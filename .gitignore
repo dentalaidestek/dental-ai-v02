@@ -1,0 +1,50 @@
+# Local AI / büyük modeller
+ai_models/
+*.litertlm
+
+# Kullanıcı yüklemeleri
+uploads/
+
+# Yerel veritabanı ve tüm DB yedekleri
+*.db
+*.db.*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Ortam değişkenleri / sırlar
+.env
+.env.*
+
+# Eski yedek dosyaları
+*.bak
+*.broken
+*.before*
+*BEFORE*
+*BACKUP*
+*SON_CALISAN*
+*SON_DURUM*
+*ANA_YEDEK*
+*.bak_v01
+*.bak_v02_step5
+
+# Telefona özel / model test dosyaları
+android_ai/
+gallery_src/
+
+# Dosya adına göre tüm eski yedekler
+*BEFORE*
+*BEFORE_*
+*BAGLANTI_ONCESI*
+*AI_ONCESI*
+*V02_AUTH_ONCESI*
+*V02_SESSION_ONCESI*
+*V02_PATIENT_SECURITY*
+*SMART_RAG_CALISIYOR*
+*SON_CALISAN*
+*SON_DURUM*
+*ANA_YEDEK*
+*.bak*

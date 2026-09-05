@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dental AI - Cihaz İçi Gemma Testi</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 18px;
+            padding: 24px;
+            box-shadow: 0 8px 30px rgba(0,0,0,.08);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        .status {
+            padding: 14px;
+            border-radius: 10px;
+            background: #e5e7eb;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 14px;
+            border: 2px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 16px;
+            color: #111;
+            background: white;
+            resize: vertical;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 12px;
+            border: 0;
+            border-radius: 10px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        #output {
+            white-space: pre-wrap;
+            background: #111827;
+            color: #f9fafb;
+            padding: 16px;
+            border-radius: 10px;
+            min-height: 100px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="card">
+        <h1>🦷 Dental AI</h1>
+        <p>Cihaz üzerinde Gemma WebGPU testi</p>
+
+        <div id="status" class="status">
+            WebGPU kontrol ediliyor...
+        </div>
+
+        <button id="loadButton" disabled>
+            Gemma'yı yükle
+        </button>
+    </div>
+
+    <div class="card">
+        <h2>Test sorusu</h2>
+
+        <textarea id="prompt">Sadece TEST yaz.</textarea>
+
+        <button id="runButton" disabled>
+            Gemma ile test et
+        </button>
+    </div>
+
+    <div class="card">
+        <h2>Sonuç</h2>
+        <div id="output">Henüz sonuç yok.</div>
+    </div>
+
+</div>
+
+<script type="module">
+
+const statusEl = document.getElementById("status");
+const loadButton = document.getElementById("loadButton");
+const runButton = document.getElementById("runButton");
+const outputEl = document.getElementById("output");
+const promptEl = document.getElementById("prompt");
+
+let pipe = null;
+
+function setStatus(text) {
+    statusEl.textContent = text;
+}
+
+async function checkWebGPU() {
+
+    if (!navigator.gpu) {
+        setStatus(
+            "❌ Bu tarayıcı WebGPU desteklemiyor."
+        );
+        return false;
+    }
+
+    try {
+
+        const adapter = await navigator.gpu.requestAdapter();
+
+        if (!adapter) {
+            setStatus(
+                "❌ Bu cihazda kullanılabilir WebGPU adaptörü bulunamadı."
+            );
+            return false;
+        }
+
+        setStatus(
+            "✅ WebGPU destekleniyor. Gemma yüklenebilir."
+        );
+
+        loadButton.disabled = false;
+
+        return true;
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "❌ WebGPU kontrolünde hata oluştu."
+        );
+
+        return false;
+    }
+}
+
+async function loadGemma() {
+
+    loadButton.disabled = true;
+
+    setStatus(
+        "⏳ Gemma modeli hazırlanıyor. İlk yükleme uzun sürebilir..."
+    );
+
+    try {
+
+        const {
+            pipeline,
+            TextStreamer
+        } = await import(
+            "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0"
+        );
+
+        pipe = await pipeline(
+            "text-generation",
+            "onnx-community/gemma-4-E2B-it-ONNX",
+            {
+                device: "webgpu",
+                dtype: "q4f16"
+            }
+        );
+
+        window.TextStreamer = TextStreamer;
+
+        setStatus(
+            "✅ Gemma cihaz üzerinde hazır."
+        );
+
+        runButton.disabled = false;
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "❌ Gemma yüklenemedi: " + error.message
+        );
+
+        loadButton.disabled = false;
+    }
+}
+
+async function runTest() {
+
+    if (!pipe) {
+        return;
+    }
+
+    runButton.disabled = true;
+
+    outputEl.textContent =
+        "⏳ Gemma cevap oluşturuyor...";
+
+    try {
+
+        const messages = [
+            {
+                role: "user",
+                content: promptEl.value
+            }
+        ];
+
+        const result = await pipe(
+            messages,
+            {
+                max_new_tokens: 50,
+                do_sample: false
+            }
+        );
+
+        outputEl.textContent =
+            JSON.stringify(result, null, 2);
+
+    } catch (error) {
+
+        console.error(error);
+
+        outputEl.textContent =
+            "HATA:\n" + error.message;
+    }
+
+    runButton.disabled = false;
+}
+
+loadButton.addEventListener(
+    "click",
+    loadGemma
+);
+
+runButton.addEventListener(
+    "click",
+    runTest
+);
+
+checkWebGPU();
+
+</script>
+
+</body>
+</html>

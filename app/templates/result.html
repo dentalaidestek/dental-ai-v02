@@ -1,0 +1,779 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+.ai-wrap {
+    max-width: 700px;
+    margin: auto;
+}
+
+.ai-card {
+    background: white;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+
+.ai-question {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.answer-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.answer-btn {
+    flex: 1;
+    min-width: 120px;
+    border: 0;
+    border-radius: 12px;
+    padding: 15px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.answer-btn.selected,
+.scale-btn.selected {
+    outline: 3px solid #222;
+}
+
+.var-btn {
+    background: #d9f7df;
+}
+
+.yok-btn {
+    background: #ffdede;
+}
+
+.choice-btn {
+    background: #e8eefc;
+}
+
+.scale-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.scale-btn {
+    flex: 1;
+    min-width: 42px;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 6px;
+    font-size: 16px;
+    font-weight: 700;
+    background: #edf0f5;
+    cursor: pointer;
+}
+
+.text-answer,
+.number-answer {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 16px;
+    background: #fff;
+}
+
+.text-answer {
+    min-height: 110px;
+    resize: vertical;
+}
+
+.number-answer {
+    min-height: 48px;
+}
+
+.answer-help {
+    color: #666;
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+#loading {
+    display: none;
+    text-align: center;
+    padding: 30px;
+}
+
+.result-title {
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.result-section {
+    margin-top: 15px;
+}
+
+.result-section h3 {
+    margin-bottom: 7px;
+}
+
+.final-box {
+    background: #f5f8ff;
+    border-radius: 14px;
+    padding: 15px;
+}
+</style>
+
+<div class="ai-wrap">
+
+    <div class="ai-card">
+        <h1>🦷 Dental AI</h1>
+
+        <p>
+            <b>Diş:</b>
+            {{ analysis.tooth_number or "-" }}
+        </p>
+
+        {% if analysis.clinical_notes %}
+        <p>
+            <b>Klinik bilgi:</b>
+            {{ analysis.clinical_notes }}
+        </p>
+        {% endif %}
+    </div>
+
+
+    {% if ai_result.status == "NEEDS_INFO" %}
+
+    <div class="ai-card">
+        <div class="result-title">
+            🔎 Kritik klinik bilgiler gerekiyor
+        </div>
+        <p>
+            AI yalnızca değerlendirmeyi değiştirebilecek
+            bilgileri soruyor.
+        </p>
+    </div>
+
+    
+
+
+    {% elif ai_result.status == "FINAL" %}
+
+    <div class="ai-card">
+        <h2>🧠 Nihai Klinik Değerlendirme</h2>
+
+        <div class="final-box">
+
+            <div class="result-section">
+                <h3>En olası durum</h3>
+                <p>{{ ai_result.most_likely }}</p>
+            </div>
+
+            {% if ai_result.differential %}
+            <div class="result-section">
+                <h3>Ayırıcı olasılıklar</h3>
+                <ul>
+                    {% for item in ai_result.differential %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if ai_result.findings %}
+            <div class="result-section">
+                <h3>Önemli bulgular</h3>
+                <ul>
+                    {% for item in ai_result.findings %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if ai_result.treatment_options %}
+            <div class="result-section">
+                <h3>Tedavi seçenekleri</h3>
+                <ul>
+                    {% for item in ai_result.treatment_options %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="result-section">
+                <h3>Önerilen yaklaşım</h3>
+                <p>{{ ai_result.preferred_approach }}</p>
+            </div>
+
+        </div>
+    </div>
+
+
+    {% elif ai_result.status == "INITIAL" %}
+
+    <div class="ai-card">
+        <h2>🧠 Klinik değerlendirme</h2>
+
+        {% if ai_result.findings %}
+        <div class="result-section">
+            <h3>Görüntüde görülen bulgular</h3>
+            <ul>
+                {% for item in ai_result.findings %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if ai_result.treatment_options %}
+        <div class="result-section">
+            <h3>Tedavi seçenekleri</h3>
+            <ul>
+                {% for item in ai_result.treatment_options %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if ai_result.most_likely %}
+        <div class="result-section">
+            <h3>En olası durum</h3>
+            <p>{{ ai_result.most_likely }}</p>
+        </div>
+        {% endif %}
+
+        {% if ai_result.differential %}
+        <div class="result-section">
+            <h3>Ayırıcı olasılıklar</h3>
+            <ul>
+                {% for item in ai_result.differential %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if ai_result.preferred_approach %}
+        <div class="result-section">
+            <h3>Önerilen yaklaşım</h3>
+            <p>{{ ai_result.preferred_approach }}</p>
+        </div>
+        {% endif %}
+
+        {% if ai_result.questions %}
+        <div class="result-section">
+            <h3>🔎 Hekime sorular</h3>
+            <p>
+                Aşağıdaki bilgiler değerlendirmeyi değiştirebilir.
+                Cevapladıktan sonra yeni bilgilerle tekrar analiz edebilirsiniz.
+            </p>
+        </div>
+
+        <form id="answersForm"
+              method="post"
+              action="/analysis/{{ analysis.id }}/final">
+
+        {% for q in ai_result.questions %}
+            {% set question_index = loop.index0 %}
+
+            <div class="ai-card question-card"
+                 data-index="{{ question_index }}">
+
+                <div class="ai-question">
+                    {{ loop.index }}. {{ q.question }}
+                </div>
+
+                {% if q.type == "VAR_YOK" or not q.type %}
+
+                <div class="answer-row">
+                    <button type="button"
+                            class="answer-btn var-btn"
+                            onclick="selectAnswer({{ question_index }}, 'VAR', this)">
+                        VAR
+                    </button>
+
+                    <button type="button"
+                            class="answer-btn yok-btn"
+                            onclick="selectAnswer({{ question_index }}, 'YOK', this)">
+                        YOK
+                    </button>
+                </div>
+
+                {% elif q.type == "SCALE" %}
+
+                <div class="scale-row">
+                    {% set min_value = q.min|default(1)|int %}
+                    {% set max_value = q.max|default(10)|int %}
+
+                    {% for value in range(min_value, max_value + 1) %}
+                    <button type="button"
+                            class="scale-btn"
+                            onclick="selectAnswer({{ question_index }}, '{{ value }}', this)">
+                        {{ value }}
+                    </button>
+                    {% endfor %}
+                </div>
+
+                {% elif q.type == "TEXT" %}
+
+                <textarea
+                    class="text-answer"
+                    id="input_{{ question_index }}"
+                    placeholder="Kısa klinik cevap yazın..."
+                    oninput="setTextAnswer({{ question_index }}, this)"
+                ></textarea>
+
+                {% elif q.type == "NUMBER" %}
+
+                <input
+                    type="number"
+                    class="number-answer"
+                    id="input_{{ question_index }}"
+                    placeholder="Sayı girin"
+                    oninput="setTextAnswer({{ question_index }}, this)"
+                >
+
+                {% elif q.type == "CHOICE" %}
+
+                <div class="answer-row">
+                    {% for option in q.options %}
+                    <button
+                        type="button"
+                        class="answer-btn choice-btn"
+                        data-question="{{ question_index }}"
+                        data-value="{{ option }}"
+                        onclick="selectChoice(this)">
+                        {{ option }}
+                    </button>
+                    {% endfor %}
+                </div>
+
+                {% endif %}
+
+                <input type="hidden"
+                       name="answer_{{ question_index }}"
+                       id="answer_{{ question_index }}">
+            </div>
+
+        {% endfor %}
+
+        <div class="ai-card" style="margin-top:16px;">
+            <button
+                type="button"
+                id="reanalyzeButton"
+                class="answer-btn"
+                disabled
+                onclick="submitReanalysis()"
+                style="width:100%; padding:14px; font-size:16px;">
+                Yeni bilgilerle tekrar analiz et
+            </button>
+        </div>
+
+        </form>
+
+        {% endif %}
+
+    </div>
+
+    {% elif ai_result.status == "READY" %}
+
+    <div class="ai-card">
+        <h2>🧠 Ön değerlendirme</h2>
+        <p>{{ ai_result.preliminary_assessment }}</p>
+    </div>
+
+
+    {% elif ai_result.status == "AI_ANALYZING" %}
+
+    <div class="ai-card" id="aiWaiting">
+        <h2>🧠 AI analiz ediyor...</h2>
+        <p>
+            Dental AI girilen bilgileri inceliyor. Bu işlem 2-3 dakika sürebilir, lütfen bekleyiniz.
+            Bu ekran otomatik güncellenecek.
+        </p>
+    </div>
+
+    <script>
+    setTimeout(function() {
+        window.location.reload();
+    }, 2000);
+    </script>
+
+
+    {% else %}
+
+    <div class="ai-card">
+        <h2>⚠️ AI sonucu hazırlanamadı</h2>
+        <p>
+            AI beklenen klinik sonuç formatını oluşturamadı.
+            Ham model çıktısı kullanıcı ekranında gösterilmemektedir.
+        </p>
+        <p>Lütfen analizi yeniden çalıştırın.</p>
+    </div>
+
+    {% endif %}
+
+
+    <div id="loading" class="ai-card">
+        <h2>🧠 Nihai değerlendirme hazırlanıyor...</h2>
+        <p>Lütfen bekleyin.</p>
+    </div>
+
+    <div class="ai-card">
+        ⚠️ Bu sistem klinik karar destek prototipidir.
+        Nihai klinik karar hekim tarafından verilmelidir.
+    </div>
+
+</div>
+
+
+<script>
+
+const answers = {};
+
+function setAnswer(index, value) {
+
+    if (value === null || value === undefined) {
+        return false;
+    }
+
+    const cleanValue = String(value).trim();
+
+    if (!cleanValue) {
+        return false;
+    }
+
+    answers[index] = cleanValue;
+
+    const hidden = document.getElementById(
+        "answer_" + index
+    );
+
+    if (hidden) {
+        hidden.value = cleanValue;
+    }
+
+    return true;
+}
+
+
+function selectChoice(button) {
+
+    const index = button.getAttribute("data-question");
+    const value = button.getAttribute("data-value");
+
+    if (!setAnswer(index, value)) {
+        return;
+    }
+
+    const card = button.closest(".question-card");
+
+    if (!card) {
+        return;
+    }
+
+    card.querySelectorAll(
+        ".choice-btn"
+    ).forEach(function(btn) {
+        btn.classList.remove("selected");
+    });
+
+    button.classList.add("selected");
+
+    setTimeout(function() {
+        checkAllAnswered();
+    }, 50);
+}
+
+
+function selectAnswer(index, value, button) {
+
+    if (!setAnswer(index, value)) {
+        return;
+    }
+
+    const card = document.querySelector(
+        '.question-card[data-index="' + index + '"]'
+    );
+
+    if (!card) {
+        return;
+    }
+
+    card.querySelectorAll(
+        ".answer-btn, .scale-btn"
+    ).forEach(function(btn) {
+        btn.classList.remove("selected");
+    });
+
+    button.classList.add("selected");
+
+    // Seçimin görünür olması için önce selected sınıfını uygula,
+    // sonra tüm sorular cevaplandı mı kontrol et.
+    setTimeout(function() {
+        checkAllAnswered();
+    }, 50);
+}
+
+
+function setTextAnswer(index, input) {
+
+    const value = input.value.trim();
+
+    const hidden = document.getElementById(
+        "answer_" + index
+    );
+
+    if (value) {
+
+        answers[index] = value;
+
+        if (hidden) {
+            hidden.value = value;
+        }
+
+    } else {
+
+        delete answers[index];
+
+        if (hidden) {
+            hidden.value = "";
+        }
+    }
+
+    checkAllAnswered();
+}
+
+
+function checkAllAnswered() {
+    const form = document.getElementById("answersForm");
+
+    if (!form) {
+        return;
+    }
+
+    const cards = document.querySelectorAll(".question-card");
+    const total = cards.length;
+
+    if (total === 0) {
+        return;
+    }
+
+    let answered = 0;
+
+    cards.forEach(function(card) {
+        const index = card.getAttribute("data-index");
+        const hidden = document.getElementById("answer_" + index);
+
+        if (hidden && hidden.value.trim() !== "") {
+            answered++;
+        }
+    });
+
+    const button = document.getElementById("reanalyzeButton");
+
+    if (button) {
+        if (answered === total) {
+            button.disabled = false;
+            button.textContent = "🔄 Yeni bilgilerle tekrar analiz et";
+        } else {
+            button.disabled = true;
+            button.textContent =
+                "Önce tüm soruları cevaplayın";
+        }
+    }
+}
+
+function submitReanalysis() {
+    const form = document.getElementById("answersForm");
+
+    if (!form) {
+        return;
+    }
+
+    const cards = document.querySelectorAll(".question-card");
+    let unanswered = [];
+
+    cards.forEach(function(card) {
+        const index = card.getAttribute("data-index");
+        const hidden = document.getElementById("answer_" + index);
+
+        if (!hidden || hidden.value.trim() === "") {
+            unanswered.push(Number(index) + 1);
+        }
+    });
+
+    if (unanswered.length > 0) {
+        alert(
+            "Lütfen tüm soruları cevaplayın.\n\n" +
+            "Cevaplanmayan soru: " +
+            unanswered.join(", ")
+        );
+        return;
+    }
+
+    const button = document.getElementById("reanalyzeButton");
+
+    if (button) {
+        button.disabled = true;
+        button.textContent = "🧠 Yeni bilgilerle analiz ediliyor...";
+    }
+
+    const loading = document.getElementById("loading");
+
+    if (loading) {
+        loading.style.display = "block";
+    }
+
+    form.submit();
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    checkAllAnswered();
+});
+</script>
+
+{% endblock %}
+
+
+<style>
+/* DENTAL AI SORU RENKLERI */
+
+.question-card .scale-btn {
+    background: white !important;
+    color: black !important;
+    border: 2px solid #999 !important;
+    font-weight: bold !important;
+}
+
+.question-card .scale-btn.selected {
+    background: #eeeeee !important;
+    color: black !important;
+}
+
+.question-card .var-btn {
+    background: #2196f3 !important;
+    color: black !important;
+    font-weight: bold !important;
+}
+
+.question-card .yok-btn {
+    background: #4caf50 !important;
+    color: black !important;
+    font-weight: bold !important;
+}
+
+.question-card .text-answer,
+.question-card .number-answer {
+    background: white !important;
+    color: black !important;
+    border: 2px solid #999 !important;
+}
+
+.question-card .text-answer::placeholder,
+.question-card .number-answer::placeholder {
+    color: #555 !important;
+    opacity: 1 !important;
+}
+
+.question-card .choice-btn {
+    background: white !important;
+    color: black !important;
+    border: 2px solid #999 !important;
+    font-weight: bold !important;
+}
+
+.question-card .choice-btn.selected {
+    background: #eeeeee !important;
+    color: black !important;
+}
+</style>
+
+<style id="DENTAL_AI_FINAL_COLORS">
+/* ===== DENTAL AI SORU RENKLERI - FINAL ===== */
+
+/* 1-10 NUMARALARI: beyaz zemin + siyah yazı */
+.question-card .scale-row .scale-btn {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #000000 !important;
+    font-weight: 800 !important;
+}
+
+/* Numara üzerine gelince */
+.question-card .scale-row .scale-btn:hover,
+.question-card .scale-row .scale-btn.selected {
+    background: #e5e5e5 !important;
+    background-color: #e5e5e5 !important;
+    color: #000000 !important;
+}
+
+/* VAR = mavi + siyah yazı */
+.question-card button.var-btn,
+.question-card button.var-btn:hover,
+.question-card button.var-btn.selected {
+    background: #2196f3 !important;
+    background-color: #2196f3 !important;
+    color: #000000 !important;
+    border-color: #1976d2 !important;
+    font-weight: 800 !important;
+}
+
+/* YOK = yeşil + siyah yazı */
+.question-card button.yok-btn,
+.question-card button.yok-btn:hover,
+.question-card button.yok-btn.selected {
+    background: #4caf50 !important;
+    background-color: #4caf50 !important;
+    color: #000000 !important;
+    border-color: #388e3c !important;
+    font-weight: 800 !important;
+}
+
+/* Yazılı cevap kutusu */
+.question-card textarea.text-answer,
+.question-card input.number-answer {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #000000 !important;
+    font-weight: 600 !important;
+}
+
+/* Placeholder */
+.question-card textarea.text-answer::placeholder,
+.question-card input.number-answer::placeholder {
+    color: #555555 !important;
+    opacity: 1 !important;
+}
+
+/* Diğer seçenek butonları */
+.question-card button.choice-btn {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #000000 !important;
+    font-weight: 800 !important;
+}
+
+.question-card button.choice-btn:hover,
+.question-card button.choice-btn.selected {
+    background: #e5e5e5 !important;
+    background-color: #e5e5e5 !important;
+    color: #000000 !important;
+}
+
+/* Soru metni */
+.question-card .ai-question {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+</style>
+

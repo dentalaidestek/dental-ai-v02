@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>🦷 Dental AI Analizi</h1>
+
+<div class="card">
+    <h2>Hasta</h2>
+    <p>
+        <b>{{ patient.anonymous_id }}</b>
+        {% if patient.age %} · {{ patient.age }} yaş{% endif %}
+    </p>
+
+    {% if patient.chief_complaint %}
+    <p>
+        <b>Ana şikâyet:</b> {{ patient.chief_complaint }}
+    </p>
+    {% endif %}
+</div>
+
+<form method="post"
+      enctype="multipart/form-data"
+      class="card form">
+
+    <h2>1. Diş</h2>
+
+    <label>
+        Diş numarası
+        <input
+            name="tooth_number"
+            placeholder="Örn: 36"
+            maxlength="10">
+    </label>
+
+    <h2>2. Kısa klinik bilgi</h2>
+
+    <label>
+        Hekim notu
+        <textarea
+            name="clinical_notes"
+            rows="5"
+            placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
+    </label>
+
+    <p class="muted">
+        Sadece önemli gördüğünüz bilgileri yazın.
+        Gereksiz klinik veri girmek zorunda değilsiniz.
+    </p>
+
+    <h2>3. Fotoğraf / Röntgen</h2>
+
+    <label>
+        Görüntü yükle
+        <input
+            type="file"
+            name="images"
+            accept="image/jpeg,image/png,image/webp"
+            multiple>
+    </label>
+
+    <p class="muted">
+        Fotoğraf veya röntgen yükleyebilirsiniz.
+        Görüntü türünü ayrıca seçmenize gerek yoktur.
+    </p>
+
+    <button type="submit">
+        🔬 Analiz Et
+    </button>
+
+</form>
+
+<div class="notice">
+    🤖 AI önce mevcut klinik bilgi ve görüntüyü değerlendirecek.
+    Tanıyı veya tedaviyi değiştirebilecek kritik bir bilgi eksikse
+    yalnızca gerekli soruları size gösterecektir.
+</div>
+
+<div class="notice">
+    ⚠️ Bu sistem araştırma/prototip aşamasındadır.
+    Klinik tanı veya tedavi kararının yerine geçmez.
+</div>
+
+{% endblock %}

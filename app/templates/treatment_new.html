@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yeni Tedavi</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,.08);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 9px;
+            font-size: 15px;
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        button, a {
+            display: inline-block;
+            margin-top: 18px;
+            padding: 12px 17px;
+            border: 0;
+            border-radius: 9px;
+            background: #1565c0;
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        .secondary {
+            background: #666;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <div class="card">
+        <h1>🦷 Yeni Tedavi Kaydı</h1>
+
+        <p>
+            Hasta:
+            <strong>
+                {{ patient.first_name or "" }}
+                {{ patient.last_name or "" }}
+            </strong>
+        </p>
+
+        <form method="post" action="/patients/{{ patient.id }}/treatment/new">
+
+            <label for="tooth_number">Diş Numarası</label>
+            <input
+                id="tooth_number"
+                name="tooth_number"
+                type="text"
+                placeholder="Örn: 11, 26, 36, 46"
+            >
+
+            <label for="treatment_name">Yapılan Tedavi</label>
+            <input
+                id="treatment_name"
+                name="treatment_name"
+                type="text"
+                placeholder="Örn: Kompozit dolgu"
+                required
+            >
+
+            <label for="treatment_date">Tedavi Tarihi</label>
+            <input
+                id="treatment_date"
+                name="treatment_date"
+                type="date"
+            >
+
+            <label for="material">Kullanılan Materyal</label>
+            <input
+                id="material"
+                name="material"
+                type="text"
+                placeholder="Örn: Kompozit, GIC, zirkonya..."
+            >
+
+            <label for="result">Sonuç / Durum</label>
+            <select id="result" name="result">
+                <option value="">Seçiniz</option>
+                <option value="Tamamlandı">Tamamlandı</option>
+                <option value="Kontrol Gerekli">Kontrol Gerekli</option>
+                <option value="Devam Ediyor">Devam Ediyor</option>
+                <option value="Başarısız">Başarısız</option>
+            </select>
+
+            <label for="doctor_note">Doktor Notu</label>
+            <textarea
+                id="doctor_note"
+                name="doctor_note"
+                placeholder="Tedavi sırasında veya sonrasında alınan notlar..."
+            ></textarea>
+
+            <button type="submit">💾 Tedaviyi Kaydet</button>
+
+            <a
+                class="secondary"
+                href="/patients/{{ patient.id }}"
+            >
+                ← Hasta Profiline Dön
+            </a>
+
+        </form>
+    </div>
+
+</div>
+</body>
+</html>

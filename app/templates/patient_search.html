@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hasta Arama</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 18px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,.08);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        form {
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 13px;
+            border: 1px solid #ccc;
+            border-radius: 9px;
+            font-size: 16px;
+        }
+
+        button, .button {
+            padding: 13px 18px;
+            border: 0;
+            border-radius: 9px;
+            background: #1565c0;
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        .patient {
+            padding: 15px;
+            border: 1px solid #e2e6eb;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
+        .patient strong {
+            font-size: 18px;
+        }
+
+        .muted {
+            color: #666;
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            form {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <div class="card">
+        <h1>🔎 Hasta Arama</h1>
+
+        <form method="get" action="/patients/search">
+            <input
+                type="text"
+                name="q"
+                value="{{ q }}"
+                placeholder="TC, ad, soyad veya hasta no..."
+                autocomplete="off"
+                autofocus
+            >
+            <button type="submit">Ara</button>
+        </form>
+    </div>
+
+    <div class="card">
+        {% if q %}
+            <h2>Arama Sonuçları</h2>
+
+            {% if patients %}
+                <p class="muted">{{ patients|length }} sonuç gösteriliyor.</p>
+
+                {% for patient in patients %}
+                    <div class="patient">
+                        <strong>
+                            {{ patient.first_name or "" }}
+                            {{ patient.last_name or "" }}
+                        </strong>
+
+                        <div class="muted">
+                            Hasta No: {{ patient.anonymous_id }}
+                        </div>
+
+                        <div class="muted">
+                            TC: {{ patient.tc_kimlik_no or "-" }}
+                        </div>
+
+                        <br>
+
+                        <a
+                            class="button"
+                            href="/patients/{{ patient.id }}"
+                        >
+                            Profili Aç
+                        </a>
+                    </div>
+                {% endfor %}
+
+            {% else %}
+                <p>❌ Hasta bulunamadı.</p>
+            {% endif %}
+
+        {% else %}
+            <p>Aramak istediğiniz hastanın bilgilerini girin.</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <a class="button" href="/">🏠 Ana Sayfa</a>
+        <a class="button" href="/patients/new">➕ Yeni Hasta</a>
+    </div>
+
+</div>
+</body>
+</html>

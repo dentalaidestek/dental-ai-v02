@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+.dashboard {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.hero {
+    display: grid;
+    grid-template-columns: 1.4fr .8fr;
+    gap: 20px;
+    align-items: stretch;
+    margin-bottom: 24px;
+}
+
+.hero-main {
+    background: linear-gradient(135deg, #0f172a, #1e3a5f);
+    color: white;
+    border-radius: 22px;
+    padding: 30px;
+    min-height: 210px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: 0 12px 30px rgba(15,23,42,.16);
+}
+
+.brand {
+    font-size: 15px;
+    letter-spacing: 2px;
+    opacity: .8;
+    margin-bottom: 8px;
+}
+
+.hero-main h1 {
+    font-size: 38px;
+    margin: 0 0 10px;
+}
+
+.hero-main p {
+    margin: 0;
+    font-size: 16px;
+    opacity: .9;
+    line-height: 1.6;
+}
+
+.doctor-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 22px;
+    min-height: 210px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.doctor-illustration {
+    text-align: center;
+    font-size: 92px;
+    line-height: 1;
+}
+
+.doctor-illustration .label {
+    display: block;
+    margin-top: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #334155;
+}
+
+.welcome {
+    margin-bottom: 20px;
+}
+
+.welcome h2 {
+    margin-bottom: 5px;
+}
+
+.welcome p {
+    color: #64748b;
+    margin-top: 0;
+}
+
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-bottom: 24px;
+}
+
+.action-card {
+    border-radius: 18px;
+    padding: 24px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 5px 18px rgba(15,23,42,.06);
+}
+
+.action-icon {
+    font-size: 34px;
+    margin-bottom: 10px;
+}
+
+.action-card h2 {
+    margin: 0 0 8px;
+}
+
+.action-card p {
+    color: #64748b;
+    min-height: 42px;
+}
+
+.action-card .btn {
+    display: inline-block;
+    margin-top: 8px;
+    text-decoration: none;
+}
+
+.patient-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 5px 18px rgba(15,23,42,.06);
+}
+
+.patient-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.patient-header h2 {
+    margin: 0;
+}
+
+.patient-count {
+    background: #eff6ff;
+    color: #1d4ed8;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.search-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.search-box input {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-box button {
+    white-space: nowrap;
+}
+
+.patient-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.patient-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.patient-name {
+    font-weight: 700;
+}
+
+.patient-age {
+    color: #64748b;
+    font-size: 14px;
+}
+
+.patient-link {
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.notice {
+    margin-top: 22px;
+}
+
+@media (max-width: 700px) {
+    .hero {
+        grid-template-columns: 1fr;
+    }
+
+    .hero-main {
+        min-height: 180px;
+        padding: 24px;
+    }
+
+    .hero-main h1 {
+        font-size: 30px;
+    }
+
+    .doctor-card {
+        min-height: 150px;
+    }
+
+    .doctor-illustration {
+        font-size: 70px;
+    }
+
+    .action-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .search-box {
+        flex-direction: column;
+    }
+
+    .patient-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .patient-link {
+        width: 100%;
+    }
+}
+
+<style>
+.hero-compact {
+    margin-bottom: 18px;
+}
+
+.hero-compact .hero-main {
+    min-height: 145px;
+    padding: 25px 30px;
+}
+
+.hero-compact .hero-main h1 {
+    font-size: 32px;
+    margin-bottom: 7px;
+}
+
+.quick-actions {
+    display: grid;
+    grid-template-columns: .7fr 1.3fr;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.quick-action,
+.ai-ask {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(15,23,42,.05);
+}
+
+.quick-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px;
+    text-decoration: none;
+    color: #1e293b;
+}
+
+.quick-action span {
+    font-size: 27px;
+}
+
+.ai-ask {
+    padding: 14px 18px;
+}
+
+.ai-ask-title {
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 8px;
+}
+
+.ai-ask form {
+    display: flex;
+    gap: 8px;
+}
+
+.ai-ask input {
+    flex: 1;
+    min-width: 0;
+}
+
+.ai-ask .btn {
+    margin: 0;
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .quick-actions {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+</style>
+
+<div class="dashboard">
+
+    <div class="hero hero-compact">
+        <div class="hero-main">
+            <div class="brand">DENTAL AI</div>
+            <h1>Hekim Paneli</h1>
+            <p>Hastalarınızı yönetin ve klinik işlemlerinize hızlıca başlayın.</p>
+        </div>
+    </div>
+
+    <div class="quick-actions">
+    <a class="quick-action" href="/patients/new">
+        <span>＋</span>
+        <strong>Yeni Hasta Oluştur</strong>
+    </a>
+</div>
+
+    <section class="patient-card">
+
+        <div class="patient-header">
+            <h2>👥 Hastalarım</h2>
+            <span class="patient-count">{{ patients|length }} kayıt</span>
+        </div>
+
+        <form action="/patients/search" method="get" class="search-box">
+            <input
+                type="text"
+                name="q"
+                placeholder="İsim, soyisim veya hasta no ara..."
+                autocomplete="off"
+            >
+            <button type="submit" class="btn">🔎 Hasta Ara</button>
+        </form>
+
+        <h3>Son 5 Hasta</h3>
+
+        <div class="patient-list">
+            {% for p in patients[:5] %}
+            <div class="patient-row">
+                <div>
+                    <div class="patient-name">
+                        {{ p.first_name or "" }} {{ p.last_name or "" }}
+                    </div>
+
+                    {% if p.age %}
+                    <div class="patient-age">{{ p.age }} yaş</div>
+                    {% endif %}
+                </div>
+
+                <a class="patient-link" href="/patients/{{ p.id }}">
+                    Hasta Profili →
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if not patients %}
+        <p>Henüz hasta kaydı bulunmuyor.</p>
+        {% endif %}
+
+    </section>
+
+    <div class="notice">
+        ⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.
+    </div>
+
+</div>
+
+{% endblock %}
+
+
+
+
+<style>
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.future-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 20px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 5px 18px rgba(15,23,42,.06);
+}
+
+.future-card-icon {
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    background: #eff6ff;
+    font-size: 22px;
+}
+
+.future-card strong {
+    display: block;
+    font-size: 16px;
+    color: #0f172a;
+}
+
+.future-card span {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+    color: #64748b;
+}
+
+@media (max-width: 650px) {
+    .quick-actions {
+        grid-template-columns: 1fr;
+    }
+}
+</style>

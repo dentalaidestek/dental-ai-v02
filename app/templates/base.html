@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title or "DENTAL-AI" }}</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<nav class="topbar">
+    <a href="/" class="brand">
+        <span class="brand-icon">🦷</span>
+        <span class="brand-text">
+            <strong>DENTAL AI</strong>
+            
+        </span>
+    </a>
+
+    <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Menüyü aç">
+        ☰
+    </button>
+
+    <div class="nav-links" id="mainMenu">
+        <a href="/">🏠 Ana Sayfa</a>
+        <a href="/patients">👥 Hastalar</a>
+        <a href="/">👨‍⚕️ Hekim Paneli</a>
+        {% if user and user.role == "ADMIN" %}
+        <a href="/admin">⚙️ Yönetici</a>
+        {% endif %}
+    </div>
+</nav>
+
+<main>{% block content %}{% endblock %}</main><script>
+function toggleMenu() {
+    document.getElementById("mainMenu").classList.toggle("open");
+}
+</script>
+</body></html>

@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="patient-page">
+
+    <div class="patient-header">
+        <div>
+            <h1>Yeni Hasta</h1>
+            <p>Hasta bilgilerini eksiksiz girerek yeni hasta kaydı oluşturun.</p>
+        </div>
+    </div>
+
+    <form method="post" class="card patient-form">
+
+        <div class="section-title">
+            <span>👤</span>
+            <div>
+                <strong>Hasta Bilgileri</strong>
+                <small>Temel hasta bilgilerini girin</small>
+            </div>
+        </div>
+
+        <div class="form-grid">
+
+            <label>
+                <span>Ad</span>
+                <input
+                    type="text"
+                    name="first_name"
+                    placeholder="Hastanın adı"
+                    required
+                >
+            </label>
+
+            <label>
+                <span>Soyad</span>
+                <input
+                    type="text"
+                    name="last_name"
+                    placeholder="Hastanın soyadı"
+                    required
+                >
+            </label>
+
+            <label>
+                <span>Doğum Tarihi</span>
+                <input
+                    type="date"
+                    name="birth_date"
+                >
+            </label>
+
+            <label>
+                <span>Telefon</span>
+                <input
+                    type="tel"
+                    name="phone"
+                    placeholder="05XXXXXXXXX"
+                    maxlength="11"
+                    minlength="11"
+                    pattern="05[0-9]{9}"
+                    inputmode="numeric"
+                    autocomplete="tel"
+                    oninput="this.value=this.value.replace(/\\D/g,'').slice(0,11)"
+                    required
+                >
+            </label>
+
+        </div>
+
+        <div class="section-title complaint-title">
+            <span>📝</span>
+            <div>
+                <strong>Başvuru Bilgileri</strong>
+                <small>Hastanın şikâyetini veya başvuru nedenini yazın</small>
+            </div>
+        </div>
+
+        <label class="complaint-field">
+            <span>Başvuru Sebebi / Şikâyeti</span>
+            <textarea
+                name="chief_complaint"
+                rows="6"
+                placeholder="Örn: Sağ alt bölgede yaklaşık 1 haftadır devam eden ağrı..."
+            ></textarea>
+        </label>
+
+        <div class="form-footer">
+            <div class="form-hint">
+                💡 Bilgileri kontrol ettikten sonra hasta kaydını oluşturabilirsiniz.
+            </div>
+
+            <button class="btn save-btn" type="submit">
+                💾 Hastayı Kaydet
+            </button>
+        </div>
+
+    </form>
+
+    <div class="notice">
+        ⚠️ Hasta bilgileri gerçek klinik verilerle kullanılmadan önce güvenlik ve gizlilik kontrolleri yapılmalıdır.
+    </div>
+
+</div>
+
+<style>
+.patient-page {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.patient-header {
+    margin-bottom: 18px;
+}
+
+.patient-header h1 {
+    margin-bottom: 5px;
+}
+
+.patient-header p {
+    margin: 0;
+    opacity: 0.7;
+}
+
+.patient-form {
+    padding: 24px;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid rgba(128,128,128,.22);
+}
+
+.section-title > span {
+    font-size: 25px;
+}
+
+.section-title strong {
+    display: block;
+    font-size: 17px;
+}
+
+.section-title small {
+    display: block;
+    margin-top: 3px;
+    opacity: 0.65;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.patient-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.patient-form label > span {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.patient-form input,
+.patient-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 13px;
+    border-radius: 10px;
+    border: 1px solid rgba(128,128,128,.35);
+    font: inherit;
+    background: transparent;
+}
+
+.patient-form input:focus,
+.patient-form textarea:focus {
+    outline: none;
+}
+
+.complaint-title {
+    margin-top: 26px;
+}
+
+.complaint-field textarea {
+    resize: vertical;
+    min-height: 130px;
+}
+
+.form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(128,128,128,.22);
+}
+
+.form-hint {
+    font-size: 13px;
+    opacity: 0.65;
+}
+
+.save-btn {
+    min-width: 175px;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+@media (max-width: 650px) {
+
+    .patient-form {
+        padding: 18px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .form-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .save-btn {
+        width: 100%;
+    }
+
+}
+</style>
+
+{% endblock %}

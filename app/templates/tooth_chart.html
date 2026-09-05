@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diş Şeması</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 18px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,.08);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        .jaw {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+
+        .tooth {
+            width: 48px;
+            height: 58px;
+            border: 2px solid #aaa;
+            border-radius: 12px 12px 8px 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: transform .15s;
+        }
+
+        .tooth:hover {
+            transform: scale(1.08);
+        }
+
+        .number {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .status {
+            font-size: 10px;
+            margin-top: 5px;
+            text-align: center;
+        }
+
+        .healthy { background: white; }
+        .caries { background: #ffb3b3; }
+        .filling { background: #b3d9ff; }
+        .crown { background: #d8b3ff; }
+        .root-canal { background: #ffc680; }
+        .extracted { background: #555; color: white; }
+        .implant { background: #b3f0b3; }
+        .other { background: #fff0a8; }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .legend span {
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .panel {
+            display: block;
+            margin-top: 20px;
+            padding: 18px;
+            background: #f7f9fc;
+            border-radius: 12px;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        select, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            margin-top: 8px;
+            border: 1px solid #ccc;
+            border-radius: 9px;
+            font-size: 15px;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        button, a.button {
+            display: inline-block;
+            padding: 11px 16px;
+            background: #1565c0;
+            color: white;
+            border: 0;
+            border-radius: 9px;
+            margin-top: 12px;
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        .secondary {
+            background: #666 !important;
+        }
+
+        .info {
+            text-align: center;
+            color: #666;
+        }
+
+        @media (max-width: 600px) {
+            .tooth {
+                width: 39px;
+                height: 52px;
+            }
+        }
+    
+        .surface-map {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            max-width: 280px;
+            margin: 15px auto;
+        }
+
+        .surface-button {
+            padding: 12px 6px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: #f7f7f7;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .surface-button:hover {
+            transform: scale(1.02);
+        }
+
+        .surface-button.selected {
+            outline: 3px solid #333;
+        }
+
+        .surface-center {
+            background: #fff;
+        }
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="card">
+
+        <h1>🦷 Diş Şeması</h1>
+
+        <p>
+            Hasta:
+            <strong>
+                {{ patient.first_name or "" }}
+                {{ patient.last_name or "" }}
+            </strong>
+        </p>
+
+        <div class="info">Üst Çene</div>
+
+        <div class="jaw">
+            {% for tooth in upper_teeth %}
+                <div
+                    class="tooth {{ tooth.css_class }}"
+                    data-tooth="{{ tooth.number }}" onclick="selectTooth('{{ tooth.number }}')"
+                    title="Diş {{ tooth.number }}"
+                >
+                    <div class="number">{{ tooth.number }}</div>
+                    <div class="status">{{ tooth.status }}</div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <hr>
+
+        <div class="info">Alt Çene</div>
+
+        <div class="jaw">
+            {% for tooth in lower_teeth %}
+                <div
+                    class="tooth {{ tooth.css_class }}"
+                    data-tooth="{{ tooth.number }}" onclick="selectTooth('{{ tooth.number }}')"
+                    title="Diş {{ tooth.number }}"
+                >
+                    <div class="number">{{ tooth.number }}</div>
+                    <div class="status">{{ tooth.status }}</div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="legend">
+            <span class="healthy">⚪ Sağlıklı</span>
+            <span class="caries">🔴 Çürük</span>
+            <span class="filling">🔵 Dolgu</span>
+            <span class="crown">🟣 Kron</span>
+            <span class="root-canal">🟠 Kanal</span>
+            <span class="extracted">⚫ Çekilmiş</span>
+            <span class="implant">🟢 İmplant</span>
+            <span class="other">🟡 Diğer</span>
+        </div>
+
+        <div id="panel" class="panel">
+
+            <h2>🦷 Diş <span id="selectedTooth"></span></h2>
+
+            <form
+                id="toothForm"
+                method="post"
+            >
+
+                
+<label>Diş Yüzeyi</label>
+
+<div class="surface-map">
+                    <button type="button" class="surface-button" data-surface="MESIAL">
+                        ◀️<br>Mesial
+                    </button>
+
+                    <button type="button" class="surface-button" data-surface="BUCCAL">
+                        🔵<br>Bukkal
+                    </button>
+
+                    <button type="button" class="surface-button" data-surface="DISTAL">
+                        ▶️<br>Distal
+                    </button>
+
+                    <button type="button" class="surface-button" data-surface="LINGUAL">
+                        🟢<br>Lingual
+                    </button>
+
+                    <button type="button" class="surface-button surface-center" data-surface="OCCLUSAL">
+                        🦷<br>Oklüzal
+                    </button>
+                </div>
+
+                <select id="surfaceSelect" name="surface">
+                    <option value="">Genel Diş</option>
+                    <option value="OCCLUSAL">🦷 Oklüzal</option>
+                    <option value="INCISAL">✂️ İnsizal</option>
+                    <option value="MESIAL">◀️ Mesial</option>
+                    <option value="DISTAL">▶️ Distal</option>
+                    <option value="BUCCAL">🔵 Bukkal / Vestibül</option>
+                    <option value="LINGUAL">🟢 Lingual / Palatinal</option>
+                </select>
+
+<label>Durum</label>
+
+                <select name="status" required>
+                    <option value="HEALTHY">⚪ Sağlıklı</option>
+                    <option value="CARIES">🔴 Çürük</option>
+                    <option value="FILLING">🔵 Dolgu</option>
+                    <option value="CROWN">🟣 Kron</option>
+                    <option value="ROOT_CANAL">🟠 Kanal Tedavisi</option>
+                    <option value="EXTRACTED">⚫ Çekilmiş</option>
+                    <option value="IMPLANT">🟢 İmplant</option>
+                    <option value="OTHER">🟡 Diğer</option>
+                </select>
+
+                <label>Not</label>
+
+                <textarea
+                    name="note"
+                    placeholder="Bu dişle ilgili ek bilgi..."
+                ></textarea>
+
+                <button type="submit">
+                    💾 Diş Durumunu Kaydet
+                </button>
+
+            </form>
+            
+            <hr style="margin:25px 0;">
+
+            <h3>📋 Tedavi Geçmişi</h3>
+            <div id="treatmentHistory">
+                <p class="info">Bu dişe ait tedavi geçmişi burada görünecek.</p>
+            </div>
+
+            
+
+
+        </div>
+
+        <a
+            class="button secondary"
+            href="/patients/{{ patient.id }}"
+        >
+            ← Hasta Profiline Dön
+        </a>
+
+    </div>
+
+</div>
+<script>
+function selectTooth(number) {
+    document.getElementById("selectedTooth").textContent = number;
+
+    const form = document.getElementById("toothForm");
+    if (form) {
+        form.action = "/patients/{{ patient.id }}/teeth/" + number;
+    }
+
+    const panel = document.getElementById("panel");
+    if (panel) {
+        panel.classList.add("active");
+
+        setTimeout(function() {
+            panel.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+        }, 100);
+    }
+
+    const surfaceSelect = document.getElementById("surfaceSelect");
+    if (surfaceSelect) surfaceSelect.value = "";
+
+    document.querySelectorAll(".surface-button").forEach(function(btn) {
+        btn.classList.remove("selected");
+    });
+
+    const history = document.getElementById("treatmentHistory");
+    if (!history) return;
+
+    history.innerHTML = '<p class="info">⏳ Tedavi geçmişi yükleniyor...</p>';
+
+    fetch("/patients/{{ patient.id }}/teeth/" + number + "/history")
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error("Geçmiş alınamadı");
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            if (!data) {
+                history.innerHTML =
+                    '<p class="info">Bu dişe ait kayıt bulunmuyor.</p>';
+                return;
+            }
+
+            let html = "";
+
+            if (data.surface_statuses && data.surface_statuses.length) {
+                html += '<h4>🦷 Yüzey Durumları</h4>';
+
+                data.surface_statuses.forEach(function(item) {
+                    html += `
+                        <div class="card" style="padding:12px;margin-bottom:8px;">
+                            <strong>${item.surface || ""}</strong>
+                            — ${item.status || ""}
+                            ${item.note ? "<br>" + item.note : ""}
+                            ${item.updated_at ? "<br><small>" + item.updated_at + "</small>" : ""}
+                        </div>
+                    `;
+                });
+            }
+
+            if (data.treatments && data.treatments.length) {
+                html += '<h4>💊 Tedaviler</h4>';
+
+                data.treatments.forEach(function(item) {
+                    html += `
+                        <div class="card" style="padding:12px;margin-bottom:8px;">
+                            <strong>${item.name || "Tedavi"}</strong>
+                            ${item.date ? "<br>📅 " + item.date : ""}
+                            ${item.material ? "<br>🧪 " + item.material : ""}
+                            ${item.result ? "<br>📋 " + item.result : ""}
+                            ${item.note ? "<br>📝 " + item.note : ""}
+                        </div>
+                    `;
+                });
+            }
+
+            if (data.analyses && data.analyses.length) {
+                html += '<h4>🔬 Analizler</h4>';
+
+                data.analyses.forEach(function(item) {
+                    html += `
+                        <div class="card" style="padding:12px;margin-bottom:8px;">
+                            ${item.status ? "<strong>" + item.status + "</strong>" : ""}
+                            ${item.date ? "<br>📅 " + item.date : ""}
+                            ${item.notes ? "<br>📝 " + item.notes : ""}
+                        </div>
+                    `;
+                });
+            }
+
+            if (!html) {
+                html =
+                    '<p class="info">Bu dişe ait tedavi geçmişi bulunmuyor.</p>';
+            }
+
+            history.innerHTML = html;
+        })
+        .catch(function(error) {
+            console.error(error);
+            history.innerHTML =
+                '<p class="info">Tedavi geçmişi yüklenemedi.</p>';
+        });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+
+    document.querySelectorAll(".surface-button").forEach(function(button) {
+        button.addEventListener("click", function() {
+            const surface = this.dataset.surface;
+            const select = document.getElementById("surfaceSelect");
+
+            if (select) {
+                select.value = surface;
+            }
+
+            document.querySelectorAll(".surface-button").forEach(function(btn) {
+                btn.classList.remove("selected");
+            });
+
+            this.classList.add("selected");
+        });
+    });
+
+    const form = document.getElementById("toothForm");
+
+    if (form) {
+        form.addEventListener("submit", function(e) {
+            const tooth =
+                document.getElementById("selectedTooth").textContent.trim();
+
+            if (!tooth) {
+                e.preventDefault();
+                alert("Önce bir diş seçin.");
+                return;
+            }
+
+            form.action =
+                "/patients/{{ patient.id }}/teeth/" + tooth;
+        });
+    }
+});
+</script>
+</body>
+</html>

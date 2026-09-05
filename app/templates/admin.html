@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}<h1>Yönetici Paneli</h1>
+<div class="grid"><section class="card"><h2>Sistem</h2><p>Hekimler: {{users|length}}</p><p>Hastalar: {{patients|length}}</p><p>Analizler: {{analyses|length}}</p><p>Klinik kayıtlar: {{records|length}}</p></section>
+<section class="card"><h2>Klinik Bilgi Ekle</h2><form method="post" action="/admin/clinical-record" class="form">
+<input name="clinical_id" placeholder="CARIES-DX-001" required><input name="topic" placeholder="Topic" required>
+<textarea name="clinical_question" placeholder="Clinical question" required></textarea><textarea name="claim" placeholder="Claim" required></textarea>
+<input name="evidence_grade" placeholder="Evidence grade"><input name="consensus_status" placeholder="Consensus status"><input name="ai_use" placeholder="AI use">
+<textarea name="safety_notes" placeholder="Safety notes"></textarea><button>Kaydet</button></form></section></div>
+<h2>Knowledge Base</h2>{% for r in records %}<div class="card"><b>{{r.clinical_id}}</b> — {{r.topic}}<p>{{r.claim}}</p><small>Evidence: {{r.evidence_grade}} · Consensus: {{r.consensus_status}} · AI: {{r.ai_use}}</small></div>{% endfor %}
+{% endblock %}

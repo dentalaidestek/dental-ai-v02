@@ -1,0 +1,337 @@
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}nav{background:#111827;color:white;padding:16px 5%;display:flex;gap:20px;align-items:center}nav a{color:white;text-decoration:none}nav span{opacity:.7;margin-right:auto}main{max-width:1100px;margin:35px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.card{background:white;border-radius:16px;padding:22px;margin:16px 0;box-shadow:0 5px 20px #0000000b}.row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eee}.btn,button{display:inline-block;border:0;border-radius:10px;padding:11px 16px;background:#2563eb;color:white;text-decoration:none;cursor:pointer}.form{display:grid;gap:14px;max-width:700px}.form input,.form textarea{width:100%;padding:11px;border:1px solid #d5d9e2;border-radius:9px;font:inherit}.form textarea{min-height:100px}.notice{padding:15px;border-radius:12px;background:#fff4cc}.muted{color:#667085}h1{font-size:32px}
+
+/* =========================================================
+   DENTAL AI - ORTAK ÜST MENÜ
+   ========================================================= */
+
+.topbar {
+    width: 100%;
+    min-height: 72px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 12px 28px;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.brand-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: #eff6ff;
+    font-size: 22px;
+}
+
+.brand strong {
+    display: block;
+    font-size: 18px;
+    line-height: 1.1;
+    letter-spacing: -0.3px;
+}
+
+.brand small {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.nav-links a {
+    display: inline-flex;
+    align-items: center;
+    padding: 9px 12px;
+    border-radius: 9px;
+    color: #334155;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-links a:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+@media (max-width: 760px) {
+    .topbar {
+        min-height: 64px;
+        padding: 10px 14px;
+        gap: 10px;
+    }
+
+    .brand small {
+        display: none;
+    }
+
+    .brand strong {
+        font-size: 16px;
+    }
+
+    .brand-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 20px;
+    }
+
+    .nav-links {
+        gap: 2px;
+    }
+
+    .nav-links a {
+        padding: 8px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 560px) {
+    .topbar {
+        align-items: center;
+    }
+
+    .nav-links a {
+        font-size: 0;
+        min-width: 34px;
+        justify-content: center;
+    }
+
+    .nav-links a:first-child {
+        font-size: 12px;
+    }
+}
+
+
+/* DENTAL AI HAMBURGER HEADER */
+
+.topbar {
+    width: 100%;
+    min-height: 68px;
+    padding: 10px 24px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, .06);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: inherit;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.brand-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    background: #eff6ff;
+    font-size: 22px;
+}
+
+.brand-text strong {
+    display: block;
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.brand-text small {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.nav-links a {
+    color: #334155;
+    text-decoration: none;
+    padding: 9px 12px;
+    border-radius: 9px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.nav-links a:hover {
+    background: #f1f5f9;
+}
+
+.menu-toggle {
+    display: none;
+    border: 0;
+    background: transparent;
+    font-size: 27px;
+    cursor: pointer;
+    padding: 6px 9px;
+    border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+    .topbar {
+        min-height: 62px;
+        padding: 9px 14px;
+        position: sticky;
+    }
+
+    .brand-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 20px;
+    }
+
+    .brand-text strong {
+        font-size: 16px;
+    }
+
+    .brand-text small {
+        display: none;
+    }
+
+    .menu-toggle {
+        display: block;
+    }
+
+    .nav-links {
+        display: none;
+        position: absolute;
+        top: 62px;
+        left: 10px;
+        right: 10px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 3px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, .12);
+    }
+
+    .nav-links.open {
+        display: flex;
+    }
+
+    .nav-links a {
+        padding: 12px 14px;
+        font-size: 14px;
+    }
+}
+
+
+/* HEADER FINAL OVERRIDE */
+.topbar .nav-links {
+    display: flex !important;
+}
+
+.topbar .menu-toggle {
+    display: none !important;
+}
+
+@media (max-width: 760px) {
+    .topbar .menu-toggle {
+        display: block !important;
+    }
+
+    .topbar .nav-links {
+        display: none !important;
+    }
+
+    .topbar .nav-links.open {
+        display: flex !important;
+    }
+}
+
+/* DENTAL AI - FINAL HEADER */
+
+.topbar {
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,.18) !important;
+}
+
+.topbar .brand {
+    color: #ffffff !important;
+}
+
+.topbar .brand-icon {
+    background: #1e293b !important;
+}
+
+.topbar .brand-text strong {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+}
+
+.topbar .nav-links a {
+    color: #e2e8f0 !important;
+}
+
+.topbar .nav-links a:hover {
+    background: #1e293b !important;
+    color: #ffffff !important;
+}
+
+.topbar .menu-toggle {
+    color: #ffffff !important;
+    font-size: 30px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+}
+
+/* Mobil menü */
+@media (max-width: 760px) {
+    .topbar .nav-links {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 12px 30px rgba(15,23,42,.25) !important;
+    }
+
+    .topbar .nav-links a {
+        color: #1e293b !important;
+    }
+
+    .topbar .nav-links a:hover {
+        background: #eff6ff !important;
+        color: #2563eb !important;
+    }
+}
+

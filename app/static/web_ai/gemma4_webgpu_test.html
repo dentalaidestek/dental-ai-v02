@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemma 4 WebGPU Test</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f7fb;
+    margin: 0;
+    padding: 20px;
+}
+
+.box {
+    max-width: 800px;
+    margin: auto;
+    background: white;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
+}
+
+h1 {
+    margin-top: 0;
+}
+
+button {
+    padding: 12px 18px;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    margin: 6px 4px 6px 0;
+    font-weight: bold;
+}
+
+#loadBtn {
+    background: #2563eb;
+    color: white;
+}
+
+#testBtn {
+    background: #16a34a;
+    color: white;
+}
+
+#status {
+    padding: 12px;
+    background: #eef2ff;
+    border-radius: 10px;
+    margin: 15px 0;
+}
+
+textarea {
+    width: 100%;
+    min-height: 120px;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #ccd3df;
+    border-radius: 10px;
+    font-size: 16px;
+}
+
+pre {
+    background: #111827;
+    color: #e5e7eb;
+    padding: 15px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+
+<h1>🦷 Gemma 4 E2B — WebGPU Test</h1>
+
+<div id="status">
+WebGPU kontrol ediliyor...
+</div>
+
+<button id="loadBtn">Gemma 4'ü Yükle</button>
+<button id="testBtn" disabled>Gemma 4 ile Test Et</button>
+
+<br><br>
+
+<textarea id="prompt">Sadece TEST yaz.</textarea>
+
+<h3>Sonuç</h3>
+<pre id="output">Henüz test yapılmadı.</pre>
+
+</div>
+
+<script type="module">
+
+import {
+    pipeline
+} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.0";
+
+const MODEL = "onnx-community/gemma-4-E2B-it-ONNX";
+
+let generator = null;
+
+const statusEl = document.getElementById("status");
+const outputEl = document.getElementById("output");
+const loadBtn = document.getElementById("loadBtn");
+const testBtn = document.getElementById("testBtn");
+
+async function checkWebGPU() {
+
+    if (!navigator.gpu) {
+        statusEl.textContent =
+            "❌ Bu tarayıcı WebGPU desteklemiyor.";
+        return false;
+    }
+
+    try {
+
+        const adapter = await navigator.gpu.requestAdapter();
+
+        if (!adapter) {
+            statusEl.textContent =
+                "❌ WebGPU adapter bulunamadı.";
+            return false;
+        }
+
+        statusEl.textContent =
+            "✅ WebGPU destekleniyor. Gemma 4 yüklenmeye hazır.";
+
+        return true;
+
+    } catch (error) {
+
+        statusEl.textContent =
+            "❌ WebGPU kontrol hatası: " + error.message;
+
+        return false;
+    }
+}
+
+loadBtn.addEventListener("click", async () => {
+
+    loadBtn.disabled = true;
+
+    try {
+
+        statusEl.textContent =
+            "⏳ Gemma 4 E2B WebGPU ile yükleniyor... İlk yükleme birkaç dakika sürebilir.";
+
+        generator = await pipeline(
+            "text-generation",
+            MODEL,
+            {
+                device: "webgpu",
+                dtype: "q4f16"
+            }
+        );
+
+        statusEl.textContent =
+            "✅ Gemma 4 cihaz üzerinde hazır.";
+
+        testBtn.disabled = false;
+
+    } catch (error) {
+
+        console.error(error);
+
+        statusEl.textContent =
+            "❌ Gemma yüklenemedi: " + error.message;
+
+        outputEl.textContent =
+            error.stack || error.toString();
+
+        loadBtn.disabled = false;
+    }
+});
+
+testBtn.addEventListener("click", async () => {
+
+    if (!generator) {
+        return;
+    }
+
+    testBtn.disabled = true;
+
+    try {
+
+        outputEl.textContent =
+            "⏳ Gemma cevap oluşturuyor...";
+
+        const prompt =
+            document.getElementById("prompt").value;
+
+        const result = await generator(
+            prompt,
+            {
+                max_new_tokens: 30
+            }
+        );
+
+        outputEl.textContent =
+            JSON.stringify(result, null, 2);
+
+    } catch (error) {
+
+        console.error(error);
+
+        outputEl.textContent =
+            error.stack || error.toString();
+
+    } finally {
+
+        testBtn.disabled = false;
+    }
+
+});
+
+checkWebGPU();
+
+</script>
+
+</body>
+</html>
