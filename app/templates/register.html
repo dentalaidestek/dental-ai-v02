@@ -177,38 +177,25 @@
                 autocomplete="organization"
             >
 
-            <label>Mezuniyet Durumu</label>
-            <select name="graduation_status" required>
+            <label>Mesleki Durum / Unvan</label>
+            <select name="professional_title" id="professional_title" required onchange="toggleProfessionalFields()">
                 <option value="">Seçiniz</option>
                 <option value="Öğrenci">Öğrenci</option>
-                <option value="Mezun">Mezun</option>
+                <option value="Diş Hekimi">Diş Hekimi</option>
+                <option value="Uzman Diş Hekimi">Uzman Diş Hekimi</option>
+                <option value="Dr. Öğr. Üyesi">Dr. Öğr. Üyesi</option>
+                <option value="Doç. Dr.">Doç. Dr.</option>
+                <option value="Prof. Dr.">Prof. Dr.</option>
             </select>
 
-            <label>Mezuniyet Yılı</label>
-            <input
-                type="number"
-                name="graduation_year"
-                min="1950"
-                max="2100"
-                placeholder="Örn. 2026"
-            >
+            <div id="graduateFields" style="display:none;">
+                <label>Mezuniyet Yılı</label>
+                <input type="number" name="graduation_year" id="graduation_year" min="1950" max="2100" placeholder="Örn. 2026">
 
-            <label>Uzmanlık Durumu</label>
-            <select name="is_specialist" id="is_specialist" required onchange="toggleSpecialty()">
-                <option value="">Seçiniz</option>
-                <option value="false">Uzman değil</option>
-                <option value="true">Uzman</option>
-            </select>
-
-            <div id="specialtyBox" style="display:none;">
-                <label>Uzmanlık Alanı</label>
-                <input
-                    type="text"
-                    name="specialty"
-                    id="specialty"
-                    maxlength="200"
-                    placeholder="Örn. Endodonti"
-                >
+                <div id="specialtyBox" style="display:none;">
+                    <label>Uzmanlık Alanı</label>
+                    <input type="text" name="specialty" id="specialty" maxlength="200" placeholder="Örn. Endodonti">
+                </div>
             </div>
 
 
@@ -273,19 +260,30 @@
         </div>
     </div>
 <script>
-function toggleSpecialty() {
-    const value = document.getElementById("is_specialist").value;
-    const box = document.getElementById("specialtyBox");
-    const input = document.getElementById("specialty");
+function toggleProfessionalFields() {
+    const title = document.getElementById("professional_title").value;
+    const graduateFields = document.getElementById("graduateFields");
+    const year = document.getElementById("graduation_year");
+    const specialtyBox = document.getElementById("specialtyBox");
+    const specialty = document.getElementById("specialty");
+    const specialistTitles = ["Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."];
 
-    if (value === "true") {
-        box.style.display = "block";
-        input.required = true;
-    } else {
-        box.style.display = "none";
-        input.required = false;
-        input.value = "";
+    if (!title || title === "Öğrenci") {
+        graduateFields.style.display = "none";
+        year.required = false;
+        year.value = "";
+        specialtyBox.style.display = "none";
+        specialty.required = false;
+        specialty.value = "";
+        return;
     }
+
+    graduateFields.style.display = "block";
+    year.required = true;
+    const needsSpecialty = specialistTitles.includes(title);
+    specialtyBox.style.display = needsSpecialty ? "block" : "none";
+    specialty.required = needsSpecialty;
+    if (!needsSpecialty) specialty.value = "";
 }
 </script>
 </body>

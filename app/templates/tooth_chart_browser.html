@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+.tooth-browser {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.tooth-browser-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 5px 18px rgba(15,23,42,.06);
+}
+
+.tooth-browser-head {
+    margin-bottom: 20px;
+}
+
+.tooth-browser-head h1 {
+    margin: 0 0 7px;
+}
+
+.tooth-browser-head p {
+    margin: 0;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.tooth-browser-search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 22px;
+}
+
+.tooth-browser-search input {
+    flex: 1;
+    min-width: 0;
+}
+
+.tooth-browser-search .btn {
+    white-space: nowrap;
+}
+
+.tooth-browser-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.tooth-browser-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 15px;
+    border-radius: 13px;
+    background: #f8fafc;
+}
+
+.tooth-browser-name {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.tooth-browser-meta {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.tooth-browser-open {
+    text-decoration: none;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.tooth-browser-empty {
+    color: #64748b;
+    margin: 18px 0 2px;
+}
+
+.tooth-browser-back {
+    display: inline-block;
+    margin-top: 18px;
+    text-decoration: none;
+}
+
+@media (max-width: 650px) {
+    .tooth-browser-card {
+        padding: 18px;
+    }
+
+    .tooth-browser-search {
+        flex-direction: column;
+    }
+
+    .tooth-browser-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .tooth-browser-open {
+        width: 100%;
+    }
+}
+</style>
+
+<div class="tooth-browser">
+    <section class="tooth-browser-card">
+        <div class="tooth-browser-head">
+            <h1>Diş Şemalarına Göz At</h1>
+            <p>Hastanızı seçerek mevcut diş şemasına doğrudan ulaşabilirsiniz.</p>
+        </div>
+
+        <form action="/tooth-charts" method="get" class="tooth-browser-search">
+            <input
+                type="text"
+                name="q"
+                value="{{ q }}"
+                placeholder="Hasta adı veya soyadı ara..."
+                autocomplete="off"
+            >
+            <button type="submit" class="btn">Hasta Ara</button>
+            {% if q %}
+            <a href="/tooth-charts" class="btn">Temizle</a>
+            {% endif %}
+        </form>
+
+        <h2>{% if q %}Arama Sonuçları{% else %}Son 10 Hasta{% endif %}</h2>
+
+        {% if patients %}
+        <div class="tooth-browser-list">
+            {% for p in patients %}
+            <div class="tooth-browser-row">
+                <div>
+                    <div class="tooth-browser-name">
+                        {{ p.first_name or "" }} {{ p.last_name or "" }}
+                    </div>
+                    <div class="tooth-browser-meta">
+                        Hasta No: {{ p.anonymous_id }}{% if p.age %} · {{ p.age }} yaş{% endif %}
+                    </div>
+                </div>
+                <a class="tooth-browser-open" href="/patients/{{ p.id }}/teeth">
+                    Diş Şemasını Aç →
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="tooth-browser-empty">
+            {% if q %}Bu isimle eşleşen hasta bulunamadı.{% else %}Henüz hasta kaydı bulunmuyor.{% endif %}
+        </p>
+        {% endif %}
+
+        <a class="tooth-browser-back" href="/">← Ana Sayfaya Dön</a>
+    </section>
+</div>
+{% endblock %}

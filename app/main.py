@@ -4,7 +4,7 @@ import uuid
 import secrets
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import shutil
@@ -28,7 +28,7 @@ from fastapi import (
     BackgroundTasks,
     Cookie,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from starlette.templating import Jinja2Templates
@@ -71,6 +71,13 @@ class DoctorProfile(SQLModel, table=True):
     is_specialist: bool = False
     specialty: Optional[str] = None
 
+
+
+class UserAccountMeta(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, unique=True)
+    professional_title: Optional[str] = None
+    username_changed_at: Optional[datetime] = None
 
 
 class AgreementAcceptance(SQLModel, table=True):
@@ -457,9 +464,8 @@ def register_user(
     username: str = Form(...),
     password: str = Form(...),
     university: str = Form(...),
-    graduation_status: str = Form(...),
+    professional_title: str = Form(...),
     graduation_year: str = Form(""),
-    is_specialist: str = Form(...),
     specialty: str = Form(""),
     accept_terms: Optional[str] = Form(None),
     kvkk_informed: Optional[str] = Form(None),
@@ -469,10 +475,34 @@ def register_user(
     email = email.strip().lower()
     username = username.strip().lower()
     university = university.strip()
-    graduation_status = graduation_status.strip()
+    professional_title = professional_title.strip()
     graduation_year = graduation_year.strip()
     specialty = specialty.strip()
-    is_specialist_bool = is_specialist.lower() == "true"
+
+    allowed_titles = {
+        "Öğrenci",
+        "Diş Hekimi",
+        "Uzman Diş Hekimi",
+        "Dr. Öğr. Üyesi",
+        "Doç. Dr.",
+        "Prof. Dr.",
+    }
+    if professional_title not in allowed_titles:
+        return templates.TemplateResponse(
+            request=request, name="register.html",
+            context={"error": "Geçerli bir mesleki unvan seçin."},
+            status_code=400,
+        )
+
+    is_student = professional_title == "Öğrenci"
+    is_specialist_bool = professional_title in {
+        "Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."
+    }
+    graduation_status = "Öğrenci" if is_student else "Mezun"
+
+    if is_student:
+        graduation_year = ""
+        specialty = ""
 
     if not accept_terms or not kvkk_informed or not accept_clinical:
         return templates.TemplateResponse(
@@ -504,13 +534,20 @@ def register_user(
             status_code=400,
         )
 
-    if not display_name or not email or not username or not university or not graduation_status:
+    if not display_name or not email or not username or not university or not professional_title:
         return templates.TemplateResponse(
             "register.html",
             {
                 "request": request,
                 "error": "Tüm alanları doldurun.",
             },
+            status_code=400,
+        )
+
+    if not is_student and not graduation_year:
+        return templates.TemplateResponse(
+            request=request, name="register.html",
+            context={"error": "Mezuniyet yılını yazmalısınız."},
             status_code=400,
         )
 
@@ -533,7 +570,7 @@ def register_user(
             "register.html",
             {
                 "request": request,
-                "error": "Uzman seçtiyseniz uzmanlık alanını yazmalısınız.",
+                "error": "Seçtiğiniz unvan için uzmanlık alanını yazmalısınız.",
             },
             status_code=400,
         )
@@ -585,6 +622,10 @@ def register_user(
             specialty=specialty if is_specialist_bool else None,
         )
         s.add(doctor_profile)
+        s.add(UserAccountMeta(
+            user_id=user.id,
+            professional_title=professional_title,
+        ))
 
         agreement_records = [
             AgreementAcceptance(
@@ -630,6 +671,13 @@ def account_page(request: Request):
         doctor_profile = s.exec(
             select(DoctorProfile).where(DoctorProfile.user_id == user.id)
         ).first()
+        account_meta = s.exec(
+            select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
+        ).first()
+
+    next_username_change_at = None
+    if account_meta and account_meta.username_changed_at:
+        next_username_change_at = account_meta.username_changed_at + timedelta(days=15)
 
     return templates.TemplateResponse(
         request=request,
@@ -637,10 +685,78 @@ def account_page(request: Request):
         context={
             "user": user,
             "doctor_profile": doctor_profile,
+            "account_meta": account_meta,
+            "next_username_change_at": next_username_change_at,
             "error": None,
             "success": None,
         },
     )
+
+
+@app.post("/account/username", response_class=HTMLResponse)
+def change_username(request: Request, username: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    username = username.strip().lower()
+    now = datetime.utcnow()
+
+    with Session(engine, expire_on_commit=False) as s:
+        db_user = s.get(User, user.id)
+        doctor_profile = s.exec(
+            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+        ).first()
+        account_meta = s.exec(
+            select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
+        ).first()
+
+        def render_account(error=None, success=None, status_code=200):
+            next_change = None
+            if account_meta and account_meta.username_changed_at:
+                next_change = account_meta.username_changed_at + timedelta(days=15)
+            return templates.TemplateResponse(
+                request=request, name="account.html",
+                context={
+                    "user": db_user or user,
+                    "doctor_profile": doctor_profile,
+                    "account_meta": account_meta,
+                    "next_username_change_at": next_change,
+                    "error": error, "success": success,
+                },
+                status_code=status_code,
+            )
+
+        if not db_user:
+            return RedirectResponse("/login", status_code=303)
+        if len(username) < 8:
+            return render_account("Kullanıcı adı en az 8 karakter olmalıdır.", status_code=400)
+        if username == db_user.username:
+            return render_account("Yeni kullanıcı adı mevcut kullanıcı adınızla aynı.", status_code=400)
+
+        if account_meta and account_meta.username_changed_at:
+            next_change = account_meta.username_changed_at + timedelta(days=15)
+            if now < next_change:
+                return render_account(
+                    f"Kullanıcı adınızı tekrar {next_change.strftime('%d.%m.%Y %H:%M')} tarihinden sonra değiştirebilirsiniz.",
+                    status_code=429,
+                )
+
+        existing = s.exec(select(User).where(User.username == username)).first()
+        if existing and existing.id != db_user.id:
+            return render_account("Bu kullanıcı adı zaten kullanılıyor.", status_code=400)
+
+        db_user.username = username
+        s.add(db_user)
+        if not account_meta:
+            account_meta = UserAccountMeta(user_id=db_user.id)
+        account_meta.username_changed_at = now
+        s.add(account_meta)
+        s.commit()
+        s.refresh(db_user)
+        s.refresh(account_meta)
+
+        return render_account(success="Kullanıcı adınız başarıyla değiştirildi. 15 gün boyunca tekrar değiştirilemez.")
 
 
 @app.post("/account/password", response_class=HTMLResponse)
@@ -1023,7 +1139,56 @@ def logout_user(request: Request):
     return response
 
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+@app.get("/uploads/{filename}")
+def protected_upload(request: Request, filename: str):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        return HTMLResponse("Geçersiz dosya yolu.", status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        asset = s.exec(select(ImageAsset).where(ImageAsset.stored_filename == safe_name)).first()
+        if asset:
+            analysis = s.get(Analysis, asset.analysis_id)
+            patient = s.get(Patient, analysis.patient_id) if analysis else None
+            if not analysis or not patient:
+                return HTMLResponse("Dosya bulunamadı.", status_code=404)
+            if user.role != "ADMIN" and patient.owner_user_id != user.id:
+                return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
+            path = Path(asset.file_path)
+        else:
+            guest_asset = s.exec(
+                select(GuestImageAsset).where(GuestImageAsset.stored_filename == safe_name)
+            ).first()
+            if guest_asset:
+                analysis = s.get(GuestAnalysis, guest_asset.guest_analysis_id)
+                if not analysis:
+                    return HTMLResponse("Dosya bulunamadı.", status_code=404)
+                if user.role != "ADMIN" and analysis.owner_user_id != user.id:
+                    return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
+                path = Path(guest_asset.file_path)
+            else:
+                rel = f"uploads/{safe_name}"
+                legacy_analysis = s.exec(
+                    select(Analysis).where(
+                        (Analysis.image_path == rel) | (Analysis.radiograph_path == rel)
+                    )
+                ).first()
+                if not legacy_analysis:
+                    return HTMLResponse("Dosya bulunamadı.", status_code=404)
+                patient = s.get(Patient, legacy_analysis.patient_id)
+                if not patient:
+                    return HTMLResponse("Dosya bulunamadı.", status_code=404)
+                if user.role != "ADMIN" and patient.owner_user_id != user.id:
+                    return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
+                path = UPLOAD_DIR / safe_name
+
+    if not path.is_file():
+        return HTMLResponse("Dosya bulunamadı.", status_code=404)
+    return FileResponse(path)
 def template_user_context(request: Request):
     return {"user": get_current_user(request)}
 
@@ -1043,8 +1208,19 @@ def home(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     with Session(engine, expire_on_commit=False) as s:
-        patients = s.exec(select(Patient).order_by(Patient.id.desc())).all()
-        analyses = s.exec(select(Analysis).order_by(Analysis.id.desc())).all()
+        patient_query = select(Patient).order_by(Patient.id.desc())
+        if user.role != "ADMIN":
+            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patients = s.exec(patient_query).all()
+
+        analysis_query = (
+            select(Analysis)
+            .join(Patient, Analysis.patient_id == Patient.id)
+            .order_by(Analysis.id.desc())
+        )
+        if user.role != "ADMIN":
+            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
+        analyses = s.exec(analysis_query).all()
         records = s.exec(select(ClinicalRecord)).all()
 
         guest_analyses = s.exec(
@@ -1068,6 +1244,9 @@ def home(request: Request):
 
 @app.get("/patients/new", response_class=HTMLResponse)
 def new_patient(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request=request, name="patient_new.html", context={})
 
 @app.post("/patients/new")
@@ -1149,6 +1328,46 @@ def create_patient(
             status_code=303
         )
 
+
+
+@app.get("/tooth-charts", response_class=HTMLResponse)
+def browse_tooth_charts(request: Request, q: str = ""):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    q = q.strip()
+
+    with Session(engine, expire_on_commit=False) as s:
+        query = select(Patient)
+
+        # Kullanıcı izolasyonu: normal hekim yalnızca kendi hastalarını görebilir.
+        if user.role != "ADMIN":
+            query = query.where(Patient.owner_user_id == user.id)
+
+        if q:
+            # İsim + soyisim birlikte yazıldığında da çalışması için her kelimeyi
+            # ad veya soyad alanlarından birinde arıyoruz.
+            for token in q.split():
+                pattern = f"%{token}%"
+                query = query.where(
+                    (Patient.first_name.like(pattern))
+                    | (Patient.last_name.like(pattern))
+                )
+            query = query.order_by(Patient.id.desc()).limit(50)
+        else:
+            query = query.order_by(Patient.id.desc()).limit(10)
+
+        patients = s.exec(query).all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="tooth_chart_browser.html",
+        context={
+            "patients": patients,
+            "q": q,
+        },
+    )
 
 
 @app.get("/patients", response_class=HTMLResponse)
@@ -2177,13 +2396,23 @@ async def create_guest_analysis(
 
 @app.post("/analysis/new/{patient_id}")
 async def create_analysis(
+    request: Request,
     patient_id: int,
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
     with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
         analysis = Analysis(
             patient_id=patient_id,
@@ -2248,6 +2477,12 @@ async def create_analysis(
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user.role != "ADMIN":
+        return HTMLResponse("Bu sayfaya erişim yetkiniz yok.", status_code=403)
+
     with Session(engine, expire_on_commit=False) as s:
         users = s.exec(select(User)).all()
         patients = s.exec(select(Patient).order_by(Patient.id.desc())).all()
@@ -2268,6 +2503,7 @@ def admin(request: Request):
 
 @app.post("/admin/clinical-record")
 def create_clinical_record(
+    request: Request,
     clinical_id: str = Form(...),
     topic: str = Form(...),
     clinical_question: str = Form(...),
@@ -2277,6 +2513,12 @@ def create_clinical_record(
     ai_use: str = Form("NOT_DEFINED"),
     safety_notes: Optional[str] = Form(None),
 ):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if user.role != "ADMIN":
+        return HTMLResponse("Bu işlem için yönetici yetkisi gerekiyor.", status_code=403)
+
     with Session(engine, expire_on_commit=False) as s:
         s.add(ClinicalRecord(
             clinical_id=clinical_id, topic=topic, clinical_question=clinical_question,
@@ -2831,13 +3073,19 @@ Hekimin sorusu:
             error = str(e)
 
     with Session(engine, expire_on_commit=False) as s:
-        patients = s.exec(
-            select(Patient).order_by(Patient.id.desc())
-        ).all()
+        patient_query = select(Patient).order_by(Patient.id.desc())
+        if user.role != "ADMIN":
+            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patients = s.exec(patient_query).all()
 
-        analyses = s.exec(
-            select(Analysis).order_by(Analysis.id.desc())
-        ).all()
+        analysis_query = (
+            select(Analysis)
+            .join(Patient, Analysis.patient_id == Patient.id)
+            .order_by(Analysis.id.desc())
+        )
+        if user.role != "ADMIN":
+            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
+        analyses = s.exec(analysis_query).all()
 
         records = s.exec(select(ClinicalRecord)).all()
 

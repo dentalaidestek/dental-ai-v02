@@ -143,6 +143,11 @@
 
             {% if doctor_profile %}
             <div class="info-item">
+                <div class="info-label">Mesleki Durum / Unvan</div>
+                <div class="info-value">{{ account_meta.professional_title if account_meta and account_meta.professional_title else doctor_profile.graduation_status or "-" }}</div>
+            </div>
+
+            <div class="info-item">
                 <div class="info-label">Üniversite</div>
                 <div class="info-value">{{ doctor_profile.university or "-" }}</div>
             </div>
@@ -176,6 +181,19 @@
             {% endif %}
             {% endif %}
         </div>
+    </div>
+
+    <div class="account-card">
+        <h2>Kullanıcı Adını Değiştir</h2>
+        <p>Kullanıcı adınızı değiştirdikten sonra 15 gün boyunca tekrar değiştiremezsiniz.</p>
+        {% if next_username_change_at %}
+        <p><strong>Bir sonraki değişiklik:</strong> {{ next_username_change_at.strftime('%d.%m.%Y %H:%M') }}</p>
+        {% endif %}
+        <form method="post" action="/account/username" class="password-form">
+            <label for="username">Yeni Kullanıcı Adı</label>
+            <input id="username" type="text" name="username" required minlength="8" maxlength="80" value="{{ user.username or '' }}" autocomplete="username">
+            <button type="submit">Kullanıcı Adını Değiştir</button>
+        </form>
     </div>
 
     <div class="account-card">
