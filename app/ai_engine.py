@@ -290,7 +290,7 @@ KURALLAR:
 
 def parse_ai_result(text):
     """
-    Gemma çıktısını güvenli şekilde JSON'a çevirir.
+    AI çıktısını güvenli şekilde JSON'a çevirir.
     Markdown json çitlerini kaldırır ve geçerli JSON
     bulunamazsa RAW döndürür.
     """
@@ -298,7 +298,7 @@ def parse_ai_result(text):
     if not text:
         return {
             "status": "AI_INVALID",
-            "error": "Gemma boş cevap döndürdü."
+            "error": "AI boş cevap döndürdü."
         }
 
     cleaned = text.strip()
@@ -352,3 +352,150 @@ def parse_ai_result(text):
         "text": text
     }
 
+
+
+# Gemini generateContent structured-output şemaları.
+# Bunlar yalnızca çıktı biçimini sabitler; klinik içerik kuralları promptta kalır.
+PRELIMINARY_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "status": {"type": "STRING", "enum": ["ANALYSIS_COMPLETE"]},
+        "most_likely": {"type": "STRING"},
+        "differential": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "findings": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "treatment_options": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "recommended_evaluation": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "questions": {
+            "type": "ARRAY",
+            "maxItems": 3,
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "question": {"type": "STRING"},
+                    "type": {
+                        "type": "STRING",
+                        "enum": ["VAR_YOK", "SCALE", "TEXT", "NUMBER", "CHOICE"],
+                    },
+                },
+                "required": ["question", "type"],
+            },
+        },
+        "preferred_approach": {"type": "STRING"},
+        "uncertainty": {"type": "STRING"},
+    },
+    "required": [
+        "status",
+        "most_likely",
+        "differential",
+        "findings",
+        "treatment_options",
+        "recommended_evaluation",
+        "questions",
+        "preferred_approach",
+        "uncertainty",
+    ],
+}
+
+FINAL_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "status": {"type": "STRING", "enum": ["FINAL"]},
+        "most_likely": {"type": "STRING"},
+        "differential": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "findings": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "treatment_options": {"type": "ARRAY", "items": {"type": "STRING"}, "maxItems": 2},
+        "preferred_approach": {"type": "STRING"},
+    },
+    "required": [
+        "status",
+        "most_likely",
+        "differential",
+        "findings",
+        "treatment_options",
+        "preferred_approach",
+    ],
+}
+
+
+_ALLOWED_QUESTION_TYPES = {"VAR_YOK", "SCALE", "TEXT", "NUMBER", "CHOICE"}
+
+
+def _invalid_result(message):
+    return {
+        "status": "AI_INVALID",
+        "error": message,
+    }
+
+
+def _valid_text(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _valid_string_list(value):
+    return isinstance(value, list) and all(_valid_text(item) for item in value)
+
+
+def validate_preliminary_result(result):
+    """Ön analiz JSON'unu template'e verilmeden önce doğrular ve normalize eder."""
+    if not isinstance(result, dict):
+        return _invalid_result("AI beklenen klinik sonuç formatını oluşturamadı.")
+
+    if result.get("status") not in {"ANALYSIS_COMPLETE", "INITIAL"}:
+        return _invalid_result("AI beklenen ön analiz durumunu üretmedi.")
+
+    for field in ("most_likely", "preferred_approach", "uncertainty"):
+        if not _valid_text(result.get(field)):
+            return _invalid_result(f"AI ön analizinde '{field}' alanı eksik veya geçersiz.")
+
+    for field in (
+        "differential",
+        "findings",
+        "treatment_options",
+        "recommended_evaluation",
+    ):
+        if not _valid_string_list(result.get(field)):
+            return _invalid_result(f"AI ön analizinde '{field}' alanı eksik veya geçersiz.")
+        result[field] = result[field][:2]
+
+    questions = result.get("questions")
+    if not isinstance(questions, list):
+        return _invalid_result("AI ön analizindeki soru listesi geçersiz.")
+
+    clean_questions = []
+    for item in questions[:5]:
+        if not isinstance(item, dict):
+            continue
+        question = item.get("question")
+        question_type = item.get("type")
+        if not _valid_text(question) or question_type not in _ALLOWED_QUESTION_TYPES:
+            continue
+        clean_questions.append({
+            "question": question.strip(),
+            "type": question_type,
+        })
+
+    # Boş soru listesi geçerlidir; yeterli bilgi varsa model soru sormayabilir.
+    result["questions"] = clean_questions
+    result["status"] = "INITIAL"
+    return result
+
+
+def validate_final_result(result):
+    """Nihai analiz JSON'unu doğrular ve yalnız geçerli ise FINAL kabul eder."""
+    if not isinstance(result, dict):
+        return _invalid_result("AI beklenen final sonuç formatını oluşturamadı.")
+
+    if result.get("status") != "FINAL":
+        return _invalid_result("AI beklenen final analiz durumunu üretmedi.")
+
+    for field in ("most_likely", "preferred_approach"):
+        if not _valid_text(result.get(field)):
+            return _invalid_result(f"AI final analizinde '{field}' alanı eksik veya geçersiz.")
+
+    for field in ("differential", "findings", "treatment_options"):
+        if not _valid_string_list(result.get(field)):
+            return _invalid_result(f"AI final analizinde '{field}' alanı eksik veya geçersiz.")
+        result[field] = result[field][:2]
+
+    result["status"] = "FINAL"
+    return result

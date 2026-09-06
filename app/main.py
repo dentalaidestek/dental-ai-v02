@@ -1903,7 +1903,12 @@ açısından en ilgili güncel kanıtları bul.
 
 
 def _run_guest_preliminary_ai(analysis_id: int):
-    from app.ai_engine import build_preliminary_prompt, parse_ai_result
+    from app.ai_engine import (
+        PRELIMINARY_RESPONSE_SCHEMA,
+        build_preliminary_prompt,
+        parse_ai_result,
+        validate_preliminary_result,
+    )
     from app.ai_provider import ask_ai
 
     with Session(engine, expire_on_commit=False) as s:
@@ -1942,17 +1947,19 @@ def _run_guest_preliminary_ai(analysis_id: int):
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
+                response_schema=PRELIMINARY_RESPONSE_SCHEMA,
             )
 
-            ai_result = parse_ai_result(ai_text)
+            ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
-            # Guest analizde Gemini geçersiz/bozuk format döndürürse 1 kez yeniden dene.
-            if isinstance(ai_result, dict) and ai_result.get("status") in {"RAW", "AI_INVALID"}:
+            # Geçerli JSON gelse bile beklenen klinik şemaya uymuyorsa 1 kez yeniden dene.
+            if ai_result.get("status") == "AI_INVALID":
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
+                    response_schema=PRELIMINARY_RESPONSE_SCHEMA,
                 )
-                ai_result = parse_ai_result(ai_text)
+                ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
         except Exception as e:
             ai_text = ""
@@ -1990,7 +1997,12 @@ def _run_guest_preliminary_ai(analysis_id: int):
 
 
 def _run_preliminary_ai(analysis_id: int):
-    from app.ai_engine import build_preliminary_prompt, parse_ai_result
+    from app.ai_engine import (
+        PRELIMINARY_RESPONSE_SCHEMA,
+        build_preliminary_prompt,
+        parse_ai_result,
+        validate_preliminary_result,
+    )
     from app.ai_provider import ask_ai
 
     with Session(engine, expire_on_commit=False) as s:
@@ -2040,10 +2052,19 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
 
             ai_text = ask_ai(
                 prompt,
-                image_paths=image_paths
+                image_paths=image_paths,
+                response_schema=PRELIMINARY_RESPONSE_SCHEMA,
             )
 
-            ai_result = parse_ai_result(ai_text)
+            ai_result = validate_preliminary_result(parse_ai_result(ai_text))
+
+            if ai_result.get("status") == "AI_INVALID":
+                ai_text = ask_ai(
+                    prompt,
+                    image_paths=image_paths,
+                    response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                )
+                ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
         except Exception as e:
             ai_text = ""
@@ -2374,7 +2395,7 @@ def analysis_result(request: Request, analysis_id: int):
 
     # -----------------------------------------------------
     # ÖNEMLİ:
-    # BURADA GEMMA ÇALIŞMIYOR.
+    # BURADA GEMINI ÇALIŞMIYOR.
     # Sadece daha önce kaydedilmiş sonucu okuyor.
     # -----------------------------------------------------
 
@@ -2439,8 +2460,10 @@ async def guest_final_analysis(
     analysis_id: int
 ):
     from app.ai_engine import (
+        FINAL_RESPONSE_SCHEMA,
         build_final_prompt,
-        parse_ai_result
+        parse_ai_result,
+        validate_final_result,
     )
     from app.ai_provider import ask_ai
 
@@ -2510,29 +2533,19 @@ async def guest_final_analysis(
 
             ai_text = ask_ai(
                 prompt,
-                image_paths=image_paths
+                image_paths=image_paths,
+                response_schema=FINAL_RESPONSE_SCHEMA,
             )
 
-            ai_result = parse_ai_result(
-                ai_text
-            )
+            ai_result = validate_final_result(parse_ai_result(ai_text))
 
-            if isinstance(ai_result, dict):
-                required_fields = {
-                    "most_likely",
-                    "differential",
-                    "findings",
-                    "treatment_options",
-                    "preferred_approach",
-                }
-
-                if required_fields.issubset(ai_result.keys()):
-                    ai_result["status"] = "FINAL"
-                else:
-                    ai_result["status"] = "AI_INVALID"
-                    ai_result["error"] = (
-                        "AI beklenen final JSON formatını üretmedi."
-                    )
+            if ai_result.get("status") == "AI_INVALID":
+                ai_text = ask_ai(
+                    prompt,
+                    image_paths=image_paths,
+                    response_schema=FINAL_RESPONSE_SCHEMA,
+                )
+                ai_result = validate_final_result(parse_ai_result(ai_text))
 
         except Exception as e:
             ai_text = ""
@@ -2587,8 +2600,10 @@ async def final_analysis(
 ):
 
     from app.ai_engine import (
+        FINAL_RESPONSE_SCHEMA,
         build_final_prompt,
-        parse_ai_result
+        parse_ai_result,
+        validate_final_result,
     )
     from app.ai_provider import ask_ai
 
@@ -2662,7 +2677,7 @@ async def final_analysis(
             answers[index] = str(value)
 
     # -----------------------------------------------------
-    # SADECE SON AŞAMADA GEMMA ÇALIŞIR
+    # SADECE SON AŞAMADA GEMINI ÇALIŞIR
     # -----------------------------------------------------
 
     try:
@@ -2698,31 +2713,19 @@ için en ilgili kanıtları bul.
 
         ai_text = ask_ai(
             prompt,
-            image_paths=image_paths
+            image_paths=image_paths,
+            response_schema=FINAL_RESPONSE_SCHEMA,
         )
 
-        ai_result = parse_ai_result(
-            ai_text
-        )
+        ai_result = validate_final_result(parse_ai_result(ai_text))
 
-        # Nihai sonuç
-        if isinstance(ai_result, dict):
-            # Sadece gerçekten beklenen final JSON'u geldiyse FINAL kabul et.
-            required_fields = {
-                "most_likely",
-                "differential",
-                "findings",
-                "treatment_options",
-                "preferred_approach",
-            }
-
-            if required_fields.issubset(ai_result.keys()):
-                ai_result["status"] = "FINAL"
-            else:
-                ai_result["status"] = "AI_INVALID"
-                ai_result["error"] = (
-                    "Gemma beklenen final JSON formatını üretmedi."
-                )
+        if ai_result.get("status") == "AI_INVALID":
+            ai_text = ask_ai(
+                prompt,
+                image_paths=image_paths,
+                response_schema=FINAL_RESPONSE_SCHEMA,
+            )
+            ai_result = validate_final_result(parse_ai_result(ai_text))
 
     except Exception as e:
 
