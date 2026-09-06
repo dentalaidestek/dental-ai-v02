@@ -405,6 +405,32 @@ def login_user(
         return response
 
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="forgot_password.html",
+        context={"error": None, "message": None},
+    )
+
+
+@app.post("/forgot-password")
+def forgot_password_request(
+    request: Request,
+    email: str = Form(...),
+):
+    email = email.strip().lower()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="forgot_password.html",
+        context={
+            "error": None,
+            "message": "Eğer bu e-posta adresi kayıtlıysa, şifre sıfırlama bağlantısı gönderilecektir.",
+        },
+    )
+
+
 @app.get("/logout")
 def logout_user(request: Request):
     delete_user_session(request)
