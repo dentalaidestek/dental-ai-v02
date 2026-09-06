@@ -331,6 +331,11 @@
         <span>＋</span>
         <strong>Yeni Hasta Oluştur</strong>
     </a>
+
+    <a class="quick-action" href="/analysis/new">
+        <span>🧠</span>
+        <strong>Dental AI ile Analiz Et</strong>
+    </a>
 </div>
 
     <section class="patient-card">
@@ -377,6 +382,65 @@
         {% endif %}
 
     </section>
+
+    <section class="patient-card guest-analysis-card">
+        <div class="patient-header">
+            <h2>⚡ Hasta Kaydı Olmadan Yapılan Analizler</h2>
+            <span class="patient-count">Son 5 işlem</span>
+        </div>
+
+        {% if guest_analyses %}
+        <div class="patient-list">
+            {% for a in guest_analyses %}
+            <div class="patient-row guest-analysis-row">
+                <div class="guest-analysis-info">
+                    <div class="patient-name">
+                        🦷 Diş: {{ a.tooth_number or "-" }}
+                    </div>
+
+                    <div class="guest-clinical-note">
+                        {{ a.clinical_notes or "Klinik bilgi girilmedi." }}
+                    </div>
+
+                    <div class="patient-age">
+                        {{ a.created_at.strftime("%d.%m.%Y %H:%M") if a.created_at else "" }}
+                    </div>
+                </div>
+
+                <a class="patient-link"
+                   href="/analysis/guest/{{ a.id }}">
+                    Sonuç →
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p>Henüz hasta kaydı olmadan yapılmış analiz bulunmuyor.</p>
+        {% endif %}
+    </section>
+
+    <style>
+        .guest-analysis-card {
+            margin-top: 20px;
+        }
+
+        .guest-analysis-info {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .guest-clinical-note {
+            margin-top: 5px;
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .guest-analysis-row {
+            gap: 14px;
+        }
+    </style>
 
     <div class="notice">
         ⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.

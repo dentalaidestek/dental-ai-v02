@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .account-container {
+        max-width: 850px;
+        margin: 30px auto;
+        padding: 0 18px 40px;
+    }
+
+    .account-card {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    }
+
+    .account-card h1,
+    .account-card h2 {
+        margin-top: 0;
+    }
+
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .info-item {
+        background: #f7f8fa;
+        border-radius: 10px;
+        padding: 14px;
+    }
+
+    .info-label {
+        font-size: 13px;
+        color: #667085;
+        margin-bottom: 5px;
+    }
+
+    .info-value {
+        font-weight: 600;
+        color: #1d2939;
+        word-break: break-word;
+    }
+
+    .password-form {
+        display: grid;
+        gap: 12px;
+    }
+
+    .password-form label {
+        font-weight: 600;
+        margin-top: 4px;
+    }
+
+    .password-form input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px;
+        border: 1px solid #ccd3dd;
+        border-radius: 9px;
+        font-size: 16px;
+    }
+
+    .password-form button {
+        margin-top: 8px;
+        padding: 12px 16px;
+        border: 0;
+        border-radius: 9px;
+        background: #2563eb;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .reset-link {
+        display: inline-block;
+        margin-top: 12px;
+        color: #2563eb;
+        text-decoration: none;
+    }
+
+    .error {
+        background: #fef2f2;
+        color: #b42318;
+        padding: 12px;
+        border-radius: 9px;
+        margin-bottom: 14px;
+    }
+
+    .success {
+        background: #ecfdf3;
+        color: #027a48;
+        padding: 12px;
+        border-radius: 9px;
+        margin-bottom: 14px;
+    }
+
+    @media (max-width: 650px) {
+        .info-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="account-container">
+
+    <div class="account-card">
+        <h1>👨‍⚕️ Hesabım</h1>
+        <p>Hekim kayıt bilgileriniz</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+        <div class="success">{{ success }}</div>
+        {% endif %}
+
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">Ad Soyad</div>
+                <div class="info-value">{{ user.display_name or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">E-posta</div>
+                <div class="info-value">{{ user.email or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Kullanıcı Adı</div>
+                <div class="info-value">{{ user.username or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Rol</div>
+                <div class="info-value">{{ user.role or "-" }}</div>
+            </div>
+
+            {% if doctor_profile %}
+            <div class="info-item">
+                <div class="info-label">Üniversite</div>
+                <div class="info-value">{{ doctor_profile.university or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Mezuniyet Durumu</div>
+                <div class="info-value">{{ doctor_profile.graduation_status or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Mezuniyet Yılı</div>
+                <div class="info-value">{{ doctor_profile.graduation_year or "-" }}</div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Uzmanlık Durumu</div>
+                <div class="info-value">
+                    {% if doctor_profile.is_specialist %}
+                        Uzman
+                    {% else %}
+                        Uzman değil
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if doctor_profile.is_specialist %}
+            <div class="info-item">
+                <div class="info-label">Uzmanlık Alanı</div>
+                <div class="info-value">{{ doctor_profile.specialty or "-" }}</div>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="account-card">
+        <h2>🔐 Şifre Değiştir</h2>
+
+        <form method="post" action="/account/password" class="password-form">
+            <label for="current_password">Mevcut Şifre</label>
+            <input
+                id="current_password"
+                type="password"
+                name="current_password"
+                required
+                autocomplete="current-password"
+            >
+
+            <label for="new_password">Yeni Şifre</label>
+            <input
+                id="new_password"
+                type="password"
+                name="new_password"
+                required
+                minlength="8"
+                autocomplete="new-password"
+            >
+
+            <label for="new_password_confirm">Yeni Şifre Tekrar</label>
+            <input
+                id="new_password_confirm"
+                type="password"
+                name="new_password_confirm"
+                required
+                minlength="8"
+                autocomplete="new-password"
+            >
+
+            <button type="submit">Şifreyi Değiştir</button>
+        </form>
+
+        <a class="reset-link" href="/forgot-password">
+            🔄 Şifremi unuttum / Şifre yenile
+        </a>
+    </div>
+
+</div>
+{% endblock %}

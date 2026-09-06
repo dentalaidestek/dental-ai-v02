@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-card">
+    <div class="page-header">
+        <div>
+            <h1>👥 Tüm Hastalar</h1>
+            <p>Kayıtlı hastalarınızı görüntüleyin ve hasta profiline geçin.</p>
+        </div>
+
+        <a class="primary-button" href="/patients/new">
+            ＋ Yeni Hasta
+        </a>
+    </div>
+
+    {% if patients %}
+    <div class="patient-list">
+        {% for patient in patients %}
+        <div class="patient-row">
+            <div class="patient-info">
+                <div class="patient-name">
+                    {{ patient.first_name or "" }} {{ patient.last_name or "" }}
+                </div>
+
+                <div class="patient-meta">
+                    Hasta No: {{ patient.anonymous_id or "-" }}
+                </div>
+
+                <div class="patient-meta">
+                    Telefon: {{ patient.phone or "-" }}
+                </div>
+            </div>
+
+            <a class="profile-button"
+               href="/patients/{{ patient.id }}">
+                Hasta Profili →
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        Henüz kayıtlı hasta bulunmuyor.
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.page-card {
+    max-width: 1000px;
+    margin: 28px auto;
+    padding: 24px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    margin-bottom: 6px;
+}
+
+.page-header p {
+    color: #64748b;
+    margin: 0;
+}
+
+.primary-button,
+.profile-button {
+    display: inline-block;
+    text-decoration: none;
+    padding: 10px 14px;
+    border-radius: 9px;
+    font-weight: 700;
+    background: #2563eb;
+    color: white;
+}
+
+.patient-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.patient-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.patient-info {
+    min-width: 0;
+}
+
+.patient-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.patient-meta {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.empty-state {
+    padding: 24px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    color: #64748b;
+}
+
+@media (max-width: 640px) {
+    .page-header,
+    .patient-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .primary-button,
+    .profile-button {
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}

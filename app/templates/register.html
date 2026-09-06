@@ -32,7 +32,7 @@
             font-weight: 600;
         }
 
-        input {
+        input, select {
             width: 100%;
             box-sizing: border-box;
             padding: 12px;
@@ -40,6 +40,16 @@
             border: 1px solid #ccd3dd;
             border-radius: 9px;
             font-size: 16px;
+        }
+
+        select {
+            box-sizing: border-box;
+            padding: 12px;
+            margin-top: 6px;
+            border: 1px solid #ccd3dd;
+            border-radius: 9px;
+            font-size: 16px;
+            background: white;
         }
 
         button {
@@ -65,6 +75,47 @@
         .link {
             text-align: center;
             margin-top: 18px;
+        }
+
+        .legal-box {
+            margin-top: 24px;
+            padding: 16px;
+            background: #f8fafc;
+            border: 1px solid #dbe3ee;
+            border-radius: 12px;
+        }
+
+        .legal-check {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 0;
+            margin-bottom: 14px;
+            font-weight: 400;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .legal-check input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            min-width: 18px;
+            margin: 2px 0 0 0;
+        }
+
+        .legal-check span {
+            flex: 1;
+        }
+
+        .legal-check a,
+        .privacy-note a {
+            font-weight: 700;
+        }
+
+        .privacy-note {
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.5;
         }
 
         a {
@@ -117,7 +168,103 @@
                 autocomplete="new-password"
             >
 
-            <button type="submit">Üye Ol</button>
+            <label>Okuduğunuz Üniversite</label>
+            <input
+                type="text"
+                name="university"
+                required
+                maxlength="200"
+                autocomplete="organization"
+            >
+
+            <label>Mezuniyet Durumu</label>
+            <select name="graduation_status" required>
+                <option value="">Seçiniz</option>
+                <option value="Öğrenci">Öğrenci</option>
+                <option value="Mezun">Mezun</option>
+            </select>
+
+            <label>Mezuniyet Yılı</label>
+            <input
+                type="number"
+                name="graduation_year"
+                min="1950"
+                max="2100"
+                placeholder="Örn. 2026"
+            >
+
+            <label>Uzmanlık Durumu</label>
+            <select name="is_specialist" id="is_specialist" required onchange="toggleSpecialty()">
+                <option value="">Seçiniz</option>
+                <option value="false">Uzman değil</option>
+                <option value="true">Uzman</option>
+            </select>
+
+            <div id="specialtyBox" style="display:none;">
+                <label>Uzmanlık Alanı</label>
+                <input
+                    type="text"
+                    name="specialty"
+                    id="specialty"
+                    maxlength="200"
+                    placeholder="Örn. Endodonti"
+                >
+            </div>
+
+
+        <div class="legal-box">
+            <label class="legal-check">
+                <input
+                    type="checkbox"
+                    name="accept_terms"
+                    value="yes"
+                    required
+                >
+                <span>
+                    <a href="/legal/terms" target="_blank">
+                        Üyelik ve Kullanım Koşulları
+                    </a>'nı okudum ve kabul ediyorum.
+                </span>
+            </label>
+
+            <label class="legal-check">
+                <input
+                    type="checkbox"
+                    name="kvkk_informed"
+                    value="yes"
+                    required
+                >
+                <span>
+                    <a href="/legal/kvkk" target="_blank">
+                        KVKK Aydınlatma Metni
+                    </a>'ni okudum ve kişisel verilerimin işlenmesi
+                    hakkında bilgilendirildim.
+                </span>
+            </label>
+
+            <label class="legal-check">
+                <input
+                    type="checkbox"
+                    name="accept_clinical"
+                    value="yes"
+                    required
+                >
+                <span>
+                    <a href="/legal/clinical" target="_blank">
+                        Dental AI Klinik Kullanım ve Sorumluluk Koşulları
+                    </a>'nı okudum ve kabul ediyorum.
+                </span>
+            </label>
+
+            <div class="privacy-note">
+                Kişisel verilerin korunmasına ilişkin ayrıntılar için
+                <a href="/legal/privacy" target="_blank">
+                    Gizlilik Politikası
+                </a>'nı inceleyebilirsiniz.
+            </div>
+        </div>
+
+        <button type="submit">Üye Ol</button>
         </form>
 
         <div class="link">
@@ -125,5 +272,21 @@
             <a href="/login">Giriş Yap</a>
         </div>
     </div>
+<script>
+function toggleSpecialty() {
+    const value = document.getElementById("is_specialist").value;
+    const box = document.getElementById("specialtyBox");
+    const input = document.getElementById("specialty");
+
+    if (value === "true") {
+        box.style.display = "block";
+        input.required = true;
+    } else {
+        box.style.display = "none";
+        input.required = false;
+        input.value = "";
+    }
+}
+</script>
 </body>
 </html>

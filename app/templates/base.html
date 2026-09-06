@@ -17,8 +17,13 @@
 
     <div class="nav-links" id="mainMenu">
         <a href="/">🏠 Ana Sayfa</a>
-        <a href="/patients">👥 Hastalar</a>
-        <a href="/">👨‍⚕️ Hekim Paneli</a>
+        <a href="/patients">👥 Tüm Hastalar</a>
+        <a href="/analyses">🧠 Tüm Analizler</a>
+        <a href="/account">👨‍⚕️ Hekim Paneli</a>
+        <a href="/about">ℹ️ Hakkında</a>
+        <a href="/legal">📄 Sözleşmeler</a>
+        <a href="/contact">✉️ İletişim</a>
+
         {% if user and user.role == "ADMIN" %}
         <a href="/admin">⚙️ Yönetici</a>
         {% endif %}

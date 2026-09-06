@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - DENTAL-AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            padding: 30px 15px;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            background: white;
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,.08);
+        }
+
+        h1, h2, h3 {
+            color: #111827;
+        }
+
+        p, li {
+            line-height: 1.65;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .version {
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        a {
+            color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a class="back" href="/register">← Üye Ol ekranına dön</a>
+
+        <h1>{{ title }}</h1>
+
+        {% if version %}
+        <div class="version">
+            Sürüm: {{ version }}
+        </div>
+        {% endif %}
+
+        {{ content | safe }}
+    </div>
+</body>
+</html>

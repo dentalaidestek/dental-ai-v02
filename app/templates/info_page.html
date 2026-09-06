@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="info-container">
+
+    {% if page == "about" %}
+    <h1>ℹ️ DENTAL AI Hakkında</h1>
+
+    <div class="info-card">
+        <p>
+            DENTAL AI, diş hekimliği alanında klinik değerlendirme
+            süreçlerini desteklemek amacıyla geliştirilen yapay zekâ
+            destekli bir klinik karar destek platformudur.
+        </p>
+
+        <p>
+            Sistem; klinik bilgiler ve uygun dental görüntüler üzerinden
+            hekime yardımcı değerlendirmeler, olası bulgular ve klinik
+            karar sürecini destekleyebilecek bilgiler sunmayı amaçlar.
+        </p>
+
+        <div class="notice">
+            <strong>Önemli:</strong>
+            DENTAL AI tarafından oluşturulan sonuçlar kesin tanı değildir
+            ve hekim muayenesinin veya profesyonel klinik değerlendirmenin
+            yerine geçmez. Nihai tanı ve tedavi kararı ilgili sağlık
+            mesleği mensubuna aittir.
+        </div>
+    </div>
+
+    {% elif page == "legal" %}
+    <h1>📄 Sözleşmeler ve Politikalar</h1>
+
+    <p class="intro">
+        DENTAL AI kullanımına ilişkin güncel hukuki metinlere
+        aşağıdan ulaşabilirsiniz.
+    </p>
+
+    <div class="legal-list">
+        <a href="/legal/terms">
+            <strong>Üyelik ve Kullanım Koşulları</strong>
+            <span>Platform üyeliği ve kullanımına ilişkin koşullar →</span>
+        </a>
+
+        <a href="/legal/kvkk">
+            <strong>KVKK Aydınlatma Metni</strong>
+            <span>Kişisel verilerin işlenmesine ilişkin bilgilendirme →</span>
+        </a>
+
+        <a href="/legal/privacy">
+            <strong>Gizlilik Politikası</strong>
+            <span>Verilerin korunması ve gizlilik yaklaşımımız →</span>
+        </a>
+
+        <a href="/legal/clinical">
+            <strong>Dental AI Klinik Kullanım ve Sorumluluk Koşulları</strong>
+            <span>Yapay zekâ çıktılarının klinik kullanım koşulları →</span>
+        </a>
+    </div>
+
+    {% elif page == "contact" %}
+    <h1>✉️ İletişim</h1>
+
+    <div class="info-card">
+        <h2>DENTAL AI Destek</h2>
+
+        <p>
+            Hesap, teknik destek, gizlilik veya platform kullanımıyla
+            ilgili konular için bizimle iletişime geçebilirsiniz.
+        </p>
+
+        <div class="contact-item">
+            <strong>E-posta</strong>
+            <a href="mailto:destek@dentalai.tr">
+                destek@dentalai.tr
+            </a>
+        </div>
+
+        <p class="small-note">
+            Kişisel veri ve gizlilik konulu başvurularda, talebinizi
+            açık şekilde belirtmeniz değerlendirme sürecini kolaylaştırır.
+        </p>
+    </div>
+    {% endif %}
+
+</div>
+
+<style>
+.info-container {
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 0 18px 40px;
+}
+
+.info-container h1 {
+    margin-bottom: 20px;
+}
+
+.info-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 22px;
+    line-height: 1.65;
+}
+
+.notice {
+    margin-top: 20px;
+    padding: 15px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+}
+
+.intro {
+    color: #64748b;
+    margin-bottom: 20px;
+}
+
+.legal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.legal-list a {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 18px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #0f172a;
+}
+
+.legal-list a:hover {
+    border-color: #2563eb;
+}
+
+.legal-list span {
+    color: #64748b;
+    font-size: 14px;
+}
+
+.contact-item {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8fafc;
+    border-radius: 10px;
+}
+
+.contact-item strong {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.contact-item a {
+    color: #2563eb;
+    font-weight: 700;
+}
+
+.small-note {
+    margin-top: 20px;
+    color: #64748b;
+    font-size: 14px;
+}
+</style>
+{% endblock %}

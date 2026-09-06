@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-card">
+    <div class="page-header">
+        <div>
+            <h1>🧠 Tüm Analizler</h1>
+            <p>Hasta profiline bağlı ve hasta kaydı olmadan yapılan tüm analizler.</p>
+        </div>
+    </div>
+
+    {% if analyses %}
+    <div class="analysis-list">
+        {% for item in analyses %}
+        <div class="analysis-row">
+            <div class="analysis-info">
+                <div class="analysis-title">
+                    {% if item.is_guest %}
+                        ⚡ Hasta Kaydı Yok
+                    {% else %}
+                        👤 {{ item.patient_name }}
+                    {% endif %}
+                </div>
+
+                <div class="analysis-meta">
+                    🦷 Diş: {{ item.tooth_number or "-" }}
+                </div>
+
+                <div class="analysis-note">
+                    {{ item.clinical_notes or "Klinik bilgi girilmedi." }}
+                </div>
+
+                <div class="analysis-date">
+                    {{ item.created_at.strftime("%d.%m.%Y %H:%M") if item.created_at else "" }}
+                </div>
+            </div>
+
+            <a class="result-button" href="{{ item.result_url }}">
+                Sonuç →
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        Henüz analiz bulunmuyor.
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.page-card {
+    max-width: 1000px;
+    margin: 28px auto;
+    padding: 24px;
+}
+
+.page-header {
+    margin-bottom: 24px;
+}
+
+.page-header h1 {
+    margin-bottom: 6px;
+}
+
+.page-header p {
+    margin: 0;
+    color: #64748b;
+}
+
+.analysis-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.analysis-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    padding: 16px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.analysis-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.analysis-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.analysis-meta,
+.analysis-date {
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.analysis-note {
+    margin-top: 7px;
+    line-height: 1.45;
+    color: #334155;
+    overflow-wrap: anywhere;
+}
+
+.result-button {
+    display: inline-block;
+    padding: 10px 14px;
+    border-radius: 9px;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.empty-state {
+    padding: 24px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    color: #64748b;
+}
+
+@media (max-width: 640px) {
+    .analysis-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .result-button {
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}

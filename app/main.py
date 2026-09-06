@@ -18,6 +18,7 @@ from dental_rag.rag import (
 )
 from dental_rag.specialty_router import classify_specialties
 
+from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from fastapi import (
     FastAPI,
     Form,
@@ -60,6 +61,32 @@ class User(SQLModel, table=True):
     email: Optional[str] = Field(default=None, index=True)
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class DoctorProfile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, unique=True)
+    university: Optional[str] = None
+    graduation_status: Optional[str] = None
+    graduation_year: Optional[int] = None
+    is_specialist: bool = False
+    specialty: Optional[str] = None
+
+
+
+class AgreementAcceptance(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    agreement_type: str = Field(index=True)
+    agreement_version: str
+    accepted_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+
+class PatientProfile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    patient_id: int = Field(index=True, unique=True)
+    address: Optional[str] = None
+
 
 class SessionToken(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -138,6 +165,25 @@ class Treatment(SQLModel, table=True):
 class ImageAsset(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     analysis_id: int = Field(index=True)
+    original_filename: str
+    stored_filename: str
+    file_path: str
+    image_type: str = "OTHER"
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GuestAnalysis(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    tooth_number: Optional[str] = None
+    clinical_notes: Optional[str] = None
+    status: str = "DRAFT"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GuestImageAsset(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    guest_analysis_id: int = Field(index=True)
     original_filename: str
     stored_filename: str
     file_path: str
@@ -335,6 +381,65 @@ def send_brevo_password_reset_email(
 
 app = FastAPI(title="DENTAL-AI", version="0.1.0")
 
+
+
+@app.get("/about", response_class=HTMLResponse)
+def about_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="info_page.html",
+        context={
+            "page": "about",
+            "title": "Hakkında",
+        },
+    )
+
+
+@app.get("/legal", response_class=HTMLResponse)
+def legal_index(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="info_page.html",
+        context={
+            "page": "legal",
+            "title": "Sözleşmeler ve Politikalar",
+        },
+    )
+
+
+@app.get("/contact", response_class=HTMLResponse)
+def contact_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="info_page.html",
+        context={
+            "page": "contact",
+            "title": "İletişim",
+        },
+    )
+
+
+@app.get("/legal/{document}", response_class=HTMLResponse)
+def legal_document(request: Request, document: str):
+    legal = LEGAL_TEXTS.get(document)
+
+    if not legal:
+        return HTMLResponse(
+            "Hukuki metin bulunamadı.",
+            status_code=404,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="legal.html",
+        context={
+            "title": legal["title"],
+            "content": legal["content"],
+            "version": LEGAL_VERSION,
+        },
+    )
+
+
 @app.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
     return templates.TemplateResponse(
@@ -351,10 +456,33 @@ def register_user(
     email: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
+    university: str = Form(...),
+    graduation_status: str = Form(...),
+    graduation_year: str = Form(""),
+    is_specialist: str = Form(...),
+    specialty: str = Form(""),
+    accept_terms: Optional[str] = Form(None),
+    kvkk_informed: Optional[str] = Form(None),
+    accept_clinical: Optional[str] = Form(None),
 ):
     display_name = display_name.strip()
     email = email.strip().lower()
     username = username.strip().lower()
+    university = university.strip()
+    graduation_status = graduation_status.strip()
+    graduation_year = graduation_year.strip()
+    specialty = specialty.strip()
+    is_specialist_bool = is_specialist.lower() == "true"
+
+    if not accept_terms or not kvkk_informed or not accept_clinical:
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error": "Üyelik koşulları, KVKK bilgilendirmesi ve klinik kullanım koşulları onaylanmalıdır.",
+            },
+            status_code=400,
+        )
 
     if len(password) < 8:
         return templates.TemplateResponse(
@@ -376,12 +504,36 @@ def register_user(
             status_code=400,
         )
 
-    if not display_name or not email or not username:
+    if not display_name or not email or not username or not university or not graduation_status:
         return templates.TemplateResponse(
             "register.html",
             {
                 "request": request,
                 "error": "Tüm alanları doldurun.",
+            },
+            status_code=400,
+        )
+
+    graduation_year_value = None
+    if graduation_year:
+        try:
+            graduation_year_value = int(graduation_year)
+        except ValueError:
+            return templates.TemplateResponse(
+                "register.html",
+                {
+                    "request": request,
+                    "error": "Mezuniyet yılı geçerli bir sayı olmalıdır.",
+                },
+                status_code=400,
+            )
+
+    if is_specialist_bool and not specialty:
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "error": "Uzman seçtiyseniz uzmanlık alanını yazmalısınız.",
             },
             status_code=400,
         )
@@ -424,6 +576,39 @@ def register_user(
         s.commit()
         s.refresh(user)
 
+        doctor_profile = DoctorProfile(
+            user_id=user.id,
+            university=university,
+            graduation_status=graduation_status,
+            graduation_year=graduation_year_value,
+            is_specialist=is_specialist_bool,
+            specialty=specialty if is_specialist_bool else None,
+        )
+        s.add(doctor_profile)
+
+        agreement_records = [
+            AgreementAcceptance(
+                user_id=user.id,
+                agreement_type="TERMS",
+                agreement_version=LEGAL_VERSION,
+            ),
+            AgreementAcceptance(
+                user_id=user.id,
+                agreement_type="KVKK_INFORMATION",
+                agreement_version=LEGAL_VERSION,
+            ),
+            AgreementAcceptance(
+                user_id=user.id,
+                agreement_type="CLINICAL_TERMS",
+                agreement_version=LEGAL_VERSION,
+            ),
+        ]
+
+        for agreement in agreement_records:
+            s.add(agreement)
+
+        s.commit()
+
         response = RedirectResponse(
             url="/",
             status_code=303,
@@ -432,6 +617,124 @@ def register_user(
         create_user_session(response, user.id)
 
         return response
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        doctor_profile = s.exec(
+            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+        ).first()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="account.html",
+        context={
+            "user": user,
+            "doctor_profile": doctor_profile,
+            "error": None,
+            "success": None,
+        },
+    )
+
+
+@app.post("/account/password", response_class=HTMLResponse)
+def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    new_password_confirm: str = Form(...),
+):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    if not user.password_hash or not verify_password(
+        current_password, user.password_hash
+    ):
+        with Session(engine, expire_on_commit=False) as s:
+            doctor_profile = s.exec(
+                select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+            ).first()
+
+        return templates.TemplateResponse(
+            request=request,
+            name="account.html",
+            context={
+                "user": user,
+                "doctor_profile": doctor_profile,
+                "error": "Mevcut şifreniz hatalı.",
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    if len(new_password) < 8:
+        with Session(engine, expire_on_commit=False) as s:
+            doctor_profile = s.exec(
+                select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+            ).first()
+
+        return templates.TemplateResponse(
+            request=request,
+            name="account.html",
+            context={
+                "user": user,
+                "doctor_profile": doctor_profile,
+                "error": "Yeni şifre en az 8 karakter olmalıdır.",
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    if new_password != new_password_confirm:
+        with Session(engine, expire_on_commit=False) as s:
+            doctor_profile = s.exec(
+                select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+            ).first()
+
+        return templates.TemplateResponse(
+            request=request,
+            name="account.html",
+            context={
+                "user": user,
+                "doctor_profile": doctor_profile,
+                "error": "Yeni şifreler eşleşmiyor.",
+                "success": None,
+            },
+            status_code=400,
+        )
+
+    with Session(engine, expire_on_commit=False) as s:
+        db_user = s.get(User, user.id)
+
+        if not db_user:
+            return RedirectResponse("/login", status_code=303)
+
+        db_user.password_hash = hash_password(new_password)
+        s.add(db_user)
+        s.commit()
+
+        doctor_profile = s.exec(
+            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+        ).first()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="account.html",
+        context={
+            "user": db_user,
+            "doctor_profile": doctor_profile,
+            "error": None,
+            "success": "Şifreniz başarıyla değiştirildi.",
+        },
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -744,13 +1047,21 @@ def home(request: Request):
         analyses = s.exec(select(Analysis).order_by(Analysis.id.desc())).all()
         records = s.exec(select(ClinicalRecord)).all()
 
+        guest_analyses = s.exec(
+            select(GuestAnalysis)
+            .where(GuestAnalysis.owner_user_id == user.id)
+            .order_by(GuestAnalysis.id.desc())
+            .limit(5)
+        ).all()
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "patients": patients,
             "analyses": analyses,
-            "records": records
+            "records": records,
+            "guest_analyses": guest_analyses
         }
     )
 
@@ -766,6 +1077,8 @@ def create_patient(
     last_name: str = Form(...),
     birth_date: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
+    tc_kimlik_no: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
     chief_complaint: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
@@ -808,6 +1121,7 @@ def create_patient(
             first_name=first_name,
             last_name=last_name,
             phone=phone,
+            tc_kimlik_no=tc_kimlik_no.strip() if tc_kimlik_no else None,
             birth_date=birth_date,
             age=calculated_age,
             chief_complaint=chief_complaint.strip() if chief_complaint else None,
@@ -817,10 +1131,48 @@ def create_patient(
         s.commit()
         s.refresh(patient)
 
+        patient_profile = PatientProfile(
+            patient_id=patient.id,
+            address=address.strip() if address else None,
+        )
+        s.add(patient_profile)
+        s.commit()
+
+        if request.query_params.get("next") == "analysis":
+            return RedirectResponse(
+                f"/analysis/new/{patient.id}",
+                status_code=303
+            )
+
         return RedirectResponse(
             f"/patients/{patient.id}",
             status_code=303
         )
+
+
+
+@app.get("/patients", response_class=HTMLResponse)
+def all_patients(request: Request):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        query = select(Patient).order_by(Patient.id.desc())
+
+        if user.role != "ADMIN":
+            query = query.where(Patient.owner_user_id == user.id)
+
+        patients = s.exec(query).all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="patients_all.html",
+        context={
+            "patients": patients,
+        },
+    )
 
 
 @app.get("/patients/search", response_class=HTMLResponse)
@@ -1263,6 +1615,12 @@ def patient_detail(request: Request, patient_id: int):
             ).order_by(Treatment.created_at.desc())
         ).all()
 
+        patient_profile = s.exec(
+            select(PatientProfile).where(
+                PatientProfile.patient_id == patient_id
+            )
+        ).first()
+
         analysis_assets = {}
         for analysis in analyses:
             analysis_assets[analysis.id] = s.exec(
@@ -1276,11 +1634,106 @@ def patient_detail(request: Request, patient_id: int):
             name="patient_detail.html",
             context={
                 "patient": patient,
+                "patient_profile": patient_profile,
                 "analyses": analyses,
                 "treatments": treatments,
                 "analysis_assets": analysis_assets,
             },
         )
+
+
+@app.get("/analyses", response_class=HTMLResponse)
+def all_analyses(request: Request):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    items = []
+
+    with Session(engine, expire_on_commit=False) as s:
+        patient_analyses = s.exec(
+            select(Analysis).order_by(Analysis.id.desc())
+        ).all()
+
+        for analysis in patient_analyses:
+            patient = s.get(Patient, analysis.patient_id)
+
+            if not patient:
+                continue
+
+            if user.role != "ADMIN" and patient.owner_user_id != user.id:
+                continue
+
+            patient_name = (
+                f"{patient.first_name or ''} {patient.last_name or ''}"
+            ).strip() or patient.anonymous_id or "Hasta"
+
+            items.append({
+                "is_guest": False,
+                "patient_name": patient_name,
+                "tooth_number": analysis.tooth_number,
+                "clinical_notes": analysis.clinical_notes,
+                "created_at": analysis.created_at,
+                "result_url": f"/analysis/{analysis.id}",
+            })
+
+        guest_analyses = s.exec(
+            select(GuestAnalysis).order_by(GuestAnalysis.id.desc())
+        ).all()
+
+        for analysis in guest_analyses:
+            if user.role != "ADMIN" and analysis.owner_user_id != user.id:
+                continue
+
+            items.append({
+                "is_guest": True,
+                "patient_name": "",
+                "tooth_number": analysis.tooth_number,
+                "clinical_notes": analysis.clinical_notes,
+                "created_at": analysis.created_at,
+                "result_url": f"/analysis/guest/{analysis.id}",
+            })
+
+    items.sort(
+        key=lambda x: x["created_at"] or datetime.min,
+        reverse=True,
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="analyses_all.html",
+        context={
+            "analyses": items,
+        },
+    )
+
+
+@app.get("/analysis/new", response_class=HTMLResponse)
+def analysis_choice(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="analysis_choice.html",
+        context={}
+    )
+
+
+@app.get("/analysis/guest/new", response_class=HTMLResponse)
+def guest_analysis_new(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="guest_analysis_new.html",
+        context={}
+    )
+
 
 @app.get("/analysis/new/{patient_id}", response_class=HTMLResponse)
 def new_analysis(request: Request, patient_id: int):
@@ -1375,6 +1828,159 @@ açısından en ilgili güncel kanıtları bul.
     )
 
 
+
+def _get_guest_specialty_rag_context(
+    analysis,
+    assets,
+    extra_text="",
+):
+    image_types = [
+        asset.image_type
+        for asset in assets
+        if asset.image_type
+    ]
+
+    routing_text = "\n".join(
+        x for x in [
+            analysis.clinical_notes or "",
+            extra_text or "",
+        ]
+        if x
+    )
+
+    router = classify_specialties(
+        age=None,
+        dentition="",
+        tooth_number=analysis.tooth_number or "",
+        clinical_notes=routing_text,
+        image_types=image_types,
+        findings="",
+        chief_complaint="",
+        top_k=5,
+    )
+
+    ranked = router.get("ranked_specialties", [])
+
+    specialties = [
+        item.get("specialty")
+        for item in ranked
+        if item.get("specialty")
+    ][:5]
+
+    labels = [
+        item.get("label")
+        for item in ranked
+        if item.get("label")
+    ][:5]
+
+    rag_query = f"""
+Diş: {analysis.tooth_number or ""}
+Klinik bilgi: {analysis.clinical_notes or ""}
+Ek hekim bilgisi: {extra_text or ""}
+Görüntü tipleri: {", ".join(image_types)}
+
+İlgili dental branşlar:
+{", ".join(labels)}
+
+Bu vaka için görüntü bulguları, klinik değerlendirme,
+ayırıcı tanı, ek değerlendirme ve tedavi yaklaşımı
+açısından en ilgili güncel kanıtları bul.
+"""
+
+    context = get_specialty_relevant_context(
+        rag_query,
+        specialties=specialties,
+        top_k=5,
+        max_chars=7000,
+    )
+
+    return (
+        "ROUTER TARAFINDAN SEÇİLEN BRANŞLAR:\n"
+        + "\n".join(f"- {label}" for label in labels)
+        + "\n\n"
+        + context
+    )
+
+
+def _run_guest_preliminary_ai(analysis_id: int):
+    from app.ai_engine import build_preliminary_prompt, parse_ai_result
+    from app.ai_provider import ask_ai
+
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+
+        if not analysis:
+            return
+
+        assets = s.exec(
+            select(GuestImageAsset).where(
+                GuestImageAsset.guest_analysis_id == analysis_id
+            )
+        ).all()
+
+        image_paths = [
+            asset.file_path
+            for asset in assets
+            if asset.file_path
+        ]
+
+        image_path = image_paths[0] if image_paths else None
+
+        try:
+            knowledge_context = _get_guest_specialty_rag_context(
+                analysis=analysis,
+                assets=assets,
+            )
+
+            prompt = build_preliminary_prompt(
+                tooth_number=analysis.tooth_number or "",
+                clinical_notes=analysis.clinical_notes or "",
+                image_path=image_path,
+                knowledge_context=knowledge_context,
+            )
+
+            ai_text = ask_ai(
+                prompt,
+                image_paths=image_paths,
+            )
+
+            ai_result = parse_ai_result(ai_text)
+
+        except Exception as e:
+            ai_text = ""
+            ai_result = {
+                "status": "AI_ERROR",
+                "error": str(e),
+            }
+
+        if isinstance(ai_result, dict):
+            questions = ai_result.get("questions")
+            if isinstance(questions, list):
+                ai_result["questions"] = questions[:5]
+
+        result_dir = Path("uploads/ai_results")
+        result_dir.mkdir(parents=True, exist_ok=True)
+
+        result_file = result_dir / f"guest_{analysis_id}.json"
+
+        result_file.write_text(
+            json.dumps(
+                {
+                    "ai_result": ai_result,
+                    "ai_text": ai_text,
+                    "stage": "PRELIMINARY",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        analysis.status = "AI_ANALYZED"
+        s.add(analysis)
+        s.commit()
+
+
 def _run_preliminary_ai(analysis_id: int):
     from app.ai_engine import build_preliminary_prompt, parse_ai_result
     from app.ai_provider import ask_ai
@@ -1465,6 +2071,79 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
         analysis.status = "AI_ANALYZED"
         s.add(analysis)
         s.commit()
+
+
+
+@app.post("/analysis/guest/new")
+async def create_guest_analysis(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    tooth_number: Optional[str] = Form(None),
+    clinical_notes: Optional[str] = Form(None),
+    images: list[UploadFile] = File(default=[]),
+):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = GuestAnalysis(
+            owner_user_id=user.id,
+            tooth_number=tooth_number,
+            clinical_notes=clinical_notes,
+            status="ANALYZING",
+        )
+
+        s.add(analysis)
+        s.commit()
+        s.refresh(analysis)
+
+        allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+
+        for image in images:
+            if not image or not image.filename:
+                continue
+
+            original_name = Path(image.filename).name
+            extension = Path(original_name).suffix.lower()
+
+            if extension not in allowed_extensions:
+                continue
+
+            stored_name = (
+                f"guest_analysis_{analysis.id}_"
+                f"{uuid.uuid4().hex}{extension}"
+            )
+
+            destination = UPLOAD_DIR / stored_name
+
+            with destination.open("wb") as buffer:
+                shutil.copyfileobj(image.file, buffer)
+
+            asset = GuestImageAsset(
+                guest_analysis_id=analysis.id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                file_path=str(destination),
+                image_type="OTHER",
+            )
+
+            s.add(asset)
+
+        s.commit()
+
+        analysis_id = analysis.id
+
+    background_tasks.add_task(
+        _run_guest_preliminary_ai,
+        analysis_id,
+    )
+
+    return RedirectResponse(
+        url=f"/analysis/guest/{analysis_id}",
+        status_code=303,
+    )
 
 
 @app.post("/analysis/new/{patient_id}")
@@ -1578,6 +2257,83 @@ def create_clinical_record(
         s.commit()
     return RedirectResponse("/admin", status_code=303)
 
+
+@app.get("/analysis/guest/{analysis_id}", response_class=HTMLResponse)
+def guest_analysis_result(request: Request, analysis_id: int):
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+
+        if not analysis:
+            return HTMLResponse(
+                "Analiz bulunamadı.",
+                status_code=404
+            )
+
+        if user.role != "ADMIN" and analysis.owner_user_id != user.id:
+            return HTMLResponse(
+                "Bu analize erişim yetkiniz yok.",
+                status_code=403
+            )
+
+        dx = s.exec(
+            select(ClinicalRecord).where(
+                ClinicalRecord.clinical_id == "CARIES-DX"
+            )
+        ).first()
+
+    result_file = Path(
+        f"uploads/ai_results/guest_{analysis_id}.json"
+    )
+
+    ai_result = {
+        "status": "AI_ANALYZING",
+        "error": ""
+    }
+
+    ai_text = ""
+
+    if result_file.exists():
+        try:
+            saved = json.loads(
+                result_file.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            ai_result = saved.get(
+                "ai_result",
+                ai_result
+            )
+
+            ai_text = saved.get(
+                "ai_text",
+                ""
+            )
+
+        except Exception as e:
+            ai_result = {
+                "status": "AI_ERROR",
+                "error": str(e)
+            }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="guest_result.html",
+        context={
+            "analysis": analysis,
+            "patient": None,
+            "dx": dx,
+            "ai_result": ai_result,
+            "ai_text": ai_text
+        }
+    )
+
+
 @app.get("/analysis/{analysis_id}", response_class=HTMLResponse)
 def analysis_result(request: Request, analysis_id: int):
     user = get_current_user(request)
@@ -1667,6 +2423,154 @@ def analysis_result(request: Request, analysis_id: int):
 # ---------------------------------------------------------
 # VAR / YOK BİTTİĞİNDE OTOMATİK NİHAİ ANALİZ
 # ---------------------------------------------------------
+
+
+@app.post("/analysis/guest/{analysis_id}/final", response_class=HTMLResponse)
+async def guest_final_analysis(
+    request: Request,
+    analysis_id: int
+):
+    from app.ai_engine import (
+        build_final_prompt,
+        parse_ai_result
+    )
+    from app.ai_provider import ask_ai
+
+    user = get_current_user(request)
+
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(
+            GuestAnalysis,
+            analysis_id
+        )
+
+        if not analysis:
+            return HTMLResponse(
+                "Analiz bulunamadı.",
+                status_code=404
+            )
+
+        if user.role != "ADMIN" and analysis.owner_user_id != user.id:
+            return HTMLResponse(
+                "Bu analize erişim yetkiniz yok.",
+                status_code=403
+            )
+
+        assets = s.exec(
+            select(GuestImageAsset).where(
+                GuestImageAsset.guest_analysis_id == analysis.id
+            )
+        ).all()
+
+        image_paths = [
+            asset.file_path
+            for asset in assets
+            if asset.file_path
+        ]
+
+        image_path = image_paths[0] if image_paths else None
+
+        form = await request.form()
+
+        answers = {}
+
+        for key, value in form.items():
+            if key.startswith("answer_"):
+                index = key.replace(
+                    "answer_",
+                    ""
+                )
+                answers[index] = str(value)
+
+        try:
+            knowledge_context = _get_guest_specialty_rag_context(
+                analysis=analysis,
+                assets=assets,
+                extra_text=f"Hekim cevapları: {answers}",
+            )
+
+            prompt = build_final_prompt(
+                tooth_number=analysis.tooth_number or "",
+                clinical_notes=analysis.clinical_notes or "",
+                answers=answers,
+                image_path=image_path,
+                knowledge_context=knowledge_context,
+            )
+
+            ai_text = ask_ai(
+                prompt,
+                image_paths=image_paths
+            )
+
+            ai_result = parse_ai_result(
+                ai_text
+            )
+
+            if isinstance(ai_result, dict):
+                required_fields = {
+                    "most_likely",
+                    "differential",
+                    "findings",
+                    "treatment_options",
+                    "preferred_approach",
+                }
+
+                if required_fields.issubset(ai_result.keys()):
+                    ai_result["status"] = "FINAL"
+                else:
+                    ai_result["status"] = "AI_INVALID"
+                    ai_result["error"] = (
+                        "AI beklenen final JSON formatını üretmedi."
+                    )
+
+        except Exception as e:
+            ai_text = ""
+
+            ai_result = {
+                "status": "AI_ERROR",
+                "error": str(e)
+            }
+
+        result_dir = Path(
+            "uploads/ai_results"
+        )
+
+        result_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        result_file = (
+            result_dir /
+            f"guest_{analysis_id}.json"
+        )
+
+        result_file.write_text(
+            json.dumps(
+                {
+                    "ai_result": ai_result,
+                    "ai_text": ai_text,
+                    "stage": "FINAL",
+                    "answers": answers
+                },
+                ensure_ascii=False,
+                indent=2
+            ),
+            encoding="utf-8"
+        )
+
+        analysis.status = "AI_FINAL"
+        s.add(analysis)
+        s.commit()
+
+    return RedirectResponse(
+        url=f"/analysis/guest/{analysis_id}",
+        status_code=303
+    )
+
 
 @app.post("/analysis/{analysis_id}/final", response_class=HTMLResponse)
 async def final_analysis(
@@ -1926,6 +2830,13 @@ Hekimin sorusu:
 
         records = s.exec(select(ClinicalRecord)).all()
 
+        guest_analyses = s.exec(
+            select(GuestAnalysis)
+            .where(GuestAnalysis.owner_user_id == user.id)
+            .order_by(GuestAnalysis.id.desc())
+            .limit(5)
+        ).all()
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -1933,6 +2844,7 @@ Hekimin sorusu:
             "patients": patients,
             "analyses": analyses,
             "records": records,
+            "guest_analyses": guest_analyses,
             "ai_question": question,
             "ai_answer": answer,
             "ai_error": error,

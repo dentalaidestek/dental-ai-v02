@@ -225,12 +225,16 @@
 <div class="container">
 <div style="margin-bottom:18px;">
     <a class="button" href="/">🏠 Anasayfa</a>
+    <a class="button" href="/patients/{{ patient.id }}/teeth">🦷 Diş Şeması</a>
     <a class="button" href="/analysis/new/{{ patient.id }}">➕ Yeni Analiz</a>
 </div>
 
 
-    <div class="card">
-        <h1>👤 Hasta Profili</h1>
+    <div class="card patient-profile-card" id="patientProfileCard">
+        <div class="patient-profile-header" onclick="togglePatientProfile()">
+            <h1>👤 Hasta Profili</h1>
+            <span class="profile-toggle-icon">⌄</span>
+        </div>
 
         <div class="grid">
             <div class="item">
@@ -240,36 +244,109 @@
                 </div>
             </div>
 
-
             <div class="item">
                 <div class="label">Telefon</div>
                 <div class="value">
                     {{ patient.phone or "-" }}
                 </div>
             </div>
+        </div>
 
-            <div class="item">
-                <div class="label">Doğum Tarihi</div>
-                <div class="value">
-                    {{ patient.birth_date or "-" }}
-                </div>
-            </div>
+        <div class="patient-profile-extra">
+            <div class="grid">
 
-            <div class="item">
-                <div class="label">Yaş</div>
-                <div class="value">
-                    {{ patient.age if patient.age is not none else "-" }}
+                <div class="item">
+                    <div class="label">TC Kimlik No</div>
+                    <div class="value">
+                        {{ patient.tc_kimlik_no or "-" }}
+                    </div>
                 </div>
-            </div>
 
-            <div class="item">
-                <div class="label">Hasta No</div>
-                <div class="value">
-                    {{ patient.anonymous_id }}
+                <div class="item">
+                    <div class="label">Doğum Tarihi</div>
+                    <div class="value">
+                        {{ patient.birth_date or "-" }}
+                    </div>
                 </div>
+
+                <div class="item">
+                    <div class="label">Yaş</div>
+                    <div class="value">
+                        {{ patient.age if patient.age is not none else "-" }}
+                    </div>
+                </div>
+
+                <div class="item">
+                    <div class="label">Hasta No</div>
+                    <div class="value">
+                        {{ patient.anonymous_id }}
+                    </div>
+                </div>
+
+                <div class="item patient-address-item">
+                    <div class="label">Adres</div>
+                    <div class="value">
+                        {{ patient_profile.address if patient_profile and patient_profile.address else "-" }}
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
+
+    <style>
+        .patient-profile-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .profile-toggle-icon {
+            font-size: 28px;
+            transition: transform .3s ease;
+        }
+
+        .patient-profile-extra {
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            margin-top: 0;
+            transition:
+                max-height .4s ease,
+                opacity .3s ease,
+                margin-top .3s ease;
+        }
+
+        .patient-profile-card.open .patient-profile-extra {
+            max-height: 800px;
+            opacity: 1;
+            margin-top: 18px;
+        }
+
+        .patient-profile-card.open .profile-toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .patient-address-item {
+            grid-column: 1 / -1;
+        }
+
+        .patient-address-item .value {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+
+    <script>
+        function togglePatientProfile() {
+            const card = document.getElementById("patientProfileCard");
+            if (card) {
+                card.classList.toggle("open");
+            }
+        }
+    </script>
 
     <div class="card">
         <h2>📝 Başvuru Şikâyeti</h2>
@@ -471,16 +548,7 @@
         {% endif %}
     </div>
 
-    <div class="card">
-        <a class="button" href="/patients/{{ patient.id }}/teeth">
-            🦷 Diş Şeması
-        </a>
 
-        <a class="button" href="/analysis/new/{{ patient.id }}">
-        </a>
-
-        
-    </div>
 
 </div>
 

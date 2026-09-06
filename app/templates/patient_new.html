@@ -66,6 +66,26 @@
                     required
                 >
             </label>
+                <label>
+                    <span>TC Kimlik No <small style="font-weight:400; opacity:.65;">(İsteğe bağlı)</small></span>
+                    <input
+                        type="text"
+                        name="tc_kimlik_no"
+                        placeholder="11 haneli TC Kimlik No"
+                        maxlength="11"
+                        inputmode="numeric"
+                        oninput="this.value=this.value.replace(/\D/g,'').slice(0,11)"
+                    >
+                </label>
+                <label style="grid-column: 1 / -1;">
+                    <span>Adres <small style="font-weight:400; opacity:.65;">(İsteğe bağlı)</small></span>
+                    <textarea
+                        name="address"
+                        rows="3"
+                        maxlength="500"
+                        placeholder="Hastanın adresi (isteğe bağlı)"
+                    ></textarea>
+                </label>
 
         </div>
 

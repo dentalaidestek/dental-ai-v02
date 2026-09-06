@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="analysis-choice-page">
+    <div class="choice-header">
+        <h1>➕ Yeni Analiz</h1>
+        <p>Analizi bir hasta profiline bağlayarak veya hasta oluşturmadan başlatabilirsiniz.</p>
+    </div>
+
+    <div class="choice-grid">
+        <a class="choice-card" href="/patients/new?next=analysis">
+            <div class="choice-icon">👤</div>
+            <h2>Hasta oluşturarak devam et</h2>
+            <p>
+                Hasta bilgilerini kaydedersiniz. Yapılan analizler ve sonraki işlemler
+                bu hastanın profilinde kayıt altında tutulur.
+            </p>
+            <span class="choice-note">Hasta profiline kaydedilir</span>
+        </a>
+
+        <a class="choice-card" href="/analysis/guest/new">
+            <div class="choice-icon">⚡</div>
+            <h2>Hasta oluşturmadan analiz et</h2>
+            <p>
+                Hasta kaydı oluşturulmaz. Klinik bilgi ve görsellerle doğrudan
+                analiz yaparsınız. Sonuç yalnızca Son Analizler bölümünde görünür.
+            </p>
+            <span class="choice-note">Hasta profiline kaydedilmez</span>
+        </a>
+    </div>
+</div>
+
+<style>
+.analysis-choice-page {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.choice-header {
+    margin-bottom: 22px;
+}
+
+.choice-header h1 {
+    margin-bottom: 6px;
+}
+
+.choice-header p {
+    margin: 0;
+    opacity: .7;
+}
+
+.choice-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+.choice-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.08);
+    border: 1px solid rgba(128,128,128,.18);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.choice-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.12);
+}
+
+.choice-icon {
+    font-size: 34px;
+    margin-bottom: 12px;
+}
+
+.choice-card h2 {
+    margin: 0 0 10px;
+}
+
+.choice-card p {
+    margin: 0 0 14px;
+    line-height: 1.6;
+    opacity: .78;
+}
+
+.choice-note {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 700;
+    opacity: .7;
+}
+
+@media (max-width: 700px) {
+    .choice-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}

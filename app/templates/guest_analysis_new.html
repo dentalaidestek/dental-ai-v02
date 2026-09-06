@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>🧠 Dental AI Analizi</h1>
+
+<div class="card">
+    <h2>Hasta oluşturmadan analiz</h2>
+    <p>
+        Bu analiz herhangi bir hasta profiline kaydedilmeyecektir.
+        Sonuç yalnızca Son Analizler bölümünde tutulacaktır.
+    </p>
+</div>
+
+<form method="post"
+      enctype="multipart/form-data"
+      class="card form">
+
+    <h2>1. Diş</h2>
+
+    <label>
+        Diş numarası
+        <input
+            name="tooth_number"
+            placeholder="Örn: 36"
+            maxlength="10">
+    </label>
+
+    <h2>2. Kısa klinik bilgi</h2>
+
+    <label>
+        Hekim notu
+        <textarea
+            name="clinical_notes"
+            rows="5"
+            placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
+    </label>
+
+    <p class="muted">
+        Analiz için önemli gördüğünüz klinik bilgileri yazabilirsiniz.
+    </p>
+
+    <h2>3. Fotoğraf / Röntgen</h2>
+
+    <label>
+        Görüntü yükle
+        <input
+            type="file"
+            name="images"
+            accept="image/jpeg,image/png,image/webp"
+            multiple>
+    </label>
+
+    <p class="muted">
+        Fotoğraf veya röntgen yükleyebilirsiniz.
+    </p>
+
+    <button type="submit">
+        🔬 Analiz Et
+    </button>
+
+</form>
+
+<div class="notice">
+    ⚠️ Bu analiz bir hasta profiline kaydedilmez.
+</div>
+
+<div class="notice">
+    🤖 AI klinik bilgi ve yüklenen görüntüleri birlikte değerlendirecektir.
+</div>
+
+{% endblock %}
