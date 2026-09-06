@@ -1,6 +1,9 @@
 import os
 import json
 import uuid
+import secrets
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
@@ -256,6 +259,80 @@ def delete_user_session(request: Request) -> None:
             s.commit()
 
 
+def send_brevo_password_reset_email(
+    recipient_email: str,
+    reset_link: str,
+) -> None:
+    api_key = os.getenv("BREVO_API_KEY")
+    sender_email = os.getenv("BREVO_SENDER_EMAIL", "destek@dentalai.tr")
+    sender_name = os.getenv("BREVO_SENDER_NAME", "DENTAL AI Destek")
+
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY tanımlı değil.")
+
+    payload = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email,
+        },
+        "to": [
+            {
+                "email": recipient_email,
+            }
+        ],
+        "subject": "DENTAL AI - Şifre Sıfırlama",
+        "htmlContent": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;">
+            <h2>🦷 DENTAL AI</h2>
+            <p>Şifrenizi sıfırlamak için aşağıdaki butona tıklayın:</p>
+            <p>
+                <a href="{reset_link}"
+                   style="display:inline-block;padding:12px 20px;
+                          background:#2563eb;color:#fff;
+                          text-decoration:none;border-radius:8px;">
+                    Şifremi Sıfırla
+                </a>
+            </p>
+            <p>Bu bağlantı 30 dakika boyunca geçerlidir ve yalnızca bir kez kullanılabilir.</p>
+            <p>Eğer bu işlemi siz başlatmadıysanız bu e-postayı dikkate almayın.</p>
+        </div>
+        """,
+        "textContent": (
+            "DENTAL AI şifre sıfırlama bağlantınız: "
+            + reset_link
+            + "\n\nBu bağlantı 30 dakika boyunca geçerlidir ve yalnızca bir kez kullanılabilir."
+        ),
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=data,
+        method="POST",
+        headers={
+            "accept": "application/json",
+            "api-key": api_key,
+            "content-type": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError(
+                    f"Brevo e-posta gönderimi başarısız: HTTP {response.status}"
+                )
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"Brevo e-posta gönderimi başarısız: HTTP {exc.code}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Brevo e-posta gönderimi sırasında bağlantı hatası oluştu."
+        ) from exc
+
+
 app = FastAPI(title="DENTAL-AI", version="0.1.0")
 
 @app.get("/register", response_class=HTMLResponse)
@@ -421,12 +498,68 @@ def forgot_password_request(
 ):
     email = email.strip().lower()
 
+    generic_message = (
+        "Eğer bu e-posta adresi kayıtlıysa, "
+        "şifre sıfırlama bağlantısı gönderilecektir."
+    )
+
+    with Session(engine, expire_on_commit=False) as s:
+        user = s.exec(
+            select(User).where(User.email == email)
+        ).first()
+
+        if user and user.is_active and user.password_hash:
+            now = datetime.utcnow()
+
+            old_tokens = s.exec(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.user_id == user.id,
+                    PasswordResetToken.used_at == None,
+                    PasswordResetToken.expires_at > now,
+                )
+            ).all()
+
+            for old_token in old_tokens:
+                old_token.used_at = now
+
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hash_session_token(raw_token)
+
+            reset_token = PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=now + __import__("datetime").timedelta(minutes=30),
+            )
+
+            s.add(reset_token)
+            s.commit()
+
+            public_base_url = os.getenv(
+                "PUBLIC_BASE_URL",
+                str(request.base_url).rstrip("/"),
+            ).rstrip("/")
+
+            reset_link = (
+                f"{public_base_url}/reset-password"
+                f"?token={raw_token}"
+            )
+
+            try:
+                send_brevo_password_reset_email(
+                    recipient_email=user.email,
+                    reset_link=reset_link,
+                )
+            except Exception:
+                # Token DB'de kalsa bile kullanıcıya bilgi sızdırmıyoruz.
+                # Gerçek hata ayrıntısı kullanıcıya gösterilmez.
+                pass
+
     return templates.TemplateResponse(
         request=request,
         name="forgot_password.html",
         context={
             "error": None,
-            "message": "Eğer bu e-posta adresi kayıtlıysa, şifre sıfırlama bağlantısı gönderilecektir.",
+            "message": generic_message,
         },
     )
 
