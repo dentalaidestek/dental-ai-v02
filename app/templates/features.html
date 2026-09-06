@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="features-page">
+    <div class="program-header">
+        <div>
+            <div class="workspace-section-kicker">Dental AI</div>
+            <h1>Tüm Özellikler</h1>
+            <p>Ana ekranda öncelikli araçlar gösterilir; diğer tüm mevcut araçlara buradan ulaşabilirsiniz.</p>
+        </div>
+    </div>
+
+    <section class="feature-group">
+        <h2>Hasta ve Klinik İş Akışı</h2>
+        <div class="feature-grid">
+            <a href="/patients"><strong>Hastalar</strong><span>Hasta listenizi görüntüleyin ve kayıtları açın.</span></a>
+            <a href="/patients/new"><strong>Yeni Hasta</strong><span>Yeni hasta kaydı oluşturun.</span></a>
+            <a href="/tooth-charts"><strong>Diş Şemaları</strong><span>Mevcut çalışan diş kayıt ve tedavi geçmişi sistemine ulaşın.</span></a>
+            <a href="/program/new?type=APPOINTMENT"><strong>Randevu Oluştur</strong><span>Randevuyu isteğe bağlı olarak hastaya bağlayın.</span></a>
+        </div>
+    </section>
+
+    <section class="feature-group">
+        <h2>Dental AI</h2>
+        <div class="feature-grid">
+            <a href="/analysis/new"><strong>Yeni AI Analizi</strong><span>Yeni görüntü ve klinik bilgi analizi başlatın.</span></a>
+            <a href="/analyses"><strong>Tüm Analizler</strong><span>Önceki analiz kayıtlarını görüntüleyin.</span></a>
+        </div>
+    </section>
+
+    <section class="feature-group">
+        <h2>Program ve Akademi</h2>
+        <div class="feature-grid">
+            <a href="/program"><strong>Programım</strong><span>Ders, randevu, klinik, sınav, tez ve görevleri takip edin.</span></a>
+            <a href="/notes"><strong>Notlarım + Akademik AI</strong><span>PDF ve ders görsellerinizi düzenleyin; notlarınızla güçlü AI sohbeti yapın.</span></a>
+            <a href="/program/new?type=CLASS"><strong>Ders Ekle</strong><span>Haftalık tekrar eden ders programı oluşturabilirsiniz.</span></a>
+            <a href="/program/new?type=EXAM"><strong>Sınav Ekle</strong><span>Sınav ve hatırlatma kaydı oluşturun.</span></a>
+            <a href="/program/new?type=THESIS"><strong>Tez / Görev Ekle</strong><span>Akademik işleri programınıza ekleyin.</span></a>
+        </div>
+    </section>
+
+    <section class="feature-group">
+        <h2>Hesap ve Bilgi</h2>
+        <div class="feature-grid">
+            <a href="/account"><strong>Hesabım</strong><span>Mesleki durum, kullanıcı adı ve güvenlik ayarları.</span></a>
+            <a href="/legal"><strong>Sözleşmeler</strong><span>Kullanım koşulları ve yasal metinler.</span></a>
+            <a href="/about"><strong>Hakkında</strong><span>Dental AI hakkında bilgiler.</span></a>
+            <a href="/contact"><strong>İletişim</strong><span>Destek ve iletişim bilgileri.</span></a>
+        </div>
+    </section>
+</div>
+{% endblock %}

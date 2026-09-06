@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="study-page study-course-clean">
+    <header class="study-course-clean-header">
+        <a class="study-back-link" href="/notes">← Notlarım</a>
+        <div class="study-course-clean-title-row">
+            <div>
+                <h1>{{ course.title }}</h1>
+                {% if course.description %}<p>{{ course.description }}</p>{% endif %}
+            </div>
+            {% if materials %}
+            <a class="study-ai-outline-link" href="/notes/courses/{{ course.id }}/ai">Akademik AI</a>
+            {% else %}
+            <span class="study-ai-outline-link disabled" aria-disabled="true">Akademik AI</span>
+            {% endif %}
+        </div>
+    </header>
+
+    <section class="study-clean-card">
+        <div class="study-clean-heading">
+            <div>
+                <h2>Not Dosyaları</h2>
+                <p>PDF, ders slaytı, kitap sayfası veya not fotoğrafı ekleyebilirsin.</p>
+            </div>
+        </div>
+
+        <form action="/notes/courses/{{ course.id }}/materials" method="post" enctype="multipart/form-data" class="study-upload-clean" id="studyUploadForm">
+            <label class="study-file-picker-clean">
+                <input id="studyFileInput" type="file" name="files" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required>
+                <span class="study-file-plus">＋</span>
+                <span class="study-file-picker-copy">
+                    <strong>PDF veya Fotoğraf Ekle</strong>
+                    <small>PDF, JPG, PNG, WEBP · dosya başına en fazla 25 MB</small>
+                </span>
+            </label>
+            <div class="study-upload-clean-actions">
+                <span id="studyUploadSelection">Dosya seçilmedi</span>
+                <button type="submit" class="study-neutral-action">Dosyaları Kaydet</button>
+            </div>
+        </form>
+
+        {% if materials %}
+        <div class="study-material-list-clean">
+            {% for material in materials %}
+            <article class="study-material-clean-row">
+                <a class="study-material-clean-preview" href="/notes/courses/{{ course.id }}/materials/{{ material.id }}/file" target="_blank" rel="noopener">
+                    {% if material.material_type == 'IMAGE' %}
+                    <img src="/notes/courses/{{ course.id }}/materials/{{ material.id }}/file" alt="{{ material.display_name }}">
+                    {% else %}
+                    <span>PDF</span>
+                    {% endif %}
+                </a>
+                <a class="study-material-clean-copy" href="/notes/courses/{{ course.id }}/materials/{{ material.id }}/file" target="_blank" rel="noopener">
+                    <strong>{{ material.display_name }}</strong>
+                    <small>{{ 'Fotoğraf' if material.material_type == 'IMAGE' else 'PDF' }} · {{ '%.1f'|format(material.size_bytes / 1024 / 1024) }} MB · {{ material.created_at.strftime('%d.%m.%Y') if material.created_at else '' }}</small>
+                </a>
+                <form action="/notes/courses/{{ course.id }}/materials/{{ material.id }}/delete" method="post" onsubmit="return confirm('Bu not dosyası silinsin mi?')">
+                    <button class="study-clean-delete" type="submit" aria-label="Dosyayı sil" title="Dosyayı sil">×</button>
+                </form>
+            </article>
+            {% endfor %}
+        </div>
+
+        <a class="study-course-chat-entry" href="/notes/courses/{{ course.id }}/ai">
+            <div>
+                <strong>Akademik AI ile Sohbet Et</strong>
+                <span>Bu derse eklediğin notları kullanır.</span>
+            </div>
+            <span aria-hidden="true">›</span>
+        </a>
+        {% else %}
+        <div class="study-clean-empty">
+            <strong>Henüz not dosyası yok.</strong>
+            <span>Akademik AI'ı kullanmak için önce PDF veya fotoğraf ekle.</span>
+        </div>
+        {% endif %}
+    </section>
+
+    <details class="study-settings-clean">
+        <summary>
+            <span>Ders Ayarları</span>
+            <span>⌄</span>
+        </summary>
+        <div class="study-settings-body">
+            <form action="/notes/courses/{{ course.id }}/rename" method="post" class="study-inline-form">
+                <label>Ders adını değiştir<input type="text" name="title" value="{{ course.title }}" maxlength="120" required></label>
+                <button class="study-neutral-action" type="submit">Kaydet</button>
+            </form>
+            <form action="/notes/courses/{{ course.id }}/delete" method="post" onsubmit="return confirm('Bu ders, tüm not dosyaları ve Akademik AI sohbeti kalıcı olarak silinsin mi?')">
+                <button class="study-danger-button" type="submit">Dersi ve Tüm Notları Sil</button>
+            </form>
+        </div>
+    </details>
+</div>
+
+<script>
+(function() {
+    const fileInput = document.getElementById('studyFileInput');
+    const uploadSelection = document.getElementById('studyUploadSelection');
+    if (!fileInput || !uploadSelection) return;
+    fileInput.addEventListener('change', function() {
+        const total = fileInput.files ? fileInput.files.length : 0;
+        if (!total) {
+            uploadSelection.textContent = 'Dosya seçilmedi';
+        } else if (total === 1) {
+            uploadSelection.textContent = fileInput.files[0].name;
+        } else {
+            uploadSelection.textContent = total + ' dosya seçildi';
+        }
+    });
+})();
+</script>
+{% endblock %}

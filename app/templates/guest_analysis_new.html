@@ -1,72 +1,45 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="analysis-compose-page">
+    <div class="analysis-compose-heading">
+        <h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/><path d="M8 10h2"/><path d="M14 13h2"/></svg> Dental AI Analizi</h1>
+        <div class="analysis-context-strip">
+            <strong>Hasta kaydı oluşturmadan analiz</strong>
+            <span>Sonuç hasta profiline bağlanmaz; Son Analizler bölümünde saklanır.</span>
+        </div>
+    </div>
 
-<h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/><path d="M8 10h2"/><path d="M14 13h2"/></svg> Dental AI Analizi</h1>
+    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form">
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>1</span><h2>Diş</h2></div>
+            <label>
+                Diş numarası
+                <input name="tooth_number" placeholder="Örn: 36" maxlength="10">
+            </label>
+        </div>
 
-<div class="card">
-    <h2>Hasta oluşturmadan analiz</h2>
-    <p>
-        Bu analiz herhangi bir hasta profiline kaydedilmeyecektir.
-        Sonuç yalnızca Son Analizler bölümünde tutulacaktır.
-    </p>
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>2</span><h2>Kısa klinik bilgi</h2></div>
+            <label>
+                Hekim notu
+                <textarea name="clinical_notes" rows="3" placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
+            </label>
+            <p class="muted analysis-field-help">Yalnızca değerlendirme için önemli klinik bilgileri yazın.</p>
+        </div>
+
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>3</span><h2>Fotoğraf / Röntgen</h2></div>
+            <label>
+                Görüntü yükle
+                <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
+            </label>
+            <p class="muted analysis-field-help">Fotoğraf veya röntgen yükleyebilirsiniz.</p>
+        </div>
+
+        <button type="submit" class="analysis-submit-button">🔬 Analiz Et</button>
+    </form>
+
+    <div class="analysis-safety-note">⚠️ Dental AI klinik kararın yerine geçmez; destek amacıyla kullanılır.</div>
 </div>
-
-<form method="post"
-      enctype="multipart/form-data"
-      class="card form">
-
-    <h2>1. Diş</h2>
-
-    <label>
-        Diş numarası
-        <input
-            name="tooth_number"
-            placeholder="Örn: 36"
-            maxlength="10">
-    </label>
-
-    <h2>2. Kısa klinik bilgi</h2>
-
-    <label>
-        Hekim notu
-        <textarea
-            name="clinical_notes"
-            rows="5"
-            placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
-    </label>
-
-    <p class="muted">
-        Analiz için önemli gördüğünüz klinik bilgileri yazabilirsiniz.
-    </p>
-
-    <h2>3. Fotoğraf / Röntgen</h2>
-
-    <label>
-        Görüntü yükle
-        <input
-            type="file"
-            name="images"
-            accept="image/jpeg,image/png,image/webp"
-            multiple>
-    </label>
-
-    <p class="muted">
-        Fotoğraf veya röntgen yükleyebilirsiniz.
-    </p>
-
-    <button type="submit">
-        🔬 Analiz Et
-    </button>
-
-</form>
-
-<div class="notice">
-    ⚠️ Bu analiz bir hasta profiline kaydedilmez.
-</div>
-
-<div class="notice">
-    🤖 AI klinik bilgi ve yüklenen görüntüleri birlikte değerlendirecektir.
-</div>
-
 {% endblock %}

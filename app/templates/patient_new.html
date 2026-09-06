@@ -11,7 +11,30 @@
         </div>
     </div>
 
-    <form method="post" class="card patient-form">
+    {% if error %}
+    <div class="workspace-flash error">{{ error }}</div>
+    {% endif %}
+
+    {% if duplicate_patient %}
+    <div class="duplicate-patient-warning" role="alert">
+        <div class="duplicate-patient-icon" aria-hidden="true">!</div>
+        <div class="duplicate-patient-copy">
+            <strong>Bu hasta daha önce kayıtlı olabilir.</strong>
+            <span>{{ duplicate_reason }}</span>
+            <div class="duplicate-patient-match">
+                <b>{{ duplicate_patient.first_name or '' }} {{ duplicate_patient.last_name or '' }}</b>
+                {% if duplicate_patient.age is not none %}<span>{{ duplicate_patient.age }} yaş</span>{% endif %}
+                {% if duplicate_patient.phone %}<span>{{ duplicate_patient.phone }}</span>{% endif %}
+            </div>
+            <div class="duplicate-patient-actions">
+                <a class="btn" href="/patients/{{ duplicate_patient.id }}">Hasta Profiline Git</a>
+                <button class="btn duplicate-force-button" type="submit" form="newPatientForm" name="force_create" value="1">Yine de Yeni Kayıt Oluştur</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" class="card patient-form" id="newPatientForm">
 
         <div class="section-title">
             <span>👤</span>
@@ -29,6 +52,7 @@
                     type="text"
                     name="first_name"
                     placeholder="Hastanın adı"
+                    value="{{ form_data.get('first_name', '') if form_data else '' }}"
                     required
                 >
             </label>
@@ -39,6 +63,7 @@
                     type="text"
                     name="last_name"
                     placeholder="Hastanın soyadı"
+                    value="{{ form_data.get('last_name', '') if form_data else '' }}"
                     required
                 >
             </label>
@@ -48,6 +73,7 @@
                 <input
                     type="date"
                     name="birth_date"
+                    value="{{ form_data.get('birth_date', '') if form_data else '' }}"
                 >
             </label>
 
@@ -57,6 +83,7 @@
                     type="tel"
                     name="phone"
                     placeholder="05XXXXXXXXX"
+                    value="{{ form_data.get('phone', '') if form_data else '' }}"
                     maxlength="11"
                     minlength="11"
                     pattern="05[0-9]{9}"
@@ -72,6 +99,7 @@
                         type="text"
                         name="tc_kimlik_no"
                         placeholder="11 haneli TC Kimlik No"
+                        value="{{ form_data.get('tc_kimlik_no', '') if form_data else '' }}"
                         maxlength="11"
                         inputmode="numeric"
                         oninput="this.value=this.value.replace(/\D/g,'').slice(0,11)"
@@ -84,7 +112,7 @@
                         rows="3"
                         maxlength="500"
                         placeholder="Hastanın adresi (isteğe bağlı)"
-                    ></textarea>
+                    >{{ form_data.get('address', '') if form_data else '' }}</textarea>
                 </label>
 
         </div>
@@ -103,7 +131,7 @@
                 name="chief_complaint"
                 rows="6"
                 placeholder="Örn: Sağ alt bölgede yaklaşık 1 haftadır devam eden ağrı..."
-            ></textarea>
+            >{{ form_data.get('chief_complaint', '') if form_data else '' }}</textarea>
         </label>
 
         <div class="form-footer">

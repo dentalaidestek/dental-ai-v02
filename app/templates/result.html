@@ -128,19 +128,16 @@
 
 <div class="ai-wrap">
 
-    <div class="ai-card">
-        <h1>🦷 Dental AI</h1>
-
-        <p>
-            <b>Diş:</b>
-            {{ analysis.tooth_number or "-" }}
-        </p>
-
+    <div class="ai-card ai-summary-card">
+        <div class="ai-summary-title">
+            <span class="ai-summary-icon">🦷</span>
+            <span>
+                <strong>Dental AI Analizi</strong>
+                <small>Diş {{ analysis.tooth_number or "-" }}</small>
+            </span>
+        </div>
         {% if analysis.clinical_notes %}
-        <p>
-            <b>Klinik bilgi:</b>
-            {{ analysis.clinical_notes }}
-        </p>
+        <div class="ai-summary-note"><strong>Klinik bilgi:</strong> {{ analysis.clinical_notes }}</div>
         {% endif %}
     </div>
 

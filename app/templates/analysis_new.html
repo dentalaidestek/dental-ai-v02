@@ -1,83 +1,71 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="analysis-compose-page">
+    <div class="analysis-compose-heading">
+        <h1>🦷 Dental AI Analizi</h1>
+        <div class="analysis-context-strip analysis-context-patient">
+            <strong>{{ patient.anonymous_id }}{% if patient.age %} · {{ patient.age }} yaş{% endif %}</strong>
+            {% if patient.chief_complaint %}<span>Ana şikâyet: {{ patient.chief_complaint }}</span>{% else %}<span>Analiz bu hasta profiline kaydedilir.</span>{% endif %}
+        </div>
+    </div>
 
-<h1>🦷 Dental AI Analizi</h1>
+    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form">
+        {% if selected_media %}
+        <input type="hidden" name="existing_media_ids" value="{{ selected_media_ids }}">
+        <div class="analysis-selected-media analysis-selected-media-multi">
+            <div class="analysis-selected-media-thumbs">
+                {% for media in selected_media[:4] %}
+                <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="Seçilen klinik görüntü">
+                {% endfor %}
+                {% if selected_media|length > 4 %}<span class="analysis-selected-media-more">+{{ selected_media|length - 4 }}</span>{% endif %}
+            </div>
+            <div>
+                <strong>{{ selected_media|length }} kayıtlı görüntü analiz için seçildi</strong>
+                <span>Bu görüntüler analize dahil edilecek. İsterseniz aşağıdan diş numarası ve kısa klinik not ekleyin.</span>
+            </div>
+        </div>
+        {% endif %}
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>1</span><h2>Diş</h2></div>
+            <label>
+                Diş numarası
+                <input name="tooth_number" placeholder="Örn: 36" maxlength="10">
+            </label>
+        </div>
 
-<div class="card">
-    <h2>Hasta</h2>
-    <p>
-        <b>{{ patient.anonymous_id }}</b>
-        {% if patient.age %} · {{ patient.age }} yaş{% endif %}
-    </p>
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>2</span><h2>Kısa klinik bilgi</h2></div>
+            <label>
+                Hekim notu
+                <textarea name="clinical_notes" rows="3" placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
+            </label>
+            <p class="muted analysis-field-help">Sadece önemli gördüğünüz bilgileri yazın; gereksiz klinik veri girmek zorunda değilsiniz.</p>
+        </div>
 
-    {% if patient.chief_complaint %}
-    <p>
-        <b>Ana şikâyet:</b> {{ patient.chief_complaint }}
-    </p>
-    {% endif %}
+        <div class="analysis-field-block">
+            <div class="analysis-step-title"><span>3</span><h2>{% if selected_media %}Ek görüntü{% else %}Fotoğraf / Röntgen{% endif %}</h2></div>
+            {% if selected_media %}
+            <details class="analysis-extra-upload">
+                <summary>Telefondan ek görüntü ekle <span>İsteğe bağlı</span></summary>
+                <label>
+                    Görüntü yükle
+                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
+                </label>
+                <p class="muted analysis-field-help">Seçtiğiniz kayıtlı görüntülere ek olarak yeni fotoğraf veya röntgen de ekleyebilirsiniz.</p>
+            </details>
+            {% else %}
+            <label>
+                Görüntü yükle
+                <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
+            </label>
+            <p class="muted analysis-field-help">Fotoğraf veya röntgen yükleyebilirsiniz; türü ayrıca seçmeniz gerekmez.</p>
+            {% endif %}
+        </div>
+
+        <button type="submit" class="analysis-submit-button">🔬 Analizi Başlat</button>
+    </form>
+
+    <div class="analysis-safety-note">🤖 AI mevcut klinik bilgi ve görüntüyü birlikte değerlendirir; kritik bilgi eksikse yalnızca gerekli soruları gösterir.</div>
 </div>
-
-<form method="post"
-      enctype="multipart/form-data"
-      class="card form">
-
-    <h2>1. Diş</h2>
-
-    <label>
-        Diş numarası
-        <input
-            name="tooth_number"
-            placeholder="Örn: 36"
-            maxlength="10">
-    </label>
-
-    <h2>2. Kısa klinik bilgi</h2>
-
-    <label>
-        Hekim notu
-        <textarea
-            name="clinical_notes"
-            rows="5"
-            placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea>
-    </label>
-
-    <p class="muted">
-        Sadece önemli gördüğünüz bilgileri yazın.
-        Gereksiz klinik veri girmek zorunda değilsiniz.
-    </p>
-
-    <h2>3. Fotoğraf / Röntgen</h2>
-
-    <label>
-        Görüntü yükle
-        <input
-            type="file"
-            name="images"
-            accept="image/jpeg,image/png,image/webp"
-            multiple>
-    </label>
-
-    <p class="muted">
-        Fotoğraf veya röntgen yükleyebilirsiniz.
-        Görüntü türünü ayrıca seçmenize gerek yoktur.
-    </p>
-
-    <button type="submit">
-        🔬 Analiz Et
-    </button>
-
-</form>
-
-<div class="notice">
-    🤖 AI önce mevcut klinik bilgi ve görüntüyü değerlendirecek.
-    Tanıyı veya tedaviyi değiştirebilecek kritik bir bilgi eksikse
-    yalnızca gerekli soruları size gösterecektir.
-</div>
-
-<div class="notice">
-    ⚠️ Bu sistem araştırma/prototip aşamasındadır.
-    Klinik tanı veya tedavi kararının yerine geçmez.
-</div>
-
 {% endblock %}

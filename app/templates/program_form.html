@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="program-form-page">
+    <div class="program-form-header">
+        <a class="workspace-back-link" href="/program">← Programım</a>
+        <h1>{% if mode == 'edit' %}Program Kaydını Düzenle{% else %}Programa Ekle{% endif %}</h1>
+        <p>Kaydı daha sonra istediğiniz zaman düzenleyebilirsiniz.</p>
+    </div>
+
+    {% if error %}<div class="workspace-flash error">{{ error }}</div>{% endif %}
+
+    <form class="program-form-card" method="post" action="{% if mode == 'edit' %}/program/{{ event.id }}/edit{% else %}/program/new{% endif %}">
+        <div class="program-form-grid">
+            <label class="program-field">
+                <span>Tür</span>
+                <select name="event_type" required>
+                    {% for value, label in event_types.items() %}
+                    <option value="{{ value }}" {% if initial_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="program-field program-field-wide">
+                <span>Başlık</span>
+                <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required placeholder="Örn. Endodonti dersi veya Mehmet Yılmaz kontrol">
+            </label>
+
+            <label class="program-field">
+                <span>Başlangıç</span>
+                <input type="datetime-local" name="start_at" value="{{ initial_start or '' }}" required>
+            </label>
+
+            <label class="program-field">
+                <span>Bitiş</span>
+                <input type="datetime-local" name="end_at" value="{{ initial_end or '' }}">
+            </label>
+
+            <label class="program-field program-field-wide">
+                <span>Hasta bağlantısı <small>(isteğe bağlı)</small></span>
+                <select name="patient_id">
+                    <option value="">Hasta bağlama</option>
+                    {% for patient in patients %}
+                    <option value="{{ patient.id }}" {% if initial_patient_id|string == patient.id|string %}selected{% endif %}>{{ patient.first_name or '' }} {{ patient.last_name or '' }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="program-field">
+                <span>Konum / Klinik / Derslik</span>
+                <input type="text" name="location" value="{{ initial_location or '' }}" maxlength="160" placeholder="Örn. Klinik 3">
+            </label>
+
+            <label class="program-field">
+                <span>Hatırlatma</span>
+                <select name="reminder_minutes">
+                    <option value="0" {% if initial_reminder == '0' %}selected{% endif %}>Saatinde</option>
+                    <option value="15" {% if initial_reminder == '15' %}selected{% endif %}>15 dk önce</option>
+                    <option value="30" {% if initial_reminder == '30' or not initial_reminder %}selected{% endif %}>30 dk önce</option>
+                    <option value="60" {% if initial_reminder == '60' %}selected{% endif %}>1 saat önce</option>
+                    <option value="120" {% if initial_reminder == '120' %}selected{% endif %}>2 saat önce</option>
+                    <option value="1440" {% if initial_reminder == '1440' %}selected{% endif %}>1 gün önce</option>
+                </select>
+            </label>
+
+            <label class="program-switch-row program-field-wide">
+                <input type="checkbox" name="notification_enabled" value="1" {% if initial_notification is not defined or initial_notification %}checked{% endif %}>
+                <span>
+                    <strong>Bildirim açık</strong>
+                    <small>Android/iPhone uygulamasında bu kayıt için telefon bildirimi kullanılabilecek.</small>
+                </span>
+            </label>
+
+            <label class="program-field">
+                <span>Tekrar</span>
+                <select name="recurrence_rule" id="recurrenceRule" onchange="toggleRecurrenceEnd()">
+                    <option value="NONE" {% if initial_recurrence != 'WEEKLY' %}selected{% endif %}>Tekrarlama</option>
+                    <option value="WEEKLY" {% if initial_recurrence == 'WEEKLY' %}selected{% endif %}>Her hafta</option>
+                </select>
+            </label>
+
+            <label class="program-field" id="recurrenceUntilField">
+                <span>Tekrar bitiş tarihi <small>(isteğe bağlı)</small></span>
+                <input type="date" name="recurrence_until" value="{{ initial_recurrence_until or '' }}">
+            </label>
+
+            <label class="program-field program-field-wide">
+                <span>Not</span>
+                <textarea name="notes" rows="4" maxlength="2000" placeholder="Kısa not veya yapılacaklar...">{{ initial_notes or '' }}</textarea>
+            </label>
+        </div>
+
+        <div class="program-form-actions">
+            <a class="btn workspace-btn-secondary" href="/program">Vazgeç</a>
+            <button class="btn" type="submit">{% if mode == 'edit' %}Değişiklikleri Kaydet{% else %}Programa Kaydet{% endif %}</button>
+        </div>
+    </form>
+</div>
+<script>
+function toggleRecurrenceEnd() {
+    const value = document.getElementById('recurrenceRule').value;
+    const field = document.getElementById('recurrenceUntilField');
+    field.style.display = value === 'WEEKLY' ? '' : 'none';
+}
+toggleRecurrenceEnd();
+</script>
+{% endblock %}

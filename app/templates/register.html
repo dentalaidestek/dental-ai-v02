@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>DENTAL-AI - Üye Ol</title>
     <style>
         body {
@@ -118,12 +118,28 @@
             line-height: 1.5;
         }
 
+        .professional-note {
+            margin: 10px 0 2px;
+            padding: 11px 12px;
+            border: 1px solid rgba(37,99,235,.18);
+            border-radius: 11px;
+            background: #f8fbff;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .professional-note strong {
+            color: #1e3a8a;
+        }
+
         a {
             color: #2563eb;
         }
     </style>
+    <link rel="stylesheet" href="/static/design-system.css">
 </head>
-<body>
+<body class="dai-standalone">
     <div class="box">
         <h1>🦷 DENTAL-AI</h1>
         <h2>Üye Ol</h2>
@@ -178,24 +194,24 @@
             >
 
             <label>Mesleki Durum / Unvan</label>
+            <div class="professional-note">
+                <strong>Dental AI deneyiminizi bu bilgiye göre düzenler.</strong><br>
+                Ana ekran ve öncelikli araçlar mesleki durumunuza uyarlanır. Lütfen güncel ve doğru bilgi girin. Bu bilgi daha sonra değiştirilebilir; mevcut kayıtlarınız silinmez.
+            </div>
             <select name="professional_title" id="professional_title" required onchange="toggleProfessionalFields()">
                 <option value="">Seçiniz</option>
                 <option value="Öğrenci">Öğrenci</option>
                 <option value="Diş Hekimi">Diş Hekimi</option>
                 <option value="Uzman Diş Hekimi">Uzman Diş Hekimi</option>
+                <option value="Asistan / Araştırma Görevlisi">Asistan / Araştırma Görevlisi</option>
                 <option value="Dr. Öğr. Üyesi">Dr. Öğr. Üyesi</option>
                 <option value="Doç. Dr.">Doç. Dr.</option>
                 <option value="Prof. Dr.">Prof. Dr.</option>
             </select>
 
-            <div id="graduateFields" style="display:none;">
-                <label>Mezuniyet Yılı</label>
-                <input type="number" name="graduation_year" id="graduation_year" min="1950" max="2100" placeholder="Örn. 2026">
-
-                <div id="specialtyBox" style="display:none;">
-                    <label>Uzmanlık Alanı</label>
-                    <input type="text" name="specialty" id="specialty" maxlength="200" placeholder="Örn. Endodonti">
-                </div>
+            <div id="specialtyBox" style="display:none;">
+                <label>Uzmanlık Alanı</label>
+                <input type="text" name="specialty" id="specialty" maxlength="200" placeholder="Örn. Endodonti">
             </div>
 
 
@@ -262,25 +278,11 @@
 <script>
 function toggleProfessionalFields() {
     const title = document.getElementById("professional_title").value;
-    const graduateFields = document.getElementById("graduateFields");
-    const year = document.getElementById("graduation_year");
     const specialtyBox = document.getElementById("specialtyBox");
     const specialty = document.getElementById("specialty");
     const specialistTitles = ["Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."];
-
-    if (!title || title === "Öğrenci") {
-        graduateFields.style.display = "none";
-        year.required = false;
-        year.value = "";
-        specialtyBox.style.display = "none";
-        specialty.required = false;
-        specialty.value = "";
-        return;
-    }
-
-    graduateFields.style.display = "block";
-    year.required = true;
     const needsSpecialty = specialistTitles.includes(title);
+
     specialtyBox.style.display = needsSpecialty ? "block" : "none";
     specialty.required = needsSpecialty;
     if (!needsSpecialty) specialty.value = "";

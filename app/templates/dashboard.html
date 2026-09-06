@@ -1,513 +1,139 @@
 {% extends "base.html" %}
 
+{% macro icon(name) -%}
+{% if name == "new_patient" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+{% elif name == "ai" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/></svg>
+{% elif name == "tooth" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg>
+{% elif name == "program" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
+{% elif name == "notes" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>
+{% elif name == "appointment" %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5"/></svg>
+{% else %}
+<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+{% endif %}
+{%- endmacro %}
+
 {% block content %}
+<div class="workspace-dashboard">
+    <section class="workspace-hero workspace-hero-compact" aria-label="Karşılama">
+        <h1>{{ dashboard_greeting }}</h1>
+    </section>
 
-<style>
-.dashboard {
-    max-width: 1100px;
-    margin: 0 auto;
-}
+    <form action="/patients/search" method="get" class="workspace-search" aria-label="Hasta ara">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+        <input type="text" name="q" placeholder="Hasta adı, soyadı veya hasta no ara..." autocomplete="off">
+        <button type="submit" class="workspace-search-button">Ara</button>
+    </form>
 
-.hero {
-    display: grid;
-    grid-template-columns: 1.4fr .8fr;
-    gap: 20px;
-    align-items: stretch;
-    margin-bottom: 24px;
-}
-
-.hero-main {
-    background: linear-gradient(135deg, #0f172a, #1e3a5f);
-    color: white;
-    border-radius: 22px;
-    padding: 30px;
-    min-height: 210px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    box-shadow: 0 12px 30px rgba(15,23,42,.16);
-}
-
-.brand {
-    font-size: 15px;
-    letter-spacing: 2px;
-    opacity: .8;
-    margin-bottom: 8px;
-}
-
-.hero-main h1 {
-    font-size: 38px;
-    margin: 0 0 10px;
-}
-
-.hero-main p {
-    margin: 0;
-    font-size: 16px;
-    opacity: .9;
-    line-height: 1.6;
-}
-
-.doctor-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 22px;
-    min-height: 210px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    position: relative;
-}
-
-.doctor-illustration {
-    text-align: center;
-    font-size: 92px;
-    line-height: 1;
-}
-
-.doctor-illustration .label {
-    display: block;
-    margin-top: 12px;
-    font-size: 15px;
-    font-weight: 700;
-    color: #334155;
-}
-
-.welcome {
-    margin-bottom: 20px;
-}
-
-.welcome h2 {
-    margin-bottom: 5px;
-}
-
-.welcome p {
-    color: #64748b;
-    margin-top: 0;
-}
-
-.action-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 18px;
-    margin-bottom: 24px;
-}
-
-.action-card {
-    border-radius: 18px;
-    padding: 24px;
-    background: white;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 5px 18px rgba(15,23,42,.06);
-}
-
-.action-icon {
-    font-size: 34px;
-    margin-bottom: 10px;
-}
-
-.action-card h2 {
-    margin: 0 0 8px;
-}
-
-.action-card p {
-    color: #64748b;
-    min-height: 42px;
-}
-
-.action-card .btn {
-    display: inline-block;
-    margin-top: 8px;
-    text-decoration: none;
-}
-
-.patient-card {
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 18px;
-    padding: 24px;
-    box-shadow: 0 5px 18px rgba(15,23,42,.06);
-}
-
-.patient-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-
-.patient-header h2 {
-    margin: 0;
-}
-
-.patient-count {
-    background: #eff6ff;
-    color: #1d4ed8;
-    padding: 7px 12px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 700;
-}
-
-.search-box {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-}
-
-.search-box input {
-    flex: 1;
-    min-width: 0;
-}
-
-.search-box button {
-    white-space: nowrap;
-}
-
-.patient-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.patient-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 15px;
-    padding: 14px;
-    border-radius: 12px;
-    background: #f8fafc;
-}
-
-.patient-name {
-    font-weight: 700;
-}
-
-.patient-age {
-    color: #64748b;
-    font-size: 14px;
-}
-
-.patient-link {
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.notice {
-    margin-top: 22px;
-}
-
-@media (max-width: 700px) {
-    .hero {
-        grid-template-columns: 1fr;
-    }
-
-    .hero-main {
-        min-height: 180px;
-        padding: 24px;
-    }
-
-    .hero-main h1 {
-        font-size: 30px;
-    }
-
-    .doctor-card {
-        min-height: 150px;
-    }
-
-    .doctor-illustration {
-        font-size: 70px;
-    }
-
-    .action-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .search-box {
-        flex-direction: column;
-    }
-
-    .patient-row {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .patient-link {
-        width: 100%;
-    }
-}
-
-<style>
-.hero-compact {
-    margin-bottom: 18px;
-}
-
-.hero-compact .hero-main {
-    min-height: 145px;
-    padding: 25px 30px;
-}
-
-.hero-compact .hero-main h1 {
-    font-size: 32px;
-    margin-bottom: 7px;
-}
-
-.quick-actions {
-    display: grid;
-    grid-template-columns: .7fr 1.3fr;
-    gap: 14px;
-    margin-bottom: 20px;
-}
-
-.quick-action,
-.ai-ask {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
-    box-shadow: 0 4px 14px rgba(15,23,42,.05);
-}
-
-.quick-action {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 18px;
-    text-decoration: none;
-    color: #1e293b;
-}
-
-.quick-action span {
-    font-size: 27px;
-}
-
-.quick-action-wide {
-    grid-column: 1 / -1;
-}
-
-.ai-ask {
-    padding: 14px 18px;
-}
-
-.ai-ask-title {
-    font-weight: 700;
-    color: #1e293b;
-    margin-bottom: 8px;
-}
-
-.ai-ask form {
-    display: flex;
-    gap: 8px;
-}
-
-.ai-ask input {
-    flex: 1;
-    min-width: 0;
-}
-
-.ai-ask .btn {
-    margin: 0;
-    white-space: nowrap;
-}
-
-@media (max-width: 700px) {
-    .quick-actions {
-        grid-template-columns: 1fr;
-    }
-}
-</style>
-
-</style>
-
-<div class="dashboard">
-
-    <div class="hero hero-compact">
-        <div class="hero-main">
-            <div class="brand">DENTAL AI</div>
-            <h1>Hekim Paneli</h1>
-            <p>Hastalarınızı yönetin ve klinik işlemlerinize hızlıca başlayın.</p>
-        </div>
-    </div>
-
-    <div class="quick-actions">
-    <a class="quick-action" href="/patients/new">
-        <span class="quick-action-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
-        <strong>Yeni Hasta Oluştur</strong>
+    <a class="workspace-ai-cta" href="/analysis/new" aria-label="Dental AI ile analiz yap">
+        <span class="workspace-ai-cta-icon">{{ icon("ai") }}</span>
+        <span class="workspace-ai-cta-copy">
+            <strong>Dental AI ile Analiz Yap</strong>
+            <small>Röntgen, fotoğraf veya klinik bilgiyle yeni analiz başlat</small>
+        </span>
+        <span class="workspace-ai-cta-arrow">›</span>
     </a>
 
-    <a class="quick-action" href="/analysis/new">
-        <span class="quick-action-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/><path d="M8 10h2"/><path d="M14 13h2"/></svg></span>
-        <strong>Dental AI ile Analiz Et</strong>
-    </a>
-
-    <a class="quick-action quick-action-wide" href="/tooth-charts">
-        <span class="quick-action-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg></span>
-        <strong>Diş Şemalarına Göz At</strong>
-    </a>
-</div>
-
-    <section class="patient-card">
-
-        <div class="patient-header">
-            <h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Hastalarım</h2>
-            <span class="patient-count">{{ patients|length }} kayıt</span>
-        </div>
-
-        <form action="/patients/search" method="get" class="search-box">
-            <input
-                type="text"
-                name="q"
-                placeholder="İsim, soyisim veya hasta no ara..."
-                autocomplete="off"
-            >
-            <button type="submit" class="btn">🔎 Hasta Ara</button>
-        </form>
-
-        <h3>Son 5 Hasta</h3>
-
-        <div class="patient-list">
-            {% for p in patients[:5] %}
-            <div class="patient-row">
-                <div>
-                    <div class="patient-name">
-                        {{ p.first_name or "" }} {{ p.last_name or "" }}
-                    </div>
-
-                    {% if p.age %}
-                    <div class="patient-age">{{ p.age }} yaş</div>
-                    {% endif %}
-                </div>
-
-                <a class="patient-link" href="/patients/{{ p.id }}">
-                    Hasta Profili →
-                </a>
+    <section class="workspace-program-today workspace-section workspace-program-compact">
+        <div class="workspace-card-heading workspace-program-heading">
+            <div>
+                <h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program <span class="workspace-date-inline">{{ local_now.strftime('%d.%m.%Y') }}</span>{% else %}Yaklaşan Program{% endif %}</h2>
             </div>
+            <a href="/program">Tüm Program</a>
+        </div>
+
+        {% if dashboard_event %}
+        <div class="workspace-today-list">
+            <a class="workspace-today-row" href="/program/{{ dashboard_event.id }}/edit">
+                <span class="workspace-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span>
+                <span class="workspace-today-text">
+                    <strong>{{ dashboard_event.title }}</strong>
+                    <small>{% if dashboard_event_label == 'Yaklaşan' %}{{ dashboard_event.start_local.strftime('%d.%m.%Y') }} · {% endif %}{{ dashboard_event.type_label }}{% if dashboard_event.patient %} · {{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }}{% endif %}{% if dashboard_event.location %} · {{ dashboard_event.location }}{% endif %}</small>
+                </span>
+                <span class="workspace-row-arrow">›</span>
+            </a>
+        </div>
+        {% else %}
+        <div class="workspace-empty-compact workspace-program-empty">Yaklaşan program kaydı yok. <a href="/program/new">Programa ekle</a></div>
+        {% endif %}
+    </section>
+
+    <section class="workspace-section">
+        <div class="workspace-card-heading">
+            <div>
+                <h2>Kısayollar</h2>
+            </div>
+            <a href="/features">Tüm Özellikler</a>
+        </div>
+        <div class="workspace-action-grid">
+            {% for action in quick_actions %}
+            <a class="workspace-action-card" href="{{ action.href }}">
+                <span class="workspace-action-icon">{{ icon(action.key) }}</span>
+                <span>
+                    <strong>{{ action.label }}</strong>
+                    <small>{{ action.hint }}</small>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="patient-card workspace-section">
+        <div class="patient-header">
+            <div>
+                <h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg> Hastalarım</h2>
+            </div>
+            <a class="workspace-text-link" href="/patients">Tüm Hastalar</a>
+        </div>
+
+        <div class="patient-list workspace-patient-list">
+            {% for p in patients[:5] %}
+            <a class="patient-row workspace-patient-row" href="/patients/{{ p.id }}">
+                <div>
+                    <div class="patient-name">{{ p.first_name or "" }} {{ p.last_name or "" }}</div>
+                    <div class="patient-age">{% if p.age %}{{ p.age }} yaş{% else %}Hasta kaydı{% endif %}</div>
+                </div>
+                <span class="workspace-row-arrow">›</span>
+            </a>
             {% endfor %}
         </div>
 
         {% if not patients %}
-        <p>Henüz hasta kaydı bulunmuyor.</p>
+        <div class="workspace-empty-compact">Henüz hasta kaydı yok. <a href="/patients/new">İlk hastayı oluştur</a></div>
         {% endif %}
-
     </section>
 
-    <section class="patient-card guest-analysis-card">
+    <section class="patient-card workspace-section">
         <div class="patient-header">
-            <h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"/></svg> Hasta Kaydı Olmadan Yapılan Analizler</h2>
-            <span class="patient-count">Son 5 işlem</span>
+            <div>
+                <div class="workspace-section-kicker">Dental AI</div>
+                <h2>Hasta Kaydı Olmadan Yapılan Analizler</h2>
+            </div>
+            <a class="workspace-text-link" href="/analyses">Tüm Analizler</a>
         </div>
 
         {% if guest_analyses %}
         <div class="patient-list">
             {% for a in guest_analyses %}
-            <div class="patient-row guest-analysis-row">
+            <a class="patient-row workspace-patient-row" href="/analysis/guest/{{ a.id }}">
                 <div class="guest-analysis-info">
-                    <div class="patient-name">
-                        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg> Diş: {{ a.tooth_number or "-" }}
-                    </div>
-
-                    <div class="guest-clinical-note">
-                        {{ a.clinical_notes or "Klinik bilgi girilmedi." }}
-                    </div>
-
-                    <div class="patient-age">
-                        {{ a.created_at.strftime("%d.%m.%Y %H:%M") if a.created_at else "" }}
-                    </div>
+                    <div class="patient-name">Diş {{ a.tooth_number or '-' }}</div>
+                    <div class="patient-age">{{ a.created_at.strftime('%d.%m.%Y %H:%M') if a.created_at else '' }}</div>
                 </div>
-
-                <a class="patient-link"
-                   href="/analysis/guest/{{ a.id }}">
-                    Sonuç →
-                </a>
-            </div>
+                <span class="workspace-row-arrow">›</span>
+            </a>
             {% endfor %}
         </div>
         {% else %}
-        <p>Henüz hasta kaydı olmadan yapılmış analiz bulunmuyor.</p>
+        <div class="workspace-empty-compact">Hasta kaydı olmadan yapılmış analiz bulunmuyor.</div>
         {% endif %}
     </section>
 
-    <style>
-        .guest-analysis-card {
-            margin-top: 20px;
-        }
-
-        .guest-analysis-info {
-            min-width: 0;
-            flex: 1;
-        }
-
-        .guest-clinical-note {
-            margin-top: 5px;
-            color: #475569;
-            font-size: 14px;
-            line-height: 1.45;
-            overflow-wrap: anywhere;
-        }
-
-        .guest-analysis-row {
-            gap: 14px;
-        }
-    </style>
-
-    <div class="notice">
-        ⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.
-    </div>
-
+    <div class="notice workspace-notice">⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
-
 {% endblock %}
-
-
-
-
-<style>
-.quick-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-    margin-bottom: 20px;
-}
-
-.future-card {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 18px 20px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
-    box-shadow: 0 5px 18px rgba(15,23,42,.06);
-}
-
-.future-card-icon {
-    width: 46px;
-    height: 46px;
-    flex: 0 0 46px;
-    display: grid;
-    place-items: center;
-    border-radius: 13px;
-    background: #eff6ff;
-    font-size: 22px;
-}
-
-.future-card strong {
-    display: block;
-    font-size: 16px;
-    color: #0f172a;
-}
-
-.future-card span {
-    display: block;
-    margin-top: 4px;
-    font-size: 13px;
-    color: #64748b;
-}
-
-@media (max-width: 650px) {
-    .quick-actions {
-        grid-template-columns: 1fr;
-    }
-}
-</style>

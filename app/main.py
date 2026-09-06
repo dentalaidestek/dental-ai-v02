@@ -1,16 +1,18 @@
 import os
 import json
+import re
 import uuid
 import secrets
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import shutil
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from dental_rag.rag import (
     get_relevant_context,
@@ -19,6 +21,7 @@ from dental_rag.rag import (
 from dental_rag.specialty_router import classify_specialties
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
+from app.study_ai import StudyAIError, ask as ask_study_ai, delete_file as delete_study_ai_file, upload_file as upload_study_ai_file
 from fastapi import (
     FastAPI,
     Form,
@@ -28,7 +31,7 @@ from fastapi import (
     BackgroundTasks,
     Cookie,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from starlette.templating import Jinja2Templates
@@ -179,6 +182,20 @@ class ImageAsset(SQLModel, table=True):
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class PatientMedia(SQLModel, table=True):
+    """Hastaya ait uzun süreli klinik fotoğraf/röntgen arşivi."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    patient_id: int = Field(index=True)
+    owner_user_id: int = Field(index=True)
+    original_filename: str
+    stored_filename: str = Field(index=True)
+    file_path: str
+    media_type: str = Field(default="PHOTO", index=True)
+    tooth_number: Optional[str] = None
+    note: Optional[str] = None
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class GuestAnalysis(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_user_id: int = Field(index=True)
@@ -208,6 +225,625 @@ class ClinicalRecord(SQLModel, table=True):
     consensus_status: str = "UNASSESSED"
     ai_use: str = "NOT_DEFINED"
     safety_notes: Optional[str] = None
+
+
+class StudyCourse(SQLModel, table=True):
+    """Kullanıcıya ait akademik ders klasörü."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    title: str = Field(index=True)
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class StudyMaterial(SQLModel, table=True):
+    """Bir ders altındaki özel PDF veya görsel not dosyası."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    course_id: int = Field(index=True)
+    owner_user_id: int = Field(index=True)
+    original_filename: str
+    display_name: str
+    stored_filename: str = Field(index=True)
+    file_path: str
+    material_type: str = Field(index=True)
+    mime_type: str
+    size_bytes: int
+    gemini_file_name: Optional[str] = None
+    gemini_file_uri: Optional[str] = None
+    gemini_file_expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class StudyChatMessage(SQLModel, table=True):
+    """Ders bazlı çok turlu Akademik AI sohbet geçmişi."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    course_id: int = Field(index=True)
+    owner_user_id: int = Field(index=True)
+    role: str = Field(index=True)
+    content: str
+    source_ids_json: Optional[str] = None
+    mode: str = "NOTES_PLUS"
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class ScheduleEvent(SQLModel, table=True):
+    """Kullanıcının ders, randevu, görev ve klinik program kayıtları.
+
+    Tarihler UTC olarak saklanır. timezone_name alanı, ileride Android/iOS
+    bildirimlerinin doğru yerel saate kurulabilmesi için kayıtla birlikte tutulur.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    event_type: str = Field(index=True)
+    title: str
+    start_at: datetime = Field(index=True)
+    end_at: Optional[datetime] = None
+    patient_id: Optional[int] = Field(default=None, index=True)
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    status: str = Field(default="ACTIVE", index=True)
+    reminder_minutes: Optional[int] = 30
+    notification_enabled: bool = True
+    recurrence_rule: str = "NONE"
+    recurrence_until: Optional[str] = None
+    timezone_name: str = "Europe/Istanbul"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+PROFESSIONAL_TITLES = {
+    "Öğrenci",
+    "Diş Hekimi",
+    "Uzman Diş Hekimi",
+    "Asistan / Araştırma Görevlisi",
+    "Dr. Öğr. Üyesi",
+    "Doç. Dr.",
+    "Prof. Dr.",
+}
+
+PROGRAM_EVENT_TYPES = {
+    "APPOINTMENT": "Hasta / Randevu",
+    "CLASS": "Ders",
+    "CLINIC": "Klinik / Pratik",
+    "EXAM": "Sınav",
+    "ASSIGNMENT": "Ödev",
+    "THESIS": "Tez",
+    "MEETING": "Toplantı",
+    "TASK": "Görev",
+    "PERSONAL": "Kişisel",
+}
+
+PROGRAM_TYPE_ICONS = {
+    "APPOINTMENT": "tooth",
+    "CLASS": "book",
+    "CLINIC": "clinic",
+    "EXAM": "exam",
+    "ASSIGNMENT": "assignment",
+    "THESIS": "thesis",
+    "MEETING": "meeting",
+    "TASK": "task",
+    "PERSONAL": "personal",
+}
+
+REMINDER_OPTIONS = {0, 15, 30, 60, 120, 1440}
+RECURRENCE_OPTIONS = {"NONE", "WEEKLY"}
+
+try:
+    APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
+except Exception:
+    APP_TIMEZONE = timezone(timedelta(hours=3))
+
+
+def _local_to_utc(value: str) -> datetime:
+    local_dt = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+    aware_local = local_dt.replace(tzinfo=APP_TIMEZONE)
+    return aware_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _utc_to_local(value: Optional[datetime]) -> Optional[datetime]:
+    if not value:
+        return None
+    aware_utc = value.replace(tzinfo=timezone.utc)
+    return aware_utc.astimezone(APP_TIMEZONE).replace(tzinfo=None)
+
+
+def _date_to_local_start(value: date) -> datetime:
+    return datetime.combine(value, time.min)
+
+
+def _date_to_local_end(value: date) -> datetime:
+    return datetime.combine(value, time.max)
+
+
+def _professional_group(title: Optional[str]) -> str:
+    if title == "Öğrenci":
+        return "STUDENT"
+    if title == "Asistan / Araştırma Görevlisi":
+        return "ASSISTANT"
+    if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}:
+        return "ACADEMIC"
+    return "DENTIST"
+
+
+def _dashboard_actions(title: Optional[str]):
+    group = _professional_group(title)
+    actions = {
+        "new_patient": {"key": "new_patient", "label": "Yeni Hasta", "href": "/patients/new", "hint": "Hasta kaydı oluştur"},
+        "ai": {"key": "ai", "label": "Dental AI", "href": "/analysis/new", "hint": "Yeni analiz başlat"},
+        "tooth": {"key": "tooth", "label": "Diş Şeması", "href": "/tooth-charts", "hint": "Kayıtlı şemalara ulaş"},
+        "program": {"key": "program", "label": "Programım", "href": "/program", "hint": "Ders ve randevular"},
+        "appointment": {"key": "appointment", "label": "Randevu Ekle", "href": "/program/new?type=APPOINTMENT", "hint": "Hasta randevusu oluştur"},
+        "patients": {"key": "patients", "label": "Hastalar", "href": "/patients", "hint": "Hasta listesini aç"},
+        "notes": {"key": "notes", "label": "Notlarım", "href": "/notes", "hint": "Ders notları ve Akademik AI"},
+    }
+    # Dental AI ana ekranda ayrı, belirgin bir analiz çağrısı olarak gösterilir.
+    # Hızlı Başlangıç alanı bu yüzden tamamlayıcı günlük araçlara ayrılır.
+    if group == "STUDENT":
+        order = ["new_patient", "notes", "patients", "tooth"]
+    elif group == "ASSISTANT":
+        order = ["program", "patients", "appointment", "tooth"]
+    elif group == "ACADEMIC":
+        order = ["program", "patients", "appointment", "tooth"]
+    else:
+        order = ["new_patient", "appointment", "patients", "tooth"]
+    return [actions[key] for key in order]
+
+
+def _dashboard_copy(title: Optional[str]):
+    group = _professional_group(title)
+    if group == "STUDENT":
+        return {"eyebrow": "Öğrenci çalışma alanı", "subtitle": "Derslerinizi, klinik pratiğinizi, hastalarınızı ve Dental AI araçlarını tek yerden takip edin."}
+    if group == "ASSISTANT":
+        return {"eyebrow": "Asistan çalışma alanı", "subtitle": "Klinik, ders, tez, görev ve hastalarınızı tek akışta yönetin."}
+    if group == "ACADEMIC":
+        return {"eyebrow": "Akademik çalışma alanı", "subtitle": "Ders, hasta, klinik ve akademik programınızı günlük akışta takip edin."}
+    return {"eyebrow": "Klinik çalışma alanı", "subtitle": "Randevularınızı, hastalarınızı ve Dental AI araçlarını hızlıca yönetin."}
+
+
+def _dashboard_greeting(local_now: datetime) -> str:
+    """Ana ekranda kısa, mesleki unvandan bağımsız selamlama üretir."""
+    hour = local_now.hour
+    if 5 <= hour < 12:
+        return "Günaydın"
+    if 18 <= hour or hour < 5:
+        return "İyi akşamlar"
+    return "Merhaba"
+
+
+def _normalize_patient_name(value: Optional[str]) -> str:
+    return " ".join((value or "").strip().casefold().split())
+
+
+def _normalize_patient_phone(value: Optional[str]) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 12 and digits.startswith("90"):
+        digits = "0" + digits[2:]
+    elif len(digits) == 10 and digits.startswith("5"):
+        digits = "0" + digits
+    return digits
+
+
+def _find_duplicate_patient(
+    session: Session,
+    owner_user_id: int,
+    first_name: str,
+    last_name: str,
+    birth_date: Optional[str],
+    age: Optional[int],
+    phone: Optional[str],
+):
+    """Yalnızca aynı hekimin kendi hastaları içinde olası mükerrer kaydı bulur.
+
+    Otomatik birleştirme veya engelleme yapmaz. En güçlü eşleşme kullanıcıya
+    gösterilir ve hekim isterse yine de yeni kayıt oluşturabilir.
+    """
+    candidates = session.exec(
+        select(Patient)
+        .where(Patient.owner_user_id == owner_user_id)
+        .order_by(Patient.id.desc())
+    ).all()
+
+    wanted_first = _normalize_patient_name(first_name)
+    wanted_last = _normalize_patient_name(last_name)
+    wanted_phone = _normalize_patient_phone(phone)
+    matches = []
+
+    for patient in candidates:
+        score = 0
+        reason = None
+        existing_phone = _normalize_patient_phone(patient.phone)
+        same_name = (
+            _normalize_patient_name(patient.first_name) == wanted_first
+            and _normalize_patient_name(patient.last_name) == wanted_last
+        )
+
+        if wanted_phone and existing_phone and wanted_phone == existing_phone:
+            score = 100
+            reason = "Telefon numarası eşleşiyor."
+
+        if same_name and birth_date and patient.birth_date == birth_date and score < 98:
+            score = 98
+            reason = "Ad, soyad ve doğum tarihi eşleşiyor."
+        elif same_name and age is not None and patient.age is not None and patient.age == age and score < 85:
+            score = 85
+            reason = "Ad, soyad ve yaş eşleşiyor."
+
+        if score:
+            matches.append((score, patient.id or 0, patient, reason))
+
+    if not matches:
+        return None, None
+
+    matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    _, _, patient, reason = matches[0]
+    return patient, reason
+
+
+def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: datetime):
+    """Bir program kaydının belirtilen yerel tarih aralığındaki görünümlerini üretir."""
+    anchor_start = _utc_to_local(event.start_at)
+    anchor_end = _utc_to_local(event.end_at) if event.end_at else None
+    if not anchor_start:
+        return []
+
+    duration = (anchor_end - anchor_start) if anchor_end else None
+    until_date = None
+    if event.recurrence_until:
+        try:
+            until_date = datetime.strptime(event.recurrence_until, "%Y-%m-%d").date()
+        except ValueError:
+            until_date = None
+
+    starts = []
+    if event.recurrence_rule == "WEEKLY":
+        current = anchor_start
+        if current < range_start:
+            delta_days = (range_start.date() - current.date()).days
+            weeks = max(0, delta_days // 7)
+            current = current + timedelta(weeks=weeks)
+            while current < range_start:
+                current += timedelta(weeks=1)
+        safety = 0
+        while current <= range_end and safety < 60:
+            if not until_date or current.date() <= until_date:
+                starts.append(current)
+            current += timedelta(weeks=1)
+            safety += 1
+    else:
+        if anchor_start <= range_end and (anchor_end or anchor_start) >= range_start:
+            starts.append(anchor_start)
+
+    result = []
+    for local_start in starts:
+        local_end = local_start + duration if duration else None
+        result.append({
+            "id": event.id,
+            "event_type": event.event_type,
+            "type_label": PROGRAM_EVENT_TYPES.get(event.event_type, "Program"),
+            "icon_key": PROGRAM_TYPE_ICONS.get(event.event_type, "task"),
+            "title": event.title,
+            "start_local": local_start,
+            "end_local": local_end,
+            "patient_id": event.patient_id,
+            "location": event.location,
+            "notes": event.notes,
+            "status": event.status,
+            "notification_enabled": event.notification_enabled,
+            "reminder_minutes": event.reminder_minutes,
+            "recurrence_rule": event.recurrence_rule,
+            "is_recurring": event.recurrence_rule != "NONE",
+        })
+    return result
+
+
+def _user_schedule_occurrences(session: Session, user_id: int, range_start: datetime, range_end: datetime):
+    events = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.owner_user_id == user_id)
+        .where(ScheduleEvent.status != "DELETED")
+        .order_by(ScheduleEvent.start_at)
+    ).all()
+
+    occurrences = []
+    for event in events:
+        occurrences.extend(_event_occurrences(event, range_start, range_end))
+
+    patient_ids = {item["patient_id"] for item in occurrences if item.get("patient_id")}
+    patient_map = {}
+    if patient_ids:
+        patients = session.exec(
+            select(Patient)
+            .where(Patient.id.in_(patient_ids))
+            .where(Patient.owner_user_id == user_id)
+        ).all()
+        patient_map = {patient.id: patient for patient in patients}
+
+    for item in occurrences:
+        patient = patient_map.get(item.get("patient_id"))
+        item["patient"] = patient
+    return sorted(occurrences, key=lambda item: item["start_local"])
+
+
+def _program_range(view: str, focus_date: date):
+    view = view if view in {"today", "week", "month"} else "week"
+    if view == "today":
+        start_date = focus_date
+        end_date = focus_date
+        previous = focus_date - timedelta(days=1)
+        following = focus_date + timedelta(days=1)
+    elif view == "month":
+        start_date = focus_date.replace(day=1)
+        if start_date.month == 12:
+            next_month = start_date.replace(year=start_date.year + 1, month=1)
+        else:
+            next_month = start_date.replace(month=start_date.month + 1)
+        end_date = next_month - timedelta(days=1)
+        previous = (start_date - timedelta(days=1)).replace(day=1)
+        following = next_month
+    else:
+        start_date = focus_date - timedelta(days=focus_date.weekday())
+        end_date = start_date + timedelta(days=6)
+        previous = focus_date - timedelta(days=7)
+        following = focus_date + timedelta(days=7)
+    return (
+        view,
+        _date_to_local_start(start_date),
+        _date_to_local_end(end_date),
+        previous,
+        following,
+    )
+
+
+def _group_program_occurrences(occurrences):
+    groups = []
+    current = None
+    for item in occurrences:
+        item_date = item["start_local"].date()
+        if current is None or current["date"] != item_date:
+            current = {
+                "date": item_date,
+                "label": item_date.strftime("%d.%m.%Y"),
+                "events": [],
+            }
+            groups.append(current)
+        current["events"].append(item)
+    return groups
+
+
+def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
+    if not patient_id:
+        return None
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        return None
+    if user.role != "ADMIN" and patient.owner_user_id != user.id:
+        return None
+    if user.role == "ADMIN" and patient.owner_user_id not in {None, user.id}:
+        return None
+    return patient
+
+
+def _validate_schedule_input(
+    session: Session,
+    user: User,
+    event_type: str,
+    title: str,
+    start_at: str,
+    end_at: str,
+    patient_id: str,
+    location: str,
+    notes: str,
+    reminder_minutes: str,
+    notification_enabled: Optional[str],
+    recurrence_rule: str,
+    recurrence_until: str,
+):
+    event_type = event_type.strip().upper()
+    title = title.strip()
+    location = location.strip()
+    notes = notes.strip()
+    recurrence_rule = recurrence_rule.strip().upper() or "NONE"
+    recurrence_until = recurrence_until.strip()
+
+    if event_type not in PROGRAM_EVENT_TYPES:
+        return None, "Geçerli bir program türü seçin."
+    if len(title) < 2 or len(title) > 160:
+        return None, "Başlık 2 ile 160 karakter arasında olmalıdır."
+
+    try:
+        start_utc = _local_to_utc(start_at)
+    except (TypeError, ValueError):
+        return None, "Başlangıç tarih ve saatini kontrol edin."
+
+    end_utc = None
+    if end_at.strip():
+        try:
+            end_utc = _local_to_utc(end_at)
+        except (TypeError, ValueError):
+            return None, "Bitiş tarih ve saatini kontrol edin."
+        if end_utc < start_utc:
+            return None, "Bitiş saati başlangıç saatinden önce olamaz."
+
+    parsed_patient_id = None
+    if patient_id.strip():
+        try:
+            parsed_patient_id = int(patient_id)
+        except ValueError:
+            return None, "Hasta seçimini kontrol edin."
+        patient = _owned_patient(session, user, parsed_patient_id)
+        if not patient:
+            return None, "Bu hastayı program kaydına bağlama yetkiniz yok."
+
+    try:
+        reminder_value = int(reminder_minutes)
+    except (TypeError, ValueError):
+        reminder_value = 30
+    if reminder_value not in REMINDER_OPTIONS:
+        return None, "Hatırlatma süresi geçersiz."
+
+    if recurrence_rule not in RECURRENCE_OPTIONS:
+        return None, "Tekrarlama seçeneği geçersiz."
+
+    if recurrence_until:
+        try:
+            until = datetime.strptime(recurrence_until, "%Y-%m-%d").date()
+        except ValueError:
+            return None, "Tekrar bitiş tarihini kontrol edin."
+        local_start = _utc_to_local(start_utc)
+        if local_start and until < local_start.date():
+            return None, "Tekrar bitiş tarihi başlangıç tarihinden önce olamaz."
+    elif recurrence_rule == "NONE":
+        recurrence_until = ""
+
+    return {
+        "event_type": event_type,
+        "title": title,
+        "start_at": start_utc,
+        "end_at": end_utc,
+        "patient_id": parsed_patient_id,
+        "location": location or None,
+        "notes": notes or None,
+        "reminder_minutes": reminder_value,
+        "notification_enabled": bool(notification_enabled),
+        "recurrence_rule": recurrence_rule,
+        "recurrence_until": recurrence_until or None,
+        "timezone_name": "Europe/Istanbul",
+    }, None
+
+
+STUDY_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+STUDY_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+STUDY_MAX_FILE_BYTES = 25 * 1024 * 1024
+STUDY_MAX_UPLOAD_COUNT = 12
+STUDY_AI_MAX_SOURCES = 20
+
+
+def _owned_study_course(session: Session, user: User, course_id: int) -> Optional[StudyCourse]:
+    course = session.get(StudyCourse, course_id)
+    if not course:
+        return None
+    if user.role != "ADMIN" and course.owner_user_id != user.id:
+        return None
+    if user.role == "ADMIN" and course.owner_user_id != user.id:
+        # Admin olmak kullanıcının özel akademik notlarına otomatik erişim vermez.
+        return None
+    return course
+
+
+def _owned_study_material(
+    session: Session,
+    user: User,
+    course_id: int,
+    material_id: int,
+) -> Optional[StudyMaterial]:
+    course = _owned_study_course(session, user, course_id)
+    if not course:
+        return None
+    material = session.get(StudyMaterial, material_id)
+    if not material or material.course_id != course_id or material.owner_user_id != user.id:
+        return None
+    return material
+
+
+def _study_file_has_valid_signature(path: Path, extension: str) -> bool:
+    try:
+        with path.open("rb") as source:
+            header = source.read(16)
+    except OSError:
+        return False
+    if extension == ".pdf":
+        return header.startswith(b"%PDF-")
+    if extension in {".jpg", ".jpeg"}:
+        return header.startswith(b"\xff\xd8\xff")
+    if extension == ".png":
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == ".webp":
+        return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
+    return False
+
+
+def _study_mime_type(extension: str) -> Optional[str]:
+    return {
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(extension)
+
+
+def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
+    result: list[int] = []
+    for raw in (raw_value or "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        if value > 0 and value not in result:
+            result.append(value)
+    return result
+
+
+def _prepare_study_ai_files(
+    session: Session,
+    user: User,
+    course: StudyCourse,
+    material_ids: list[int],
+) -> list[dict]:
+    """Private course materials -> robust Gemini-ready references.
+
+    V11 does not expose source selection to the user. The caller passes every
+    material that belongs to the course. Ownership is re-authorized for every
+    file. Small/medium files can be sent inline by study_ai.py; larger material
+    keeps a temporary Gemini Files API reference when available.
+    """
+    if len(material_ids) > STUDY_AI_MAX_SOURCES:
+        raise StudyAIError(
+            f"Bu derste çok fazla not dosyası var. Akademik AI aynı anda en fazla {STUDY_AI_MAX_SOURCES} dosyayla çalışabilir."
+        )
+
+    prepared = []
+    now = datetime.utcnow()
+    for material_id in material_ids:
+        material = _owned_study_material(session, user, course.id, material_id)
+        if not material:
+            raise StudyAIError("Ders notlarından birine erişim yetkiniz yok.")
+        path = Path(material.file_path)
+        if not path.is_file():
+            raise StudyAIError(f"Not dosyası bulunamadı: {material.display_name}")
+
+        # For smaller course sets study_ai.py can use the local file inline, so a
+        # temporary remote upload is not mandatory. We still reuse a valid cached
+        # URI when present and lazily upload large files here.
+        valid_cache = (
+            material.gemini_file_uri
+            and material.gemini_file_name
+            and material.gemini_file_expires_at
+            and material.gemini_file_expires_at > now + timedelta(minutes=5)
+        )
+        should_upload = path.stat().st_size > 8 * 1024 * 1024 and not valid_cache
+        if should_upload:
+            uploaded = upload_study_ai_file(str(path), material.mime_type, material.display_name)
+            material.gemini_file_name = uploaded["name"]
+            material.gemini_file_uri = uploaded["uri"]
+            material.gemini_file_expires_at = now + timedelta(hours=47)
+            session.add(material)
+
+        prepared.append({
+            "id": material.id,
+            "name": material.original_filename,
+            "display_name": material.display_name,
+            "mime_type": material.mime_type,
+            "uri": material.gemini_file_uri if valid_cache or should_upload else None,
+            "local_path": str(path),
+        })
+    session.commit()
+    return prepared
+
 
 def init_db():
     SQLModel.metadata.create_all(engine)
@@ -465,7 +1101,6 @@ def register_user(
     password: str = Form(...),
     university: str = Form(...),
     professional_title: str = Form(...),
-    graduation_year: str = Form(""),
     specialty: str = Form(""),
     accept_terms: Optional[str] = Form(None),
     kvkk_informed: Optional[str] = Form(None),
@@ -476,18 +1111,9 @@ def register_user(
     username = username.strip().lower()
     university = university.strip()
     professional_title = professional_title.strip()
-    graduation_year = graduation_year.strip()
     specialty = specialty.strip()
 
-    allowed_titles = {
-        "Öğrenci",
-        "Diş Hekimi",
-        "Uzman Diş Hekimi",
-        "Dr. Öğr. Üyesi",
-        "Doç. Dr.",
-        "Prof. Dr.",
-    }
-    if professional_title not in allowed_titles:
+    if professional_title not in PROFESSIONAL_TITLES:
         return templates.TemplateResponse(
             request=request, name="register.html",
             context={"error": "Geçerli bir mesleki unvan seçin."},
@@ -501,7 +1127,6 @@ def register_user(
     graduation_status = "Öğrenci" if is_student else "Mezun"
 
     if is_student:
-        graduation_year = ""
         specialty = ""
 
     if not accept_terms or not kvkk_informed or not accept_clinical:
@@ -543,27 +1168,6 @@ def register_user(
             },
             status_code=400,
         )
-
-    if not is_student and not graduation_year:
-        return templates.TemplateResponse(
-            request=request, name="register.html",
-            context={"error": "Mezuniyet yılını yazmalısınız."},
-            status_code=400,
-        )
-
-    graduation_year_value = None
-    if graduation_year:
-        try:
-            graduation_year_value = int(graduation_year)
-        except ValueError:
-            return templates.TemplateResponse(
-                "register.html",
-                {
-                    "request": request,
-                    "error": "Mezuniyet yılı geçerli bir sayı olmalıdır.",
-                },
-                status_code=400,
-            )
 
     if is_specialist_bool and not specialty:
         return templates.TemplateResponse(
@@ -617,7 +1221,7 @@ def register_user(
             user_id=user.id,
             university=university,
             graduation_status=graduation_status,
-            graduation_year=graduation_year_value,
+            graduation_year=None,
             is_specialist=is_specialist_bool,
             specialty=specialty if is_specialist_bool else None,
         )
@@ -688,9 +1292,61 @@ def account_page(request: Request):
             "account_meta": account_meta,
             "next_username_change_at": next_username_change_at,
             "error": None,
-            "success": None,
+            "success": (
+                "Mesleki durumunuz güncellendi. Ana ekran öncelikleriniz yeni durumunuza göre düzenlendi; mevcut kayıtlarınız silinmedi."
+                if request.query_params.get("profile_updated") == "1"
+                else None
+            ),
         },
     )
+
+
+@app.post("/account/professional-title")
+def change_professional_title(
+    request: Request,
+    professional_title: str = Form(...),
+    confirm_change: str = Form(""),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    professional_title = professional_title.strip()
+    if professional_title not in PROFESSIONAL_TITLES:
+        return HTMLResponse("Geçerli bir mesleki durum seçin.", status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        account_meta = s.exec(
+            select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
+        ).first()
+        current_title = account_meta.professional_title if account_meta and account_meta.professional_title else None
+
+        # Mesleki durum değişikliği yalnız arayüz önceliklerini değiştirir.
+        # Hasta, Notlarım, Akademik AI, Programım veya diğer kullanıcı verileri burada silinmez.
+        if current_title and current_title != professional_title and confirm_change != "yes":
+            return HTMLResponse("Mesleki durum değişikliği için ikinci onay gereklidir.", status_code=400)
+
+        if not account_meta:
+            account_meta = UserAccountMeta(user_id=user.id)
+
+        account_meta.professional_title = professional_title
+        s.add(account_meta)
+
+        doctor_profile = s.exec(
+            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+        ).first()
+        if doctor_profile:
+            doctor_profile.graduation_status = (
+                "Öğrenci" if professional_title == "Öğrenci" else "Mezun"
+            )
+            doctor_profile.is_specialist = professional_title in {
+                "Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."
+            }
+            s.add(doctor_profile)
+
+        s.commit()
+
+    return RedirectResponse("/account?profile_updated=1", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
@@ -767,90 +1423,51 @@ def change_password(
     new_password_confirm: str = Form(...),
 ):
     user = get_current_user(request)
-
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    if not user.password_hash or not verify_password(
-        current_password, user.password_hash
-    ):
+    def render_account(error=None, success=None, status_code=200):
         with Session(engine, expire_on_commit=False) as s:
+            db_user = s.get(User, user.id) or user
             doctor_profile = s.exec(
                 select(DoctorProfile).where(DoctorProfile.user_id == user.id)
             ).first()
-
+            account_meta = s.exec(
+                select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
+            ).first()
+        next_change = None
+        if account_meta and account_meta.username_changed_at:
+            next_change = account_meta.username_changed_at + timedelta(days=15)
         return templates.TemplateResponse(
             request=request,
             name="account.html",
             context={
-                "user": user,
+                "user": db_user,
                 "doctor_profile": doctor_profile,
-                "error": "Mevcut şifreniz hatalı.",
-                "success": None,
+                "account_meta": account_meta,
+                "next_username_change_at": next_change,
+                "error": error,
+                "success": success,
             },
-            status_code=400,
+            status_code=status_code,
         )
 
+    if not user.password_hash or not verify_password(current_password, user.password_hash):
+        return render_account("Mevcut şifreniz hatalı.", status_code=400)
     if len(new_password) < 8:
-        with Session(engine, expire_on_commit=False) as s:
-            doctor_profile = s.exec(
-                select(DoctorProfile).where(DoctorProfile.user_id == user.id)
-            ).first()
-
-        return templates.TemplateResponse(
-            request=request,
-            name="account.html",
-            context={
-                "user": user,
-                "doctor_profile": doctor_profile,
-                "error": "Yeni şifre en az 8 karakter olmalıdır.",
-                "success": None,
-            },
-            status_code=400,
-        )
-
+        return render_account("Yeni şifre en az 8 karakter olmalıdır.", status_code=400)
     if new_password != new_password_confirm:
-        with Session(engine, expire_on_commit=False) as s:
-            doctor_profile = s.exec(
-                select(DoctorProfile).where(DoctorProfile.user_id == user.id)
-            ).first()
-
-        return templates.TemplateResponse(
-            request=request,
-            name="account.html",
-            context={
-                "user": user,
-                "doctor_profile": doctor_profile,
-                "error": "Yeni şifreler eşleşmiyor.",
-                "success": None,
-            },
-            status_code=400,
-        )
+        return render_account("Yeni şifreler eşleşmiyor.", status_code=400)
 
     with Session(engine, expire_on_commit=False) as s:
         db_user = s.get(User, user.id)
-
         if not db_user:
             return RedirectResponse("/login", status_code=303)
-
         db_user.password_hash = hash_password(new_password)
         s.add(db_user)
         s.commit()
 
-        doctor_profile = s.exec(
-            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
-        ).first()
-
-    return templates.TemplateResponse(
-        request=request,
-        name="account.html",
-        context={
-            "user": db_user,
-            "doctor_profile": doctor_profile,
-            "error": None,
-            "success": "Şifreniz başarıyla değiştirildi.",
-        },
-    )
+    return render_account(success="Şifreniz başarıyla değiştirildi.")
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1201,11 +1818,720 @@ templates = Jinja2Templates(
 def startup():
     init_db()
 
+
+@app.get("/notes", response_class=HTMLResponse)
+def study_notes_index(request: Request, q: str = ""):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    query_text = (q or "").strip()
+    with Session(engine, expire_on_commit=False) as s:
+        course_query = (
+            select(StudyCourse)
+            .where(StudyCourse.owner_user_id == user.id)
+            .order_by(StudyCourse.updated_at.desc())
+        )
+        if query_text:
+            course_query = course_query.where(StudyCourse.title.ilike(f"%{query_text}%"))
+        courses = s.exec(course_query).all()
+        cards = []
+        for course in courses:
+            materials = s.exec(
+                select(StudyMaterial)
+                .where(StudyMaterial.course_id == course.id)
+                .where(StudyMaterial.owner_user_id == user.id)
+                .order_by(StudyMaterial.created_at.desc())
+            ).all()
+            cards.append({"course": course, "material_count": len(materials)})
+
+    return templates.TemplateResponse(
+        request=request,
+        name="notes.html",
+        context={"course_cards": cards, "q": query_text},
+    )
+
+
+@app.post("/notes/courses")
+def create_study_course(
+    request: Request,
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    clean_title = " ".join((title or "").strip().split())
+    clean_description = (description or "").strip()
+    if len(clean_title) < 2 or len(clean_title) > 120:
+        return HTMLResponse("Ders adı 2 ile 120 karakter arasında olmalıdır.", status_code=400)
+    if len(clean_description) > 500:
+        return HTMLResponse("Ders açıklaması en fazla 500 karakter olabilir.", status_code=400)
+
+    course = StudyCourse(
+        owner_user_id=user.id,
+        title=clean_title,
+        description=clean_description or None,
+    )
+    with Session(engine, expire_on_commit=False) as s:
+        s.add(course)
+        s.commit()
+        s.refresh(course)
+    return RedirectResponse(f"/notes/courses/{course.id}", status_code=303)
+
+
+@app.get("/notes/courses/{course_id}", response_class=HTMLResponse)
+def study_course_detail(request: Request, course_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        materials = s.exec(
+            select(StudyMaterial)
+            .where(StudyMaterial.course_id == course_id)
+            .where(StudyMaterial.owner_user_id == user.id)
+            .order_by(StudyMaterial.created_at.desc())
+        ).all()
+        message_count = len(s.exec(
+            select(StudyChatMessage)
+            .where(StudyChatMessage.course_id == course_id)
+            .where(StudyChatMessage.owner_user_id == user.id)
+        ).all())
+
+    return templates.TemplateResponse(
+        request=request,
+        name="notes_course.html",
+        context={"course": course, "materials": materials, "message_count": message_count},
+    )
+
+
+@app.post("/notes/courses/{course_id}/rename")
+def rename_study_course(request: Request, course_id: int, title: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    clean_title = " ".join((title or "").strip().split())
+    if len(clean_title) < 2 or len(clean_title) > 120:
+        return HTMLResponse("Ders adı 2 ile 120 karakter arasında olmalıdır.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        course.title = clean_title
+        course.updated_at = datetime.utcnow()
+        s.add(course)
+        s.commit()
+    return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
+
+
+@app.post("/notes/courses/{course_id}/delete")
+def delete_study_course(request: Request, course_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    local_paths: list[Path] = []
+    gemini_names: list[str] = []
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        materials = s.exec(
+            select(StudyMaterial)
+            .where(StudyMaterial.course_id == course_id)
+            .where(StudyMaterial.owner_user_id == user.id)
+        ).all()
+        messages = s.exec(
+            select(StudyChatMessage)
+            .where(StudyChatMessage.course_id == course_id)
+            .where(StudyChatMessage.owner_user_id == user.id)
+        ).all()
+        for material in materials:
+            local_paths.append(Path(material.file_path))
+            if material.gemini_file_name:
+                gemini_names.append(material.gemini_file_name)
+            s.delete(material)
+        for message in messages:
+            s.delete(message)
+        s.delete(course)
+        s.commit()
+
+    for path in local_paths:
+        path.unlink(missing_ok=True)
+    for name in gemini_names:
+        delete_study_ai_file(name)
+    return RedirectResponse("/notes?deleted=1", status_code=303)
+
+
+@app.post("/notes/courses/{course_id}/materials")
+async def upload_study_materials(
+    request: Request,
+    course_id: int,
+    files: list[UploadFile] = File(default=[]),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    selected = [item for item in files if item and item.filename]
+    if not selected:
+        return HTMLResponse("Yüklenecek PDF veya görsel seçin.", status_code=400)
+    if len(selected) > STUDY_MAX_UPLOAD_COUNT:
+        return HTMLResponse(f"Tek seferde en fazla {STUDY_MAX_UPLOAD_COUNT} dosya yükleyebilirsiniz.", status_code=400)
+
+    saved_paths: list[Path] = []
+    try:
+        with Session(engine, expire_on_commit=False) as s:
+            course = _owned_study_course(s, user, course_id)
+            if not course:
+                return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+
+            destination_dir = UPLOAD_DIR / "study" / f"user_{user.id}" / f"course_{course_id}"
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            added = 0
+            for upload in selected:
+                original_name = Path(upload.filename).name
+                extension = Path(original_name).suffix.lower()
+                if extension not in STUDY_ALLOWED_EXTENSIONS:
+                    continue
+                mime_type = _study_mime_type(extension)
+                if not mime_type:
+                    continue
+                stored_name = f"study_{course_id}_{uuid.uuid4().hex}{extension}"
+                destination = destination_dir / stored_name
+                saved_paths.append(destination)
+                total = 0
+                with destination.open("wb") as output:
+                    while True:
+                        chunk = await upload.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > STUDY_MAX_FILE_BYTES:
+                            raise ValueError("Bir ders notu dosyası en fazla 25 MB olabilir.")
+                        output.write(chunk)
+                if not _study_file_has_valid_signature(destination, extension):
+                    raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
+
+                material_type = "PDF" if extension == ".pdf" else "IMAGE"
+                s.add(StudyMaterial(
+                    course_id=course_id,
+                    owner_user_id=user.id,
+                    original_filename=original_name,
+                    display_name=original_name,
+                    stored_filename=stored_name,
+                    file_path=str(destination),
+                    material_type=material_type,
+                    mime_type=mime_type,
+                    size_bytes=total,
+                ))
+                added += 1
+
+            if added == 0:
+                return HTMLResponse("Kaydedilecek geçerli PDF veya görsel bulunamadı.", status_code=400)
+            course.updated_at = datetime.utcnow()
+            s.add(course)
+            s.commit()
+    except ValueError as exc:
+        for path in saved_paths:
+            path.unlink(missing_ok=True)
+        return HTMLResponse(str(exc), status_code=400)
+    except Exception:
+        for path in saved_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+    return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
+
+
+@app.get("/notes/courses/{course_id}/materials/{material_id}/file")
+def study_material_file(request: Request, course_id: int, material_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        material = _owned_study_material(s, user, course_id, material_id)
+        if not material:
+            return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        path = Path(material.file_path)
+        filename = material.original_filename
+        mime_type = material.mime_type
+    if not path.is_file():
+        return HTMLResponse("Not dosyası sunucuda bulunamadı.", status_code=404)
+    return FileResponse(path, media_type=mime_type)
+
+
+@app.post("/notes/courses/{course_id}/materials/{material_id}/delete")
+def delete_study_material(request: Request, course_id: int, material_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    local_path = None
+    gemini_name = None
+    with Session(engine, expire_on_commit=False) as s:
+        material = _owned_study_material(s, user, course_id, material_id)
+        if not material:
+            return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        local_path = Path(material.file_path)
+        gemini_name = material.gemini_file_name
+        s.delete(material)
+        course = _owned_study_course(s, user, course_id)
+        if course:
+            course.updated_at = datetime.utcnow()
+            s.add(course)
+        s.commit()
+    if local_path:
+        local_path.unlink(missing_ok=True)
+    if gemini_name:
+        delete_study_ai_file(gemini_name)
+    return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
+
+
+@app.get("/notes/courses/{course_id}/ai", response_class=HTMLResponse)
+def study_ai_page(request: Request, course_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        materials = s.exec(
+            select(StudyMaterial)
+            .where(StudyMaterial.course_id == course_id)
+            .where(StudyMaterial.owner_user_id == user.id)
+            .order_by(StudyMaterial.created_at.asc())
+        ).all()
+        messages = s.exec(
+            select(StudyChatMessage)
+            .where(StudyChatMessage.course_id == course_id)
+            .where(StudyChatMessage.owner_user_id == user.id)
+            .order_by(StudyChatMessage.id)
+        ).all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="notes_ai.html",
+        context={
+            "course": course,
+            "material_count": len(materials),
+            "messages": messages[-40:],
+        },
+    )
+
+
+@app.post("/notes/courses/{course_id}/ai/ask")
+def study_ai_ask(
+    request: Request,
+    course_id: int,
+    message: str = Form(...),
+):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
+
+    clean_message = (message or "").strip()
+    if not clean_message:
+        return JSONResponse({"ok": False, "error": "Bir soru veya çalışma isteği yazın."}, status_code=400)
+    if len(clean_message) > 8000:
+        return JSONResponse({"ok": False, "error": "Mesaj en fazla 8000 karakter olabilir."}, status_code=400)
+
+    try:
+        with Session(engine, expire_on_commit=False) as s:
+            course = _owned_study_course(s, user, course_id)
+            if not course:
+                return JSONResponse({"ok": False, "error": "Ders bulunamadı veya erişim yetkiniz yok."}, status_code=404)
+            materials = s.exec(
+                select(StudyMaterial)
+                .where(StudyMaterial.course_id == course_id)
+                .where(StudyMaterial.owner_user_id == user.id)
+                .order_by(StudyMaterial.created_at.asc())
+            ).all()
+            if not materials:
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Bu derste henüz not bulunmuyor. Önce PDF veya fotoğraf ekleyin.",
+                }, status_code=400)
+            material_ids = [item.id for item in materials if item.id]
+            if len(material_ids) > STUDY_AI_MAX_SOURCES:
+                return JSONResponse({
+                    "ok": False,
+                    "error": f"Bu derste {len(material_ids)} not dosyası var. Akademik AI şu anda aynı anda en fazla {STUDY_AI_MAX_SOURCES} dosyayla çalışabiliyor.",
+                }, status_code=400)
+            ai_files = _prepare_study_ai_files(s, user, course, material_ids)
+            history_rows = s.exec(
+                select(StudyChatMessage)
+                .where(StudyChatMessage.course_id == course_id)
+                .where(StudyChatMessage.owner_user_id == user.id)
+                .order_by(StudyChatMessage.id)
+            ).all()
+            history = [{"role": row.role, "content": row.content} for row in history_rows[-12:]]
+            answer = ask_study_ai(course.title, clean_message, "NOTES_ONLY", history, ai_files)
+            source_json = json.dumps(material_ids, ensure_ascii=False)
+            s.add(StudyChatMessage(
+                course_id=course_id,
+                owner_user_id=user.id,
+                role="USER",
+                content=clean_message,
+                source_ids_json=source_json,
+                mode="NOTES_ONLY",
+            ))
+            s.add(StudyChatMessage(
+                course_id=course_id,
+                owner_user_id=user.id,
+                role="ASSISTANT",
+                content=answer,
+                source_ids_json=source_json,
+                mode="NOTES_ONLY",
+            ))
+            course.updated_at = datetime.utcnow()
+            s.add(course)
+            s.commit()
+    except StudyAIError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+
+    return JSONResponse({"ok": True, "answer": answer})
+
+
+@app.post("/notes/courses/{course_id}/ai/clear")
+def clear_study_ai_chat(request: Request, course_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
+        messages = s.exec(
+            select(StudyChatMessage)
+            .where(StudyChatMessage.course_id == course_id)
+            .where(StudyChatMessage.owner_user_id == user.id)
+        ).all()
+        for item in messages:
+            s.delete(item)
+        s.commit()
+    return RedirectResponse(f"/notes/courses/{course_id}/ai", status_code=303)
+
+
+@app.get("/features", response_class=HTMLResponse)
+def features_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(
+        request=request,
+        name="features.html",
+        context={},
+    )
+
+
+@app.get("/program", response_class=HTMLResponse)
+def program_page(
+    request: Request,
+    view: str = "week",
+    day: str = "",
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    today_local = datetime.now(APP_TIMEZONE).date()
+    try:
+        focus_date = date.fromisoformat(day) if day else today_local
+    except ValueError:
+        focus_date = today_local
+
+    view, range_start, range_end, previous, following = _program_range(view, focus_date)
+
+    with Session(engine, expire_on_commit=False) as s:
+        occurrences = _user_schedule_occurrences(
+            s, user.id, range_start, range_end
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="program.html",
+        context={
+            "view": view,
+            "focus_date": focus_date,
+            "today_date": today_local,
+            "previous_day": previous.isoformat(),
+            "next_day": following.isoformat(),
+            "groups": _group_program_occurrences(occurrences),
+            "event_type_labels": PROGRAM_EVENT_TYPES,
+            "saved": request.query_params.get("saved") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
+            "completed": request.query_params.get("completed") == "1",
+        },
+    )
+
+
+@app.get("/program/new", response_class=HTMLResponse)
+def program_new_page(
+    request: Request,
+    type: str = "",
+    patient_id: str = "",
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    local_now = datetime.now(APP_TIMEZONE).replace(second=0, microsecond=0)
+    rounded_minute = 0 if local_now.minute < 30 else 30
+    suggested = local_now.replace(minute=rounded_minute)
+    if suggested < local_now:
+        suggested += timedelta(minutes=30)
+
+    with Session(engine, expire_on_commit=False) as s:
+        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
+        if user.role != "ADMIN":
+            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patients = s.exec(patient_query).all()
+
+    initial_type = type.upper() if type.upper() in PROGRAM_EVENT_TYPES else "APPOINTMENT"
+    return templates.TemplateResponse(
+        request=request,
+        name="program_form.html",
+        context={
+            "mode": "new",
+            "event": None,
+            "patients": patients,
+            "event_types": PROGRAM_EVENT_TYPES,
+            "initial_type": initial_type,
+            "initial_patient_id": patient_id,
+            "initial_start": suggested.strftime("%Y-%m-%dT%H:%M"),
+            "initial_end": (suggested + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M"),
+            "error": None,
+        },
+    )
+
+
+@app.post("/program/new")
+def program_create(
+    request: Request,
+    event_type: str = Form(...),
+    title: str = Form(...),
+    start_at: str = Form(...),
+    end_at: str = Form(""),
+    patient_id: str = Form(""),
+    location: str = Form(""),
+    notes: str = Form(""),
+    reminder_minutes: str = Form("30"),
+    notification_enabled: Optional[str] = Form(None),
+    recurrence_rule: str = Form("NONE"),
+    recurrence_until: str = Form(""),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        payload, error = _validate_schedule_input(
+            s, user, event_type, title, start_at, end_at, patient_id,
+            location, notes, reminder_minutes, notification_enabled,
+            recurrence_rule, recurrence_until,
+        )
+        if error:
+            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
+            if user.role != "ADMIN":
+                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patients = s.exec(patient_query).all()
+            return templates.TemplateResponse(
+                request=request,
+                name="program_form.html",
+                context={
+                    "mode": "new",
+                    "event": None,
+                    "patients": patients,
+                    "event_types": PROGRAM_EVENT_TYPES,
+                    "initial_type": event_type,
+                    "initial_patient_id": patient_id,
+                    "initial_start": start_at,
+                    "initial_end": end_at,
+                    "initial_title": title,
+                    "initial_location": location,
+                    "initial_notes": notes,
+                    "initial_reminder": reminder_minutes,
+                    "initial_notification": bool(notification_enabled),
+                    "initial_recurrence": recurrence_rule,
+                    "initial_recurrence_until": recurrence_until,
+                    "error": error,
+                },
+                status_code=400,
+            )
+
+        event = ScheduleEvent(owner_user_id=user.id, **payload)
+        s.add(event)
+        s.commit()
+
+    return RedirectResponse("/program?saved=1", status_code=303)
+
+
+@app.get("/program/{event_id}/edit", response_class=HTMLResponse)
+def program_edit_page(request: Request, event_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        event = s.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
+        if user.role != "ADMIN":
+            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patients = s.exec(patient_query).all()
+        start_local = _utc_to_local(event.start_at)
+        end_local = _utc_to_local(event.end_at)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="program_form.html",
+        context={
+            "mode": "edit",
+            "event": event,
+            "patients": patients,
+            "event_types": PROGRAM_EVENT_TYPES,
+            "initial_type": event.event_type,
+            "initial_patient_id": str(event.patient_id or ""),
+            "initial_start": start_local.strftime("%Y-%m-%dT%H:%M") if start_local else "",
+            "initial_end": end_local.strftime("%Y-%m-%dT%H:%M") if end_local else "",
+            "initial_title": event.title,
+            "initial_location": event.location or "",
+            "initial_notes": event.notes or "",
+            "initial_reminder": str(event.reminder_minutes if event.reminder_minutes is not None else 30),
+            "initial_notification": event.notification_enabled,
+            "initial_recurrence": event.recurrence_rule,
+            "initial_recurrence_until": event.recurrence_until or "",
+            "error": None,
+        },
+    )
+
+
+@app.post("/program/{event_id}/edit")
+def program_edit(
+    request: Request,
+    event_id: int,
+    event_type: str = Form(...),
+    title: str = Form(...),
+    start_at: str = Form(...),
+    end_at: str = Form(""),
+    patient_id: str = Form(""),
+    location: str = Form(""),
+    notes: str = Form(""),
+    reminder_minutes: str = Form("30"),
+    notification_enabled: Optional[str] = Form(None),
+    recurrence_rule: str = Form("NONE"),
+    recurrence_until: str = Form(""),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        event = s.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+
+        payload, error = _validate_schedule_input(
+            s, user, event_type, title, start_at, end_at, patient_id,
+            location, notes, reminder_minutes, notification_enabled,
+            recurrence_rule, recurrence_until,
+        )
+        if error:
+            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
+            if user.role != "ADMIN":
+                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patients = s.exec(patient_query).all()
+            return templates.TemplateResponse(
+                request=request,
+                name="program_form.html",
+                context={
+                    "mode": "edit",
+                    "event": event,
+                    "patients": patients,
+                    "event_types": PROGRAM_EVENT_TYPES,
+                    "initial_type": event_type,
+                    "initial_patient_id": patient_id,
+                    "initial_start": start_at,
+                    "initial_end": end_at,
+                    "initial_title": title,
+                    "initial_location": location,
+                    "initial_notes": notes,
+                    "initial_reminder": reminder_minutes,
+                    "initial_notification": bool(notification_enabled),
+                    "initial_recurrence": recurrence_rule,
+                    "initial_recurrence_until": recurrence_until,
+                    "error": error,
+                },
+                status_code=400,
+            )
+
+        for key, value in payload.items():
+            setattr(event, key, value)
+        event.updated_at = datetime.utcnow()
+        s.add(event)
+        s.commit()
+
+    return RedirectResponse("/program?saved=1", status_code=303)
+
+
+@app.post("/program/{event_id}/complete")
+def program_complete(request: Request, event_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        event = s.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+        if event.recurrence_rule != "NONE":
+            return HTMLResponse(
+                "Tekrarlanan programın tamamını tamamlandı olarak işaretlemek yerine düzenleyebilirsiniz.",
+                status_code=400,
+            )
+        event.status = "COMPLETED"
+        event.updated_at = datetime.utcnow()
+        s.add(event)
+        s.commit()
+
+    return RedirectResponse("/program?completed=1", status_code=303)
+
+
+@app.post("/program/{event_id}/delete")
+def program_delete(request: Request, event_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    with Session(engine, expire_on_commit=False) as s:
+        event = s.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+        event.status = "DELETED"
+        event.updated_at = datetime.utcnow()
+        s.add(event)
+        s.commit()
+
+    return RedirectResponse("/program?deleted=1", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+
+    local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    today_start = _date_to_local_start(local_now.date())
+    today_end = _date_to_local_end(local_now.date())
+    upcoming_end = local_now + timedelta(days=90)
 
     with Session(engine, expire_on_commit=False) as s:
         patient_query = select(Patient).order_by(Patient.id.desc())
@@ -1230,6 +2556,36 @@ def home(request: Request):
             .limit(5)
         ).all()
 
+        account_meta = s.exec(
+            select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
+        ).first()
+
+        # Ana ekran, bütün günü listelemek yerine yalnızca sıradaki işi gösterir.
+        # Önce bugün için henüz bitmemiş/başlamamış kayıt aranır. Bugün yoksa
+        # önümüzdeki 90 gün içindeki en yakın aktif kayıt kullanılır.
+        today_upcoming_events = _user_schedule_occurrences(
+            s, user.id, local_now, today_end
+        )
+        upcoming_events = _user_schedule_occurrences(
+            s, user.id, local_now, upcoming_end
+        )
+
+    professional_title = (
+        account_meta.professional_title
+        if account_meta and account_meta.professional_title
+        else "Diş Hekimi"
+    )
+    today_next_event = next(
+        (item for item in today_upcoming_events if item["status"] == "ACTIVE"),
+        None,
+    )
+    next_event = next(
+        (item for item in upcoming_events if item["status"] == "ACTIVE"),
+        None,
+    )
+    dashboard_event = today_next_event or next_event
+    dashboard_event_label = "Bugün" if today_next_event else "Yaklaşan"
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -1237,7 +2593,15 @@ def home(request: Request):
             "patients": patients,
             "analyses": analyses,
             "records": records,
-            "guest_analyses": guest_analyses
+            "guest_analyses": guest_analyses,
+            "professional_title": professional_title,
+            "professional_group": _professional_group(professional_title),
+            "dashboard_copy": _dashboard_copy(professional_title),
+            "dashboard_greeting": _dashboard_greeting(local_now),
+            "quick_actions": _dashboard_actions(professional_title),
+            "dashboard_event": dashboard_event,
+            "dashboard_event_label": dashboard_event_label,
+            "local_now": local_now,
         }
     )
 
@@ -1247,7 +2611,11 @@ def new_patient(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    return templates.TemplateResponse(request=request, name="patient_new.html", context={})
+    return templates.TemplateResponse(
+        request=request,
+        name="patient_new.html",
+        context={"form_data": {}},
+    )
 
 @app.post("/patients/new")
 def create_patient(
@@ -1259,6 +2627,7 @@ def create_patient(
     tc_kimlik_no: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     chief_complaint: Optional[str] = Form(None),
+    force_create: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
     if not user:
@@ -1280,6 +2649,15 @@ def create_patient(
             calculated_age = None
 
     phone = phone.strip() if phone else None
+    form_data = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "birth_date": birth_date or "",
+        "phone": phone or "",
+        "tc_kimlik_no": tc_kimlik_no.strip() if tc_kimlik_no else "",
+        "address": address.strip() if address else "",
+        "chief_complaint": chief_complaint.strip() if chief_complaint else "",
+    }
 
     # Türkiye telefon numarası doğrulaması
     if phone:
@@ -1288,12 +2666,36 @@ def create_patient(
                 request=request,
                 name="patient_new.html",
                 context={
-                    "error": "Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır."
+                    "error": "Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır.",
+                    "form_data": form_data,
                 },
                 status_code=400,
             )
 
     with Session(engine, expire_on_commit=False) as s:
+        # Mükerrer hasta kontrolü kesinlikle kullanıcının kendi hasta havuzuyla
+        # sınırlıdır. Başka hekimin hastası bu uyarıda dahi görünmez.
+        duplicate_patient, duplicate_reason = _find_duplicate_patient(
+            s,
+            user.id,
+            first_name,
+            last_name,
+            birth_date,
+            calculated_age,
+            phone,
+        )
+        if duplicate_patient and force_create != "1":
+            return templates.TemplateResponse(
+                request=request,
+                name="patient_new.html",
+                context={
+                    "duplicate_patient": duplicate_patient,
+                    "duplicate_reason": duplicate_reason,
+                    "form_data": form_data,
+                },
+                status_code=409,
+            )
+
         patient = Patient(
             anonymous_id=f"PAT-{uuid.uuid4().hex[:10].upper()}",
             owner_user_id=user.id,
@@ -1848,6 +3250,14 @@ def patient_detail(request: Request, patient_id: int):
                 )
             ).all()
 
+        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+        patient_media = s.exec(
+            select(PatientMedia).where(
+                PatientMedia.patient_id == patient_id,
+                PatientMedia.owner_user_id == media_owner_id,
+            ).order_by(PatientMedia.uploaded_at.desc())
+        ).all()
+
         return templates.TemplateResponse(
             request=request,
             name="patient_detail.html",
@@ -1857,8 +3267,202 @@ def patient_detail(request: Request, patient_id: int):
                 "analyses": analyses,
                 "treatments": treatments,
                 "analysis_assets": analysis_assets,
+                "patient_media": patient_media,
             },
         )
+
+
+def _patient_media_has_valid_signature(path: Path, extension: str) -> bool:
+    try:
+        with path.open("rb") as image_file:
+            header = image_file.read(16)
+    except OSError:
+        return False
+    if extension in {".jpg", ".jpeg"}:
+        return header.startswith(b"\xff\xd8\xff")
+    if extension == ".png":
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == ".webp":
+        return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
+    return False
+
+
+def _parse_patient_media_ids(raw_value: Optional[str]) -> list[int]:
+    """Comma-separated media ids -> unique positive integer ids, preserving order."""
+    values: list[int] = []
+    for raw_id in (raw_value or "").split(","):
+        raw_id = raw_id.strip()
+        if not raw_id:
+            continue
+        try:
+            media_id = int(raw_id)
+        except ValueError:
+            continue
+        if media_id > 0 and media_id not in values:
+            values.append(media_id)
+    return values
+
+
+@app.post("/patients/{patient_id}/media")
+async def upload_patient_media(
+    request: Request,
+    patient_id: int,
+    media_type: str = Form(...),
+    tooth_number: Optional[str] = Form(None),
+    note: Optional[str] = Form(None),
+    files: list[UploadFile] = File(default=[]),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    normalized_type = (media_type or "").strip().upper()
+    if normalized_type not in {"PHOTO", "RADIOGRAPH"}:
+        return HTMLResponse("Geçersiz klinik görüntü türü.", status_code=400)
+
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    max_bytes = 12 * 1024 * 1024
+    saved_paths: list[Path] = []
+    selected_files = [upload for upload in files if upload and upload.filename]
+    if len(selected_files) > 12:
+        return HTMLResponse("Tek seferde en fazla 12 görüntü yükleyebilirsiniz.", status_code=400)
+
+    try:
+        with Session(engine, expire_on_commit=False) as s:
+            patient = s.get(Patient, patient_id)
+            if not patient:
+                return HTMLResponse("Hasta bulunamadı", status_code=404)
+            if user.role != "ADMIN" and patient.owner_user_id != user.id:
+                return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+
+            owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+            valid_count = 0
+            for upload in selected_files:
+                original_name = Path(upload.filename).name
+                extension = Path(original_name).suffix.lower()
+                if extension not in allowed_extensions:
+                    continue
+
+                stored_name = f"patient_{patient_id}_{uuid.uuid4().hex}{extension}"
+                destination = UPLOAD_DIR / stored_name
+                saved_paths.append(destination)
+                total = 0
+                with destination.open("wb") as buffer:
+                    while True:
+                        chunk = await upload.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise ValueError("Bir görüntü en fazla 12 MB olabilir.")
+                        buffer.write(chunk)
+
+                if not _patient_media_has_valid_signature(destination, extension):
+                    raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
+
+                s.add(PatientMedia(
+                    patient_id=patient_id,
+                    owner_user_id=owner_id,
+                    original_filename=original_name,
+                    stored_filename=stored_name,
+                    file_path=str(destination),
+                    media_type=normalized_type,
+                    tooth_number=(tooth_number or "").strip() or None,
+                    note=(note or "").strip() or None,
+                ))
+                valid_count += 1
+
+            if valid_count == 0:
+                return HTMLResponse("Kaydedilecek geçerli JPG/PNG/WEBP görüntüsü seçilmedi.", status_code=400)
+            s.commit()
+    except ValueError as exc:
+        for path in saved_paths:
+            path.unlink(missing_ok=True)
+        return HTMLResponse(str(exc), status_code=400)
+    except Exception:
+        for path in saved_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+    return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
+
+
+@app.get("/patients/{patient_id}/media/{media_id}/file")
+def patient_media_file(request: Request, patient_id: int, media_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        media = s.get(PatientMedia, media_id)
+        if not patient or not media or media.patient_id != patient_id:
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        if user.role != "ADMIN" and media.owner_user_id != user.id:
+            return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+        path = Path(media.file_path)
+
+    if not path.is_file():
+        return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+    return FileResponse(path)
+
+
+@app.post("/patients/{patient_id}/media/{media_id}/delete")
+def delete_patient_media(request: Request, patient_id: int, media_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    file_path = None
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        media = s.get(PatientMedia, media_id)
+        if not patient or not media or media.patient_id != patient_id:
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        if user.role != "ADMIN" and media.owner_user_id != user.id:
+            return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+        file_path = Path(media.file_path)
+        s.delete(media)
+        s.commit()
+
+    if file_path:
+        file_path.unlink(missing_ok=True)
+    return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
+
+
+@app.post("/patients/{patient_id}/media/delete-all")
+def delete_all_patient_media(request: Request, patient_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    file_paths: list[Path] = []
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+
+        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+        media_items = s.exec(
+            select(PatientMedia).where(
+                PatientMedia.patient_id == patient_id,
+                PatientMedia.owner_user_id == media_owner_id,
+            )
+        ).all()
+        for media in media_items:
+            file_paths.append(Path(media.file_path))
+            s.delete(media)
+        s.commit()
+
+    for file_path in file_paths:
+        file_path.unlink(missing_ok=True)
+    return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
 
 @app.get("/analyses", response_class=HTMLResponse)
@@ -1955,11 +3559,23 @@ def guest_analysis_new(request: Request):
 
 
 @app.get("/analysis/new/{patient_id}", response_class=HTMLResponse)
-def new_analysis(request: Request, patient_id: int):
+def new_analysis(
+    request: Request,
+    patient_id: int,
+    media_id: Optional[int] = None,
+    media_ids: Optional[str] = None,
+):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
+    requested_ids = _parse_patient_media_ids(media_ids)
+    if media_id is not None and media_id not in requested_ids:
+        requested_ids.insert(0, media_id)
+    if len(requested_ids) > 12:
+        return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+
+    selected_media: list[PatientMedia] = []
     with Session(engine, expire_on_commit=False) as s:
         patient = s.get(Patient, patient_id)
 
@@ -1968,7 +3584,24 @@ def new_analysis(request: Request, patient_id: int):
 
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
-    return templates.TemplateResponse(request=request, name="analysis_new.html", context={"patient": patient})
+
+        for selected_id in requested_ids:
+            media = s.get(PatientMedia, selected_id)
+            if not media or media.patient_id != patient_id:
+                return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+            if user.role != "ADMIN" and media.owner_user_id != user.id:
+                return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+            selected_media.append(media)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="analysis_new.html",
+        context={
+            "patient": patient,
+            "selected_media": selected_media,
+            "selected_media_ids": ",".join(str(media.id) for media in selected_media),
+        },
+    )
 
 
 def _get_specialty_rag_context(
@@ -2401,6 +4034,8 @@ async def create_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
+    existing_media_id: Optional[int] = Form(None),
+    existing_media_ids: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
     user = get_current_user(request)
@@ -2413,6 +4048,24 @@ async def create_analysis(
             return HTMLResponse("Hasta bulunamadı", status_code=404)
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+
+        requested_media_ids = _parse_patient_media_ids(existing_media_ids)
+        if existing_media_id is not None and existing_media_id not in requested_media_ids:
+            requested_media_ids.insert(0, existing_media_id)
+        if len(requested_media_ids) > 12:
+            return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+
+        selected_media_items: list[tuple[PatientMedia, Path]] = []
+        for selected_id in requested_media_ids:
+            media = s.get(PatientMedia, selected_id)
+            if not media or media.patient_id != patient_id:
+                return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+            if user.role != "ADMIN" and media.owner_user_id != user.id:
+                return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+            media_path = Path(media.file_path)
+            if media_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not media_path.is_file():
+                return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
+            selected_media_items.append((media, media_path))
 
         analysis = Analysis(
             patient_id=patient_id,
@@ -2428,6 +4081,22 @@ async def create_analysis(
         allowed_extensions = {
             ".jpg", ".jpeg", ".png", ".webp"
         }
+
+        for selected_media, selected_media_path in selected_media_items:
+            source_ext = selected_media_path.suffix.lower()
+            stored_name = (
+                f"analysis_{analysis.id}_"
+                f"{uuid.uuid4().hex}{source_ext}"
+            )
+            destination = UPLOAD_DIR / stored_name
+            shutil.copy2(selected_media_path, destination)
+            s.add(ImageAsset(
+                analysis_id=analysis.id,
+                original_filename=selected_media.original_filename,
+                stored_filename=stored_name,
+                file_path=str(destination),
+                image_type=("RADIOGRAPH" if selected_media.media_type == "RADIOGRAPH" else "OTHER"),
+            ))
 
         for image in images:
             if not image or not image.filename:

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="study-page">
+    <header class="study-page-header">
+        <div>
+            <a class="study-back-link" href="/">← Ana Sayfa</a>
+            <h1>Notlarım</h1>
+            <p>Derslerini oluştur, PDF veya görüntü ekle; ardından Dental AI Akademik ile notların üzerinden çalış.</p>
+        </div>
+        <button type="button" class="study-primary-button" onclick="document.getElementById('newCoursePanel').toggleAttribute('open')">+ Ders Ekle</button>
+    </header>
+
+    <div class="study-notes-guide" role="note">
+        <strong>Nasıl kullanılır?</strong>
+        <span>Dersini oluştur → PDF veya görüntü ekle → Dental AI Akademik ile soru sor, özet çıkar veya sınava hazırlan.</span>
+    </div>
+
+    <details class="study-create-panel" id="newCoursePanel">
+        <summary>Yeni ders oluştur</summary>
+        <form action="/notes/courses" method="post" class="study-course-create-form">
+            <label>Ders adı
+                <input type="text" name="title" maxlength="120" required placeholder="Örn. Çene Oklüzyon">
+            </label>
+            <label>Kısa açıklama <span>(isteğe bağlı)</span>
+                <textarea name="description" maxlength="500" rows="2" placeholder="Örn. 3. sınıf güz dönemi"></textarea>
+            </label>
+            <button type="submit" class="study-primary-button">Dersi Oluştur</button>
+        </form>
+    </details>
+
+    <form class="study-search" action="/notes" method="get">
+        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+        <input type="search" name="q" value="{{ q }}" placeholder="Ders ara..." autocomplete="off">
+    </form>
+
+    {% if course_cards %}
+    <div class="study-course-grid">
+        {% for item in course_cards %}
+        <a class="study-course-card" href="/notes/courses/{{ item.course.id }}">
+            <span class="study-course-icon">
+                <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>
+            </span>
+            <span class="study-course-copy">
+                <strong>{{ item.course.title }}</strong>
+                <small>{{ item.material_count }} dosya{% if item.course.description %} · {{ item.course.description }}{% endif %}</small>
+            </span>
+            <span class="workspace-row-arrow">›</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <section class="study-empty-state">
+        <div class="study-empty-icon">📚</div>
+        <h2>{% if q %}Ders bulunamadı{% else %}İlk dersini oluştur{% endif %}</h2>
+        <p>{% if q %}Arama kelimesini değiştirerek tekrar deneyebilirsin.{% else %}PDF, slayt fotoğrafı veya el yazısı notlarını derslerin altında topla.{% endif %}</p>
+        {% if not q %}<button type="button" class="study-primary-button" onclick="document.getElementById('newCoursePanel').setAttribute('open','')">+ Ders Ekle</button>{% endif %}
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

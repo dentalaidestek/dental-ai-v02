@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="study-ai-page study-chat-shell study-chat-clean-shell">
+    <header class="study-chat-clean-topbar">
+        <a class="study-chat-clean-back" href="/notes/courses/{{ course.id }}" aria-label="Derse dön">←</a>
+        <div class="study-chat-clean-title">
+            <strong>{{ course.title }}</strong>
+            <small>Dental AI Akademik</small>
+        </div>
+        <form action="/notes/courses/{{ course.id }}/ai/clear" method="post" onsubmit="return confirm('Bu dersin Akademik AI sohbet geçmişi temizlensin mi?')">
+            <button type="submit" class="study-chat-clean-new">Yeni sohbet</button>
+        </form>
+    </header>
+
+    <div class="study-chat-clean-info">
+        {% if material_count > 0 %}
+        <span>Bu sohbet bu derse eklediğin notları kaynak olarak kullanır.</span>
+        <small>{{ material_count }} not dosyası</small>
+        {% else %}
+        <span>Bu derste henüz not bulunmuyor.</span>
+        <a href="/notes/courses/{{ course.id }}">PDF veya fotoğraf ekle</a>
+        {% endif %}
+    </div>
+
+    {% if material_count > 0 %}
+    <div class="study-quick-prompts study-quick-prompts-clean">
+        <button type="button" data-prompt="Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.">Özetle</button>
+        <button type="button" data-prompt="Bu ders notlarındaki konuyu bana bir hoca gibi, mantığını kurarak ve gerektiğinde örneklerle öğret. Bilgiyi ezberletmek yerine anlamamı sağla.">Bana Öğret</button>
+        <button type="button" data-prompt="Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.">Soru Hazırla</button>
+    </div>
+    {% endif %}
+
+    <section class="study-chat study-chat-scroll study-chat-clean-scroll" id="studyChat" aria-live="polite">
+        {% if messages %}
+            {% for msg in messages %}
+            <article class="study-chat-message {{ 'assistant' if msg.role == 'ASSISTANT' else 'user' }}">
+                <div class="study-chat-content">
+                    <div class="study-chat-role">{{ 'Dental AI Akademik' if msg.role == 'ASSISTANT' else 'Sen' }}</div>
+                    <div class="study-chat-markdown">{{ msg.content }}</div>
+                </div>
+            </article>
+            {% endfor %}
+        {% else %}
+        <div class="study-chat-clean-welcome" id="studyChatWelcome">
+            {% if material_count > 0 %}
+            <h2>Nasıl çalışalım?</h2>
+            <p>Notlarını özetleyebilir, konuyu anlatabilir veya sana soru hazırlayabilirim.</p>
+            {% else %}
+            <h2>Önce bir not ekle</h2>
+            <p>Bu sohbet yalnızca bu derse yüklediğin PDF ve fotoğraflardan çalışır.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+
+    <footer class="study-chat-clean-footer">
+        <div class="study-chat-status" id="studyChatStatus"></div>
+        <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm">
+            <textarea id="studyChatInput" name="message" rows="1" maxlength="8000" placeholder="Mesajını yaz..." {% if material_count == 0 %}disabled{% endif %} required></textarea>
+            <button type="submit" id="studySendButton" aria-label="Gönder" {% if material_count == 0 %}disabled{% endif %}>↑</button>
+        </form>
+    </footer>
+</div>
+
+<script>
+(function() {
+    document.body.classList.add('study-chat-active');
+
+    const courseId = {{ course.id }};
+    const materialCount = {{ material_count }};
+    const form = document.getElementById('studyChatForm');
+    const input = document.getElementById('studyChatInput');
+    const send = document.getElementById('studySendButton');
+    const chat = document.getElementById('studyChat');
+    const status = document.getElementById('studyChatStatus');
+
+    function escapeHtml(value) {
+        return value.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+    }
+    function normalizeAcademicText(value) {
+        let text = value || '';
+        const replacements = [
+            [/\^\s*\\circ\b/g, '°'], [/\\circ\b/g, '°'],
+            [/\\rightarrow\b/g, '→'], [/\\leftarrow\b/g, '←'], [/\\leftrightarrow\b/g, '↔'],
+            [/\\Rightarrow\b/g, '⇒'], [/\\Leftarrow\b/g, '⇐'],
+            [/\\times\b/g, '×'], [/\\cdot\b/g, '·'], [/\\pm\b/g, '±'],
+            [/\\leq\b/g, '≤'], [/\\geq\b/g, '≥'], [/\\neq\b/g, '≠'], [/\\approx\b/g, '≈'],
+            [/\\alpha\b/g, 'α'], [/\\beta\b/g, 'β'], [/\\gamma\b/g, 'γ'], [/\\delta\b/g, 'δ']
+        ];
+        replacements.forEach(([pattern, replacement]) => { text = text.replace(pattern, replacement); });
+        text = text
+            .replace(/\\(?:text|mathrm|mathbf)\{([^{}]*)\}/g, '$1')
+            .replace(/\\[()[\]]/g, '')
+            .replace(/\$([^$\n]+)\$/g, '$1')
+            .replace(/\$+/g, '')
+            .replace(/\\%/g, '%');
+        return text;
+    }
+    function inlineFormat(value) {
+        return value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+    function safeMarkdown(text) {
+        const lines = escapeHtml(normalizeAcademicText(text)).split(/\r?\n/);
+        let out = '', inUl = false, inOl = false;
+        function closeLists() { if (inUl) { out += '</ul>'; inUl=false; } if (inOl) { out += '</ol>'; inOl=false; } }
+        lines.forEach(line => {
+            if (/^\s*(?:\*\*)?Soru\s+\d+(?:[:.)-])?(?:\*\*)?\s*$/i.test(line)) {
+                closeLists();
+                const clean = line.replace(/\*\*/g,'').trim().replace(/[:.)-]$/,'');
+                out += '<h3 class="study-question-heading">'+inlineFormat(clean)+'</h3>';
+            }
+            else if (/^#{1,6}\s+/.test(line)) { closeLists(); out += '<h3>'+inlineFormat(line.replace(/^#{1,6}\s+/,''))+'</h3>'; }
+            else if (/^\s*(?:---+|___+)\s*$/.test(line)) { closeLists(); out += '<hr class="study-chat-rule">'; }
+            else if (/^[-*]\s+/.test(line)) { if (inOl) { out += '</ol>'; inOl=false; } if (!inUl) { out += '<ul>'; inUl=true; } out += '<li>'+inlineFormat(line.replace(/^[-*]\s+/,''))+'</li>'; }
+            else if (/^\d+[.)]\s+/.test(line)) { if (inUl) { out += '</ul>'; inUl=false; } if (!inOl) { out += '<ol>'; inOl=true; } out += '<li>'+inlineFormat(line.replace(/^\d+[.)]\s+/,''))+'</li>'; }
+            else if (!line.trim()) { closeLists(); out += '<div class="study-chat-gap"></div>'; }
+            else { closeLists(); out += '<p>'+inlineFormat(line)+'</p>'; }
+        });
+        closeLists();
+        return out;
+    }
+    document.querySelectorAll('.study-chat-markdown').forEach(el => { el.innerHTML = safeMarkdown(el.textContent); });
+
+    function isNearBottom() {
+        return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 180;
+    }
+    function scrollChatBottom(force=false) {
+        if (force || isNearBottom()) chat.scrollTo({top: chat.scrollHeight, behavior: force ? 'auto' : 'smooth'});
+    }
+
+    function addMessage(role, text, pending=false, forceScroll=false) {
+        const welcome = document.getElementById('studyChatWelcome');
+        if (welcome) welcome.remove();
+        const shouldFollow = forceScroll || isNearBottom();
+        const article = document.createElement('article');
+        article.className = 'study-chat-message ' + role + (pending ? ' pending' : '');
+        const content = document.createElement('div');
+        content.className='study-chat-content';
+        const label = document.createElement('div');
+        label.className='study-chat-role';
+        label.textContent = role === 'assistant' ? 'Dental AI Akademik' : 'Sen';
+        const body = document.createElement('div');
+        body.className='study-chat-markdown';
+        body.innerHTML = pending ? '<span class="study-thinking">Yanıt hazırlanıyor...</span>' : safeMarkdown(text);
+        content.appendChild(label);
+        content.appendChild(body);
+        article.appendChild(content);
+        chat.appendChild(article);
+        if (shouldFollow) requestAnimationFrame(() => chat.scrollTo({top: chat.scrollHeight, behavior:'smooth'}));
+        return article;
+    }
+
+    async function sendMessage(text) {
+        text = (text || '').trim();
+        if (!text || send.disabled) return;
+        if (!materialCount) {
+            status.textContent='Bu derste henüz not yok. Önce PDF veya fotoğraf ekle.';
+            return;
+        }
+        status.textContent='';
+        addMessage('user', text, false, true);
+        const pending = addMessage('assistant','',true,true);
+        input.value='';
+        input.style.height='auto';
+        send.disabled=true;
+        const data = new FormData();
+        data.append('message', text);
+        try {
+            const response = await fetch('/notes/courses/'+courseId+'/ai/ask', {method:'POST', body:data, credentials:'same-origin'});
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'AI isteği tamamlanamadı.');
+            pending.classList.remove('pending');
+            pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(result.answer);
+            scrollChatBottom();
+        } catch (err) {
+            pending.remove();
+            status.textContent = err.message || 'Bir hata oluştu.';
+        } finally {
+            send.disabled=false;
+            input.focus();
+        }
+    }
+
+    form.addEventListener('submit', event => { event.preventDefault(); sendMessage(input.value); });
+    input.addEventListener('input', () => {
+        input.style.height='auto';
+        input.style.height=Math.min(input.scrollHeight,140)+'px';
+    });
+    input.addEventListener('keydown', event => {
+        if (event.key==='Enter' && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+        }
+    });
+    document.querySelectorAll('.study-quick-prompts button').forEach(btn => btn.addEventListener('click', () => sendMessage(btn.dataset.prompt)));
+    requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
+})();
+</script>
+{% endblock %}

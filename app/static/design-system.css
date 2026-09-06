@@ -1,0 +1,656 @@
+/* =========================================================
+   DENTAL AI DESIGN SYSTEM V1
+   Shared visual language only. No route/form/JS behavior here.
+   ========================================================= */
+:root {
+    --dai-navy-950: #0b1220;
+    --dai-navy-900: #0f172a;
+    --dai-navy-800: #17233a;
+    --dai-blue-700: #1d4ed8;
+    --dai-blue-600: #2563eb;
+    --dai-blue-500: #3b82f6;
+    --dai-blue-100: #dbeafe;
+    --dai-blue-50: #eff6ff;
+    --dai-bg: #f5f7fb;
+    --dai-surface: #ffffff;
+    --dai-surface-soft: #f8fafc;
+    --dai-border: #e2e8f0;
+    --dai-border-strong: #cbd5e1;
+    --dai-text: #172033;
+    --dai-muted: #64748b;
+    --dai-success-bg: #ecfdf3;
+    --dai-success: #166534;
+    --dai-warning-bg: #fff8e1;
+    --dai-warning: #92400e;
+    --dai-danger-bg: #fef2f2;
+    --dai-danger: #991b1b;
+    --dai-radius-sm: 10px;
+    --dai-radius-md: 14px;
+    --dai-radius-lg: 18px;
+    --dai-radius-xl: 22px;
+    --dai-shadow-card: 0 8px 26px rgba(15, 23, 42, .065);
+    --dai-shadow-float: 0 18px 46px rgba(15, 23, 42, .16);
+    --dai-focus: 0 0 0 3px rgba(37, 99, 235, .14);
+}
+
+html {
+    background: var(--dai-bg);
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+}
+
+body.dai-app-shell,
+body.dai-standalone {
+    background: var(--dai-bg) !important;
+    color: var(--dai-text) !important;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body.dai-app-shell {
+    min-height: 100vh;
+}
+
+body.dai-standalone {
+    min-height: 100vh;
+    padding-top: max(18px, env(safe-area-inset-top)) !important;
+    padding-bottom: max(20px, env(safe-area-inset-bottom)) !important;
+}
+
+body.dai-app-shell main {
+    width: min(1120px, 100%);
+}
+
+/* Core surfaces: appearance only; existing layout rules remain authoritative. */
+body.dai-app-shell .card,
+body.dai-app-shell .workspace-section,
+body.dai-app-shell .workspace-next-card,
+body.dai-app-shell .workspace-today-card,
+body.dai-app-shell .program-form-card,
+body.dai-app-shell .feature-group,
+body.dai-standalone .card,
+body.dai-standalone .box,
+body.dai-standalone .panel {
+    background: var(--dai-surface) !important;
+    border: 1px solid var(--dai-border) !important;
+    border-radius: var(--dai-radius-lg) !important;
+    box-shadow: var(--dai-shadow-card) !important;
+}
+
+body.dai-app-shell h1,
+body.dai-app-shell h2,
+body.dai-app-shell h3,
+body.dai-standalone h1,
+body.dai-standalone h2,
+body.dai-standalone h3 {
+    color: var(--dai-navy-900);
+    letter-spacing: -.018em;
+}
+
+body.dai-app-shell p,
+body.dai-standalone p {
+    line-height: 1.58;
+}
+
+body.dai-app-shell .muted,
+body.dai-app-shell small,
+body.dai-standalone .muted,
+body.dai-standalone small {
+    color: var(--dai-muted);
+}
+
+/* Form language */
+body.dai-app-shell label,
+body.dai-standalone label {
+    color: #334155;
+    font-weight: 700;
+}
+
+body.dai-app-shell input:not([type="checkbox"]):not([type="radio"]),
+body.dai-app-shell select,
+body.dai-app-shell textarea,
+body.dai-standalone input:not([type="checkbox"]):not([type="radio"]),
+body.dai-standalone select,
+body.dai-standalone textarea {
+    border: 1px solid var(--dai-border-strong) !important;
+    border-radius: var(--dai-radius-sm) !important;
+    background: #fff !important;
+    color: var(--dai-text) !important;
+    min-height: 44px;
+    outline: none;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+body.dai-app-shell textarea,
+body.dai-standalone textarea {
+    min-height: 96px;
+}
+
+body.dai-app-shell input:focus,
+body.dai-app-shell select:focus,
+body.dai-app-shell textarea:focus,
+body.dai-standalone input:focus,
+body.dai-standalone select:focus,
+body.dai-standalone textarea:focus {
+    border-color: var(--dai-blue-500) !important;
+    box-shadow: var(--dai-focus) !important;
+}
+
+body.dai-app-shell input::placeholder,
+body.dai-app-shell textarea::placeholder,
+body.dai-standalone input::placeholder,
+body.dai-standalone textarea::placeholder {
+    color: #94a3b8;
+}
+
+/* Primary actions. Tooth surface controls are intentionally excluded. */
+body.dai-app-shell .btn:not(.secondary):not(.danger),
+body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button),
+body.dai-standalone a.button:not(.secondary):not(.danger),
+body.dai-standalone button:not(.surface-button) {
+    background: var(--dai-blue-600) !important;
+    color: #fff !important;
+    border: 1px solid var(--dai-blue-600) !important;
+    border-radius: var(--dai-radius-sm) !important;
+    font-weight: 750;
+    min-height: 44px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, .14);
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+
+body.dai-app-shell .btn:not(.secondary):not(.danger):hover,
+body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button):hover,
+body.dai-standalone a.button:not(.secondary):not(.danger):hover,
+body.dai-standalone button:not(.surface-button):hover {
+    background: var(--dai-blue-700) !important;
+    border-color: var(--dai-blue-700) !important;
+}
+
+body.dai-app-shell .secondary,
+body.dai-standalone .secondary {
+    background: #fff !important;
+    color: #334155 !important;
+    border: 1px solid var(--dai-border-strong) !important;
+    box-shadow: none !important;
+}
+
+body.dai-app-shell .danger,
+body.dai-standalone .danger {
+    background: #fff !important;
+    color: var(--dai-danger) !important;
+    border: 1px solid #fecaca !important;
+    box-shadow: none !important;
+}
+
+body.dai-app-shell a:not(.brand):not(.mobile-nav-item):not(.workspace-action-card):not(.btn),
+body.dai-standalone a:not(.button):not(.secondary) {
+    color: var(--dai-blue-700);
+}
+
+/* Semantic notices */
+body.dai-app-shell .error,
+body.dai-standalone .error {
+    background: var(--dai-danger-bg) !important;
+    color: var(--dai-danger) !important;
+    border: 1px solid #fecaca !important;
+    border-radius: var(--dai-radius-sm) !important;
+}
+body.dai-app-shell .info,
+body.dai-standalone .info {
+    background: var(--dai-blue-50);
+    color: #1e40af;
+    border-radius: var(--dai-radius-sm);
+}
+body.dai-app-shell .notice,
+body.dai-standalone .notice {
+    background: var(--dai-warning-bg) !important;
+    color: var(--dai-warning) !important;
+    border: 1px solid #fde68a !important;
+}
+
+/* App chrome */
+body.dai-app-shell .topbar {
+    background: linear-gradient(120deg, var(--dai-navy-950), var(--dai-navy-900)) !important;
+    border-bottom-color: rgba(255,255,255,.08) !important;
+    box-shadow: 0 6px 20px rgba(15,23,42,.16) !important;
+}
+body.dai-app-shell .brand,
+body.dai-app-shell .brand strong {
+    color: #fff !important;
+}
+body.dai-app-shell .brand-icon {
+    background: rgba(255,255,255,.10) !important;
+    color: #dbeafe !important;
+    border: 1px solid rgba(255,255,255,.12);
+}
+body.dai-app-shell .primary-nav a {
+    color: #dce7f5 !important;
+}
+body.dai-app-shell .primary-nav a:hover {
+    background: rgba(255,255,255,.09) !important;
+    color: #fff !important;
+}
+body.dai-app-shell .menu-toggle {
+    color: #fff !important;
+}
+body.dai-app-shell .workspace-menu-panel {
+    border-radius: var(--dai-radius-lg) !important;
+    box-shadow: var(--dai-shadow-float) !important;
+}
+
+/* Workspace cards stay calm; blue is reserved for priority/action. */
+body.dai-app-shell .workspace-hero {
+    background: linear-gradient(135deg, var(--dai-navy-950), #152646) !important;
+    border: 1px solid rgba(255,255,255,.06);
+    box-shadow: 0 14px 34px rgba(15,23,42,.18);
+}
+body.dai-app-shell .workspace-action-card {
+    border-color: var(--dai-border) !important;
+    background: var(--dai-surface) !important;
+    box-shadow: 0 4px 15px rgba(15,23,42,.045) !important;
+}
+body.dai-app-shell .workspace-action-card:hover {
+    border-color: #bfdbfe !important;
+    background: #fbfdff !important;
+}
+body.dai-app-shell .workspace-action-icon {
+    background: var(--dai-blue-50) !important;
+    color: var(--dai-blue-700) !important;
+}
+
+/* Lists and separators */
+body.dai-app-shell .row,
+body.dai-standalone .row,
+body.dai-standalone .patient {
+    border-color: var(--dai-border) !important;
+}
+body.dai-standalone .patient {
+    background: #fbfdff;
+    border-radius: var(--dai-radius-md) !important;
+}
+body.dai-app-shell hr,
+body.dai-standalone hr {
+    border: 0;
+    border-top: 1px solid var(--dai-border);
+}
+
+/* Auth/legal standalone pages */
+body.dai-standalone .box {
+    width: min(440px, calc(100% - 28px));
+}
+body.dai-standalone .box h1:first-child {
+    color: var(--dai-navy-900);
+}
+body.dai-standalone .legal-box {
+    background: var(--dai-surface-soft) !important;
+    border: 1px solid var(--dai-border) !important;
+    border-radius: var(--dai-radius-md) !important;
+}
+
+/* Tooth chart: visual polish only. Clinical status colors are untouched. */
+body.dai-standalone.dai-tooth-chart .tooth {
+    border-color: #b8c5d6;
+    box-shadow: 0 2px 6px rgba(15,23,42,.04);
+}
+body.dai-standalone.dai-tooth-chart .tooth:hover {
+    border-color: var(--dai-blue-500);
+    box-shadow: 0 5px 14px rgba(37,99,235,.12);
+}
+body.dai-standalone.dai-tooth-chart .surface-button {
+    border-color: var(--dai-border-strong) !important;
+    background: #fff !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+}
+body.dai-standalone.dai-tooth-chart .surface-button.selected {
+    background: var(--dai-blue-50) !important;
+    color: var(--dai-blue-700) !important;
+    border-color: var(--dai-blue-500) !important;
+    box-shadow: var(--dai-focus) !important;
+}
+body.dai-standalone.dai-tooth-chart #panel {
+    scroll-margin-top: 18px;
+}
+
+/* Mobile: touch-friendly but compact. */
+@media (max-width: 760px) {
+    body.dai-app-shell main {
+        margin-top: 22px;
+        padding-left: 13px;
+        padding-right: 13px;
+    }
+    body.dai-app-shell .card,
+    body.dai-app-shell .workspace-section,
+    body.dai-app-shell .workspace-next-card,
+    body.dai-app-shell .workspace-today-card,
+    body.dai-app-shell .program-form-card,
+    body.dai-standalone .card,
+    body.dai-standalone .box,
+    body.dai-standalone .panel {
+        border-radius: 16px !important;
+    }
+    body.dai-app-shell input,
+    body.dai-app-shell select,
+    body.dai-app-shell textarea,
+    body.dai-app-shell button,
+    body.dai-app-shell .btn,
+    body.dai-standalone input,
+    body.dai-standalone select,
+    body.dai-standalone textarea,
+    body.dai-standalone button,
+    body.dai-standalone a.button {
+        font-size: 16px;
+    }
+    body.dai-app-shell .mobile-bottom-nav {
+        border-top-color: var(--dai-border) !important;
+    }
+    body.dai-app-shell .mobile-nav-plus {
+        background: var(--dai-blue-600) !important;
+        border-color: #fff !important;
+    }
+    body.dai-standalone.dai-tooth-chart {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* =========================================================
+   DENTAL AI VISUAL POLISH V3
+   Navy-tinted boundaries across the complete application.
+   Hierarchy: outer cards > inner rows > form controls.
+   Clinical tooth/status colors are intentionally untouched.
+   ========================================================= */
+:root {
+    --dai-border: #d5dde9;
+    --dai-border-strong: #bdc9d9;
+    --dai-card-border: rgba(15, 23, 42, .14);
+    --dai-card-border-hover: rgba(37, 99, 235, .32);
+    --dai-inner-border: rgba(15, 23, 42, .09);
+    --dai-inner-border-strong: rgba(15, 23, 42, .13);
+    --dai-input-border: rgba(15, 23, 42, .20);
+    --dai-shadow-card: 0 7px 22px rgba(15, 23, 42, .055);
+}
+
+/* Main surfaces on every base-template and standalone page. */
+body.dai-app-shell :is(
+    .card,
+    .workspace-section,
+    .workspace-next-card,
+    .workspace-today-card,
+    .program-form-card,
+    .feature-group,
+    .account-card,
+    .page-card,
+    .info-card,
+    .tooth-browser-card,
+    .program-toolbar,
+    .program-day,
+    .program-empty,
+    .ai-card,
+    .result-section,
+    .choice-card,
+    .question-card
+),
+body.dai-standalone :is(
+    .card,
+    .box,
+    .panel,
+    .legal-box,
+    .info-card,
+    .page-card,
+    .ai-card,
+    .result-section,
+    .choice-card,
+    .question-card
+) {
+    border-color: var(--dai-card-border) !important;
+    box-shadow: var(--dai-shadow-card) !important;
+}
+
+/* Calm inner surfaces: visible, but lighter than the parent card. */
+body.dai-app-shell :is(
+    .workspace-action-card,
+    .workspace-today-row,
+    .workspace-patient-row,
+    .program-event,
+    .patient-history-row,
+    .patient-info-item,
+    .analysis-image-card,
+    .workspace-empty-compact,
+    .patient-empty-state,
+    .quick-add-grid a,
+    .tooth-browser-row
+),
+body.dai-standalone :is(
+    .item,
+    .info-item,
+    .patient,
+    .analysis-row,
+    .analysis-image-card
+) {
+    border: 1px solid var(--dai-inner-border) !important;
+}
+
+body.dai-app-shell :is(.workspace-action-card, .workspace-today-row, .workspace-patient-row, .program-event, .tooth-browser-row):hover {
+    border-color: var(--dai-card-border-hover) !important;
+    background-color: #fbfdff !important;
+}
+
+/* Search and forms use a slightly stronger line for quick visual scanning. */
+body.dai-app-shell .workspace-search {
+    border-color: var(--dai-card-border) !important;
+    box-shadow: var(--dai-shadow-card) !important;
+}
+body.dai-app-shell input:not([type="checkbox"]):not([type="radio"]),
+body.dai-app-shell select,
+body.dai-app-shell textarea,
+body.dai-standalone input:not([type="checkbox"]):not([type="radio"]),
+body.dai-standalone select,
+body.dai-standalone textarea {
+    border-color: var(--dai-input-border) !important;
+}
+
+/* Patient and dashboard details use navy-tinted separators instead of gray blocks. */
+body.dai-app-shell .patient-action {
+    border-color: var(--dai-inner-border-strong) !important;
+}
+body.dai-app-shell .patient-hero-meta span {
+    border-color: var(--dai-inner-border) !important;
+}
+body.dai-app-shell .patient-info-card > summary,
+body.dai-app-shell .patient-section-heading,
+body.dai-app-shell .program-day-heading {
+    border-color: var(--dai-inner-border) !important;
+}
+
+/* Hamburger and mobile navigation belong to the same navy visual family. */
+body.dai-app-shell .workspace-menu-panel {
+    border-color: rgba(15,23,42,.16) !important;
+}
+body.dai-app-shell .mobile-bottom-nav {
+    border-top-color: rgba(15,23,42,.14) !important;
+    box-shadow: 0 -7px 22px rgba(15,23,42,.07) !important;
+}
+
+/* The tooth chart gets only structural boundary polish. Clinical colors stay intact. */
+body.dai-standalone.dai-tooth-chart :is(.card, .panel) {
+    border-color: rgba(15,23,42,.14) !important;
+}
+body.dai-standalone.dai-tooth-chart .surface-button:not(.selected) {
+    border-color: rgba(15,23,42,.18) !important;
+}
+
+/* Auth/legal cards: a crisp edge without making them heavy. */
+body.dai-standalone :is(.box, .legal-box) {
+    border-color: rgba(15,23,42,.14) !important;
+}
+
+@media (max-width: 760px) {
+    body.dai-app-shell :is(
+        .card,
+        .workspace-section,
+        .program-form-card,
+        .feature-group,
+        .account-card,
+        .page-card,
+        .info-card,
+        .tooth-browser-card,
+        .program-day,
+        .ai-card,
+        .result-section,
+        .choice-card,
+        .question-card
+    ),
+    body.dai-standalone :is(.card, .box, .panel, .legal-box) {
+        box-shadow: 0 5px 16px rgba(15,23,42,.05) !important;
+    }
+}
+
+
+/* =========================================================
+   DENTAL AI SURFACE DEPTH V4
+   Subtle navy edge, brighter center. Kept intentionally restrained.
+   ========================================================= */
+body.dai-app-shell :is(
+    .card,
+    .workspace-section,
+    .program-form-card,
+    .feature-group,
+    .account-card,
+    .page-card,
+    .info-card,
+    .tooth-browser-card,
+    .program-toolbar,
+    .program-day,
+    .program-empty,
+    .ai-card,
+    .choice-card,
+    .question-card
+),
+body.dai-standalone :is(.card, .box, .panel, .legal-box, .info-card, .page-card, .ai-card, .choice-card, .question-card) {
+    border: 1px solid transparent !important;
+    background:
+        radial-gradient(circle at 50% 42%, #ffffff 0%, #ffffff 63%, #fbfcff 100%) padding-box,
+        linear-gradient(135deg, rgba(15,23,42,.24), rgba(37,99,235,.12) 48%, rgba(15,23,42,.09)) border-box !important;
+    box-shadow: 0 7px 22px rgba(15,23,42,.055), inset 0 1px 0 rgba(255,255,255,.94) !important;
+}
+
+/* Search intentionally uses the same navy family as the application header. */
+body.dai-app-shell .workspace-search {
+    background: linear-gradient(125deg, #0f172a, #172a49) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+    box-shadow: 0 8px 22px rgba(15,23,42,.14) !important;
+}
+body.dai-app-shell .workspace-search .ui-icon { color: #e2e8f0 !important; }
+body.dai-app-shell .workspace-search input:not([type="checkbox"]):not([type="radio"]) {
+    background: rgba(255,255,255,.075) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,.14) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+body.dai-app-shell .workspace-search input::placeholder { color: rgba(255,255,255,.66) !important; }
+body.dai-app-shell .workspace-search input:focus {
+    border-color: rgba(147,197,253,.72) !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,.15) !important;
+}
+body.dai-app-shell .workspace-search-button {
+    background: #2563eb !important;
+    border-color: #3b82f6 !important;
+    color: #fff !important;
+}
+
+/* Preserve semantically colored clinical/tooth elements. */
+body.dai-standalone.dai-tooth-chart :is(.tooth, .surface-button, .legend-item),
+body.dai-app-shell :is(.notice, .error, .info, .workspace-flash, .final-box) {
+    background-clip: border-box;
+}
+
+/* Inner cards keep the same idea at a lighter strength. */
+body.dai-app-shell :is(
+    .workspace-action-card,
+    .workspace-today-row,
+    .workspace-patient-row,
+    .program-event,
+    .patient-history-row,
+    .patient-info-item,
+    .analysis-image-card,
+    .workspace-empty-compact,
+    .patient-empty-state,
+    .quick-add-grid a,
+    .tooth-browser-row
+) {
+    background: radial-gradient(circle at 50% 44%, #ffffff 0%, #ffffff 70%, #f8fbff 100%) !important;
+    border-color: rgba(15,23,42,.12) !important;
+}
+
+/* ================================================================
+   ACADEMIC UI V12 OVERRIDES
+   The global primary-button rule must not recolor the academic chat/library.
+   ================================================================ */
+body.dai-app-shell.study-chat-active .study-chat-clean-new,
+body.dai-app-shell.study-chat-active .study-quick-prompts-clean button {
+    min-height: 27px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    border-color: #d6dae0 !important;
+    box-shadow: none !important;
+    font-size: .66rem !important;
+}
+body.dai-app-shell.study-chat-active .study-quick-prompts-clean button {
+    border: 0 !important;
+    background: transparent !important;
+}
+body.dai-app-shell.study-chat-active .study-chat-clean-composer button {
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0 !important;
+    background: #111827 !important;
+    color: #fff !important;
+    border: 1px solid #111827 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    font-size: 1rem !important;
+}
+body.dai-app-shell .study-course-clean .study-neutral-action {
+    min-height: 34px !important;
+    padding: 5px 10px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    border: 1px solid #cfd5dd !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+    font-size: .72rem !important;
+}
+body.dai-app-shell .study-course-clean .study-clean-delete {
+    width: 30px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #9b1c1c !important;
+    border: 1px solid #e4e7ec !important;
+    border-radius: 9px !important;
+    box-shadow: none !important;
+    font-size: 1rem !important;
+}
+body.dai-app-shell .study-course-clean .study-danger-button {
+    min-height: 34px !important;
+    background: #fff !important;
+    color: #9b1c1c !important;
+    border-color: #efc6c6 !important;
+    box-shadow: none !important;
+}

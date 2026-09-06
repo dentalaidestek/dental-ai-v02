@@ -48,3 +48,6 @@ gallery_src/
 *SON_DURUM*
 *ANA_YEDEK*
 *.bak*
+
+# Local Dental AI patch backups
+.dental_ai_*

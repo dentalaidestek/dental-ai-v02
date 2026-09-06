@@ -1001,3 +1001,3578 @@ h2 .ui-icon {
     width: 17px;
     height: 17px;
 }
+
+/* =========================================================
+   DENTAL AI WORKSPACE V1
+   Dashboard + Program + mobile application shell
+   ========================================================= */
+
+.workspace-dashboard,
+.program-page,
+.program-form-page,
+.features-page {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.workspace-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 24px 26px;
+    border-radius: 22px;
+    color: #fff;
+    background: linear-gradient(135deg, #0f172a, #18355b);
+    box-shadow: var(--shadow-md);
+    margin-bottom: 16px;
+}
+
+.workspace-hero h1 {
+    color: #fff;
+    margin: 3px 0 7px;
+    font-size: clamp(27px, 4vw, 35px);
+}
+
+.workspace-hero p {
+    color: #dbeafe;
+    margin: 0;
+    max-width: 720px;
+}
+
+.workspace-eyebrow,
+.workspace-section-kicker {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.workspace-eyebrow { color: #bfdbfe; }
+.workspace-section-kicker { color: #64748b; margin-bottom: 4px; }
+
+.workspace-role-pill {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.10);
+    font-size: 12px;
+    font-weight: 750;
+    color: #fff;
+}
+
+.workspace-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 9px 8px 14px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 16px;
+}
+
+.workspace-search .ui-icon { color: #64748b; }
+.workspace-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    padding: 8px 2px;
+    font: inherit;
+    color: #0f172a;
+    background: transparent;
+}
+.workspace-search-button { padding: 9px 15px; }
+
+.workspace-focus-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.workspace-next-card,
+.workspace-today-card,
+.workspace-section,
+.program-toolbar,
+.program-day,
+.program-empty,
+.program-form-card,
+.feature-group {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+}
+
+.workspace-next-card,
+.workspace-today-card {
+    padding: 20px;
+}
+.workspace-next-card h2,
+.workspace-today-card h2 { margin: 2px 0 6px; }
+.workspace-next-card p { margin: 0 0 14px; }
+.workspace-next-time {
+    font-size: 28px;
+    font-weight: 850;
+    color: #1d4ed8;
+    letter-spacing: -.04em;
+}
+
+.workspace-inline-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.workspace-btn-secondary {
+    background: #eef2f7 !important;
+    color: #334155 !important;
+}
+
+.workspace-card-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.workspace-card-heading h2 { margin: 0; }
+.workspace-card-heading > a,
+.workspace-text-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.workspace-today-list { display: grid; gap: 6px; }
+.workspace-today-row,
+.workspace-patient-row {
+    text-decoration: none;
+    color: inherit;
+}
+.workspace-today-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 18px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 8px;
+    border-radius: 11px;
+}
+.workspace-today-row:hover { background: #f8fafc; }
+.workspace-time { font-weight: 800; color: #1d4ed8; }
+.workspace-today-text { min-width: 0; }
+.workspace-today-text strong,
+.workspace-today-text small { display: block; }
+.workspace-today-text strong { color: #172033; }
+.workspace-today-text small { color: #64748b; margin-top: 2px; }
+.workspace-row-arrow { font-size: 25px; color: #94a3b8; line-height: 1; }
+
+.workspace-section {
+    padding: 20px;
+    margin: 0 0 16px;
+}
+
+.workspace-action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+.workspace-action-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 76px;
+    padding: 13px;
+    border: 1px solid #e7edf5;
+    border-radius: 14px;
+    text-decoration: none;
+    color: #172033;
+    background: #fbfdff;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.workspace-action-card:hover {
+    transform: translateY(-1px);
+    border-color: #cbd9ec;
+    box-shadow: 0 6px 18px rgba(15,23,42,.06);
+}
+.workspace-action-icon {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: #eff6ff;
+    color: #2563eb;
+}
+.workspace-action-icon .ui-icon { width: 21px; height: 21px; }
+.workspace-action-card strong,
+.workspace-action-card small { display: block; }
+.workspace-action-card strong { font-size: 14px; }
+.workspace-action-card small { margin-top: 2px; color: #64748b; font-size: 12px; line-height: 1.3; }
+
+.workspace-patient-list { gap: 6px; }
+.workspace-patient-row { padding: 12px 13px !important; }
+.workspace-empty-compact {
+    padding: 13px 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #64748b;
+}
+.workspace-empty-compact a { color: #2563eb; font-weight: 700; }
+.workspace-notice { margin-top: 18px; }
+
+/* Program */
+.program-header,
+.program-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+.program-header h1,
+.program-form-header h1 { margin: 2px 0 5px; }
+.program-header p,
+.program-form-header p { margin: 0; }
+
+.workspace-flash {
+    padding: 12px 14px;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+}
+.workspace-flash.success { background: #ecfdf3; border-color: #bbf7d0; color: #047857; }
+.workspace-flash.error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+
+.program-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    margin-bottom: 16px;
+}
+.program-view-tabs { display: flex; gap: 4px; }
+.program-view-tabs a,
+.program-period-nav a {
+    text-decoration: none;
+    color: #475569;
+    font-weight: 700;
+    border-radius: 10px;
+}
+.program-view-tabs a { padding: 9px 13px; }
+.program-view-tabs a.active { color: #1d4ed8; background: #eff6ff; }
+.program-period-nav { display: flex; align-items: center; gap: 4px; }
+.program-period-nav a { min-width: 36px; text-align: center; padding: 8px; }
+.program-period-nav a:hover { background: #f1f5f9; }
+.program-period-nav .program-today-link { min-width: auto; font-size: 12px; }
+
+.program-groups { display: grid; gap: 14px; }
+.program-day { overflow: hidden; }
+.program-day-today { border-color: #bfdbfe; }
+.program-day-heading {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 13px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid #edf1f6;
+}
+.program-day-heading h2 { font-size: 16px; margin: 0; }
+.program-day-heading span {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 800;
+}
+.program-event-list { display: grid; }
+.program-event {
+    display: grid;
+    grid-template-columns: 72px minmax(0,1fr) auto;
+    gap: 14px;
+    padding: 15px 16px;
+    border-bottom: 1px solid #eef2f6;
+}
+.program-event:last-child { border-bottom: 0; }
+.program-event.is-completed { opacity: .58; }
+.program-event.is-completed h3 { text-decoration: line-through; }
+.program-event-time strong,
+.program-event-time small { display: block; }
+.program-event-time strong { color: #1d4ed8; font-size: 17px; }
+.program-event-time small { color: #94a3b8; margin-top: 1px; }
+.program-event-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.program-type,
+.program-recurring,
+.program-reminder {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 800;
+}
+.program-type { color: #1d4ed8; background: #eff6ff; }
+.program-event-main h3 { margin: 4px 0 2px; font-size: 16px; }
+.program-event-main p { margin: 0; color: #64748b; font-size: 13px; }
+.program-event-main p a { color: #2563eb; font-weight: 700; text-decoration: none; }
+.program-notes { margin-top: 6px; font-size: 13px; color: #475569; white-space: pre-line; }
+.program-event-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; align-self: center; }
+.program-event-actions a,
+.link-button {
+    border: 0;
+    padding: 6px 8px;
+    background: transparent;
+    color: #2563eb;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 750;
+    text-decoration: none;
+    cursor: pointer;
+}
+.danger-link { color: #b91c1c !important; }
+
+.program-empty {
+    text-align: center;
+    padding: 46px 20px;
+}
+.program-empty-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 10px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 26px;
+}
+.program-empty h2 { margin: 0 0 5px; }
+.program-empty p { margin: 0 0 15px; }
+
+/* Program form */
+.program-form-page { max-width: 850px; }
+.program-form-header { display: block; }
+.workspace-back-link { color: #2563eb; font-weight: 700; text-decoration: none; }
+.program-form-card { padding: 22px; }
+.program-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px;
+}
+.program-field { display: grid; gap: 6px; }
+.program-field > span { font-weight: 750; color: #334155; font-size: 13px; }
+.program-field small { color: #94a3b8; font-weight: 600; }
+.program-field input,
+.program-field select,
+.program-field textarea,
+.password-form select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 12px;
+    border: 1px solid #cfd8e3;
+    border-radius: 10px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+}
+.program-field textarea { resize: vertical; }
+.program-field-wide { grid-column: 1 / -1; }
+.program-switch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+.program-switch-row input { margin-top: 4px; width: 18px; height: 18px; }
+.program-switch-row strong,
+.program-switch-row small { display: block; }
+.program-switch-row small { color: #64748b; margin-top: 2px; }
+.program-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    margin-top: 18px;
+}
+
+/* Tüm özellikler */
+.feature-group { padding: 20px; margin-bottom: 15px; }
+.feature-group h2 { margin: 0 0 12px; font-size: 18px; }
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 10px;
+}
+.feature-grid a {
+    display: block;
+    padding: 14px;
+    border-radius: 13px;
+    border: 1px solid #e7edf5;
+    text-decoration: none;
+    background: #fbfdff;
+}
+.feature-grid strong,
+.feature-grid span { display: block; }
+.feature-grid strong { color: #172033; }
+.feature-grid span { color: #64748b; font-size: 12px; margin-top: 3px; }
+
+/* Mobil alt navigasyon ve hızlı ekle */
+.mobile-bottom-nav,
+.quick-add-backdrop { display: none; }
+
+@media (max-width: 900px) {
+    .workspace-action-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 760px) {
+    body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+    main { padding-bottom: 28px !important; }
+
+    .workspace-hero {
+        padding: 20px;
+        border-radius: 18px;
+    }
+    .workspace-role-pill { display: none; }
+    .workspace-focus-grid { grid-template-columns: 1fr; }
+    .workspace-search-button { min-height: 42px; }
+    .workspace-section,
+    .workspace-next-card,
+    .workspace-today-card { padding: 16px; }
+    .workspace-action-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+    .workspace-action-card { min-height: 70px; padding: 11px; }
+    .workspace-action-card small { display: none; }
+
+    .program-header { align-items: center; }
+    .program-header .btn { flex: 0 0 auto; }
+    .program-toolbar { align-items: stretch; flex-direction: column; }
+    .program-view-tabs,
+    .program-period-nav { justify-content: center; }
+    .program-event {
+        grid-template-columns: 58px minmax(0,1fr);
+        gap: 10px;
+        padding: 14px;
+    }
+    .program-event-actions {
+        grid-column: 2;
+        justify-content: flex-start;
+    }
+    .program-event-actions a,
+    .link-button { min-height: 38px; display: inline-flex; align-items: center; }
+
+    .program-form-grid { grid-template-columns: 1fr; }
+    .program-field-wide { grid-column: auto; }
+    .program-form-card { padding: 16px; }
+    .program-form-actions .btn { flex: 1; text-align: center; }
+    .feature-grid { grid-template-columns: 1fr; }
+
+    .mobile-bottom-nav {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1200;
+        min-height: calc(64px + env(safe-area-inset-bottom));
+        padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+        background: rgba(255,255,255,.98);
+        border-top: 1px solid #e2e8f0;
+        box-shadow: 0 -8px 28px rgba(15,23,42,.08);
+        backdrop-filter: blur(14px);
+    }
+    .mobile-nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        color: #64748b;
+        text-decoration: none;
+        font-size: 10px;
+        font-weight: 750;
+    }
+    .mobile-nav-item .ui-icon { width: 21px; height: 21px; }
+    .mobile-nav-plus {
+        width: 48px;
+        height: 48px;
+        align-self: center;
+        justify-self: center;
+        margin-top: -18px;
+        border-radius: 50%;
+        border: 4px solid #fff;
+        background: #2563eb;
+        color: #fff;
+        font-size: 29px;
+        line-height: 1;
+        box-shadow: 0 8px 20px rgba(37,99,235,.28);
+    }
+
+    .quick-add-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1300;
+        align-items: flex-end;
+        background: rgba(15,23,42,.42);
+        padding: 0;
+    }
+    .quick-add-backdrop.open { display: flex; }
+    .quick-add-sheet {
+        width: 100%;
+        background: #fff;
+        border-radius: 22px 22px 0 0;
+        padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+        box-shadow: 0 -16px 48px rgba(15,23,42,.20);
+    }
+    .quick-add-handle {
+        width: 42px;
+        height: 4px;
+        background: #cbd5e1;
+        border-radius: 99px;
+        margin: 4px auto 10px;
+    }
+    .quick-add-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .quick-add-heading strong { font-size: 18px; }
+    .quick-add-heading button {
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        border-radius: 50%;
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 24px;
+    }
+    .quick-add-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+    }
+    .quick-add-grid a {
+        min-height: 84px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        border-radius: 15px;
+        background: #f8fafc;
+        border: 1px solid #e5eaf1;
+        color: #172033;
+        text-decoration: none;
+        text-align: center;
+    }
+    .quick-add-grid a span { color: #2563eb; font-weight: 850; font-size: 19px; }
+    .quick-add-grid a strong { font-size: 12px; }
+    body.quick-add-open { overflow: hidden; }
+}
+
+@media (max-width: 430px) {
+    .workspace-action-grid { grid-template-columns: 1fr 1fr; }
+    .workspace-action-icon { width: 36px; height: 36px; flex-basis: 36px; }
+    .workspace-action-card strong { font-size: 13px; }
+    .workspace-search { padding-left: 11px; }
+    .program-header { align-items: flex-start; }
+    .program-header p { display: none; }
+}
+
+/* Workspace üst navigasyon: günlük işler görünür, diğerleri üç çizgi menüsünde. */
+.primary-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+.primary-nav a {
+    color: #dbe4f0;
+    text-decoration: none;
+    padding: 9px 11px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.primary-nav a:hover { background: rgba(255,255,255,.09); color: #fff; }
+
+.topbar .menu-toggle {
+    display: flex !important;
+    flex: 0 0 auto;
+}
+.topbar .workspace-menu-panel {
+    display: none !important;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 18px;
+    left: auto;
+    width: min(320px, calc(100vw - 24px));
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding: 9px;
+    background: #fff !important;
+    border: 1px solid #dbe3ed !important;
+    border-radius: 16px !important;
+    box-shadow: 0 18px 48px rgba(15,23,42,.20) !important;
+}
+.topbar .workspace-menu-panel.open { display: flex !important; }
+.topbar .workspace-menu-panel a {
+    color: #263449 !important;
+    padding: 12px 13px !important;
+    font-size: 14px !important;
+}
+.topbar .workspace-menu-panel a:hover {
+    color: #1d4ed8 !important;
+    background: #eff6ff !important;
+    transform: none !important;
+}
+.workspace-menu-divider {
+    height: 1px;
+    background: #e8edf3;
+    margin: 4px 5px;
+}
+
+@media (max-width: 760px) {
+    .primary-nav { display: none; }
+    .topbar .workspace-menu-panel {
+        top: calc(100% + 6px) !important;
+        left: 10px !important;
+        right: 10px !important;
+        width: auto;
+    }
+}
+
+/* =========================================================
+   UI DÜZELTME V2 — mobil okunabilirlik + hasta profili
+   ========================================================= */
+
+/* Ana sayfa: Programım ve Bugün tek, kompakt kart. */
+.workspace-program-today {
+    padding: 18px 20px;
+}
+.workspace-program-heading {
+    margin-bottom: 8px;
+}
+.workspace-program-heading h2 {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.workspace-date-inline {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0;
+}
+.workspace-program-empty {
+    margin-top: 4px;
+}
+
+/* Dashboard listeleri: mobilde ok ve metin artık ayrı kutulara düşmez. */
+.workspace-patient-list,
+.workspace-section > .patient-list {
+    display: grid;
+    gap: 8px;
+}
+.workspace-patient-row {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.workspace-patient-row > div {
+    min-width: 0;
+}
+.workspace-patient-row .workspace-row-arrow {
+    flex: 0 0 auto;
+}
+
+/* Mobil alt menü: isimler tam, daha okunur ve aktif sayfa belirgin. */
+@media (max-width: 760px) {
+    .mobile-nav-item {
+        color: #536176;
+        font-size: 11px;
+        font-weight: 760;
+        line-height: 1.05;
+        min-width: 0;
+    }
+    .mobile-nav-item span {
+        display: block;
+        white-space: nowrap;
+        opacity: 1;
+    }
+    .mobile-nav-item .ui-icon {
+        width: 22px;
+        height: 22px;
+    }
+    .mobile-nav-item.active {
+        color: #1d4ed8;
+    }
+    .mobile-nav-item.active .ui-icon {
+        stroke-width: 2.35;
+    }
+}
+
+/* Hasta detay sayfası: uygulama kabuğuyla aynı tasarım dili. */
+.patient-detail-page {
+    width: min(940px, 100%);
+    margin: 0 auto;
+}
+.patient-back-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    margin-bottom: 6px;
+}
+.patient-hero-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 22px;
+    padding: 22px !important;
+}
+.patient-hero-main {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 14px;
+}
+.patient-avatar {
+    width: 58px;
+    height: 58px;
+    flex: 0 0 58px;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    color: #1d4ed8;
+    font-size: 20px;
+    font-weight: 850;
+    letter-spacing: -.04em;
+}
+.patient-hero-copy {
+    min-width: 0;
+}
+.patient-hero-copy h1 {
+    margin: 2px 0 7px;
+    font-size: clamp(24px, 4vw, 34px);
+    line-height: 1.08;
+}
+.patient-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.patient-hero-meta span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 650;
+}
+.patient-action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(112px, 1fr));
+    gap: 8px;
+}
+.patient-action {
+    min-height: 54px;
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    border-radius: 13px;
+    border: 1px solid #dbe3ed;
+    background: #fff;
+    color: #263449 !important;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+.patient-action span {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 28px;
+    border-radius: 9px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 850;
+}
+.patient-action strong {
+    font-size: 13px;
+    white-space: nowrap;
+}
+.patient-action-primary {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+    color: #1d4ed8 !important;
+}
+.patient-action:active {
+    transform: translateY(1px);
+}
+
+.patient-info-card {
+    padding: 0 !important;
+    overflow: hidden;
+}
+.patient-info-card > summary {
+    min-height: 68px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.patient-info-card > summary::-webkit-details-marker {
+    display: none;
+}
+.patient-info-card > summary strong,
+.patient-info-card > summary small {
+    display: block;
+}
+.patient-info-card > summary strong {
+    color: #172033;
+    font-size: 17px;
+}
+.patient-info-card > summary small {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+}
+.patient-details-arrow {
+    color: #64748b;
+    font-size: 24px;
+    transition: transform .18s ease;
+}
+.patient-info-card[open] .patient-details-arrow {
+    transform: rotate(180deg);
+}
+.patient-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 0 18px 18px;
+}
+.patient-info-item {
+    min-width: 0;
+    padding: 12px 13px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #edf1f6;
+}
+.patient-info-item > span,
+.patient-info-item > strong {
+    display: block;
+}
+.patient-info-item > span {
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 650;
+}
+.patient-info-item > strong {
+    color: #172033;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+.patient-info-address {
+    grid-column: 1 / -1;
+}
+.patient-info-address strong {
+    white-space: pre-wrap;
+}
+
+.patient-section-card {
+    padding: 20px !important;
+}
+.patient-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+.patient-section-heading h2 {
+    margin: 2px 0 0;
+    font-size: 21px;
+}
+.patient-section-action {
+    min-height: 38px;
+    padding: 8px 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.patient-complaint-card p {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #334155;
+}
+.patient-history-list {
+    display: grid;
+    gap: 8px;
+}
+.patient-history-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 14px;
+    border-radius: 13px;
+    border: 1px solid #e6ebf2;
+    background: #fbfdff;
+}
+.patient-history-main {
+    min-width: 0;
+}
+.patient-history-title {
+    color: #172033;
+    font-size: 15px;
+    font-weight: 800;
+}
+.patient-history-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px 9px;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 12px;
+}
+.patient-history-note {
+    margin: 7px 0 0 !important;
+    color: #475569;
+    font-size: 13px;
+}
+.analysis-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 11px;
+}
+.analysis-status.success { background: #dcfce7; color: #166534; }
+.analysis-status.partial { background: #fef3c7; color: #92400e; }
+.analysis-status.failed { background: #fee2e2; color: #991b1b; }
+body.dai-app-shell .patient-detail-page button.analysis-detail-button,
+body.dai-app-shell .patient-detail-page button.patient-show-more {
+    min-height: 38px;
+    padding: 7px 11px;
+    border-radius: 10px !important;
+    background: #fff !important;
+    border: 1px solid #dbe3ed !important;
+    color: #1d4ed8 !important;
+    box-shadow: none !important;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+body.dai-app-shell .patient-detail-page button.patient-show-more {
+    margin-top: 10px;
+}
+.patient-empty-state {
+    padding: 14px;
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #64748b;
+}
+
+/* Analiz detay modali — eski işlev korunur, görünüm ortak sisteme alınır. */
+.analysis-modal {
+    display: none;
+    position: fixed;
+    z-index: 1500;
+    inset: 0;
+    background: rgba(15,23,42,.68);
+    padding: 20px;
+    overflow: auto;
+}
+.analysis-modal.open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.analysis-modal-content {
+    position: relative;
+    width: min(900px, 100%);
+    max-height: 90vh;
+    overflow: auto;
+    background: #fff;
+    color: #172033;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 24px 70px rgba(15,23,42,.30);
+}
+body.dai-app-shell .patient-detail-page button.analysis-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 38px;
+    min-height: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 50% !important;
+    background: #f1f5f9 !important;
+    border: 0 !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+    font-size: 25px;
+    line-height: 1;
+}
+.analysis-modal-content h2 { margin-top: 0; padding-right: 42px; }
+.analysis-modal-content h3 { margin: 20px 0 10px; }
+.analysis-modal-meta {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 12px;
+}
+.analysis-image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+}
+.analysis-image-card {
+    padding: 9px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #f9fafb;
+}
+.analysis-image-card img {
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    display: block;
+    border-radius: 8px;
+    background: #111827;
+}
+.analysis-image-card div {
+    margin-top: 7px;
+    font-size: 12px;
+    word-break: break-word;
+}
+.analysis-muted { color: #64748b; }
+.analysis-treatment-box {
+    padding: 14px;
+    background: #f8fafc;
+    border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+    .workspace-program-today {
+        padding: 15px !important;
+    }
+    .workspace-program-heading h2 {
+        font-size: 20px;
+    }
+    .workspace-today-row {
+        grid-template-columns: 48px minmax(0, 1fr) 16px;
+        padding: 9px 5px;
+    }
+
+    .patient-detail-page {
+        width: 100%;
+    }
+    .patient-back-link {
+        margin-left: 2px;
+    }
+    .patient-hero-card {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 17px !important;
+    }
+    .patient-avatar {
+        width: 52px;
+        height: 52px;
+        flex-basis: 52px;
+        border-radius: 15px;
+    }
+    .patient-hero-copy h1 {
+        font-size: 26px;
+    }
+    .patient-action-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .patient-action {
+        min-width: 0;
+        padding: 9px 10px;
+    }
+    .patient-action strong {
+        font-size: 12px;
+    }
+    .patient-info-grid {
+        grid-template-columns: 1fr;
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+    .patient-info-address {
+        grid-column: auto;
+    }
+    .patient-info-card > summary {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+    .patient-section-card {
+        padding: 16px !important;
+    }
+    .patient-section-heading h2 {
+        font-size: 19px;
+    }
+    .patient-history-row {
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+    }
+    .analysis-history-item {
+        flex-direction: row;
+    }
+    .analysis-modal {
+        padding: 8px;
+    }
+    .analysis-modal-content {
+        padding: 18px;
+        max-height: 94vh;
+    }
+    .analysis-modal-meta {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 380px) {
+    .mobile-nav-item { font-size: 10px; }
+    .patient-hero-main { align-items: flex-start; }
+    .patient-hero-meta span { font-size: 11px; }
+    .patient-action-grid { gap: 6px; }
+    .patient-action { padding-left: 8px; padding-right: 8px; }
+}
+
+/* =========================================================
+   DENTAL AI UI POLISH V3 — hierarchy, borders, compact mobile
+   ========================================================= */
+.workspace-action-card,
+.workspace-today-row,
+.workspace-patient-row {
+    border: 1px solid rgba(15,23,42,.09);
+}
+.workspace-today-row,
+.workspace-patient-row {
+    background: #fff;
+}
+.workspace-patient-row {
+    border-radius: 13px;
+}
+.workspace-patient-row .workspace-row-arrow {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0 !important;
+    border-radius: 50%;
+    background: #f5f8fc;
+    color: #64748b;
+    font-size: 20px;
+}
+
+.patient-hero-card,
+.patient-info-card,
+.patient-section-card {
+    border: 1px solid rgba(15,23,42,.14) !important;
+}
+.patient-hero-copy h1 {
+    font-size: clamp(22px, 3.4vw, 30px);
+}
+.patient-section-heading h2 {
+    font-size: clamp(18px, 2.5vw, 22px);
+}
+.patient-info-item,
+.patient-history-row,
+.patient-complaint-card p,
+.patient-empty-state {
+    border: 1px solid rgba(15,23,42,.085);
+}
+.patient-complaint-card p,
+.patient-empty-state {
+    background: #fbfcfe;
+}
+.patient-action {
+    border-color: rgba(15,23,42,.13);
+    box-shadow: 0 2px 7px rgba(15,23,42,.025);
+}
+.patient-action:hover {
+    border-color: rgba(37,99,235,.30);
+    background: #fbfdff;
+}
+
+.program-event {
+    border: 1px solid rgba(15,23,42,.09);
+}
+.program-day {
+    border-color: rgba(15,23,42,.14);
+}
+.program-form-card {
+    border-color: rgba(15,23,42,.14);
+}
+
+/* Keep form groups visually clear on patient/new analysis/program pages. */
+.patient-form,
+.form,
+.program-form-grid {
+    --local-field-line: rgba(15,23,42,.18);
+}
+
+@media (max-width: 760px) {
+    .workspace-section {
+        padding: 15px;
+    }
+    .workspace-action-card {
+        min-height: 68px;
+        border-color: rgba(15,23,42,.105);
+    }
+    .workspace-patient-row {
+        padding: 11px 12px !important;
+    }
+    .workspace-patient-row .workspace-row-arrow {
+        width: 26px;
+        height: 26px;
+        font-size: 18px;
+    }
+    .patient-hero-card {
+        padding: 15px !important;
+    }
+    .patient-hero-copy h1 {
+        font-size: 22px;
+    }
+    .patient-section-heading h2 {
+        font-size: 18px;
+    }
+    .patient-info-item,
+    .patient-history-row {
+        border-color: rgba(15,23,42,.085);
+    }
+}
+
+
+/* =========================================================
+   DENTAL AI UI REFINE V4 — compact AI flow + stronger hierarchy
+   ========================================================= */
+.workspace-hero {
+    padding: 17px 21px;
+    margin-bottom: 12px;
+}
+.workspace-hero h1 {
+    margin: 2px 0 4px;
+    font-size: clamp(24px, 3.4vw, 30px);
+    line-height: 1.1;
+    color: #fff !important;
+}
+.workspace-hero p {
+    font-size: 14px;
+    line-height: 1.45;
+    max-width: 680px;
+}
+.workspace-eyebrow { margin-bottom: 2px; }
+.workspace-role-pill { padding: 6px 10px; }
+
+.workspace-ai-cta {
+    display: grid;
+    grid-template-columns: 46px minmax(0,1fr) 24px;
+    align-items: center;
+    gap: 12px;
+    min-height: 72px;
+    margin: 0 0 14px;
+    padding: 11px 14px;
+    border: 1px solid rgba(37,99,235,.34);
+    border-radius: 16px;
+    background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 56%, #ffffff 100%);
+    box-shadow: 0 6px 18px rgba(15,23,42,.055);
+    color: #0f172a !important;
+    text-decoration: none;
+}
+.workspace-ai-cta:hover { border-color: rgba(37,99,235,.55); }
+.workspace-ai-cta-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 13px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: linear-gradient(145deg, #1d4ed8, #2563eb);
+    box-shadow: 0 7px 18px rgba(37,99,235,.22);
+}
+.workspace-ai-cta-icon .ui-icon { width: 25px; height: 25px; }
+.workspace-ai-cta-copy strong,
+.workspace-ai-cta-copy small { display: block; }
+.workspace-ai-cta-copy strong { font-size: 17px; line-height: 1.2; }
+.workspace-ai-cta-copy small { color: #64748b; margin-top: 3px; font-size: 12px; }
+.workspace-ai-cta-arrow { color: #2563eb; font-size: 27px; line-height: 1; text-align: right; }
+
+.analysis-compose-page {
+    max-width: 760px;
+    margin: 0 auto;
+}
+.analysis-compose-heading { margin-bottom: 10px; }
+.analysis-compose-heading h1 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 10px;
+    font-size: clamp(26px, 4vw, 34px);
+}
+.analysis-compose-heading h1 .ui-icon { width: 30px; height: 30px; }
+.analysis-context-strip {
+    display: flex;
+    align-items: baseline;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+    padding: 9px 12px;
+    border: 1px solid rgba(15,23,42,.10);
+    border-radius: 12px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.35;
+}
+.analysis-context-strip strong { color: #172033; }
+.analysis-compact-form {
+    max-width: none;
+    gap: 0 !important;
+    padding: 15px 18px !important;
+    margin-top: 10px !important;
+}
+.analysis-field-block {
+    padding: 11px 0 12px;
+    border-bottom: 1px solid rgba(15,23,42,.08);
+}
+.analysis-field-block:first-child { padding-top: 1px; }
+.analysis-field-block:last-of-type { border-bottom: 0; padding-bottom: 8px; }
+.analysis-step-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.analysis-step-title > span {
+    width: 25px;
+    height: 25px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 850;
+}
+.analysis-step-title h2 { margin: 0; font-size: 18px; }
+.analysis-compact-form label { display: grid; gap: 6px; }
+.analysis-compact-form textarea { min-height: 78px !important; }
+.analysis-compact-form input[type="file"] { padding: 8px 10px; }
+.analysis-field-help { margin: 6px 0 0; font-size: 12px; line-height: 1.35; }
+.analysis-submit-button { width: 100%; margin-top: 9px; }
+.analysis-safety-note {
+    margin-top: 9px;
+    padding: 9px 12px;
+    border-radius: 11px;
+    border: 1px solid rgba(15,23,42,.08);
+    background: #fbfcfe;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.ai-summary-card {
+    display: grid;
+    gap: 8px;
+    padding: 12px 15px !important;
+    margin-bottom: 12px !important;
+}
+.ai-summary-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ai-summary-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    background: #eff6ff;
+    font-size: 21px;
+}
+.ai-summary-title strong,
+.ai-summary-title small { display: block; }
+.ai-summary-title strong { font-size: 19px; color: #0f172a; line-height: 1.15; }
+.ai-summary-title small { margin-top: 2px; color: #64748b; font-size: 12px; }
+.ai-summary-note {
+    padding-top: 7px;
+    border-top: 1px solid rgba(15,23,42,.07);
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+    .workspace-hero {
+        padding: 14px 16px;
+        border-radius: 16px;
+        margin-bottom: 10px;
+    }
+    .workspace-hero h1 { font-size: 24px; }
+    .workspace-hero p { font-size: 13px; line-height: 1.35; }
+    .workspace-ai-cta {
+        grid-template-columns: 42px minmax(0,1fr) 18px;
+        min-height: 64px;
+        padding: 9px 11px;
+        margin-bottom: 12px;
+        border-radius: 14px;
+    }
+    .workspace-ai-cta-icon { width: 42px; height: 42px; border-radius: 12px; }
+    .workspace-ai-cta-copy strong { font-size: 15px; }
+    .workspace-ai-cta-copy small { font-size: 11px; line-height: 1.25; }
+    .analysis-compose-heading h1 { font-size: 27px; margin-bottom: 8px; }
+    .analysis-context-strip { padding: 8px 10px; font-size: 12px; }
+    .analysis-compact-form { padding: 12px 14px !important; }
+    .analysis-field-block { padding: 9px 0 10px; }
+    .analysis-step-title { margin-bottom: 6px; }
+    .analysis-step-title h2 { font-size: 17px; }
+    .analysis-compact-form textarea { min-height: 70px !important; }
+    .analysis-field-help { margin-top: 4px; }
+    .ai-summary-card { padding: 10px 12px !important; }
+}
+
+/* =========================================================
+   DENTAL AI COMPACT WORKSPACE V5
+   Faster first-screen access + consistent mobile spacing.
+   ========================================================= */
+
+/* The greeting is a compact status line, not a second header. */
+.workspace-hero.workspace-hero-compact {
+    min-height: 0;
+    padding: 11px 17px;
+    margin-bottom: 8px;
+    border-radius: 16px;
+    align-items: center;
+}
+.workspace-hero.workspace-hero-compact h1 {
+    margin: 0;
+    font-size: clamp(21px, 3vw, 25px);
+    line-height: 1.15;
+    font-weight: 800;
+}
+
+/* Keep the three main dashboard controls visually strong but vertically lean. */
+.workspace-search {
+    min-height: 54px;
+    margin-bottom: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.workspace-search input {
+    min-height: 38px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+.workspace-search-button {
+    min-height: 40px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+}
+.workspace-ai-cta {
+    min-height: 58px;
+    margin-bottom: 8px;
+    padding: 7px 11px;
+    grid-template-columns: 40px minmax(0,1fr) 20px;
+    gap: 10px;
+    border-radius: 14px;
+}
+.workspace-ai-cta-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+}
+.workspace-ai-cta-icon .ui-icon { width: 22px; height: 22px; }
+.workspace-ai-cta-copy strong { font-size: 15px; }
+.workspace-ai-cta-copy small { font-size: 11px; margin-top: 1px; line-height: 1.25; }
+.workspace-ai-cta-arrow { font-size: 23px; }
+
+/* Dashboard program card: exactly one next item. */
+.workspace-program-compact {
+    padding: 12px 14px !important;
+    margin-bottom: 8px !important;
+}
+.workspace-program-compact .workspace-card-heading {
+    margin-bottom: 7px;
+}
+.workspace-program-compact .workspace-section-kicker {
+    margin-bottom: 1px;
+}
+.workspace-program-compact .workspace-program-heading h2 {
+    font-size: 18px;
+    line-height: 1.15;
+}
+.workspace-program-compact .workspace-date-inline {
+    font-size: 12px;
+    margin-left: 4px;
+}
+.workspace-program-compact .workspace-today-row {
+    min-height: 52px;
+    padding: 7px 8px;
+}
+.workspace-program-compact .workspace-empty-compact {
+    padding: 9px 11px;
+    font-size: 12px;
+}
+
+/* Priority tools should all be visible on the opening mobile viewport. */
+.workspace-dashboard > .workspace-section:not(.workspace-program-compact) {
+    margin-bottom: 10px;
+}
+.workspace-dashboard > .workspace-section .workspace-card-heading {
+    margin-bottom: 8px;
+}
+.workspace-dashboard > .workspace-section .workspace-card-heading h2 {
+    line-height: 1.1;
+}
+.workspace-action-grid { gap: 7px; }
+.workspace-action-card {
+    min-height: 60px;
+    padding: 8px 10px;
+    gap: 8px;
+}
+.workspace-action-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    border-radius: 10px;
+}
+.workspace-action-icon .ui-icon { width: 19px; height: 19px; }
+.workspace-action-card strong { font-size: 13px; }
+.workspace-action-card small { display: none; }
+
+/* Duplicate patient warning — informational, never an automatic merge. */
+.duplicate-patient-warning {
+    display: grid;
+    grid-template-columns: 36px minmax(0,1fr);
+    gap: 11px;
+    margin: 0 0 14px;
+    padding: 13px 14px;
+    border: 1px solid rgba(217,119,6,.30);
+    border-radius: 15px;
+    background: linear-gradient(135deg, #fffdf6, #fff9e8);
+    box-shadow: 0 5px 16px rgba(15,23,42,.04);
+}
+.duplicate-patient-icon {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: #fef3c7;
+    color: #92400e;
+    font-weight: 900;
+}
+.duplicate-patient-copy > strong,
+.duplicate-patient-copy > span { display: block; }
+.duplicate-patient-copy > strong { color: #78350f; font-size: 14px; }
+.duplicate-patient-copy > span { color: #92400e; font-size: 12px; margin-top: 2px; }
+.duplicate-patient-match {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 8px;
+    margin-top: 8px;
+    color: #334155;
+}
+.duplicate-patient-match b { color: #172033; }
+.duplicate-patient-match span {
+    padding: 3px 7px;
+    border: 1px solid rgba(15,23,42,.08);
+    border-radius: 999px;
+    background: rgba(255,255,255,.72);
+    font-size: 11px;
+}
+.duplicate-patient-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+.duplicate-patient-actions .btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+.duplicate-force-button {
+    background: #fff !important;
+    color: #92400e !important;
+    border: 1px solid rgba(146,64,14,.22) !important;
+}
+
+/* Patient information disclosure: clear tap target and visible chevron. */
+.patient-info-card > summary {
+    cursor: pointer;
+}
+.patient-details-arrow {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 2px 7px rgba(37,99,235,.08);
+}
+.patient-info-card[open] .patient-details-arrow {
+    transform: rotate(180deg);
+    background: #dbeafe;
+}
+
+/* Account/detail pages should begin close to the application header. */
+body.dai-app-shell .account-container {
+    margin-top: 6px !important;
+}
+body.dai-app-shell .patient-detail-page {
+    padding-top: 0;
+}
+body.dai-app-shell .patient-back-link {
+    margin-top: 0;
+}
+
+@media (max-width: 760px) {
+    /* Global application pages: remove the large empty strip below the header. */
+    body.dai-app-shell main {
+        padding: 12px 12px 26px !important;
+    }
+
+    .workspace-hero.workspace-hero-compact {
+        padding: 9px 14px;
+        margin-bottom: 7px;
+        border-radius: 14px;
+    }
+    .workspace-hero.workspace-hero-compact h1 {
+        font-size: 20px;
+    }
+    .workspace-search {
+        min-height: 50px;
+        margin-bottom: 7px;
+        padding: 5px 7px 5px 10px;
+        border-radius: 14px;
+    }
+    .workspace-search-button {
+        min-height: 38px !important;
+        padding: 6px 13px;
+    }
+    .workspace-ai-cta {
+        min-height: 54px;
+        margin-bottom: 7px;
+        padding: 6px 10px;
+    }
+    .workspace-ai-cta-copy small {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .workspace-program-compact {
+        padding: 10px 12px !important;
+        margin-bottom: 7px !important;
+    }
+    .workspace-program-compact .workspace-today-row {
+        min-height: 48px;
+        grid-template-columns: 45px minmax(0,1fr) 15px;
+        padding: 6px 5px;
+    }
+    .workspace-program-compact .workspace-time { font-size: 14px; }
+    .workspace-program-compact .workspace-today-text strong { font-size: 13px; }
+    .workspace-program-compact .workspace-today-text small { font-size: 10.5px; }
+
+    .workspace-dashboard > .workspace-section:not(.workspace-program-compact) {
+        padding: 12px !important;
+        margin-bottom: 8px;
+    }
+    .workspace-section-kicker { font-size: 10px; }
+    .workspace-dashboard > .workspace-section .workspace-card-heading h2 { font-size: 20px; }
+    .workspace-dashboard > .workspace-section .workspace-card-heading > a { font-size: 12px; }
+    .workspace-action-card {
+        min-height: 56px;
+        padding: 7px 8px;
+    }
+    .workspace-action-icon {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+    }
+
+    /* Pixel-stable icon + label rows. The center plus stays elevated. */
+    .mobile-bottom-nav {
+        align-items: stretch;
+        min-height: calc(64px + env(safe-area-inset-bottom));
+    }
+    .mobile-nav-item {
+        display: grid !important;
+        grid-template-rows: 24px 14px;
+        align-content: center;
+        justify-items: center;
+        gap: 3px !important;
+        min-height: 52px;
+        padding: 0 !important;
+        line-height: 1 !important;
+    }
+    .mobile-nav-item .ui-icon {
+        width: 22px;
+        height: 22px;
+        display: block;
+        margin: 0;
+        align-self: center;
+    }
+    .mobile-nav-item span {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        height: 14px;
+        line-height: 14px !important;
+        margin: 0 !important;
+        white-space: nowrap;
+    }
+    .mobile-nav-plus {
+        align-self: center;
+    }
+
+    body.dai-app-shell .account-container {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    .patient-detail-page .patient-back-link {
+        min-height: 34px;
+        margin-bottom: 4px;
+    }
+    .patient-info-card > summary {
+        min-height: 60px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .patient-details-arrow {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+        font-size: 21px;
+    }
+
+    .duplicate-patient-warning {
+        grid-template-columns: 32px minmax(0,1fr);
+        padding: 11px;
+    }
+    .duplicate-patient-icon { width: 31px; height: 31px; }
+    .duplicate-patient-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Patient clinical media V6 */
+.patient-chief-complaint {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 0.94rem;
+}
+.patient-chief-complaint span { color: #64748b; font-weight: 700; }
+.patient-chief-complaint strong { color: #172033; font-weight: 700; }
+.patient-media-section { scroll-margin-top: 110px; }
+.patient-media-heading p { margin: 4px 0 0; color: #64748b; font-size: 0.92rem; }
+.patient-media-upload {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.16);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(226,232,240,.46), rgba(255,255,255,.98) 38%, #fff 100%);
+}
+.patient-media-type-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.patient-media-pick {
+    min-height: 48px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 14px;
+    background: #fff;
+    color: #1e293b;
+    font-weight: 800;
+    font-size: 0.95rem;
+}
+.patient-media-pick.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+.patient-media-selected { margin: 10px 2px 0; color: #64748b; font-size: 0.88rem; }
+.patient-media-details { margin-top: 10px; border-top: 1px solid rgba(15,23,42,.08); padding-top: 10px; }
+.patient-media-details summary { cursor: pointer; color: #334155; font-weight: 750; list-style: none; }
+.patient-media-details summary::-webkit-details-marker { display: none; }
+.patient-media-details summary span { float: right; color: #2563eb; }
+.patient-media-fields { display: grid; grid-template-columns: 120px 1fr; gap: 10px; margin-top: 12px; }
+.patient-media-fields label { margin: 0; font-size: .88rem; }
+.patient-media-fields small { color: #94a3b8; font-weight: 500; }
+.patient-media-fields input, .patient-media-fields textarea { margin-top: 6px; }
+.patient-media-save {
+    width: 100%; min-height: 46px; margin-top: 12px; border: 0; border-radius: 14px;
+    background: #2563eb; color: #fff; font-weight: 800; font-size: .95rem;
+}
+.patient-media-save:disabled { opacity: .42; cursor: not-allowed; }
+.patient-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.patient-media-card { overflow: hidden; border: 1px solid rgba(15,23,42,.14); border-radius: 16px; background: #fff; }
+.patient-media-thumb { position: relative; display: block; aspect-ratio: 4/3; overflow: hidden; background: #eef2f7; }
+.patient-media-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.patient-media-badge { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; border-radius: 999px; background: rgba(15,23,42,.82); color:#fff; font-size:.72rem; font-weight:800; }
+.patient-media-info { padding: 10px; }
+.patient-media-info > strong { display:block; font-size:.82rem; color:#1e293b; }
+.patient-media-meta { margin-top:5px; display:flex; flex-direction:column; gap:3px; color:#64748b; font-size:.78rem; overflow-wrap:anywhere; }
+.patient-media-actions { margin-top:9px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.patient-media-actions a, .patient-media-actions button { border:0; background:transparent; padding:0; color:#2563eb; font-size:.78rem; font-weight:800; text-decoration:none; }
+.patient-media-actions form { margin:0; }
+.patient-media-actions button { color:#b42318; }
+.analysis-selected-media { display:flex; gap:12px; align-items:center; margin-bottom:14px; padding:10px; border:1px solid rgba(37,99,235,.2); border-radius:14px; background:#f8fbff; }
+.analysis-selected-media img { width:72px; height:58px; object-fit:cover; border-radius:10px; border:1px solid rgba(15,23,42,.1); }
+.analysis-selected-media div { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.analysis-selected-media strong { font-size:.9rem; color:#172033; }
+.analysis-selected-media span { font-size:.78rem; color:#64748b; }
+@media (max-width: 560px) {
+    .patient-media-fields { grid-template-columns: 1fr; }
+    .patient-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .patient-media-type-actions { grid-template-columns: 1fr 1fr; }
+}
+
+/* =========================
+   PATIENT MEDIA V7 COMPACT GALLERY
+   ========================= */
+.patient-media-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 9px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: #f8fafc;
+}
+.patient-media-selection-status,
+.patient-media-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.patient-media-selection-status strong {
+    color: #334155;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+.patient-media-link-button {
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    padding: 5px 3px;
+    font-weight: 800;
+    font-size: 0.76rem;
+}
+.patient-media-batch-analyze {
+    min-height: 36px;
+    border: 0;
+    border-radius: 10px;
+    padding: 7px 10px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 850;
+    white-space: nowrap;
+}
+.patient-media-batch-analyze:disabled { opacity: .42; cursor: not-allowed; }
+.patient-media-overflow { position: relative; }
+.patient-media-overflow summary {
+    list-style: none;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(15,23,42,.12);
+    border-radius: 10px;
+    background: #fff;
+    color: #334155;
+    font-size: 1.3rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.patient-media-overflow summary::-webkit-details-marker { display: none; }
+.patient-media-overflow form {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 7px);
+    z-index: 20;
+    width: max-content;
+    max-width: 230px;
+    padding: 6px;
+    border: 1px solid rgba(15,23,42,.14);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(15,23,42,.16);
+}
+.patient-media-overflow form button {
+    border: 0;
+    border-radius: 9px;
+    background: #fff5f5;
+    color: #b42318;
+    padding: 9px 11px;
+    font-weight: 800;
+    font-size: .78rem;
+}
+.patient-media-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+.patient-media-card {
+    position: relative;
+    overflow: visible;
+    border: 0;
+    border-radius: 13px;
+    background: transparent;
+}
+.patient-media-thumb {
+    width: 100%;
+    padding: 0;
+    border: 1px solid rgba(15,23,42,.13);
+    border-radius: 13px;
+    aspect-ratio: 1 / 1;
+    cursor: zoom-in;
+    box-shadow: 0 4px 12px rgba(15,23,42,.05);
+}
+.patient-media-thumb img { border-radius: 12px; }
+.patient-media-badge {
+    left: 5px;
+    bottom: 5px;
+    padding: 3px 6px;
+    font-size: .62rem;
+}
+.patient-media-select-control {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    z-index: 4;
+    width: 26px;
+    height: 26px;
+    margin: 0;
+    cursor: pointer;
+}
+.patient-media-select-control input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.patient-media-select-control span {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 2px solid rgba(255,255,255,.96);
+    border-radius: 50%;
+    background: rgba(15,23,42,.55);
+    color: transparent;
+    box-shadow: 0 2px 8px rgba(15,23,42,.22);
+    font-size: .76rem;
+    font-weight: 900;
+}
+.patient-media-select-control input:checked + span {
+    background: #2563eb;
+    color: #fff;
+}
+.patient-media-show-more {
+    width: auto;
+    min-height: 36px;
+    margin: 10px auto 0;
+    padding: 7px 13px;
+    border-radius: 10px;
+    font-size: .78rem;
+}
+.patient-media-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10050;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(8, 15, 30, .86);
+    backdrop-filter: blur(5px);
+}
+.patient-media-modal.open { display: flex; }
+.patient-media-modal-content {
+    position: relative;
+    width: min(680px, 100%);
+    max-height: 90vh;
+    overflow: auto;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(0,0,0,.3);
+}
+.patient-media-modal-content > img {
+    display: block;
+    width: 100%;
+    max-height: 66vh;
+    object-fit: contain;
+    background: #0f172a;
+    border-radius: 18px 18px 0 0;
+}
+.patient-media-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(15,23,42,.78);
+    color: #fff;
+    font-size: 1.4rem;
+    line-height: 1;
+}
+.patient-media-modal-info { padding: 14px; }
+.patient-media-modal-title-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: baseline;
+}
+.patient-media-modal-title-row strong { color: #172033; font-size: 1rem; }
+.patient-media-modal-title-row span { color: #64748b; font-size: .78rem; }
+.patient-media-modal-meta,
+.patient-media-modal-note {
+    margin-top: 8px;
+    color: #475569;
+    font-size: .84rem;
+}
+.patient-media-modal-note {
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: #f8fafc;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.patient-media-modal-delete {
+    width: 100%;
+    min-height: 42px;
+    margin-top: 12px;
+    border: 1px solid rgba(180,35,24,.18);
+    border-radius: 11px;
+    background: #fff5f5;
+    color: #b42318;
+    font-weight: 850;
+}
+.analysis-selected-media-multi { align-items: stretch; }
+.analysis-selected-media-thumbs {
+    display: grid;
+    grid-template-columns: repeat(2, 46px);
+    gap: 5px;
+    flex: 0 0 auto;
+    position: relative;
+}
+.analysis-selected-media-thumbs img {
+    width: 46px;
+    height: 42px;
+    border-radius: 8px;
+}
+.analysis-selected-media-more {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    min-width: 25px;
+    height: 25px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #fff !important;
+    font-size: .68rem !important;
+    font-weight: 900;
+}
+.analysis-extra-upload {
+    border: 1px solid rgba(15,23,42,.12);
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 10px 12px;
+}
+.analysis-extra-upload summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    list-style: none;
+    color: #334155;
+    font-weight: 800;
+    cursor: pointer;
+}
+.analysis-extra-upload summary::-webkit-details-marker { display: none; }
+.analysis-extra-upload summary span { color: #64748b; font-size: .75rem; font-weight: 650; }
+.analysis-extra-upload label { display: block; margin-top: 10px; }
+
+@media (max-width: 560px) {
+    .patient-media-toolbar { align-items: stretch; flex-direction: column; gap: 7px; padding: 8px; }
+    .patient-media-toolbar-actions { justify-content: space-between; }
+    .patient-media-batch-analyze { flex: 1; }
+    .patient-media-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .patient-media-select-control { top: 4px; right: 4px; }
+    .patient-media-modal { padding: 10px; }
+    .patient-media-modal-content > img { max-height: 62vh; }
+    .analysis-selected-media-multi { flex-direction: column; }
+    .analysis-selected-media-thumbs { grid-template-columns: repeat(4, 42px); }
+    .analysis-selected-media-thumbs img { width: 42px; height: 38px; }
+}
+
+/* =========================================================
+   DENTAL AI FINAL POLISH V8
+   Final dashboard text hierarchy + first-screen density.
+   No behavior or clinical workflow changes.
+   ========================================================= */
+
+/* Greeting remains visible but behaves as a slim welcome strip. */
+.workspace-hero.workspace-hero-compact {
+    padding: 8px 15px;
+    margin-bottom: 6px;
+}
+.workspace-hero.workspace-hero-compact h1 {
+    font-size: 19px;
+    line-height: 1.1;
+}
+
+/* Removing duplicate kickers lets the real section titles carry hierarchy. */
+.workspace-dashboard .workspace-program-compact .workspace-card-heading,
+.workspace-dashboard > .workspace-section .workspace-card-heading,
+.workspace-dashboard > .patient-card .patient-header {
+    margin-bottom: 6px;
+}
+.workspace-dashboard .workspace-program-compact .workspace-program-heading h2 {
+    font-size: 17px;
+    line-height: 1.15;
+}
+.workspace-dashboard > .workspace-section .workspace-card-heading h2,
+.workspace-dashboard > .patient-card .patient-header h2 {
+    font-size: 18px;
+    line-height: 1.15;
+}
+.workspace-dashboard > .patient-card .patient-header h2 .ui-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* Empty program state should not occupy more room than a real shortcut row. */
+.workspace-program-compact .workspace-empty-compact {
+    padding: 7px 9px;
+    min-height: 0;
+    line-height: 1.35;
+}
+
+@media (max-width: 760px) {
+    .workspace-dashboard {
+        margin-top: -4px;
+    }
+    .workspace-hero.workspace-hero-compact {
+        padding: 7px 12px;
+        margin-bottom: 5px;
+        border-radius: 13px;
+    }
+    .workspace-hero.workspace-hero-compact h1 {
+        font-size: 18px;
+    }
+    .workspace-search,
+    .workspace-ai-cta,
+    .workspace-program-compact {
+        margin-bottom: 6px !important;
+    }
+    .workspace-program-compact {
+        padding: 9px 11px !important;
+    }
+    .workspace-dashboard > .workspace-section:not(.workspace-program-compact) {
+        padding: 11px !important;
+        margin-bottom: 7px;
+    }
+    .workspace-dashboard > .workspace-section .workspace-card-heading h2,
+    .workspace-dashboard > .patient-card .patient-header h2 {
+        font-size: 18px;
+    }
+}
+
+/* =========================================================
+   DENTAL AI ACADEMIC NOTES V9
+   Course notes + PDF/image library + source-grounded AI chat.
+   ========================================================= */
+.study-page,
+.study-ai-page {
+    width: min(100% - 28px, 980px);
+    margin: 16px auto 96px;
+    color: #172033;
+}
+.study-page-header,
+.study-course-header,
+.study-ai-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+.study-page-header h1,
+.study-course-header h1,
+.study-ai-header h1 {
+    margin: 4px 0 4px;
+    color: #0f172a;
+    font-size: clamp(1.65rem, 5vw, 2.15rem);
+    line-height: 1.08;
+}
+.study-page-header p,
+.study-course-header p,
+.study-ai-header p {
+    max-width: 650px;
+    margin: 0;
+    color: #64748b;
+    font-size: .9rem;
+    line-height: 1.45;
+}
+.study-back-link {
+    color: #2563eb;
+    font-size: .82rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+.study-primary-button,
+.study-secondary-button,
+.study-danger-button,
+.study-ai-main-button {
+    min-height: 42px;
+    border-radius: 12px;
+    padding: 9px 14px;
+    font: inherit;
+    font-size: .84rem;
+    font-weight: 850;
+    text-decoration: none;
+    cursor: pointer;
+}
+.study-primary-button {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 7px 18px rgba(37,99,235,.16);
+}
+.study-primary-button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.study-secondary-button {
+    border: 1px solid rgba(15,23,42,.15);
+    background: #fff;
+    color: #334155;
+}
+.study-danger-button {
+    border: 1px solid rgba(180,35,24,.2);
+    background: #fff5f5;
+    color: #b42318;
+}
+.study-create-panel,
+.study-card,
+.study-ai-source-panel,
+.study-empty-state,
+.study-empty-inline {
+    border: 1px solid rgba(15,23,42,.14);
+    border-radius: 16px;
+    background: radial-gradient(circle at 50% 42%, #fff 48%, #f7f9fc 100%);
+    box-shadow: inset 0 0 0 1px rgba(37,99,235,.018), 0 6px 18px rgba(15,23,42,.045);
+}
+.study-create-panel { margin-bottom: 12px; padding: 0; overflow: hidden; }
+.study-create-panel > summary,
+.study-settings-card > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 14px;
+    font-weight: 850;
+    color: #0f172a;
+}
+.study-create-panel > summary::-webkit-details-marker,
+.study-settings-card > summary::-webkit-details-marker { display: none; }
+.study-course-create-form,
+.study-settings-body { padding: 0 14px 14px; }
+.study-course-create-form label,
+.study-inline-form label { display: grid; gap: 6px; margin-bottom: 10px; color: #475569; font-size: .82rem; font-weight: 800; }
+.study-course-create-form label span { color: #94a3b8; font-weight: 650; }
+.study-course-create-form input,
+.study-course-create-form textarea,
+.study-inline-form input,
+.study-search input,
+.study-chat-composer textarea {
+    width: 100%;
+    border: 1px solid rgba(15,23,42,.18);
+    border-radius: 11px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+    outline: none;
+}
+.study-course-create-form input,
+.study-course-create-form textarea,
+.study-inline-form input { padding: 10px 11px; }
+.study-course-create-form input:focus,
+.study-course-create-form textarea:focus,
+.study-inline-form input:focus,
+.study-search input:focus,
+.study-chat-composer textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.study-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 9px 12px;
+    border: 1px solid rgba(15,23,42,.14);
+    border-radius: 13px;
+    background: #fff;
+}
+.study-search .ui-icon { width: 18px; height: 18px; color: #64748b; }
+.study-search input { border: 0; padding: 4px 0; box-shadow: none !important; }
+.study-course-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.study-course-card {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 76px;
+    padding: 12px;
+    border: 1px solid rgba(15,23,42,.14);
+    border-radius: 15px;
+    background: radial-gradient(circle at 45% 45%, #fff 52%, #f5f8fc 100%);
+    color: inherit;
+    text-decoration: none;
+    box-shadow: 0 5px 16px rgba(15,23,42,.04);
+}
+.study-course-card:hover { border-color: rgba(37,99,235,.32); transform: translateY(-1px); }
+.study-course-icon {
+    width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center;
+    border-radius: 12px; background: #eff6ff; color: #2563eb;
+}
+.study-course-icon .ui-icon { width: 22px; height: 22px; }
+.study-course-copy { min-width: 0; display: grid; gap: 4px; flex: 1; }
+.study-course-copy strong { color: #0f172a; font-size: .96rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.study-course-copy small { color: #64748b; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.study-empty-state { padding: 32px 18px; text-align: center; }
+.study-empty-icon { font-size: 2rem; }
+.study-empty-state h2 { margin: 8px 0 4px; color: #0f172a; }
+.study-empty-state p { margin: 0 auto 14px; max-width: 520px; color: #64748b; }
+.study-ai-main-button {
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px;
+    align-items: center; min-width: 166px; border: 1px solid rgba(37,99,235,.28);
+    background: linear-gradient(135deg,#0f172a,#172b55); color: #fff;
+}
+.study-ai-main-button > span { grid-row: 1 / 3; font-size: 1.3rem; color: #93c5fd; }
+.study-ai-main-button strong { font-size: .86rem; }
+.study-ai-main-button small { font-size: .68rem; color: #bfdbfe; font-weight: 650; }
+.study-card { padding: 13px; margin-bottom: 12px; }
+.study-section-heading { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.study-section-heading h2 { margin: 0; color: #0f172a; font-size: 1.05rem; }
+.study-section-heading p { margin: 3px 0 0; color: #64748b; font-size: .78rem; }
+.study-upload-form { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: stretch; }
+.study-upload-zone {
+    min-height: 70px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+    column-gap: 10px; align-items: center; padding: 10px 12px; cursor: pointer;
+    border: 1px dashed rgba(37,99,235,.38); border-radius: 12px; background: rgba(239,246,255,.65);
+}
+.study-upload-zone input { position: absolute; opacity: 0; pointer-events: none; }
+.study-upload-icon { grid-row: 1/3; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #dbeafe; color: #1d4ed8; font-size: 1.3rem; }
+.study-upload-zone strong { color: #1e3a8a; font-size: .88rem; }
+.study-upload-zone small { color: #64748b; font-size: .7rem; }
+.study-material-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(15,23,42,.09); }
+.study-material-toolbar > div:first-child { display: grid; gap: 2px; }
+.study-material-toolbar strong { color: #0f172a; font-size: .84rem; }
+.study-material-toolbar small { color: #64748b; font-size: .7rem; }
+.study-toolbar-actions { display: flex; gap: 7px; }
+.study-material-list { display: grid; gap: 7px; }
+.study-material-row {
+    display: grid; grid-template-columns: auto 48px minmax(0,1fr) auto; gap: 9px; align-items: center;
+    padding: 8px; border: 1px solid rgba(15,23,42,.1); border-radius: 12px; background: #fff;
+}
+.study-material-select input { position: absolute; opacity: 0; pointer-events: none; }
+.study-material-select span { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid rgba(15,23,42,.2); border-radius: 8px; color: transparent; cursor: pointer; font-size: .72rem; font-weight: 900; }
+.study-material-select input:checked + span { border-color: #2563eb; background: #2563eb; color: #fff; }
+.study-material-preview { width: 48px; height: 46px; overflow: hidden; display: grid; place-items: center; border-radius: 9px; background: #f1f5f9; text-decoration: none; }
+.study-material-preview img { width: 100%; height: 100%; object-fit: cover; }
+.study-pdf-icon { color: #b42318; font-size: .7rem; font-weight: 950; }
+.study-material-copy { min-width: 0; display: grid; gap: 3px; color: inherit; text-decoration: none; }
+.study-material-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #172033; font-size: .84rem; }
+.study-material-copy small { color: #64748b; font-size: .68rem; }
+.study-icon-button { width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(15,23,42,.1); background: #fff; font-size: 1.1rem; cursor: pointer; }
+.study-icon-button.danger { color: #b42318; }
+.study-empty-inline { padding: 14px; display: flex; gap: 8px; align-items: baseline; margin-bottom: 12px; }
+.study-empty-inline strong { color: #0f172a; }
+.study-empty-inline span { color: #64748b; font-size: .82rem; }
+.study-settings-card { padding: 0; overflow: hidden; }
+.study-inline-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 12px; }
+.study-inline-form label { margin: 0; }
+
+/* Academic AI chat */
+.study-ai-page { width: min(100% - 24px, 920px); }
+.study-ai-source-panel { padding: 11px 12px; margin-bottom: 8px; }
+.study-ai-source-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.study-ai-source-top > div { display: grid; gap: 1px; }
+.study-ai-source-top strong { color: #0f172a; font-size: .84rem; }
+.study-ai-source-top small { color: #64748b; font-size: .68rem; }
+.study-source-toggle { border: 0; background: transparent; color: #2563eb; font-weight: 850; font-size: .75rem; cursor: pointer; }
+.study-source-summary { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.study-source-summary span { max-width: 230px; padding: 4px 7px; border-radius: 999px; background: #eff6ff; color: #1e40af; font-size: .66rem; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.study-source-summary .study-source-empty { background: #f1f5f9; color: #64748b; }
+.study-source-picker { margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(15,23,42,.09); }
+.study-source-chip { display: grid; grid-template-columns: auto auto minmax(0,1fr); gap: 7px; align-items: center; min-height: 38px; margin-bottom: 5px; padding: 6px 8px; border: 1px solid rgba(15,23,42,.09); border-radius: 10px; background: #fff; cursor: pointer; }
+.study-source-chip > span { min-width: 31px; padding: 3px 4px; border-radius: 6px; background: #f1f5f9; color: #475569; text-align: center; font-size: .58rem; font-weight: 900; }
+.study-source-chip strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; color: #334155; }
+.study-source-limit { display: block; margin-top: 6px; color: #94a3b8; font-size: .65rem; }
+.study-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; padding: 4px; border: 1px solid rgba(15,23,42,.11); border-radius: 12px; background: #f1f5f9; }
+.study-mode-switch button { min-height: 35px; border: 0; border-radius: 9px; background: transparent; color: #64748b; font-weight: 800; font-size: .72rem; cursor: pointer; }
+.study-mode-switch button.active { background: #fff; color: #0f172a; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+.study-quick-prompts { display: flex; gap: 6px; overflow-x: auto; padding: 1px 0 8px; scrollbar-width: none; }
+.study-quick-prompts::-webkit-scrollbar { display:none; }
+.study-quick-prompts button { flex: 0 0 auto; min-height: 34px; padding: 6px 10px; border: 1px solid rgba(37,99,235,.18); border-radius: 999px; background: #f8fbff; color: #1d4ed8; font-size: .7rem; font-weight: 800; cursor: pointer; }
+.study-chat { min-height: 300px; display: grid; align-content: start; gap: 10px; padding: 10px 0 120px; }
+.study-chat-welcome { max-width: 600px; margin: 30px auto 0; text-align: center; color: #64748b; }
+.study-chat-welcome-icon { width: 46px; height: 46px; display: grid; place-items: center; margin: 0 auto 9px; border-radius: 14px; background: linear-gradient(135deg,#0f172a,#1d4ed8); color: #fff; font-size: 1.2rem; }
+.study-chat-welcome h2 { margin: 0 0 6px; color: #0f172a; font-size: 1.15rem; }
+.study-chat-welcome p { margin: 0; font-size: .82rem; line-height: 1.5; }
+.study-chat-message { max-width: 88%; }
+.study-chat-message.user { justify-self: end; }
+.study-chat-message.assistant { justify-self: start; width: min(100%, 760px); }
+.study-chat-role { margin: 0 5px 4px; color: #64748b; font-size: .64rem; font-weight: 850; }
+.study-chat-message.user .study-chat-role { text-align: right; }
+.study-chat-markdown { padding: 10px 12px; border-radius: 15px; font-size: .84rem; line-height: 1.55; overflow-wrap: anywhere; }
+.study-chat-message.user .study-chat-markdown { background: #2563eb; color: #fff; border-bottom-right-radius: 5px; }
+.study-chat-message.assistant .study-chat-markdown { border: 1px solid rgba(15,23,42,.11); background: #fff; color: #273449; border-bottom-left-radius: 5px; box-shadow: 0 4px 15px rgba(15,23,42,.035); }
+.study-chat-markdown p { margin: 0 0 7px; }
+.study-chat-markdown p:last-child { margin-bottom: 0; }
+.study-chat-markdown h3,.study-chat-markdown h4 { margin: 12px 0 5px; color: inherit; line-height: 1.25; }
+.study-chat-markdown ul,.study-chat-markdown ol { margin: 5px 0 8px; padding-left: 20px; }
+.study-chat-markdown li { margin: 3px 0; }
+.study-chat-markdown code { padding: 1px 4px; border-radius: 5px; background: rgba(148,163,184,.15); font-size: .78rem; }
+.study-chat-gap { height: 5px; }
+.study-thinking { color: #64748b; font-weight: 700; }
+.study-chat-composer { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom,0px)); z-index: 20; display: grid; grid-template-columns: 1fr 44px; gap: 7px; align-items: end; padding: 7px; border: 1px solid rgba(15,23,42,.15); border-radius: 16px; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); box-shadow: 0 10px 35px rgba(15,23,42,.12); }
+.study-chat-composer textarea { min-height: 44px; max-height: 160px; resize: none; padding: 11px 12px; border: 0; box-shadow: none !important; line-height: 1.4; }
+.study-chat-composer button { width: 44px; height: 44px; border: 0; border-radius: 13px; background: #2563eb; color: #fff; font-size: 1.25rem; font-weight: 900; cursor: pointer; }
+.study-chat-composer button:disabled { opacity: .5; }
+.study-chat-status { min-height: 22px; padding: 5px 4px 0; color: #b42318; font-size: .72rem; font-weight: 750; }
+
+@media (max-width: 700px) {
+    .study-page,.study-ai-page { width: min(100% - 18px, 980px); margin-top: 8px; }
+    .study-page-header,.study-course-header,.study-ai-header { gap: 9px; margin-bottom: 10px; }
+    .study-page-header p,.study-ai-header p { font-size: .78rem; }
+    .study-page-header .study-primary-button { white-space: nowrap; padding-inline: 10px; }
+    .study-course-grid { grid-template-columns: 1fr; gap: 7px; }
+    .study-course-card { min-height: 68px; padding: 10px; }
+    .study-ai-main-button { min-width: 136px; padding: 8px 10px; }
+    .study-upload-form { grid-template-columns: 1fr; }
+    .study-upload-form > .study-primary-button { width: 100%; }
+    .study-material-toolbar { align-items: stretch; flex-direction: column; }
+    .study-toolbar-actions { display: grid; grid-template-columns: auto 1fr; }
+    .study-material-row { grid-template-columns: auto 44px minmax(0,1fr) auto; gap: 7px; }
+    .study-material-preview { width: 44px; height: 42px; }
+    .study-material-copy small { font-size: .64rem; }
+    .study-inline-form { grid-template-columns: 1fr; }
+    .study-chat { padding-bottom: 105px; }
+    .study-chat-message { max-width: 94%; }
+    .study-chat-message.assistant { max-width: 100%; }
+    .study-chat-composer { bottom: calc(70px + env(safe-area-inset-bottom,0px)); }
+}
+
+/* =========================================================
+   DENTAL AI ACADEMIC NOTES V10
+   Compact course library + fixed ChatGPT-like academic chat.
+   ========================================================= */
+.study-course-modern {
+    width: min(100% - 24px, 900px);
+    margin-top: 10px;
+}
+.study-course-header-compact {
+    margin-bottom: 10px;
+}
+.study-course-title-block { min-width: 0; }
+.study-course-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+}
+.study-course-title-row h1 {
+    margin: 0;
+    font-size: clamp(1.45rem, 4vw, 1.9rem);
+    line-height: 1.12;
+}
+.study-course-title-row p {
+    margin: 3px 0 0;
+    color: #64748b;
+    font-size: .78rem;
+    line-height: 1.35;
+}
+.study-ai-compact-link {
+    flex: 0 0 auto;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 11px;
+    border: 1px solid rgba(37,99,235,.24);
+    border-radius: 11px;
+    background: linear-gradient(135deg,#0f172a,#172b55);
+    color: #fff;
+    text-decoration: none;
+    font-size: .76rem;
+    font-weight: 850;
+    box-shadow: 0 5px 14px rgba(15,23,42,.11);
+}
+.study-ai-compact-link span { color: #93c5fd; font-size: .96rem; }
+.study-library-card {
+    padding: 13px;
+    border: 1px solid rgba(15,23,42,.13);
+    border-radius: 15px;
+    background: radial-gradient(circle at 50% 44%, #fff 56%, #f7f9fc 100%);
+    box-shadow: 0 5px 16px rgba(15,23,42,.04);
+}
+.study-library-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 9px;
+}
+.study-library-heading h2 { margin: 0; font-size: 1rem; }
+.study-library-heading p { margin: 2px 0 0; color: #64748b; font-size: .72rem; line-height: 1.35; }
+.study-upload-compact {
+    display: grid;
+    grid-template-columns: auto minmax(0,1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px dashed rgba(37,99,235,.3);
+    border-radius: 11px;
+    background: #f8fbff;
+}
+.study-file-picker {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 9px;
+    border-radius: 9px;
+    background: #eaf2ff;
+    color: #1d4ed8;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: .74rem;
+}
+.study-file-picker input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.study-file-picker span { font-size: 1rem; line-height: 1; }
+.study-file-picker strong { font-weight: 850; }
+.study-upload-selection {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #64748b;
+    font-size: .7rem;
+}
+.study-upload-submit { min-height: 36px; padding: 6px 11px; font-size: .74rem; box-shadow: none; }
+.study-upload-help { margin: 5px 2px 0; color: #94a3b8; font-size: .62rem; }
+.study-material-toolbar-compact {
+    margin: 11px 0 8px;
+    padding: 9px 0 0;
+    border-top: 1px solid rgba(15,23,42,.08);
+    border-bottom: 0;
+}
+.study-selection-copy { display: grid; gap: 1px; }
+.study-selection-copy strong { font-size: .78rem; }
+.study-selection-copy small { font-size: .66rem; }
+.study-toolbar-actions-compact { align-items: center; gap: 6px; }
+.study-text-action {
+    min-height: 34px;
+    padding: 5px 7px;
+    border: 0;
+    background: transparent;
+    color: #2563eb;
+    font-size: .7rem;
+    font-weight: 850;
+    cursor: pointer;
+}
+.study-work-button { min-height: 34px; padding: 5px 10px; font-size: .7rem; box-shadow: none; }
+.study-material-list-compact { gap: 5px; }
+.study-material-row-compact {
+    grid-template-columns: auto 38px minmax(0,1fr) auto;
+    gap: 7px;
+    min-height: 50px;
+    padding: 6px 7px;
+    border-radius: 10px;
+}
+.study-material-preview-compact { width: 38px; height: 38px; border-radius: 8px; }
+.study-material-row-compact .study-material-copy strong { font-size: .78rem; }
+.study-material-row-compact .study-material-copy small { font-size: .62rem; }
+.study-material-row-compact .study-material-select span { width: 22px; height: 22px; border-radius: 7px; }
+.study-trash-button { width: 31px; height: 31px; padding: 6px; display: grid; place-items: center; }
+.study-trash-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.study-library-empty { margin-top: 10px; padding: 12px; border-top: 1px solid rgba(15,23,42,.08); display: flex; gap: 6px; flex-wrap: wrap; }
+.study-settings-row {
+    margin-top: 8px;
+    border: 1px solid rgba(15,23,42,.11);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+.study-settings-row > summary {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    list-style: none;
+    cursor: pointer;
+    color: #334155;
+    font-size: .78rem;
+    font-weight: 850;
+}
+.study-settings-row > summary::-webkit-details-marker { display: none; }
+.study-settings-chevron { color: #2563eb; font-size: 1rem; transition: transform .18s ease; }
+.study-settings-row[open] .study-settings-chevron { transform: rotate(180deg); }
+.study-settings-row .study-settings-body { padding: 0 12px 12px; border-top: 1px solid rgba(15,23,42,.07); padding-top: 10px; }
+
+/* Fixed academic chat shell: only message history scrolls. */
+body.study-chat-active {
+    overflow: hidden !important;
+}
+body.study-chat-active main {
+    width: 100%;
+    max-width: none;
+    height: calc(100dvh - 70px);
+    margin: 0;
+    padding: 0 !important;
+    overflow: hidden;
+}
+.study-chat-shell {
+    position: relative;
+    width: min(100%, 980px) !important;
+    height: 100%;
+    margin: 0 auto !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f8fafc;
+    color: #172033;
+}
+.study-chat-topbar {
+    flex: 0 0 auto;
+    min-height: 52px;
+    display: grid;
+    grid-template-columns: 38px minmax(0,1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(15,23,42,.09);
+    background: rgba(255,255,255,.98);
+    z-index: 31;
+}
+.study-chat-back {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    color: #334155;
+    text-decoration: none;
+    font-size: 1.1rem;
+    font-weight: 900;
+}
+.study-chat-back:hover { background: #f1f5f9; }
+.study-chat-title { min-width: 0; display: grid; gap: 0; }
+.study-chat-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; font-size: .88rem; }
+.study-chat-title small { color: #64748b; font-size: .62rem; }
+.study-chat-new-button {
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid rgba(15,23,42,.11);
+    border-radius: 9px;
+    background: #fff;
+    color: #334155;
+    font-size: .68rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.study-chat-controls {
+    position: relative;
+    flex: 0 0 auto;
+    padding: 7px 10px 6px;
+    border-bottom: 1px solid rgba(15,23,42,.08);
+    background: #fff;
+    z-index: 30;
+}
+.study-chat-control-row { display: flex; align-items: center; gap: 7px; }
+.study-source-control {
+    flex: 0 0 auto;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border: 1px solid rgba(15,23,42,.12);
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: .68rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.study-source-control strong {
+    min-width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: .62rem;
+}
+.study-source-control.active { border-color: rgba(37,99,235,.35); background: #f8fbff; }
+.study-mode-switch-compact {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 3px;
+    border-radius: 10px;
+}
+.study-mode-switch-compact button { min-height: 28px; padding: 4px 6px; font-size: .62rem; }
+.study-source-summary-line {
+    min-height: 19px;
+    margin: 5px 0 0;
+    gap: 4px;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+.study-source-summary-line span { max-width: 70%; padding: 2px 6px; font-size: .59rem; }
+.study-source-popover {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 48px;
+    z-index: 50;
+    max-height: min(52dvh, 420px);
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid rgba(15,23,42,.14);
+    border-radius: 14px;
+    background: rgba(255,255,255,.99);
+    box-shadow: 0 18px 50px rgba(15,23,42,.18);
+}
+.study-source-popover[hidden] { display: none !important; }
+.study-source-popover-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.study-source-popover-head > div { display: grid; gap: 1px; }
+.study-source-popover-head strong { font-size: .78rem; color: #0f172a; }
+.study-source-popover-head small { color: #64748b; font-size: .62rem; }
+.study-source-popover-head button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; background: #f1f5f9; color: #475569; font-size: 1rem; }
+.study-source-popover-list { display: grid; gap: 5px; }
+.study-source-chip-modern { margin: 0; min-height: 36px; }
+.study-quick-prompts-compact { margin-top: 4px; padding: 0; }
+.study-quick-prompts-compact button { min-height: 30px; padding: 5px 9px; font-size: .64rem; background: #fff; }
+.study-chat-scroll {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    display: block;
+    padding: 18px clamp(12px,4vw,28px) 16px;
+    scroll-behavior: smooth;
+}
+.study-chat-scroll .study-chat-welcome { margin: clamp(34px,10vh,90px) auto 0; }
+.study-chat-message {
+    width: min(100%, 800px);
+    max-width: 100%;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+}
+.study-chat-message.user {
+    justify-content: flex-end;
+}
+.study-chat-message.user .study-chat-content { max-width: min(82%, 620px); }
+.study-chat-message.assistant .study-chat-content { min-width: 0; flex: 1; }
+.study-chat-avatar {
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: linear-gradient(135deg,#0f172a,#1d4ed8);
+    color: #fff;
+    font-size: .58rem;
+    font-weight: 900;
+}
+.study-chat-role { margin: 0 0 4px; font-size: .61rem; }
+.study-chat-message.user .study-chat-role { text-align: right; padding-right: 5px; }
+.study-chat-markdown {
+    padding: 0;
+    border-radius: 0;
+    font-size: .83rem;
+    line-height: 1.58;
+}
+.study-chat-message.assistant .study-chat-markdown {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #273449;
+}
+.study-chat-message.user .study-chat-markdown {
+    padding: 9px 12px;
+    border-radius: 15px 15px 5px 15px;
+    background: #1d4ed8;
+    color: #fff;
+}
+.study-chat-footer {
+    flex: 0 0 auto;
+    padding: 5px 10px 9px;
+    border-top: 1px solid rgba(15,23,42,.08);
+    background: rgba(248,250,252,.98);
+    z-index: 32;
+}
+.study-chat-footer .study-chat-status { min-height: 0; padding: 0 4px 4px; }
+.study-chat-composer-fixed {
+    position: static !important;
+    bottom: auto !important;
+    margin: 0 auto;
+    width: min(100%, 820px);
+    grid-template-columns: minmax(0,1fr) 42px;
+    padding: 6px;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 5px 22px rgba(15,23,42,.09);
+}
+.study-chat-composer-fixed textarea { min-height: 42px; max-height: 140px; padding: 10px 11px; font-size: .82rem; }
+.study-chat-composer-fixed button { width: 42px; height: 42px; border-radius: 13px; }
+
+@media (max-width: 760px) {
+    .study-course-modern { width: min(100% - 16px, 900px); margin-top: 6px; }
+    .study-course-title-row { align-items: flex-end; gap: 8px; }
+    .study-course-title-row h1 { font-size: 1.35rem; }
+    .study-ai-compact-link { min-height: 34px; padding: 5px 8px; font-size: .68rem; }
+    .study-library-card { padding: 10px; }
+    .study-library-heading { margin-bottom: 7px; }
+    .study-library-heading h2 { font-size: .92rem; }
+    .study-library-heading p { font-size: .66rem; }
+    .study-upload-compact { grid-template-columns: auto minmax(0,1fr) auto; gap: 5px; padding: 6px; }
+    .study-file-picker { min-height: 34px; padding: 5px 7px; font-size: .66rem; }
+    .study-upload-selection { font-size: .61rem; }
+    .study-upload-submit { min-height: 34px; padding: 5px 8px; }
+    .study-material-toolbar-compact { flex-direction: row; align-items: center; gap: 6px; }
+    .study-selection-copy small { display: none; }
+    .study-toolbar-actions-compact { display: flex; }
+    .study-material-row-compact { grid-template-columns: auto 34px minmax(0,1fr) auto; min-height: 46px; padding: 5px 6px; }
+    .study-material-preview-compact { width: 34px; height: 34px; }
+    .study-material-row-compact .study-material-copy strong { font-size: .73rem; }
+    .study-material-row-compact .study-material-copy small { font-size: .58rem; }
+
+    body.study-chat-active { padding-bottom: 0 !important; }
+    body.study-chat-active main {
+        height: calc(100dvh - 70px - 64px - env(safe-area-inset-bottom, 0px));
+    }
+    .study-chat-shell { width: 100% !important; }
+    .study-chat-topbar { min-height: 48px; padding: 5px 8px; grid-template-columns: 34px minmax(0,1fr) auto; }
+    .study-chat-back { width: 32px; height: 32px; }
+    .study-chat-title strong { font-size: .82rem; }
+    .study-chat-new-button { min-height: 31px; padding: 4px 7px; font-size: .62rem; }
+    .study-chat-controls { padding: 6px 8px 5px; }
+    .study-chat-control-row { gap: 5px; }
+    .study-source-control { min-height: 31px; padding: 4px 7px; font-size: .62rem; }
+    .study-mode-switch-compact button { min-height: 26px; font-size: .57rem; }
+    .study-source-popover { left: 8px; right: 8px; top: 44px; max-height: 48dvh; }
+    .study-quick-prompts-compact button { min-height: 28px; padding: 4px 8px; font-size: .6rem; }
+    .study-chat-scroll { padding: 14px 10px 12px; }
+    .study-chat-scroll .study-chat-welcome { margin-top: 9vh; }
+    .study-chat-message { margin-bottom: 13px; gap: 7px; }
+    .study-chat-avatar { flex-basis: 27px; width: 27px; height: 27px; border-radius: 8px; }
+    .study-chat-message.user .study-chat-content { max-width: 86%; }
+    .study-chat-markdown { font-size: .79rem; }
+    .study-chat-footer { padding: 4px 8px 6px; }
+    .study-chat-composer-fixed { grid-template-columns: minmax(0,1fr) 40px; padding: 5px; }
+    .study-chat-composer-fixed textarea { min-height: 40px; font-size: .8rem; }
+    .study-chat-composer-fixed button { width: 40px; height: 40px; }
+}
+
+/* Academic chat uses its own full-height composer; app bottom navigation stays out of the conversation view. */
+body.study-chat-active .mobile-bottom-nav { display: none !important; }
+@media (max-width: 760px) {
+    body.study-chat-active main { height: calc(100dvh - 70px); }
+    body.study-chat-active .study-chat-footer { padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ================================================================
+   DENTAL AI ACADEMIC CHAT V11
+   White/black academic UI, automatic course sources, modal media gallery.
+   ================================================================ */
+
+/* Course page: quiet white surface, dark text, no blue action blocks. */
+.study-course-clean {
+    width: min(100% - 24px, 900px);
+    margin: 18px auto 100px;
+    color: #111827;
+}
+.study-course-clean-header { margin: 0 0 12px; }
+.study-course-clean-title-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 5px;
+}
+.study-course-clean-title-row h1 { margin: 0; color: #111827; font-size: clamp(1.45rem,4vw,2rem); line-height: 1.05; }
+.study-course-clean-title-row p { margin: 5px 0 0; color: #6b7280; font-size: .84rem; }
+.study-ai-outline-link {
+    flex: 0 0 auto;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: #fff;
+    color: #111827;
+    text-decoration: none;
+    font-size: .78rem;
+    font-weight: 800;
+}
+.study-ai-outline-link.disabled { color: #9ca3af; background: #f9fafb; pointer-events: none; }
+.study-clean-card {
+    padding: 14px;
+    border: 1px solid #dfe3e8;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 6px 22px rgba(15,23,42,.035);
+}
+.study-clean-heading h2 { margin: 0; color: #111827; font-size: 1.05rem; }
+.study-clean-heading p { margin: 4px 0 0; color: #6b7280; font-size: .75rem; line-height: 1.4; }
+.study-upload-clean { margin-top: 12px; display: grid; gap: 8px; }
+.study-file-picker-clean {
+    min-height: 62px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px dashed #aeb6c2;
+    border-radius: 14px;
+    background: #fff;
+    color: #111827;
+    cursor: pointer;
+}
+.study-file-picker-clean input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.study-file-plus {
+    width: 36px; height: 36px; flex: 0 0 36px;
+    display: grid; place-items: center;
+    border: 1px solid #d8dde5; border-radius: 10px;
+    background: #f8fafc; color: #111827; font-size: 1.2rem;
+}
+.study-file-picker-copy { display: grid; gap: 2px; min-width: 0; }
+.study-file-picker-copy strong { color: #111827; font-size: .84rem; }
+.study-file-picker-copy small { color: #6b7280; font-size: .65rem; }
+.study-upload-clean-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.study-upload-clean-actions > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6b7280; font-size: .7rem; }
+.study-neutral-action {
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 1px solid #cfd5dd;
+    border-radius: 10px;
+    background: #fff;
+    color: #111827;
+    font-size: .74rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.study-material-list-clean { display: grid; gap: 6px; margin-top: 14px; }
+.study-material-clean-row {
+    min-height: 50px;
+    display: grid;
+    grid-template-columns: 40px minmax(0,1fr) 32px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 7px;
+    border: 1px solid #e3e6eb;
+    border-radius: 12px;
+    background: #fff;
+}
+.study-material-clean-preview {
+    width: 40px; height: 40px; overflow: hidden;
+    display: grid; place-items: center;
+    border-radius: 9px; background: #f3f4f6;
+    color: #b42318; text-decoration: none; font-size: .62rem; font-weight: 900;
+}
+.study-material-clean-preview img { width: 100%; height: 100%; object-fit: cover; }
+.study-material-clean-copy { min-width: 0; display: grid; gap: 2px; color: #111827; text-decoration: none; }
+.study-material-clean-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+.study-material-clean-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6b7280; font-size: .61rem; }
+.study-clean-delete {
+    width: 30px; height: 30px; display: grid; place-items: center;
+    padding: 0; border: 1px solid #e4e7ec; border-radius: 9px;
+    background: #fff; color: #9b1c1c; font-size: 1rem; cursor: pointer;
+}
+.study-course-chat-entry {
+    min-height: 52px;
+    margin-top: 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 11px;
+    border: 1px solid #d7dce3; border-radius: 13px;
+    background: #fff; color: #111827; text-decoration: none;
+}
+.study-course-chat-entry > div { display: grid; gap: 2px; }
+.study-course-chat-entry strong { font-size: .8rem; }
+.study-course-chat-entry span { color: #6b7280; font-size: .64rem; }
+.study-course-chat-entry > span:last-child { color: #111827; font-size: 1.1rem; }
+.study-clean-empty { margin-top: 12px; padding: 12px 0 2px; border-top: 1px solid #eceff2; display: grid; gap: 3px; }
+.study-clean-empty strong { font-size: .8rem; color: #111827; }
+.study-clean-empty span { color: #6b7280; font-size: .68rem; }
+.study-settings-clean {
+    margin-top: 10px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fff; overflow: hidden;
+}
+.study-settings-clean > summary {
+    min-height: 44px; display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; list-style: none; color: #111827; font-size: .78rem; font-weight: 800; cursor: pointer;
+}
+.study-settings-clean > summary::-webkit-details-marker { display: none; }
+.study-settings-clean .study-settings-body { padding: 10px 12px 12px; border-top: 1px solid #eceff2; }
+
+/* Academic chat: white canvas, black text, no blue action blocks. */
+body.study-chat-active { background: #fff !important; }
+body.study-chat-active main { background: #fff !important; }
+.study-chat-clean-shell { background: #fff !important; color: #111827; }
+.study-chat-clean-topbar {
+    flex: 0 0 auto;
+    min-height: 50px;
+    display: grid;
+    grid-template-columns: 34px minmax(0,1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #e7e9ed;
+    background: #fff;
+    z-index: 31;
+}
+.study-chat-clean-back {
+    width: 32px; height: 32px; display: grid; place-items: center;
+    border-radius: 9px; color: #111827; text-decoration: none; font-size: 1rem; font-weight: 900;
+}
+.study-chat-clean-title { min-width: 0; display: grid; gap: 0; }
+.study-chat-clean-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #111827; font-size: .86rem; }
+.study-chat-clean-title small { color: #777f8b; font-size: .61rem; }
+.study-chat-clean-new {
+    min-height: 32px; padding: 5px 8px;
+    border: 1px solid #d6dae0; border-radius: 9px;
+    background: #fff; color: #111827; font-size: .64rem; font-weight: 800; cursor: pointer;
+}
+.study-chat-clean-info {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 7px 12px 5px;
+    background: #fff; color: #525866;
+    font-size: .67rem; line-height: 1.35;
+}
+.study-chat-clean-info small { flex: 0 0 auto; color: #8b919b; font-size: .58rem; }
+.study-chat-clean-info a { flex: 0 0 auto; color: #111827; font-weight: 800; text-decoration: underline; }
+.study-quick-prompts-clean {
+    flex: 0 0 auto;
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 5px 10px 8px;
+    border-bottom: 1px solid #eceef1;
+    background: #fff;
+    scrollbar-width: none;
+}
+.study-quick-prompts-clean::-webkit-scrollbar { display: none; }
+.study-quick-prompts-clean button {
+    flex: 0 0 auto;
+    min-height: 31px;
+    padding: 5px 10px;
+    border: 1px solid #d4d8de;
+    border-radius: 999px;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    font-size: .66rem;
+    font-weight: 750;
+    cursor: pointer;
+}
+.study-chat-clean-scroll {
+    background: #fff;
+    padding: 14px clamp(12px,4vw,26px) 16px;
+}
+.study-chat-clean-welcome {
+    width: min(100%, 560px); margin: clamp(40px,11vh,96px) auto 0;
+    text-align: center; color: #6b7280;
+}
+.study-chat-clean-welcome h2 { margin: 0 0 6px; color: #111827; font-size: 1.05rem; }
+.study-chat-clean-welcome p { margin: 0; font-size: .76rem; line-height: 1.5; }
+.study-chat-clean-shell .study-chat-message { margin-bottom: 14px; }
+.study-chat-clean-shell .study-chat-message.user .study-chat-content { max-width: min(84%, 620px); }
+.study-chat-clean-shell .study-chat-role { color: #6b7280; font-size: .6rem; }
+.study-chat-clean-shell .study-chat-markdown { color: #111827 !important; font-size: .82rem; line-height: 1.58; }
+.study-chat-clean-shell .study-chat-message.user .study-chat-markdown {
+    padding: 9px 11px;
+    border: 1px solid #e1e4e8;
+    border-radius: 15px 15px 5px 15px;
+    background: #f7f7f8 !important;
+    color: #111827 !important;
+}
+.study-chat-clean-shell .study-chat-message.assistant .study-chat-markdown {
+    padding: 1px 0;
+    border: 0;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none;
+}
+.study-chat-clean-footer {
+    flex: 0 0 auto;
+    padding: 4px 9px calc(7px + env(safe-area-inset-bottom,0px));
+    border-top: 1px solid #e8eaee;
+    background: #fff;
+    z-index: 32;
+}
+.study-chat-clean-footer .study-chat-status { min-height: 0; padding: 0 4px 4px; color: #b42318; font-size: .68rem; }
+.study-chat-clean-composer {
+    width: min(100%, 820px);
+    margin: 0 auto;
+    grid-template-columns: minmax(0,1fr) 40px;
+    padding: 5px;
+    border: 1px solid #cfd4dc;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 3px 16px rgba(15,23,42,.06);
+}
+.study-chat-clean-composer textarea {
+    min-height: 40px; max-height: 140px;
+    padding: 9px 10px;
+    border: 0 !important; outline: 0; box-shadow: none !important;
+    background: #fff !important; color: #111827 !important; font-size: .81rem;
+}
+.study-chat-clean-composer textarea::placeholder { color: #9aa0aa; }
+.study-chat-clean-composer button {
+    width: 40px; height: 40px;
+    border: 0; border-radius: 12px;
+    background: #111827 !important; color: #fff !important;
+    box-shadow: none !important; font-size: 1rem; cursor: pointer;
+}
+.study-chat-clean-composer button:disabled { background: #d1d5db !important; color: #fff !important; }
+
+/* Patient media V11: gallery is hidden from the profile until requested. */
+.patient-media-open-gallery {
+    width: 100%; min-height: 44px; margin-top: 10px;
+    display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 8px;
+    padding: 8px 11px;
+    border: 1px solid rgba(15,23,42,.14); border-radius: 13px;
+    background: #fff; color: #172033; text-align: left; font-weight: 800; cursor: pointer;
+}
+.patient-media-open-gallery strong {
+    min-width: 26px; height: 26px; display: grid; place-items: center;
+    border-radius: 999px; background: #f1f5f9; color: #334155; font-size: .7rem;
+}
+.patient-media-open-gallery > span:last-child { color: #64748b; font-size: 1.1rem; }
+.patient-media-gallery-modal {
+    position: fixed; inset: 0; z-index: 2150;
+    display: none; align-items: center; justify-content: center;
+    padding: 14px;
+    background: rgba(15,23,42,.62);
+    backdrop-filter: blur(5px);
+}
+.patient-media-gallery-modal.open { display: flex; }
+.patient-media-gallery-dialog {
+    width: min(100%, 760px); max-height: min(88dvh, 860px);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    border-radius: 19px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.28);
+}
+.patient-media-gallery-head {
+    flex: 0 0 auto; min-height: 50px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 11px; border-bottom: 1px solid rgba(15,23,42,.09);
+}
+.patient-media-gallery-head > div { display: grid; gap: 1px; }
+.patient-media-gallery-head strong { color: #172033; font-size: .9rem; }
+.patient-media-gallery-head span { color: #64748b; font-size: .64rem; }
+.patient-media-gallery-head > button {
+    width: 34px; height: 34px; padding: 0;
+    border: 1px solid rgba(15,23,42,.1); border-radius: 10px;
+    background: #fff; color: #334155; font-size: 1.1rem; cursor: pointer;
+}
+.patient-media-toolbar-modal { flex: 0 0 auto; margin: 0; padding: 8px 10px; border-bottom: 1px solid rgba(15,23,42,.08); }
+.patient-media-grid-modal {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    margin: 0; padding: 10px;
+    grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px;
+}
+.patient-media-grid-modal .patient-media-card { border-radius: 12px; }
+.patient-media-grid-modal .patient-media-thumb { aspect-ratio: 1/1; }
+.patient-media-empty { margin-top: 10px; }
+
+@media (max-width: 760px) {
+    .study-course-clean { width: min(100% - 16px,900px); margin-top: 8px; }
+    .study-course-clean-title-row { align-items: center; }
+    .study-course-clean-title-row h1 { font-size: 1.3rem; }
+    .study-ai-outline-link { min-height: 34px; padding: 5px 9px; font-size: .67rem; }
+    .study-clean-card { padding: 10px; border-radius: 15px; }
+    .study-file-picker-clean { min-height: 56px; padding: 8px 9px; }
+    .study-file-plus { width: 33px; height: 33px; flex-basis: 33px; }
+    .study-file-picker-copy strong { font-size: .77rem; }
+    .study-file-picker-copy small { font-size: .6rem; }
+    .study-upload-clean-actions { align-items: stretch; }
+    .study-neutral-action { min-height: 34px; padding: 5px 9px; font-size: .68rem; }
+    .study-material-clean-row { min-height: 46px; grid-template-columns: 36px minmax(0,1fr) 30px; }
+    .study-material-clean-preview { width: 36px; height: 36px; }
+    .study-material-clean-copy strong { font-size: .73rem; }
+    .study-material-clean-copy small { font-size: .58rem; }
+
+    body.study-chat-active main { height: calc(100dvh - 70px); }
+    .study-chat-clean-topbar { min-height: 46px; padding: 5px 8px; }
+    .study-chat-clean-info { padding: 6px 9px 4px; font-size: .62rem; }
+    .study-quick-prompts-clean { padding: 4px 8px 7px; }
+    .study-quick-prompts-clean button { min-height: 29px; padding: 4px 8px; font-size: .61rem; }
+    .study-chat-clean-scroll { padding: 12px 10px; }
+    .study-chat-clean-shell .study-chat-message.user .study-chat-content { max-width: 88%; }
+    .study-chat-clean-shell .study-chat-markdown { font-size: .79rem; }
+    .study-chat-clean-footer { padding: 4px 8px calc(6px + env(safe-area-inset-bottom,0px)); }
+
+    .patient-media-gallery-modal { align-items: flex-end; padding: 0; }
+    .patient-media-gallery-dialog {
+        width: 100%; max-height: 88dvh;
+        border-radius: 20px 20px 0 0;
+        padding-bottom: env(safe-area-inset-bottom,0px);
+    }
+    .patient-media-grid-modal { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; padding: 8px; }
+    .patient-media-toolbar-modal { padding: 7px 8px; }
+}
+
+/* ================================================================
+   DENTAL AI ACADEMIC CHAT V12
+   Final neutral chat polish: no blue controls, readable answers,
+   and a viewport-safe composer that never falls below the screen.
+   ================================================================ */
+body.study-chat-active {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #fff !important;
+}
+body.study-chat-active > .topbar {
+    flex: 0 0 auto !important;
+}
+body.study-chat-active > main {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    background: #fff !important;
+}
+body.study-chat-active .study-chat-clean-shell {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    background: #fff !important;
+}
+body.study-chat-active .study-chat-clean-topbar {
+    min-height: 46px !important;
+    padding: 5px 10px !important;
+}
+body.study-chat-active .study-chat-clean-new {
+    min-height: 30px !important;
+    padding: 4px 8px !important;
+    border: 1px solid #d6dae0 !important;
+    border-radius: 9px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    font-size: .68rem !important;
+    font-weight: 750 !important;
+}
+body.study-chat-active .study-chat-clean-info {
+    padding: 6px 12px 5px !important;
+    border-bottom: 1px solid #f0f1f3 !important;
+    color: #5f6672 !important;
+}
+body.study-chat-active .study-quick-prompts-clean {
+    gap: 2px !important;
+    padding: 3px 10px 6px !important;
+    border-bottom: 1px solid #eceef1 !important;
+    overflow-x: auto !important;
+}
+body.study-chat-active .study-quick-prompts-clean button {
+    min-height: 27px !important;
+    padding: 3px 8px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: #303641 !important;
+    box-shadow: none !important;
+    font-size: .66rem !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+}
+body.study-chat-active .study-quick-prompts-clean button + button {
+    border-left: 1px solid #e5e7eb !important;
+    border-radius: 0 !important;
+}
+body.study-chat-active .study-chat-clean-scroll {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding: 12px clamp(12px,4vw,26px) 18px !important;
+    background: #fff !important;
+}
+body.study-chat-active .study-chat-clean-shell .study-chat-message {
+    width: min(100%, 800px) !important;
+    margin: 0 auto 14px !important;
+}
+body.study-chat-active .study-chat-clean-shell .study-chat-message.user .study-chat-content {
+    max-width: min(82%, 620px) !important;
+}
+body.study-chat-active .study-chat-clean-shell .study-chat-message.user .study-chat-markdown {
+    padding: 9px 11px !important;
+    border: 1px solid #dedfe3 !important;
+    border-radius: 15px 15px 5px 15px !important;
+    background: #f5f5f5 !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+}
+body.study-chat-active .study-chat-clean-shell .study-chat-message.assistant .study-chat-markdown {
+    padding: 1px 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+}
+body.study-chat-active .study-chat-markdown h3,
+body.study-chat-active .study-chat-markdown h4 {
+    margin: 14px 0 6px !important;
+    color: #111827 !important;
+    font-size: .93rem !important;
+    line-height: 1.35 !important;
+}
+body.study-chat-active .study-chat-markdown p {
+    margin: 0 0 8px !important;
+}
+body.study-chat-active .study-chat-markdown ul,
+body.study-chat-active .study-chat-markdown ol {
+    margin: 5px 0 10px !important;
+    padding-left: 20px !important;
+}
+body.study-chat-active .study-chat-rule {
+    border: 0 !important;
+    border-top: 1px solid #e5e7eb !important;
+    margin: 12px 0 !important;
+}
+body.study-chat-active .study-chat-clean-footer {
+    flex: 0 0 auto !important;
+    padding: 4px 9px max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    border-top: 1px solid #e8eaee !important;
+    background: #fff !important;
+}
+body.study-chat-active .study-chat-clean-composer {
+    position: static !important;
+    bottom: auto !important;
+    width: min(100%, 820px) !important;
+    min-height: 52px !important;
+    margin: 0 auto !important;
+    grid-template-columns: minmax(0,1fr) 40px !important;
+    gap: 6px !important;
+    padding: 5px !important;
+    border: 1px solid #cfd4dc !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 2px 12px rgba(15,23,42,.05) !important;
+}
+body.study-chat-active .study-chat-clean-composer textarea {
+    min-height: 40px !important;
+    max-height: 120px !important;
+    padding: 9px 10px !important;
+    border: 0 !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    font-size: 16px !important;
+    line-height: 1.35 !important;
+}
+body.study-chat-active .study-chat-clean-composer button {
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0 !important;
+    border: 1px solid #111827 !important;
+    border-radius: 12px !important;
+    background: #111827 !important;
+    color: #fff !important;
+    box-shadow: none !important;
+    font-size: 1rem !important;
+}
+
+/* Course/not library is neutral too; global button theming must not make it blue. */
+body.dai-app-shell .study-course-clean .study-neutral-action,
+body.dai-app-shell .study-course-clean .study-clean-delete {
+    box-shadow: none !important;
+}
+body.dai-app-shell .study-course-clean .study-neutral-action {
+    min-height: 34px !important;
+    padding: 5px 10px !important;
+    border: 1px solid #cfd5dd !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    font-size: .72rem !important;
+}
+body.dai-app-shell .study-course-clean .study-clean-delete {
+    width: 30px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 !important;
+    border: 1px solid #e4e7ec !important;
+    border-radius: 9px !important;
+    background: #fff !important;
+    color: #9b1c1c !important;
+    font-size: 1rem !important;
+}
+body.dai-app-shell .study-course-clean .study-danger-button {
+    min-height: 34px !important;
+    padding: 6px 10px !important;
+    border: 1px solid #efc6c6 !important;
+    background: #fff !important;
+    color: #9b1c1c !important;
+    box-shadow: none !important;
+    font-size: .72rem !important;
+}
+
+@media (max-width: 760px) {
+    body.study-chat-active .study-chat-clean-info { padding-inline: 9px !important; font-size: .62rem !important; }
+    body.study-chat-active .study-quick-prompts-clean { padding-inline: 8px !important; }
+    body.study-chat-active .study-chat-clean-scroll { padding: 10px 10px 14px !important; }
+    body.study-chat-active .study-chat-clean-footer { padding: 4px 8px max(7px, env(safe-area-inset-bottom,0px)) !important; }
+    body.study-chat-active .study-chat-clean-shell .study-chat-message.user .study-chat-content { max-width: 88% !important; }
+}
+
+
+/* ================================================================
+   Academic polish V13: quieter sources, stronger study hierarchy.
+   ================================================================ */
+.study-notes-guide {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: -2px 0 12px;
+    padding: 9px 11px;
+    border: 1px solid rgba(15,23,42,.10);
+    border-radius: 12px;
+    background: #fff;
+    color: #4b5563;
+    font-size: .76rem;
+    line-height: 1.45;
+}
+.study-notes-guide strong {
+    flex: 0 0 auto;
+    color: #111827;
+    font-size: .76rem;
+    font-weight: 850;
+}
+.study-notes-guide span { min-width: 0; }
+
+body.study-chat-active .study-chat-markdown h3,
+body.study-chat-active .study-chat-markdown h4,
+body.study-chat-active .study-chat-markdown .study-question-heading {
+    margin: 18px 0 8px !important;
+    color: #0b1220 !important;
+    font-size: 1.02rem !important;
+    font-weight: 850 !important;
+    line-height: 1.32 !important;
+}
+body.study-chat-active .study-chat-markdown .study-question-heading:first-child,
+body.study-chat-active .study-chat-markdown h3:first-child,
+body.study-chat-active .study-chat-markdown h4:first-child {
+    margin-top: 2px !important;
+}
+body.study-chat-active .study-chat-markdown p {
+    margin: 0 0 10px !important;
+    line-height: 1.65 !important;
+}
+body.study-chat-active .study-chat-markdown ol,
+body.study-chat-active .study-chat-markdown ul {
+    margin: 7px 0 14px !important;
+}
+body.study-chat-active .study-chat-markdown li {
+    margin: 6px 0 !important;
+    line-height: 1.58 !important;
+}
+body.study-chat-active .study-chat-gap { height: 10px !important; }
+
+@media (max-width: 760px) {
+    .study-notes-guide {
+        display: grid;
+        gap: 2px;
+        margin-bottom: 9px;
+        padding: 8px 9px;
+        font-size: .71rem;
+    }
+    .study-notes-guide strong { font-size: .71rem; }
+    body.study-chat-active .study-chat-markdown h3,
+    body.study-chat-active .study-chat-markdown h4,
+    body.study-chat-active .study-chat-markdown .study-question-heading {
+        font-size: .96rem !important;
+        margin-top: 16px !important;
+    }
+}

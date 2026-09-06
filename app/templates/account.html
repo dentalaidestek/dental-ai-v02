@@ -158,11 +158,6 @@
             </div>
 
             <div class="info-item">
-                <div class="info-label">Mezuniyet Yılı</div>
-                <div class="info-value">{{ doctor_profile.graduation_year or "-" }}</div>
-            </div>
-
-            <div class="info-item">
                 <div class="info-label">Uzmanlık Durumu</div>
                 <div class="info-value">
                     {% if doctor_profile.is_specialist %}
@@ -181,6 +176,27 @@
             {% endif %}
             {% endif %}
         </div>
+    </div>
+
+    <div class="account-card">
+        <h2>Mesleki Durum</h2>
+        <p>Dental AI ana ekranını ve öncelikli araçları bu seçime göre düzenler. Mesleki durumunuzu değiştirmeniz mevcut hasta, program, Notlarım veya Akademik AI kayıtlarınızı silmez.</p>
+        <form method="post" action="/account/professional-title" class="password-form" id="professionalTitleForm" onsubmit="return confirmProfessionalTitleChange(this)">
+            <input type="hidden" name="confirm_change" id="confirmProfessionalChange" value="">
+            <label for="professional_title">Mesleki Durum / Unvan</label>
+            {% set current_title = account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else '') %}
+            <select id="professional_title" name="professional_title" required>
+                <option value="Öğrenci" {% if current_title == 'Öğrenci' %}selected{% endif %}>Öğrenci</option>
+                <option value="Diş Hekimi" {% if current_title == 'Diş Hekimi' %}selected{% endif %}>Diş Hekimi</option>
+                <option value="Uzman Diş Hekimi" {% if current_title == 'Uzman Diş Hekimi' %}selected{% endif %}>Uzman Diş Hekimi</option>
+                <option value="Asistan / Araştırma Görevlisi" {% if current_title == 'Asistan / Araştırma Görevlisi' %}selected{% endif %}>Asistan / Araştırma Görevlisi</option>
+                <option value="Dr. Öğr. Üyesi" {% if current_title == 'Dr. Öğr. Üyesi' %}selected{% endif %}>Dr. Öğr. Üyesi</option>
+                <option value="Doç. Dr." {% if current_title == 'Doç. Dr.' %}selected{% endif %}>Doç. Dr.</option>
+                <option value="Prof. Dr." {% if current_title == 'Prof. Dr.' %}selected{% endif %}>Prof. Dr.</option>
+            </select>
+            <button type="submit">Mesleki Durumu Güncelle</button>
+        </form>
+        <p class="muted">Değişiklik yalnızca uygulamanın size neyi önce gösterdiğini etkiler; mevcut kayıtlar korunur.</p>
     </div>
 
     <div class="account-card">
@@ -238,4 +254,30 @@
     </div>
 
 </div>
+
+<script>
+function confirmProfessionalTitleChange(form) {
+    const select = document.getElementById('professional_title');
+    const initial = select ? select.dataset.initialValue : '';
+    const next = select ? select.value : '';
+    const hidden = document.getElementById('confirmProfessionalChange');
+
+    if (!select || !hidden) return true;
+    if (!initial || initial === next) {
+        hidden.value = 'yes';
+        return true;
+    }
+
+    const ok = window.confirm(
+        'Mesleki durumunuzu değiştirmek üzeresiniz. Ana ekran ve öncelikli araçlar yeni seçiminize göre düzenlenecek. Mevcut kayıtlarınız silinmeyecek. Değişikliği onaylıyor musunuz?'
+    );
+    if (ok) hidden.value = 'yes';
+    return ok;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const select = document.getElementById('professional_title');
+    if (select) select.dataset.initialValue = select.value;
+});
+</script>
 {% endblock %}

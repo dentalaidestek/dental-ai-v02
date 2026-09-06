@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="program-page">
+    <div class="program-header">
+        <div>
+            <div class="workspace-section-kicker">Günlük çalışma merkezi</div>
+            <h1>Programım</h1>
+            <p>Ders, randevu, klinik, sınav, tez ve görevlerinizi tek yerde takip edin.</p>
+        </div>
+        <a class="btn" href="/program/new">+ Yeni Kayıt</a>
+    </div>
+
+    {% if saved %}<div class="workspace-flash success">Program kaydı kaydedildi.</div>{% endif %}
+    {% if deleted %}<div class="workspace-flash">Program kaydı kaldırıldı.</div>{% endif %}
+    {% if completed %}<div class="workspace-flash success">Görev tamamlandı olarak işaretlendi.</div>{% endif %}
+
+    <div class="program-toolbar">
+        <div class="program-view-tabs" aria-label="Program görünümü">
+            <a class="{% if view == 'today' %}active{% endif %}" href="/program?view=today&day={{ focus_date.isoformat() }}">Bugün</a>
+            <a class="{% if view == 'week' %}active{% endif %}" href="/program?view=week&day={{ focus_date.isoformat() }}">Hafta</a>
+            <a class="{% if view == 'month' %}active{% endif %}" href="/program?view=month&day={{ focus_date.isoformat() }}">Ay</a>
+        </div>
+        <div class="program-period-nav">
+            <a href="/program?view={{ view }}&day={{ previous_day }}" aria-label="Önceki dönem">‹</a>
+            <a class="program-today-link" href="/program?view={{ view }}">Bugüne Git</a>
+            <a href="/program?view={{ view }}&day={{ next_day }}" aria-label="Sonraki dönem">›</a>
+        </div>
+    </div>
+
+    {% if groups %}
+    <div class="program-groups">
+        {% for group in groups %}
+        <section class="program-day {% if group.date == today_date %}program-day-today{% endif %}">
+            <div class="program-day-heading">
+                <h2>{{ group.label }}</h2>
+                {% if group.date == today_date %}<span>Bugün</span>{% endif %}
+            </div>
+            <div class="program-event-list">
+                {% for event in group.events %}
+                <article class="program-event {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
+                    <div class="program-event-time">
+                        <strong>{{ event.start_local.strftime('%H:%M') }}</strong>
+                        {% if event.end_local %}<small>{{ event.end_local.strftime('%H:%M') }}</small>{% endif %}
+                    </div>
+                    <div class="program-event-main">
+                        <div class="program-event-meta">
+                            <span class="program-type">{{ event.type_label }}</span>
+                            {% if event.is_recurring %}<span class="program-recurring">Haftalık</span>{% endif %}
+                            {% if event.notification_enabled %}<span class="program-reminder">🔔 {{ event.reminder_minutes }} dk</span>{% endif %}
+                        </div>
+                        <h3>{{ event.title }}</h3>
+                        <p>
+                            {% if event.patient %}<a href="/patients/{{ event.patient.id }}">{{ event.patient.first_name or '' }} {{ event.patient.last_name or '' }}</a>{% endif %}
+                            {% if event.location %}{% if event.patient %} · {% endif %}{{ event.location }}{% endif %}
+                        </p>
+                        {% if event.notes %}<div class="program-notes">{{ event.notes }}</div>{% endif %}
+                    </div>
+                    <div class="program-event-actions">
+                        <a href="/program/{{ event.id }}/edit">Düzenle</a>
+                        {% if event.status != 'COMPLETED' and not event.is_recurring %}
+                        <form method="post" action="/program/{{ event.id }}/complete">
+                            <button type="submit" class="link-button">Tamamla</button>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="/program/{{ event.id }}/delete" onsubmit="return confirm('Bu program kaydı kaldırılsın mı?');">
+                            <button type="submit" class="link-button danger-link">Sil</button>
+                        </form>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="program-empty">
+        <div class="program-empty-icon">＋</div>
+        <h2>Bu dönemde program kaydı yok</h2>
+        <p>Ders, hasta randevusu, sınav, tez veya görev ekleyebilirsiniz.</p>
+        <a class="btn" href="/program/new">İlk Kaydı Ekle</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
