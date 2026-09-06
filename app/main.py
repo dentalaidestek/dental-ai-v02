@@ -1946,6 +1946,14 @@ def _run_guest_preliminary_ai(analysis_id: int):
 
             ai_result = parse_ai_result(ai_text)
 
+            # Guest analizde Gemini geçersiz/bozuk format döndürürse 1 kez yeniden dene.
+            if isinstance(ai_result, dict) and ai_result.get("status") in {"RAW", "AI_INVALID"}:
+                ai_text = ask_ai(
+                    prompt,
+                    image_paths=image_paths,
+                )
+                ai_result = parse_ai_result(ai_text)
+
         except Exception as e:
             ai_text = ""
             ai_result = {

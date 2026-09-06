@@ -157,7 +157,7 @@
         </p>
     </div>
 
-    
+
 
 
     {% elif ai_result.status == "FINAL" %}
@@ -211,7 +211,11 @@
             </div>
 
         </div>
-    </div>
+
+        <div style="margin-top:16px;">
+            <a class="button" href="/patients/{{ patient.id }}">← Hasta Profiline Dön</a>
+        </div>
+</div>
 
 
     {% elif ai_result.status == "INITIAL" %}
@@ -379,7 +383,11 @@
 
         {% endif %}
 
-    </div>
+
+        <div style="margin-top:16px;">
+            <a class="button" href="/patients/{{ patient.id }}">← Hasta Profiline Dön</a>
+        </div>
+</div>
 
     {% elif ai_result.status == "READY" %}
 
