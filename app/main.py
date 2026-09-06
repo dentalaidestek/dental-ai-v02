@@ -280,6 +280,16 @@ def register_user(
             status_code=400,
         )
 
+    if len(username) < 8:
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "error": "Kullanıcı adı en az 8 karakter olmalıdır.",
+            },
+            status_code=400,
+        )
+
     if not display_name or not email or not username:
         return templates.TemplateResponse(
             "register.html",
