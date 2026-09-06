@@ -4,7 +4,7 @@
 <div class="page-card">
     <div class="page-header">
         <div>
-            <h1>🧠 Tüm Analizler</h1>
+            <h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/><path d="M8 10h2"/><path d="M14 13h2"/></svg> Tüm Analizler</h1>
             <p>Hasta profiline bağlı ve hasta kaydı olmadan yapılan tüm analizler.</p>
         </div>
     </div>
@@ -16,14 +16,14 @@
             <div class="analysis-info">
                 <div class="analysis-title">
                     {% if item.is_guest %}
-                        ⚡ Hasta Kaydı Yok
+                        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"/></svg> Hasta Kaydı Yok
                     {% else %}
                         👤 {{ item.patient_name }}
                     {% endif %}
                 </div>
 
                 <div class="analysis-meta">
-                    🦷 Diş: {{ item.tooth_number or "-" }}
+                    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg> Diş: {{ item.tooth_number or "-" }}
                 </div>
 
                 <div class="analysis-note">

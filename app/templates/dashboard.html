@@ -328,12 +328,12 @@
 
     <div class="quick-actions">
     <a class="quick-action" href="/patients/new">
-        <span>＋</span>
+        <span class="quick-action-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
         <strong>Yeni Hasta Oluştur</strong>
     </a>
 
     <a class="quick-action" href="/analysis/new">
-        <span>🧠</span>
+        <span class="quick-action-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/><path d="M8 10h2"/><path d="M14 13h2"/></svg></span>
         <strong>Dental AI ile Analiz Et</strong>
     </a>
 </div>
@@ -341,7 +341,7 @@
     <section class="patient-card">
 
         <div class="patient-header">
-            <h2>👥 Hastalarım</h2>
+            <h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Hastalarım</h2>
             <span class="patient-count">{{ patients|length }} kayıt</span>
         </div>
 
@@ -385,7 +385,7 @@
 
     <section class="patient-card guest-analysis-card">
         <div class="patient-header">
-            <h2>⚡ Hasta Kaydı Olmadan Yapılan Analizler</h2>
+            <h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"/></svg> Hasta Kaydı Olmadan Yapılan Analizler</h2>
             <span class="patient-count">Son 5 işlem</span>
         </div>
 
@@ -395,7 +395,7 @@
             <div class="patient-row guest-analysis-row">
                 <div class="guest-analysis-info">
                     <div class="patient-name">
-                        🦷 Diş: {{ a.tooth_number or "-" }}
+                        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg> Diş: {{ a.tooth_number or "-" }}
                     </div>
 
                     <div class="guest-clinical-note">

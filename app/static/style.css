@@ -335,3 +335,669 @@
     }
 }
 
+
+
+/* =========================================================
+   DENTAL AI — MODERN UI SYSTEM
+   Sadece görsel katmandır. İşlevlere ve verilere dokunmaz.
+   ========================================================= */
+
+:root {
+    --bg: #f6f8fc;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
+
+    --text: #162033;
+    --text-soft: #64748b;
+    --text-faint: #94a3b8;
+
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --primary-soft: #eff6ff;
+
+    --border: #e5eaf1;
+    --border-strong: #d8e0ea;
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+
+    --shadow-sm: 0 2px 10px rgba(15, 23, 42, .04);
+    --shadow-md: 0 8px 30px rgba(15, 23, 42, .07);
+    --shadow-lg: 0 18px 50px rgba(15, 23, 42, .10);
+}
+
+
+/* GENEL SAYFA */
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    background:
+        radial-gradient(circle at top left, rgba(37,99,235,.035), transparent 32%),
+        var(--bg);
+    color: var(--text);
+    font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+}
+
+main {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 32px 20px 56px;
+}
+
+h1,
+h2,
+h3,
+h4 {
+    color: #0f172a;
+    letter-spacing: -.025em;
+}
+
+h1 {
+    font-size: clamp(27px, 4vw, 36px);
+    line-height: 1.15;
+    font-weight: 800;
+}
+
+h2 {
+    font-weight: 750;
+}
+
+p {
+    color: #475569;
+}
+
+
+/* =========================================================
+   ÜST MENÜ
+   ========================================================= */
+
+.topbar {
+    min-height: 70px !important;
+    padding: 0 28px !important;
+
+    background:
+        linear-gradient(
+            110deg,
+            #0f172a 0%,
+            #16243b 55%,
+            #172554 100%
+        ) !important;
+
+    border: 0 !important;
+    border-bottom: 1px solid rgba(255,255,255,.07) !important;
+
+    box-shadow:
+        0 8px 30px rgba(15,23,42,.16) !important;
+
+    backdrop-filter: blur(14px);
+}
+
+.topbar .brand {
+    gap: 12px;
+}
+
+.topbar .brand-icon {
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 13px !important;
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255,255,255,.15),
+            rgba(255,255,255,.07)
+        ) !important;
+
+    border: 1px solid rgba(255,255,255,.12);
+
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+.topbar .brand-text strong {
+    font-size: 17px !important;
+    letter-spacing: -.3px;
+}
+
+.topbar .nav-links {
+    gap: 4px;
+}
+
+.topbar .nav-links a {
+    padding: 9px 12px !important;
+    border-radius: 10px !important;
+
+    font-size: 13px !important;
+    font-weight: 600 !important;
+
+    color: #dbe4f0 !important;
+
+    transition:
+        background .18s ease,
+        color .18s ease,
+        transform .18s ease !important;
+}
+
+.topbar .nav-links a:hover {
+    background: rgba(255,255,255,.09) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+}
+
+.topbar .menu-toggle {
+    width: 42px;
+    height: 42px;
+    padding: 0 !important;
+
+    display: none;
+
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 11px !important;
+
+    background: rgba(255,255,255,.08) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+
+    font-size: 24px !important;
+}
+
+
+/* =========================================================
+   KARTLAR
+   ========================================================= */
+
+.card,
+.patient-card,
+.page-card,
+.info-card {
+    background: rgba(255,255,255,.97);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+
+    box-shadow: var(--shadow-sm);
+
+    transition:
+        box-shadow .2s ease,
+        border-color .2s ease,
+        transform .2s ease;
+}
+
+.card:hover,
+.patient-card:hover {
+    border-color: #dbe4ef;
+    box-shadow: var(--shadow-md);
+}
+
+.card {
+    padding: 24px;
+    margin: 18px 0;
+}
+
+
+/* =========================================================
+   SATIR / LİSTE GÖRÜNÜMÜ
+   ========================================================= */
+
+.row,
+.patient-row,
+.analysis-row {
+    border-bottom: 0 !important;
+}
+
+.patient-row,
+.analysis-row {
+    background: var(--surface);
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+
+    padding: 17px 18px !important;
+
+    box-shadow: 0 2px 10px rgba(15,23,42,.025);
+
+    transition:
+        transform .16s ease,
+        box-shadow .16s ease,
+        border-color .16s ease;
+}
+
+.patient-row:hover,
+.analysis-row:hover {
+    transform: translateY(-1px);
+    border-color: #d4deea !important;
+    box-shadow: 0 8px 24px rgba(15,23,42,.055);
+}
+
+.patient-name,
+.analysis-title {
+    color: #0f172a !important;
+    font-weight: 750 !important;
+    letter-spacing: -.015em;
+}
+
+.patient-meta,
+.analysis-meta,
+.analysis-date,
+.patient-age {
+    color: var(--text-soft) !important;
+}
+
+
+/* =========================================================
+   BUTONLAR
+   ========================================================= */
+
+button,
+.btn,
+.button,
+.primary-button,
+.profile-button,
+.result-button,
+.patient-link {
+    border: 0;
+    border-radius: 11px !important;
+
+    font-weight: 650 !important;
+    letter-spacing: -.01em;
+
+    text-decoration: none;
+
+    transition:
+        transform .16s ease,
+        box-shadow .16s ease,
+        background .16s ease,
+        border-color .16s ease !important;
+}
+
+button,
+.btn,
+.button,
+.primary-button,
+.profile-button,
+.result-button {
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary),
+            var(--primary-dark)
+        ) !important;
+
+    color: #ffffff !important;
+
+    box-shadow:
+        0 5px 14px rgba(37,99,235,.16);
+}
+
+button:hover,
+.btn:hover,
+.button:hover,
+.primary-button:hover,
+.profile-button:hover,
+.result-button:hover {
+    transform: translateY(-1px);
+
+    box-shadow:
+        0 8px 20px rgba(37,99,235,.22);
+}
+
+button:active,
+.btn:active,
+.button:active,
+.primary-button:active,
+.profile-button:active,
+.result-button:active {
+    transform: translateY(0);
+}
+
+
+/* SONUÇ / LİSTE BAĞLANTILARI */
+
+.patient-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 9px 13px;
+
+    background: var(--primary-soft);
+    color: var(--primary) !important;
+
+    border: 1px solid #dbeafe;
+
+    box-shadow: none;
+}
+
+.patient-link:hover {
+    background: #dbeafe;
+    border-color: #bfdbfe;
+}
+
+
+/* =========================================================
+   FORMLAR
+   ========================================================= */
+
+input,
+textarea,
+select,
+.form input,
+.form textarea {
+    font: inherit;
+
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 11px !important;
+
+    background: #ffffff !important;
+    color: #162033;
+
+    outline: none;
+
+    transition:
+        border-color .16s ease,
+        box-shadow .16s ease,
+        background .16s ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.form input:focus,
+.form textarea:focus {
+    border-color: #3b82f6 !important;
+
+    box-shadow:
+        0 0 0 4px rgba(59,130,246,.11) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #9aa7b7;
+}
+
+
+/* =========================================================
+   BİLGİ / UYARI ALANLARI
+   ========================================================= */
+
+.notice {
+    background: #f8fbff !important;
+
+    border: 1px solid #dbeafe;
+
+    color: #334155;
+
+    border-radius: 13px !important;
+
+    box-shadow: none;
+}
+
+.muted {
+    color: var(--text-soft) !important;
+}
+
+
+/* =========================================================
+   QUICK ACTION / ANA SAYFA KARTLARI
+   ========================================================= */
+
+.quick-actions {
+    gap: 14px !important;
+}
+
+.quick-action {
+    border: 1px solid var(--border) !important;
+    border-radius: 16px !important;
+
+    background: #ffffff !important;
+
+    box-shadow: var(--shadow-sm);
+
+    transition:
+        transform .18s ease,
+        border-color .18s ease,
+        box-shadow .18s ease !important;
+}
+
+.quick-action:hover {
+    transform: translateY(-2px);
+
+    border-color: #cdd8e5 !important;
+
+    box-shadow: var(--shadow-md);
+}
+
+.quick-action strong {
+    color: #172033;
+}
+
+
+/* =========================================================
+   SAYFA BAŞLIKLARI
+   ========================================================= */
+
+.page-header {
+    margin-bottom: 26px !important;
+}
+
+.page-header h1 {
+    margin-top: 0;
+    margin-bottom: 7px !important;
+}
+
+.page-header p {
+    color: var(--text-soft) !important;
+}
+
+
+/* =========================================================
+   LEGAL / INFO
+   ========================================================= */
+
+.legal-list a {
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+
+    box-shadow: var(--shadow-sm);
+
+    transition:
+        transform .16s ease,
+        border-color .16s ease,
+        box-shadow .16s ease !important;
+}
+
+.legal-list a:hover {
+    transform: translateY(-1px);
+
+    border-color: #bfdbfe !important;
+
+    box-shadow: var(--shadow-md);
+}
+
+
+/* =========================================================
+   SCROLLBAR
+   ========================================================= */
+
+::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c7d1de;
+    border-radius: 999px;
+    border: 2px solid #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #9aa9bc;
+}
+
+
+/* =========================================================
+   MOBİL
+   ========================================================= */
+
+@media (max-width: 760px) {
+
+    main {
+        padding: 22px 13px 42px;
+    }
+
+    .topbar {
+        min-height: 62px !important;
+        padding: 8px 13px !important;
+    }
+
+    .topbar .menu-toggle {
+        display: flex !important;
+    }
+
+    .topbar .nav-links {
+        top: 68px !important;
+        left: 10px !important;
+        right: 10px !important;
+
+        padding: 8px !important;
+
+        background: rgba(255,255,255,.98) !important;
+
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 16px !important;
+
+        box-shadow:
+            0 18px 45px rgba(15,23,42,.18) !important;
+    }
+
+    .topbar .nav-links a {
+        padding: 13px 14px !important;
+        border-radius: 10px !important;
+
+        color: #263449 !important;
+
+        font-size: 14px !important;
+    }
+
+    .topbar .nav-links a:hover {
+        background: #f1f5f9 !important;
+        color: #1d4ed8 !important;
+        transform: none;
+    }
+
+    .card {
+        padding: 18px;
+        border-radius: 16px;
+    }
+
+    .patient-row,
+    .analysis-row {
+        padding: 15px !important;
+        border-radius: 13px !important;
+    }
+
+    h1 {
+        font-size: 27px;
+    }
+}
+
+
+/* =========================================================
+   HAREKET AZALTMA TERCİHİ
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
+/* DENTAL AI — MODERN LINE ICONS */
+.ui-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vertical-align: -3px;
+}
+
+.brand-icon .ui-icon {
+    width: 23px;
+    height: 23px;
+    color: #ffffff;
+}
+
+.menu-icon {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.nav-links a {
+    gap: 8px;
+}
+
+.quick-action-icon {
+    width: 42px;
+    height: 42px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 12px;
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.quick-action-icon .ui-icon {
+    width: 21px;
+    height: 21px;
+}
+
+h1 .ui-icon {
+    width: 27px;
+    height: 27px;
+    margin-right: 7px;
+}
+
+h2 .ui-icon {
+    width: 21px;
+    height: 21px;
+    margin-right: 6px;
+}
+
+.primary-button .ui-icon,
+.profile-button .ui-icon,
+.result-button .ui-icon,
+.patient-link .ui-icon {
+    width: 17px;
+    height: 17px;
+}
