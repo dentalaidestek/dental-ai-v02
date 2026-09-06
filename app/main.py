@@ -36,8 +36,16 @@ from app.auth import (
 )
 
 BASE = Path(__file__).resolve().parent
-DB_PATH = BASE.parent / "dental_ai.db"
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL)
+else:
+    DB_PATH = BASE.parent / "dental_ai.db"
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        connect_args={"check_same_thread": False},
+    )
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
