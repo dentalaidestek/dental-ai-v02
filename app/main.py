@@ -435,11 +435,16 @@ def register_user(
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
+def login_page(request: Request, reset: str = ""):
+    message = (
+        "Şifreniz başarıyla değiştirildi. Yeni şifrenizle giriş yapabilirsiniz."
+        if reset == "success"
+        else None
+    )
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"error": None},
+        context={"error": None, "message": message},
     )
 
 
@@ -561,6 +566,141 @@ def forgot_password_request(
             "error": None,
             "message": generic_message,
         },
+    )
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(
+    request: Request,
+    token: str = "",
+):
+    token_hash = hash_session_token(token) if token else ""
+
+    valid_token = False
+
+    if token_hash:
+        with Session(engine, expire_on_commit=False) as s:
+            reset_token = s.exec(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.token_hash == token_hash,
+                    PasswordResetToken.used_at == None,
+                    PasswordResetToken.expires_at > datetime.utcnow(),
+                )
+            ).first()
+
+            valid_token = reset_token is not None
+
+    if not valid_token:
+        return templates.TemplateResponse(
+            request=request,
+            name="reset_password.html",
+            context={
+                "token": None,
+                "error": "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş.",
+                "message": None,
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="reset_password.html",
+        context={
+            "token": token,
+            "error": None,
+            "message": None,
+        },
+    )
+
+
+@app.post("/reset-password")
+def reset_password(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    token_hash = hash_session_token(token)
+
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            request=request,
+            name="reset_password.html",
+            context={
+                "token": token,
+                "error": "Şifre en az 8 karakter olmalıdır.",
+                "message": None,
+            },
+            status_code=400,
+        )
+
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request=request,
+            name="reset_password.html",
+            context={
+                "token": token,
+                "error": "Şifreler eşleşmiyor.",
+                "message": None,
+            },
+            status_code=400,
+        )
+
+    with Session(engine, expire_on_commit=False) as s:
+        reset_token = s.exec(
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used_at == None,
+                PasswordResetToken.expires_at > datetime.utcnow(),
+            )
+        ).first()
+
+        if not reset_token:
+            return templates.TemplateResponse(
+                request=request,
+                name="reset_password.html",
+                context={
+                    "token": None,
+                    "error": "Bu şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş.",
+                    "message": None,
+                },
+                status_code=400,
+            )
+
+        user = s.get(User, reset_token.user_id)
+
+        if not user or not user.is_active:
+            return templates.TemplateResponse(
+                request=request,
+                name="reset_password.html",
+                context={
+                    "token": None,
+                    "error": "Bu şifre sıfırlama bağlantısı geçersiz.",
+                    "message": None,
+                },
+                status_code=400,
+            )
+
+        user.password_hash = hash_password(password)
+        reset_token.used_at = datetime.utcnow()
+
+        # Güvenlik: eski oturumları da sonlandır.
+        session_tokens = s.exec(
+            select(SessionToken).where(
+                SessionToken.user_id == user.id
+            )
+        ).all()
+
+        for session_token in session_tokens:
+            s.delete(session_token)
+
+        s.add(user)
+        s.add(reset_token)
+        s.commit()
+
+    return RedirectResponse(
+        url="/login?reset=success",
+        status_code=303,
     )
 
 
