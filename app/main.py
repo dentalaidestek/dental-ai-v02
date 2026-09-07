@@ -5299,3 +5299,125 @@ def _ai_selftest_groq_direct(
         }
 
 # === TEMP_GROQ_DIRECT_TEST_END ===
+
+# === TEMP_MISTRAL_DIRECT_TEST_BEGIN ===
+@app.post(
+    "/__ai-selftest-mistral-direct/{model:path}",
+    include_in_schema=False,
+)
+def _ai_selftest_mistral_direct(
+    model: str,
+    x_ai_selftest_token: str | None = _AIHeader(
+        default=None,
+        alias="X-AI-Selftest-Token",
+    ),
+):
+    import json
+    import secrets
+    import urllib.error
+    import urllib.request
+
+    from app.study_provider import get_provider
+
+    if not secrets.compare_digest(
+        x_ai_selftest_token or "",
+        _AI_SELFTEST_TOKEN,
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    allowed = {
+        "mistral-medium-latest",
+        "mistral-small-latest",
+    }
+
+    if model not in allowed:
+        raise _AIHTTPException(status_code=404)
+
+    provider = get_provider("mistral")
+    provider._require_key()
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Sadece TEST_OK yaz.",
+            }
+        ],
+        "temperature": 0,
+        "max_tokens": 64,
+        "stream": False,
+    }
+
+    request = urllib.request.Request(
+        provider.BASE_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers=provider._headers(),
+    )
+
+    def safe_limit_headers(headers):
+        result = {}
+        if not headers:
+            return result
+
+        for key, value in headers.items():
+            low = key.lower()
+            if (
+                "ratelimit" in low
+                or "rate-limit" in low
+                or low == "retry-after"
+            ):
+                result[key] = value
+
+        return result
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=100,
+        ) as response:
+            raw = response.read().decode("utf-8")
+            result = json.loads(raw)
+
+            answer = provider._answer_from_openai_response(result)
+
+            return {
+                "ok": True,
+                "model": model,
+                "http": getattr(response, "status", 200),
+                "reply": answer[:200],
+                "limit_headers": safe_limit_headers(
+                    response.headers
+                ),
+            }
+
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        return {
+            "ok": False,
+            "model": model,
+            "http": exc.code,
+            "error": " ".join(body.split())[:500],
+            "limit_headers": safe_limit_headers(
+                exc.headers
+            ),
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "model": model,
+            "http": None,
+            "error": (
+                f"{type(exc).__name__}: "
+                f"{str(exc)[:300]}"
+            ),
+            "limit_headers": {},
+        }
+
+# === TEMP_MISTRAL_DIRECT_TEST_END ===
