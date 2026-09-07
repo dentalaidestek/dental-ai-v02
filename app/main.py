@@ -5195,3 +5195,107 @@ def _ai_selftest_groq_adapter(
         }
 
 # === TEMP_GROQ_ADAPTER_TEST_END ===
+
+# === TEMP_GROQ_DIRECT_TEST_BEGIN ===
+@app.post(
+    "/__ai-selftest-groq-direct/{model:path}",
+    include_in_schema=False,
+)
+def _ai_selftest_groq_direct(
+    model: str,
+    x_ai_selftest_token: str | None = _AIHeader(
+        default=None,
+        alias="X-AI-Selftest-Token",
+    ),
+):
+    import json
+    import secrets
+    import urllib.error
+    import urllib.request
+
+    from app.study_provider import get_provider
+
+    if not secrets.compare_digest(
+        x_ai_selftest_token or "",
+        _AI_SELFTEST_TOKEN,
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    allowed = {
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "qwen/qwen3.6-27b",
+        "llama-3.3-70b-versatile",
+    }
+
+    if model not in allowed:
+        raise _AIHTTPException(status_code=404)
+
+    provider = get_provider("groq")
+    provider._require_key()
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Bu bir teknik bağlantı testidir.",
+            },
+            {
+                "role": "user",
+                "content": "Sadece TEST_OK yaz.",
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": 128,
+        "stream": False,
+    }
+
+    request = urllib.request.Request(
+        provider.BASE_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers=provider._headers(),
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=100,
+        ) as response:
+            result = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        answer = provider._answer_from_openai_response(result)
+
+        return {
+            "ok": True,
+            "model": model,
+            "http": 200,
+            "reply": answer[:200],
+        }
+
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        return {
+            "ok": False,
+            "model": model,
+            "http": exc.code,
+            "error": " ".join(body.split())[:400],
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "model": model,
+            "http": None,
+            "error": f"{type(exc).__name__}: {str(exc)[:300]}",
+        }
+
+# === TEMP_GROQ_DIRECT_TEST_END ===

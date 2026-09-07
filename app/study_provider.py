@@ -832,6 +832,15 @@ class GroqStudyProvider(OpenAICompatibleStudyProvider):
     API_KEY_ENV = "GROQ_API_KEY"
     BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+    def _headers(self) -> dict[str, str]:
+        headers = super()._headers()
+        headers["User-Agent"] = (
+            os.getenv("STUDY_GROQ_USER_AGENT")
+            or "DentalAI/1.0 (+https://dentalai.tr)"
+        ).strip()
+        headers["Accept"] = "application/json"
+        return headers
+
 
 class MistralStudyProvider(OpenAICompatibleStudyProvider):
     name = "mistral"
