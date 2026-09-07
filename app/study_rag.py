@@ -430,6 +430,19 @@ def ensure_material_index(session: Session, material) -> int:
     return len(pending)
 
 
+
+def course_index_ready(session: Session, *, owner_user_id: int, course_id: int) -> bool:
+    """Cheap readiness check; avoids walking every material on every question."""
+    target = get_embedding_target()
+    row = session.exec(
+        select(StudyRAGChunk)
+        .where(StudyRAGChunk.owner_user_id == owner_user_id)
+        .where(StudyRAGChunk.course_id == course_id)
+        .where(StudyRAGChunk.embedding_provider == target.provider)
+        .where(StudyRAGChunk.embedding_model == target.model)
+    ).first()
+    return row is not None
+
 def ensure_course_index(session: Session, materials: list) -> tuple[int, list[str]]:
     """Ensure every current material has a persistent index.
 
@@ -700,7 +713,7 @@ def retrieve_course_context(
             and len(attachments) < max_attachments
             and key not in attachment_keys
             and row.content_kind in {"PDF_PAGE", "IMAGE"}
-            and (row.content_kind == "IMAGE" or not row.text_content or needs_visual)
+            and needs_visual
         ):
             try:
                 attachment = _page_attachment(material, row.page_number, show_source=wants_sources)
@@ -711,28 +724,8 @@ def retrieve_course_context(
                 attachments.append(attachment)
                 attachment_keys.add(key)
 
-    memories = session.exec(
-        select(StudyRAGMemory)
-        .where(StudyRAGMemory.owner_user_id == owner_user_id)
-        .where(StudyRAGMemory.course_id == course_id)
-        .where(StudyRAGMemory.embedding_provider == target.provider)
-        .where(StudyRAGMemory.embedding_model == target.model)
-        .order_by(StudyRAGMemory.id.desc())
-    ).all()
-    # Keep database work bounded even for very long-running courses.
-    memories = memories[:300]
-    selected_memories = _rank_memories(
-        memories,
-        query=enriched_query,
-        query_vector=query_vector,
-        limit=3,
-    )
-    memory_context = [
-        "Önceki ilgili çalışma konuşması:\n"
-        f"Öğrenci: {row.user_text[:1800]}\n"
-        f"Dental AI: {row.assistant_text[:2600]}"
-        for row in selected_memories
-    ]
+    # Recent chat history is already passed to generation; avoid a second embedding quota path.
+    memory_context: list[str] = []
 
     if not note_context and not attachments:
         raise StudyRAGError("Soruyla ilişkilendirilebilecek ders notu bölümü bulunamadı.")

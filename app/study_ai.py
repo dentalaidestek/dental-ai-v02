@@ -123,12 +123,12 @@ def ask_rag(
     }
 
     try:
-        max_provider_attempts = int(os.getenv("STUDY_ROUTER_MAX_PROVIDER_ATTEMPTS", "2"))
+        max_provider_attempts = int(os.getenv("STUDY_ROUTER_MAX_PROVIDER_ATTEMPTS", "3"))
     except ValueError:
-        max_provider_attempts = 2
-    # Product rule: one primary request + at most one fallback. Even if the pool
+        max_provider_attempts = 3
+    # Product rule: one primary request + at most two fallbacks. Even if the pool
     # contains many models, a user request never walks the whole chain.
-    max_provider_attempts = max(1, min(max_provider_attempts, 2))
+    max_provider_attempts = max(1, min(max_provider_attempts, 3))
     attempted_api_calls = 0
 
     for target in targets:
