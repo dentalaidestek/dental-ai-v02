@@ -5122,3 +5122,76 @@ def _ai_selftest_cohere_adapter(
         }
 
 # === TEMP_COHERE_ADAPTER_TEST_END ===
+
+# === TEMP_GROQ_ADAPTER_TEST_BEGIN ===
+@app.post(
+    "/__ai-selftest-groq/{model:path}",
+    include_in_schema=False,
+)
+def _ai_selftest_groq_adapter(
+    model: str,
+    x_ai_selftest_token: str | None = _AIHeader(
+        default=None,
+        alias="X-AI-Selftest-Token",
+    ),
+):
+    import secrets
+    from app.study_provider import get_provider, StudyProviderError
+
+    if not secrets.compare_digest(
+        x_ai_selftest_token or "",
+        _AI_SELFTEST_TOKEN,
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    allowed = {
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "qwen/qwen3.6-27b",
+        "llama-3.3-70b-versatile",
+    }
+
+    if model not in allowed:
+        raise _AIHTTPException(status_code=404)
+
+    try:
+        provider = get_provider("groq")
+
+        answer = provider.generate(
+            model=model,
+            system_prompt="Bu bir teknik bağlantı testidir.",
+            history=[],
+            prompt="Sadece TEST_OK yaz.",
+            attachments=[],
+            temperature=0,
+            max_output_tokens=256,
+        )
+
+        return {
+            "ok": bool(answer and answer.strip()),
+            "provider": "groq",
+            "model": model,
+            "reply": (answer or "").strip()[:300],
+        }
+
+    except StudyProviderError as exc:
+        return {
+            "ok": False,
+            "provider": "groq",
+            "model": model,
+            "code": exc.code,
+            "retryable": exc.retryable,
+            "error": str(exc)[:300],
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": "groq",
+            "model": model,
+            "code": None,
+            "error": f"{type(exc).__name__}: {str(exc)[:250]}",
+        }
+
+# === TEMP_GROQ_ADAPTER_TEST_END ===
