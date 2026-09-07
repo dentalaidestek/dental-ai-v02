@@ -114,7 +114,7 @@ def ask_rag(
     targets = get_generation_targets(profile)
     if not targets:
         raise StudyAIError("Akademik AI için kullanılabilir üretim sağlayıcısı bulunamadı.")
-    max_output_tokens = 7000 if broad_output else 3200
+    max_output_tokens = 3600 if broad_output else 2200
 
     required_attachment_types = {
         item.get("mime_type")
@@ -123,12 +123,12 @@ def ask_rag(
     }
 
     try:
-        max_provider_attempts = int(os.getenv("STUDY_ROUTER_MAX_PROVIDER_ATTEMPTS", "2"))
+        max_provider_attempts = int(os.getenv("STUDY_ROUTER_MAX_PROVIDER_ATTEMPTS", "3"))
     except ValueError:
-        max_provider_attempts = 2
-    # Product rule: one primary request + at most one fallback. Even if the pool
-    # contains many models, a user request never walks the whole chain.
-    max_provider_attempts = max(1, min(max_provider_attempts, 2))
+        max_provider_attempts = 3
+    # Product rule: one primary request and at most two real fallbacks.
+    # Healthy requests still use exactly one generation API call.
+    max_provider_attempts = max(1, min(max_provider_attempts, 3))
     attempted_api_calls = 0
 
     for target in targets:
@@ -153,7 +153,7 @@ def ask_rag(
             answer = provider.generate(
                 model=target.model,
                 system_prompt=STUDY_SYSTEM_PROMPT,
-                history=history[-8:],
+                history=history[-6:],
                 prompt=prompt,
                 attachments=attachments or [],
                 temperature=0.28,

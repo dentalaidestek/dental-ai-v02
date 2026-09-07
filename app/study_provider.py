@@ -5,6 +5,7 @@ import json
 import importlib
 import logging
 import os
+import re
 import socket
 import time
 import urllib.error
@@ -13,7 +14,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.study_router_state import (
-    rank_targets as router_rank_targets,
     record_api_result,
     record_local_failure,
     target_available as router_target_available,
@@ -131,103 +131,80 @@ def _provider_has_key(provider: str) -> bool:
 
 
 def get_generation_targets(profile: str = "complex") -> list[ProviderTarget]:
-    """Build the configured pool, then let the persistent smart router rank it.
+    """Deterministic Academic AI chain with quota/health skipping only.
 
-    The router never probes models just to discover quota. It uses prior success,
-    provider-reported rate-limit headers, latency and circuit state already stored
-    by Dental AI. The request loop later performs at most one primary call plus
-    one fallback call.
+    No runtime quality scoring or provider probing is performed. A healthy first
+    target receives the request; fallbacks are used only after a real failure or
+    when router state already marks a target unavailable.
     """
-    raw = (os.getenv("STUDY_AI_PROVIDER_CHAIN") or "").strip()
     targets: list[ProviderTarget] = []
 
     def add(provider: str, model: str) -> None:
         provider = (provider or "").strip().lower()
         model = (model or "").strip()
-        if not provider or not model:
+        if not provider or not model or not _provider_has_key(provider):
             return
         target = ProviderTarget(provider, model)
         if target not in targets:
             targets.append(target)
 
+    # Custom chain is intentionally opt-in. Old Render variables cannot
+    # accidentally re-enable Gemini Lite/Mistral/known-bad targets.
+    use_custom = (os.getenv("STUDY_AI_USE_CUSTOM_CHAIN") or "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    raw = (os.getenv("STUDY_AI_PROVIDER_CHAIN") or "").strip() if use_custom else ""
     if raw:
         for item in raw.split(","):
-            item = item.strip()
-            if not item:
-                continue
-            provider, sep, model = item.partition(":")
+            provider, sep, model = item.strip().partition(":")
             if sep:
                 add(provider, model)
-        return [
-            target for target in targets
-            if _provider_has_key(target.provider) and router_target_available(target.provider, target.model)
-        ]
+        return targets
 
     profile = (profile or "complex").strip().lower()
     complex_mode = profile in {"complex", "deep", "broad", "exam"}
 
     gemini_primary = (os.getenv("STUDY_GEMINI_MODEL") or "gemini-3.8-flash").strip()
     gemini_fallback = (os.getenv("STUDY_GEMINI_FALLBACK_MODEL") or "gemini-3.7-flash").strip()
-    gemini_lite = (os.getenv("STUDY_GEMINI_LITE_MODEL") or "gemini-3.5-flash-lite").strip()
     cohere_plus = (os.getenv("STUDY_COHERE_PLUS_MODEL") or "command-a-plus-05-2026").strip()
     cohere_reasoning = (os.getenv("STUDY_COHERE_REASONING_MODEL") or "command-a-reasoning-08-2025").strip()
     cohere_standard = (os.getenv("STUDY_COHERE_MODEL") or "command-a-03-2025").strip()
     groq_120b = (os.getenv("STUDY_GROQ_STRONG_MODEL") or "openai/gpt-oss-120b").strip()
     groq_20b = (os.getenv("STUDY_GROQ_FAST_MODEL") or "openai/gpt-oss-20b").strip()
-    groq_qwen38 = (os.getenv("STUDY_GROQ_QWEN_STRONG_MODEL") or "qwen/qwen3.8-27b").strip()
     groq_qwen36 = (os.getenv("STUDY_GROQ_QWEN_FAST_MODEL") or "qwen/qwen3.6-27b").strip()
-    groq_llama = (os.getenv("STUDY_GROQ_LLAMA_MODEL") or "llama-3.3-70b-versatile").strip()
-    mistral_medium = (os.getenv("STUDY_MISTRAL_STRONG_MODEL") or "mistral-medium-latest").strip()
-    mistral_small = (os.getenv("STUDY_MISTRAL_MODEL") or "mistral-small-latest").strip()
     openrouter_free = (os.getenv("STUDY_OPENROUTER_MODEL") or "openrouter/free").strip()
 
-    has_gemini = _provider_has_key("gemini")
-    has_cohere = _provider_has_key("cohere")
-    has_groq = _provider_has_key("groq")
-    has_mistral = _provider_has_key("mistral")
-    has_openrouter = _provider_has_key("openrouter")
-
     if complex_mode:
-        if has_gemini: add("gemini", gemini_primary)
-        if has_cohere: add("cohere", cohere_plus)
-        if has_groq: add("groq", groq_120b)
-        if has_mistral: add("mistral", mistral_medium)
-        if has_gemini: add("gemini", gemini_fallback)
-        if has_cohere: add("cohere", cohere_reasoning)
-        if has_groq: add("groq", groq_qwen38)
-        if has_mistral: add("mistral", mistral_small)
-        if has_gemini: add("gemini", gemini_lite)
-        if has_cohere: add("cohere", cohere_standard)
-        if has_groq:
-            add("groq", groq_llama)
-            add("groq", groq_20b)
-            add("groq", groq_qwen36)
-        if has_openrouter: add("openrouter", openrouter_free)
+        ordered = [
+            ("gemini", gemini_primary),
+            ("gemini", gemini_fallback),
+            ("groq", groq_120b),
+            ("cohere", cohere_plus),
+            ("cohere", cohere_reasoning),
+            ("groq", groq_20b),
+            ("cohere", cohere_standard),
+            ("groq", groq_qwen36),
+            ("openrouter", openrouter_free),
+        ]
     else:
-        if has_gemini: add("gemini", gemini_lite)
-        if has_groq: add("groq", groq_20b)
-        if has_mistral: add("mistral", mistral_small)
-        if has_cohere: add("cohere", cohere_standard)
-        if has_openrouter: add("openrouter", openrouter_free)
-        if has_groq: add("groq", groq_qwen36)
-        if has_gemini: add("gemini", gemini_primary)
-        if has_cohere: add("cohere", cohere_plus)
-        if has_groq: add("groq", groq_120b)
-        if has_gemini: add("gemini", gemini_fallback)
-        if has_cohere: add("cohere", cohere_reasoning)
-        if has_groq: add("groq", groq_qwen38)
-        if has_mistral: add("mistral", mistral_medium)
+        # Normal questions conserve the strongest Gemini pool by starting at 3.7,
+        # while still keeping both Gemini targets ahead of other providers.
+        ordered = [
+            ("gemini", gemini_fallback),
+            ("gemini", gemini_primary),
+            ("groq", groq_20b),
+            ("cohere", cohere_standard),
+            ("groq", groq_120b),
+            ("cohere", cohere_plus),
+            ("cohere", cohere_reasoning),
+            ("groq", groq_qwen36),
+            ("openrouter", openrouter_free),
+        ]
 
-    if not targets and has_gemini:
-        add("gemini", gemini_primary)
-        add("gemini", gemini_fallback)
+    for provider, model in ordered:
+        add(provider, model)
 
-    ranked = router_rank_targets(
-        [(target.provider, target.model) for target in targets],
-        profile=profile,
-        limit=max(2, min(10, len(targets) or 2)),
-    )
-    return [ProviderTarget(provider, model) for provider, model in ranked]
+    return targets
 
 
 def report_target_failure(target: ProviderTarget, error: StudyProviderError) -> None:
@@ -789,6 +766,13 @@ class OpenAICompatibleStudyProvider(StudyProvider):
             ).strip()
         else:
             answer = ""
+        original_answer = answer
+        answer = re.sub(r"(?is)<think>.*?</think>", "", answer).strip()
+        if re.match(r"(?is)^\s*<think>", original_answer) and "</think>" not in original_answer.lower():
+            raise StudyProviderError(
+                "Akademik AI final yanıt üretmeden reasoning sınırına ulaştı.",
+                retryable=True,
+            )
         if not answer:
             raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
         return answer
