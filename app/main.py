@@ -5051,3 +5051,74 @@ def _ai_selftest(
         }
 
 # === TEMP_AI_SELFTEST_END ===
+
+# === TEMP_COHERE_ADAPTER_TEST_BEGIN ===
+@app.post(
+    "/__ai-selftest-cohere/{model}",
+    include_in_schema=False,
+)
+def _ai_selftest_cohere_adapter(
+    model: str,
+    x_ai_selftest_token: str | None = _AIHeader(
+        default=None,
+        alias="X-AI-Selftest-Token",
+    ),
+):
+    import secrets
+    from app.study_provider import get_provider, StudyProviderError
+
+    if not secrets.compare_digest(
+        x_ai_selftest_token or "",
+        _AI_SELFTEST_TOKEN,
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    allowed = {
+        "command-a-plus-05-2026",
+        "command-a-reasoning-08-2025",
+        "command-a-03-2025",
+    }
+
+    if model not in allowed:
+        raise _AIHTTPException(status_code=404)
+
+    try:
+        provider = get_provider("cohere")
+
+        answer = provider.generate(
+            model=model,
+            system_prompt="Bu bir teknik bağlantı testidir.",
+            history=[],
+            prompt="Sadece TEST_OK yaz.",
+            attachments=[],
+            temperature=0,
+            max_output_tokens=64,
+        )
+
+        return {
+            "ok": bool(answer and answer.strip()),
+            "provider": "cohere",
+            "model": model,
+            "reply": (answer or "").strip()[:300],
+        }
+
+    except StudyProviderError as exc:
+        return {
+            "ok": False,
+            "provider": "cohere",
+            "model": model,
+            "code": exc.code,
+            "retryable": exc.retryable,
+            "error": str(exc)[:300],
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": "cohere",
+            "model": model,
+            "code": None,
+            "error": f"{type(exc).__name__}: {str(exc)[:250]}",
+        }
+
+# === TEMP_COHERE_ADAPTER_TEST_END ===
