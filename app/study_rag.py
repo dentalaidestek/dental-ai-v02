@@ -464,40 +464,6 @@ def ensure_course_index(session: Session, materials: list) -> tuple[int, list[st
     raise StudyRAGError("Bu derste aranabilir bir not indeksi bulunmuyor.")
 
 
-def course_index_ready(
-    session: Session,
-    *,
-    owner_user_id: int,
-    course_id: int,
-    materials: list,
-) -> bool:
-    """Cheap readiness check; never hashes/re-embeds files during a user question."""
-    material_ids = {
-        int(material.id)
-        for material in materials
-        if getattr(material, "id", None)
-    }
-    if not material_ids:
-        return False
-
-    target = get_embedding_target()
-    raw_indexed_ids = session.exec(
-        select(StudyRAGChunk.material_id)
-        .where(StudyRAGChunk.owner_user_id == owner_user_id)
-        .where(StudyRAGChunk.course_id == course_id)
-        .where(StudyRAGChunk.embedding_provider == target.provider)
-        .where(StudyRAGChunk.embedding_model == target.model)
-    ).all()
-    indexed_material_ids: set[int] = set()
-    for value in raw_indexed_ids:
-        scalar = value[0] if isinstance(value, (tuple, list)) else value
-        try:
-            indexed_material_ids.add(int(scalar))
-        except (TypeError, ValueError):
-            continue
-    return material_ids.issubset(indexed_material_ids)
-
-
 def _history_enriched_query(query: str, recent_history: list[dict] | None) -> str:
     current = (query or "").strip()
     if len(_tokens(current)) >= 4 or not recent_history:
@@ -684,14 +650,14 @@ def retrieve_course_context(
 
     broad = is_broad_study_request(query)
     try:
-        normal_top_k = int(os.getenv("STUDY_RAG_TOP_K", "6"))
-        broad_top_k = int(os.getenv("STUDY_RAG_BROAD_TOP_K", "10"))
-        normal_max_attachments = int(os.getenv("STUDY_RAG_MAX_ATTACHMENTS", "1"))
-        broad_max_attachments = int(os.getenv("STUDY_RAG_BROAD_MAX_ATTACHMENTS", "2"))
-        max_context_chars = int(os.getenv("STUDY_RAG_MAX_CONTEXT_CHARS", "14000"))
+        normal_top_k = int(os.getenv("STUDY_RAG_TOP_K", "8"))
+        broad_top_k = int(os.getenv("STUDY_RAG_BROAD_TOP_K", "14"))
+        normal_max_attachments = int(os.getenv("STUDY_RAG_MAX_ATTACHMENTS", "2"))
+        broad_max_attachments = int(os.getenv("STUDY_RAG_BROAD_MAX_ATTACHMENTS", "4"))
+        max_context_chars = int(os.getenv("STUDY_RAG_MAX_CONTEXT_CHARS", "20000"))
     except ValueError:
-        normal_top_k, broad_top_k = 6, 10
-        normal_max_attachments, broad_max_attachments, max_context_chars = 1, 2, 14000
+        normal_top_k, broad_top_k = 8, 14
+        normal_max_attachments, broad_max_attachments, max_context_chars = 2, 4, 20000
     limit = broad_top_k if broad else normal_top_k
     max_attachments = broad_max_attachments if broad else normal_max_attachments
     wants_sources = _wants_source_details(query)
@@ -745,33 +711,28 @@ def retrieve_course_context(
                 attachments.append(attachment)
                 attachment_keys.add(key)
 
-    semantic_memory_enabled = (
-        os.getenv("STUDY_RAG_SEMANTIC_MEMORY", "0").strip().lower()
-        in {"1", "true", "yes", "on"}
+    memories = session.exec(
+        select(StudyRAGMemory)
+        .where(StudyRAGMemory.owner_user_id == owner_user_id)
+        .where(StudyRAGMemory.course_id == course_id)
+        .where(StudyRAGMemory.embedding_provider == target.provider)
+        .where(StudyRAGMemory.embedding_model == target.model)
+        .order_by(StudyRAGMemory.id.desc())
+    ).all()
+    # Keep database work bounded even for very long-running courses.
+    memories = memories[:300]
+    selected_memories = _rank_memories(
+        memories,
+        query=enriched_query,
+        query_vector=query_vector,
+        limit=3,
     )
-    memory_context: list[str] = []
-    if semantic_memory_enabled:
-        memories = session.exec(
-            select(StudyRAGMemory)
-            .where(StudyRAGMemory.owner_user_id == owner_user_id)
-            .where(StudyRAGMemory.course_id == course_id)
-            .where(StudyRAGMemory.embedding_provider == target.provider)
-            .where(StudyRAGMemory.embedding_model == target.model)
-            .order_by(StudyRAGMemory.id.desc())
-        ).all()
-        memories = memories[:120]
-        selected_memories = _rank_memories(
-            memories,
-            query=enriched_query,
-            query_vector=query_vector,
-            limit=2,
-        )
-        memory_context = [
-            "Önceki ilgili çalışma konuşması:\n"
-            f"Öğrenci: {row.user_text[:1400]}\n"
-            f"Dental AI: {row.assistant_text[:2200]}"
-            for row in selected_memories
-        ]
+    memory_context = [
+        "Önceki ilgili çalışma konuşması:\n"
+        f"Öğrenci: {row.user_text[:1800]}\n"
+        f"Dental AI: {row.assistant_text[:2600]}"
+        for row in selected_memories
+    ]
 
     if not note_context and not attachments:
         raise StudyRAGError("Soruyla ilişkilendirilebilecek ders notu bölümü bulunamadı.")
