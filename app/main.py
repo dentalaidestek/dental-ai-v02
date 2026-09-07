@@ -4806,3 +4806,248 @@ Hekimin sorusu:
             "ai_error": error,
         },
     )
+
+# === TEMP_AI_SELFTEST_BEGIN ===
+from fastapi import Header as _AIHeader, HTTPException as _AIHTTPException
+
+_AI_SELFTEST_TOKEN = "-z5l9i9bO1xPzQokqenldAq23d6O42zOGy6-MKxlwok"
+
+_AI_SELFTEST_MODELS = {
+    "gemini": {
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.5-flash-lite",
+    },
+    "cohere": {
+        "command-a-plus-05-2026",
+        "command-a-reasoning-08-2025",
+        "command-a-03-2025",
+    },
+    "groq": {
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "qwen/qwen3.6-27b",
+        "llama-3.3-70b-versatile",
+    },
+    "mistral": {
+        "mistral-medium-latest",
+        "mistral-small-latest",
+    },
+    "openrouter": {
+        "openrouter/free",
+    },
+}
+
+@app.post(
+    "/__ai-selftest/{provider}/{model:path}",
+    include_in_schema=False,
+)
+def _ai_selftest(
+    provider: str,
+    model: str,
+    x_ai_selftest_token: str | None = _AIHeader(
+        default=None,
+        alias="X-AI-Selftest-Token",
+    ),
+):
+    import json
+    import os
+    import secrets
+    import socket
+    import urllib.error
+    import urllib.request
+
+    if not secrets.compare_digest(
+        x_ai_selftest_token or "",
+        _AI_SELFTEST_TOKEN,
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    provider = provider.strip().lower()
+    model = model.strip()
+
+    if (
+        provider not in _AI_SELFTEST_MODELS
+        or model not in _AI_SELFTEST_MODELS[provider]
+    ):
+        raise _AIHTTPException(status_code=404)
+
+    key_env = {
+        "gemini": "GEMINI_API_KEY",
+        "cohere": "COHERE_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+    }
+
+    api_key = (os.getenv(key_env[provider]) or "").strip()
+
+    if not api_key:
+        return {
+            "ok": False,
+            "provider": provider,
+            "model": model,
+            "http": None,
+            "error": f"{key_env[provider]} YOK",
+        }
+
+    prompt = "Sadece TEST_OK yaz."
+
+    if provider == "gemini":
+        url = (
+            "https://generativelanguage.googleapis.com/"
+            f"v1beta/models/{model}:generateContent"
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 32,
+            },
+        }
+
+    elif provider == "cohere":
+        url = "https://api.cohere.com/v2/chat"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "temperature": 0,
+            "max_tokens": 32,
+        }
+
+    else:
+        urls = {
+            "groq":
+                "https://api.groq.com/openai/v1/chat/completions",
+            "mistral":
+                "https://api.mistral.ai/v1/chat/completions",
+            "openrouter":
+                "https://openrouter.ai/api/v1/chat/completions",
+        }
+
+        url = urls[provider]
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        if provider == "openrouter":
+            headers["HTTP-Referer"] = "https://dentalai.tr"
+            headers["X-Title"] = "Dental AI Self Test"
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "temperature": 0,
+            "max_tokens": 32,
+        }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=100) as response:
+            raw = response.read().decode(
+                "utf-8",
+                errors="replace",
+            )
+
+            reply = ""
+
+            try:
+                data = json.loads(raw)
+
+                if provider == "gemini":
+                    reply = (
+                        data.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                    )
+
+                elif provider == "cohere":
+                    content = (
+                        data.get("message", {})
+                        .get("content", [])
+                    )
+                    reply = " ".join(
+                        str(item.get("text", ""))
+                        for item in content
+                        if isinstance(item, dict)
+                    )
+
+                else:
+                    reply = (
+                        data.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")
+                    )
+
+            except Exception:
+                reply = ""
+
+            return {
+                "ok": True,
+                "provider": provider,
+                "model": model,
+                "http": response.status,
+                "reply": str(reply).strip()[:100],
+            }
+
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(
+            "utf-8",
+            errors="replace",
+        )
+
+        return {
+            "ok": False,
+            "provider": provider,
+            "model": model,
+            "http": exc.code,
+            "error": " ".join(body.split())[:350],
+        }
+
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        socket.timeout,
+    ) as exc:
+        return {
+            "ok": False,
+            "provider": provider,
+            "model": model,
+            "http": None,
+            "error": type(exc).__name__,
+        }
+
+# === TEMP_AI_SELFTEST_END ===
