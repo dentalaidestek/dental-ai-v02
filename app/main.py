@@ -5092,7 +5092,7 @@ def _ai_selftest_cohere_adapter(
             prompt="Sadece TEST_OK yaz.",
             attachments=[],
             temperature=0,
-            max_output_tokens=64,
+            max_output_tokens=2048,
         )
 
         return {
