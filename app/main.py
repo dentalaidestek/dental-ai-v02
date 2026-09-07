@@ -21,7 +21,19 @@ from dental_rag.rag import (
 from dental_rag.specialty_router import classify_specialties
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
-from app.study_ai import StudyAIError, ask as ask_study_ai, delete_file as delete_study_ai_file, upload_file as upload_study_ai_file
+from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
+from app.study_rag import (
+    StudyRAGChunk,
+    StudyRAGMemory,
+    StudyRAGError,
+    classify_course_scope,
+    delete_course_rag_index,
+    delete_course_rag_memory,
+    delete_material_rag_index,
+    ensure_course_index,
+    remember_exchange,
+    retrieve_course_context,
+)
 from fastapi import (
     FastAPI,
     Form,
@@ -787,62 +799,6 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
             result.append(value)
     return result
 
-
-def _prepare_study_ai_files(
-    session: Session,
-    user: User,
-    course: StudyCourse,
-    material_ids: list[int],
-) -> list[dict]:
-    """Private course materials -> robust Gemini-ready references.
-
-    V11 does not expose source selection to the user. The caller passes every
-    material that belongs to the course. Ownership is re-authorized for every
-    file. Small/medium files can be sent inline by study_ai.py; larger material
-    keeps a temporary Gemini Files API reference when available.
-    """
-    if len(material_ids) > STUDY_AI_MAX_SOURCES:
-        raise StudyAIError(
-            f"Bu derste çok fazla not dosyası var. Akademik AI aynı anda en fazla {STUDY_AI_MAX_SOURCES} dosyayla çalışabilir."
-        )
-
-    prepared = []
-    now = datetime.utcnow()
-    for material_id in material_ids:
-        material = _owned_study_material(session, user, course.id, material_id)
-        if not material:
-            raise StudyAIError("Ders notlarından birine erişim yetkiniz yok.")
-        path = Path(material.file_path)
-        if not path.is_file():
-            raise StudyAIError(f"Not dosyası bulunamadı: {material.display_name}")
-
-        # For smaller course sets study_ai.py can use the local file inline, so a
-        # temporary remote upload is not mandatory. We still reuse a valid cached
-        # URI when present and lazily upload large files here.
-        valid_cache = (
-            material.gemini_file_uri
-            and material.gemini_file_name
-            and material.gemini_file_expires_at
-            and material.gemini_file_expires_at > now + timedelta(minutes=5)
-        )
-        should_upload = path.stat().st_size > 8 * 1024 * 1024 and not valid_cache
-        if should_upload:
-            uploaded = upload_study_ai_file(str(path), material.mime_type, material.display_name)
-            material.gemini_file_name = uploaded["name"]
-            material.gemini_file_uri = uploaded["uri"]
-            material.gemini_file_expires_at = now + timedelta(hours=47)
-            session.add(material)
-
-        prepared.append({
-            "id": material.id,
-            "name": material.original_filename,
-            "display_name": material.display_name,
-            "mime_type": material.mime_type,
-            "uri": material.gemini_file_uri if valid_cache or should_upload else None,
-            "local_path": str(path),
-        })
-    session.commit()
-    return prepared
 
 
 def init_db():
@@ -1958,6 +1914,7 @@ def delete_study_course(request: Request, course_id: int):
             s.delete(material)
         for message in messages:
             s.delete(message)
+        delete_course_rag_index(s, owner_user_id=user.id, course_id=course_id)
         s.delete(course)
         s.commit()
 
@@ -2079,6 +2036,12 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
         local_path = Path(material.file_path)
         gemini_name = material.gemini_file_name
+        delete_material_rag_index(
+            s,
+            owner_user_id=user.id,
+            course_id=course_id,
+            material_id=material_id,
+        )
         s.delete(material)
         course = _owned_study_course(s, user, course_id)
         if course:
@@ -2125,10 +2088,32 @@ def study_ai_page(request: Request, course_id: int):
     )
 
 
+def _remember_study_exchange_background(
+    owner_user_id: int,
+    course_id: int,
+    user_text: str,
+    assistant_text: str,
+) -> None:
+    """Persist semantic chat memory after the HTTP answer is sent."""
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            remember_exchange(
+                session,
+                owner_user_id=owner_user_id,
+                course_id=course_id,
+                user_text=user_text,
+                assistant_text=assistant_text,
+            )
+    except Exception:
+        # Chat rows are already persisted; semantic memory is an optimization.
+        return
+
+
 @app.post("/notes/courses/{course_id}/ai/ask")
 def study_ai_ask(
     request: Request,
     course_id: int,
+    background_tasks: BackgroundTasks,
     message: str = Form(...),
 ):
     user = get_current_user(request)
@@ -2146,6 +2131,7 @@ def study_ai_ask(
             course = _owned_study_course(s, user, course_id)
             if not course:
                 return JSONResponse({"ok": False, "error": "Ders bulunamadı veya erişim yetkiniz yok."}, status_code=404)
+
             materials = s.exec(
                 select(StudyMaterial)
                 .where(StudyMaterial.course_id == course_id)
@@ -2157,29 +2143,58 @@ def study_ai_ask(
                     "ok": False,
                     "error": "Bu derste henüz not bulunmuyor. Önce PDF veya fotoğraf ekleyin.",
                 }, status_code=400)
-            material_ids = [item.id for item in materials if item.id]
-            if len(material_ids) > STUDY_AI_MAX_SOURCES:
+
+            scope = classify_course_scope(
+                course.title,
+                [item.original_filename for item in materials],
+            )
+            if scope == "NON_DENTAL":
                 return JSONResponse({
                     "ok": False,
-                    "error": f"Bu derste {len(material_ids)} not dosyası var. Akademik AI şu anda aynı anda en fazla {STUDY_AI_MAX_SOURCES} dosyayla çalışabiliyor.",
+                    "error": "Bu ders Dental AI Akademik'in diş hekimliği çalışma alanı dışında görünüyor.",
                 }, status_code=400)
-            ai_files = _prepare_study_ai_files(s, user, course, material_ids)
+
+            # Material bytes are indexed once. Unchanged PDFs/images reuse their
+            # persistent page embeddings on every later question.
+            ensure_course_index(s, materials)
+
             history_rows = s.exec(
                 select(StudyChatMessage)
                 .where(StudyChatMessage.course_id == course_id)
                 .where(StudyChatMessage.owner_user_id == user.id)
                 .order_by(StudyChatMessage.id)
             ).all()
-            history = [{"role": row.role, "content": row.content} for row in history_rows[-12:]]
-            answer = ask_study_ai(course.title, clean_message, "NOTES_ONLY", history, ai_files)
-            source_json = json.dumps(material_ids, ensure_ascii=False)
+            history = [
+                {"role": row.role, "content": row.content}
+                for row in history_rows[-8:]
+            ]
+
+            rag_result = retrieve_course_context(
+                s,
+                owner_user_id=user.id,
+                course_id=course_id,
+                query=clean_message,
+                materials=materials,
+                recent_history=history,
+            )
+
+            answer = ask_study_ai(
+                course.title,
+                clean_message,
+                history,
+                rag_result.note_context,
+                rag_result.memory_context,
+                rag_result.attachments,
+            )
+            source_json = json.dumps(rag_result.source_material_ids, ensure_ascii=False)
+
             s.add(StudyChatMessage(
                 course_id=course_id,
                 owner_user_id=user.id,
                 role="USER",
                 content=clean_message,
                 source_ids_json=source_json,
-                mode="NOTES_ONLY",
+                mode="RAG_NOTES_ONLY",
             ))
             s.add(StudyChatMessage(
                 course_id=course_id,
@@ -2187,11 +2202,23 @@ def study_ai_ask(
                 role="ASSISTANT",
                 content=answer,
                 source_ids_json=source_json,
-                mode="NOTES_ONLY",
+                mode="RAG_NOTES_ONLY",
             ))
             course.updated_at = datetime.utcnow()
             s.add(course)
             s.commit()
+
+            # Do not make the user wait for a second embedding API call.
+            # Semantic memory is persisted after the response is sent.
+            background_tasks.add_task(
+                _remember_study_exchange_background,
+                user.id,
+                course_id,
+                clean_message,
+                answer,
+            )
+    except StudyRAGError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
     except StudyAIError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
@@ -2214,6 +2241,7 @@ def clear_study_ai_chat(request: Request, course_id: int):
         ).all()
         for item in messages:
             s.delete(item)
+        delete_course_rag_memory(s, owner_user_id=user.id, course_id=course_id)
         s.commit()
     return RedirectResponse(f"/notes/courses/{course_id}/ai", status_code=303)
 

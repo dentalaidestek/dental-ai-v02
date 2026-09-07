@@ -6,3 +6,5 @@ python-multipart
 psycopg2-binary
 
 uvicorn
+
+pypdf>=5.9,<7
