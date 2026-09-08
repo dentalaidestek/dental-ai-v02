@@ -4821,155 +4821,197 @@ Hekimin sorusu:
 
 # ============================================================
 # TEMP: OpenAI GPT-5+ availability test
-# Remove after model testing.
-# ============================================================
 
 @app.get("/__openai_model_test")
-async def openai_model_test():
+def openai_model_test():
     import os
+    import json
     import re
-    import httpx
+    import urllib.request
+    import urllib.error
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
     if not api_key:
         return {
             "ok": False,
-            "error": "OPENAI_API_KEY is not configured"
+            "error": "OPENAI_API_KEY Render Environment icinde bulunamadi"
         }
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    def request_json(url, method="GET", payload=None, timeout=60):
+        headers = {
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        }
+
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers=headers,
+            method=method,
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read().decode("utf-8", errors="replace")
+                return r.status, json.loads(raw)
+
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {"raw": raw[:1000]}
+            return e.code, data
+
+        except Exception as e:
+            return 0, {
+                "error": {
+                    "type": type(e).__name__,
+                    "message": str(e)
+                }
+            }
+
+    # --------------------------------------------------------
+    # 1. API key'in gorebildigi modeller
+    # --------------------------------------------------------
+
+    status, model_data = request_json(
+        "https://api.openai.com/v1/models"
+    )
+
+    if status != 200:
+        return {
+            "ok": False,
+            "stage": "list_models",
+            "status": status,
+            "detail": model_data
+        }
+
+    all_models = sorted(
+        x.get("id", "")
+        for x in model_data.get("data", [])
+        if x.get("id")
+    )
+
+    # GPT-5.0 ve ustu.
+    # Audio/realtime/image-generation vb akademik sohbet
+    # disindaki modelleri test etmiyoruz.
+    candidates = []
+
+    excluded = (
+        "audio",
+        "realtime",
+        "transcribe",
+        "tts",
+        "image",
+        "embedding",
+        "search",
+        "codex",
+    )
+
+    for model in all_models:
+        low = model.lower()
+
+        m = re.match(r"^gpt-(\d+)(?:\.(\d+))?", low)
+        if not m:
+            continue
+
+        major = int(m.group(1))
+
+        if major < 5:
+            continue
+
+        if any(word in low for word in excluded):
+            continue
+
+        candidates.append(model)
+
+    candidates = sorted(set(candidates))
+
+    # --------------------------------------------------------
+    # 2. Her modele GERCEK Responses API istegi
+    # --------------------------------------------------------
 
     results = []
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    for model in candidates:
 
-        # 1) Ask OpenAI which models this API key can see.
-        try:
-            r = await client.get(
-                "https://api.openai.com/v1/models",
-                headers=headers,
-            )
-        except Exception as exc:
-            return {
-                "ok": False,
-                "stage": "list_models",
-                "error": f"{type(exc).__name__}: {exc}",
-            }
+        payload = {
+            "model": model,
+            "input": "Reply exactly with OK.",
+            "max_output_tokens": 64
+        }
 
-        if r.status_code != 200:
-            try:
-                detail = r.json()
-            except Exception:
-                detail = r.text[:1000]
+        code, data = request_json(
+            "https://api.openai.com/v1/responses",
+            method="POST",
+            payload=payload,
+            timeout=90,
+        )
 
-            return {
-                "ok": False,
-                "stage": "list_models",
-                "status": r.status_code,
-                "error": detail,
-            }
+        if code in (200, 201):
 
-        raw_models = [
-            item.get("id", "")
-            for item in r.json().get("data", [])
-            if item.get("id")
-        ]
+            usage = data.get("usage") or {}
 
-        # GPT 5.x / 6.x families only.
-        # Exclude obvious non-chat/support models.
-        candidates = []
+            output_text = ""
 
-        for model in raw_models:
-            m = model.lower()
+            for item in data.get("output", []):
+                if item.get("type") == "message":
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            output_text += content.get("text", "")
 
-            match = re.match(r"^gpt-(\d+)(?:\.(\d+))?", m)
-            if not match:
-                continue
-
-            major = int(match.group(1))
-
-            if major < 5:
-                continue
-
-            excluded = (
-                "audio",
-                "transcribe",
-                "tts",
-                "realtime",
-                "search",
-                "embedding",
-                "image",
-                "codex",
-            )
-
-            if any(x in m for x in excluded):
-                continue
-
-            candidates.append(model)
-
-        candidates = sorted(set(candidates))
-
-        # 2) Real API call for every visible GPT-5+ candidate.
-        for model in candidates:
-            payload = {
+            results.append({
                 "model": model,
-                "input": "Reply with exactly: OK",
-                "max_output_tokens": 32,
-            }
+                "works": True,
+                "http": code,
+                "answer": output_text[:100],
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
+                "total_tokens": usage.get("total_tokens"),
+            })
 
-            try:
-                rr = await client.post(
-                    "https://api.openai.com/v1/responses",
-                    headers=headers,
-                    json=payload,
-                )
+        else:
 
-                if rr.status_code in (200, 201):
-                    data = rr.json()
-                    usage = data.get("usage", {})
+            err = data.get("error") or {}
 
-                    results.append({
-                        "model": model,
-                        "works": True,
-                        "status": rr.status_code,
-                        "input_tokens": usage.get("input_tokens"),
-                        "output_tokens": usage.get("output_tokens"),
-                        "total_tokens": usage.get("total_tokens"),
-                    })
+            results.append({
+                "model": model,
+                "works": False,
+                "http": code,
+                "error_type": err.get("type"),
+                "error_code": err.get("code"),
+                "message": str(
+                    err.get("message") or data
+                )[:500],
+            })
 
-                else:
-                    try:
-                        err = rr.json().get("error", {})
-                    except Exception:
-                        err = {"message": rr.text[:500]}
+    working = [
+        r["model"]
+        for r in results
+        if r.get("works")
+    ]
 
-                    results.append({
-                        "model": model,
-                        "works": False,
-                        "status": rr.status_code,
-                        "error_type": err.get("type"),
-                        "error_code": err.get("code"),
-                        "message": str(err.get("message", ""))[:500],
-                    })
-
-            except Exception as exc:
-                results.append({
-                    "model": model,
-                    "works": False,
-                    "error_type": type(exc).__name__,
-                    "message": str(exc)[:500],
-                })
+    failed = [
+        r["model"]
+        for r in results
+        if not r.get("works")
+    ]
 
     return {
         "ok": True,
-        "visible_gpt5_plus": candidates,
-        "tested": len(results),
+        "gpt5_plus_visible": candidates,
+        "visible_count": len(candidates),
+        "working_count": len(working),
+        "working_models": working,
+        "failed_models": failed,
         "results": results,
     }
 
-# ============================================================
 # END TEMP OpenAI test
 # ============================================================
