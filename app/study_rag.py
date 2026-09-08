@@ -15,6 +15,11 @@ from typing import Optional
 from pypdf import PdfReader, PdfWriter
 from sqlmodel import Field, Session, SQLModel, select
 
+# === TEMP_STUDY_TRACE_RAG_IMPORT_BEGIN ===
+import time as _study_trace_time
+from app.study_trace import trace_event
+# === TEMP_STUDY_TRACE_RAG_IMPORT_END ===
+
 from app.study_provider import (
     StudyProviderError,
     get_embedding_dimensions,
@@ -276,6 +281,16 @@ def _existing_current_chunks(
 
 def ensure_material_index(session: Session, material) -> int:
     """Index a material exactly once per bytes+embedding model combination."""
+    # === TEMP_STUDY_TRACE_MATERIAL_START_BEGIN ===
+    _material_trace_started = _study_trace_time.perf_counter()
+    trace_event(
+        "index.material.begin",
+        course_id=getattr(material, "course_id", None),
+        material_id=getattr(material, "id", None),
+        mime_type=getattr(material, "mime_type", None),
+        size_bytes=getattr(material, "size_bytes", None),
+    )
+    # === TEMP_STUDY_TRACE_MATERIAL_START_END ===
     if not material.id:
         raise StudyRAGError("Ders notu kaydı tamamlanmamış.")
     path = Path(material.file_path)
@@ -297,6 +312,15 @@ def ensure_material_index(session: Session, material) -> int:
         .where(StudyRAGChunk.embedding_model == target.model)
     ).all()
     if quick_current and path.stat().st_size == material.size_bytes:
+        # === TEMP_STUDY_TRACE_MATERIAL_REUSE_BEGIN ===
+        trace_event(
+            "index.material.reuse",
+            course_id=material.course_id,
+            material_id=material.id,
+            chunks=len(quick_current),
+            elapsed_ms=round((_study_trace_time.perf_counter() - _material_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_MATERIAL_REUSE_END ===
         return len(quick_current)
 
     material_hash = _sha256(path)
@@ -310,6 +334,15 @@ def ensure_material_index(session: Session, material) -> int:
         model_name=target.model,
     )
     if current:
+        # === TEMP_STUDY_TRACE_MATERIAL_HASH_REUSE_BEGIN ===
+        trace_event(
+            "index.material.hash_reuse",
+            course_id=material.course_id,
+            material_id=material.id,
+            chunks=len(current),
+            elapsed_ms=round((_study_trace_time.perf_counter() - _material_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_MATERIAL_HASH_REUSE_END ===
         return len(current)
 
     try:
@@ -323,6 +356,16 @@ def ensure_material_index(session: Session, material) -> int:
     try:
         if mime_type == "application/pdf":
             reader = PdfReader(str(path))
+            # === TEMP_STUDY_TRACE_PDF_BEGIN ===
+            trace_event(
+                "index.material.pdf",
+                course_id=material.course_id,
+                material_id=material.id,
+                page_count=len(reader.pages),
+                embedding_provider=target.provider,
+                embedding_model=target.model,
+            )
+            # === TEMP_STUDY_TRACE_PDF_END ===
             max_pages = max(1, int(os.getenv("STUDY_RAG_MAX_PDF_PAGES", "300")))
             if len(reader.pages) > max_pages:
                 raise StudyRAGError(
@@ -427,6 +470,15 @@ def ensure_material_index(session: Session, material) -> int:
     for row in pending:
         session.add(row)
     session.commit()
+    # === TEMP_STUDY_TRACE_MATERIAL_SUCCESS_BEGIN ===
+    trace_event(
+        "index.material.success",
+        course_id=material.course_id,
+        material_id=material.id,
+        chunks=len(pending),
+        elapsed_ms=round((_study_trace_time.perf_counter() - _material_trace_started) * 1000, 1),
+    )
+    # === TEMP_STUDY_TRACE_MATERIAL_SUCCESS_END ===
     return len(pending)
 
 
@@ -648,6 +700,17 @@ def retrieve_course_context(
     materials: list,
     recent_history: list[dict] | None = None,
 ) -> StudyRAGResult:
+    # === TEMP_STUDY_TRACE_RAG_START_BEGIN ===
+    _rag_trace_started = _study_trace_time.perf_counter()
+    trace_event(
+        "rag.begin",
+        course_id=course_id,
+        query_chars=len(query or ""),
+        history_count=len(recent_history or []),
+        contextual_followup=_looks_like_contextual_followup(query),
+        material_count=len(materials or []),
+    )
+    # === TEMP_STUDY_TRACE_RAG_START_END ===
     target = get_embedding_target()
     try:
         provider = get_provider(target.provider)
@@ -657,6 +720,10 @@ def retrieve_course_context(
     enriched_query = _history_enriched_query(query, recent_history)
 
     query_vector: list[float] | None = None
+    # === TEMP_STUDY_TRACE_RAG_EMBED_START_BEGIN ===
+    _embed_started = _study_trace_time.perf_counter()
+    trace_event("rag.embedding.begin", course_id=course_id, provider=target.provider, model=target.model)
+    # === TEMP_STUDY_TRACE_RAG_EMBED_START_END ===
     try:
         query_vector = provider.embed_text(
             model=target.model,
@@ -666,7 +733,24 @@ def retrieve_course_context(
             ),
             dimensions=dimensions,
         )
+        # === TEMP_STUDY_TRACE_RAG_EMBED_SUCCESS_BEGIN ===
+        trace_event(
+            "rag.embedding.success",
+            course_id=course_id,
+            dimensions=len(query_vector or []),
+            elapsed_ms=round((_study_trace_time.perf_counter() - _embed_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_RAG_EMBED_SUCCESS_END ===
     except StudyProviderError as exc:
+        # === TEMP_STUDY_TRACE_RAG_EMBED_FALLBACK_BEGIN ===
+        trace_event(
+            "rag.embedding.fallback",
+            course_id=course_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            elapsed_ms=round((_study_trace_time.perf_counter() - _embed_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_RAG_EMBED_FALLBACK_END ===
         # Retrieval remains available with lexical/diversity fallback if the
         # embedding endpoint is temporarily rate-limited.
         logger.warning("RAG query embedding unavailable; lexical fallback: %s", exc)
@@ -678,6 +762,9 @@ def retrieve_course_context(
         .where(StudyRAGChunk.embedding_provider == target.provider)
         .where(StudyRAGChunk.embedding_model == target.model)
     ).all()
+    # === TEMP_STUDY_TRACE_RAG_ROWS_BEGIN ===
+    trace_event("rag.rows.loaded", course_id=course_id, indexed_rows=len(rows))
+    # === TEMP_STUDY_TRACE_RAG_ROWS_END ===
     if not rows:
         raise StudyRAGError("Bu dersin RAG indeksi henüz hazır değil.")
 
@@ -703,6 +790,22 @@ def retrieve_course_context(
         broad=broad,
         limit=max(3, limit),
     )
+
+    # === TEMP_STUDY_TRACE_RAG_SELECTED_BEGIN ===
+    trace_event(
+        "rag.selected",
+        course_id=course_id,
+        broad=broad,
+        requested_limit=limit,
+        selected_count=len(selected),
+        needs_visual=needs_visual,
+        wants_sources=wants_sources,
+        selected=[
+            {"material_id": row.material_id, "page": row.page_number, "kind": row.content_kind}
+            for row in selected[:20]
+        ],
+    )
+    # === TEMP_STUDY_TRACE_RAG_SELECTED_END ===
 
     material_lookup = _material_map(materials)
     note_context: list[str] = []
@@ -750,6 +853,18 @@ def retrieve_course_context(
     if not note_context and not attachments:
         raise StudyRAGError("Soruyla ilişkilendirilebilecek ders notu bölümü bulunamadı.")
 
+    # === TEMP_STUDY_TRACE_RAG_SUCCESS_BEGIN ===
+    trace_event(
+        "rag.success",
+        course_id=course_id,
+        note_sections=len(note_context),
+        context_chars=total_chars,
+        attachment_count=len(attachments),
+        source_material_count=len(source_material_ids),
+        used_semantic_search=query_vector is not None,
+        elapsed_ms=round((_study_trace_time.perf_counter() - _rag_trace_started) * 1000, 1),
+    )
+    # === TEMP_STUDY_TRACE_RAG_SUCCESS_END ===
     return StudyRAGResult(
         note_context=note_context,
         memory_context=memory_context,

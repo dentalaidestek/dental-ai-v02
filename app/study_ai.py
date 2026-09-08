@@ -5,6 +5,11 @@ import os
 import urllib.request
 from pathlib import Path
 
+# === TEMP_STUDY_TRACE_AI_IMPORT_BEGIN ===
+import time as _study_trace_time
+from app.study_trace import trace_event
+# === TEMP_STUDY_TRACE_AI_IMPORT_END ===
+
 from app.study_provider import (
     StudyProviderError,
     get_generation_targets,
@@ -138,12 +143,37 @@ def ask_rag(
     max_provider_attempts = max(1, min(max_provider_attempts, 3))
     attempted_api_calls = 0
 
+    # === TEMP_STUDY_TRACE_AI_PLAN_BEGIN ===
+    trace_event(
+        "generation.plan",
+        profile=profile,
+        broad_output=broad_output,
+        note_sections=len(note_context),
+        attachment_count=len(attachments or []),
+        history_count=len(history[-8:]),
+        max_provider_attempts=max_provider_attempts,
+        targets=[{"provider": target.provider, "model": target.model} for target in targets],
+    )
+    # === TEMP_STUDY_TRACE_AI_PLAN_END ===
+
     for target in targets:
         if attempted_api_calls >= max_provider_attempts:
             break
         if not target_available(target):
+            # === TEMP_STUDY_TRACE_AI_SKIP_UNAVAILABLE_BEGIN ===
+            trace_event("generation.target.skip", provider=target.provider, model=target.model, reason="router_unavailable")
+            # === TEMP_STUDY_TRACE_AI_SKIP_UNAVAILABLE_END ===
             continue
         try:
+            # === TEMP_STUDY_TRACE_AI_ATTEMPT_BEGIN ===
+            _provider_started = _study_trace_time.perf_counter()
+            trace_event(
+                "generation.target.begin",
+                provider=target.provider,
+                model=target.model,
+                next_attempt=attempted_api_calls + 1,
+            )
+            # === TEMP_STUDY_TRACE_AI_ATTEMPT_END ===
             provider = get_provider(target.provider)
             if required_attachment_types and not all(
                 provider.supports_generation_attachment(mime_type)
@@ -154,6 +184,15 @@ def ask_rag(
                     target.provider,
                     target.model,
                 )
+                # === TEMP_STUDY_TRACE_AI_SKIP_ATTACHMENT_BEGIN ===
+                trace_event(
+                    "generation.target.skip",
+                    provider=target.provider,
+                    model=target.model,
+                    reason="attachment_unsupported",
+                    required_types=sorted(required_attachment_types),
+                )
+                # === TEMP_STUDY_TRACE_AI_SKIP_ATTACHMENT_END ===
                 continue
 
             attempted_api_calls += 1
@@ -167,8 +206,31 @@ def ask_rag(
                 max_output_tokens=max_output_tokens,
             )
             report_target_success(target)
+            # === TEMP_STUDY_TRACE_AI_SUCCESS_BEGIN ===
+            trace_event(
+                "generation.target.success",
+                provider=target.provider,
+                model=target.model,
+                attempt=attempted_api_calls,
+                answer_chars=len(answer or ""),
+                elapsed_ms=round((_study_trace_time.perf_counter() - _provider_started) * 1000, 1),
+            )
+            # === TEMP_STUDY_TRACE_AI_SUCCESS_END ===
             return answer
         except StudyProviderError as exc:
+            # === TEMP_STUDY_TRACE_AI_ERROR_BEGIN ===
+            trace_event(
+                "generation.target.error",
+                provider=target.provider,
+                model=target.model,
+                attempt=attempted_api_calls,
+                code=exc.code,
+                retryable=exc.retryable,
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+                elapsed_ms=round((_study_trace_time.perf_counter() - _provider_started) * 1000, 1),
+            )
+            # === TEMP_STUDY_TRACE_AI_ERROR_END ===
             last_error = _translate_provider_error(exc)
             report_target_failure(target, exc)
             logger.warning(
@@ -184,6 +246,9 @@ def ask_rag(
             # We may use one healthy fallback, never a long blind provider chain.
             continue
 
+    # === TEMP_STUDY_TRACE_AI_EXHAUSTED_BEGIN ===
+    trace_event("generation.exhausted", attempted_api_calls=attempted_api_calls)
+    # === TEMP_STUDY_TRACE_AI_EXHAUSTED_END ===
     raise last_error or StudyAIError("Akademik AI için şu anda kullanılabilir model bulunamadı.")
 
 

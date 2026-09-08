@@ -20,6 +20,14 @@ from dental_rag.rag import (
 )
 from dental_rag.specialty_router import classify_specialties
 
+# === TEMP_STUDY_TRACE_MAIN_IMPORT_BEGIN ===
+import logging as _study_trace_logging
+import sys as _study_trace_sys
+import time as _study_trace_time
+from app.study_trace import begin_trace, get_trace_events, trace_event
+logger = _study_trace_logging.getLogger(__name__)
+# === TEMP_STUDY_TRACE_MAIN_IMPORT_END ===
+
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
 from app.study_rag import (
@@ -1927,6 +1935,11 @@ def delete_study_course(request: Request, course_id: int):
 
 
 def _index_study_course_background(owner_user_id: int, course_id: int) -> None:
+    # === TEMP_STUDY_TRACE_BG_START_BEGIN ===
+    _trace_id = begin_trace(owner_user_id, "index")
+    _trace_started = _study_trace_time.perf_counter()
+    trace_event("index.background.start", trace_id=_trace_id, owner_user_id=owner_user_id, course_id=course_id)
+    # === TEMP_STUDY_TRACE_BG_START_END ===
     try:
         with Session(engine, expire_on_commit=False) as session:
             materials = session.exec(
@@ -1936,8 +1949,28 @@ def _index_study_course_background(owner_user_id: int, course_id: int) -> None:
                 .order_by(StudyMaterial.created_at.asc())
             ).all()
             if materials:
+                # === TEMP_STUDY_TRACE_BG_RUN_BEFORE_BEGIN ===
+                trace_event("index.course.begin", course_id=course_id, material_count=len(materials))
+                # === TEMP_STUDY_TRACE_BG_RUN_BEFORE_END ===
                 ensure_course_index(session, materials)
+                # === TEMP_STUDY_TRACE_BG_RUN_AFTER_BEGIN ===
+                trace_event(
+                    "index.course.success",
+                    course_id=course_id,
+                    elapsed_ms=round((_study_trace_time.perf_counter() - _trace_started) * 1000, 1),
+                )
+                # === TEMP_STUDY_TRACE_BG_RUN_AFTER_END ===
     except Exception:
+        # === TEMP_STUDY_TRACE_BG_ERROR_BEGIN ===
+        _trace_exc = _study_trace_sys.exc_info()[1]
+        trace_event(
+            "index.background.error",
+            course_id=course_id,
+            error_type=type(_trace_exc).__name__ if _trace_exc else "Exception",
+            error=str(_trace_exc)[:240] if _trace_exc else "",
+            elapsed_ms=round((_study_trace_time.perf_counter() - _trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_BG_ERROR_END ===
         logger.exception("Background study indexing failed: course=%s", course_id)
 
 
@@ -1952,6 +1985,17 @@ async def upload_study_materials(
     if not user:
         return RedirectResponse("/login", status_code=303)
 
+    # === TEMP_STUDY_TRACE_UPLOAD_START_BEGIN ===
+    _upload_trace_id = begin_trace(user.id, "upload")
+    _upload_trace_started = _study_trace_time.perf_counter()
+    trace_event(
+        "upload.request",
+        trace_id=_upload_trace_id,
+        owner_user_id=user.id,
+        course_id=course_id,
+        received_count=len(files or []),
+    )
+    # === TEMP_STUDY_TRACE_UPLOAD_START_END ===
     selected = [item for item in files if item and item.filename]
     if not selected:
         return HTMLResponse("Yüklenecek PDF veya görsel seçin.", status_code=400)
@@ -1992,6 +2036,16 @@ async def upload_study_materials(
                 if not _study_file_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
 
+                # === TEMP_STUDY_TRACE_UPLOAD_FILE_BEGIN ===
+                trace_event(
+                    "upload.file.saved",
+                    course_id=course_id,
+                    extension=extension,
+                    mime_type=mime_type,
+                    size_bytes=total,
+                )
+                # === TEMP_STUDY_TRACE_UPLOAD_FILE_END ===
+
                 material_type = "PDF" if extension == ".pdf" else "IMAGE"
                 s.add(StudyMaterial(
                     course_id=course_id,
@@ -2011,17 +2065,47 @@ async def upload_study_materials(
             course.updated_at = datetime.utcnow()
             s.add(course)
             s.commit()
+            # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_BEGIN ===
+            trace_event(
+                "upload.commit.success",
+                course_id=course_id,
+                added_count=added,
+                elapsed_ms=round((_study_trace_time.perf_counter() - _upload_trace_started) * 1000, 1),
+            )
+            # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_END ===
     except ValueError as exc:
+        # === TEMP_STUDY_TRACE_UPLOAD_VALUE_ERROR_BEGIN ===
+        trace_event(
+            "upload.error",
+            course_id=course_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            elapsed_ms=round((_study_trace_time.perf_counter() - _upload_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_UPLOAD_VALUE_ERROR_END ===
         for path in saved_paths:
             path.unlink(missing_ok=True)
         return HTMLResponse(str(exc), status_code=400)
     except Exception:
+        # === TEMP_STUDY_TRACE_UPLOAD_ERROR_BEGIN ===
+        _upload_exc = _study_trace_sys.exc_info()[1]
+        trace_event(
+            "upload.error",
+            course_id=course_id,
+            error_type=type(_upload_exc).__name__ if _upload_exc else "Exception",
+            error=str(_upload_exc)[:240] if _upload_exc else "",
+            elapsed_ms=round((_study_trace_time.perf_counter() - _upload_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_UPLOAD_ERROR_END ===
         for path in saved_paths:
             path.unlink(missing_ok=True)
         raise
 
     # Index once after upload; the user does not wait for embedding work.
     background_tasks.add_task(_index_study_course_background, user.id, course_id)
+    # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_BEGIN ===
+    trace_event("upload.index.scheduled", course_id=course_id)
+    # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
 
 
@@ -2139,6 +2223,17 @@ def study_ai_ask(
     if not user:
         return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
 
+    # === TEMP_STUDY_TRACE_ASK_START_BEGIN ===
+    _ask_trace_id = begin_trace(user.id, "ask")
+    _ask_trace_started = _study_trace_time.perf_counter()
+    trace_event(
+        "ask.request",
+        trace_id=_ask_trace_id,
+        owner_user_id=user.id,
+        course_id=course_id,
+        query_chars=len(message or ""),
+    )
+    # === TEMP_STUDY_TRACE_ASK_START_END ===
     clean_message = (message or "").strip()
     if not clean_message:
         return JSONResponse({"ok": False, "error": "Bir soru veya çalışma isteği yazın."}, status_code=400)
@@ -2163,6 +2258,10 @@ def study_ai_ask(
                     "error": "Bu derste henüz not bulunmuyor. Önce PDF veya fotoğraf ekleyin.",
                 }, status_code=400)
 
+            # === TEMP_STUDY_TRACE_ASK_MATERIALS_BEGIN ===
+            trace_event("ask.materials.ready", course_id=course_id, material_count=len(materials))
+            # === TEMP_STUDY_TRACE_ASK_MATERIALS_END ===
+
             scope = classify_course_scope(
                 course.title,
                 [item.original_filename for item in materials],
@@ -2175,8 +2274,23 @@ def study_ai_ask(
 
             # Upload normally prepares the index in background. Existing courses
             # get one lazy migration only when no usable index exists yet.
+            # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_BEGIN ===
+            _trace_index_ready = course_index_ready(s, owner_user_id=user.id, course_id=course_id)
+            trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
+            # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_END ===
             if not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
+                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_BEGIN ===
+                _lazy_started = _study_trace_time.perf_counter()
+                trace_event("ask.lazy_index.begin", course_id=course_id)
+                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_END ===
                 ensure_course_index(s, materials)
+                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_DONE_BEGIN ===
+                trace_event(
+                    "ask.lazy_index.success",
+                    course_id=course_id,
+                    elapsed_ms=round((_study_trace_time.perf_counter() - _lazy_started) * 1000, 1),
+                )
+                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_DONE_END ===
 
             history_rows = s.exec(
                 select(StudyChatMessage)
@@ -2189,6 +2303,12 @@ def study_ai_ask(
                 for row in history_rows[-8:]
             ]
 
+            # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
+            trace_event("ask.history.ready", course_id=course_id, history_count=len(history))
+            _rag_started = _study_trace_time.perf_counter()
+            trace_event("ask.rag.begin", course_id=course_id)
+            # === TEMP_STUDY_TRACE_ASK_HISTORY_END ===
+
             rag_result = retrieve_course_context(
                 s,
                 owner_user_id=user.id,
@@ -2198,6 +2318,20 @@ def study_ai_ask(
                 recent_history=history,
             )
 
+            # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
+            trace_event(
+                "ask.rag.success",
+                course_id=course_id,
+                note_sections=len(rag_result.note_context),
+                attachment_count=len(rag_result.attachments),
+                source_material_count=len(rag_result.source_material_ids),
+                used_semantic_search=rag_result.used_semantic_search,
+                elapsed_ms=round((_study_trace_time.perf_counter() - _rag_started) * 1000, 1),
+            )
+            _generation_started = _study_trace_time.perf_counter()
+            trace_event("ask.generation.begin", course_id=course_id)
+            # === TEMP_STUDY_TRACE_ASK_RAG_DONE_END ===
+
             answer = ask_study_ai(
                 course.title,
                 clean_message,
@@ -2206,6 +2340,14 @@ def study_ai_ask(
                 rag_result.memory_context,
                 rag_result.attachments,
             )
+            # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
+            trace_event(
+                "ask.generation.success",
+                course_id=course_id,
+                answer_chars=len(answer or ""),
+                elapsed_ms=round((_study_trace_time.perf_counter() - _generation_started) * 1000, 1),
+            )
+            # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_END ===
             source_json = json.dumps(rag_result.source_material_ids, ensure_ascii=False)
 
             s.add(StudyChatMessage(
@@ -2228,13 +2370,54 @@ def study_ai_ask(
             s.add(course)
             s.commit()
 
+            # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
+            trace_event(
+                "ask.complete",
+                course_id=course_id,
+                elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
+            )
+            # === TEMP_STUDY_TRACE_ASK_COMPLETE_END ===
+
             # Recent chat rows provide continuity; no extra semantic-memory embedding call.
     except StudyRAGError as exc:
+        # === TEMP_STUDY_TRACE_ASK_RAG_ERROR_BEGIN ===
+        trace_event(
+            "ask.error",
+            course_id=course_id,
+            layer="rag",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_ASK_RAG_ERROR_END ===
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
     except StudyAIError as exc:
+        # === TEMP_STUDY_TRACE_ASK_AI_ERROR_BEGIN ===
+        trace_event(
+            "ask.error",
+            course_id=course_id,
+            layer="generation",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
+        )
+        # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
     return JSONResponse({"ok": True, "answer": answer})
+
+
+# === TEMP_STUDY_TRACE_ENDPOINT_BEGIN ===
+@app.get("/notes/diagnostics/trace")
+def study_trace_diagnostics(request: Request, limit: int = 150):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
+    return JSONResponse(
+        {"ok": True, "events": get_trace_events(user.id, limit=limit)},
+        headers={"Cache-Control": "no-store"},
+    )
+# === TEMP_STUDY_TRACE_ENDPOINT_END ===
 
 
 @app.post("/notes/courses/{course_id}/ai/clear")
