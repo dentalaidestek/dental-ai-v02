@@ -98,6 +98,13 @@ def ask_rag(
             "İLGİLİ ESKİ SOHBET HAFIZASI (yalnız devamlılık için, factual source değildir):\n"
             + memory_text
         )
+    prompt_parts.append(
+        "SOHBET DEVAMLILIĞI KURALI:\n"
+        "Kullanıcı bu/burada/yazdığın sorular/önceki soru/3. soru gibi bir referans kullanıyorsa "
+        "referansı gerçek sohbet geçmişinden çöz. Önceki asistan mesajındaki soru veya listeleri "
+        "yeniden üretmek, açıklamak ya da cevaplamak için sohbet geçmişini kullanabilirsin; "
+        "yeni akademik factual iddiaların dayanağı DERS NOTU BAĞLAMI olmalıdır."
+    )
     prompt_parts.append("KULLANICI MESAJI:\n" + question.strip())
     prompt = "\n\n=====\n\n".join(prompt_parts)
 

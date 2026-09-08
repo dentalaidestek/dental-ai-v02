@@ -477,22 +477,42 @@ def ensure_course_index(session: Session, materials: list) -> tuple[int, list[st
     raise StudyRAGError("Bu derste aranabilir bir not indeksi bulunmuyor.")
 
 
+def _looks_like_contextual_followup(query: str) -> bool:
+    """Meaning depends on the immediately preceding chat."""
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+    if len(_tokens(text)) <= 3:
+        return True
+    patterns = (
+        r"\b(bu|bunu|bunun|buna|burada|burası|şu|şunu|şunun|şuna|orada|onu|onun)\b",
+        r"\b(yukarıdaki|önceki|az önceki|son yazdığın|yazdığın|söylediğin|anlattığın)\b",
+        r"\b(cevapları|cevaplarını|açıkla|anlamadım|ne demek|nasıl yani|neden)\b",
+        r"\b(\d+\s*[.\-]?\s*soru|soru\s*\d+|madde\s*\d+)\b",
+        r"\b(devam et|devamını|biraz daha|tekrar anlat)\b",
+    )
+    return any(re.search(p, text, flags=re.I) for p in patterns)
+
+
 def _history_enriched_query(query: str, recent_history: list[dict] | None) -> str:
     current = (query or "").strip()
-    if len(_tokens(current)) >= 4 or not recent_history:
+    if not recent_history or not _looks_like_contextual_followup(current):
         return current
     previous = []
-    for item in reversed(recent_history[-6:]):
+    chars = 0
+    for item in reversed(recent_history[-8:]):
         text = (item.get("content") or "").strip()
         if not text:
             continue
-        previous.append(text[:900])
-        if len(previous) >= 2:
+        role = "Asistan" if item.get("role") == "ASSISTANT" else "Kullanıcı"
+        piece = f"{role}: {text[:1800]}"
+        previous.append(piece)
+        chars += len(piece)
+        if len(previous) >= 4 or chars >= 4200:
             break
     if not previous:
         return current
-    return current + "\nÖnceki konuşma bağlamı: " + " | ".join(reversed(previous))
-
+    return current + "\n\nYakın sohbet bağlamı:\n" + "\n".join(reversed(previous))
 
 def _rank_chunks(
     rows: list[StudyRAGChunk],

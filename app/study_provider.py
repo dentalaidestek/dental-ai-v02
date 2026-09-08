@@ -125,6 +125,7 @@ def _provider_has_key(provider: str) -> bool:
         "groq": "GROQ_API_KEY",
         "mistral": "MISTRAL_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
+        "openai": "OPENAI_API_KEY",
     }
     env = mapping.get(provider)
     return True if env is None else bool((os.getenv(env) or "").strip())
@@ -156,7 +157,8 @@ def get_generation_targets(profile: str = "complex") -> list[ProviderTarget]:
         groq20=(os.getenv("STUDY_GROQ_FAST_MODEL") or "openai/gpt-oss-20b").strip()
         q36=(os.getenv("STUDY_GROQ_QWEN_FAST_MODEL") or "qwen/qwen3.6-27b").strip()
         orfree=(os.getenv("STUDY_OPENROUTER_MODEL") or "openrouter/free").strip()
-        ordered=[("gemini",g38),("gemini",g37),("cohere",cplus),("groq",groq120),("cohere",creason),("groq",groq20),("cohere",cstd),("groq",q36),("openrouter",orfree)]
+        openai_luna=(os.getenv("STUDY_OPENAI_MODEL") or "gpt-5.6-luna").strip()
+        ordered=[("gemini",g38),("openai",openai_luna),("gemini",g37),("cohere",cplus),("groq",groq120),("cohere",creason),("groq",groq20),("cohere",cstd),("groq",q36),("openrouter",orfree)]
         for provider, model in ordered: add(provider, model)
     return [t for t in targets if router_target_available(t.provider, t.model)]
 
@@ -765,6 +767,70 @@ class OpenAICompatibleStudyProvider(StudyProvider):
         return self._answer_from_openai_response(result)
 
 
+
+class OpenAIStudyProvider(OpenAICompatibleStudyProvider):
+    """OpenAI Responses API adapter; Academic AI only."""
+    name = "openai"
+    API_KEY_ENV = "OPENAI_API_KEY"
+    BASE_URL = "https://api.openai.com/v1/responses"
+
+    @staticmethod
+    def _answer_from_responses_api(result: dict) -> str:
+        direct = result.get("output_text")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        parts = []
+        for item in result.get("output") or []:
+            if isinstance(item, dict) and item.get("type") == "message":
+                for content in item.get("content") or []:
+                    if isinstance(content, dict) and content.get("type") == "output_text" and content.get("text"):
+                        parts.append(str(content["text"]))
+        answer = "\n".join(parts).strip()
+        if not answer:
+            raise StudyProviderError("OpenAI akademik modeli boş yanıt döndürdü.")
+        return answer
+
+    def supports_generation_attachment(self, mime_type: str) -> bool:
+        return mime_type in {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+
+    def generate(self, *, model: str, system_prompt: str, history: list[dict],
+                 prompt: str, attachments: list[dict] | None = None,
+                 temperature: float = 0.3, max_output_tokens: int = 7000) -> str:
+        input_items = [{
+            "role": "developer",
+            "content": [{"type": "input_text", "text": system_prompt}],
+        }]
+        for item in history:
+            text = (item.get("content") or "").strip()
+            if not text:
+                continue
+            role = "assistant" if item.get("role") == "ASSISTANT" else "user"
+            ctype = "input_text"
+            input_items.append({"role": role, "content": [{"type": ctype, "text": text}]})
+
+        user_content = [{"type": "input_text", "text": prompt}]
+        for index, attachment in enumerate(attachments or [], start=1):
+            raw = attachment.get("data")
+            mime_type = (attachment.get("mime_type") or "").strip()
+            if not isinstance(raw, bytes) or not mime_type:
+                continue
+            data_url = f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
+            user_content.append({"type": "input_text", "text": (attachment.get("label") or f"not-{index}").strip()})
+            if mime_type == "application/pdf":
+                user_content.append({"type": "input_file", "filename": f"ders-notu-{index}.pdf", "file_data": data_url})
+            elif mime_type.startswith("image/"):
+                user_content.append({"type": "input_image", "image_url": data_url})
+        input_items.append({"role": "user", "content": user_content})
+
+        result = self._request_json({
+            "model": model,
+            "input": input_items,
+            "max_output_tokens": max_output_tokens,
+            "store": False,
+        })
+        return self._answer_from_responses_api(result)
+
+
 class GroqStudyProvider(OpenAICompatibleStudyProvider):
     name = "groq"
     API_KEY_ENV = "GROQ_API_KEY"
@@ -858,3 +924,4 @@ register_provider("cohere", CohereStudyProvider)
 register_provider("groq", GroqStudyProvider)
 register_provider("mistral", MistralStudyProvider)
 register_provider("openrouter", OpenRouterStudyProvider)
+register_provider("openai", OpenAIStudyProvider)
