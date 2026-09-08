@@ -5015,3 +5015,74 @@ def openai_model_test():
 
 # END TEMP OpenAI test
 # ============================================================
+
+@app.get("/__openai_sol_only_test")
+def openai_sol_only_test():
+    import os
+    import json
+    import urllib.request
+    import urllib.error
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+    if not api_key:
+        return {"ok": False, "error": "OPENAI_API_KEY yok"}
+
+    model = "gpt-5.6-sol"
+
+    payload = json.dumps({
+        "model": model,
+        "input": "Reply exactly with: SOL_OK",
+        "max_output_tokens": 64
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=payload,
+        headers={
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            raw = r.read().decode("utf-8")
+            data = json.loads(raw)
+
+            texts = []
+            for item in data.get("output", []):
+                if item.get("type") == "message":
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            texts.append(content.get("text", ""))
+
+            return {
+                "model": model,
+                "works": True,
+                "http": r.status,
+                "answer": "".join(texts),
+                "usage": data.get("usage")
+            }
+
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(raw)
+        except Exception:
+            detail = raw
+
+        return {
+            "model": model,
+            "works": False,
+            "http": e.code,
+            "detail": detail
+        }
+
+    except Exception as e:
+        return {
+            "model": model,
+            "works": False,
+            "error": repr(e)
+        }
