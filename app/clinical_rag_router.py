@@ -121,21 +121,24 @@ _SIGNAL_CANONICAL_TEXT = {
 }
 
 _CLINICAL_RAG_ROUTER_SCHEMA = {
+    # Keep the wire schema intentionally small. Gemini may reject overly
+    # constrained/large responseSchema payloads; business validation stays in
+    # Python below and the prompt still lists the exact allowed values.
     "type": "OBJECT",
     "properties": {
         "specialties": {
             "type": "ARRAY",
-            "items": {"type": "STRING", "enum": list(SPECIALTIES.keys())},
+            "items": {"type": "STRING"},
             "maxItems": 5,
         },
         "image_types": {
             "type": "ARRAY",
-            "items": {"type": "STRING", "enum": sorted(_ALLOWED_IMAGE_TYPES)},
+            "items": {"type": "STRING"},
             "maxItems": 5,
         },
         "signals": {
             "type": "ARRAY",
-            "items": {"type": "STRING", "enum": sorted(_ALLOWED_SIGNALS)},
+            "items": {"type": "STRING"},
             "maxItems": 10,
         },
         "routing_findings": {
@@ -228,6 +231,197 @@ Klinik not: {clinical_notes or ""}
 Ek hekim bilgisi: {extra_text or ""}
 Sistemde kayıtlı görüntü tipi: {", ".join(stored_image_types) or "OTHER"}
 """.strip()
+
+
+
+def _normalize_router_token(value: str, *, upper: bool = False) -> str:
+    token = str(value or "").strip()
+    token = token.replace("-", "_").replace(" ", "_")
+    return token.upper() if upper else token.lower()
+
+
+def _fallback_text(value: str) -> str:
+    text = str(value or "").lower()
+    replacements = {
+        "ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return " ".join(text.split())
+
+
+def _fallback_specialty_hints(
+    *,
+    age=None,
+    tooth_number: str = "",
+    clinical_notes: str = "",
+    chief_complaint: str = "",
+    extra_text: str = "",
+    image_types: list[str] | None = None,
+    top_k: int = 5,
+) -> list[dict]:
+    """
+    High-precision deterministic safety fallback.
+
+    It is used only when multimodal AI routing fails. These rules intentionally
+    prefer strong clinical phrases over broad single-word matches, so a normal
+    TME finding or alveolar ridge resorption cannot accidentally route a
+    prosthodontic case to orofacial pain/endodontics.
+    """
+    text = _fallback_text(
+        " ".join(
+            [
+                tooth_number or "",
+                clinical_notes or "",
+                chief_complaint or "",
+                extra_text or "",
+            ]
+        )
+    )
+    scores: dict[str, int] = {}
+    reasons: dict[str, list[str]] = {}
+
+    def has(*phrases: str) -> bool:
+        return any(_fallback_text(p) in text for p in phrases)
+
+    def add(specialty: str, score: int, reason: str) -> None:
+        if specialty not in SPECIALTIES:
+            return
+        scores[specialty] = max(scores.get(specialty, 0), int(score))
+        reasons.setdefault(specialty, [])
+        if reason not in reasons[specialty]:
+            reasons[specialty].append(reason)
+
+    # Pedodontics
+    if age is not None:
+        try:
+            if int(age) < 18:
+                add("pedodontics", 12, "Çocuk/adölesan hasta")
+        except (TypeError, ValueError):
+            pass
+    if has("sut disi", "karma dentisyon", "cocuk hasta", "pedodonti", "süt dişi"):
+        add("pedodontics", 24, "Pediatrik dentisyon/klinik bağlam")
+
+    # Restorative
+    if has("curuk", "caries", "kavite", "kompozit", "direkt restorasyon", "sdf", "sealant"):
+        add("restorative", 18, "Çürük/restoratif tedavi sinyali")
+    if has("selektif curuk", "minimal invaziv", "remineralizasyon"):
+        add("restorative", 24, "Minimal invaziv/restoratif karar sinyali")
+
+    # Endodontics — require tooth/root/pulp-specific evidence. Generic alveolar
+    # or ridge resorption is deliberately NOT an endodontic signal.
+    if has(
+        "pulpa testi", "ept", "soguk testi", "kanal tedavisi",
+        "apikal periodontitis", "periapikal lezyon", "acik apeks",
+        "nekrotik pulpa", "pulpitis", "kok kanal", "kök kanal",
+        "kok rezorpsiyonu", "root resorption", "internal resorption",
+        "external resorption", "servikal rezorpsiyon",
+    ):
+        add("endodontics", 26, "Pulpa/periapikal/kök-spesifik endodontik sinyal")
+
+    # Periodontology / peri-implant
+    if has(
+        "periodontitis", "periodontal cep", "atasman kaybi", "furkasyon",
+        "dis eti cekilmesi", "gingival recession", "peri-implantitis",
+        "peri implantitis", "implant cevresinde kanama", "suppurasyon",
+    ):
+        add("periodontology", 26, "Periodontal/peri-implant hastalık sinyali")
+
+    # Prosthodontics
+    if has(
+        "tam dissizlik", "tam dişsizlik", "edentul", "edentulous",
+        "total protez", "tam protez", "overdenture",
+        "implant ustu protez", "implant üstü protez",
+        "bolumlu protez", "bölümlü protez", "hareketli protez",
+    ):
+        add("prosthodontics", 34, "Dişsizlik/protez rehabilitasyonu")
+    if has("protez") and has("retansiyon", "tutuculuk", "stabilite", "cigneme guclugu", "çiğneme güçlüğü"):
+        add("prosthodontics", 36, "Protez retansiyon/stabilite problemi")
+    if has("alveoler kret rezorpsiyonu", "alveolar ridge resorption", "kret rezorpsiyonu"):
+        add("prosthodontics", 28, "Dişsiz kret/protetik destek değerlendirmesi")
+
+    # Oral surgery
+    if has(
+        "gomulu dis", "gömülü diş", "impacted", "ucuncu molar", "üçüncü molar",
+        "yirmilik", "cerrahi cekim", "mronj", "bisfosfonat", "denosumab",
+        "kemik grefti", "sinus lift", "augmentasyon",
+    ):
+        add("oral_surgery", 28, "Cerrahi/gömülü diş/MRONJ sinyali")
+
+    # Orthodontics
+    if has(
+        "malokluzyon", "maloklüzyon", "caprasiklik", "çapraşıklık",
+        "retainer", "relaps", "ortodontik", "sabit aparey", "seffaf plak",
+        "şeffaf plak", "yer darligi", "yer darlığı",
+    ):
+        add("orthodontics", 28, "Ortodontik/retansiyon sinyali")
+
+    # Oral diagnosis / radiology
+    if has("cbct", "panoramik", "bitewing", "periapikal", "radyografi", "rontgen", "röntgen"):
+        add("oral_diagnosis_radiology", 16, "Görüntüleme kararı/değerlendirmesi")
+    specific_images = {
+        _normalize_router_token(t, upper=True)
+        for t in (image_types or [])
+    } - {"", "OTHER"}
+    if specific_images:
+        add("oral_diagnosis_radiology", 10, "Dental görüntü mevcut")
+
+    # Oral medicine
+    if has(
+        "lichen planus", "liken planus", "kserostomi", "agiz kurulugu",
+        "ağız kuruluğu", "mukozit", "burning mouth", "yanan agiz",
+        "yanan ağız", "oral medicine",
+    ):
+        add("oral_medicine", 27, "Oral medicine/mukozal sistemik komplikasyon sinyali")
+
+    # Oral pathology
+    if has(
+        "lokoplaki", "lökoplaki", "eritroplaki", "displazi", "biyopsi",
+        "histopatoloji", "opmd", "oral kanser", "malignite",
+        "odontojenik kist", "odontojenik tumor", "odontojenik tümör",
+    ):
+        add("oral_pathology", 30, "Patoloji/biyopsi/OPMD sinyali")
+
+    # Orofacial pain: TME/TMD only counts when symptomatic. "TME muayenesi
+    # normal" alone is intentionally ignored.
+    if has(
+        "tme agrisi", "tme ağrısı", "tmd agrisi", "tmd ağrısı",
+        "artralji", "myalji", "eklem sesi", "agiz acmada kisitlilik",
+        "ağız açmada kısıtlılık", "nöropatik ağrı", "noropatik agri",
+        "allodini", "parestezi", "elektriklenme",
+    ):
+        add("orofacial_pain", 28, "Semptomatik TMD/nöropatik ağrı sinyali")
+
+    # Dental anesthesiology
+    if has(
+        "sedasyon", "nitroz oksit", "nitröz oksit", "genel anestezi",
+        "hava yolu", "airway", "preoperatif aclik", "preoperatif açlık",
+        "monitorizasyon", "monitörizasyon",
+    ):
+        add("dental_anesthesiology", 30, "Sedasyon/anestezi/hava yolu sinyali")
+
+    # Dental public health
+    if has(
+        "toplum agiz sagligi", "toplum ağız sağlığı", "epidemiyoloji",
+        "su florlamasi", "su florlaması", "community water fluoridation",
+        "enfeksiyon kontrolu", "enfeksiyon kontrolü",
+        "antibiyotik stewardship", "oral health program",
+    ):
+        add("dental_public_health", 30, "Toplum ağız sağlığı/koruyucu program sinyali")
+
+    ranked = sorted(
+        scores,
+        key=lambda specialty: (-scores[specialty], list(SPECIALTIES).index(specialty)),
+    )
+    return [
+        {
+            "specialty": specialty,
+            "label": SPECIALTIES.get(specialty, specialty),
+            "score": scores[specialty],
+            "reasons": reasons.get(specialty) or ["Güçlü fallback klinik sinyali"],
+        }
+        for specialty in ranked[: max(1, int(top_k or 5))]
+    ]
 
 
 _ROUTE_CACHE_TTL_SECONDS = 30 * 60
@@ -384,19 +578,28 @@ def route_clinical_case(
         data = _json_object(text)
 
         ai_specialties = [
-            item
-            for item in _unique(data.get("specialties") or [])
-            if item in SPECIALTIES
+            token
+            for token in (
+                _normalize_router_token(item)
+                for item in _unique(data.get("specialties") or [])
+            )
+            if token in SPECIALTIES
         ][:top_k]
         ai_image_types = [
-            item
-            for item in _unique(data.get("image_types") or [])
-            if item in _ALLOWED_IMAGE_TYPES
+            token
+            for token in (
+                _normalize_router_token(item, upper=True)
+                for item in _unique(data.get("image_types") or [])
+            )
+            if token in _ALLOWED_IMAGE_TYPES
         ]
         signals = [
-            item
-            for item in _unique(data.get("signals") or [])
-            if item in _ALLOWED_SIGNALS
+            token
+            for token in (
+                _normalize_router_token(item, upper=True)
+                for item in _unique(data.get("signals") or [])
+            )
+            if token in _ALLOWED_SIGNALS
         ][:10]
         routing_findings = _unique(data.get("routing_findings") or [])[:6]
 
@@ -441,35 +644,50 @@ def route_clinical_case(
             for index, specialty in enumerate(selected)
         ]
     else:
-        # AI routing failed: only now use the legacy lexical router as fallback.
-        combined_text = "\n".join(
-            value
-            for value in [clinical_notes or "", extra_text or ""]
-            if value
-        )
-        lexical = classify_specialties(
+        # AI routing failed. Prefer high-precision clinical safety hints first;
+        # only fall back to the broader legacy lexical router if no strong hint
+        # exists. This prevents broad words such as "rezorpsiyon" or a normal
+        # TME exam from hijacking a clearly prosthodontic case.
+        strong_fallback = _fallback_specialty_hints(
             age=age,
-            dentition="",
             tooth_number=tooth_number or "",
-            clinical_notes=combined_text,
-            image_types=resolved_types,
-            findings="",
+            clinical_notes=clinical_notes or "",
             chief_complaint=chief_complaint or "",
-            top_k=max(5, top_k),
+            extra_text=extra_text or "",
+            image_types=resolved_types,
+            top_k=top_k,
         )
-        lexical_ranked = lexical.get("ranked_specialties", [])
-        ranked_specialties = [
-            {
-                "specialty": item.get("specialty"),
-                "label": item.get("label") or SPECIALTIES.get(
-                    item.get("specialty"), item.get("specialty")
-                ),
-                "score": item.get("score"),
-                "reasons": list(item.get("reasons") or []),
-            }
-            for item in lexical_ranked[:top_k]
-            if isinstance(item, dict) and item.get("specialty")
-        ]
+        if strong_fallback:
+            ranked_specialties = strong_fallback
+        else:
+            combined_text = "\n".join(
+                value
+                for value in [clinical_notes or "", extra_text or ""]
+                if value
+            )
+            lexical = classify_specialties(
+                age=age,
+                dentition="",
+                tooth_number=tooth_number or "",
+                clinical_notes=combined_text,
+                image_types=resolved_types,
+                findings="",
+                chief_complaint=chief_complaint or "",
+                top_k=max(5, top_k),
+            )
+            lexical_ranked = lexical.get("ranked_specialties", [])
+            ranked_specialties = [
+                {
+                    "specialty": item.get("specialty"),
+                    "label": item.get("label") or SPECIALTIES.get(
+                        item.get("specialty"), item.get("specialty")
+                    ),
+                    "score": item.get("score"),
+                    "reasons": list(item.get("reasons") or []),
+                }
+                for item in lexical_ranked[:top_k]
+                if isinstance(item, dict) and item.get("specialty")
+            ]
 
     if not ranked_specialties:
         ranked_specialties = [
