@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Optional
 
 
@@ -99,6 +100,33 @@ def _add(
         scores[specialty].reasons.append(reason)
 
 
+# Some router keywords are deliberate stems (for example ``kavit``), while
+# most must match complete words/phrases.  The old plain-substring lookup made
+# unrelated words route to the wrong specialty (e.g. ``aralik`` inside
+# ``aralikli`` pushed a caries case toward orthodontics).
+_ROUTER_PREFIX_KEYWORDS = {
+    "kavit",
+    "malokluz",
+}
+
+
+def _keyword_matches(text: str, keyword: str) -> bool:
+    normalized_keyword = _normalize(keyword).strip()
+    if not normalized_keyword:
+        return False
+
+    if normalized_keyword in _ROUTER_PREFIX_KEYWORDS:
+        pattern = r"(?<![a-z0-9])" + re.escape(normalized_keyword) + r"[a-z0-9]*"
+    else:
+        pattern = (
+            r"(?<![a-z0-9])"
+            + re.escape(normalized_keyword)
+            + r"(?![a-z0-9])"
+        )
+
+    return re.search(pattern, text) is not None
+
+
 KEYWORDS = {
     "pedodontics": [
         "cocuk",
@@ -152,13 +180,32 @@ KEYWORDS = {
         "sinus trakt",
         "fistul",
         "rezorpsiyon",
+        "resorption",
         "internal rezorpsiyon",
+        "internal resorption",
         "eksternal rezorpsiyon",
+        "external resorption",
         "perforasyon",
+        "perforation",
         "kanal tedavisi",
+        "root canal",
         "retreatment",
         "rejenaratif",
+        "regenerative",
         "apeksifikasyon",
+        "apexification",
+        "acik apeks",
+        "open apex",
+        "catlak dis",
+        "cracked tooth",
+        "vertical root fracture",
+        "vertikal kok kirigi",
+        "avulsiyon",
+        "avulsion",
+        "luksasyon",
+        "luxation",
+        "intrusion",
+        "intrüzyon",
     ],
 
     "periodontology": [
@@ -518,7 +565,7 @@ def classify_specialties(
 
     for specialty, keywords in KEYWORDS.items():
         for keyword in keywords:
-            if _normalize(keyword) in combined_text:
+            if _keyword_matches(combined_text, keyword):
                 # Daha özgül klinik ifadeler daha fazla ağırlık alır.
                 normalized_keyword = _normalize(keyword)
 
@@ -540,36 +587,157 @@ def classify_specialties(
     # Bunlar tanı koymaz.
     # Sadece RAG için klinik olarak daha ilgili uzmanlıkları öne çıkarır.
 
-    # Derin çürük + spontan/gece ağrısı + pulpal/periapikal şüphe
-    if (
-        "derin curuk" in combined_text
-        and (
-            "spontan" in combined_text
-            or "gece agrisi" in combined_text
-            or "gece agri" in combined_text
-            or "kendiliginden agri" in combined_text
-        )
-    ):
+    # Çürük/kavite ile ağrının birlikte bulunması pulpal durumun
+    # değerlendirilmesini klinik olarak anlamlı kılar. Bu bir tanı değildir;
+    # yalnızca Endodonti kaynaklarının RAG havuzuna girmesini sağlar.
+    caries_or_cavity_signal = any(
+        x in combined_text
+        for x in [
+            "curuk",
+            "caries",
+            "kavit",
+            "dentin",
+        ]
+    )
+    pain_signal = any(
+        x in combined_text
+        for x in [
+            "agri",
+            "sizlama",
+            "zonklama",
+            "spontan",
+            "gece agrisi",
+            "sicak",
+            "soguk",
+        ]
+    )
+
+    if caries_or_cavity_signal and pain_signal:
         _add(
             scores,
             "endodontics",
-            8,
-            "Derin çürük ve spontan/gece ağrısı birlikte"
+            5,
+            "Çürük/kavite ile ağrı birlikte; pulpal durum değerlendirmesi",
         )
-
-        _add(
-            scores,
-            "pedodontics",
-            4,
-            "Çocuk/adölesan hastada pulpal değerlendirme"
-        )
-
         _add(
             scores,
             "restorative",
-            4,
-            "Derin çürük için restoratif değerlendirme"
+            2,
+            "Ağrılı çürük/kavite için restoratif değerlendirme",
         )
+
+    # Endodontinin özel alanları: kaynak paketindeki dar kılavuzları yalnız
+    # gerçek vaka sinyalleri varsa erişilebilir hale getirir. Bu puanlar tanı
+    # koymaz; resorpsiyon, çatlak ve travmada Endodonti RAG rotasını açar.
+    resorption_signal = any(
+        x in combined_text
+        for x in [
+            "rezorpsiyon", "resorption", "internal resorption",
+            "external resorption", "servikal rezorpsiyon",
+        ]
+    )
+    if resorption_signal:
+        _add(scores, "endodontics", 9, "Kök rezorpsiyonu değerlendirmesi")
+        _add(scores, "oral_diagnosis_radiology", 4, "Rezorpsiyonun görüntüleme ile lokalizasyonu")
+
+    crack_signal = any(
+        x in combined_text
+        for x in [
+            "catlak", "cracked tooth", "vertical root fracture",
+            "vertikal kok kirigi", "split tooth", "isirma agrisi",
+        ]
+    )
+    if crack_signal:
+        _add(scores, "endodontics", 9, "Çatlak/kök kırığı için endodontik değerlendirme")
+        _add(scores, "restorative", 4, "Çatlak dişte restorabilite değerlendirmesi")
+
+    endodontic_trauma_signal = any(
+        x in combined_text
+        for x in [
+            "avulsiyon", "avulsion", "luksasyon", "luxation",
+            "intrusyon", "intrusion", "ekstruzyon", "extrusion",
+            "kok kirigi", "root fracture",
+        ]
+    )
+    if endodontic_trauma_signal:
+        _add(scores, "endodontics", 9, "Travmatik dental yaralanmada pulpa/kök yönetimi")
+
+    immature_endo_signal = any(
+        x in combined_text
+        for x in [
+            "acik apeks", "open apex", "immatur", "immature",
+            "revitalizasyon", "regenerative", "apeksifikasyon", "apexification",
+        ]
+    )
+    if immature_endo_signal:
+        _add(scores, "endodontics", 8, "İmmatür/açık apeksli dişin endodontik yönetimi")
+
+    # Güçlü pulpal belirti paterni: gerçek klinik notlarda "spontan ağrı"
+    # yerine "kendiliğinden başladı", "geceleri uyandırıyor" veya termal
+    # uyaran kalktıktan sonra 10+ saniye süren ağrı gibi ifadeler bulunabilir.
+    # Negatif ifadeler pozitif sayılmaz. Bu blok tanı koymaz; yalnız Endodonti
+    # kaynaklarını ana RAG rotasına taşır.
+    spontaneous_negated = bool(re.search(
+        r"(?:spontan|kendiliginden|gece|geceleri).{0,55}"
+        r"(?:yok|yoktur|tariflemiyor|olmuyor|bulunmuyor|inkar ediyor|denies)",
+        combined_text,
+    ))
+    spontaneous_or_night_signal = (
+        pain_signal
+        and not spontaneous_negated
+        and any(
+            x in combined_text
+            for x in [
+                "spontan", "kendiliginden", "geceleri", "gece",
+                "uyandir", "uykudan", "spontaneous", "night pain", "wakes",
+            ]
+        )
+    )
+    thermal_signal = any(
+        x in combined_text
+        for x in ["soguk", "sicak", "cold", "hot", "termal", "thermal"]
+    )
+    post_stimulus_signal = any(
+        x in combined_text
+        for x in [
+            "uyaran kaldirildiktan sonra", "uyaran kesildikten sonra",
+            "uyaran uzaklastirildiktan sonra", "stimulus removed",
+            "after stimulus", "sonra devam", "devam ediyor",
+            "suruyor", "lingering", "uzamis", "uzun sure",
+        ]
+    )
+    duration_10s_or_more = bool(re.search(
+        r"\b(?:1[0-9]|[2-9][0-9]|[1-9][0-9]{2,})\s*(?:saniye|sn|sec|second)",
+        combined_text,
+    ))
+    lingering_thermal_signal = thermal_signal and post_stimulus_signal and (
+        duration_10s_or_more
+        or any(x in combined_text for x in ["lingering", "uzamis", "uzun sure"])
+    )
+    strong_pulpal_signal = caries_or_cavity_signal and (
+        spontaneous_or_night_signal or lingering_thermal_signal
+    )
+
+    if strong_pulpal_signal:
+        _add(
+            scores,
+            "endodontics",
+            10,
+            "Çürük/kavite ile güçlü spontan-gece veya uzamış termal ağrı paterni",
+        )
+        _add(
+            scores,
+            "restorative",
+            2,
+            "Derin çürükte restorabilite ve pulpa koruma değerlendirmesi",
+        )
+        if age_group in {"infant", "early_childhood", "child", "adolescent"}:
+            _add(
+                scores,
+                "pedodontics",
+                4,
+                "Çocuk/adölesan hastada pulpal değerlendirme",
+            )
 
     if (
         "periapikal" in combined_text
@@ -853,7 +1021,18 @@ def classify_specialties(
         if item.score > 0
     ]
 
-    selected = meaningful[: max(1, top_k)]
+    # Strong case signals should not drag weak, image-only/background specialties
+    # into the RAG prompt just to fill top_k.  When there is no strong signal we
+    # preserve the broader legacy behavior.
+    if meaningful and meaningful[0].score >= 8:
+        relevance_floor = max(3, int(meaningful[0].score * 0.35))
+        selected = [
+            item
+            for item in meaningful
+            if item.score >= relevance_floor
+        ][: max(1, top_k)]
+    else:
+        selected = meaningful[: max(1, top_k)]
 
     return {
         "age_group": age_group,
