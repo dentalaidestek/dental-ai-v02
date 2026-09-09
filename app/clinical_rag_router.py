@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
+import threading
 import time
+from pathlib import Path
 from typing import Iterable
 
 from app.ai_provider import ask_ai
@@ -184,6 +188,99 @@ Sistemde kayıtlı görüntü tipi: {", ".join(stored_image_types) or "OTHER"}
 """.strip()
 
 
+_ROUTE_CACHE_TTL_SECONDS = 30 * 60
+_ROUTE_CACHE_MAX_ITEMS = 512
+_ROUTE_CACHE: dict[str, tuple[float, str, dict]] = {}
+_ROUTE_CACHE_LOCK = threading.Lock()
+
+
+def _route_fingerprint(
+    *,
+    age,
+    tooth_number: str,
+    clinical_notes: str,
+    chief_complaint: str,
+    image_paths: list[str],
+    stored_image_types: list[str],
+    top_k: int,
+) -> str:
+    """
+    Stable case fingerprint for reusing the preliminary multimodal route.
+
+    extra_text is intentionally excluded: final dentist answers still enter the
+    downstream RAG query and final clinical prompt, but they do not force the
+    same radiograph to be re-routed by a second multimodal AI call.
+    """
+    parts = [
+        str(age if age is not None else ""),
+        str(tooth_number or ""),
+        str(clinical_notes or ""),
+        str(chief_complaint or ""),
+        ",".join(stored_image_types),
+        str(int(top_k or 5)),
+    ]
+    for raw_path in image_paths:
+        p = Path(raw_path)
+        try:
+            stat = p.stat()
+            parts.append(
+                f"{p}:{stat.st_size}:{getattr(stat, 'st_mtime_ns', int(stat.st_mtime * 1_000_000_000))}"
+            )
+        except OSError:
+            parts.append(str(p))
+    payload = "\x1f".join(parts).encode("utf-8", errors="replace")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _route_cache_get(cache_key: str, fingerprint: str) -> dict | None:
+    key = str(cache_key or "").strip()
+    if not key:
+        return None
+    now = time.monotonic()
+    with _ROUTE_CACHE_LOCK:
+        entry = _ROUTE_CACHE.get(key)
+        if not entry:
+            return None
+        created_at, saved_fingerprint, saved_route = entry
+        if saved_fingerprint != fingerprint or now - created_at > _ROUTE_CACHE_TTL_SECONDS:
+            _ROUTE_CACHE.pop(key, None)
+            return None
+        result = copy.deepcopy(saved_route)
+    result["mode"] = "ai_cache"
+    xray_trace_event(
+        "rag.ai_router.cache_hit",
+        cache_key_tag=hashlib.sha256(key.encode("utf-8")).hexdigest()[:12],
+        specialties=[
+            item.get("specialty")
+            for item in result.get("ranked_specialties", [])
+            if isinstance(item, dict) and item.get("specialty")
+        ],
+        image_types=result.get("image_types") or [],
+        signals=result.get("signals") or [],
+        cache_age_ms=round((now - created_at) * 1000, 1),
+    )
+    return result
+
+
+def _route_cache_put(cache_key: str, fingerprint: str, route: dict) -> None:
+    key = str(cache_key or "").strip()
+    if not key:
+        return
+    now = time.monotonic()
+    with _ROUTE_CACHE_LOCK:
+        expired = [
+            saved_key
+            for saved_key, (created_at, _, _) in _ROUTE_CACHE.items()
+            if now - created_at > _ROUTE_CACHE_TTL_SECONDS
+        ]
+        for saved_key in expired:
+            _ROUTE_CACHE.pop(saved_key, None)
+        if len(_ROUTE_CACHE) >= _ROUTE_CACHE_MAX_ITEMS:
+            oldest_key = min(_ROUTE_CACHE, key=lambda k: _ROUTE_CACHE[k][0])
+            _ROUTE_CACHE.pop(oldest_key, None)
+        _ROUTE_CACHE[key] = (now, fingerprint, copy.deepcopy(route))
+
+
 def route_clinical_case(
     *,
     age=None,
@@ -193,12 +290,26 @@ def route_clinical_case(
     extra_text: str = "",
     image_paths: list[str] | None = None,
     stored_image_types: list[str] | None = None,
+    cache_key: str = "",
     top_k: int = 5,
 ) -> dict:
-    """Multimodal AI-first RAG routing with deterministic fallback."""
+    """Multimodal AI-first RAG routing; lexical router is failure fallback only."""
 
     paths = [p for p in (image_paths or []) if p]
     stored_types = _unique(stored_image_types or [])
+    fingerprint = _route_fingerprint(
+        age=age,
+        tooth_number=tooth_number,
+        clinical_notes=clinical_notes,
+        chief_complaint=chief_complaint,
+        image_paths=paths,
+        stored_image_types=stored_types,
+        top_k=top_k,
+    )
+    cached = _route_cache_get(cache_key, fingerprint)
+    if cached is not None:
+        return cached
+
     prompt = _build_router_prompt(
         age=age,
         tooth_number=tooth_number,
@@ -272,72 +383,65 @@ def route_clinical_case(
         for item in signals
         if item in _SIGNAL_CANONICAL_TEXT
     )
-    combined_text = "\n".join(
-        value
-        for value in [clinical_notes or "", extra_text or ""]
-        if value
-    )
-    findings_for_fallback = "\n".join(
-        value
-        for value in [canonical_signal_text, "\n".join(routing_findings)]
-        if value
-    )
-
-    lexical = classify_specialties(
-        age=age,
-        dentition="",
-        tooth_number=tooth_number or "",
-        clinical_notes=combined_text,
-        image_types=resolved_types,
-        findings=findings_for_fallback,
-        chief_complaint=chief_complaint or "",
-        top_k=max(5, top_k),
-    )
-    lexical_ranked = lexical.get("ranked_specialties", [])
-    lexical_by_specialty = {
-        item.get("specialty"): item
-        for item in lexical_ranked
-        if isinstance(item, dict) and item.get("specialty")
-    }
 
     if ai_specialties:
-        selected = list(ai_specialties)
-        # AI is primary. Rules are only a safety net for a very strong signal;
-        # weak word matches cannot pollute RAG.
-        for item in lexical_ranked:
-            specialty = item.get("specialty") if isinstance(item, dict) else None
-            score = int(item.get("score") or 0) if isinstance(item, dict) else 0
-            if specialty and specialty not in selected and score >= 8:
-                selected.append(specialty)
-            if len(selected) >= top_k:
-                break
-    else:
-        selected = [
-            item.get("specialty")
-            for item in lexical_ranked
-            if isinstance(item, dict) and item.get("specialty")
-        ][:top_k]
-
-    if not selected:
-        selected = ["oral_diagnosis_radiology"]
-
-    ranked_specialties = []
-    for specialty in selected[:top_k]:
-        lexical_item = lexical_by_specialty.get(specialty) or {}
-        ranked_specialties.append(
+        # AI succeeded: do not let the old word/score router inject extra branches.
+        selected = list(ai_specialties[:top_k])
+        ranked_specialties = [
             {
                 "specialty": specialty,
                 "label": SPECIALTIES.get(specialty, specialty),
-                "score": lexical_item.get("score"),
-                "reasons": (
-                    ["Multimodal AI görüntü + klinik yönlendirmesi"]
-                    if specialty in ai_specialties
-                    else list(lexical_item.get("reasons") or [])
-                ),
+                "score": max(1, top_k - index),
+                "reasons": [
+                    f"Multimodal AI görüntü + klinik yönlendirmesi (öncelik {index + 1})"
+                ],
             }
+            for index, specialty in enumerate(selected)
+        ]
+    else:
+        # AI routing failed: only now use the legacy lexical router as fallback.
+        combined_text = "\n".join(
+            value
+            for value in [clinical_notes or "", extra_text or ""]
+            if value
         )
+        lexical = classify_specialties(
+            age=age,
+            dentition="",
+            tooth_number=tooth_number or "",
+            clinical_notes=combined_text,
+            image_types=resolved_types,
+            findings="",
+            chief_complaint=chief_complaint or "",
+            top_k=max(5, top_k),
+        )
+        lexical_ranked = lexical.get("ranked_specialties", [])
+        ranked_specialties = [
+            {
+                "specialty": item.get("specialty"),
+                "label": item.get("label") or SPECIALTIES.get(
+                    item.get("specialty"), item.get("specialty")
+                ),
+                "score": item.get("score"),
+                "reasons": list(item.get("reasons") or []),
+            }
+            for item in lexical_ranked[:top_k]
+            if isinstance(item, dict) and item.get("specialty")
+        ]
 
-    return {
+    if not ranked_specialties:
+        ranked_specialties = [
+            {
+                "specialty": "oral_diagnosis_radiology",
+                "label": SPECIALTIES.get(
+                    "oral_diagnosis_radiology", "Oral Diagnoz ve Oral Radyoloji"
+                ),
+                "score": 1,
+                "reasons": ["Güvenli varsayılan klinik yönlendirme"],
+            }
+        ]
+
+    result = {
         "ranked_specialties": ranked_specialties,
         "image_types": resolved_types,
         "routing_findings": routing_findings,
@@ -345,3 +449,10 @@ def route_clinical_case(
         "canonical_signal_text": canonical_signal_text,
         "mode": route_mode,
     }
+
+    # Cache only successful AI routes. If AI failed, final can retry instead of
+    # freezing a weaker lexical fallback result.
+    if route_mode == "ai":
+        _route_cache_put(cache_key, fingerprint, result)
+
+    return result

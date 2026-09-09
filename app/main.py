@@ -3878,6 +3878,7 @@ def _get_specialty_rag_context(
         extra_text=extra_text or "",
         image_paths=[asset.file_path for asset in assets if asset.file_path],
         stored_image_types=image_types,
+        cache_key=f"patient:{patient.id}:{analysis.id}",
         top_k=5,
     )
     image_types = router.get("image_types") or image_types
@@ -3991,6 +3992,7 @@ def _get_guest_specialty_rag_context(
         extra_text=extra_text or "",
         image_paths=[asset.file_path for asset in assets if asset.file_path],
         stored_image_types=image_types,
+        cache_key=f"guest:{analysis.id}",
         top_k=5,
     )
     image_types = router.get("image_types") or image_types
