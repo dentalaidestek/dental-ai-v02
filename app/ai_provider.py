@@ -9,6 +9,10 @@ import urllib.error
 import urllib.request
 
 
+# === TEMP_XRAY_TRACE_PROVIDER_IMPORT_BEGIN ===
+from app.xray_trace import xray_trace_event
+# === TEMP_XRAY_TRACE_PROVIDER_IMPORT_END ===
+
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -159,7 +163,29 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
     payload_bytes = _build_payload(prompt, paths, response_schema=response_schema)
     last_error = None
 
+    # === TEMP_XRAY_TRACE_PROVIDER_REQUEST_BEGIN ===
+    _xray_provider_started = time.perf_counter()
+    xray_trace_event(
+        "provider.request.begin",
+        provider="gemini",
+        model=GEMINI_MODEL,
+        image_count=len(paths),
+        payload_bytes=len(payload_bytes),
+        structured_output=bool(response_schema),
+        max_attempts=GEMINI_MAX_ATTEMPTS,
+    )
+    # === TEMP_XRAY_TRACE_PROVIDER_REQUEST_END ===
+
     for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
+        # === TEMP_XRAY_TRACE_PROVIDER_ATTEMPT_BEGIN_BEGIN ===
+        _xray_attempt_started = time.perf_counter()
+        xray_trace_event(
+            "provider.attempt.begin",
+            provider="gemini",
+            model=GEMINI_MODEL,
+            attempt=attempt,
+        )
+        # === TEMP_XRAY_TRACE_PROVIDER_ATTEMPT_BEGIN_END ===
         request = urllib.request.Request(
             GEMINI_URL,
             data=payload_bytes,
@@ -202,6 +228,22 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
                 )
                 raise GeminiAPIError("Gemini cevap verdi ancak metin içeriği bulunamadı.")
 
+            # === TEMP_XRAY_TRACE_PROVIDER_SUCCESS_BEGIN ===
+            _usage = result.get("usageMetadata") or {}
+            xray_trace_event(
+                "provider.attempt.success",
+                provider="gemini",
+                model=GEMINI_MODEL,
+                attempt=attempt,
+                answer_chars=len(answer),
+                finish_reason=candidate.get("finishReason"),
+                prompt_tokens=_usage.get("promptTokenCount"),
+                output_tokens=_usage.get("candidatesTokenCount"),
+                total_tokens=_usage.get("totalTokenCount"),
+                elapsed_ms=round((time.perf_counter() - _xray_attempt_started) * 1000, 1),
+                total_elapsed_ms=round((time.perf_counter() - _xray_provider_started) * 1000, 1),
+            )
+            # === TEMP_XRAY_TRACE_PROVIDER_SUCCESS_END ===
             return answer
 
         except urllib.error.HTTPError as e:
@@ -215,6 +257,17 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
                 body[:1500],
             )
             last_error = GeminiAPIError(_safe_http_error_message(e.code))
+            # === TEMP_XRAY_TRACE_PROVIDER_HTTP_ERROR_BEGIN ===
+            xray_trace_event(
+                "provider.attempt.http_error",
+                provider="gemini",
+                model=GEMINI_MODEL,
+                attempt=attempt,
+                status=e.code,
+                retryable=e.code in RETRYABLE_HTTP_CODES and attempt < GEMINI_MAX_ATTEMPTS,
+                elapsed_ms=round((time.perf_counter() - _xray_attempt_started) * 1000, 1),
+            )
+            # === TEMP_XRAY_TRACE_PROVIDER_HTTP_ERROR_END ===
 
             if e.code not in RETRYABLE_HTTP_CODES or attempt >= GEMINI_MAX_ATTEMPTS:
                 raise last_error
@@ -230,11 +283,31 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
             last_error = GeminiAPIError(
                 "Gemini bağlantısında geçici bir sorun oluştu. Lütfen tekrar deneyin."
             )
+            # === TEMP_XRAY_TRACE_PROVIDER_NETWORK_ERROR_BEGIN ===
+            xray_trace_event(
+                "provider.attempt.network_error",
+                provider="gemini",
+                model=GEMINI_MODEL,
+                attempt=attempt,
+                error_type=type(e).__name__,
+                retryable=attempt < GEMINI_MAX_ATTEMPTS,
+                elapsed_ms=round((time.perf_counter() - _xray_attempt_started) * 1000, 1),
+            )
+            # === TEMP_XRAY_TRACE_PROVIDER_NETWORK_ERROR_END ===
             if attempt >= GEMINI_MAX_ATTEMPTS:
                 raise last_error
 
         except json.JSONDecodeError as e:
             logger.warning("Gemini API yanıt gövdesi JSON değil: %r", e)
+            # === TEMP_XRAY_TRACE_PROVIDER_JSON_ERROR_BEGIN ===
+            xray_trace_event(
+                "provider.attempt.json_error",
+                provider="gemini",
+                model=GEMINI_MODEL,
+                attempt=attempt,
+                elapsed_ms=round((time.perf_counter() - _xray_attempt_started) * 1000, 1),
+            )
+            # === TEMP_XRAY_TRACE_PROVIDER_JSON_ERROR_END ===
             raise GeminiAPIError("Gemini servis cevabı okunamadı. Lütfen tekrar deneyin.")
 
         time.sleep(min(4, 2 ** (attempt - 1)))

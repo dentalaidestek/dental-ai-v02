@@ -28,6 +28,16 @@ from app.study_trace import begin_trace, get_trace_events, trace_event
 logger = _study_trace_logging.getLogger(__name__)
 # === TEMP_STUDY_TRACE_MAIN_IMPORT_END ===
 
+# === TEMP_XRAY_TRACE_MAIN_IMPORT_BEGIN ===
+import time as _xray_trace_time
+from app.xray_trace import (
+    begin_xray_trace,
+    end_xray_trace,
+    get_xray_trace_events,
+    xray_trace_event,
+)
+# === TEMP_XRAY_TRACE_MAIN_IMPORT_END ===
+
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
 from app.study_rag import (
@@ -3755,6 +3765,19 @@ def all_analyses(request: Request):
     )
 
 
+# === TEMP_XRAY_TRACE_ENDPOINT_BEGIN ===
+@app.get("/analysis/diagnostics/trace")
+def xray_trace_diagnostics(request: Request, limit: int = 200):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
+    return JSONResponse(
+        {"ok": True, "events": get_xray_trace_events(user.id, limit=limit)},
+        headers={"Cache-Control": "no-store"},
+    )
+# === TEMP_XRAY_TRACE_ENDPOINT_END ===
+
+
 @app.get("/analysis/new", response_class=HTMLResponse)
 def analysis_choice(request: Request):
     user = get_current_user(request)
@@ -3860,6 +3883,22 @@ def _get_specialty_rag_context(
 
     ranked = router.get("ranked_specialties", [])
 
+    # === TEMP_XRAY_TRACE_ROUTER_RESULT_BEGIN ===
+    xray_trace_event(
+        "rag.router.result",
+        ranked=[
+            {
+                "specialty": item.get("specialty"),
+                "label": item.get("label"),
+                "score": item.get("score"),
+            }
+            for item in ranked[:5]
+            if isinstance(item, dict)
+        ],
+        image_types=image_types,
+    )
+    # === TEMP_XRAY_TRACE_ROUTER_RESULT_END ===
+
     specialties = [
         item.get("specialty")
         for item in ranked
@@ -3888,12 +3927,28 @@ ayırıcı tanı, ek değerlendirme ve tedavi yaklaşımı
 açısından en ilgili güncel kanıtları bul.
 """
 
+    # === TEMP_XRAY_TRACE_RAG_CONTEXT_BEGIN ===
+    _rag_trace_started = _xray_trace_time.perf_counter()
+    xray_trace_event(
+        "rag.search.begin",
+        specialties=specialties,
+        specialty_labels=labels,
+    )
     context = get_specialty_relevant_context(
         rag_query,
         specialties=specialties,
         top_k=5,
         max_chars=7000,
     )
+    _rag_sources = re.findall(r"\[KAYNAK:\s*([^\]]+)\]", context or "")
+    xray_trace_event(
+        "rag.search.success",
+        context_chars=len(context or ""),
+        source_count=len(_rag_sources),
+        sources=_rag_sources[:8],
+        elapsed_ms=round((_xray_trace_time.perf_counter() - _rag_trace_started) * 1000, 1),
+    )
+    # === TEMP_XRAY_TRACE_RAG_CONTEXT_END ===
 
     return (
         "ROUTER TARAFINDAN SEÇİLEN BRANŞLAR:\n"
@@ -3936,6 +3991,22 @@ def _get_guest_specialty_rag_context(
 
     ranked = router.get("ranked_specialties", [])
 
+    # === TEMP_XRAY_TRACE_ROUTER_RESULT_BEGIN ===
+    xray_trace_event(
+        "rag.router.result",
+        ranked=[
+            {
+                "specialty": item.get("specialty"),
+                "label": item.get("label"),
+                "score": item.get("score"),
+            }
+            for item in ranked[:5]
+            if isinstance(item, dict)
+        ],
+        image_types=image_types,
+    )
+    # === TEMP_XRAY_TRACE_ROUTER_RESULT_END ===
+
     specialties = [
         item.get("specialty")
         for item in ranked
@@ -3962,12 +4033,28 @@ ayırıcı tanı, ek değerlendirme ve tedavi yaklaşımı
 açısından en ilgili güncel kanıtları bul.
 """
 
+    # === TEMP_XRAY_TRACE_RAG_CONTEXT_BEGIN ===
+    _rag_trace_started = _xray_trace_time.perf_counter()
+    xray_trace_event(
+        "rag.search.begin",
+        specialties=specialties,
+        specialty_labels=labels,
+    )
     context = get_specialty_relevant_context(
         rag_query,
         specialties=specialties,
         top_k=5,
         max_chars=7000,
     )
+    _rag_sources = re.findall(r"\[KAYNAK:\s*([^\]]+)\]", context or "")
+    xray_trace_event(
+        "rag.search.success",
+        context_chars=len(context or ""),
+        source_count=len(_rag_sources),
+        sources=_rag_sources[:8],
+        elapsed_ms=round((_xray_trace_time.perf_counter() - _rag_trace_started) * 1000, 1),
+    )
+    # === TEMP_XRAY_TRACE_RAG_CONTEXT_END ===
 
     return (
         "ROUTER TARAFINDAN SEÇİLEN BRANŞLAR:\n"
@@ -3992,6 +4079,21 @@ def _run_guest_preliminary_ai(analysis_id: int):
         if not analysis:
             return
 
+        # === TEMP_XRAY_TRACE_GUEST_PRE_START_BEGIN ===
+        _xray_case_started = _xray_trace_time.perf_counter()
+        begin_xray_trace(
+            getattr(analysis, "owner_user_id", None),
+            stage="preliminary",
+            analysis_id=analysis_id,
+            guest=True,
+        )
+        xray_trace_event(
+            "analysis.case.loaded",
+            tooth_number=analysis.tooth_number or "",
+            has_clinical_notes=bool(analysis.clinical_notes),
+        )
+        # === TEMP_XRAY_TRACE_GUEST_PRE_START_END ===
+
         assets = s.exec(
             select(GuestImageAsset).where(
                 GuestImageAsset.guest_analysis_id == analysis_id
@@ -4006,6 +4108,14 @@ def _run_guest_preliminary_ai(analysis_id: int):
 
         image_path = image_paths[0] if image_paths else None
 
+        # === TEMP_XRAY_TRACE_GUEST_PRE_IMAGES_BEGIN ===
+        xray_trace_event(
+            "analysis.images.ready",
+            image_count=len(image_paths),
+            image_types=[asset.image_type for asset in assets if asset.image_type],
+        )
+        # === TEMP_XRAY_TRACE_GUEST_PRE_IMAGES_END ===
+
         try:
             knowledge_context = _get_guest_specialty_rag_context(
                 analysis=analysis,
@@ -4019,6 +4129,14 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 knowledge_context=knowledge_context,
             )
 
+            # === TEMP_XRAY_TRACE_GUEST_PRE_AI_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.begin",
+                stage="preliminary",
+                prompt_chars=len(prompt or ""),
+                schema="preliminary",
+            )
+            # === TEMP_XRAY_TRACE_GUEST_PRE_AI_END ===
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -4026,9 +4144,24 @@ def _run_guest_preliminary_ai(analysis_id: int):
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
+            # === TEMP_XRAY_TRACE_GUEST_PRE_RESULT_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.result",
+                stage="preliminary",
+                status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+                finding_count=len(ai_result.get("findings") or []) if isinstance(ai_result, dict) else 0,
+                treatment_count=len(ai_result.get("treatment_options") or []) if isinstance(ai_result, dict) else 0,
+                differential_count=len(ai_result.get("differential") or []) if isinstance(ai_result, dict) else 0,
+                question_count=len(ai_result.get("questions") or []) if isinstance(ai_result, dict) else 0,
+                question_types=[q.get("type") for q in (ai_result.get("questions") or []) if isinstance(q, dict)] if isinstance(ai_result, dict) else [],
+            )
+            # === TEMP_XRAY_TRACE_GUEST_PRE_RESULT_END ===
 
             # Geçerli JSON gelse bile beklenen klinik şemaya uymuyorsa 1 kez yeniden dene.
             if ai_result.get("status") == "AI_INVALID":
+                # === TEMP_XRAY_TRACE_GUEST_PRE_SCHEMA_RETRY_BEGIN ===
+                xray_trace_event("analysis.schema.retry", stage="preliminary")
+                # === TEMP_XRAY_TRACE_GUEST_PRE_SCHEMA_RETRY_END ===
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -4037,6 +4170,14 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
         except Exception as e:
+            # === TEMP_XRAY_TRACE_GUEST_PRE_ERROR_BEGIN ===
+            xray_trace_event(
+                "analysis.error",
+                stage="preliminary",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            # === TEMP_XRAY_TRACE_GUEST_PRE_ERROR_END ===
             ai_text = ""
             ai_result = {
                 "status": "AI_ERROR",
@@ -4069,6 +4210,15 @@ def _run_guest_preliminary_ai(analysis_id: int):
         analysis.status = "AI_ANALYZED"
         s.add(analysis)
         s.commit()
+        # === TEMP_XRAY_TRACE_GUEST_PRE_COMPLETE_BEGIN ===
+        xray_trace_event(
+            "analysis.complete",
+            stage="preliminary",
+            result_status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+            elapsed_ms=round((_xray_trace_time.perf_counter() - _xray_case_started) * 1000, 1),
+        )
+        end_xray_trace(stage="preliminary")
+        # === TEMP_XRAY_TRACE_GUEST_PRE_COMPLETE_END ===
 
 
 def _run_preliminary_ai(analysis_id: int):
@@ -4086,6 +4236,23 @@ def _run_preliminary_ai(analysis_id: int):
         if not analysis:
             return
 
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_START_BEGIN ===
+        _trace_patient = s.get(Patient, analysis.patient_id)
+        _xray_case_started = _xray_trace_time.perf_counter()
+        begin_xray_trace(
+            getattr(_trace_patient, "owner_user_id", None),
+            stage="preliminary",
+            analysis_id=analysis_id,
+            guest=False,
+        )
+        xray_trace_event(
+            "analysis.case.loaded",
+            tooth_number=analysis.tooth_number or "",
+            has_clinical_notes=bool(analysis.clinical_notes),
+            has_patient=bool(_trace_patient),
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_START_END ===
+
         assets = s.exec(
             select(ImageAsset).where(
                 ImageAsset.analysis_id == analysis_id
@@ -4099,6 +4266,14 @@ def _run_preliminary_ai(analysis_id: int):
         ]
 
         image_path = image_paths[0] if image_paths else None
+
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_IMAGES_BEGIN ===
+        xray_trace_event(
+            "analysis.images.ready",
+            image_count=len(image_paths),
+            image_types=[asset.image_type for asset in assets if asset.image_type],
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_IMAGES_END ===
 
         try:
             rag_query = f"""
@@ -4125,6 +4300,14 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 knowledge_context=knowledge_context
             )
 
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_AI_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.begin",
+                stage="preliminary",
+                prompt_chars=len(prompt or ""),
+                schema="preliminary",
+            )
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_AI_END ===
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -4132,8 +4315,23 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_RESULT_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.result",
+                stage="preliminary",
+                status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+                finding_count=len(ai_result.get("findings") or []) if isinstance(ai_result, dict) else 0,
+                treatment_count=len(ai_result.get("treatment_options") or []) if isinstance(ai_result, dict) else 0,
+                differential_count=len(ai_result.get("differential") or []) if isinstance(ai_result, dict) else 0,
+                question_count=len(ai_result.get("questions") or []) if isinstance(ai_result, dict) else 0,
+                question_types=[q.get("type") for q in (ai_result.get("questions") or []) if isinstance(q, dict)] if isinstance(ai_result, dict) else [],
+            )
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_RESULT_END ===
 
             if ai_result.get("status") == "AI_INVALID":
+                # === TEMP_XRAY_TRACE_PATIENT_PRE_SCHEMA_RETRY_BEGIN ===
+                xray_trace_event("analysis.schema.retry", stage="preliminary")
+                # === TEMP_XRAY_TRACE_PATIENT_PRE_SCHEMA_RETRY_END ===
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -4142,6 +4340,14 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
         except Exception as e:
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_ERROR_BEGIN ===
+            xray_trace_event(
+                "analysis.error",
+                stage="preliminary",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            # === TEMP_XRAY_TRACE_PATIENT_PRE_ERROR_END ===
             ai_text = ""
             ai_result = {
                 "status": "AI_ERROR",
@@ -4175,6 +4381,15 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
         analysis.status = "AI_ANALYZED"
         s.add(analysis)
         s.commit()
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_COMPLETE_BEGIN ===
+        xray_trace_event(
+            "analysis.complete",
+            stage="preliminary",
+            result_status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+            elapsed_ms=round((_xray_trace_time.perf_counter() - _xray_case_started) * 1000, 1),
+        )
+        end_xray_trace(stage="preliminary")
+        # === TEMP_XRAY_TRACE_PATIENT_PRE_COMPLETE_END ===
 
 
 
@@ -4624,6 +4839,21 @@ async def guest_final_analysis(
                 status_code=403
             )
 
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_START_BEGIN ===
+        _xray_case_started = _xray_trace_time.perf_counter()
+        begin_xray_trace(
+            getattr(analysis, "owner_user_id", None),
+            stage="final",
+            analysis_id=analysis_id,
+            guest=True,
+        )
+        xray_trace_event(
+            "analysis.case.loaded",
+            tooth_number=analysis.tooth_number or "",
+            has_clinical_notes=bool(analysis.clinical_notes),
+        )
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_START_END ===
+
         assets = s.exec(
             select(GuestImageAsset).where(
                 GuestImageAsset.guest_analysis_id == analysis.id
@@ -4650,6 +4880,15 @@ async def guest_final_analysis(
                 )
                 answers[index] = str(value)
 
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_ANSWERS_BEGIN ===
+        xray_trace_event(
+            "analysis.answers.ready",
+            answer_count=len(answers),
+            answer_lengths=[len(str(value)) for value in answers.values()],
+            image_count=len(image_paths),
+        )
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_ANSWERS_END ===
+
         try:
             knowledge_context = _get_guest_specialty_rag_context(
                 analysis=analysis,
@@ -4665,6 +4904,14 @@ async def guest_final_analysis(
                 knowledge_context=knowledge_context,
             )
 
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_AI_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.begin",
+                stage="final",
+                prompt_chars=len(prompt or ""),
+                schema="final",
+            )
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_AI_END ===
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -4672,8 +4919,21 @@ async def guest_final_analysis(
             )
 
             ai_result = validate_final_result(parse_ai_result(ai_text))
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_RESULT_BEGIN ===
+            xray_trace_event(
+                "analysis.ai.result",
+                stage="final",
+                status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+                finding_count=len(ai_result.get("findings") or []) if isinstance(ai_result, dict) else 0,
+                treatment_count=len(ai_result.get("treatment_options") or []) if isinstance(ai_result, dict) else 0,
+                differential_count=len(ai_result.get("differential") or []) if isinstance(ai_result, dict) else 0,
+            )
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_RESULT_END ===
 
             if ai_result.get("status") == "AI_INVALID":
+                # === TEMP_XRAY_TRACE_GUEST_FINAL_SCHEMA_RETRY_BEGIN ===
+                xray_trace_event("analysis.schema.retry", stage="final")
+                # === TEMP_XRAY_TRACE_GUEST_FINAL_SCHEMA_RETRY_END ===
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -4682,6 +4942,14 @@ async def guest_final_analysis(
                 ai_result = validate_final_result(parse_ai_result(ai_text))
 
         except Exception as e:
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_ERROR_BEGIN ===
+            xray_trace_event(
+                "analysis.error",
+                stage="final",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+            # === TEMP_XRAY_TRACE_GUEST_FINAL_ERROR_END ===
             ai_text = ""
 
             ai_result = {
@@ -4720,6 +4988,15 @@ async def guest_final_analysis(
         analysis.status = "AI_FINAL"
         s.add(analysis)
         s.commit()
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_COMPLETE_BEGIN ===
+        xray_trace_event(
+            "analysis.complete",
+            stage="final",
+            result_status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+            elapsed_ms=round((_xray_trace_time.perf_counter() - _xray_case_started) * 1000, 1),
+        )
+        end_xray_trace(stage="final")
+        # === TEMP_XRAY_TRACE_GUEST_FINAL_COMPLETE_END ===
 
     return RedirectResponse(
         url=f"/analysis/guest/{analysis_id}",
@@ -4772,6 +5049,21 @@ async def final_analysis(
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_START_BEGIN ===
+        _xray_case_started = _xray_trace_time.perf_counter()
+        begin_xray_trace(
+            getattr(patient, "owner_user_id", None),
+            stage="final",
+            analysis_id=analysis_id,
+            guest=False,
+        )
+        xray_trace_event(
+            "analysis.case.loaded",
+            tooth_number=analysis.tooth_number or "",
+            has_clinical_notes=bool(analysis.clinical_notes),
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_START_END ===
+
         dx = s.exec(
             select(ClinicalRecord).where(
                 ClinicalRecord.clinical_id == "CARIES-DX"
@@ -4810,6 +5102,15 @@ async def final_analysis(
 
             answers[index] = str(value)
 
+    # === TEMP_XRAY_TRACE_PATIENT_FINAL_ANSWERS_BEGIN ===
+    xray_trace_event(
+        "analysis.answers.ready",
+        answer_count=len(answers),
+        answer_lengths=[len(str(value)) for value in answers.values()],
+        image_count=len(image_paths),
+    )
+    # === TEMP_XRAY_TRACE_PATIENT_FINAL_ANSWERS_END ===
+
     # -----------------------------------------------------
     # SADECE SON AŞAMADA GEMINI ÇALIŞIR
     # -----------------------------------------------------
@@ -4845,6 +5146,14 @@ için en ilgili kanıtları bul.
             knowledge_context=knowledge_context
         )
 
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_AI_BEGIN ===
+        xray_trace_event(
+            "analysis.ai.begin",
+            stage="final",
+            prompt_chars=len(prompt or ""),
+            schema="final",
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_AI_END ===
         ai_text = ask_ai(
             prompt,
             image_paths=image_paths,
@@ -4852,8 +5161,21 @@ için en ilgili kanıtları bul.
         )
 
         ai_result = validate_final_result(parse_ai_result(ai_text))
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_RESULT_BEGIN ===
+        xray_trace_event(
+            "analysis.ai.result",
+            stage="final",
+            status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+            finding_count=len(ai_result.get("findings") or []) if isinstance(ai_result, dict) else 0,
+            treatment_count=len(ai_result.get("treatment_options") or []) if isinstance(ai_result, dict) else 0,
+            differential_count=len(ai_result.get("differential") or []) if isinstance(ai_result, dict) else 0,
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_RESULT_END ===
 
         if ai_result.get("status") == "AI_INVALID":
+            # === TEMP_XRAY_TRACE_PATIENT_FINAL_SCHEMA_RETRY_BEGIN ===
+            xray_trace_event("analysis.schema.retry", stage="final")
+            # === TEMP_XRAY_TRACE_PATIENT_FINAL_SCHEMA_RETRY_END ===
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -4863,6 +5185,14 @@ için en ilgili kanıtları bul.
 
     except Exception as e:
 
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_ERROR_BEGIN ===
+        xray_trace_event(
+            "analysis.error",
+            stage="final",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        )
+        # === TEMP_XRAY_TRACE_PATIENT_FINAL_ERROR_END ===
         ai_text = ""
 
         ai_result = {
@@ -4916,6 +5246,16 @@ için en ilgili kanıtları bul.
             analysis.status = "AI_FINAL"
             s.add(analysis)
             s.commit()
+
+    # === TEMP_XRAY_TRACE_PATIENT_FINAL_COMPLETE_BEGIN ===
+    xray_trace_event(
+        "analysis.complete",
+        stage="final",
+        result_status=ai_result.get("status") if isinstance(ai_result, dict) else None,
+        elapsed_ms=round((_xray_trace_time.perf_counter() - _xray_case_started) * 1000, 1),
+    )
+    end_xray_trace(stage="final")
+    # === TEMP_XRAY_TRACE_PATIENT_FINAL_COMPLETE_END ===
 
     return RedirectResponse(
         url=f"/analysis/{analysis_id}",
