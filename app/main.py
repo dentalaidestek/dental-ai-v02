@@ -18,7 +18,7 @@ from dental_rag.rag import (
     get_relevant_context,
     get_specialty_relevant_context,
 )
-from dental_rag.specialty_router import classify_specialties
+from app.clinical_rag_router import route_clinical_case
 
 # === TEMP_STUDY_TRACE_MAIN_IMPORT_BEGIN ===
 import logging as _study_trace_logging
@@ -3870,16 +3870,19 @@ def _get_specialty_rag_context(
         if x
     )
 
-    router = classify_specialties(
+    router = route_clinical_case(
         age=patient.age,
-        dentition="",
         tooth_number=analysis.tooth_number or "",
-        clinical_notes=routing_text,
-        image_types=image_types,
-        findings="",
+        clinical_notes=analysis.clinical_notes or "",
         chief_complaint=patient.chief_complaint or "",
+        extra_text=extra_text or "",
+        image_paths=[asset.file_path for asset in assets if asset.file_path],
+        stored_image_types=image_types,
         top_k=5,
     )
+    image_types = router.get("image_types") or image_types
+    routing_findings = router.get("routing_findings") or []
+    routing_signal_text = router.get("canonical_signal_text") or ""
 
     ranked = router.get("ranked_specialties", [])
 
@@ -3917,6 +3920,8 @@ Diş: {analysis.tooth_number or ""}
 Hasta şikayeti: {patient.chief_complaint or ""}
 Klinik bilgi: {analysis.clinical_notes or ""}
 Ek hekim bilgisi: {extra_text or ""}
+AI yönlendirme bulguları: {"; ".join(routing_findings)}
+AI standart klinik sinyalleri: {routing_signal_text}
 Görüntü tipleri: {", ".join(image_types)}
 
 İlgili dental branşlar:
@@ -3978,16 +3983,19 @@ def _get_guest_specialty_rag_context(
         if x
     )
 
-    router = classify_specialties(
+    router = route_clinical_case(
         age=None,
-        dentition="",
         tooth_number=analysis.tooth_number or "",
-        clinical_notes=routing_text,
-        image_types=image_types,
-        findings="",
+        clinical_notes=analysis.clinical_notes or "",
         chief_complaint="",
+        extra_text=extra_text or "",
+        image_paths=[asset.file_path for asset in assets if asset.file_path],
+        stored_image_types=image_types,
         top_k=5,
     )
+    image_types = router.get("image_types") or image_types
+    routing_findings = router.get("routing_findings") or []
+    routing_signal_text = router.get("canonical_signal_text") or ""
 
     ranked = router.get("ranked_specialties", [])
 
@@ -4023,6 +4031,8 @@ def _get_guest_specialty_rag_context(
 Diş: {analysis.tooth_number or ""}
 Klinik bilgi: {analysis.clinical_notes or ""}
 Ek hekim bilgisi: {extra_text or ""}
+AI yönlendirme bulguları: {"; ".join(routing_findings)}
+AI standart klinik sinyalleri: {routing_signal_text}
 Görüntü tipleri: {", ".join(image_types)}
 
 İlgili dental branşlar:
