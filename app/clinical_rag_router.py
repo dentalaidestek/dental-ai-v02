@@ -75,27 +75,26 @@ _SIGNAL_CANONICAL_TEXT = {
 }
 
 _CLINICAL_RAG_ROUTER_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
+    "type": "OBJECT",
     "properties": {
         "specialties": {
-            "type": "array",
-            "items": {"type": "string", "enum": list(SPECIALTIES.keys())},
+            "type": "ARRAY",
+            "items": {"type": "STRING", "enum": list(SPECIALTIES.keys())},
             "maxItems": 5,
         },
         "image_types": {
-            "type": "array",
-            "items": {"type": "string", "enum": sorted(_ALLOWED_IMAGE_TYPES)},
+            "type": "ARRAY",
+            "items": {"type": "STRING", "enum": sorted(_ALLOWED_IMAGE_TYPES)},
             "maxItems": 5,
         },
         "signals": {
-            "type": "array",
-            "items": {"type": "string", "enum": sorted(_ALLOWED_SIGNALS)},
+            "type": "ARRAY",
+            "items": {"type": "STRING", "enum": sorted(_ALLOWED_SIGNALS)},
             "maxItems": 8,
         },
         "routing_findings": {
-            "type": "array",
-            "items": {"type": "string"},
+            "type": "ARRAY",
+            "items": {"type": "STRING"},
             "maxItems": 6,
         },
     },
