@@ -4199,7 +4199,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
         if isinstance(ai_result, dict):
             questions = ai_result.get("questions")
             if isinstance(questions, list):
-                ai_result["questions"] = questions[:5]
+                ai_result["questions"] = questions[:3]
 
         result_dir = Path("uploads/ai_results")
         result_dir.mkdir(parents=True, exist_ok=True)
@@ -4370,7 +4370,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
             questions = ai_result.get("questions")
 
             if isinstance(questions, list):
-                ai_result["questions"] = questions[:5]
+                ai_result["questions"] = questions[:3]
 
         result_dir = Path("uploads/ai_results")
         result_dir.mkdir(parents=True, exist_ok=True)

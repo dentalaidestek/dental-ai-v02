@@ -163,26 +163,14 @@
         <h2>🧠 Nihai Klinik Değerlendirme</h2>
 
         <div class="final-box">
-
             <div class="result-section">
-                <h3>En olası durum</h3>
+                <h3>En Olası Durum</h3>
                 <p>{{ ai_result.most_likely }}</p>
             </div>
 
-            {% if ai_result.differential %}
-            <div class="result-section">
-                <h3>Ayırıcı olasılıklar</h3>
-                <ul>
-                    {% for item in ai_result.differential %}
-                    <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-
             {% if ai_result.findings %}
             <div class="result-section">
-                <h3>Önemli bulgular</h3>
+                <h3>Önemli Bulgular</h3>
                 <ul>
                     {% for item in ai_result.findings %}
                     <li>{{ item }}</li>
@@ -193,9 +181,20 @@
 
             {% if ai_result.treatment_options %}
             <div class="result-section">
-                <h3>Tedavi seçenekleri</h3>
-                <ul>
+                <h3>Tedavi Seçenekleri</h3>
+                <ol>
                     {% for item in ai_result.treatment_options %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% endif %}
+
+            {% if ai_result.treatment_cautions %}
+            <div class="result-section">
+                <h3>Tedaviye Bağlı Dikkat Edilecekler</h3>
+                <ul>
+                    {% for item in ai_result.treatment_cautions %}
                     <li>{{ item }}</li>
                     {% endfor %}
                 </ul>
@@ -203,22 +202,40 @@
             {% endif %}
 
             <div class="result-section">
-                <h3>Önerilen yaklaşım</h3>
+                <h3>Önerilen Yaklaşım</h3>
                 <p>{{ ai_result.preferred_approach }}</p>
             </div>
 
+            {% if ai_result.differential %}
+            <div class="result-section">
+                <h3>Diğer Olası Tanılar</h3>
+                <ul>
+                    {% for item in ai_result.differential %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </div>
+
     </div>
 
 
     {% elif ai_result.status == "INITIAL" %}
 
     <div class="ai-card">
-        <h2>🧠 Klinik değerlendirme</h2>
+        <h2>🧠 Klinik Değerlendirme</h2>
+
+        {% if ai_result.most_likely %}
+        <div class="result-section">
+            <h3>En Olası Durum</h3>
+            <p>{{ ai_result.most_likely }}</p>
+        </div>
+        {% endif %}
 
         {% if ai_result.findings %}
         <div class="result-section">
-            <h3>Görüntüde görülen bulgular</h3>
+            <h3>Önemli Bulgular</h3>
             <ul>
                 {% for item in ai_result.findings %}
                 <li>{{ item }}</li>
@@ -229,27 +246,20 @@
 
         {% if ai_result.treatment_options %}
         <div class="result-section">
-            <h3>Tedavi seçenekleri</h3>
-            <ul>
+            <h3>Tedavi Seçenekleri</h3>
+            <ol>
                 {% for item in ai_result.treatment_options %}
                 <li>{{ item }}</li>
                 {% endfor %}
-            </ul>
+            </ol>
         </div>
         {% endif %}
 
-        {% if ai_result.most_likely %}
+        {% if ai_result.treatment_cautions %}
         <div class="result-section">
-            <h3>En olası durum</h3>
-            <p>{{ ai_result.most_likely }}</p>
-        </div>
-        {% endif %}
-
-        {% if ai_result.differential %}
-        <div class="result-section">
-            <h3>Ayırıcı olasılıklar</h3>
+            <h3>Tedaviye Bağlı Dikkat Edilecekler</h3>
             <ul>
-                {% for item in ai_result.differential %}
+                {% for item in ai_result.treatment_cautions %}
                 <li>{{ item }}</li>
                 {% endfor %}
             </ul>
@@ -258,17 +268,28 @@
 
         {% if ai_result.preferred_approach %}
         <div class="result-section">
-            <h3>Önerilen yaklaşım</h3>
+            <h3>Önerilen Yaklaşım</h3>
             <p>{{ ai_result.preferred_approach }}</p>
+        </div>
+        {% endif %}
+
+        {% if ai_result.differential %}
+        <div class="result-section">
+            <h3>Diğer Olası Tanılar</h3>
+            <ul>
+                {% for item in ai_result.differential %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
         </div>
         {% endif %}
 
         {% if ai_result.questions %}
         <div class="result-section">
-            <h3>🔎 Hekime sorular</h3>
+            <h3>🔎 Hekime Sorular</h3>
             <p>
-                Aşağıdaki bilgiler değerlendirmeyi değiştirebilir.
-                Cevapladıktan sonra yeni bilgilerle tekrar analiz edebilirsiniz.
+                Yalnız tedavi sırasını, uygulanabilirliği veya vaka-özel komplikasyon
+                riskini değiştirebilecek eksik bilgiler sorulur.
             </p>
         </div>
 
@@ -281,83 +302,22 @@
 
             <div class="ai-card question-card"
                  data-index="{{ question_index }}">
-
                 <div class="ai-question">
                     {{ loop.index }}. {{ q.question }}
                 </div>
-
-                {% if q.type == "VAR_YOK" or not q.type %}
-
-                <div class="answer-row">
-                    <button type="button"
-                            class="answer-btn var-btn"
-                            onclick="selectAnswer({{ question_index }}, 'VAR', this)">
-                        VAR
-                    </button>
-
-                    <button type="button"
-                            class="answer-btn yok-btn"
-                            onclick="selectAnswer({{ question_index }}, 'YOK', this)">
-                        YOK
-                    </button>
-                </div>
-
-                {% elif q.type == "SCALE" %}
-
-                <div class="scale-row">
-                    {% set min_value = q.min|default(1)|int %}
-                    {% set max_value = q.max|default(10)|int %}
-
-                    {% for value in range(min_value, max_value + 1) %}
-                    <button type="button"
-                            class="scale-btn"
-                            onclick="selectAnswer({{ question_index }}, '{{ value }}', this)">
-                        {{ value }}
-                    </button>
-                    {% endfor %}
-                </div>
-
-                {% elif q.type == "TEXT" %}
 
                 <textarea
                     class="text-answer"
                     id="input_{{ question_index }}"
                     placeholder="Kısa klinik cevap yazın..."
+                    rows="2"
                     oninput="setTextAnswer({{ question_index }}, this)"
                 ></textarea>
-
-                {% elif q.type == "NUMBER" %}
-
-                <input
-                    type="number"
-                    class="number-answer"
-                    id="input_{{ question_index }}"
-                    placeholder="Sayı girin"
-                    oninput="setTextAnswer({{ question_index }}, this)"
-                >
-
-                {% elif q.type == "CHOICE" %}
-
-                <div class="answer-row">
-                    {% for option in q.options %}
-                    <button
-                        type="button"
-                        class="answer-btn choice-btn"
-                        data-question="{{ question_index }}"
-                        data-value="{{ option }}"
-                        onclick="selectChoice(this)">
-                        {{ option }}
-                    </button>
-                    {% endfor %}
-                </div>
-
-                {% endif %}
 
                 <input type="hidden"
                        name="answer_{{ question_index }}"
                        id="answer_{{ question_index }}">
             </div>
-
         {% endfor %}
 
         <div class="ai-card" style="margin-top:16px;">
@@ -371,9 +331,7 @@
                 Yeni bilgilerle tekrar analiz et
             </button>
         </div>
-
         </form>
-
         {% endif %}
 
     </div>

@@ -52,6 +52,27 @@ _ALLOWED_SIGNALS = {
     "SINUS_RELATION",
     "CBCT_COMPLEXITY",
     "ENDODONTIC_TREATMENT_TECHNIQUE",
+    "PERIODONTAL_BONE_LOSS",
+    "PERI_IMPLANT_DISEASE",
+    "EDENTULISM",
+    "IMPLANT_PROSTHODONTICS",
+    "TOOTH_WEAR_OR_STRUCTURAL_LOSS",
+    "IMPACTED_OR_ERUPTION_ISSUE",
+    "THIRD_MOLAR",
+    "SUSPICIOUS_ORAL_LESION",
+    "BIOPSY_OR_PATHOLOGY_NEED",
+    "TMJ_DISORDER",
+    "NEUROPATHIC_PAIN_FEATURES",
+    "SEDATION_OR_AIRWAY",
+    "RADIOGRAPHIC_DECISION",
+    "PEDIATRIC_BEHAVIOR",
+    "DEVELOPING_OCCLUSION",
+    "ORTHODONTIC_RETENTION",
+    "CARIES_RISK_PREVENTION",
+    "MRONJ_RISK",
+    "CANCER_THERAPY_ORAL_COMPLICATION",
+    "XEROSTOMIA_OR_HYPOSALIVATION",
+    "PUBLIC_HEALTH_PREVENTION",
 }
 
 _SIGNAL_CANONICAL_TEXT = {
@@ -76,6 +97,27 @@ _SIGNAL_CANONICAL_TEXT = {
     "SINUS_RELATION": "maksiller sinüs odontojenik sinüzit maxillary sinus",
     "CBCT_COMPLEXITY": "CBCT perforasyon kırık alet iyileşmeyen apikal periodontitis kompleks anatomi",
     "ENDODONTIC_TREATMENT_TECHNIQUE": "kanal tedavisi RCT enstrümantasyon irrigasyon obturasyon",
+    "PERIODONTAL_BONE_LOSS": "periodontal kemik kaybı furkasyon cep ataşman kaybı periodontitis",
+    "PERI_IMPLANT_DISEASE": "peri-implant mukozitis peri-implantitis implant çevresi kemik kaybı kanama",
+    "EDENTULISM": "dişsizlik edentül alan tam dişsizlik kısmi dişsizlik protez",
+    "IMPLANT_PROSTHODONTICS": "implant üstü protez yükleme primer stabilite overdenture sabit implant restorasyonu",
+    "TOOTH_WEAR_OR_STRUCTURAL_LOSS": "aşınma tooth wear ileri diş dokusu kaybı restorabilite ferrule oklüzal rehabilitasyon",
+    "IMPACTED_OR_ERUPTION_ISSUE": "gömülü diş impaksiyon ektopik sürme sürme bozukluğu gömülü kanin",
+    "THIRD_MOLAR": "üçüncü molar yirmi yaş dişi gömülü molar perikoronitis",
+    "SUSPICIOUS_ORAL_LESION": "iyileşmeyen ülser lökoplaki eritroplaki indürasyon oral lezyon malignite şüphesi",
+    "BIOPSY_OR_PATHOLOGY_NEED": "biyopsi histopatoloji patoloji örnekleme oral lezyon",
+    "TMJ_DISORDER": "TME TMD artralji myalji eklem sesi ağız açmada kısıtlılık",
+    "NEUROPATHIC_PAIN_FEATURES": "nöropatik ağrı yanma elektriklenme allodini parestezi sinir hasarı",
+    "SEDATION_OR_AIRWAY": "sedasyon genel anestezi hava yolu airway monitorizasyon nitröz oksit",
+    "RADIOGRAPHIC_DECISION": "radyografi görüntüleme bitewing periapikal panoramik CBCT endikasyon doz optimizasyonu",
+    "PEDIATRIC_BEHAVIOR": "çocuk davranış yönlendirme kooperasyon dental kaygı sedasyon gereksinimi",
+    "DEVELOPING_OCCLUSION": "karma dentisyon gelişen oklüzyon çapraz kapanış yer darlığı sürme bozukluğu interceptif",
+    "ORTHODONTIC_RETENTION": "ortodontik retansiyon retainer relaps sabit retainer hareketli retainer",
+    "CARIES_RISK_PREVENTION": "çürük riski florür sealant SDF önleme remineralizasyon",
+    "MRONJ_RISK": "MRONJ antirezorptif bisfosfonat denosumab çene osteonekrozu",
+    "CANCER_THERAPY_ORAL_COMPLICATION": "kemoterapi radyoterapi oral mukozit kserostomi osteoradyonekroz enfeksiyon",
+    "XEROSTOMIA_OR_HYPOSALIVATION": "kserostomi ağız kuruluğu hiposalivasyon tükürük azalması",
+    "PUBLIC_HEALTH_PREVENTION": "toplum ağız sağlığı epidemiyoloji florlu su enfeksiyon kontrolü antibiyotik stewardship",
 }
 
 _CLINICAL_RAG_ROUTER_SCHEMA = {
@@ -94,7 +136,7 @@ _CLINICAL_RAG_ROUTER_SCHEMA = {
         "signals": {
             "type": "ARRAY",
             "items": {"type": "STRING", "enum": sorted(_ALLOWED_SIGNALS)},
-            "maxItems": 8,
+            "maxItems": 10,
         },
         "routing_findings": {
             "type": "ARRAY",
@@ -355,7 +397,7 @@ def route_clinical_case(
             item
             for item in _unique(data.get("signals") or [])
             if item in _ALLOWED_SIGNALS
-        ][:8]
+        ][:10]
         routing_findings = _unique(data.get("routing_findings") or [])[:6]
 
         if not ai_specialties:
