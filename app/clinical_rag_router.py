@@ -73,6 +73,15 @@ _ALLOWED_SIGNALS = {
     "CANCER_THERAPY_ORAL_COMPLICATION",
     "XEROSTOMIA_OR_HYPOSALIVATION",
     "PUBLIC_HEALTH_PREVENTION",
+    "COMPLETE_EDENTULISM",
+    "PARTIAL_EDENTULISM",
+    "PROSTHESIS_RETENTION_STABILITY",
+    "ALVEOLAR_RIDGE_RESORPTION",
+    "PRIMARY_TOOTH",
+    "NONCAVITATED_CARIES",
+    "GINGIVAL_RECESSION",
+    "IMPLANT_LOADING_DECISION",
+    "OVERDENTURE_CANDIDACY",
 }
 
 _SIGNAL_CANONICAL_TEXT = {
@@ -81,43 +90,52 @@ _SIGNAL_CANONICAL_TEXT = {
     "SPONTANEOUS_OR_NIGHT_PAIN": "spontan ağrı gece ağrısı kendiliğinden ağrı",
     "LINGERING_THERMAL_RESPONSE": "soğuk testi uzamış ağrı lingering pain uyaran kaldırıldıktan sonra devam eden ağrı",
     "PULP_TEST_ABNORMAL": "vitalite soğuk testi EPT pulpa testi anormal",
-    "PULPAL_INVOLVEMENT": "pulpa pulpal pulpitis pulpa yakın",
+    "PULPAL_INVOLVEMENT": "pulpa ile klinik veya radyografik ilişki pulpal involvement",
     "APICAL_PATHOSIS": "apikal periodontitis periapikal lezyon periapikal patoloji",
     "PERIODONTAL_PATHOSIS": "periodontitis periodontal cep kemik kaybı mobilite",
-    "ORAL_MUCOSAL_PATHOSIS": "oral lezyon ülser lökoplaki eritroplaki mukozal patoloji",
-    "SURGICAL_PATHOSIS": "cerrahi gömülü diş çekim kemik patolojisi",
-    "ORTHODONTIC_ISSUE": "maloklüzyon ortodonti çapraşıklık diş sürmesi",
+    "ORAL_MUCOSAL_PATHOSIS": "oral mukozada patolojik lezyon veya anormal doku bulgusu",
+    "SURGICAL_PATHOSIS": "ağız diş çene cerrahisi değerlendirmesi gerektirebilecek pozitif bulgu",
+    "ORTHODONTIC_ISSUE": "ortodontik problem veya ortodontik tedavi bağlamı",
     "PROSTHODONTIC_RESTORABILITY": "restorabilite ferrule kuron protez diş dokusu kaybı",
-    "PEDIATRIC_DENTITION": "çocuk süt dişi karma dentisyon pedodonti",
-    "OROFACIAL_PAIN": "orofasiyal ağrı TME nöropatik ağrı",
+    "PEDIATRIC_DENTITION": "pediatrik dentisyon ve çocuk diş hekimliği bağlamı",
+    "OROFACIAL_PAIN": "orofasiyal ağrı bağlamı",
     "TRAUMA": "travma avulsiyon lüksasyon dental injury",
-    "RESORPTION": "rezorpsiyon resorption internal external cervical resorption",
+    "RESORPTION": "diş kökü rezorpsiyonu root resorption internal external cervical resorption; edentül kret rezorpsiyonu değildir",
     "CRACK_OR_FRACTURE": "çatlak diş cracked tooth vertikal kök kırığı vertical root fracture",
-    "IMMATURE_OR_OPEN_APEX": "açık apeks open apex immatür revitalizasyon rejeneratif apeksifikasyon",
+    "IMMATURE_OR_OPEN_APEX": "immatür kök gelişimi ve açık apeks open apex immature root",
     "SINUS_RELATION": "maksiller sinüs odontojenik sinüzit maxillary sinus",
-    "CBCT_COMPLEXITY": "CBCT perforasyon kırık alet iyileşmeyen apikal periodontitis kompleks anatomi",
+    "CBCT_COMPLEXITY": "CBCT ile üç boyutlu değerlendirme gerektirebilen kompleks anatomi veya komplikasyon",
     "ENDODONTIC_TREATMENT_TECHNIQUE": "kanal tedavisi RCT enstrümantasyon irrigasyon obturasyon",
-    "PERIODONTAL_BONE_LOSS": "periodontal kemik kaybı furkasyon cep ataşman kaybı periodontitis",
+    "PERIODONTAL_BONE_LOSS": "alveoler destek dokuda klinik olarak anlamlı kemik kaybı",
     "PERI_IMPLANT_DISEASE": "peri-implant mukozitis peri-implantitis implant çevresi kemik kaybı kanama",
-    "EDENTULISM": "dişsizlik edentül alan tam dişsizlik kısmi dişsizlik protez",
-    "IMPLANT_PROSTHODONTICS": "implant üstü protez yükleme primer stabilite overdenture sabit implant restorasyonu",
+    "EDENTULISM": "dişsizlik edentül alan",
+    "IMPLANT_PROSTHODONTICS": "implant üstü protetik restorasyon veya mevcut implant-protez ilişkisi; yalnız implant varlığı değildir",
     "TOOTH_WEAR_OR_STRUCTURAL_LOSS": "aşınma tooth wear ileri diş dokusu kaybı restorabilite ferrule oklüzal rehabilitasyon",
     "IMPACTED_OR_ERUPTION_ISSUE": "gömülü diş impaksiyon ektopik sürme sürme bozukluğu gömülü kanin",
     "THIRD_MOLAR": "üçüncü molar yirmi yaş dişi gömülü molar perikoronitis",
-    "SUSPICIOUS_ORAL_LESION": "iyileşmeyen ülser lökoplaki eritroplaki indürasyon oral lezyon malignite şüphesi",
+    "SUSPICIOUS_ORAL_LESION": "persistan veya klinik olarak şüpheli oral lezyon malignite açısından değerlendirme gereksinimi",
     "BIOPSY_OR_PATHOLOGY_NEED": "biyopsi histopatoloji patoloji örnekleme oral lezyon",
     "TMJ_DISORDER": "TME TMD artralji myalji eklem sesi ağız açmada kısıtlılık",
     "NEUROPATHIC_PAIN_FEATURES": "nöropatik ağrı yanma elektriklenme allodini parestezi sinir hasarı",
-    "SEDATION_OR_AIRWAY": "sedasyon genel anestezi hava yolu airway monitorizasyon nitröz oksit",
-    "RADIOGRAPHIC_DECISION": "radyografi görüntüleme bitewing periapikal panoramik CBCT endikasyon doz optimizasyonu",
-    "PEDIATRIC_BEHAVIOR": "çocuk davranış yönlendirme kooperasyon dental kaygı sedasyon gereksinimi",
+    "SEDATION_OR_AIRWAY": "sedasyon veya genel anestezi bağlamında hava yolu ve monitorizasyon gereksinimi",
+    "RADIOGRAPHIC_DECISION": "dental görüntüleme seçimi endikasyon gerekçelendirme ve radyografik değerlendirme",
+    "PEDIATRIC_BEHAVIOR": "çocuk hastada davranış yönlendirme kooperasyon veya dental kaygı",
     "DEVELOPING_OCCLUSION": "karma dentisyon gelişen oklüzyon çapraz kapanış yer darlığı sürme bozukluğu interceptif",
     "ORTHODONTIC_RETENTION": "ortodontik retansiyon retainer relaps sabit retainer hareketli retainer",
-    "CARIES_RISK_PREVENTION": "çürük riski florür sealant SDF önleme remineralizasyon",
+    "CARIES_RISK_PREVENTION": "çürük riski koruyucu yaklaşım önleme ve remineralizasyon",
     "MRONJ_RISK": "MRONJ antirezorptif bisfosfonat denosumab çene osteonekrozu",
     "CANCER_THERAPY_ORAL_COMPLICATION": "kemoterapi radyoterapi oral mukozit kserostomi osteoradyonekroz enfeksiyon",
     "XEROSTOMIA_OR_HYPOSALIVATION": "kserostomi ağız kuruluğu hiposalivasyon tükürük azalması",
-    "PUBLIC_HEALTH_PREVENTION": "toplum ağız sağlığı epidemiyoloji florlu su enfeksiyon kontrolü antibiyotik stewardship",
+    "PUBLIC_HEALTH_PREVENTION": "toplum ağız sağlığı koruyucu program epidemiyoloji ve sağlık politikası bağlamı",
+    "COMPLETE_EDENTULISM": "tam dişsizlik complete edentulism complete edentulous total protez",
+    "PARTIAL_EDENTULISM": "kısmi dişsizlik parsiyel dişsizlik partial edentulism removable partial denture",
+    "PROSTHESIS_RETENTION_STABILITY": "protez retansiyon stabilite tutuculuk yetersizliği hareketli protez fonksiyon sorunu",
+    "ALVEOLAR_RIDGE_RESORPTION": "alveoler kret rezorpsiyonu edentül kret atrofisi alveolar ridge resorption",
+    "PRIMARY_TOOTH": "süt dişi primary tooth primary molar deciduous tooth",
+    "NONCAVITATED_CARIES": "nonkavite çürük noncavitated caries başlangıç lezyonu",
+    "GINGIVAL_RECESSION": "diş eti çekilmesi gingival recession mukogingival resesyon",
+    "IMPLANT_LOADING_DECISION": "implant yükleme zamanlaması loading timing primer stabilite immediate early conventional loading",
+    "OVERDENTURE_CANDIDACY": "tam dişsiz çenede implant tutuculu hareketli overdenture adaylığı ve retansiyon sorunu",
 }
 
 _CLINICAL_RAG_ROUTER_SCHEMA = {
@@ -196,6 +214,7 @@ def _build_router_prompt(
     chief_complaint: str,
     extra_text: str,
     stored_image_types: list[str],
+    image_count: int,
 ) -> str:
     allowed_specialties = ", ".join(SPECIALTIES.keys())
     allowed_signals = ", ".join(sorted(_ALLOWED_SIGNALS))
@@ -210,11 +229,21 @@ KRİTİK KURALLAR:
 - "mobilite yok", "sondlama normal", "palpasyon hassas değil" gibi normal/negatif bulgular
   tek başına o branşı öne çıkarmasın.
 - Sadece klinik karar desteğini anlamlı biçimde değiştirecek branşları seç; listeyi doldurmak için ekleme.
-- Görüntü tipini mümkün olduğunca spesifik sınıflandır: PERIAPICAL, BITEWING, PANORAMIC,
+- image_types yalnız GERÇEKTEN yüklenen görüntü dosyalarını sınıflandırsın. Klinik notta "radyografide" yazması tek başına yüklenmiş görüntü sayılmaz.
+  Yüklenen görüntü yoksa image_types boş dizi olsun. Görüntü varsa mümkün olduğunca spesifik sınıflandır: PERIAPICAL, BITEWING, PANORAMIC,
   CBCT, INTRAORAL, EXTRAORAL, CLINICAL_PHOTO, RADIOGRAPH veya OTHER.
 - signals yalnız POZİTİF ve karar değiştiren standart sinyalleri içersin. Normal/negatif bulgular signals'a girmez.
-- routing_findings alanına en fazla 6 kısa gözlem yaz; görüntü ve klinik metinden birlikte çıkar ve negasyonu koru.
-  Örn: "pulpa yakın derin restorasyon", "soğuk testi sonrası uzamış ağrı", "periodontal sondlama normal".
+- RESORPTION yalnız diş/kök rezorpsiyonudur. Edentül alveoler kret rezorpsiyonu için ALVEOLAR_RIDGE_RESORPTION kullan.
+- IMPLANT_PROSTHODONTICS yalnız implant üstü restorasyon/protez, yükleme veya protetik sorun gerçekten varsa kullan; sadece ağızda implant bulunması yeterli değildir.
+- Tam dişsizlikte COMPLETE_EDENTULISM, kısmi dişsizlikte PARTIAL_EDENTULISM kullan.
+- Hareketli/total protezde tutuculuk veya stabilite sorunu varsa PROSTHESIS_RETENTION_STABILITY kullan.
+- Tam dişsizlik + belirgin protez retansiyon/stabilite sorunu varsa OVERDENTURE_CANDIDACY düşünülebilir; bu bir tedavi kararı değil kaynak yönlendirme sinyalidir.
+- İmplant yükleme zamanlaması/primer stabilite gerçekten tartışılıyorsa IMPLANT_LOADING_DECISION kullan; mevcut implant hastalığında sırf implant var diye kullanma.
+- Süt dişi gerçekten söz konusuysa PRIMARY_TOOTH; nonkavite çürükte NONCAVITATED_CARIES; gingival çekilmede GINGIVAL_RECESSION kullan.
+- routing_findings alanına en fazla 6 kısa gözlem yaz ve HER gözlemi kaynağıyla etiketle:
+  [IMAGE] yalnız yüklenen görüntünün piksellerinden görülen bulgu, [TEXT] yalnız klinik nottan gelen bulgu, [BOTH] ikisinde de desteklenen bulgu.
+  Yüklenen gerçek görüntü sayısı 0 ise [IMAGE] veya [BOTH] kullanma. Negasyonu koru.
+  Örn: "[IMAGE] periapikal radyolüsensi", "[TEXT] soğuk testi sonrası uzamış ağrı", "[BOTH] implant çevresi krestal kemik kaybı".
 - routing_findings tanı değildir; kaynak seçimini yönlendiren kısa gözlemdir.
 
 İzin verilen uzmanlık anahtarları:
@@ -229,6 +258,7 @@ Diş: {tooth_number or "belirtilmemiş"}
 Şikayet: {chief_complaint or ""}
 Klinik not: {clinical_notes or ""}
 Ek hekim bilgisi: {extra_text or ""}
+Yüklenen gerçek görüntü sayısı: {int(image_count or 0)}
 Sistemde kayıtlı görüntü tipi: {", ".join(stored_image_types) or "OTHER"}
 """.strip()
 
@@ -248,6 +278,127 @@ def _fallback_text(value: str) -> str:
     for old, new in replacements.items():
         text = text.replace(old, new)
     return " ".join(text.split())
+
+
+def _refine_router_signals(
+    signals: list[str],
+    *,
+    clinical_notes: str = "",
+    chief_complaint: str = "",
+    routing_findings: list[str] | None = None,
+) -> list[str]:
+    """
+    Fast deterministic signal cleanup/enrichment after multimodal AI routing.
+
+    This does not diagnose. It only prevents broad signals from polluting source
+    selection and adds high-confidence context signals that can be recovered
+    from the clinical text/routing findings without another model call.
+    """
+    refined = [
+        item for item in _unique(signals or [])
+        if item in _ALLOWED_SIGNALS
+    ]
+    evidence = _fallback_text(
+        " ".join([
+            clinical_notes or "",
+            chief_complaint or "",
+            " ".join(routing_findings or []),
+        ])
+    )
+
+    def has(*phrases: str) -> bool:
+        return any(_fallback_text(p) in evidence for p in phrases)
+
+    def add(signal: str) -> None:
+        if signal in _ALLOWED_SIGNALS and signal not in refined:
+            refined.append(signal)
+
+    def remove(signal: str) -> None:
+        while signal in refined:
+            refined.remove(signal)
+
+    complete = has(
+        "tam dissizlik", "tam dişsizlik", "complete edentulism",
+        "complete edentulous", "total protez", "complete denture",
+    )
+    partial = has(
+        "kismi dissizlik", "kısmi dişsizlik", "parsiyel dissizlik",
+        "parsiyel dişsizlik", "partial edentulism", "partial edentulous",
+        "hareketli bolumlu", "hareketli bölümlü",
+    )
+    prosthesis_problem = has("protez", "denture", "prosthesis") and has(
+        "retansiyon", "tutuculuk", "stabilite", "retention", "stability",
+        "cigneme guclugu", "çiğneme güçlüğü",
+    )
+    ridge_resorption = (has("kret", "ridge", "alveoler", "alveolar") and has("rezorpsiyon", "resorption", "atrofi", "atrophy")) or has(
+        "kret rezorpsiyonu", "alveoler kret rezorpsiyonu",
+        "alveolar ridge resorption", "ridge resorption",
+        "ridge atrophy", "kret atrofisi",
+    )
+    root_resorption = has(
+        "kok rezorpsiyonu", "kök rezorpsiyonu", "root resorption",
+        "internal resorption", "external resorption", "servikal rezorpsiyon",
+    )
+    implant_loading = has(
+        "implant yukleme", "implant yükleme", "loading timing", "loading protocol",
+        "primer stabilite", "primary stability", "immediate loading",
+        "early loading", "conventional loading", "hemen yukleme", "hemen yükleme",
+    )
+    explicit_overdenture = has("overdenture", "locator", "implant tutuculu hareketli")
+    implant_prosthetic_evidence = has(
+        "implant ustu protez", "implant üstü protez", "implant prosthesis",
+        "implant-supported prosthesis", "abutment", "dayanak", "overdenture",
+        "locator", "implant crown", "implant kuron", "implant kopru",
+        "implant köprü", "protetik", "prosthodontic",
+    ) or prosthesis_problem or implant_loading or complete or partial
+
+    if complete:
+        add("EDENTULISM")
+        add("COMPLETE_EDENTULISM")
+        remove("PARTIAL_EDENTULISM")
+    elif partial:
+        add("EDENTULISM")
+        add("PARTIAL_EDENTULISM")
+        remove("COMPLETE_EDENTULISM")
+
+    if prosthesis_problem:
+        add("PROSTHESIS_RETENTION_STABILITY")
+    if ridge_resorption:
+        add("ALVEOLAR_RIDGE_RESORPTION")
+        if not root_resorption:
+            remove("RESORPTION")
+    if root_resorption:
+        add("RESORPTION")
+
+    if has("sut disi", "süt dişi", "primary tooth", "primary molar", "deciduous tooth"):
+        add("PRIMARY_TOOTH")
+    if has("nonkavite", "noncavitated", "non cavitated", "baslangic curuk", "başlangıç çürük"):
+        add("NONCAVITATED_CARIES")
+    if has("gingival recession", "dis eti cekilmesi", "diş eti çekilmesi", "mukogingival", "gingival recesyon"):
+        add("GINGIVAL_RECESSION")
+    if implant_loading:
+        add("IMPLANT_LOADING_DECISION")
+    if explicit_overdenture or (complete and prosthesis_problem):
+        add("OVERDENTURE_CANDIDACY")
+        add("IMPLANT_PROSTHODONTICS")
+
+    # Existing implant disease is not a prosthodontic/loading signal by itself.
+    if "IMPLANT_PROSTHODONTICS" in refined and not implant_prosthetic_evidence:
+        remove("IMPLANT_PROSTHODONTICS")
+    if "IMPLANT_LOADING_DECISION" in refined and not implant_loading:
+        remove("IMPLANT_LOADING_DECISION")
+
+    # High-confidence peri-implant disease pattern can be reconstructed from
+    # text/findings if the multimodal model omitted the standardized code.
+    implant_context = has("implant", "peri implant", "peri-implant")
+    inflammatory = has("kanama", "bleeding", "suppurasyon", "suppuration", "purulence")
+    pocket_or_loss = has("cep", "pocket", "sondlama", "probing", "kemik kaybi", "kemik kaybı", "bone loss")
+    if implant_context and inflammatory and pocket_or_loss:
+        add("PERI_IMPLANT_DISEASE")
+        if has("kemik kaybi", "kemik kaybı", "bone loss", "krestal"):
+            add("PERIODONTAL_BONE_LOSS")
+
+    return refined[:16]
 
 
 def _fallback_specialty_hints(
@@ -553,6 +704,7 @@ def route_clinical_case(
         chief_complaint=chief_complaint,
         extra_text=extra_text,
         stored_image_types=stored_types,
+        image_count=len(paths),
     )
 
     ai_specialties: list[str] = []
@@ -602,6 +754,15 @@ def route_clinical_case(
             if token in _ALLOWED_SIGNALS
         ][:10]
         routing_findings = _unique(data.get("routing_findings") or [])[:6]
+        if not paths:
+            ai_image_types = []
+
+        signals = _refine_router_signals(
+            signals,
+            clinical_notes=clinical_notes,
+            chief_complaint=chief_complaint,
+            routing_findings=routing_findings,
+        )
 
         if not ai_specialties:
             raise ValueError("AI router geçerli uzmanlık seçmedi.")
@@ -622,9 +783,17 @@ def route_clinical_case(
             elapsed_ms=round((time.perf_counter() - started) * 1000, 1),
         )
 
+    if route_mode == "fallback":
+        signals = _refine_router_signals(
+            signals,
+            clinical_notes=clinical_notes,
+            chief_complaint=chief_complaint,
+            routing_findings=routing_findings,
+        )
+
     resolved_types = _resolved_image_types(ai_image_types, stored_types)
     canonical_signal_text = "\n".join(
-        _SIGNAL_CANONICAL_TEXT[item]
+        f"{item}: {_SIGNAL_CANONICAL_TEXT[item]}"
         for item in signals
         if item in _SIGNAL_CANONICAL_TEXT
     )

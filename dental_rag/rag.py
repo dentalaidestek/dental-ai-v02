@@ -318,6 +318,104 @@ def _contains_any(normalized_query, phrases):
     return any(normalize(phrase) in normalized_query for phrase in phrases)
 
 
+def _extract_router_signals(query):
+    """Return exact standardized multimodal router codes embedded in the RAG query."""
+    return {
+        token
+        for token in re.findall(r"\b[A-Z][A-Z0-9_]{3,}\b", str(query or ""))
+        if "_" in token
+    }
+
+
+def _source_card_metadata_bonus(text, query):
+    """Extra weight for curated source title/Clinical tags matching the case.
+
+    The evidence cards already carry clinical tags.  Weighting those fields more
+    than incidental prose makes the ranking scale to every specialty without a
+    separate hard-coded rule for every individual patient.
+    """
+    raw = str(text or "")
+    title = ""
+    tags = ""
+    for line in raw.splitlines()[:18]:
+        stripped = line.strip()
+        if not title and stripped.startswith("# "):
+            title = stripped[2:]
+        lower = stripped.lower()
+        if lower.startswith("clinical tags:"):
+            tags = stripped.split(":", 1)[1]
+        elif stripped.upper().startswith("RAG ETİKETLERİ:") or stripped.upper().startswith("RAG ETIKETLERI:"):
+            tags = stripped.split(":", 1)[1]
+
+    query_tokens = tokenize(query)
+    tag_tokens = tokenize(tags)
+    title_tokens = tokenize(title)
+    tag_overlap = len(query_tokens.intersection(tag_tokens))
+    title_overlap = len(query_tokens.intersection(title_tokens))
+
+    # Clinical tags are intentionally concise and therefore receive the larger
+    # weight; caps prevent long generic tag lists from dominating.
+    return min(30, tag_overlap * 5) + min(12, title_overlap * 3)
+
+
+def _specialty_order_bonus(category, specialties):
+    """Respect the multimodal router's specialty order in cross-discipline cases."""
+    ordered = [str(item) for item in (specialties or [])]
+    if category not in ordered:
+        return 0
+    index = ordered.index(category)
+    return (32, 20, 12, 7, 4)[min(index, 4)]
+
+
+def _signal_conflict_guard(source, query):
+    """Block sources that contradict high-confidence standardized case context."""
+    source_upper = str(source or "").replace("\\", "/").upper()
+    signals = _extract_router_signals(query)
+
+    if "COMPLETE_EDENTULISM" in signals and "ACP_PDI_PARTIAL_EDENTULISM" in source_upper:
+        return False
+    if "PARTIAL_EDENTULISM" in signals and "ACP_PDI_COMPLETE_EDENTULISM" in source_upper:
+        return False
+
+    # Peri-implant disease is not an implant-loading/overdenture question unless
+    # the case independently carries a prosthetic/loading decision signal.
+    if "PERI_IMPLANT_DISEASE" in signals:
+        prosthetic_decision = bool(
+            signals.intersection({
+                "OVERDENTURE_CANDIDACY",
+                "IMPLANT_LOADING_DECISION",
+                "PROSTHESIS_RETENTION_STABILITY",
+                "COMPLETE_EDENTULISM",
+                "PARTIAL_EDENTULISM",
+            })
+        )
+        if not prosthetic_decision and (
+            "ITI_OVERDENTURE_LOADING" in source_upper
+            or "ITI_7TH_CONSENSUS_IMPLANT_PLACEMENT_LOADING" in source_upper
+            or "ITI_FIXED_EDENTULOUS_LOADING" in source_upper
+        ):
+            return False
+
+        # In a pure peri-implant case, natural-tooth periodontitis guidance is
+        # secondary and should not outrank the peri-implant guideline.
+        if "PERIODONTAL_PATHOSIS" not in signals and (
+            "EFP_STAGE_I_III_PERIODONTITIS" in source_upper
+            or "EFP_STAGE_IV_PERIODONTITIS" in source_upper
+        ):
+            return False
+
+    # Edentulous ridge atrophy must never activate the Endodontic root-resorption
+    # evidence card unless the router separately identified true root resorption.
+    if (
+        "ALVEOLAR_RIDGE_RESORPTION" in signals
+        and "RESORPTION" not in signals
+        and "endodontics/ESE_ROOT_RESORPTION".upper() in source_upper
+    ):
+        return False
+
+    return True
+
+
 def _endodontic_source_rules(source, query, specialties):
     """Return (eligible, source_bonus) for endodontic knowledge files.
 
@@ -552,32 +650,37 @@ def _specialty_source_rules(source, query, specialties):
     if category not in specialties:
         return False, 0
 
+    signals = _extract_router_signals(query)
+
     def has(*phrases):
         return _contains_any(normalized_query, phrases)
+
+    def sig(*names):
+        return any(name in signals for name in names)
 
     # PEDODONTICS
     if category == "pedodontics":
         child = has("çocuk", "pediatrik", "7 yaş", "8 yaş", "9 yaş", "süt dişi", "karma dentisyon", "primary tooth")
         if "AAPD_BEHAVIOR_GUIDANCE" in source_upper:
-            signal = child and has("davranış", "kooperasyon", "anksiyete", "korku", "behavior", "cooperation")
+            signal = sig("PEDIATRIC_BEHAVIOR") or (child and has("davranış", "kooperasyon", "anksiyete", "korku", "behavior", "cooperation"))
             return signal, 55 if signal else 0
         if "AAPD_DENTAL_TRAUMA_IADT" in source_upper:
-            signal = has("travma", "avulsiyon", "lüksasyon", "intrüzyon", "kırık", "trauma", "avulsion", "luxation")
+            signal = (sig("TRAUMA") and (sig("PEDIATRIC_DENTITION") or child)) or has("travma", "avulsiyon", "lüksasyon", "intrüzyon", "kırık", "trauma", "avulsion", "luxation")
             return signal, 54 if signal else 0
         if "AAPD_VPT_PRIMARY" in source_upper:
-            signal = has("süt dişi", "süt molar", "primary tooth", "primary molar") and has("pulpa", "pulp", "derin çürük", "deep caries")
+            signal = (sig("PRIMARY_TOOTH") and sig("PULPAL_INVOLVEMENT", "CARIES_OR_RESTORATIVE")) or (has("süt dişi", "süt molar", "primary tooth", "primary molar") and has("pulpa", "pulp", "derin çürük", "deep caries"))
             return signal, 56 if signal else 0
         if "AAPD_NONVITAL_PRIMARY" in source_upper:
-            signal = has("süt dişi", "süt molar", "primary tooth", "primary molar") and has("nekroz", "nekrotik", "nonvital", "fistül", "abscess")
+            signal = (sig("PRIMARY_TOOTH") and sig("PULP_TEST_ABNORMAL", "APICAL_PATHOSIS")) or (has("süt dişi", "süt molar", "primary tooth", "primary molar") and has("nekroz", "nekrotik", "nonvital", "fistül", "abscess"))
             return signal, 54 if signal else 0
         if "AAPD_VPT_PERMANENT" in source_upper:
-            signal = child and has("daimi", "permanent", "immatür", "immature", "open apex", "açık apeks") and has("pulpa", "pulp", "derin çürük", "deep caries")
+            signal = (sig("PEDIATRIC_DENTITION", "IMMATURE_OR_OPEN_APEX") and not sig("PRIMARY_TOOTH") and sig("PULPAL_INVOLVEMENT", "CARIES_OR_RESTORATIVE")) or (child and has("daimi", "permanent", "immatür", "immature", "open apex", "açık apeks") and has("pulpa", "pulp", "derin çürük", "deep caries"))
             return signal, 52 if signal else 0
         if "AAPD_DEVELOPING_DENTITION" in source_upper:
-            signal = has("karma dentisyon", "sürme", "eruption", "crossbite", "çapraşıklık", "developing dentition")
+            signal = sig("DEVELOPING_OCCLUSION") or has("karma dentisyon", "sürme", "eruption", "crossbite", "çapraşıklık", "developing dentition")
             return signal, 46 if signal else 0
         if "AAPD_PIT_FISSURE_SEALANTS" in source_upper:
-            signal = has("fissür", "sealant", "örtücü", "nonkavite", "pit fissure")
+            signal = (sig("CARIES_RISK_PREVENTION", "NONCAVITATED_CARIES") and child) or has("fissür", "sealant", "örtücü", "nonkavite", "pit fissure")
             return signal, 44 if signal else 0
         if "AAPD_FLUORIDE" in source_upper:
             signal = has("flor", "fluoride", "koruyucu", "prevention")
@@ -588,10 +691,10 @@ def _specialty_source_rules(source, query, specialties):
     # RESTORATIVE
     if category == "restorative":
         if "ADA_RESTORATIVE_CARIES_CPG" in source_upper:
-            signal = has("çürük", "caries", "kavite", "selektif", "selective", "restorasyon", "restoration")
+            signal = sig("CARIES_OR_RESTORATIVE") or has("çürük", "caries", "kavite", "selektif", "selective", "restorasyon", "restoration")
             return signal, 55 if signal else 0
         if "ADA_NONRESTORATIVE_CARIES" in source_upper:
-            signal = has("sdf", "silver diamine", "nonrestoratif", "nonrestorative", "arrest", "nonkavite")
+            signal = sig("NONCAVITATED_CARIES") or has("sdf", "silver diamine", "nonrestoratif", "nonrestorative", "arrest", "nonkavite")
             return signal, 52 if signal else 0
         if "ADA_DIRECT_RESTORATIVE_MATERIALS" in source_upper:
             signal = has("kompozit", "composite", "cam iyonomer", "glass ionomer", "amalgam", "direkt restorasyon")
@@ -611,16 +714,16 @@ def _specialty_source_rules(source, query, specialties):
     # PERIODONTOLOGY
     if category == "periodontology":
         if "EFP_PERI_IMPLANT_DISEASES" in source_upper:
-            signal = has("peri-implant", "periimplant", "implant çevresi", "mukozit", "implantitis")
+            signal = sig("PERI_IMPLANT_DISEASE") or has("peri-implant", "periimplant", "implant çevresi", "mukozit", "implantitis")
             return signal, 58 if signal else 0
         if "EFP_STAGE_IV" in source_upper:
             signal = has("stage iv", "evre iv", "şiddetli mobilite", "masticatory dysfunction", "diş kaybı", "tooth loss")
             return signal, 54 if signal else 0
         if "EFP_STAGE_I_III" in source_upper:
-            signal = has("periodontitis", "periodontitis", "cep", "pocket", "kemik kaybı", "bone loss")
+            signal = (sig("PERIODONTAL_PATHOSIS") or (sig("PERIODONTAL_BONE_LOSS") and not sig("PERI_IMPLANT_DISEASE"))) or has("periodontitis", "periodontitis", "cep", "pocket", "kemik kaybı", "bone loss")
             return signal, 48 if signal else 0
         if "AAP_EFP_CLASSIFICATION" in source_upper:
-            signal = has("stage", "evre", "grade", "derece", "periodontitis", "kemik kaybı")
+            signal = sig("PERIODONTAL_PATHOSIS") or has("stage", "evre", "grade", "derece", "periodontitis", "kemik kaybı")
             return signal, 46 if signal else 0
         if "EFP_DIABETES" in source_upper:
             signal = has("diyabet", "diabetes", "hba1c", "glisemik")
@@ -629,7 +732,7 @@ def _specialty_source_rules(source, query, specialties):
             signal = has("kardiyovasküler", "cardiovascular", "kalp", "ateroskleroz")
             return signal, 50 if signal else 0
         if "EFP_MUCOGINGIVAL_RECESSION" in source_upper:
-            signal = has("recesyon", "recession", "çekilme", "keratinize", "mukogingival")
+            signal = sig("GINGIVAL_RECESSION") or has("recesyon", "recession", "çekilme", "keratinize", "mukogingival")
             return signal, 50 if signal else 0
         if "EFP_SUPPORTIVE_PERIODONTAL_CARE" in source_upper:
             signal = has("idame", "bakım", "supportive", "maintenance", "recall")
@@ -638,7 +741,7 @@ def _specialty_source_rules(source, query, specialties):
     # PROSTHODONTICS
     if category == "prosthodontics":
         if "ITI_OVERDENTURE_LOADING" in source_upper:
-            signal = has("overdenture", "implant destekli hareketli", "locator")
+            signal = sig("OVERDENTURE_CANDIDACY") or has("overdenture", "implant destekli hareketli", "locator")
             return signal, 58 if signal else 0
         if "ITI_FIXED_EDENTULOUS_LOADING" in source_upper:
             signal = has("tam ark sabit", "fixed full arch", "fixed edentulous", "all-on")
@@ -647,13 +750,13 @@ def _specialty_source_rules(source, query, specialties):
             signal = has("estetik bölge", "esthetic zone", "anterior implant", "immediate implant", "hemen yükleme")
             return signal, 54 if signal else 0
         if "ITI_7TH_CONSENSUS_IMPLANT_PLACEMENT_LOADING" in source_upper:
-            signal = has("implant", "yükleme", "loading", "placement")
+            signal = sig("IMPLANT_LOADING_DECISION") or has("implant yükleme", "implant loading", "loading protocol", "placement timing")
             return signal, 48 if signal else 0
         if "ACP_PDI_COMPLETE_EDENTULISM" in source_upper:
-            signal = has("tam dişsiz", "complete edentulous", "total protez", "complete denture")
+            signal = sig("COMPLETE_EDENTULISM") or has("tam dişsiz", "complete edentulous", "total protez", "complete denture")
             return signal, 52 if signal else 0
         if "ACP_PDI_PARTIAL_EDENTULISM" in source_upper:
-            signal = has("parsiyel", "partial edentulous", "kısmi dişsizlik", "hareketli bölümlü")
+            signal = (sig("PARTIAL_EDENTULISM") and not sig("COMPLETE_EDENTULISM")) or (not sig("COMPLETE_EDENTULISM") and has("parsiyel", "partial edentulous", "kısmi dişsizlik", "hareketli bölümlü"))
             return signal, 50 if signal else 0
         if "ACP_PDI_DENTATE" in source_upper:
             signal = has("dentate", "kron", "köprü", "fixed prosthesis", "sabit protez")
@@ -667,16 +770,16 @@ def _specialty_source_rules(source, query, specialties):
     # ORAL SURGERY
     if category == "oral_surgery":
         if "AAOMS_MRONJ" in source_upper:
-            signal = has("mronj", "osteonekroz", "bisfosfonat", "bisphosphonate", "denosumab", "antiresorptif")
+            signal = sig("MRONJ_RISK") or has("mronj", "osteonekroz", "bisfosfonat", "bisphosphonate", "denosumab", "antiresorptif")
             return signal, 60 if signal else 0
         if "AAOMS_THIRD_MOLAR" in source_upper:
-            signal = has("üçüncü molar", "20 yaş", "wisdom tooth", "gömülü", "impacted")
+            signal = sig("THIRD_MOLAR") or has("üçüncü molar", "20 yaş", "wisdom tooth", "gömülü", "impacted")
             return signal, 56 if signal else 0
         if "AAOMS_TMJ_INTRAARTICULAR" in source_upper:
-            signal = has("tme", "tmj", "intraartiküler", "intraarticular", "disk", "ankiloz")
+            signal = sig("TMJ_DISORDER") and has("cerrahi", "surgical", "intraartiküler", "intraarticular", "disk", "ankiloz") or has("tme", "tmj", "intraartiküler", "intraarticular", "disk", "ankiloz")
             return signal, 54 if signal else 0
         if "AAOMS_ORAL_LESION_BIOPSY" in source_upper:
-            signal = has("biyopsi", "biopsy", "oral lezyon", "kitle", "ülser")
+            signal = sig("BIOPSY_OR_PATHOLOGY_NEED") or has("biyopsi", "biopsy", "oral lezyon", "kitle", "ülser")
             return signal, 50 if signal else 0
         if "AAOMS_ORAL_MUCOSAL_DYSPLASIA" in source_upper:
             signal = has("displazi", "dysplasia", "lökoplaki", "leukoplakia", "eritroplaki", "erythroplakia")
@@ -694,7 +797,7 @@ def _specialty_source_rules(source, query, specialties):
     # ORTHODONTICS
     if category == "orthodontics":
         if "BOS_RETENTION" in source_upper:
-            signal = has("retainer", "retansiyon", "relaps", "relapse")
+            signal = sig("ORTHODONTIC_RETENTION") or has("retainer", "retansiyon", "relaps", "relapse")
             return signal, 58 if signal else 0
         if "BOS_ORTHODONTIC_RADIOGRAPHS" in source_upper:
             signal = has("sefalometri", "cephalometric", "panoramik", "radyografi", "radiograph")
@@ -706,7 +809,7 @@ def _specialty_source_rules(source, query, specialties):
             signal = has("travma", "trauma", "avulsiyon", "lüksasyon", "kırık diş")
             return signal, 52 if signal else 0
         if "BOS_RISKS_ORTHODONTIC_TREATMENT" in source_upper:
-            signal = has("rezorpsiyon", "resorption", "dekalsifikasyon", "white spot", "risk")
+            signal = (sig("RESORPTION") and sig("ORTHODONTIC_ISSUE")) or has("kök rezorpsiyonu", "root resorption", "dekalsifikasyon", "white spot", "ortodontik risk")
             return signal, 48 if signal else 0
         if "BOS_EXTRACTIONS_RISK" in source_upper:
             signal = has("çekimli ortodonti", "extraction", "premolar çekimi")
@@ -718,7 +821,7 @@ def _specialty_source_rules(source, query, specialties):
     # ORAL DIAGNOSIS & RADIOLOGY
     if category == "oral_diagnosis_radiology":
         if "AAOMR_IMPLANT_IMAGING" in source_upper:
-            signal = has("implant", "kemik genişliği", "sinir komşuluğu", "implant planning")
+            signal = (sig("RADIOGRAPHIC_DECISION") and sig("IMPLANT_PROSTHODONTICS")) or has("implant planning", "implant planlama", "kemik genişliği", "sinir komşuluğu")
             return signal, 60 if signal else 0
         if "AAOMR_CBCT_ORTHODONTICS" in source_upper:
             signal = has("ortodonti", "orthodontic", "gömülü kanin", "impacted canine") and has("cbct", "3d", "konik")
@@ -727,7 +830,7 @@ def _specialty_source_rules(source, query, specialties):
             signal = has("insidental", "incidental", "beklenmeyen bulgu")
             return signal, 52 if signal else 0
         if "ADA_CARIES_RADIOGRAPHIC_DETECTION" in source_upper:
-            signal = has("çürük", "caries", "bitewing", "aproksimal")
+            signal = (sig("RADIOGRAPHIC_DECISION") and sig("CARIES_OR_RESTORATIVE")) or has("çürük", "caries", "bitewing", "aproksimal")
             return signal, 54 if signal else 0
         if "SEDENTEXCT_CBCT" in source_upper:
             signal = has("cbct", "konik ışın", "cone beam", "3d görüntü")
@@ -741,22 +844,22 @@ def _specialty_source_rules(source, query, specialties):
     # ORAL MEDICINE
     if category == "oral_medicine":
         if "AAOM_BURNING_MOUTH" in source_upper:
-            signal = has("burning mouth", "yanan ağız", "ağız yanması")
+            signal = sig("NEUROPATHIC_PAIN_FEATURES") and sig("OROFACIAL_PAIN") or has("burning mouth", "yanan ağız", "ağız yanması")
             return signal, 58 if signal else 0
         if "AAOM_LICHEN_PLANUS" in source_upper:
             signal = has("liken planus", "lichen planus", "lichenoid")
             return signal, 58 if signal else 0
         if "ADA_XEROSTOMIA" in source_upper:
-            signal = has("kserostomi", "xerostomia", "ağız kuruluğu", "hiposalivasyon")
+            signal = sig("XEROSTOMIA_OR_HYPOSALIVATION") or has("kserostomi", "xerostomia", "ağız kuruluğu", "hiposalivasyon")
             return signal, 56 if signal else 0
         if "MASCC_ISOO_MUCOSITIS" in source_upper:
-            signal = has("mukozit", "mucositis", "kemoterapi", "radyoterapi")
+            signal = sig("CANCER_THERAPY_ORAL_COMPLICATION") or has("mukozit", "mucositis", "kemoterapi", "radyoterapi")
             return signal, 56 if signal else 0
         if "NCI_ORAL_COMPLICATIONS_CANCER_THERAPY" in source_upper:
             signal = has("kemoterapi", "radyoterapi", "kanser tedavisi", "cancer therapy")
             return signal, 52 if signal else 0
         if "AAOMS_ORAL_LESION_EVALUATION" in source_upper:
-            signal = has("oral lezyon", "ülser", "ulcer", "kitle", "2 hafta", "3 hafta")
+            signal = sig("SUSPICIOUS_ORAL_LESION") or has("oral lezyon", "ülser", "ulcer", "kitle", "2 hafta", "3 hafta")
             return signal, 50 if signal else 0
         if "WHO_ORAL_CANCER_RISK" in source_upper:
             signal = has("tütün", "tobacco", "alkol", "alcohol", "kanser riski", "oral cancer risk")
@@ -766,7 +869,7 @@ def _specialty_source_rules(source, query, specialties):
 
     # ORAL PATHOLOGY
     if category == "oral_pathology":
-        opmd = has("opmd", "lökoplaki", "leukoplakia", "eritroplaki", "erythroplakia", "premalign", "potansiyel malign")
+        opmd = sig("SUSPICIOUS_ORAL_LESION") and has("lökoplaki", "leukoplakia", "eritroplaki", "erythroplakia", "opmd") or has("opmd", "lökoplaki", "leukoplakia", "eritroplaki", "erythroplakia", "premalign", "potansiyel malign")
         if "WHO_OPMD_FRAMEWORK" in source_upper:
             return opmd, 66 if opmd else 0
         if "AAOMS_ORAL_MUCOSAL_DYSPLASIA" in source_upper:
@@ -791,10 +894,10 @@ def _specialty_source_rules(source, query, specialties):
     # OROFACIAL PAIN
     if category == "orofacial_pain":
         if "DC_TMD" in source_upper:
-            signal = has("tmd", "tme", "tmj", "myalji", "myalgia", "artralji", "arthralgia")
+            signal = sig("TMJ_DISORDER") or has("tmd", "tme", "tmj", "myalji", "myalgia", "artralji", "arthralgia")
             return signal, 60 if signal else 0
         if "IASP_NEUROPATHIC_PAIN" in source_upper:
-            signal = has("nöropatik", "neuropathic", "allodini", "allodynia", "parestezi", "yanıcı ağrı")
+            signal = sig("NEUROPATHIC_PAIN_FEATURES") or has("nöropatik", "neuropathic", "allodini", "allodynia", "parestezi", "yanıcı ağrı")
             return signal, 58 if signal else 0
         if "AAPD_TMD_CHILDREN" in source_upper:
             signal = has("çocuk", "adölesan", "pediatric", "adolescent") and has("tmd", "tme", "tmj")
@@ -813,7 +916,7 @@ def _specialty_source_rules(source, query, specialties):
     # DENTAL ANESTHESIOLOGY
     if category == "dental_anesthesiology":
         if "AAP_AAPD_PEDIATRIC_SEDATION" in source_upper:
-            signal = has("çocuk", "pediatric") and has("sedasyon", "sedation")
+            signal = sig("SEDATION_OR_AIRWAY") and (sig("PEDIATRIC_DENTITION") or has("çocuk", "pediatric")) or (has("çocuk", "pediatric") and has("sedasyon", "sedation"))
             return signal, 60 if signal else 0
         if "ADA_NITROUS_OXIDE" in source_upper:
             signal = has("nitröz", "nitrous", "n2o")
@@ -825,7 +928,7 @@ def _specialty_source_rules(source, query, specialties):
             signal = has("açlık", "fasting", "npo") and has("sedasyon", "anestezi", "anesthesia")
             return signal, 56 if signal else 0
         if "ADA_SEDATION_GENERAL_ANESTHESIA" in source_upper:
-            signal = has("sedasyon", "sedation", "genel anestezi", "general anesthesia", "deep sedation")
+            signal = sig("SEDATION_OR_AIRWAY") or has("sedasyon", "sedation", "genel anestezi", "general anesthesia", "deep sedation")
             return signal, 54 if signal else 0
         if "AAOMS_OFFICE_ANESTHESIA" in source_upper:
             signal = has("ofis anestezi", "office anesthesia", "derin sedasyon", "deep sedation")
@@ -983,6 +1086,9 @@ def get_specialty_relevant_context(
         if category not in allowed_categories:
             continue
 
+        if not _signal_conflict_guard(source, query):
+            continue
+
         source_bonus = 0
         if category == "endodontics":
             source_allowed, source_bonus = _endodontic_source_rules(
@@ -1042,6 +1148,8 @@ def get_specialty_relevant_context(
             + int(category_priority.get(category, 0))
             + int(category_scores.get(category, 0)) * 2
             + int(source_bonus)
+            + int(_specialty_order_bonus(category, specialties))
+            + int(_source_card_metadata_bonus(result.get("text", ""), query))
         )
 
         ranked_results.append((adjusted_score, result))
