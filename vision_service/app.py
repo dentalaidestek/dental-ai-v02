@@ -99,3 +99,53 @@ async def analyze_image(
     finally:
         if temp_path:
             Path(temp_path).unlink(missing_ok=True)
+
+
+@app.get("/diagnostics/runtime/{stage}")
+def diagnostics_runtime(stage: str):
+    import subprocess
+    import sys
+
+    probes = {
+        "torch": """
+import resource
+print("BEFORE_MB", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, flush=True)
+import torch
+print("TORCH_OK", torch.__version__, flush=True)
+print("AFTER_MB", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, flush=True)
+""",
+        "ultralytics": """
+import resource
+print("BEFORE_MB", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, flush=True)
+from ultralytics import YOLO
+print("ULTRALYTICS_OK", flush=True)
+print("AFTER_MB", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, flush=True)
+""",
+    }
+
+    if stage not in probes:
+        raise HTTPException(
+            status_code=400,
+            detail="stage torch veya ultralytics olmalı",
+        )
+
+    try:
+        p = subprocess.run(
+            [sys.executable, "-c", probes[stage]],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+
+        return {
+            "stage": stage,
+            "returncode": p.returncode,
+            "stdout": p.stdout,
+            "stderr": p.stderr[-3000:],
+        }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "stage": stage,
+            "timeout": True,
+        }
