@@ -97,6 +97,7 @@ def main():
     fd, temp_name = tempfile.mkstemp(
         prefix="dental-vision-",
         suffix=".pt",
+        dir=DEST.parent,
     )
     os.close(fd)
 
