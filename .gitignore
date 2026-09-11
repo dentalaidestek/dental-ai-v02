@@ -54,3 +54,4 @@ gallery_src/
 models/vision/*.pt
 
 vision_service/__pycache__/
+.vision_backups/
