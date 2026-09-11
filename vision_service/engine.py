@@ -77,6 +77,17 @@ def get_model():
             raise VisionError(f"Model bulunamadı: {MODEL_PATH}")
 
         try:
+            _trace("torch_import_start")
+            t_torch = time.perf_counter()
+
+            import torch
+
+            _trace(
+                "torch_import_ok",
+                seconds=round(time.perf_counter() - t_torch, 3),
+                torch_version=torch.__version__,
+            )
+
             _trace("ultralytics_import_start")
             t0 = time.perf_counter()
 
