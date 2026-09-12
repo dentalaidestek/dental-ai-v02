@@ -29,5 +29,5 @@ jobs:
           python-version: "3.12"
       - name: Install lightweight checkpoint inspectors
         run: python -m pip install --disable-pip-version-check -q huggingface_hub onnx
-      - name: Verify Liodon remote ONNX weight and exact class metadata
-        run: python tests/check_liodon_remote_model.py
+      - name: Verify Liodon remote ONNX weight, hash and exact class metadata
+        run: PYTHONPATH=. python tests/check_liodon_remote_model.py
