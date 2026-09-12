@@ -17,6 +17,8 @@ class ModelSource:
     purpose: str
     revision: str | None = None
     sha256: str | None = None
+    license_id: str | None = None
+    commercial_use_allowed: bool | None = None
 
 
 OPTIONAL_MODEL_SOURCES = {
@@ -27,6 +29,8 @@ OPTIONAL_MODEL_SOURCES = {
         filename="dental_disease_panoramic_yolov8seg/best.pt",
         local_name="dental_findings_31_seg.pt",
         purpose="31-class panoramic findings helper/direct detector",
+        license_id="other",
+        commercial_use_allowed=None,
     ),
     "liodon3": ModelSource(
         key="liodon3",
@@ -37,6 +41,8 @@ OPTIONAL_MODEL_SOURCES = {
         purpose="compact panoramic control detector for caries/periapical lesion/impacted tooth",
         revision="93c7037b11275d94cbf6c2f5d1ea86452910dc3a",
         sha256="4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71",
+        license_id="cc-by-nc-4.0",
+        commercial_use_allowed=False,
     ),
     "panoreader_periapical": ModelSource(
         key="panoreader_periapical",
@@ -66,6 +72,21 @@ OPTIONAL_MODEL_SOURCES = {
         purpose="tooth-ROI restoration classifier fallback",
         revision="eafdac009916ef640d4d9c92c128aae40552fde4",
     ),
+    "insmile12": ModelSource(
+        key="insmile12",
+        architecture="ultralytics",
+        repo_candidates=("joshuarebo/insmile-dental-yolo",),
+        filename="best.pt",
+        local_name="insmile_dental_yolov8m_12.pt",
+        purpose=(
+            "12-class panoramic control/helper detector; exact direct use limited to labels "
+            "whose semantics match the canonical catalog"
+        ),
+        revision="e9e6f6cae68aacead47354410eb0b09b3821de03",
+        sha256="03975059587922897221d96d504c217a3c1447798bb25fa88429671dd24f9a9d",
+        license_id=None,
+        commercial_use_allowed=None,
+    ),
     "tvem11": ModelSource(
         key="tvem11",
         architecture="maskdino",
@@ -74,6 +95,8 @@ OPTIONAL_MODEL_SOURCES = {
         local_name="tvem_11diseases.pth",
         purpose="TVEM 11-disease specialist; deep caries/residual root/pontic",
         revision="29081baac6b09aab4214477e72e80b25ce0a3eef",
+        license_id="cc-by-nc-4.0",
+        commercial_use_allowed=False,
     ),
     "tvem_bone_loss": ModelSource(
         key="tvem_bone_loss",
@@ -84,6 +107,8 @@ OPTIONAL_MODEL_SOURCES = {
         purpose="TVEM generic bone-loss helper",
         revision="a3e5b74ceb23fd947e9b27dfc3980c22fbf33e27",
         sha256="faea0004a39ef2420369066c546df7a29e2e1906c0247ccb45da44eafd629ddc",
+        license_id="cc-by-nc-4.0",
+        commercial_use_allowed=False,
     ),
     "tvem_canal_sinus": ModelSource(
         key="tvem_canal_sinus",
@@ -94,6 +119,8 @@ OPTIONAL_MODEL_SOURCES = {
         purpose="TVEM mandibular-canal/maxillary-sinus anatomy helper",
         revision="0c7dd7ef2404da22889210be9e57a69f0d285052",
         sha256="5e4678afd21c7aa5675982227cc7826b220eefbb98b0dc774dd20077b9d41ad6",
+        license_id="cc-by-nc-4.0",
+        commercial_use_allowed=False,
     ),
     "tvem_periapical3": ModelSource(
         key="tvem_periapical3",
@@ -104,6 +131,8 @@ OPTIONAL_MODEL_SOURCES = {
         purpose="periapical lesion subtype helper",
         revision="48be5960dafe950c498fba9075b627fa95acba3f",
         sha256="5bd28f3ab57815c74b52176b0a2b4fa6d147d602f8b057ad12f19585814fc8d0",
+        license_id="cc-by-nc-4.0",
+        commercial_use_allowed=False,
     ),
 }
 
@@ -111,3 +140,13 @@ OPTIONAL_MODEL_SOURCES = {
 def optional_model_path(key: str) -> Path:
     source = OPTIONAL_MODEL_SOURCES[key]
     return BASE_DIR / key / source.local_name
+
+
+def production_license_blockers() -> list[str]:
+    """Return optional sources that must not silently become commercial production dependencies."""
+
+    return sorted(
+        key
+        for key, source in OPTIONAL_MODEL_SOURCES.items()
+        if source.commercial_use_allowed is not True
+    )
