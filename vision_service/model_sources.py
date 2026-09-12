@@ -15,6 +15,7 @@ class ModelSource:
     filename: str
     local_name: str
     purpose: str
+    sha256: str | None = None
 
 
 OPTIONAL_MODEL_SOURCES = {
@@ -28,11 +29,12 @@ OPTIONAL_MODEL_SOURCES = {
     ),
     "liodon3": ModelSource(
         key="liodon3",
-        architecture="ultralytics",
+        architecture="ultralytics_onnx",
         repo_candidates=("liodon-ai/dental-panoramic-detector",),
-        filename="best.pt",
-        local_name="liodon_panorama3.pt",
+        filename="best.onnx",
+        local_name="liodon_panorama3.onnx",
         purpose="compact panoramic control detector for caries/periapical lesion/impacted tooth",
+        sha256="4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71",
     ),
     "panoreader_boneloss": ModelSource(
         key="panoreader_boneloss",
