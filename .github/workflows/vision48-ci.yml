@@ -33,3 +33,5 @@ jobs:
         run: PYTHONPATH=. python tests/check_liodon_remote_model.py
       - name: Probe current public dental checkpoint repositories
         run: PYTHONPATH=. python tests/probe_hyunchan_hf_models.py
+      - name: Inspect current bone-loss and periapical ONNX checkpoints
+        run: PYTHONPATH=. python tests/check_hyunchan_ready_models.py
