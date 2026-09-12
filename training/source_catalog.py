@@ -61,6 +61,55 @@ SOURCES = {
         ),
         note="3k-image, 87-label instance-segmentation source; exact labels include SHORTENED RCT, ROOT CANAL BEYOND APEX, Unerupted, Calculus and VERTICAL BONE LOSS.",
     ),
+    "roboflow_apex_resorption": TrainingSource(
+        key="roboflow_apex_resorption",
+        access="hosted_model_or_export_required",
+        locator="https://universe.roboflow.com/tooth-g5ed6/apex-detection-resorption",
+        modality="DENTAL_XRAY",
+        target_signals=("UNERUPTED_TOOTH", "ROOT_RESORPTION_GENERIC"),
+        note=(
+            "Public 2026 project with explicit Unerupted Tooth and Resorbed Apex labels. "
+            "Do not split generic/resorbed-apex evidence into EXTERNAL_ROOT_RESORPTION or "
+            "INTERNAL_ROOT_RESORPTION. Local checkpoint SHA and panoramic-only suitability "
+            "must be verified before runtime use."
+        ),
+    ),
+    "roboflow_lamina_pdl": TrainingSource(
+        key="roboflow_lamina_pdl",
+        access="hosted_model_or_export_required",
+        locator="https://universe.roboflow.com/ld-1rvyz/lamina-dura-loss-5-mx-and-mn-2jxyv",
+        modality="DENTAL_XRAY",
+        target_signals=("LOSS_OF_LAMINA_DURA", "WIDENED_PDL", "FURCATION_BONE_LOSS"),
+        note=(
+            "Research candidate with lamina-dura/PDL/furcation-related labels. Exact raw-label "
+            "semantics, image modality, export rights and a local checkpoint hash are required "
+            "before any canonical mapping or PASS."
+        ),
+    ),
+    "roboflow_furcation_detection": TrainingSource(
+        key="roboflow_furcation_detection",
+        access="hosted_model_or_export_required",
+        locator="https://universe.roboflow.com/m-owrxi/furcation-detection",
+        modality="DENTAL_XRAY",
+        target_signals=("FURCATION_BONE_LOSS",),
+        note=(
+            "Public trained YOLO project (reported 3,204 images). Treat as a research candidate, "
+            "not a local ready weight, until checkpoint export, SHA256, license, panoramic "
+            "modality and positive/negative runtime behavior are verified."
+        ),
+    ),
+    "roboflow_tmj_morphology": TrainingSource(
+        key="roboflow_tmj_morphology",
+        access="hosted_model_or_export_required",
+        locator="https://universe.roboflow.com/tesis-lana/tmj-anotation-all-zl04j",
+        modality="DENTAL_XRAY",
+        target_signals=("TMJ_MORPHOLOGY_HELPER",),
+        note=(
+            "TMJ morphology research candidate. Class names such as FLATTENED must not be "
+            "mapped directly to CONDYLAR_FLATTENING until anatomy/class-code semantics and "
+            "panoramic applicability are independently verified."
+        ),
+    ),
     "pandent": TrainingSource(
         key="pandent",
         access="gated_manual_approval",
