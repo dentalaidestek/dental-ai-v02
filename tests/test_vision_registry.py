@@ -8,6 +8,7 @@ from vision_service.motors.registry48 import MOTOR_SPECS
 from vision_service.motors.tvem import TVEM11_TO_CANONICAL, TVEM_ANATOMY_TO_HELPER
 from vision_service.motors.yolo31 import RAW_TO_CANONICAL, RAW_TO_HELPER
 from vision_service.readiness import PINNED_DIRECT_FINDINGS, readiness_snapshot
+from vision_service.validation_matrix import VALIDATION_TARGETS, by_lane
 
 
 class VisionRegistryTests(unittest.TestCase):
@@ -21,6 +22,17 @@ class VisionRegistryTests(unittest.TestCase):
             self.assertNotIn(spec.strategy, {"placeholder", "todo", "unknown"})
             self.assertTrue(spec.sources)
             self.assertTrue(spec.description)
+
+    def test_validation_matrix_covers_every_finding_exactly_once(self):
+        self.assertEqual(set(VALIDATION_TARGETS), set(FINDING_CATALOG))
+        self.assertEqual(len(VALIDATION_TARGETS), 48)
+        allowed = {"pinned_direct", "ready_candidate", "composed_candidate", "train_required"}
+        self.assertTrue(all(target.lane in allowed for target in VALIDATION_TARGETS.values()))
+        self.assertEqual(len(by_lane("pinned_direct")), 9)
+        self.assertGreater(len(by_lane("train_required")), 0)
+        for target in VALIDATION_TARGETS.values():
+            self.assertTrue(target.primary_sources)
+            self.assertTrue(target.note)
 
     def test_pinned_baseline_is_nine_and_not_misreported_as_48(self):
         self.assertEqual(len(PINNED_DIRECT_FINDINGS), 9)
