@@ -6,29 +6,28 @@ Bu belge `work/vision48-3d-ready` dalının gerçek durumunu gösterir. Producti
 
 - `main` değiştirilmedi.
 - Render servisleri `main` dalını izlediği için bu dal production'a deploy edilmez.
-- PR #1 draft durumunda tutulur; 48/48 gerçek runtime PASS tamamlanmadan merge edilmez.
-- Runtime/klinik doğrulama yazılım kapsamından ayrı tutulur.
+- PR #1 draft durumunda tutulur; 48/48 gerçek runtime kapsamı tamamlanmadan merge edilmez.
 
-## Durumun üç ayrı sayacı
+## Mevcut doğrulanmış taban korunur
 
-1. **Motor yazılım kapsamı: 48/48.** `vision_service/motors/registry48.py` içindeki katalogda her canonical bulgu için bir inference stratejisi vardır; placeholder/TODO yoktur.
-2. **Pinned gerçek-weight runtime availability: 9/48.** Repo içinde sabit weight + canonical mapping ile yapılandırılmış taban bulgular `MISSING_TOOTH`, `IMPACTED_TOOTH`, `FILLING`, `CROWN`, `BRIDGE`, `IMPLANT`, `ROOT_CANAL_TREATED`, `CARIES`, `PERIAPICAL_RADIOLUCENCY` bulgularıdır. Bu yalnız modelin çalıştırılabilir biçimde mevcut olduğunu söyler.
-3. **Evidence-backed runtime PASS: 0/48.** `vision_service/runtime_validation.py` içindeki kanıt defterinde gerçek pozitif panorama + negatif/false-positive kontrolü + exact mapping + threshold + gerekiyorsa FDI lokalizasyonu + fail-isolation kanıtı olmadan hiçbir bulgu PASS sayılmaz.
+Mevcut panoramik sistemde daha önce test edilmiş baseline geri sıfırlanmaz:
 
-Bu üç sayı birbirinin yerine kullanılmaz. Model dosyasının diskte bulunması, import edilmesi veya tek başına confidence üretmesi klinik/runtime PASS değildir. 48/48 kanıt tamamlanmadan `runtime_validation_complete=true` olmaz.
+- **9 pinned bulgu** mevcut gerçek weight + canonical mapping ile çalışır ve daha önce doğrulanmıştır: `MISSING_TOOTH`, `IMPACTED_TOOTH`, `FILLING`, `CROWN`, `BRIDGE`, `IMPLANT`, `ROOT_CANAL_TREATED`, `CARIES`, `PERIAPICAL_RADIOLUCENCY`.
+- **FDI / diş numaralandırma motoru** da daha önce test edilmiş mevcut baseline'ın parçasıdır; Vision48 genişletmesi bunu yeniden “test edilmemiş” durumuna düşürmez.
+- Bu nedenle yeni Vision48 çalışmasının görevi mevcut doğrulanmış tabanı silmek veya yeniden sıfırdan kanıtlamak değil, kalan bulguları gerçek motorlarla tamamlayıp doğrulamaktır.
 
 ## 48/48 motor uygulama kapsamı
 
-`vision_service/pipeline.py` pinned modelleri, optional hazır modelleri, TVEM kontrol motorlarını ve composed/CV motorlarını tek panoramik pipeline'da toplar.
+`vision_service/motors/registry48.py` ve `vision_service/pipeline.py` tarafında 48 canonical bulgunun yazılım stratejileri tanımlıdır. Pinned modeller, optional hazır modeller, TVEM kontrol motorları ve composed/CV motorları tek panoramik pipeline'da birleşir.
 
-Her bulgunun kabul yolu ayrıca `vision_service/validation_matrix.py` içinde dört lane'den biriyle tanımlıdır:
+Her bulgunun devam yolu `vision_service/validation_matrix.py` içinde dört lane'den biriyle tanımlıdır:
 
-- `pinned_direct`: mevcut sabit checkpoint,
-- `ready_candidate`: hazır public checkpoint adayı var; exact-label + gerçek pozitif/negatif panorama testi sonrası kabul edilir,
+- `pinned_direct`: mevcut doğrulanmış/pinned baseline,
+- `ready_candidate`: hazır public checkpoint adayı var; exact-label ve gerçek runtime kontrolü sonrası kabul edilir,
 - `composed_candidate`: doğrulanmış üst motorlar + FDI/anatomi/ölçüm ile deterministik çıktı; validation zayıfsa dedicated training'e düşer,
 - `train_required`: yeterince spesifik hazır panoramik checkpoint henüz doğrulanmadı; dedicated eğitim gerekir.
 
-Böylece yalnız kod yazılmış olması yanlışlıkla “motor klinik olarak hazır” anlamına gelmez. `derived48.py` içindeki görüntü heuristikleri de aynı katı runtime PASS sözleşmesine tabidir.
+`derived48.py` içindeki görüntü heuristikleri de doğrulanmadan hazır bulgu sayılmaz; fakat bu durum mevcut 9 bulgu ve FDI baseline'ını geriye düşürmez.
 
 ## Sabit/pinned mevcut modeller
 
@@ -36,7 +35,7 @@ Böylece yalnız kod yazılmış olması yanlışlıkla “motor klinik olarak h
 - Findings9: `YOLO26_Dental_Findings_9.pt`
 - Impacted tooth: `OralGuard_Impacted.pt`
 
-Bu ağırlıkların varlığı 9 bulguyu otomatik PASS yapmaz; gerçek test fixture kanıtı ayrıca kaydedilir.
+Bu baseline korunur; mevcut 9 bulgu gereksiz yere yeniden eğitilmez.
 
 ## Hazır optional kaynaklar
 
@@ -67,7 +66,7 @@ Doğrulanmış örnekler:
 - InsMile `best.pt` revision + SHA256,
 - TVEM bone-loss, canal/sinus ve periapical3 revision + SHA256.
 
-Lisans uygunluğu model varlığından ayrıdır. Liodon ve TVEM kaynakları `CC-BY-NC-4.0` olduğundan ticari production bağımlılığı olarak otomatik onaylanmaz. InsMile lisansı net doğrulanmadığı için production açısından `unknown` blocker olarak kalır. `readiness_snapshot()` bu optional production-license blocker listesini açıkça raporlar.
+Lisans uygunluğu model varlığından ayrıdır. Liodon ve TVEM kaynakları `CC-BY-NC-4.0` olduğundan ticari production bağımlılığı olarak otomatik onaylanmaz. InsMile lisansı net doğrulanmadığı için production açısından `unknown` blocker olarak kalır.
 
 ## Eğitim hattı
 
@@ -92,28 +91,10 @@ Yayınlarda güçlü performans gösterip açık checkpointi bulunmayan sınıfl
 
 Fotoğraf tabanlı 3D katmanı branch üzerinde ayrı tutulur ve tanısal CBCT rekonstrüksiyonu gibi sunulmaz. Amaç, ağız içi fotoğraflardan hasta sunumu için etkileşimli dental visualization üretmektir. Radyografik Vision48 motorlarının tanısal görüntü katmanıyla karıştırılmaz.
 
-## Doğrulama ayrımı
-
-`readiness_snapshot()` ayrı ayrı şunları raporlar:
-
-- `implementation_complete`,
-- `runtime_available_baseline_total`,
-- `runtime_validation_pass_total`,
-- `runtime_validation_pending_total`,
-- `runtime_validation_complete`,
-- `validation_lane_counts`,
-- `training_required_codes`,
-- `ready_candidate_codes`,
-- `composed_candidate_codes`,
-- indirilen/eksik optional model dosyaları,
-- optional production-license blocker listesi.
-
-Tek görüntü confidence değeri accuracy veya mAP olarak raporlanmaz.
-
-## Güncel bitirme durumu
+## Güncel durum
 
 - Motor stratejisi: **48/48 implementation complete**.
-- Kanıtlı runtime PASS: **0/48**; repo içinde gerçek pozitif/negatif panorama fixture seti henüz yoktur.
-- CI contract/model-source kontrolleri yeşildir.
+- Önceden doğrulanmış baseline: **9 pinned bulgu + FDI/diş numaralandırma** korunur.
+- Kalan Vision48 bulgularının gerçek runtime doğrulaması tamamlanmadan panoramik sistem için `48/48 PANORAMIC PASS` denmez.
+- CI contract/model-source kontrolleri yeşil tutulur.
 - Production deploy **YAPILMADI**.
-- `48/48 PANORAMIC PASS` ifadesi bu kanıt defteri gerçekten 48 PASS olmadan kullanılmayacaktır.
