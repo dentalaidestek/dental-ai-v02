@@ -10,13 +10,11 @@ Bu belge `work/vision48-3d-ready` dalının gerçek durumunu gösterir. Producti
 
 ## 48/48 motor uygulama kapsamı
 
-`vision_service/motors/registry48.py` içinde katalogdaki **48 bulgunun tamamı** için çalışan bir inference stratejisi tanımlıdır. Stratejiler üç türdür:
+`vision_service/motors/registry48.py` içinde katalogdaki **48 bulgunun tamamı** için bir inference stratejisi tanımlıdır. `vision_service/pipeline.py` pinned modelleri, optional hazır modelleri, TVEM kontrol modellerini ve composed/CV motorlarını tek panoramik pipeline'da toplar.
 
-1. hazır/doğrudan checkpoint,
-2. birden fazla motor çıktısını birleştiren composed motor,
-3. FDI/anatomi + görüntü geometrisinden türetilen CV motoru.
+Stratejiler üç türdür: hazır/doğrudan checkpoint, birden fazla motor çıktısını birleştiren composed motor ve FDI/anatomi + görüntü geometrisinden türetilen CV motoru. Hiçbir katalog kaydı placeholder/TODO olarak bırakılmaz.
 
-Hiçbir katalog kaydı placeholder/TODO olarak bırakılmaz. Bu, 48 bulgunun yazılım motorunun hazır olduğu anlamına gelir; **48/48 klinik doğrulama yapıldığı anlamına gelmez**.
+Bu **48/48 yazılım motor kapsamıdır**; gerçek panoramik pozitif/negatif smoke doğrulaması ayrı aşamadır ve sonuçlar görülmeden klinik başarı iddiası yapılmaz.
 
 ## Sabit/pinned mevcut modeller
 
@@ -24,40 +22,25 @@ Hiçbir katalog kaydı placeholder/TODO olarak bırakılmaz. Bu, 48 bulgunun yaz
 - Findings9: `YOLO26_Dental_Findings_9.pt`
 - Impacted tooth: `OralGuard_Impacted.pt`
 
-Bu üç kaynakla doğrudan baseline canonical kapsama 9 bulgudur.
+## Hazır optional kaynaklar
 
-## Hazır optional model kaynakları
-
-Manifest ayrıca şunları hazırlar:
+Manifest şunları destekler:
 
 - 31-class panoramic detector/segmenter,
 - Panoramic Reader bone-loss/periapical/tooth-seg/restoration modelleri,
 - TVEM 11-disease, bone-loss, mandibular-canal/maxillary-sinus ve periapical specialist checkpointleri.
 
-TVEM label adları OPGAgent kategori dosyalarındaki gerçek isimlerle eşlenir; `class_0` tahmini üzerinden hastalık adı uydurulmaz.
+TVEM exact labels kullanılır: `Deep Caries`, `Residual Root`, `Pontic`, `Mandibular Canal`, `Maxillary Sinus`, `Bone Loss`. `class_0` üzerinden hastalık adı uydurulmaz.
 
-## Motor kompozisyonları
+## Genel AI'ya görüntü gönderilmez
 
-Örnekler:
-
-- `IMPACTED_THIRD_MOLAR` = impacted detector + FDI third-molar konumu,
-- `IMPLANT_SUPPORTED_CROWN` = implant + crown/abutment mekansal eşleşmesi,
-- `RECURRENT_CARIES` = caries + restoration margin ilişkisi,
-- `MANDIBULAR_CANAL_PROXIMITY` = kanal anatomisi + kök/diş mesafesi,
-- periodontal alt tipler = generic bone-loss + crest/defect/furcation geometrisi,
-- internal/external resorption = generic resorption + root contour/lumen geometry,
-- sinus bulguları = sinus maskesi + iç opasite/basal bant analizi,
-- condyle bulguları = bilateral superior contour/shape analizi.
+`app/ai_provider.py` artık legacy `image_paths` parametresini kabul etse bile dış API isteğine hiçbir görüntü/piksel/base64 eklemez. Dosyalar yalnız yerel DentalAI görüntü motorlarında işlenir. Dış klinik AI'ya yalnız yapılandırılmış Vision48 JSON + klinik/RAG metni gider. CI testi external payload içinde `inline_data` bulunmadığını doğrular.
 
 ## Doğrulama ayrımı
 
-`readiness_snapshot()` iki ayrı kavramı raporlar:
+`readiness_snapshot()` iki farklı durumu raporlar:
 
 - `implementation_complete`: 48 motorun kod/strateji kapsamı,
 - `runtime_validation_complete`: gerçek pozitif/negatif panoramik smoke testleri.
 
-Böylece katalogda isim olması veya tek görüntüde yüksek confidence görülmesi 48/48 PASS diye raporlanamaz.
-
-## Genel AI kuralı
-
-Panoramik pikseli GPT/Gemini/başka genel multimodal modele gönderilmeyecek. Genel AI yalnız özel görüntü motorlarının yapılandırılmış çıktısı + FDI/ölçüm + klinik metin alacak.
+Tek görüntü confidence değeri accuracy/mAP olarak raporlanmaz.
