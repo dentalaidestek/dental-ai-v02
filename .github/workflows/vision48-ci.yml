@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Compile application code
-        run: python -m compileall -q vision_service app tests
-      - name: Vision48, no-pixels-to-LLM and photo3D contract tests
-        run: python -m unittest tests.test_vision_registry tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract -v
+      - name: Compile application and training code
+        run: python -m compileall -q vision_service app tests training
+      - name: Vision48, training-plan, no-pixels-to-LLM and photo3D contract tests
+        run: python -m unittest tests.test_vision_registry tests.test_training_sources tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract -v
