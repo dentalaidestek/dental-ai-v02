@@ -26,6 +26,14 @@ OPTIONAL_MODEL_SOURCES = {
         local_name="dental_findings_31_seg.pt",
         purpose="31-class panoramic findings helper/direct detector",
     ),
+    "liodon3": ModelSource(
+        key="liodon3",
+        architecture="ultralytics",
+        repo_candidates=("liodon-ai/dental-panoramic-detector",),
+        filename="best.pt",
+        local_name="liodon_panorama3.pt",
+        purpose="compact panoramic control detector for caries/periapical lesion/impacted tooth",
+    ),
     "panoreader_boneloss": ModelSource(
         key="panoreader_boneloss",
         architecture="ultralytics",
