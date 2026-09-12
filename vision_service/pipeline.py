@@ -117,12 +117,11 @@ def _attach_fdi(item: dict, teeth: list[dict]) -> None:
             item["fdi"] = tooth.get("fdi")
 
 
-def _normalize_boneloss(raw_class: str, **_) -> dict:
-    return {"type": "helper", "signal": "BONE_LOSS_GENERIC"}
-
-
 def _normalize_periapical(raw_class: str, **_) -> dict:
-    return {"type": "finding", "finding_code": "PERIAPICAL_RADIOLUCENCY"}
+    normalized = str(raw_class or "").strip().casefold().replace("_", " ").replace("-", " ")
+    if "periapical" in normalized and ("lesion" in normalized or "radioluc" in normalized):
+        return {"type": "finding", "finding_code": "PERIAPICAL_RADIOLUCENCY"}
+    return {"type": "unknown", "raw_class": str(raw_class or "")}
 
 
 def _merge_findings(items: list[dict]) -> list[dict]:
@@ -174,12 +173,11 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
             execution.append({"motor": model_key, "status": "error"})
 
-    # Optional ready public YOLO sources. Missing files are a normal pre-runtime state.
+    # Optional ready public YOLO/ONNX sources. Missing files are a normal pre-runtime state.
     # Each source keeps the resolution/NMS settings it was trained or published with.
     optional_jobs = [
         ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28")), 0.45, 1280),
         ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.45")), 0.35, 640),
-        ("panoreader_boneloss", _normalize_boneloss, float(os.getenv("DENTAL_BONELOSS_CONF", "0.30")), 0.45, 1280),
         ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30")), 0.45, 1280),
     ]
     for key, normalizer, conf, iou, imgsz in optional_jobs:
