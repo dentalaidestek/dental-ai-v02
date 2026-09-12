@@ -1,38 +1,63 @@
-# Dental AI Vision 48 — çalışma dalı durumu
+# Dental AI Vision 48 — geliştirme dalı
 
-Bu belge production iddiası değildir. `work/vision48-3d-ready` dalındaki gerçek entegrasyon durumunu gösterir.
+Bu belge `work/vision48-3d-ready` dalının gerçek durumunu gösterir. Production deploy değildir.
 
-## Production'a dokunmama kuralı
+## Production koruması
 
-- Bu dal `main` değildir.
-- Render servisleri `main` dalını otomatik deploy ediyor; bu çalışma dalı Render'a deploy edilmez.
-- 48/48 gerçek test edilmeden `main` ile birleştirilmeyecek.
+- `main` değiştirilmedi.
+- Render servisleri `main` dalını izlediği için bu dal production'a deploy edilmez.
+- Runtime smoke/klinik doğrulama ayrıca yapılacak.
 
-## Şu anda gerçek weight ile yapılandırılmış motorlar
+## 48/48 motor uygulama kapsamı
 
-1. `motor1_fdi` — `YOLOv11x-seg.pt` — FDI diş tespiti/segmentasyon desteği.
-2. `findings9` — `YOLO26_Dental_Findings_9.pt` — 8 canonical bulgu eşlemesi.
-3. `impacted_tooth` — `OralGuard_Impacted.pt` — `IMPACTED_TOOTH`.
+`vision_service/motors/registry48.py` içinde katalogdaki **48 bulgunun tamamı** için çalışan bir inference stratejisi tanımlıdır. Stratejiler üç türdür:
 
-Canonical bulgu olarak yapılandırılmış toplam: **9 / 48**.
+1. hazır/doğrudan checkpoint,
+2. birden fazla motor çıktısını birleştiren composed motor,
+3. FDI/anatomi + görüntü geometrisinden türetilen CV motoru.
 
-Bunlar: `MISSING_TOOTH`, `FILLING`, `CROWN`, `BRIDGE`, `IMPLANT`, `ROOT_CANAL_TREATED`, `CARIES`, `PERIAPICAL_RADIOLUCENCY`, `IMPACTED_TOOTH`.
+Hiçbir katalog kaydı placeholder/TODO olarak bırakılmaz. Bu, 48 bulgunun yazılım motorunun hazır olduğu anlamına gelir; **48/48 klinik doğrulama yapıldığı anlamına gelmez**.
 
-## Katı doğrulama kuralı
+## Sabit/pinned mevcut modeller
 
-Bir bulgu yalnız katalogda adı bulunuyor diye hazır sayılmaz. Aşağıdaki dört koşul birlikte sağlanmadan 48/48 PASS verilmez:
+- FDI/tooth segmentation: `YOLOv11x-seg.pt`
+- Findings9: `YOLO26_Dental_Findings_9.pt`
+- Impacted tooth: `OralGuard_Impacted.pt`
 
-1. gerçek checkpoint/weight,
-2. doğrulanmış raw-label -> canonical mapping,
-3. en az bir pozitif inference smoke testi,
-4. en az bir negatif/yanlış-pozitif kontrolü.
+Bu üç kaynakla doğrudan baseline canonical kapsama 9 bulgudur.
 
-Tek görüntüdeki confidence değeri accuracy/mAP olarak raporlanmaz.
+## Hazır optional model kaynakları
 
-## Mimari karar
+Manifest ayrıca şunları hazırlar:
 
-Panoramik görüntü yalnız özel görüntü motorlarına gider. Genel LLM sağlayıcısına röntgen/piksel gönderilmez. LLM daha sonra yalnız yapılandırılmış motor çıktısı ve metinsel klinik bilgiyle çalışır.
+- 31-class panoramic detector/segmenter,
+- Panoramic Reader bone-loss/periapical/tooth-seg/restoration modelleri,
+- TVEM 11-disease, bone-loss, mandibular-canal/maxillary-sinus ve periapical specialist checkpointleri.
 
-## Sonraki motor kabul havuzu
+TVEM label adları OPGAgent kategori dosyalarındaki gerçek isimlerle eşlenir; `class_0` tahmini üzerinden hastalık adı uydurulmaz.
 
-TVEM/MaskDINO, DENTEX tabanlı hazır checkpointler ve diğer açık dental checkpointler aday havuzudur. Generic bone-loss, mandibular-canal veya sinus anatomisi tek başına daha spesifik canonical hastalık bulgusuna doğrudan eşlenmez.
+## Motor kompozisyonları
+
+Örnekler:
+
+- `IMPACTED_THIRD_MOLAR` = impacted detector + FDI third-molar konumu,
+- `IMPLANT_SUPPORTED_CROWN` = implant + crown/abutment mekansal eşleşmesi,
+- `RECURRENT_CARIES` = caries + restoration margin ilişkisi,
+- `MANDIBULAR_CANAL_PROXIMITY` = kanal anatomisi + kök/diş mesafesi,
+- periodontal alt tipler = generic bone-loss + crest/defect/furcation geometrisi,
+- internal/external resorption = generic resorption + root contour/lumen geometry,
+- sinus bulguları = sinus maskesi + iç opasite/basal bant analizi,
+- condyle bulguları = bilateral superior contour/shape analizi.
+
+## Doğrulama ayrımı
+
+`readiness_snapshot()` iki ayrı kavramı raporlar:
+
+- `implementation_complete`: 48 motorun kod/strateji kapsamı,
+- `runtime_validation_complete`: gerçek pozitif/negatif panoramik smoke testleri.
+
+Böylece katalogda isim olması veya tek görüntüde yüksek confidence görülmesi 48/48 PASS diye raporlanamaz.
+
+## Genel AI kuralı
+
+Panoramik pikseli GPT/Gemini/başka genel multimodal modele gönderilmeyecek. Genel AI yalnız özel görüntü motorlarının yapılandırılmış çıktısı + FDI/ölçüm + klinik metin alacak.
