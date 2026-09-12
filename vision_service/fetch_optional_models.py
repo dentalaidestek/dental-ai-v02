@@ -40,14 +40,20 @@ def fetch_one(key: str) -> Path:
     errors = []
     for repo in source.repo_candidates:
         try:
-            cached = Path(hf_hub_download(repo_id=repo, filename=source.filename))
+            cached = Path(
+                hf_hub_download(
+                    repo_id=repo,
+                    filename=source.filename,
+                    revision=source.revision,
+                )
+            )
             _verify(cached, source.sha256)
             shutil.copy2(cached, dest)
             _verify(dest, source.sha256)
             return dest
         except Exception as exc:
             dest.unlink(missing_ok=True)
-            errors.append(f"{repo}: {type(exc).__name__}: {exc}")
+            errors.append(f"{repo}@{source.revision or 'main'}: {type(exc).__name__}: {exc}")
 
     raise RuntimeError(f"{key} indirilemedi: " + " | ".join(errors))
 
