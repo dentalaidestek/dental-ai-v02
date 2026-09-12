@@ -3,10 +3,11 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-from pathlib import Path
 
 import onnx
-from huggingface_hub import hf_hub_download
+
+from vision_service.fetch_optional_models import fetch_one
+from vision_service.model_sources import OPTIONAL_MODEL_SOURCES
 
 
 EXPECTED = {0: "caries", 1: "periapical_lesion", 2: "impacted_tooth"}
@@ -26,13 +27,11 @@ def _parse_names(raw: str):
 
 
 def main():
-    path = Path(
-        hf_hub_download(
-            repo_id="liodon-ai/dental-panoramic-detector",
-            filename="best.onnx",
-        )
-    )
+    source = OPTIONAL_MODEL_SOURCES["liodon3"]
+    path = fetch_one("liodon3")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != source.sha256:
+        raise AssertionError(f"Liodon hash mismatch after fetch: {digest}")
     model = onnx.load(str(path), load_external_data=False)
     metadata = {item.key: item.value for item in model.metadata_props}
     names = _parse_names(metadata.get("names", ""))
