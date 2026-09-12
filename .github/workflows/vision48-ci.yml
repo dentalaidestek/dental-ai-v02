@@ -17,5 +17,5 @@ jobs:
           python-version: "3.12"
       - name: Compile application code
         run: python -m compileall -q vision_service app tests
-      - name: Vision 48 and no-pixels-to-LLM contract tests
-        run: python -m unittest tests.test_vision_registry tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy -v
+      - name: Vision48, no-pixels-to-LLM and photo3D contract tests
+        run: python -m unittest tests.test_vision_registry tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract -v
