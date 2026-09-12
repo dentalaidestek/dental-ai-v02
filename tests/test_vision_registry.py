@@ -50,6 +50,7 @@ class VisionRegistryTests(unittest.TestCase):
 
     def test_optional_sources_have_real_locations(self):
         self.assertGreaterEqual(len(OPTIONAL_MODEL_SOURCES), 9)
+        self.assertNotIn("panoreader_boneloss", OPTIONAL_MODEL_SOURCES)
         for key, source in OPTIONAL_MODEL_SOURCES.items():
             self.assertEqual(key, source.key)
             self.assertTrue(source.repo_candidates)
@@ -59,8 +60,12 @@ class VisionRegistryTests(unittest.TestCase):
         self.assertIn("liodon-ai/dental-panoramic-detector", liodon.repo_candidates)
         self.assertEqual(liodon.filename, "best.onnx")
         self.assertEqual(liodon.local_name, "liodon_panorama3.onnx")
+        self.assertEqual(liodon.revision, "93c7037b11275d94cbf6c2f5d1ea86452910dc3a")
         self.assertEqual(liodon.sha256, "4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71")
-        self.assertIn("chemahc94/dental-periapical", OPTIONAL_MODEL_SOURCES["panoreader_periapical"].repo_candidates)
+        periapical = OPTIONAL_MODEL_SOURCES["panoreader_periapical"]
+        self.assertEqual(periapical.repo_candidates, ("chemahc94/Dental_012",))
+        self.assertEqual(periapical.filename, "best.onnx")
+        self.assertEqual(periapical.sha256, "fd8ff1ec6c50cbb2342a70b7c3689311d3ac77370a9db6fed6db9465eac07f48")
 
     def test_known_ready_model_labels_map_without_class0_guessing(self):
         self.assertEqual(TVEM11_TO_CANONICAL["Deep Caries"], "DEEP_CARIES")
