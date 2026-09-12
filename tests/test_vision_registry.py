@@ -3,6 +3,7 @@ import unittest
 from vision_service.model_manifest import MODEL_ASSETS
 from vision_service.model_sources import OPTIONAL_MODEL_SOURCES
 from vision_service.motors.catalog import FINDING_CATALOG
+from vision_service.motors.liodon3 import RAW_TO_CANONICAL as LIODON3_TO_CANONICAL
 from vision_service.motors.registry48 import MOTOR_SPECS
 from vision_service.motors.tvem import TVEM11_TO_CANONICAL, TVEM_ANATOMY_TO_HELPER
 from vision_service.motors.yolo31 import RAW_TO_CANONICAL, RAW_TO_HELPER
@@ -36,12 +37,14 @@ class VisionRegistryTests(unittest.TestCase):
             int(digest, 16)
 
     def test_optional_sources_have_real_locations(self):
-        self.assertGreaterEqual(len(OPTIONAL_MODEL_SOURCES), 8)
+        self.assertGreaterEqual(len(OPTIONAL_MODEL_SOURCES), 9)
         for key, source in OPTIONAL_MODEL_SOURCES.items():
             self.assertEqual(key, source.key)
             self.assertTrue(source.repo_candidates)
             self.assertTrue(source.filename)
             self.assertTrue(source.local_name)
+        self.assertIn("liodon-ai/dental-panoramic-detector", OPTIONAL_MODEL_SOURCES["liodon3"].repo_candidates)
+        self.assertIn("chemahc94/dental-periapical", OPTIONAL_MODEL_SOURCES["panoreader_periapical"].repo_candidates)
 
     def test_known_ready_model_labels_map_without_class0_guessing(self):
         self.assertEqual(TVEM11_TO_CANONICAL["Deep Caries"], "DEEP_CARIES")
@@ -51,6 +54,9 @@ class VisionRegistryTests(unittest.TestCase):
         self.assertEqual(TVEM_ANATOMY_TO_HELPER["Maxillary Sinus"], "MAXILLARY_SINUS_HELPER")
         self.assertEqual(RAW_TO_CANONICAL["Post-core"], "ENDO_POST")
         self.assertEqual(RAW_TO_HELPER["Root resorption"], "ROOT_RESORPTION_GENERIC")
+        self.assertEqual(LIODON3_TO_CANONICAL["caries"], "CARIES")
+        self.assertEqual(LIODON3_TO_CANONICAL["periapical_lesion"], "PERIAPICAL_RADIOLUCENCY")
+        self.assertEqual(LIODON3_TO_CANONICAL["impacted_tooth"], "IMPACTED_TOOTH")
 
 
 if __name__ == "__main__":
