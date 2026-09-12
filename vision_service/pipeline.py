@@ -12,6 +12,7 @@ from vision_service.model_sources import optional_model_path
 from vision_service.motors.catalog import FINDING_CATALOG
 from vision_service.motors.findings9 import normalize_class as normalize_findings9
 from vision_service.motors.impacted_tooth import normalize_class as normalize_impacted
+from vision_service.motors.liodon3 import normalize_class as normalize_liodon3
 from vision_service.motors.yolo31 import normalize_class as normalize_yolo31
 from vision_service.optional_yolo import run_source
 from vision_service.readiness import readiness_snapshot
@@ -174,17 +175,19 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
             execution.append({"motor": model_key, "status": "error"})
 
     # Optional ready public YOLO sources. Missing files are a normal pre-runtime state.
+    # Each source keeps the resolution/NMS settings it was trained or published with.
     optional_jobs = [
-        ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28"))),
-        ("panoreader_boneloss", _normalize_boneloss, float(os.getenv("DENTAL_BONELOSS_CONF", "0.30"))),
-        ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30"))),
+        ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28")), 0.45, 1280),
+        ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.45")), 0.35, 640),
+        ("panoreader_boneloss", _normalize_boneloss, float(os.getenv("DENTAL_BONELOSS_CONF", "0.30")), 0.45, 1280),
+        ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30")), 0.45, 1280),
     ]
-    for key, normalizer, conf in optional_jobs:
+    for key, normalizer, conf, iou, imgsz in optional_jobs:
         if not optional_model_path(key).is_file():
             execution.append({"motor": key, "status": "not_downloaded"})
             continue
         try:
-            f, h = run_source(image_path, key, normalizer, conf=conf)
+            f, h = run_source(image_path, key, normalizer, conf=conf, iou=iou, imgsz=imgsz)
             findings.extend(f); helpers.extend(h)
             execution.append({"motor": key, "status": "ok", "findings": len(f), "helpers": len(h)})
         except Exception as exc:
