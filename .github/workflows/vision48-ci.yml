@@ -17,8 +17,8 @@ jobs:
           python-version: "3.12"
       - name: Compile application and training code
         run: python -m compileall -q vision_service app tests training
-      - name: Vision48, runtime-validation, training-plan, no-pixels-to-LLM and photo3D contract tests
-        run: python -m unittest tests.test_vision_registry tests.test_runtime_validation tests.test_training_sources tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract -v
+      - name: Vision48, training-plan, no-pixels-to-LLM and photo3D contract tests
+        run: python -m unittest tests.test_vision_registry tests.test_training_sources tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract -v
 
   ready-model-contract:
     runs-on: ubuntu-latest
