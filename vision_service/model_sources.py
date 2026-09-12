@@ -15,6 +15,7 @@ class ModelSource:
     filename: str
     local_name: str
     purpose: str
+    revision: str | None = None
     sha256: str | None = None
 
 
@@ -34,39 +35,36 @@ OPTIONAL_MODEL_SOURCES = {
         filename="best.onnx",
         local_name="liodon_panorama3.onnx",
         purpose="compact panoramic control detector for caries/periapical lesion/impacted tooth",
+        revision="93c7037b11275d94cbf6c2f5d1ea86452910dc3a",
         sha256="4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71",
-    ),
-    "panoreader_boneloss": ModelSource(
-        key="panoreader_boneloss",
-        architecture="ultralytics",
-        repo_candidates=("chemahc94/dental-boneloss", "schemahc94/dental-boneloss"),
-        filename="best.pt",
-        local_name="panoreader_boneloss.pt",
-        purpose="generic alveolar bone-loss helper",
     ),
     "panoreader_periapical": ModelSource(
         key="panoreader_periapical",
-        architecture="ultralytics",
-        repo_candidates=("chemahc94/dental-periapical", "schemahc94/dental-periapical"),
-        filename="best.pt",
-        local_name="panoreader_periapical.pt",
-        purpose="periapical lesion fallback detector",
+        architecture="ultralytics_onnx",
+        repo_candidates=("chemahc94/Dental_012",),
+        filename="best.onnx",
+        local_name="panoreader_periapical.onnx",
+        purpose="one-class periapical-lesion fallback detector",
+        revision="53ef2e5396e065d7d4371fc0c208d90830c5cdb6",
+        sha256="fd8ff1ec6c50cbb2342a70b7c3689311d3ac77370a9db6fed6db9465eac07f48",
     ),
     "panoreader_toothseg": ModelSource(
         key="panoreader_toothseg",
-        architecture="ultralytics",
-        repo_candidates=("chemahc94/dental-seg", "schemahc94/dental-seg"),
-        filename="yolov8m-seg.pt",
-        local_name="panoreader_toothseg.pt",
+        architecture="ultralytics_onnx",
+        repo_candidates=("chemahc94/Dental-AI-Models",),
+        filename="Dental_008/yolov8m_best.onnx",
+        local_name="panoreader_toothseg.onnx",
         purpose="alternate tooth segmentation helper",
+        revision="05b496bc104c77601f5f472eb00b0fa646b75895",
     ),
     "panoreader_restoration": ModelSource(
         key="panoreader_restoration",
-        architecture="torchvision_state_dict",
-        repo_candidates=("chemahc94/dental-restoration", "schemahc94/dental-restoration"),
-        filename="best.pt",
-        local_name="panoreader_restoration.pt",
+        architecture="onnx_classifier",
+        repo_candidates=("chemahc94/Dental_013",),
+        filename="best_restoration_model.onnx",
+        local_name="panoreader_restoration.onnx",
         purpose="tooth-ROI restoration classifier fallback",
+        revision="eafdac009916ef640d4d9c92c128aae40552fde4",
     ),
     "tvem11": ModelSource(
         key="tvem11",
