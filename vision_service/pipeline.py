@@ -12,6 +12,7 @@ from vision_service.model_sources import optional_model_path
 from vision_service.motors.catalog import FINDING_CATALOG
 from vision_service.motors.findings9 import normalize_class as normalize_findings9
 from vision_service.motors.impacted_tooth import normalize_class as normalize_impacted
+from vision_service.motors.insmile12 import normalize_class as normalize_insmile12
 from vision_service.motors.liodon3 import normalize_class as normalize_liodon3
 from vision_service.motors.yolo31 import normalize_class as normalize_yolo31
 from vision_service.optional_yolo import run_source
@@ -177,6 +178,7 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
     # Each source keeps the resolution/NMS settings it was trained or published with.
     optional_jobs = [
         ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28")), 0.45, 1280),
+        ("insmile12", normalize_insmile12, float(os.getenv("DENTAL_INSMILE12_CONF", "0.35")), 0.45, 640),
         ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.45")), 0.35, 640),
         ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30")), 0.45, 1280),
     ]
