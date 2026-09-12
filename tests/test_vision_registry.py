@@ -55,7 +55,11 @@ class VisionRegistryTests(unittest.TestCase):
             self.assertTrue(source.repo_candidates)
             self.assertTrue(source.filename)
             self.assertTrue(source.local_name)
-        self.assertIn("liodon-ai/dental-panoramic-detector", OPTIONAL_MODEL_SOURCES["liodon3"].repo_candidates)
+        liodon = OPTIONAL_MODEL_SOURCES["liodon3"]
+        self.assertIn("liodon-ai/dental-panoramic-detector", liodon.repo_candidates)
+        self.assertEqual(liodon.filename, "best.onnx")
+        self.assertEqual(liodon.local_name, "liodon_panorama3.onnx")
+        self.assertEqual(liodon.sha256, "4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71")
         self.assertIn("chemahc94/dental-periapical", OPTIONAL_MODEL_SOURCES["panoreader_periapical"].repo_candidates)
 
     def test_known_ready_model_labels_map_without_class0_guessing(self):
