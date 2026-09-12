@@ -3,7 +3,11 @@ from __future__ import annotations
 from collections import Counter
 
 from vision_service.model_manifest import model_path
-from vision_service.model_sources import OPTIONAL_MODEL_SOURCES, optional_model_path
+from vision_service.model_sources import (
+    OPTIONAL_MODEL_SOURCES,
+    optional_model_path,
+    production_license_blockers,
+)
 from vision_service.motors.catalog import FINDING_CATALOG
 from vision_service.motors.findings9 import RAW_CLASS_TO_FINDING
 from vision_service.motors.registry48 import MOTOR_SPECS
@@ -36,6 +40,7 @@ def readiness_snapshot() -> dict:
     pending = runtime_pending_codes()
     validated_pinned = sorted(set(validated) & set(PINNED_DIRECT_FINDINGS))
     lane_counts = Counter(target.lane for target in VALIDATION_TARGETS.values())
+    license_blockers = production_license_blockers()
 
     return {
         "catalog_total": len(FINDING_CATALOG),
@@ -54,6 +59,8 @@ def readiness_snapshot() -> dict:
         "runtime_validation_pending_codes": pending,
         "pinned_model_files": pinned_files,
         "optional_model_files": optional_files,
+        "optional_production_license_blockers": license_blockers,
+        "optional_production_license_clear": not license_blockers,
         "validation_lane_counts": dict(sorted(lane_counts.items())),
         "training_required_codes": sorted(
             code for code, target in VALIDATION_TARGETS.items()
@@ -72,6 +79,7 @@ def readiness_snapshot() -> dict:
         "note": (
             "implementation/model-file availability is not a clinical/runtime PASS; "
             "runtime PASS requires explicit executable evidence, exact mapping, "
-            "positive+negative panorama cases, threshold, FDI decision and fail isolation."
+            "positive+negative panorama cases, threshold, FDI decision and fail isolation. "
+            "Optional models with non-commercial or unknown licensing remain production blockers."
         ),
     }
