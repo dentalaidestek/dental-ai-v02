@@ -71,6 +71,11 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("rendered_teeth:renderedTeeth", script)
         self.assertIn("diş 3D'ye yerleştirildi", script)
 
+    def test_horizontal_masks_keep_their_full_impacted_axis(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("if(xx>yy){vx=1;vy=0}", script)
+        self.assertIn("-1.45,1.45", script)
+
     def test_external_atlas_is_revision_pinned(self):
         script = FINAL.read_text(encoding="utf-8")
         self.assertRegex(script, r"const ATLAS_REV='[0-9a-f]{40}'")
