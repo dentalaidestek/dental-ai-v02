@@ -9,7 +9,9 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
 from vision_service.model_manifest import model_path
-from vision_service.pipeline import _attach_fdi, analyze_panorama
+from vision_service.motors.findings9 import normalize_class as normalize_findings9
+from vision_service.motors.impacted_tooth import normalize_class as normalize_impacted
+from vision_service.pipeline import _attach_fdi, _detector_outputs, analyze_panorama
 
 app = FastAPI(title="Dental AI Anatomy 3D Direct FDI Test")
 _FDI_MODEL = None
@@ -77,6 +79,57 @@ def _predict_fdi(image_path: str):
     return teeth, used_conf, result
 
 
+def _run_pinned_findings(image_path: str, teeth: list[dict]):
+    """Run the pinned direct finding motors independently of the Vision48 FDI path.
+
+    The 3D test intentionally uses the legacy direct FDI inference that already works
+    on the Kaggle panorama. Findings must not disappear just because analyze_panorama's
+    own FDI stage behaves differently, so the pinned direct finding motors are also run
+    here and attached to the same direct-FDI tooth boxes.
+    """
+    findings = []
+    helpers = []
+    execution = []
+    warnings = []
+    jobs = [
+        ("findings9", normalize_findings9, 0.35, 0.45, 1280),
+        ("impacted_tooth", normalize_impacted, 0.40, 0.45, 1280),
+    ]
+    for model_key, normalizer, conf, iou, imgsz in jobs:
+        try:
+            f, h = _detector_outputs(
+                image_path=image_path,
+                model_key=model_key,
+                conf=conf,
+                iou=iou,
+                imgsz=imgsz,
+                normalizer=normalizer,
+            )
+            findings.extend(f)
+            helpers.extend(h)
+            execution.append({"motor": model_key, "status": "ok", "findings": len(f), "helpers": len(h)})
+        except Exception as exc:
+            warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
+            execution.append({"motor": model_key, "status": "error"})
+
+    for item in findings + helpers:
+        _attach_fdi(item, teeth)
+    return findings, helpers, execution, warnings
+
+
+def _merge_direct_findings(existing: list[dict], extra: list[dict]) -> list[dict]:
+    merged = []
+    seen = set()
+    for item in list(existing or []) + list(extra or []):
+        bbox = tuple(round(float(v), 0) for v in (item.get("bbox") or []))
+        key = (str(item.get("fdi") or ""), str(item.get("finding_code") or ""), bbox)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/viewer", response_class=HTMLResponse)
 def viewer():
@@ -124,12 +177,25 @@ async def analyze_image(image: UploadFile = File(...)):
         # First: restore the exact direct FDI path that previously produced 29 teeth.
         teeth, used_conf, raw = _predict_fdi(temp_path)
 
-        # Findings are still produced by the Vision48 pipeline, but they no longer control
-        # whether the 3D viewer receives teeth.
+        # Keep the full Vision48 output when available. A failure here must not erase
+        # the working direct-FDI 3D path or the pinned direct findings below.
         try:
             base = analyze_panorama(temp_path)
         except Exception as exc:
-            base = {"findings": [], "helpers": [], "warnings": [{"motor": "pipeline", "message": str(exc)}]}
+            base = {
+                "findings": [],
+                "helpers": [],
+                "motor_execution": [],
+                "warnings": [{"motor": "pipeline", "message": str(exc)}],
+            }
+
+        pinned_findings, pinned_helpers, pinned_exec, pinned_warnings = _run_pinned_findings(temp_path, teeth)
+        base["findings"] = _merge_direct_findings(list(base.get("findings") or []), pinned_findings)
+        base["helpers"] = list(base.get("helpers") or []) + pinned_helpers
+        base["finding_count"] = len(base["findings"])
+        base["helper_signal_count"] = len(base["helpers"])
+        base["motor_execution"] = list(base.get("motor_execution") or []) + pinned_exec
+        base["warnings"] = list(base.get("warnings") or []) + pinned_warnings
 
         for item in list(base.get("findings") or []) + list(base.get("helpers") or []):
             if not item.get("fdi"):
@@ -141,6 +207,7 @@ async def analyze_image(image: UploadFile = File(...)):
         base["has_segmentation"] = bool(raw is not None and raw.masks is not None)
         base["fdi_source"] = "legacy_direct_yolo"
         base["fdi_conf_used"] = used_conf
+        base["pinned_direct_findings_restored"] = True
 
         if not teeth:
             base["fdi_debug"] = {
