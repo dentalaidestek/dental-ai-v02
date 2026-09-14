@@ -79,6 +79,15 @@
     return out;
   }
 
+  function resolveToothPart(fdi,data){
+    const exact=data.teethByFdi.get(Number(fdi));
+    if(exact)return {part:exact,placementCenter:partCenter(exact),mirrorX:false,atlasFallback:false};
+    const s=String(fdi),opposite={1:2,2:1,3:4,4:3}[s[0]],source=data.teethByFdi.get(Number(`${opposite}${s[1]}`));
+    if(!source)return null;
+    const c=partCenter(source),mid=(data.toothMinX+data.toothMaxX)/2;
+    return {part:source,placementCenter:[2*mid-c[0],c[1],c[2]],mirrorX:true,atlasFallback:true};
+  }
+
   function polygonAxis(tooth){
     const p=tooth?.polygon;
     if(!Array.isArray(p)||p.length<6){const b=tooth.bbox.map(Number),c=boxCenter(b);return {cx:c[0],cy:c[1],length:Math.max(1,b[3]-b[1]),tilt:0,reliable:false}}
@@ -98,11 +107,11 @@
     return {medianH:Math.max(1,median(heights)),medianW:Math.max(1,median(widths)),minX:Math.min(...teeth.map(t=>+t.bbox[0])),maxX:Math.max(...teeth.map(t=>+t.bbox[2])),byType,archY};
   }
 
-  function patientTransform(tooth,part,data,stats,findings){
+  function patientTransform(tooth,part,data,stats,findings,placementCenter=partCenter(part)){
     const b=tooth.bbox.map(Number),w=Math.max(1,b[2]-b[0]),h=Math.max(1,b[3]-b[1]),type=stats.byType.get(String(tooth.fdi)[1]);
     const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH);
     const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
-    const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=partCenter(part),imageX=boxCenter(b)[0];
+    const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=placementCenter,imageX=boxCenter(b)[0];
     const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
     const xShift=clamp(desiredX-c[0],-maxShift,maxShift);let zShift=0;
     if(isImpacted)zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*.30;
@@ -121,11 +130,11 @@
     return new THREE.MeshPhysicalMaterial({color:has?new THREE.Color(color).lerp(new THREE.Color(0xf4f1e8),.72):color,roughness:.30,metalness:0,clearcoat:.14,side:THREE.DoubleSide});
   }
 
-  function buildPatientTooth(tooth,part,data,stats,findings){
-    const THREE=window.D3.THREE,c=partCenter(part),transform=patientTransform(tooth,part,data,stats,findings),mesh=new THREE.Mesh(geometryFor(part,data.buffer),toothMaterial(findings));
-    mesh.position.set(-c[0],-c[1],-c[2]);mesh.userData.tooth=tooth;
+  function buildPatientTooth(tooth,resolved,data,stats,findings){
+    const THREE=window.D3.THREE,{part,placementCenter,mirrorX}=resolved,sourceCenter=partCenter(part),transform=patientTransform(tooth,part,data,stats,findings,placementCenter),geometry=geometryFor(part,data.buffer);geometry.translate(-sourceCenter[0],-sourceCenter[1],-sourceCenter[2]);const mesh=new THREE.Mesh(geometry,toothMaterial(findings));
+    if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=tooth;
     const wrapper=new THREE.Group();wrapper.userData.tooth=tooth;wrapper.userData.patientTransform=transform;
-    wrapper.position.set(c[0]-data.center[0]+transform.positionShift[0],c[1]-data.center[1],c[2]-data.center[2]+transform.positionShift[2]);
+    wrapper.position.set(placementCenter[0]-data.center[0]+transform.positionShift[0],placementCenter[1]-data.center[1],placementCenter[2]-data.center[2]+transform.positionShift[2]);
     wrapper.scale.set(...transform.scale);wrapper.rotation.y=transform.rotationY;wrapper.add(mesh);return {wrapper,mesh,transform};
   }
 
@@ -161,10 +170,10 @@
     const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
     const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa8b9de,transparent:true,opacity:.17,roughness:.56,metalness:0,transmission:.06,depthWrite:false,side:window.D3.THREE.DoubleSide});
     for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);(part.jaw==='maxilla'?maxillaRoot:mandibleRoot).add(mesh)}
-    const clickables=[];let impactedAdjusted=0,axisAdjusted=0;
-    for(const tooth of patient){const part=data.teethByFdi.get(Number(tooth.fdi));if(!part)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,part,data,stats,findings);if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;addFindingMarkers(built.wrapper,part,findings);clickables.push(built.mesh);(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
+    const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0;
+    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;addFindingMarkers(built.wrapper,resolved.part,findings);clickables.push(built.mesh);(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
     root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel=addMandibularCanals(scene,mandibleRoot);
-    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
+    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
     const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
@@ -172,11 +181,11 @@
   openTooth=async function(t){
     await baseOpenTooth(t);
     try{
-      const data=await loadData(),part=data.teethByFdi.get(Number(normalizeFdi(t.fdi)));if(!part)return;
+      const data=await loadData(),resolved=resolveToothPart(normalizeFdi(t.fdi),data);if(!resolved)return;const {part,placementCenter,mirrorX}=resolved;
       disposeScene(toothScene);toothScene=createBase($('tooth3d'));
-      const THREE=window.D3.THREE,c=partCenter(part),patient=(result?.teeth||[]).filter(x=>x?.bbox&&validFdi(normalizeFdi(x.fdi))),stats=patientStats(patient),findings=toothFindings(t),transform=patientTransform(t,part,data,stats,findings),group=new THREE.Group(),pose=new THREE.Group();group.rotation.x=-Math.PI/2;pose.rotation.y=transform.rotationY;
+      const THREE=window.D3.THREE,c=partCenter(part),patient=(result?.teeth||[]).filter(x=>x?.bbox&&validFdi(normalizeFdi(x.fdi))),stats=patientStats(patient),findings=toothFindings(t),transform=patientTransform(t,part,data,stats,findings,placementCenter),group=new THREE.Group(),pose=new THREE.Group();group.rotation.x=-Math.PI/2;pose.rotation.y=transform.rotationY;
       const geometry=geometryFor(part,data.buffer);geometry.translate(-c[0],-c[1],-c[2]);
-      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf2eee6,roughness:.24,clearcoat:.20,transparent:true,opacity:.80,side:THREE.DoubleSide,depthWrite:true}));mesh.userData.tooth=t;pose.add(mesh);addFindingMarkers(pose,part,findings);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
+      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf2eee6,roughness:.24,clearcoat:.20,transparent:true,opacity:.80,side:THREE.DoubleSide,depthWrite:true}));if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=t;pose.add(mesh);addFindingMarkers(pose,part,findings);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
       $('chips').innerHTML='';const direct=findings.filter(f=>f.evidence_type==='direct');const shown=direct.length?direct:findings;if(!shown.length){const chip=document.createElement('span');chip.className='chip';chip.textContent='Doğrudan bulgu yok';$('chips').appendChild(chip)}else for(const f of shown){const chip=document.createElement('span');chip.className='chip';chip.textContent=f.label||f.finding_code;$('chips').appendChild(chip)}
       const prior=$('metrics').textContent||'';$('metrics').textContent=`${prior}${prior?' • ':''}${PANORAMIC_SIMULATION_LABEL}; bukkolingual derinlik anatomik referanstır.`;
     }catch(err){console.warn('[ANATOMY_DETAIL_FALLBACK]',err)}
