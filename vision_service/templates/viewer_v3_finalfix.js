@@ -26,9 +26,11 @@
 
   function geometryFor(part,buffer){
     const THREE=window.D3.THREE,g=new THREE.BufferGeometry();
-    g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(buffer,part.positions,part.vertexCount*3),3));
-    if(Number.isFinite(part.normals))g.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(buffer,part.normals,part.vertexCount*3),3));
-    g.setIndex(new THREE.BufferAttribute(new Uint32Array(buffer,part.indices,part.indexCount),1));
+    // Each mesh needs private arrays: detail/fallback centering transforms must
+    // never mutate the shared downloaded atlas buffer used by another tooth.
+    g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(new Float32Array(buffer,part.positions,part.vertexCount*3)),3));
+    if(Number.isFinite(part.normals))g.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(new Float32Array(buffer,part.normals,part.vertexCount*3)),3));
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(new Uint32Array(buffer,part.indices,part.indexCount)),1));
     if(!g.getAttribute('normal'))g.computeVertexNormals();
     return g;
   }
@@ -170,10 +172,10 @@
     const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
     const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa8b9de,transparent:true,opacity:.17,roughness:.56,metalness:0,transmission:.06,depthWrite:false,side:window.D3.THREE.DoubleSide});
     for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);(part.jaw==='maxilla'?maxillaRoot:mandibleRoot).add(mesh)}
-    const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0;
-    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;addFindingMarkers(built.wrapper,resolved.part,findings);clickables.push(built.mesh);(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
+    const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0,renderedTeeth=0;
+    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;addFindingMarkers(built.wrapper,resolved.part,findings);clickables.push(built.mesh);(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
     root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel=addMandibularCanals(scene,mandibleRoot);
-    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
+    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
     const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
@@ -194,7 +196,7 @@
   const baseAnalyze=analyze;
   analyze=async function(){
     await baseAnalyze();if(!result?.anatomy3d)return;
-    const count=allFindings().length,meta=result.anatomy3d;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.axis_adjusted} diş film eksenine uyarlandı • ${PANORAMIC_SIMULATION_LABEL}`;
+    const count=allFindings().length,meta=result.anatomy3d;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;
   };
   $('run').onclick=analyze;
 
