@@ -128,7 +128,8 @@ def line_score(gray, bbox) -> float:
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180.0, threshold=max(8, int(min(patch.shape) * 0.18)), minLineLength=max(6, int(min(patch.shape) * 0.20)), maxLineGap=3)
     if lines is None:
         return 0.0
-    total = sum(math.hypot(xb-xa, yb-ya) for xa, ya, xb, yb in lines[:, 0])
+    flat_lines = np.asarray(lines).reshape(-1, 4)
+    total = sum(math.hypot(xb-xa, yb-ya) for xa, ya, xb, yb in flat_lines)
     diag = max(1.0, math.hypot(patch.shape[1], patch.shape[0]))
     return min(1.0, float(total / (diag * 4.0)))
 
