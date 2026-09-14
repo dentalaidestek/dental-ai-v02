@@ -25,57 +25,94 @@ def _get_fdi_model():
     return _FDI_MODEL
 
 
+def _fdi_from_label(label):
+    try:
+        value = int(str(label).strip())
+    except Exception:
+        return None
+    if value // 10 in {1, 2, 3, 4} and value % 10 in set(range(1, 9)):
+        return value
+    return None
+
+
 def _predict_fdi(image_path: str):
+    """Run a high-confidence pass and then recovery passes for tilted/weak teeth.
+
+    The old implementation stopped as soon as *any* teeth were found, so a panorama
+    with 22 confident teeth never got a lower-confidence recovery pass for a tilted
+    23rd tooth. Here we merge only previously-missing FDI classes from recovery passes.
+    """
     model = _get_fdi_model()
     passes = (0.40, 0.20, 0.08)
-    last = None
-    used_conf = passes[-1]
-    for conf in passes:
-        last = model.predict(source=image_path, imgsz=1280, conf=conf, iou=0.45, verbose=False)[0]
-        count = len(last.boxes) if last.boxes is not None else 0
+    best_by_fdi: dict[str, dict] = {}
+    last_result = None
+    used_conf = passes[0]
+
+    def add_result(result, conf: float, recovery: bool):
+        nonlocal best_by_fdi
+        if result is None or result.boxes is None:
+            return
+        boxes = result.boxes.xyxy.detach().cpu().numpy()
+        scores = result.boxes.conf.detach().cpu().numpy()
+        classes = result.boxes.cls.detach().cpu().numpy().astype(int)
+        names = result.names
+        mask_polys = result.masks.xy if result.masks is not None and result.masks.xy is not None else []
+
+        existing = list(best_by_fdi.values())
+        widths = [max(1.0, x["bbox"][2] - x["bbox"][0]) for x in existing]
+        heights = [max(1.0, x["bbox"][3] - x["bbox"][1]) for x in existing]
+        widths.sort(); heights.sort()
+        med_w = widths[len(widths)//2] if widths else None
+        med_h = heights[len(heights)//2] if heights else None
+
+        for i, (box, score, class_id) in enumerate(zip(boxes, scores, classes)):
+            label = names.get(int(class_id), str(class_id)) if isinstance(names, dict) else names[int(class_id)]
+            fdi = _fdi_from_label(label)
+            if fdi is None:
+                continue
+            key = str(fdi)
+            if recovery and key in best_by_fdi:
+                continue
+
+            x1, y1, x2, y2 = [float(v) for v in box.tolist()]
+            w, h = max(1.0, x2-x1), max(1.0, y2-y1)
+            if recovery and med_w and med_h:
+                if not (0.42*med_w <= w <= 1.95*med_w and 0.42*med_h <= h <= 2.10*med_h):
+                    continue
+                # Very weak candidates are accepted only when they are geometrically tooth-sized.
+                if float(score) < 0.10:
+                    continue
+
+            poly = []
+            if i < len(mask_polys):
+                arr = mask_polys[i]
+                if arr is not None and len(arr) >= 3:
+                    step = max(1, len(arr)//120)
+                    poly = [[round(float(x),1), round(float(y),1)] for x,y in arr[::step]]
+
+            item = {
+                "fdi": fdi,
+                "confidence": round(float(score), 4),
+                "bbox": [round(x1,1), round(y1,1), round(x2,1), round(y2,1)],
+                "polygon": poly,
+                "recovered": bool(recovery),
+                "recovery_conf": conf if recovery else None,
+            }
+            prev = best_by_fdi.get(key)
+            if prev is None or item["confidence"] > prev["confidence"]:
+                best_by_fdi[key] = item
+
+    for idx, conf in enumerate(passes):
+        result = model.predict(source=image_path, imgsz=1280, conf=conf, iou=0.45, verbose=False)[0]
+        last_result = result
         used_conf = conf
-        if count:
+        add_result(result, conf, recovery=idx > 0)
+        # Once the arch is already well populated, a very-low pass adds more risk than value.
+        if idx == 1 and len(best_by_fdi) >= 27:
             break
 
-    result = last
-    teeth = []
-    if result is None or result.boxes is None:
-        return teeth, used_conf, None
-
-    boxes = result.boxes.xyxy.detach().cpu().numpy()
-    scores = result.boxes.conf.detach().cpu().numpy()
-    classes = result.boxes.cls.detach().cpu().numpy().astype(int)
-    names = result.names
-    mask_polys = result.masks.xy if result.masks is not None and result.masks.xy is not None else []
-
-    best_by_fdi = {}
-    for i, (box, score, class_id) in enumerate(zip(boxes, scores, classes)):
-        label = names.get(int(class_id), str(class_id)) if isinstance(names, dict) else names[int(class_id)]
-        try:
-            fdi = int(str(label))
-        except Exception:
-            fdi = str(label)
-
-        poly = []
-        if i < len(mask_polys):
-            arr = mask_polys[i]
-            if arr is not None and len(arr) >= 3:
-                step = max(1, len(arr) // 120)
-                poly = [[round(float(x), 1), round(float(y), 1)] for x, y in arr[::step]]
-
-        item = {
-            "fdi": fdi,
-            "confidence": round(float(score), 4),
-            "bbox": [round(float(v), 1) for v in box.tolist()],
-            "polygon": poly,
-        }
-        key = str(fdi)
-        prev = best_by_fdi.get(key)
-        if prev is None or item["confidence"] > prev["confidence"]:
-            best_by_fdi[key] = item
-
     teeth = sorted(best_by_fdi.values(), key=lambda x: str(x["fdi"]))
-    return teeth, used_conf, result
+    return teeth, used_conf, last_result
 
 
 def _run_pinned_findings(image_path: str, teeth: list[dict]):
@@ -85,8 +122,8 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
     execution = []
     warnings = []
     jobs = [
-        ("findings9", normalize_findings9, 0.35, 0.45, 1280),
-        ("impacted_tooth", normalize_impacted, 0.40, 0.45, 1280),
+        ("findings9", normalize_findings9, 0.28, 0.45, 1280),
+        ("impacted_tooth", normalize_impacted, 0.35, 0.45, 1280),
     ]
     for model_key, normalizer, conf, iou, imgsz in jobs:
         try:
@@ -104,6 +141,24 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
         except Exception as exc:
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
             execution.append({"motor": model_key, "status": "error"})
+
+    # One conservative recovery pass if both pinned motors returned zero findings.
+    if not findings:
+        try:
+            f, h = _detector_outputs(
+                image_path=image_path,
+                model_key="findings9",
+                conf=0.18,
+                iou=0.45,
+                imgsz=1280,
+                normalizer=normalize_findings9,
+            )
+            for item in f:
+                item["recovery"] = True
+            findings.extend(f); helpers.extend(h)
+            execution.append({"motor": "findings9_recovery", "status": "ok", "findings": len(f), "helpers": len(h)})
+        except Exception as exc:
+            warnings.append({"motor": "findings9_recovery", "error_type": type(exc).__name__, "message": str(exc)})
 
     for item in findings + helpers:
         _attach_fdi(item, teeth)
@@ -158,7 +213,7 @@ def anatomy_tooth(fdi: int):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "occlusion_aware": True}
+    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "occlusion_aware": True, "fdi_recovery": True}
 
 
 @app.post("/analyze")
@@ -203,6 +258,7 @@ async def analyze_image(image: UploadFile = File(...)):
         base["has_segmentation"] = bool(raw is not None and raw.masks is not None)
         base["fdi_source"] = "legacy_direct_yolo"
         base["fdi_conf_used"] = used_conf
+        base["fdi_recovered_count"] = sum(1 for t in teeth if t.get("recovered"))
         base["pinned_direct_findings_restored"] = True
 
         if not teeth:
