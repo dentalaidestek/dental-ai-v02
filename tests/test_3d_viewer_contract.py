@@ -38,6 +38,8 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("function dedupeFindings", script)
         self.assertIn("function allFindings(){return dedupeFindings", script)
         self.assertIn("const direct=findings.filter", script)
+        self.assertIn("displayFindingFamily", script)
+        self.assertIn("IMPACTED_THIRD_MOLAR'?'IMPACTED_TOOTH", script)
 
     def test_reference_canal_is_not_invented_without_signal(self):
         script = FINAL.read_text(encoding="utf-8")
