@@ -134,6 +134,42 @@ def line_score(gray, bbox) -> float:
     return min(1.0, float(total / (diag * 4.0)))
 
 
+def root_filling_score(gray, tooth: dict) -> float:
+    """Conservatively score a long, narrow radiopaque line inside a root."""
+    cv2, np = _cv2(); root = tooth_root_bbox(tooth)
+    if gray is None or cv2 is None or np is None or not root:
+        return 0.0
+    h, w = gray.shape[:2]; clipped = clip_bbox(root, w, h)
+    if not clipped:
+        return 0.0
+    x1, y1, x2, y2 = clipped; patch = gray[y1:y2, x1:x2]
+    ph, pw = patch.shape[:2]
+    if ph < 14 or pw < 6:
+        return 0.0
+    margin = max(1, int(pw * 0.14)); roi = patch[:, margin:pw-margin] if pw-2*margin >= 5 else patch
+    p50, p94, p99 = [float(v) for v in np.percentile(roi, [50, 94, 99])]
+    contrast = p99 - p50
+    if contrast < 42:
+        return 0.0
+    threshold = max(170.0, p94)
+    bright = (roi >= threshold).astype(np.uint8) * 255
+    bright_fraction = float((bright > 0).mean())
+    if bright_fraction < 0.004 or bright_fraction > 0.24:
+        return 0.0
+    lines = cv2.HoughLinesP(bright, 1, np.pi / 180.0, threshold=max(5, int(ph * 0.12)), minLineLength=max(6, int(ph * 0.24)), maxLineGap=max(2, int(ph * 0.08)))
+    if lines is None:
+        return 0.0
+    best = 0.0
+    for xa, ya, xb, yb in np.asarray(lines).reshape(-1, 4):
+        dx, dy = float(xb-xa), float(yb-ya); length = math.hypot(dx, dy)
+        deviation = math.degrees(math.atan2(abs(dx), max(1e-6, abs(dy))))
+        if deviation > 42:
+            continue
+        length_score = min(1.0, length / max(1.0, ph * 0.62)); contrast_score = min(1.0, contrast / 105.0)
+        best = max(best, length_score * 0.72 + contrast_score * 0.28)
+    return min(1.0, best)
+
+
 def root_curvature_score(gray, tooth: dict) -> float:
     cv2, np = _cv2(); root = tooth_root_bbox(tooth)
     if gray is None or cv2 is None or np is None or not root:
