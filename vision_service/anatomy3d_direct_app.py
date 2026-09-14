@@ -9,10 +9,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
+from vision_service.derived48 import derive_findings
 from vision_service.model_manifest import model_path
 from vision_service.motors.findings9 import normalize_class as normalize_findings9
 from vision_service.motors.impacted_tooth import normalize_class as normalize_impacted
-from vision_service.pipeline import _attach_fdi, _detector_outputs, analyze_panorama
+from vision_service.pipeline import _attach_fdi, _detector_outputs, _merge_findings, analyze_panorama
 
 app = FastAPI(title="Dental AI Anatomy 3D Direct FDI Test")
 _FDI_MODEL = None
@@ -235,6 +236,13 @@ async def analyze_image(image: UploadFile = File(...)):
         for item in list(base.get("findings") or []) + list(base.get("helpers") or []):
             if not item.get("fdi"):
                 _attach_fdi(item, teeth)
+        # Re-run only the deterministic geometry/CV composition with the richer
+        # direct FDI masks. The generic pipeline's FDI pass does not retain masks,
+        # which previously discarded the visible axis of an impacted third molar.
+        recovered = derive_findings(temp_path, teeth, list(base.get("findings") or []), list(base.get("helpers") or []))
+        base["findings"] = _merge_findings(list(base.get("findings") or []) + recovered)
+        base["finding_count"] = len(base["findings"])
+        base["geometry_recovered_findings"] = len(recovered)
         base["teeth"] = teeth
         base["tooth_count"] = len(teeth)
         base["unique_fdi_count"] = len({str(t.get("fdi")) for t in teeth})
