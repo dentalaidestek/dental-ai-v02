@@ -53,14 +53,19 @@ def _sample(points, colors, np, limit=9000):
     return points[idx], colors[idx]
 
 
-def _serialize(points, colors, *, mode: str, source_count: int, quality: dict):
-    cv2, np = _deps()
+def _serialize(points, colors, *, mode: str, source_count: int, quality: dict, surface_faces=None):
+    _, np = _deps()
     points = _normalize_points(points, np)
     if points is None or len(points) == 0:
         raise Photo3DError("3D nokta bulutu üretilemedi.")
     colors = np.asarray(colors, dtype=np.uint8)
-    points, colors = _sample(points, colors, np)
-    return {
+
+    # Surface meshes keep their original vertex indexing; sparse point clouds can
+    # still be sampled to keep the browser payload small.
+    if surface_faces is None:
+        points, colors = _sample(points, colors, np)
+
+    payload = {
         "mode": mode,
         "source_count": source_count,
         "diagnostic": False,
@@ -71,15 +76,15 @@ def _serialize(points, colors, *, mode: str, source_count: int, quality: dict):
         "points": [[round(float(x), 5), round(float(y), 5), round(float(z), 5)] for x, y, z in points],
         "colors": [[int(r), int(g), int(b)] for b, g, r in colors],
         "quality": quality,
+        "render_style": "translucent_dental_surface_v1",
     }
+    if surface_faces is not None:
+        payload["surface_faces"] = [[int(a), int(b), int(c)] for a, b, c in surface_faces]
+    return payload
 
 
 def reconstruct_single(path: str):
-    """Create a conservative single-photo pseudo-depth surface.
-
-    This is intentionally labelled non-diagnostic. It is a visual presentation
-    fallback for clinics that only have an intraoral photo.
-    """
+    """Create a smooth single-photo pseudo-depth dental presentation surface."""
     cv2, np = _deps()
     image = _read(path, max_width=720)
     h, w = image.shape[:2]
@@ -87,39 +92,71 @@ def reconstruct_single(path: str):
     gray = cv2.bilateralFilter(gray, 9, 30, 30)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Teeth are usually among the brighter, lower-saturation structures in an
-    # intraoral frame. Keep a broad mask so gingival context is not completely lost.
     value = hsv[:, :, 2]
     saturation = hsv[:, :, 1]
     mask = ((value > max(70, int(np.percentile(value, 42)))) & (saturation < 225)).astype(np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8), iterations=2)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8), iterations=1)
 
-    # A smoothed luminance + local-gradient proxy provides a visibly useful depth
-    # relief without claiming metric anatomy.
     norm = gray.astype(np.float32) / 255.0
     gx = cv2.Sobel(norm, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(norm, cv2.CV_32F, 0, 1, ksize=3)
     relief = cv2.GaussianBlur((1.0 - norm) * 0.72 + np.sqrt(gx * gx + gy * gy) * 0.28, (0, 0), 3.0)
 
-    stride = max(2, int(max(h, w) / 180))
-    ys, xs = np.mgrid[0:h:stride, 0:w:stride]
-    valid = mask[0:h:stride, 0:w:stride] > 0
-    xs = xs[valid].astype(np.float32)
-    ys = ys[valid].astype(np.float32)
-    zs = relief[0:h:stride, 0:w:stride][valid].astype(np.float32)
-    if len(xs) < 150:
-        valid = np.ones_like(mask[0:h:stride, 0:w:stride], dtype=bool)
-        ys, xs = np.mgrid[0:h:stride, 0:w:stride]
-        xs = xs[valid].astype(np.float32); ys = ys[valid].astype(np.float32); zs = relief[0:h:stride, 0:w:stride][valid].astype(np.float32)
+    # Use a regular grid so the browser can draw a genuine triangle surface
+    # instead of only a cloud of dots. The mask keeps the model focused on the
+    # visible oral region and the grid remains small enough for mobile devices.
+    stride = max(4, int(max(h, w) / 115))
+    yv = np.arange(0, h, stride, dtype=np.int32)
+    xv = np.arange(0, w, stride, dtype=np.int32)
+    valid_grid = mask[np.ix_(yv, xv)] > 0
+    if int(valid_grid.sum()) < 150:
+        valid_grid = np.ones((len(yv), len(xv)), dtype=bool)
 
-    x = (xs - w / 2.0) / max(1.0, w)
-    y = -(ys - h / 2.0) / max(1.0, w)
-    z = (zs - float(np.median(zs))) * 0.55
-    points = np.stack([x, y, z], axis=1)
-    colors = image[ys.astype(int), xs.astype(int)]
+    index_grid = np.full(valid_grid.shape, -1, dtype=np.int32)
+    points = []
+    colors = []
+    for gy_i, yy in enumerate(yv):
+        for gx_i, xx in enumerate(xv):
+            if not valid_grid[gy_i, gx_i]:
+                continue
+            z0 = float(relief[yy, xx])
+            px = (float(xx) - w / 2.0) / max(1.0, float(w))
+            py = -(float(yy) - h / 2.0) / max(1.0, float(w))
+            points.append((px, py, z0))
+            colors.append(image[yy, xx])
+            index_grid[gy_i, gx_i] = len(points) - 1
+
+    points = np.asarray(points, dtype=np.float32)
+    colors = np.asarray(colors, dtype=np.uint8)
+    if len(points) < 3:
+        raise Photo3DError("3D yüzey üretilemedi.")
+
+    z = points[:, 2]
+    points[:, 2] = (z - float(np.median(z))) * 0.62
+
+    faces = []
+    rows, cols = index_grid.shape
+    for r in range(rows - 1):
+        for c in range(cols - 1):
+            a = int(index_grid[r, c])
+            b = int(index_grid[r, c + 1])
+            d = int(index_grid[r + 1, c])
+            e = int(index_grid[r + 1, c + 1])
+            if a >= 0 and b >= 0 and d >= 0:
+                faces.append((a, d, b))
+            if b >= 0 and d >= 0 and e >= 0:
+                faces.append((b, d, e))
+
     coverage = float(mask.mean())
-    return _serialize(points, colors, mode="single_view_photo_relief", source_count=1, quality={"mask_coverage": round(coverage, 3), "metric_scale": False})
+    return _serialize(
+        points,
+        colors,
+        mode="single_view_photo_surface",
+        source_count=1,
+        quality={"mask_coverage": round(coverage, 3), "metric_scale": False, "surface_mesh": bool(faces)},
+        surface_faces=faces if faces else None,
+    )
 
 
 def _pair_reconstruction(img1, img2):
@@ -173,7 +210,7 @@ def reconstruct_multiview(paths: list[str]):
         all_points.append(pts); all_colors.append(colors); matches += m; inliers += i
     if not all_points:
         fallback = reconstruct_single(paths[0])
-        fallback["mode"] = "multiview_fallback_single_relief"
+        fallback["mode"] = "multiview_fallback_single_surface"
         fallback["source_count"] = len(paths)
         fallback["quality"]["sfm_failed"] = True
         return fallback
