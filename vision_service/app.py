@@ -33,7 +33,7 @@ def health():
 
 @app.get("/viewer", response_class=HTMLResponse)
 def viewer():
-    path = Path(__file__).resolve().parent / "templates" / "viewer.html"
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v2.html"
     return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
