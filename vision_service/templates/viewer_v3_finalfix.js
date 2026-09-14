@@ -59,6 +59,7 @@
   }
 
   function findingScore(f){return Number(f?.confidence??f?.score??0)||0}
+  function displayFindingFamily(code){const c=String(code||'').toUpperCase();return c==='IMPACTED_THIRD_MOLAR'?'IMPACTED_TOOTH':c}
   function dedupeFindings(items){
     const best=new Map();
     for(const f of items||[]){
@@ -66,8 +67,8 @@
       const fdi=validFdi(normalizeFdi(f.fdi))?String(normalizeFdi(f.fdi)):'';
       const b=Array.isArray(f.bbox)?f.bbox.map(Number):null;
       const spatial=fdi||((b&&b.length===4)?`${Math.round((b[0]+b[2])/40)}:${Math.round((b[1]+b[3])/40)}`:'global');
-      const key=`${String(f.finding_code).toUpperCase()}:${spatial}`;
-      const prior=best.get(key);if(!prior||findingScore(f)>findingScore(prior))best.set(key,f);
+      const key=`${displayFindingFamily(f.finding_code)}:${spatial}`;
+      const prior=best.get(key),moreSpecific=String(f.finding_code)==='IMPACTED_THIRD_MOLAR'&&String(prior?.finding_code)!=='IMPACTED_THIRD_MOLAR';if(!prior||findingScore(f)>findingScore(prior)||(findingScore(f)===findingScore(prior)&&moreSpecific))best.set(key,f);
     }
     return [...best.values()];
   }
