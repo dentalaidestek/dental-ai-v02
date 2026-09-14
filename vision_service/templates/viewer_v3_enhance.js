@@ -1,7 +1,7 @@
 // Dental AI 3D enhancement layer: jaw/maxilla framework, occlusion-aware placement,
-// face/skull context and reliable per-tooth finding attachment.
+// root-in-bone visualization and reliable per-tooth finding attachment.
 (function(){
-  const OPP = {11:41,12:42,13:43,14:44,15:45,16:46,17:47,18:48,21:31,22:32,23:33,24:34,25:35,26:36,27:37,28:38};
+  const OPP={11:41,12:42,13:43,14:44,15:45,16:46,17:47,18:48,21:31,22:32,23:33,24:34,25:35,26:36,27:37,28:38};
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const med=a=>{const x=a.filter(Number.isFinite).slice().sort((p,q)=>p-q);return x.length?x[Math.floor(x.length/2)]:0};
   const center=b=>[(+b[0]+ +b[2])/2,(+b[1]+ +b[3])/2];
@@ -17,9 +17,7 @@
     return inter/(aa+bb-inter||1);
   }
 
-  // Do not hide a valid finding merely because it is derived rather than direct.
-  // Prefer explicit FDI; otherwise spatially attach it to the tooth it overlaps.
-  findingsFor = function(t){
+  findingsFor=function(t){
     const tf=String(t.fdi);
     return allFindings().filter(f=>{
       if(f.fdi!=null&&String(f.fdi)!=='')return String(f.fdi)===tf;
@@ -31,95 +29,108 @@
 
   function occlusionProfile(teeth){
     const by=new Map(teeth.filter(validFdi).map(t=>[Number(t.fdi),t]));
-    const gaps=[], shifts=[], widths=[], heights=[], pairDetails=[];
+    const gaps=[],shifts=[],heights=[],pairDetails=[];
     for(const [u,l] of Object.entries(OPP)){
       const U=by.get(Number(u)),L=by.get(Number(l)); if(!U||!L)continue;
       const ub=U.bbox.map(Number),lb=L.bbox.map(Number);
-      const gap=lb[1]-ub[3]; // lower crown top minus upper crown bottom in panorama pixels
       const uw=Math.max(1,ub[2]-ub[0]),lw=Math.max(1,lb[2]-lb[0]);
       const uh=Math.max(1,ub[3]-ub[1]),lh=Math.max(1,lb[3]-lb[1]);
-      const shift=(center(ub)[0]-center(lb)[0])/((uw+lw)/2);
-      gaps.push(gap); shifts.push(shift); widths.push(uw,lw); heights.push(uh,lh);
-      pairDetails.push({upper:Number(u),lower:Number(l),gap,shift});
+      const gap=lb[1]-ub[3];
+      const h=(uh+lh)/2;
+      const gn=gap/Math.max(1,h);
+      if(Math.abs(gn)<=0.65){
+        gaps.push(gn);heights.push(uh,lh);
+        const shift=(center(ub)[0]-center(lb)[0])/((uw+lw)/2);
+        shifts.push(shift);pairDetails.push({upper:Number(u),lower:Number(l),gapNorm:gn,shift});
+      }
     }
-    const h=Math.max(1,med(heights)||1), gapPx=med(gaps), gapNorm=gapPx/h;
-    // Negative panorama gap = visible crown overlap/deeper bite; positive = more separation.
-    const separation=clamp(1.30+gapNorm*0.70,0.94,1.62);
-    const overbite=clamp(-gapNorm,-0.35,0.75);
-    const mesioDistal=clamp(med(shifts),-0.45,0.45);
-    return {separation,overbite,mesioDistal,gapPx,pairs:pairDetails.length,pairDetails};
+    const gapNorm=med(gaps),mesioDistal=clamp(med(shifts),-.35,.35);
+    // Panoramik bite-block kaynaklı küçük radyografik aralıkları açık kapanış sayma.
+    const separation=clamp(1.10+gapNorm*.22,.96,1.28);
+    const overbite=gapNorm<-.10?clamp(-gapNorm,0,.65):(gapNorm>.32?-clamp(gapNorm,0,.55):0);
+    return {separation,overbite,mesioDistal,gapNorm,pairs:pairDetails.length,pairDetails};
   }
 
-  function archPose(t,minX,maxX,profile){
+  function polygonTilt(t){
+    const p=t?.polygon;if(!Array.isArray(p)||p.length<6)return 0;
+    let mx=0,my=0;for(const q of p){mx+=+q[0];my+=+q[1]}mx/=p.length;my/=p.length;
+    let xx=0,yy=0,xy=0;for(const q of p){const x=+q[0]-mx,y=+q[1]-my;xx+=x*x;yy+=y*y;xy+=x*y}
+    const tr=xx+yy,det=xx*yy-xy*xy,disc=Math.sqrt(Math.max(0,tr*tr/4-det)),lambda=tr/2+disc;
+    let vx=xy,vy=lambda-xx;if(Math.abs(vx)+Math.abs(vy)<1e-8){vx=0;vy=1}
+    const len=Math.hypot(vx,vy)||1;vx/=len;vy/=len;if(vy<0){vx=-vx;vy=-vy}
+    return clamp(Math.atan2(vx,vy),-.55,.55);
+  }
+
+  function archData(teeth){
+    const upperY=teeth.filter(t=>isUpper(t.fdi)).map(t=>center(t.bbox)[1]);
+    const lowerY=teeth.filter(t=>!isUpper(t.fdi)).map(t=>center(t.bbox)[1]);
+    const heights=teeth.map(t=>+t.bbox[3]-+t.bbox[1]);
+    return {upperCy:med(upperY),lowerCy:med(lowerY),medianH:Math.max(1,med(heights))};
+  }
+
+  function archPose(t,minX,maxX,profile,ad){
     const [x1,,x2]=t.bbox.map(Number),c=(x1+x2)/2,n=(c-minX)/Math.max(1,maxX-minX),s=(n-.5)*2;
-    const upper=isUpper(t.fdi);
-    const y=(upper?1:-1)*(profile.separation/2);
-    // Small sagittal offset from visible upper/lower mesiodistal relation; never pretend it is true CBCT depth.
-    const z=-.72+2.18*(1-s*s)+(upper?-.10: .10)*profile.mesioDistal;
-    return {x:s*3.15,y,z,rotY:-s*.62,upper};
+    const upper=isUpper(t.fdi),cy=center(t.bbox)[1],baseCy=upper?ad.upperCy:ad.lowerCy;
+    const imageOffset=clamp((cy-baseCy)/ad.medianH,-.9,.9)*.25;
+    const y=(upper?1:-1)*(profile.separation/2)-imageOffset;
+    const z=-.78+2.22*(1-s*s)+(upper?-.08:.08)*profile.mesioDistal;
+    const tilt=polygonTilt(t);
+    return {x,y,z,rotY:-s*.60,rotZ:(upper?Math.PI:0)-tilt,upper,tilt};
   }
 
   function tube(scene,pts,radius,color,opacity){
     const {THREE}=window.D3;if(pts.length<2)return;
-    const curve=new THREE.CatmullRomCurve3(pts),geo=new THREE.TubeGeometry(curve,96,radius,14,false);
-    const mat=new THREE.MeshPhysicalMaterial({color,transparent:true,opacity,roughness:.24,transmission:.28,depthWrite:false,side:THREE.DoubleSide});
+    const curve=new THREE.CatmullRomCurve3(pts),geo=new THREE.TubeGeometry(curve,112,radius,18,false);
+    const mat=new THREE.MeshPhysicalMaterial({color,transparent:true,opacity,roughness:.42,transmission:.16,depthWrite:false,side:THREE.DoubleSide});
     scene.add(new THREE.Mesh(geo,mat));
   }
 
-  function addJawFramework(scene,profile){
-    const {THREE}=window.D3, up=[],low=[];
-    for(let i=0;i<=44;i++){
-      const s=-1+i/22,z=-.72+2.18*(1-s*s);
-      up.push(new THREE.Vector3(s*3.32, profile.separation/2+.38,z));
-      low.push(new THREE.Vector3(s*3.30,-profile.separation/2-.48,z-.04));
-    }
-    // Alveolar maxilla and mandibular body follow the patient's tooth arch rather than a floating generic ring.
-    tube(scene,up,.42,0x8ba9ff,.18);
-    tube(scene,low,.50,0x8ba9ff,.20);
-
-    // Mandibular rami / angle regions.
-    for(const side of [-1,1]){
-      tube(scene,[
-        new THREE.Vector3(side*3.22,-profile.separation/2-.52,-.62),
-        new THREE.Vector3(side*3.55,-.35,-.95),
-        new THREE.Vector3(side*3.48,.72,-1.08)
-      ],.33,0x8ba9ff,.18);
-      // Zygomatic/maxillary side frame.
-      tube(scene,[
-        new THREE.Vector3(side*2.45,profile.separation/2+.45,.20),
-        new THREE.Vector3(side*3.18,1.45,-.18),
-        new THREE.Vector3(side*3.38,1.92,-.82)
-      ],.18,0x8ba9ff,.12);
-    }
-
-    // Maxillary sinus cavities as subtle translucent anatomical context.
-    for(const side of [-1,1]){
-      const g=new THREE.SphereGeometry(1,28,20);g.scale(1.12,.82,.72);
-      const m=new THREE.MeshPhysicalMaterial({color:0x86a6ff,transparent:true,opacity:.055,roughness:.1,transmission:.55,depthWrite:false,side:THREE.DoubleSide});
-      const o=new THREE.Mesh(g,m);o.position.set(side*1.72,1.55,.12);scene.add(o);
-    }
-
-    // Mandibular canal is illustrative context only; patient-specific canal path still comes from image/CBCT data when available.
-    const canal=[];for(let i=0;i<=40;i++){const s=-1+i/20;canal.push(new THREE.Vector3(s*3.00,-profile.separation/2-.54,-.68+1.92*(1-s*s)))}
-    tube(scene,canal,.055,0xff6d8b,.86);
-  }
-
-  function addFaceSkullEnvelope(scene){
+  function boneMaterial(opacity=.24){
     const {THREE}=window.D3;
-    const skull=new THREE.Mesh(
-      new THREE.SphereGeometry(1,42,32),
-      new THREE.MeshBasicMaterial({color:0x9bb7ff,transparent:true,opacity:.035,wireframe:true,depthWrite:false})
-    );
-    skull.scale.set(3.72,4.38,2.50);skull.position.set(0,.55,.10);scene.add(skull);
-    // Chin/lower facial contour gives the subtle outer-human silhouette seen in the reference without claiming patient-specific soft tissue.
-    const chin=new THREE.Mesh(
-      new THREE.SphereGeometry(1,32,22),
-      new THREE.MeshBasicMaterial({color:0x7899e8,transparent:true,opacity:.025,wireframe:true,depthWrite:false})
-    );
-    chin.scale.set(2.62,2.35,1.85);chin.position.set(0,-2.25,.18);scene.add(chin);
+    return new THREE.MeshPhysicalMaterial({color:0x9bb5ef,transparent:true,opacity,roughness:.46,transmission:.14,depthWrite:false,side:THREE.DoubleSide});
   }
 
-  const originalRenderJaw=renderJaw;
+  function addJawBone(scene,teeth,poseMap,scaleMap,profile){
+    const {THREE}=window.D3;
+    const upperCrest=[],lowerCrest=[],upperBase=[],lowerBody=[];
+    for(let i=0;i<=48;i++){
+      const s=-1+i/24,z=-.78+2.22*(1-s*s);
+      upperCrest.push(new THREE.Vector3(s*3.34, profile.separation/2+.28,z));
+      lowerCrest.push(new THREE.Vector3(s*3.34,-profile.separation/2-.28,z));
+      upperBase.push(new THREE.Vector3(s*3.42, profile.separation/2+.92,z-.05));
+      lowerBody.push(new THREE.Vector3(s*3.42,-profile.separation/2-1.00,z-.08));
+    }
+    // Alveolar process hugs the root halves; body/base supplies an actual jaw silhouette.
+    tube(scene,upperCrest,.48,0x9bb5ef,.25);
+    tube(scene,lowerCrest,.50,0x9bb5ef,.27);
+    tube(scene,upperBase,.62,0x8fa9df,.16);
+    tube(scene,lowerBody,.72,0x8fa9df,.23);
+
+    for(const t of teeth){
+      const p=poseMap.get(String(t.fdi)),s=scaleMap.get(String(t.fdi));if(!p||!s)continue;
+      const g=new THREE.SphereGeometry(1,26,20);
+      const rootDir=p.upper?1:-1;
+      const socket=new THREE.Mesh(g,boneMaterial(.20));
+      socket.scale.set(.34*s.x,.66*s.y,.40*s.z);
+      socket.position.set(p.x,p.y+rootDir*.42*s.y,p.z);
+      socket.rotation.y=p.rotY;socket.rotation.z=p.rotZ-(p.upper?Math.PI:0);
+      scene.add(socket);
+    }
+
+    // Mandibular ramus and angle regions: connected to the body, not a floating face shell.
+    for(const side of [-1,1]){
+      tube(scene,[
+        new THREE.Vector3(side*3.30,-profile.separation/2-.92,-.66),
+        new THREE.Vector3(side*3.64,-1.20,-1.02),
+        new THREE.Vector3(side*3.72,-.08,-1.12),
+        new THREE.Vector3(side*3.54,.70,-1.06)
+      ],.42,0x8fa9df,.22);
+    }
+
+    const canal=[];for(let i=0;i<=42;i++){const s=-1+i/21;canal.push(new THREE.Vector3(s*3.02,-profile.separation/2-.83,-.70+1.92*(1-s*s)))}
+    tube(scene,canal,.052,0xff7898,.88);
+  }
+
   renderJaw=async function(){
     await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));
     const {scene,camera,controls,renderer}=jawScene;
@@ -127,20 +138,24 @@
     if(!teeth.length)throw new Error('FDI diş tespiti yok');
     const profile=occlusionProfile(teeth);result.occlusion_profile=profile;
 
-    // Wider initial framing: show the jaw/skull context first, user can pinch to enter a single region.
-    camera.position.set(0,.15,10.6);controls.target.set(0,.05,.35);controls.minDistance=3.4;controls.maxDistance=16;
-    addFaceSkullEnvelope(scene);addJawFramework(scene,profile);
+    // Start farther away so the whole jaw is visible on a phone screen.
+    camera.position.set(0,.05,13.8);controls.target.set(0,-.05,.28);controls.minDistance=5.4;controls.maxDistance=20;
 
     const widths=teeth.map(t=>t.bbox[2]-t.bbox[0]),heights=teeth.map(t=>t.bbox[3]-t.bbox[1]);
     const mw=median(widths),mh=median(heights),minX=Math.min(...teeth.map(t=>t.bbox[0])),maxX=Math.max(...teeth.map(t=>t.bbox[2]));
+    const ad=archData(teeth),poseMap=new Map(),scaleMap=new Map();
+    for(const t of teeth){poseMap.set(String(t.fdi),archPose(t,minX,maxX,profile,ad));scaleMap.set(String(t.fdi),patientScale(t,mw,mh))}
+    addJawBone(scene,teeth,poseMap,scaleMap,profile);
+
     const clickables=[];
     const loaded=await Promise.all(teeth.map(async t=>{try{return[t,await loadToothObject(t.fdi)]}catch(e){console.warn('anatomy',t.fdi,e);return[t,null]}}));
     for(const [t,obj] of loaded){
       if(!obj)continue;
-      const p=archPose(t,minX,maxX,profile),s=patientScale(t,mw,mh);
-      obj.scale.set(.62*s.x,.62*s.y,.62*s.z);obj.position.set(p.x,p.y,p.z);obj.rotation.y=p.rotY;if(p.upper)obj.rotation.z=Math.PI;
+      const p=poseMap.get(String(t.fdi)),s=scaleMap.get(String(t.fdi));
+      obj.scale.set(.60*s.x,.60*s.y,.60*s.z);obj.position.set(p.x,p.y,p.z);obj.rotation.y=p.rotY;obj.rotation.z=p.rotZ;
       obj.userData.tooth=t;obj.traverse(n=>{if(n.isMesh){n.userData.tooth=t;clickables.push(n)}});scene.add(obj);
     }
+
     const {THREE}=window.D3,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
     renderer.domElement.addEventListener('pointerdown',ev=>{
       const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
@@ -148,14 +163,13 @@
     });
   };
 
-  // Refresh the status after the original analyze finishes so finding count and the visible 2D occlusal relation are not hidden.
   const originalAnalyze=analyze;
   analyze=async function(){
     await originalAnalyze();
     if(!result)return;
-    const oc=result.occlusion_profile;
-    const fcount=(result.findings||[]).filter(f=>f&&f.finding_code).length;
-    const bite=oc?(oc.overbite>0.12?'örtüşme var':oc.overbite<-.08?'açıklık var':'yakın temas'):'hesaplanmadı';
+    const oc=result.occlusion_profile,fcount=(result.findings||[]).filter(f=>f&&f.finding_code).length;
+    let bite='hesaplanmadı';
+    if(oc){bite=oc.overbite>0.10?'örtüşme var':oc.overbite<-.30?'belirgin açıklık':'yakın temas'}
     $('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${fcount} bulgu • kapanış: ${bite}`;
   };
   $('run').onclick=analyze;
