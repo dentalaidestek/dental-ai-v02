@@ -1,203 +1,177 @@
-// Final visual alignment patch: same-source jaw + teeth, compact findings, smooth detail tooth.
+// Panoramic-conditioned anatomical viewer.
+// Patient-specific cues are limited to evidence visible in the panorama. The
+// jaw volume and buccolingual depth remain an anatomical reference, not CBCT.
 (function(){
-  const MANIFEST_URL='https://raw.githubusercontent.com/choxos/OMFAtlas/main/public/models/dental/manifest.json';
-  const BUFFER_URL='https://raw.githubusercontent.com/choxos/OMFAtlas/main/public/models/dental/open-full-jaw.bin';
+  const ATLAS_REV='c835665a9ade09ee0b993cee6eee1b25b7f7311b';
+  const ATLAS_ROOT=`https://raw.githubusercontent.com/choxos/OMFAtlas/${ATLAS_REV}/public/models/dental`;
+  const MANIFEST_URL=`${ATLAS_ROOT}/manifest.json`;
+  const BUFFER_URL=`${ATLAS_ROOT}/open-full-jaw.bin`;
+  const PANORAMIC_SIMULATION_LABEL='Panoramik tabanlı anatomik 3D görselleştirme';
+  const IMPACTED_CODES=new Set(['IMPACTED_TOOTH','IMPACTED_THIRD_MOLAR','UNERUPTED_TOOTH']);
+  const BONE_LOSS_RE=/BONE_LOSS/;
   let dataPromise=null;
 
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const validFdi=v=>/^[1-4][1-8]$/.test(String(v??''));
   const upper=fdi=>['1','2'].includes(String(fdi)[0]);
+  const median=values=>{const a=values.filter(Number.isFinite).slice().sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:0};
   const normalizeFdi=v=>{
     const s=String(v??'').trim();
-    if(validFdi(s)) return Number(s);
-    const m=s.match(/(?:^|\D)([1-4][1-8])(?:\D|$)/); if(m) return Number(m[1]);
-    const d=s.replace(/\D/g,''); if(d.length>=2){const t=d.slice(-2); if(validFdi(t)) return Number(t)}
+    if(validFdi(s))return Number(s);
+    const m=s.match(/(?:^|\D)([1-4][1-8])(?:\D|$)/);if(m)return Number(m[1]);
+    const d=s.replace(/\D/g,'');if(d.length>=2){const t=d.slice(-2);if(validFdi(t))return Number(t)}
     return v;
   };
+  const boxCenter=b=>[(+b[0]+ +b[2])/2,(+b[1]+ +b[3])/2];
 
   function geometryFor(part,buffer){
-    const THREE=window.D3.THREE;
-    const g=new THREE.BufferGeometry();
+    const THREE=window.D3.THREE,g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(buffer,part.positions,part.vertexCount*3),3));
-    if(Number.isFinite(part.normals)) g.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(buffer,part.normals,part.vertexCount*3),3));
+    if(Number.isFinite(part.normals))g.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(buffer,part.normals,part.vertexCount*3),3));
     g.setIndex(new THREE.BufferAttribute(new Uint32Array(buffer,part.indices,part.indexCount),1));
-    if(!g.getAttribute('normal')) g.computeVertexNormals();
+    if(!g.getAttribute('normal'))g.computeVertexNormals();
     return g;
   }
 
+  function partCenter(part){
+    if(Array.isArray(part?.axes?.center)&&part.axes.center.length===3)return part.axes.center.map(Number);
+    return part.bounds[0].map((v,i)=>(+v + +part.bounds[1][i])/2);
+  }
+  function partSpan(part,axis){return Math.max(1e-6,+part.bounds[1][axis]- +part.bounds[0][axis])}
+
   async function loadData(){
-    if(dataPromise) return dataPromise;
+    if(dataPromise)return dataPromise;
     dataPromise=(async()=>{
       const [mr,br]=await Promise.all([fetch(MANIFEST_URL,{cache:'force-cache'}),fetch(BUFFER_URL,{cache:'force-cache'})]);
-      if(!mr.ok||!br.ok) throw new Error('Open-Full-Jaw modeli yüklenemedi');
+      if(!mr.ok||!br.ok)throw new Error('Sabitlenmiş anatomik çene modeli yüklenemedi');
       const manifest=await mr.json(),buffer=await br.arrayBuffer();
       const parts=(manifest.parts||[]).filter(p=>p.source==='openfulljaw'&&(p.buffer||'')==='open-full-jaw');
-      const bones=parts.filter(p=>p.group==='bone');
-      const teeth=parts.filter(p=>p.group==='tooth'&&validFdi(p.fdi));
-      if(bones.length<2||teeth.length<20) throw new Error('Open-Full-Jaw parçaları eksik');
+      const bones=parts.filter(p=>p.group==='bone'),teeth=parts.filter(p=>p.group==='tooth'&&validFdi(p.fdi));
+      if(bones.length<2||teeth.length<20)throw new Error('Anatomik çene parçaları eksik');
       const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
-      for(const p of parts) for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],+p.bounds[0][i]);hi[i]=Math.max(hi[i],+p.bounds[1][i]);}
-      const center=lo.map((v,i)=>(v+hi[i])/2);
-      return {buffer,bones,teethByFdi:new Map(teeth.map(p=>[Number(p.fdi),p])),center};
+      for(const p of parts)for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],+p.bounds[0][i]);hi[i]=Math.max(hi[i],+p.bounds[1][i])}
+      const center=lo.map((v,i)=>(v+hi[i])/2),centers=teeth.map(p=>partCenter(p)[0]);
+      return {buffer,bones,teethByFdi:new Map(teeth.map(p=>[Number(p.fdi),p])),center,toothMinX:Math.min(...centers),toothMaxX:Math.max(...centers)};
     })();
     return dataPromise;
   }
 
+  function allFindings(){return (result?.findings||[]).filter(f=>f&&f.finding_code)}
   function toothFindings(t){
-    const all=(result?.findings||[]).filter(f=>f&&f.finding_code);
-    const out=[];
-    const seen=new Set();
-    for(const f of all){
-      if(String(f.fdi||'')!==String(t.fdi)) continue;
-      const k=String(f.finding_code); if(seen.has(k)) continue; seen.add(k); out.push(f);
+    const out=[],seen=new Set();
+    for(const f of allFindings()){
+      if(String(f.fdi||'')!==String(t.fdi))continue;
+      const key=String(f.finding_code);if(seen.has(key))continue;seen.add(key);out.push(f);
     }
     return out;
   }
 
+  function polygonAxis(tooth){
+    const p=tooth?.polygon;
+    if(!Array.isArray(p)||p.length<6){const b=tooth.bbox.map(Number),c=boxCenter(b);return {cx:c[0],cy:c[1],length:Math.max(1,b[3]-b[1]),tilt:0,reliable:false}}
+    let mx=0,my=0;for(const q of p){mx+=+q[0];my+=+q[1]}mx/=p.length;my/=p.length;
+    let xx=0,yy=0,xy=0;for(const q of p){const dx=+q[0]-mx,dy=+q[1]-my;xx+=dx*dx;yy+=dy*dy;xy+=dx*dy}
+    const tr=xx+yy,det=xx*yy-xy*xy,disc=Math.sqrt(Math.max(0,tr*tr/4-det)),lambda=tr/2+disc;
+    let vx=xy,vy=lambda-xx;if(Math.abs(vx)+Math.abs(vy)<1e-8){vx=0;vy=1}
+    const n=Math.hypot(vx,vy)||1;vx/=n;vy/=n;if(vy<0){vx=-vx;vy=-vy}
+    const projections=p.map(q=>(+q[0]-mx)*vx+(+q[1]-my)*vy);
+    return {cx:mx,cy:my,length:Math.max(1,Math.max(...projections)-Math.min(...projections)),tilt:clamp(Math.atan2(vx,vy),-.95,.95),reliable:true};
+  }
+
+  function patientStats(teeth){
+    const widths=teeth.map(t=>+t.bbox[2]- +t.bbox[0]),heights=teeth.map(t=>+t.bbox[3]- +t.bbox[1]),byType=new Map();
+    for(const t of teeth){const k=String(t.fdi)[1],h=Math.max(1,+t.bbox[3]- +t.bbox[1]),w=Math.max(1,+t.bbox[2]- +t.bbox[0]);if(!byType.has(k))byType.set(k,{h:[],w:[]});byType.get(k).h.push(h);byType.get(k).w.push(w)}
+    const archY={upper:median(teeth.filter(t=>upper(t.fdi)).map(t=>boxCenter(t.bbox)[1])),lower:median(teeth.filter(t=>!upper(t.fdi)).map(t=>boxCenter(t.bbox)[1]))};
+    return {medianH:Math.max(1,median(heights)),medianW:Math.max(1,median(widths)),minX:Math.min(...teeth.map(t=>+t.bbox[0])),maxX:Math.max(...teeth.map(t=>+t.bbox[2])),byType,archY};
+  }
+
+  function patientTransform(tooth,part,data,stats,findings){
+    const b=tooth.bbox.map(Number),w=Math.max(1,b[2]-b[0]),h=Math.max(1,b[3]-b[1]),type=stats.byType.get(String(tooth.fdi)[1]);
+    const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH);
+    const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
+    const axis=polygonAxis(tooth),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code)),c=partCenter(part),imageX=boxCenter(b)[0];
+    const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
+    const xShift=clamp(desiredX-c[0],-maxShift,maxShift);let zShift=0;
+    if(isImpacted){const archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH;zShift=-clamp(imageOffset,-1.25,1.25)*partSpan(part,2)*.55}
+    return {scale:[sx,sy,sz],rotationY:-axis.tilt*(isImpacted?.82:.26),positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
+  }
+
   function findingColor(code){
     code=String(code||'');
-    if(/CARIES|PERIAPICAL|RADIOLUCENT|RESORPTION/.test(code)) return 0xff5b6f;
-    if(/ROOT_CANAL|ENDO|POST/.test(code)) return 0xff83b3;
-    if(/FILLING|CROWN|BRIDGE|INLAY|PONTIC|IMPLANT/.test(code)) return 0x60d7ff;
-    return 0xffa34d;
+    if(/CARIES|PERIAPICAL|RADIOLUCENT|RESORPTION|FRACTURE/.test(code))return 0xff5b6f;
+    if(/ROOT_CANAL|ENDO|POST/.test(code))return 0xff83b3;
+    if(/FILLING|CROWN|BRIDGE|INLAY|PONTIC|IMPLANT/.test(code))return 0x60d7ff;
+    if(BONE_LOSS_RE.test(code))return 0xa990ff;if(IMPACTED_CODES.has(code))return 0xffc857;return 0xffa34d;
+  }
+  function toothMaterial(findings){
+    const THREE=window.D3.THREE,has=findings.length>0,color=has?findingColor(findings[0].finding_code):0xf4f1e8;
+    return new THREE.MeshPhysicalMaterial({color:has?new THREE.Color(color).lerp(new THREE.Color(0xf4f1e8),.72):color,roughness:.30,metalness:0,clearcoat:.14,side:THREE.DoubleSide});
   }
 
-  function makeToothMesh(part,buffer,center,findings){
-    const THREE=window.D3.THREE;
-    const has=Array.isArray(findings)&&findings.length>0;
-    const mat=new THREE.MeshPhysicalMaterial({
-      color:has?0xffe3df:0xf4f1e8,
-      roughness:.30,metalness:0,clearcoat:.14,
-      transparent:false,opacity:1,side:THREE.DoubleSide
-    });
-    const mesh=new THREE.Mesh(geometryFor(part,buffer),mat);
-    mesh.position.set(-center[0],-center[1],-center[2]);
-    return mesh;
+  function buildPatientTooth(tooth,part,data,stats,findings){
+    const THREE=window.D3.THREE,c=partCenter(part),transform=patientTransform(tooth,part,data,stats,findings),mesh=new THREE.Mesh(geometryFor(part,data.buffer),toothMaterial(findings));
+    mesh.position.set(-c[0],-c[1],-c[2]);mesh.userData.tooth=tooth;
+    const wrapper=new THREE.Group();wrapper.userData.tooth=tooth;wrapper.userData.patientTransform=transform;
+    wrapper.position.set(c[0]-data.center[0]+transform.positionShift[0],c[1]-data.center[1],c[2]-data.center[2]+transform.positionShift[2]);
+    wrapper.scale.set(...transform.scale);wrapper.rotation.y=transform.rotationY;wrapper.add(mesh);return {wrapper,mesh,transform};
   }
 
-  function fitCamera(ctx,obj,pad=1.28){
-    const {THREE}=window.D3;
-    obj.updateMatrixWorld(true);
-    const box=new THREE.Box3().setFromObject(obj),c=new THREE.Vector3(),s=new THREE.Vector3();
-    box.getCenter(c);box.getSize(s);
-    const radius=Math.max(.1,Math.hypot(s.x,s.y,s.z)/2);
-    const fov=ctx.camera.fov*Math.PI/180;
-    const dist=(radius/Math.sin(fov/2))*pad;
-    ctx.controls.target.copy(c);
-    ctx.camera.position.set(c.x,c.y+radius*.05,c.z+dist);
-    ctx.camera.near=Math.max(.01,dist-radius*2.2);
-    ctx.camera.far=dist+radius*4;
-    ctx.camera.updateProjectionMatrix();
-    ctx.controls.minDistance=Math.max(radius*.65,1.5);
-    ctx.controls.maxDistance=dist*2.4;
-    ctx.controls.update();
+  function addFindingMarkers(wrapper,part,findings){
+    if(!findings.length)return;
+    const THREE=window.D3.THREE,size=Math.max(partSpan(part,0),partSpan(part,1),partSpan(part,2));
+    findings.slice(0,3).forEach((f,i)=>{const color=findingColor(f.finding_code),marker=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.55,size*(.035+i*.006)),18,12),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.32,transparent:true,opacity:.88,depthWrite:false}));marker.position.set((i-1)*size*.07,0,size*.11);marker.userData.finding=f;wrapper.add(marker)});
+    if(findings.some(f=>BONE_LOSS_RE.test(String(f.finding_code)))){const ring=new THREE.Mesh(new THREE.TorusGeometry(size*.18,size*.022,10,36),new THREE.MeshBasicMaterial({color:0xa990ff,transparent:true,opacity:.72,depthWrite:false}));ring.rotation.x=Math.PI/2;ring.position.set(0,0,size*.10);wrapper.add(ring)}
   }
 
-  function addFindingMarker(group,part,assemblyCenter,count,color){
-    if(!count) return;
-    const THREE=window.D3.THREE;
-    const c=Array.isArray(part?.axes?.center)?part.axes.center:part.bounds[0].map((v,i)=>(+v + +part.bounds[1][i])/2);
-    const p=new THREE.Vector3(c[0]-assemblyCenter[0],c[1]-assemblyCenter[1],c[2]-assemblyCenter[2]);
-    const dot=new THREE.Mesh(
-      new THREE.SphereGeometry(1.25,16,12),
-      new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.28,transparent:true,opacity:.90,depthWrite:false})
-    );
-    dot.position.copy(p);
-    dot.userData.findingMarker=true;
-    group.add(dot);
+  function addMandibularCanals(scene,root){
+    const THREE=window.D3.THREE;root.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(root),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3()),helper=(result?.helpers||[]).some(h=>h?.signal==='MANDIBULAR_CANAL_HELPER');
+    for(const side of [-1,1]){
+      const points=[];for(let i=0;i<=28;i++){const u=i/28;points.push(new THREE.Vector3(center.x+side*size.x*(.10+.36*u),box.min.y+size.y*(.22+.20*u-.035*Math.sin(u*Math.PI)),center.z-side*size.z*(.035+.055*u)))}
+      const curve=new THREE.CatmullRomCurve3(points),geo=new THREE.TubeGeometry(curve,84,Math.max(.018,size.x*.0048),12,false),mat=new THREE.MeshStandardMaterial({color:0xff7898,emissive:0x7f1536,emissiveIntensity:.30,transparent:true,opacity:helper?.96:.78,depthWrite:false});
+      const tube=new THREE.Mesh(geo,mat);tube.userData.anatomicalReference=true;tube.userData.panoramaSupported=helper;scene.add(tube);
+    }
+    return helper?'panoramik kanal sinyali + anatomik referans derinlik':'anatomik referans kanal';
+  }
+
+  function fitCamera(ctx,obj,pad=1.24){
+    const THREE=window.D3.THREE;obj.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(obj),c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3()),radius=Math.max(.1,Math.hypot(s.x,s.y,s.z)/2),fov=ctx.camera.fov*Math.PI/180,dist=(radius/Math.sin(fov/2))*pad;
+    ctx.controls.target.copy(c);ctx.camera.position.set(c.x+radius*.12,c.y+radius*.04,c.z+dist);ctx.camera.near=Math.max(.01,dist-radius*2.2);ctx.camera.far=dist+radius*4;ctx.camera.updateProjectionMatrix();ctx.controls.minDistance=Math.max(radius*.65,1.5);ctx.controls.maxDistance=dist*2.4;ctx.controls.update();
   }
 
   renderJaw=async function(){
-    await waitD3();
-    disposeScene(jawScene); jawScene=createBase($('jaw3d'));
-    const {scene,renderer,camera}=jawScene;
-    const data=await loadData();
-    const patient=(result?.teeth||[]).map(t=>{if(t)t.fdi=normalizeFdi(t.fdi);return t}).filter(t=>t?.bbox&&validFdi(t.fdi));
-    if(!patient.length) throw new Error('FDI diş tespiti yok');
-
-    const root=new window.D3.THREE.Group();
-    root.rotation.x=-Math.PI/2;
-    scene.add(root);
-
-    const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({
-      color:0xa8b9de,transparent:true,opacity:.16,roughness:.56,metalness:0,transmission:.06,depthWrite:false,side:window.D3.THREE.DoubleSide
-    });
-    for(const part of data.bones){
-      const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());
-      mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);
-      root.add(mesh);
-    }
-
-    const clickables=[];
-    for(const t of patient){
-      const part=data.teethByFdi.get(Number(t.fdi));
-      if(!part) continue;
-      const findings=toothFindings(t);
-      const mesh=makeToothMesh(part,data.buffer,data.center,findings);
-      mesh.userData.tooth=t;
-      clickables.push(mesh);
-      root.add(mesh);
-      if(findings.length){
-        addFindingMarker(root,part,data.center,findings.length,findingColor(findings[0].finding_code));
-      }
-    }
-
-    root.scale.setScalar(.058);
-    fitCamera(jawScene,root,1.18);
-
-    const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
-    renderer.domElement.addEventListener('pointerdown',ev=>{
-      const r=renderer.domElement.getBoundingClientRect();
-      mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
-      ray.setFromCamera(mouse,camera);
-      const hit=ray.intersectObjects(clickables,false)[0];
-      if(hit?.object?.userData?.tooth) openTooth(hit.object.userData.tooth);
-    });
+    await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));
+    const {scene,renderer,camera}=jawScene,data=await loadData(),patient=(result?.teeth||[]).map(t=>{if(t)t.fdi=normalizeFdi(t.fdi);return t}).filter(t=>t?.bbox&&validFdi(t.fdi));
+    if(!patient.length)throw new Error('FDI diş tespiti yok');
+    const stats=patientStats(patient),root=new window.D3.THREE.Group();root.rotation.x=-Math.PI/2;scene.add(root);
+    const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa8b9de,transparent:true,opacity:.17,roughness:.56,metalness:0,transmission:.06,depthWrite:false,side:window.D3.THREE.DoubleSide});
+    for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);root.add(mesh)}
+    const clickables=[];let impactedAdjusted=0,axisAdjusted=0;
+    for(const tooth of patient){const part=data.teethByFdi.get(Number(tooth.fdi));if(!part)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,part,data,stats,findings);if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;addFindingMarkers(built.wrapper,part,findings);clickables.push(built.mesh);root.add(built.wrapper)}
+    root.scale.setScalar(.058);fitCamera(jawScene,root,1.17);const canalLabel=addMandibularCanals(scene,root);
+    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,canal:canalLabel,atlas_revision:ATLAS_REV};
+    const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
-  const oldOpenTooth=openTooth;
+  const baseOpenTooth=openTooth;
   openTooth=async function(t){
-    await oldOpenTooth(t);
+    await baseOpenTooth(t);
     try{
-      const data=await loadData(),part=data.teethByFdi.get(Number(normalizeFdi(t.fdi)));
-      if(!part) return;
-      await waitD3();
-      disposeScene(toothScene); toothScene=createBase($('tooth3d'));
-      const THREE=window.D3.THREE;
-      const group=new THREE.Group(); group.rotation.x=-Math.PI/2;
-      const g=geometryFor(part,data.buffer);
-      const c=Array.isArray(part?.axes?.center)?part.axes.center:part.bounds[0].map((v,i)=>(+v + +part.bounds[1][i])/2);
-      g.translate(-c[0],-c[1],-c[2]);
-      const f=toothFindings(t);
-      const mesh=new THREE.Mesh(g,new THREE.MeshPhysicalMaterial({
-        color:0xf2eee6,roughness:.24,clearcoat:.20,transparent:true,opacity:.78,side:THREE.DoubleSide,depthWrite:true
-      }));
-      group.add(mesh);
-
-      const tb=t.bbox.map(Number),tw=Math.max(1,tb[2]-tb[0]),th=Math.max(1,tb[3]-tb[1]);
-      const box=new THREE.Box3().setFromObject(group),size=new THREE.Vector3();box.getSize(size);
-      for(const item of f){
-        if(!Array.isArray(item.bbox)||item.bbox.length!==4) continue;
-        const b=item.bbox.map(Number),cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;
-        const nx=((cx-(tb[0]+tb[2])/2)/tw), ny=((cy-(tb[1]+tb[3])/2)/th);
-        const marker=new THREE.Mesh(
-          new THREE.SphereGeometry(Math.max(.35,size.x*.035),18,12),
-          new THREE.MeshStandardMaterial({color:findingColor(item.finding_code),emissive:findingColor(item.finding_code),emissiveIntensity:.35,transparent:true,opacity:.86,depthWrite:false})
-        );
-        marker.position.set(nx*size.x*.72,-ny*size.y*.86,size.z*.52);
-        group.add(marker);
-      }
-      toothScene.scene.add(group);
-      group.scale.setScalar(.065);
-      fitCamera(toothScene,group,1.34);
-    }catch(err){console.warn('[SMOOTH_DETAIL_FALLBACK]',err);}
+      const data=await loadData(),part=data.teethByFdi.get(Number(normalizeFdi(t.fdi)));if(!part)return;
+      disposeScene(toothScene);toothScene=createBase($('tooth3d'));
+      const THREE=window.D3.THREE,c=partCenter(part),group=new THREE.Group();group.rotation.x=-Math.PI/2;
+      const geometry=geometryFor(part,data.buffer);geometry.translate(-c[0],-c[1],-c[2]);
+      const findings=toothFindings(t),mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf2eee6,roughness:.24,clearcoat:.20,transparent:true,opacity:.80,side:THREE.DoubleSide,depthWrite:true}));mesh.userData.tooth=t;group.add(mesh);addFindingMarkers(group,part,findings);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.34);
+      const prior=$('metrics').textContent||'';$('metrics').textContent=`${prior}${prior?' • ':''}${PANORAMIC_SIMULATION_LABEL}; bukkolingual derinlik anatomik referanstır.`;
+    }catch(err){console.warn('[ANATOMY_DETAIL_FALLBACK]',err)}
   };
 
-  const style=document.createElement('style');
-  style.textContent=`
-    .detail-info{grid-template-columns:min(42vw,250px) 1fr;align-items:start;max-height:38vh;overflow:auto}
-    .detail-info canvas{width:100%;height:auto;max-height:250px;object-fit:contain;background:#000}
-    .chips{max-height:82px;overflow:auto}
-    @media(max-width:620px){.detail-info{grid-template-columns:42vw 1fr}.detail-info canvas{width:100%;height:auto;max-height:210px}}
-  `;
-  document.head.appendChild(style);
+  const baseAnalyze=analyze;
+  analyze=async function(){
+    await baseAnalyze();if(!result?.anatomy3d)return;
+    const count=allFindings().length,meta=result.anatomy3d;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.axis_adjusted} diş film eksenine uyarlandı • ${PANORAMIC_SIMULATION_LABEL}`;
+  };
+  $('run').onclick=analyze;
+
+  const style=document.createElement('style');style.textContent=`.detail-info{grid-template-columns:min(42vw,250px) 1fr;align-items:start;max-height:38vh;overflow:auto}.detail-info canvas{width:100%;height:auto;max-height:250px;object-fit:contain;background:#000}.chips{max-height:82px;overflow:auto}@media(max-width:620px){.detail-info{grid-template-columns:42vw 1fr}.detail-info canvas{width:100%;height:auto;max-height:210px}}`;document.head.appendChild(style);
 })();
