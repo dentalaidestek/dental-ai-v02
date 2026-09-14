@@ -27,28 +27,17 @@ def _get_fdi_model():
 
 
 def _fdi_from_label(label):
-    """Normalize the FDI class label without assuming the class name is only digits.
-
-    Older working viewer code accepted labels such as ``11``, ``FDI 11`` and
-    ``tooth_11``. The recovery refactor accidentally accepted only the first form,
-    which could turn a valid direct FDI result into zero teeth.
-    """
+    """Normalize the FDI class label without assuming the class name is only digits."""
     s = str(label or "").strip()
-
-    # Plain numeric label first.
     try:
         value = int(s)
         if value // 10 in {1, 2, 3, 4} and 1 <= value % 10 <= 8:
             return value
     except Exception:
         pass
-
-    # Then accept a standalone two-digit FDI code embedded in a class name.
     m = re.search(r"(?<!\d)([1-4][1-8])(?!\d)", s)
     if m:
         return int(m.group(1))
-
-    # Last conservative fallback: strip non-digits and inspect the last two digits.
     digits = re.sub(r"\D", "", s)
     if len(digits) >= 2:
         tail = digits[-2:]
@@ -69,13 +58,11 @@ def _predict_fdi(image_path: str):
         nonlocal best_by_fdi
         if result is None or result.boxes is None:
             return
-
         boxes = result.boxes.xyxy.detach().cpu().numpy()
         scores = result.boxes.conf.detach().cpu().numpy()
         classes = result.boxes.cls.detach().cpu().numpy().astype(int)
         names = result.names
         mask_polys = result.masks.xy if result.masks is not None and result.masks.xy is not None else []
-
         existing = list(best_by_fdi.values())
         widths = [max(1.0, x["bbox"][2] - x["bbox"][0]) for x in existing]
         heights = [max(1.0, x["bbox"][3] - x["bbox"][1]) for x in existing]
@@ -88,27 +75,22 @@ def _predict_fdi(image_path: str):
             fdi = _fdi_from_label(label)
             if fdi is None:
                 continue
-
             key = str(fdi)
             if recovery and key in best_by_fdi:
                 continue
-
             x1, y1, x2, y2 = [float(v) for v in box.tolist()]
             w, h = max(1.0, x2-x1), max(1.0, y2-y1)
-
             if recovery and med_w and med_h:
                 if not (0.42*med_w <= w <= 1.95*med_w and 0.42*med_h <= h <= 2.10*med_h):
                     continue
                 if float(score) < 0.10:
                     continue
-
             poly = []
             if i < len(mask_polys):
                 arr = mask_polys[i]
                 if arr is not None and len(arr) >= 3:
                     step = max(1, len(arr)//120)
                     poly = [[round(float(x), 1), round(float(y), 1)] for x, y in arr[::step]]
-
             item = {
                 "fdi": fdi,
                 "confidence": round(float(score), 4),
@@ -128,13 +110,11 @@ def _predict_fdi(image_path: str):
         add_result(result, conf, recovery=idx > 0)
         if idx == 1 and len(best_by_fdi) >= 27:
             break
-
     teeth = sorted(best_by_fdi.values(), key=lambda x: str(x["fdi"]))
     return teeth, used_conf, last_result
 
 
 def _run_pinned_findings(image_path: str, teeth: list[dict]):
-    """Run pinned finding motors independently of the Vision48 FDI path."""
     findings = []
     helpers = []
     execution = []
@@ -145,16 +125,8 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
     ]
     for model_key, normalizer, conf, iou, imgsz in jobs:
         try:
-            f, h = _detector_outputs(
-                image_path=image_path,
-                model_key=model_key,
-                conf=conf,
-                iou=iou,
-                imgsz=imgsz,
-                normalizer=normalizer,
-            )
-            findings.extend(f)
-            helpers.extend(h)
+            f, h = _detector_outputs(image_path=image_path, model_key=model_key, conf=conf, iou=iou, imgsz=imgsz, normalizer=normalizer)
+            findings.extend(f); helpers.extend(h)
             execution.append({"motor": model_key, "status": "ok", "findings": len(f), "helpers": len(h)})
         except Exception as exc:
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
@@ -162,14 +134,7 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
 
     if not findings:
         try:
-            f, h = _detector_outputs(
-                image_path=image_path,
-                model_key="findings9",
-                conf=0.18,
-                iou=0.45,
-                imgsz=1280,
-                normalizer=normalize_findings9,
-            )
+            f, h = _detector_outputs(image_path=image_path, model_key="findings9", conf=0.18, iou=0.45, imgsz=1280, normalizer=normalize_findings9)
             for item in f:
                 item["recovery"] = True
             findings.extend(f); helpers.extend(h)
@@ -220,6 +185,12 @@ def viewer_v3_enhance_js():
     return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/viewer-v3-realjaw.js", response_class=PlainTextResponse)
+def viewer_v3_realjaw_js():
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_realjaw.js"
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/anatomy/tooth/{fdi}.obj", response_class=PlainTextResponse)
 def anatomy_tooth(fdi: int):
     try:
@@ -230,7 +201,7 @@ def anatomy_tooth(fdi: int):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "occlusion_aware": True, "fdi_recovery": True}
+    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "real_jaw_reference": True, "occlusion_aware": True, "fdi_recovery": True}
 
 
 @app.post("/analyze")
@@ -238,25 +209,16 @@ async def analyze_image(image: UploadFile = File(...)):
     suffix = Path(image.filename or "image.jpg").suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
         raise HTTPException(status_code=400, detail="Desteklenmeyen görüntü formatı.")
-
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             shutil.copyfileobj(image.file, tmp)
             temp_path = tmp.name
-
         teeth, used_conf, raw = _predict_fdi(temp_path)
-
         try:
             base = analyze_panorama(temp_path)
         except Exception as exc:
-            base = {
-                "findings": [],
-                "helpers": [],
-                "motor_execution": [],
-                "warnings": [{"motor": "pipeline", "message": str(exc)}],
-            }
-
+            base = {"findings": [], "helpers": [], "motor_execution": [], "warnings": [{"motor": "pipeline", "message": str(exc)}]}
         pinned_findings, pinned_helpers, pinned_exec, pinned_warnings = _run_pinned_findings(temp_path, teeth)
         base["findings"] = _merge_direct_findings(list(base.get("findings") or []), pinned_findings)
         base["helpers"] = list(base.get("helpers") or []) + pinned_helpers
@@ -264,11 +226,9 @@ async def analyze_image(image: UploadFile = File(...)):
         base["helper_signal_count"] = len(base["helpers"])
         base["motor_execution"] = list(base.get("motor_execution") or []) + pinned_exec
         base["warnings"] = list(base.get("warnings") or []) + pinned_warnings
-
         for item in list(base.get("findings") or []) + list(base.get("helpers") or []):
             if not item.get("fdi"):
                 _attach_fdi(item, teeth)
-
         base["teeth"] = teeth
         base["tooth_count"] = len(teeth)
         base["unique_fdi_count"] = len({str(t.get("fdi")) for t in teeth})
@@ -277,13 +237,8 @@ async def analyze_image(image: UploadFile = File(...)):
         base["fdi_conf_used"] = used_conf
         base["fdi_recovered_count"] = sum(1 for t in teeth if t.get("recovered"))
         base["pinned_direct_findings_restored"] = True
-
         if not teeth:
-            base["fdi_debug"] = {
-                "model": model_path("motor1_fdi").name,
-                "passes": [0.40, 0.20, 0.08],
-                "message": "Direct FDI model returned zero usable FDI labels",
-            }
+            base["fdi_debug"] = {"model": model_path("motor1_fdi").name, "passes": [0.40, 0.20, 0.08], "message": "Direct FDI model returned zero usable FDI labels"}
         return base
     finally:
         if temp_path:
