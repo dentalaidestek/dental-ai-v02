@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -26,22 +27,38 @@ def _get_fdi_model():
 
 
 def _fdi_from_label(label):
+    """Normalize the FDI class label without assuming the class name is only digits.
+
+    Older working viewer code accepted labels such as ``11``, ``FDI 11`` and
+    ``tooth_11``. The recovery refactor accidentally accepted only the first form,
+    which could turn a valid direct FDI result into zero teeth.
+    """
+    s = str(label or "").strip()
+
+    # Plain numeric label first.
     try:
-        value = int(str(label).strip())
+        value = int(s)
+        if value // 10 in {1, 2, 3, 4} and 1 <= value % 10 <= 8:
+            return value
     except Exception:
-        return None
-    if value // 10 in {1, 2, 3, 4} and value % 10 in set(range(1, 9)):
-        return value
+        pass
+
+    # Then accept a standalone two-digit FDI code embedded in a class name.
+    m = re.search(r"(?<!\d)([1-4][1-8])(?!\d)", s)
+    if m:
+        return int(m.group(1))
+
+    # Last conservative fallback: strip non-digits and inspect the last two digits.
+    digits = re.sub(r"\D", "", s)
+    if len(digits) >= 2:
+        tail = digits[-2:]
+        if re.fullmatch(r"[1-4][1-8]", tail):
+            return int(tail)
     return None
 
 
 def _predict_fdi(image_path: str):
-    """Run a high-confidence pass and then recovery passes for tilted/weak teeth.
-
-    The old implementation stopped as soon as *any* teeth were found, so a panorama
-    with 22 confident teeth never got a lower-confidence recovery pass for a tilted
-    23rd tooth. Here we merge only previously-missing FDI classes from recovery passes.
-    """
+    """Run direct FDI inference and merge only missing teeth from recovery passes."""
     model = _get_fdi_model()
     passes = (0.40, 0.20, 0.08)
     best_by_fdi: dict[str, dict] = {}
@@ -52,6 +69,7 @@ def _predict_fdi(image_path: str):
         nonlocal best_by_fdi
         if result is None or result.boxes is None:
             return
+
         boxes = result.boxes.xyxy.detach().cpu().numpy()
         scores = result.boxes.conf.detach().cpu().numpy()
         classes = result.boxes.cls.detach().cpu().numpy().astype(int)
@@ -70,16 +88,17 @@ def _predict_fdi(image_path: str):
             fdi = _fdi_from_label(label)
             if fdi is None:
                 continue
+
             key = str(fdi)
             if recovery and key in best_by_fdi:
                 continue
 
             x1, y1, x2, y2 = [float(v) for v in box.tolist()]
             w, h = max(1.0, x2-x1), max(1.0, y2-y1)
+
             if recovery and med_w and med_h:
                 if not (0.42*med_w <= w <= 1.95*med_w and 0.42*med_h <= h <= 2.10*med_h):
                     continue
-                # Very weak candidates are accepted only when they are geometrically tooth-sized.
                 if float(score) < 0.10:
                     continue
 
@@ -88,12 +107,12 @@ def _predict_fdi(image_path: str):
                 arr = mask_polys[i]
                 if arr is not None and len(arr) >= 3:
                     step = max(1, len(arr)//120)
-                    poly = [[round(float(x),1), round(float(y),1)] for x,y in arr[::step]]
+                    poly = [[round(float(x), 1), round(float(y), 1)] for x, y in arr[::step]]
 
             item = {
                 "fdi": fdi,
                 "confidence": round(float(score), 4),
-                "bbox": [round(x1,1), round(y1,1), round(x2,1), round(y2,1)],
+                "bbox": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
                 "polygon": poly,
                 "recovered": bool(recovery),
                 "recovery_conf": conf if recovery else None,
@@ -107,7 +126,6 @@ def _predict_fdi(image_path: str):
         last_result = result
         used_conf = conf
         add_result(result, conf, recovery=idx > 0)
-        # Once the arch is already well populated, a very-low pass adds more risk than value.
         if idx == 1 and len(best_by_fdi) >= 27:
             break
 
@@ -142,7 +160,6 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
             execution.append({"motor": model_key, "status": "error"})
 
-    # One conservative recovery pass if both pinned motors returned zero findings.
     if not findings:
         try:
             f, h = _detector_outputs(
@@ -265,7 +282,7 @@ async def analyze_image(image: UploadFile = File(...)):
             base["fdi_debug"] = {
                 "model": model_path("motor1_fdi").name,
                 "passes": [0.40, 0.20, 0.08],
-                "message": "Direct FDI model returned zero boxes",
+                "message": "Direct FDI model returned zero usable FDI labels",
             }
         return base
     finally:
