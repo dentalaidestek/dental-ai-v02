@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import math
 
 from vision_service.cv_signals import (
     apical_bbox,
@@ -12,6 +13,7 @@ from vision_service.cv_signals import (
     load_gray,
     patch_stats,
     root_curvature_score,
+    root_filling_score,
     tooth_crown_bbox,
     tooth_root_bbox,
 )
@@ -63,6 +65,22 @@ def _same_fdi_or_overlap(a, b) -> bool:
     return bbox_iou(a.get("bbox"), b.get("bbox")) >= 0.12
 
 
+def _polygon_tilt_deg(tooth: dict) -> float | None:
+    points = tooth.get("polygon") or []
+    if len(points) < 6:
+        return None
+    xs = [float(p[0]) for p in points]; ys = [float(p[1]) for p in points]
+    mx = sum(xs) / len(xs); my = sum(ys) / len(ys)
+    xx = sum((x-mx)**2 for x in xs); yy = sum((y-my)**2 for y in ys)
+    xy = sum((x-mx)*(y-my) for x, y in zip(xs, ys))
+    trace = xx + yy; det = xx*yy - xy*xy
+    eigen = trace/2.0 + math.sqrt(max(0.0, trace*trace/4.0-det))
+    vx, vy = xy, eigen-xx
+    if abs(vx)+abs(vy) < 1e-8:
+        vx, vy = ((1.0, 0.0) if xx > yy else (0.0, 1.0))
+    return abs(math.degrees(math.atan2(vx, vy)))
+
+
 def derive_findings(image_path: str | None, teeth: list[dict], findings: list[dict], helpers: list[dict], *, patient_age: int | None = None) -> list[dict]:
     out: list[dict] = []
     gray = load_gray(image_path) if image_path else None
@@ -83,6 +101,30 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
         if patient_age is None or patient_age >= 12:
             tooth = _nearest_tooth(h.get("bbox"), teeth)
             out.append(_finding("RETAINED_PRIMARY_TOOTH", max(0.45, h.get("confidence", 0.0)), bbox=h.get("bbox"), fdi=tooth.get("fdi") if tooth else None, evidence=["PRIMARY_TOOTH_HELPER"]))
+
+    # 4/6 — recover an impacted third molar from its FDI mask geometry when the
+    # dedicated detector is below threshold.
+    existing_impacted = _by_code(findings, "IMPACTED_TOOTH")
+    for tooth in teeth:
+        fdi = str(tooth.get("fdi") or "")
+        if fdi not in {"18", "28", "38", "48"} or any(_same_fdi_or_overlap(tooth, x) for x in existing_impacted):
+            continue
+        bbox = tooth.get("bbox") or []
+        if len(bbox) != 4:
+            continue
+        is_upper = fdi[0] in {"1", "2"}
+        jaw_quadrants = {"1", "2"} if is_upper else {"3", "4"}
+        peers = [t for t in teeth if str(t.get("fdi") or "")[:1] in jaw_quadrants and str(t.get("fdi") or "")[-1:] != "8" and len(t.get("bbox") or []) == 4]
+        peer_centers = sorted((float(t["bbox"][1])+float(t["bbox"][3]))/2.0 for t in peers)
+        peer_heights = sorted(max(1.0, float(t["bbox"][3])-float(t["bbox"][1])) for t in peers)
+        cy = (float(bbox[1])+float(bbox[3]))/2.0
+        offset = abs(cy-peer_centers[len(peer_centers)//2]) / peer_heights[len(peer_heights)//2] if peer_centers and peer_heights else 0.0
+        tilt = _polygon_tilt_deg(tooth)
+        if (tilt is not None and tilt >= 34.0) or offset >= 0.58:
+            strength = max((tilt or 0.0)/90.0, min(1.0, offset))
+            recovered = _finding("IMPACTED_TOOTH", 0.54+min(0.24, strength*0.24), bbox=bbox, fdi=tooth.get("fdi"), evidence=["third_molar_fdi", "off_arch_or_axis_geometry"], measurement={"axis_tilt_deg": round(tilt,1) if tilt is not None else None, "arch_offset_ratio": round(offset,3)})
+            out.append(recovered)
+            out.append(_finding("IMPACTED_THIRD_MOLAR", recovered["confidence"], bbox=bbox, fdi=tooth.get("fdi"), evidence=["IMPACTED_TOOTH", "third_molar_fdi"]))
 
     # 4 — unerupted: tooth bbox vertical outlier from quadrant arch, excluding already-impacted regions.
     if len(teeth) >= 10:
@@ -136,8 +178,20 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
         if imp and bbox_distance(abut.get("bbox"), imp.get("bbox")) <= 12:
             out.append(_finding("IMPLANT_SUPPORTED_CROWN", max(0.52, abut.get("confidence",0)), bbox=abut.get("bbox"), fdi=imp.get("fdi"), evidence=["IMPLANT", "ABUTMENT_HELPER"]))
 
-    # 16-20 — endodontic geometry candidates.
-    for rct in _by_code(findings, "ROOT_CANAL_TREATED"):
+    # 16-20 — endodontic geometry candidates. When the pinned motor misses a
+    # treated tooth, require a long/narrow high-contrast line inside its root.
+    rct_candidates = list(_by_code(findings, "ROOT_CANAL_TREATED"))
+    if gray is not None:
+        existing_fdis = {str(x.get("fdi")) for x in rct_candidates if x.get("fdi") is not None}
+        for tooth in teeth:
+            fdi = str(tooth.get("fdi") or "")
+            if not fdi or fdi in existing_fdis:
+                continue
+            score = root_filling_score(gray, tooth)
+            if score >= 0.58:
+                recovered = _finding("ROOT_CANAL_TREATED", 0.46+min(0.24, score*0.24), bbox=tooth_root_bbox(tooth), fdi=tooth.get("fdi"), evidence=["intraradicular_radiopaque_line_recovery"], measurement={"root_filling_score": round(score,3)})
+                out.append(recovered); rct_candidates.append(recovered); existing_fdis.add(fdi)
+    for rct in rct_candidates:
         tooth = next((t for t in teeth if str(t.get("fdi")) == str(rct.get("fdi")) and t.get("fdi") is not None), None) or _nearest_tooth(rct.get("bbox"), teeth)
         if not tooth or gray is None:
             continue
