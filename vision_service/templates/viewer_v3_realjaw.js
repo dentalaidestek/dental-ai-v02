@@ -242,11 +242,11 @@
     return 0xff7bc8;
   }
 
-  function addFindingMarker(parent,part,tooth){
+  function addFindingMarker(parent,part,tooth,assemblyCenter){
     const list=findingsFor(tooth);if(!list.length)return;
     const THREE=window.D3.THREE,c=sourceCenter(part),up=part?.axes?.up||[0,0,1];
     const g=new THREE.Group();
-    const base=[c[0],c[1],c[2]];
+    const base=[c[0]-assemblyCenter[0],c[1]-assemblyCenter[1],c[2]-assemblyCenter[2]];
     for(let i=0;i<Math.min(3,list.length);i++){
       const m=new THREE.Mesh(
         new THREE.SphereGeometry(1.15+i*.20,16,12),
@@ -303,7 +303,7 @@
       const patientScale=clamp((imgLen/srcLen)/k,.92,1.08);
       const obj=buildRegisteredTooth(part,template.buffer,template.assemblyCenter,t,patientScale);
       obj.traverse(n=>{if(n.isMesh){n.userData.tooth=t;clickables.push(n)}});toothLayer.add(obj);
-      addFindingMarker(toothLayer,part,t);
+      addFindingMarker(toothLayer,part,t,template.assemblyCenter);
     }
 
     const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
