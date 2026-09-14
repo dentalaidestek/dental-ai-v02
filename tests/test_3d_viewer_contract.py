@@ -64,6 +64,13 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("if(mirrorX)mesh.scale.x=-1", script)
         self.assertIn("atlas_fallbacks:atlasFallbacks", script)
 
+    def test_mesh_transforms_cannot_mutate_shared_atlas_buffer(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("new Float32Array(new Float32Array(buffer,part.positions", script)
+        self.assertIn("new Uint32Array(new Uint32Array(buffer,part.indices", script)
+        self.assertIn("rendered_teeth:renderedTeeth", script)
+        self.assertIn("diş 3D'ye yerleştirildi", script)
+
     def test_external_atlas_is_revision_pinned(self):
         script = FINAL.read_text(encoding="utf-8")
         self.assertRegex(script, r"const ATLAS_REV='[0-9a-f]{40}'")
