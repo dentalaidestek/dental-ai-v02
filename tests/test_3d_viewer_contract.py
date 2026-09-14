@@ -33,6 +33,30 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("MANDIBULAR_CANAL_HELPER", script)
         self.assertIn("BONE_LOSS_RE", script)
 
+    def test_visible_results_are_deduplicated(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("function dedupeFindings", script)
+        self.assertIn("function allFindings(){return dedupeFindings", script)
+        self.assertIn("const direct=findings.filter", script)
+
+    def test_reference_canal_is_not_invented_without_signal(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("if(!helper)return 'gösterilmedi: filmden mandibular kanal sinyali yok'", script)
+        self.assertIn("addMandibularCanals(scene,mandibleRoot)", script)
+
+    def test_invalid_canal_metrics_are_suppressed(self):
+        base = (ROOT / "vision_service" / "templates" / "viewer_v3.js").read_text(encoding="utf-8")
+        self.assertIn("curvatureDeg<=90", base)
+        self.assertIn("if(path?.reliable)", base)
+        self.assertIn("Geçersiz uzunluk/eğrilik değeri gösterilmedi", base)
+
+    def test_occlusion_and_detail_patient_pose_are_applied(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("maxillaRoot.position.z=-2.8", script)
+        self.assertIn("mandibleRoot.position.z=2.8", script)
+        self.assertIn("pose.rotation.y=transform.rotationY", script)
+        self.assertIn("fitCamera(toothScene,group,1.72)", script)
+
     def test_external_atlas_is_revision_pinned(self):
         script = FINAL.read_text(encoding="utf-8")
         self.assertRegex(script, r"const ATLAS_REV='[0-9a-f]{40}'")
