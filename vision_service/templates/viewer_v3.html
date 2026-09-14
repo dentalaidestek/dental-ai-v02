@@ -25,6 +25,18 @@ window.D3={THREE,OrbitControls,OBJLoader};window.dispatchEvent(new Event('d3-rea
 <script src="/viewer-v3.js"></script>
 <script src="/viewer-v3-patch.js"></script>
 <script src="/viewer-v3-enhance.js"></script>
-<script src="/viewer-v3-postfix.js"></script>
+<script>
+(function(){
+  function normalizeFdi(v){
+    const s=String(v ?? '').trim();
+    if(/^[1-4][1-8]$/.test(s))return Number(s);
+    const m=s.match(/(?:^|\D)([1-4][1-8])(?:\D|$)/);if(m)return Number(m[1]);
+    const d=s.replace(/\D/g,'');if(d.length>=2){const t=d.slice(-2);if(/^[1-4][1-8]$/.test(t))return Number(t)}
+    return v;
+  }
+  const enhancedRenderJaw=renderJaw;
+  renderJaw=async function(){if(result&&Array.isArray(result.teeth)){for(const t of result.teeth){if(t)t.fdi=normalizeFdi(t.fdi)}}return enhancedRenderJaw();};
+})();
+</script>
 </body>
 </html>
