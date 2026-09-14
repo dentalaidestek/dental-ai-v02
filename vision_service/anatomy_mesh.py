@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from io import BytesIO
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -18,6 +20,8 @@ TEETHNET_BINVOX = (
     "SingleObject-SingleTooth/TeethNet-Images-Normal-without-texture-v-400/"
     "{fdi}/viewpoints/rendering/Voxel/model.binvox"
 )
+CACHE_DIR = Path(os.getenv("DENTAL_ANATOMY_CACHE_DIR", "/tmp/dental_ai_anatomy_cache"))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 class AnatomyMeshError(RuntimeError):
     pass
@@ -75,6 +79,35 @@ def _parse_binvox(data: bytes) -> np.ndarray:
     return volume
 
 
+def _compact_volume(volume: np.ndarray, factor: int = 4) -> np.ndarray:
+    """Reduce 400^3 TeethNet voxels before marching cubes without losing thin roots.
+
+    The old code converted the full 400^3 array to float for every tooth. Loading many
+    teeth in parallel could allocate multiple gigabytes and make the viewer look frozen.
+    Max-pooling 4x4x4 blocks keeps occupied anatomy while reducing the working grid to
+    roughly 100^3.
+    """
+    occupied = np.argwhere(volume)
+    if occupied.size == 0:
+        raise AnatomyMeshError("Voxel modeli boş")
+
+    lo = np.maximum(occupied.min(axis=0) - factor * 2, 0)
+    hi = np.minimum(occupied.max(axis=0) + factor * 2 + 1, volume.shape)
+    cropped = volume[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+
+    pads = [(-cropped.shape[i]) % factor for i in range(3)]
+    if any(pads):
+        cropped = np.pad(cropped, ((0,pads[0]),(0,pads[1]),(0,pads[2])), constant_values=False)
+
+    sx, sy, sz = cropped.shape
+    pooled = cropped.reshape(
+        sx//factor, factor,
+        sy//factor, factor,
+        sz//factor, factor,
+    ).max(axis=(1,3,5))
+    return pooled
+
+
 def _normalize_vertices(vertices: np.ndarray) -> np.ndarray:
     lo = vertices.min(axis=0)
     hi = vertices.max(axis=0)
@@ -102,14 +135,15 @@ def _normalize_vertices(vertices: np.ndarray) -> np.ndarray:
 
 
 def _marching_cubes(volume: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    reduced = _compact_volume(volume, factor=4)
     try:
         from skimage.measure import marching_cubes
         verts, faces, _normals, _values = marching_cubes(
-            volume.astype(np.float32), level=0.5, allow_degenerate=False
+            reduced.astype(np.float32, copy=False), level=0.5, allow_degenerate=False
         )
         return verts.astype(np.float32), faces.astype(np.int32)
     except Exception:
-        occupied = np.argwhere(volume)
+        occupied = np.argwhere(reduced)
         vertex_map: dict[tuple[int, int, int], int] = {}
         vertices: list[tuple[float, float, float]] = []
         faces: list[tuple[int, int, int]] = []
@@ -121,11 +155,11 @@ def _marching_cubes(volume: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             ((0,0,-1), [(0,0,0),(0,1,0),(1,1,0),(1,0,0)]),
             ((0,0,1),  [(0,0,1),(1,0,1),(1,1,1),(0,1,1)]),
         ]
-        sx, sy, sz = volume.shape
+        sx, sy, sz = reduced.shape
         for x, y, z in occupied:
             for (dx, dy, dz), corners in dirs:
                 nx, ny, nz = x + dx, y + dy, z + dz
-                if 0 <= nx < sx and 0 <= ny < sy and 0 <= nz < sz and volume[nx, ny, nz]:
+                if 0 <= nx < sx and 0 <= ny < sy and 0 <= nz < sz and reduced[nx, ny, nz]:
                     continue
                 idx = []
                 for cx, cy, cz in corners:
@@ -148,10 +182,27 @@ def _obj_text(vertices: np.ndarray, faces: np.ndarray) -> str:
 
 @lru_cache(maxsize=32)
 def anatomy_obj(fdi: int) -> str:
-    data = _download_binvox(int(fdi))
+    fdi = int(fdi)
+    if fdi not in VALID_FDI:
+        raise AnatomyMeshError(f"Desteklenmeyen FDI: {fdi}")
+
+    cache_path = CACHE_DIR / f"tooth_{fdi}_v2.obj"
+    try:
+        if cache_path.is_file() and cache_path.stat().st_size > 1024:
+            return cache_path.read_text(encoding="utf-8")
+    except Exception:
+        pass
+
+    data = _download_binvox(fdi)
     volume = _parse_binvox(data)
     vertices, faces = _marching_cubes(volume)
     if len(vertices) < 50 or len(faces) < 50:
         raise AnatomyMeshError(f"Anatomik mesh üretilemedi: {fdi}")
     vertices = _normalize_vertices(vertices)
-    return _obj_text(vertices, faces)
+    obj = _obj_text(vertices, faces)
+
+    try:
+        cache_path.write_text(obj, encoding="utf-8")
+    except Exception:
+        pass
+    return obj
