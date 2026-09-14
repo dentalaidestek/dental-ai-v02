@@ -27,7 +27,6 @@ def _get_fdi_model():
 
 def _predict_fdi(image_path: str):
     model = _get_fdi_model()
-    # This is the same direct inference path that the first working Kaggle 3D test used.
     passes = (0.40, 0.20, 0.08)
     last = None
     used_conf = passes[-1]
@@ -80,13 +79,7 @@ def _predict_fdi(image_path: str):
 
 
 def _run_pinned_findings(image_path: str, teeth: list[dict]):
-    """Run the pinned direct finding motors independently of the Vision48 FDI path.
-
-    The 3D test intentionally uses the legacy direct FDI inference that already works
-    on the Kaggle panorama. Findings must not disappear just because analyze_panorama's
-    own FDI stage behaves differently, so the pinned direct finding motors are also run
-    here and attached to the same direct-FDI tooth boxes.
-    """
+    """Run pinned finding motors independently of the Vision48 FDI path."""
     findings = []
     helpers = []
     execution = []
@@ -149,6 +142,12 @@ def viewer_v3_patch_js():
     return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/viewer-v3-enhance.js", response_class=PlainTextResponse)
+def viewer_v3_enhance_js():
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_enhance.js"
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/anatomy/tooth/{fdi}.obj", response_class=PlainTextResponse)
 def anatomy_tooth(fdi: int):
     try:
@@ -159,7 +158,7 @@ def anatomy_tooth(fdi: int):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo"}
+    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "occlusion_aware": True}
 
 
 @app.post("/analyze")
@@ -174,11 +173,8 @@ async def analyze_image(image: UploadFile = File(...)):
             shutil.copyfileobj(image.file, tmp)
             temp_path = tmp.name
 
-        # First: restore the exact direct FDI path that previously produced 29 teeth.
         teeth, used_conf, raw = _predict_fdi(temp_path)
 
-        # Keep the full Vision48 output when available. A failure here must not erase
-        # the working direct-FDI 3D path or the pinned direct findings below.
         try:
             base = analyze_panorama(temp_path)
         except Exception as exc:
