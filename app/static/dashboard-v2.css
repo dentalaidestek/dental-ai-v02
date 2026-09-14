@@ -26,9 +26,12 @@
 .workspace-dashboard>.workspace-ai-cta small{color:#cfd3da!important;line-height:1.4!important;margin-top:8px!important}
 .workspace-dashboard>.workspace-ai-cta .workspace-ai-cta-arrow{color:#fff!important;font-size:28px!important;position:absolute!important;right:20px!important;bottom:16px!important}
 .workspace-dashboard>.workspace-program-compact{grid-area:program!important;margin:0!important}
-.workspace-dashboard>.workspace-shortcuts-card{grid-area:shortcuts!important;margin:0!important}
-.workspace-dashboard>.workspace-patients-card{grid-area:patients!important;margin:0!important}
-.workspace-dashboard>.workspace-analyses-card{grid-area:analyses!important;margin:0!important}
+.workspace-dashboard>.workspace-shortcuts-card,
+.workspace-dashboard>.workspace-program-compact + .workspace-section{grid-area:shortcuts!important;margin:0!important}
+.workspace-dashboard>.workspace-patients-card,
+.workspace-dashboard>.workspace-program-compact + .workspace-section + .patient-card{grid-area:patients!important;margin:0!important}
+.workspace-dashboard>.workspace-analyses-card,
+.workspace-dashboard>.workspace-program-compact + .workspace-section + .patient-card + .patient-card{grid-area:analyses!important;margin:0!important}
 .workspace-dashboard>.workspace-notice{grid-area:notice!important;margin:0!important;background:transparent!important;border:0!important;color:#8b919a!important;text-align:center!important;font-size:11px!important;padding:4px 8px!important}
 .workspace-dashboard>.workspace-section,.workspace-dashboard>.patient-card{border:1px solid #e7e9ee!important;border-radius:20px!important;background:#fff!important;box-shadow:0 8px 24px rgba(15,23,42,.035)!important}
 .workspace-dashboard .workspace-card-heading,.workspace-dashboard .patient-header{margin-bottom:10px!important}
