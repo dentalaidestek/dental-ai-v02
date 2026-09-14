@@ -191,6 +191,12 @@ def viewer_v3_realjaw_js():
     return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/viewer-v3-finalfix.js", response_class=PlainTextResponse)
+def viewer_v3_finalfix_js():
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_finalfix.js"
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/anatomy/tooth/{fdi}.obj", response_class=PlainTextResponse)
 def anatomy_tooth(fdi: int):
     try:
