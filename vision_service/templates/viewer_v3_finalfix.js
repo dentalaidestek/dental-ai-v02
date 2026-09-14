@@ -96,10 +96,10 @@
     let mx=0,my=0;for(const q of p){mx+=+q[0];my+=+q[1]}mx/=p.length;my/=p.length;
     let xx=0,yy=0,xy=0;for(const q of p){const dx=+q[0]-mx,dy=+q[1]-my;xx+=dx*dx;yy+=dy*dy;xy+=dx*dy}
     const tr=xx+yy,det=xx*yy-xy*xy,disc=Math.sqrt(Math.max(0,tr*tr/4-det)),lambda=tr/2+disc;
-    let vx=xy,vy=lambda-xx;if(Math.abs(vx)+Math.abs(vy)<1e-8){vx=0;vy=1}
+    let vx=xy,vy=lambda-xx;if(Math.abs(vx)+Math.abs(vy)<1e-8){if(xx>yy){vx=1;vy=0}else{vx=0;vy=1}}
     const n=Math.hypot(vx,vy)||1;vx/=n;vy/=n;if(vy<0){vx=-vx;vy=-vy}
     const projections=p.map(q=>(+q[0]-mx)*vx+(+q[1]-my)*vy);
-    return {cx:mx,cy:my,length:Math.max(1,Math.max(...projections)-Math.min(...projections)),tilt:clamp(Math.atan2(vx,vy),-.95,.95),reliable:true};
+    return {cx:mx,cy:my,length:Math.max(1,Math.max(...projections)-Math.min(...projections)),tilt:clamp(Math.atan2(vx,vy),-1.45,1.45),reliable:true};
   }
 
   function patientStats(teeth){
