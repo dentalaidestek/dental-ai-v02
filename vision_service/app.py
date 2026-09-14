@@ -5,8 +5,9 @@ import shutil
 import tempfile
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
+from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
 from vision_service.engine import MODEL_PATH, VisionError, model_available
 from vision_service.motors.catalog import FINDING_CATALOG
 from vision_service.motors.registry48 import MOTOR_SPECS
@@ -14,7 +15,7 @@ from vision_service.photo3d import Photo3DError, reconstruct
 from vision_service.pipeline import analyze_panorama
 from vision_service.readiness import readiness_snapshot
 
-app = FastAPI(title="Dental AI Vision", version="0.3.0-vision48-photo3d")
+app = FastAPI(title="Dental AI Vision", version="0.4.0-anatomy3d")
 VISION_API_KEY = os.getenv("DENTAL_VISION_API_KEY", "").strip()
 
 
@@ -28,13 +29,28 @@ def require_vision_key(x_vision_key: str | None = Header(default=None, alias="X-
 @app.get("/health")
 def health():
     ready = readiness_snapshot()
-    return {"ok": True, "service": "dental-ai-vision", "engine": "dental_ai_panorama_48_v1", "base_model_available": model_available(), "base_model_file": MODEL_PATH.name, "api_protected": bool(VISION_API_KEY), "catalog_total": len(FINDING_CATALOG), "implementation_total": ready["implementation_total"], "implementation_complete": ready["implementation_complete"], "runtime_validation_complete": ready["runtime_validation_complete"], "photo3d": True}
+    return {"ok": True, "service": "dental-ai-vision", "engine": "dental_ai_panorama_48_v1", "base_model_available": model_available(), "base_model_file": MODEL_PATH.name, "api_protected": bool(VISION_API_KEY), "catalog_total": len(FINDING_CATALOG), "implementation_total": ready["implementation_total"], "implementation_complete": ready["implementation_complete"], "runtime_validation_complete": ready["runtime_validation_complete"], "photo3d": True, "anatomy3d": True}
 
 
 @app.get("/viewer", response_class=HTMLResponse)
 def viewer():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v2.html"
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v3.html"
     return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/viewer-v3.js", response_class=PlainTextResponse)
+def viewer_v3_js():
+    path = Path(__file__).resolve().parent / "templates" / "viewer_v3.js"
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/anatomy/tooth/{fdi}.obj", response_class=PlainTextResponse)
+def anatomy_tooth(fdi: int):
+    try:
+        obj = anatomy_obj(int(fdi))
+    except AnatomyMeshError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlainTextResponse(obj, media_type="text/plain", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/readiness")
