@@ -38,5 +38,37 @@ window.D3={THREE,OrbitControls,OBJLoader};window.dispatchEvent(new Event('d3-rea
   renderJaw=async function(){if(result&&Array.isArray(result.teeth)){for(const t of result.teeth){if(t)t.fdi=normalizeFdi(t.fdi)}}return enhancedRenderJaw();};
 })();
 </script>
+<script>
+(function(){
+  const OPP={11:41,12:42,13:43,14:44,15:45,16:46,17:47,18:48,21:31,22:32,23:33,24:34,25:35,26:36,27:37,28:38};
+  const med=a=>{const v=a.filter(Number.isFinite).slice().sort((x,y)=>x-y);return v.length?v[Math.floor(v.length/2)]:null};
+  function visibleBiteLabel(){
+    const teeth=(result?.teeth||[]).filter(t=>t?.bbox&&/^[1-4][1-8]$/.test(String(t.fdi)));
+    const by=new Map(teeth.map(t=>[Number(t.fdi),t]));
+    const gaps=[];
+    for(const [u,l] of Object.entries(OPP)){
+      const U=by.get(Number(u)),L=by.get(Number(l)); if(!U||!L)continue;
+      const ub=U.bbox.map(Number),lb=L.bbox.map(Number);
+      const uh=Math.max(1,ub[3]-ub[1]),lh=Math.max(1,lb[3]-lb[1]);
+      const g=(lb[1]-ub[3])/Math.max(1,(uh+lh)/2);
+      if(Math.abs(g)<=0.9)gaps.push(g);
+    }
+    const g=med(gaps);
+    if(g===null)return 'temas değerlendirilemedi';
+    if(g<=-0.08)return 'röntgende örtüşme görülüyor';
+    if(g>=0.08)return 'röntgende temas görünmüyor';
+    return 'temas belirsiz';
+  }
+  const previousAnalyze=analyze;
+  analyze=async function(){
+    await previousAnalyze();
+    if(!result)return;
+    const n=result.unique_fdi_count||result.tooth_count||0;
+    const f=(result.findings||[]).filter(x=>x&&x.finding_code).length;
+    $('status').textContent=`${n} diş • ${f} bulgu • kapanış: ${visibleBiteLabel()}`;
+  };
+  $('run').onclick=analyze;
+})();
+</script>
 </body>
 </html>
