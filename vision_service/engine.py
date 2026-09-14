@@ -120,45 +120,51 @@ def get_model():
         return _MODEL
 
 
-def analyze(image_path: str) -> dict:
-    _trace("analyze_enter")
-
-    model = get_model()
-
-    _trace("predict_start", imgsz=1280, conf=0.50, iou=0.45)
+def _predict(model, image_path: str, conf: float):
+    _trace("predict_start", imgsz=1280, conf=conf, iou=0.45)
     started = time.perf_counter()
-
     try:
         result = model.predict(
             source=image_path,
             imgsz=1280,
-            conf=0.50,
+            conf=conf,
             iou=0.45,
             verbose=False,
         )[0]
-
-        box_count = (
-            len(result.boxes)
-            if result.boxes is not None
-            else 0
-        )
-
+        box_count = len(result.boxes) if result.boxes is not None else 0
         _trace(
             "predict_ok",
             seconds=round(time.perf_counter() - started, 3),
             boxes=box_count,
             masks=result.masks is not None,
+            conf=conf,
         )
-
+        return result
     except Exception as exc:
         _trace(
             "predict_error",
             error_type=type(exc).__name__,
             seconds=round(time.perf_counter() - started, 3),
+            conf=conf,
         )
-        raise VisionError(
-            f"Analiz başarısız: {exc}"
-        ) from exc
+        raise VisionError(f"Analiz başarısız: {exc}") from exc
+
+
+def analyze(image_path: str) -> dict:
+    _trace("analyze_enter")
+    model = get_model()
+
+    primary_conf = float(os.getenv("DENTAL_FDI_CONF", "0.40"))
+    fallback_conf = float(os.getenv("DENTAL_FDI_FALLBACK_CONF", "0.25"))
+
+    result = _predict(model, image_path, primary_conf)
+    box_count = len(result.boxes) if result.boxes is not None else 0
+
+    # Some panoramic images that are visibly usable fall just below 0.40.
+    # Only when the first pass returns no teeth, retry once at a lower threshold.
+    if box_count == 0 and fallback_conf < primary_conf:
+        _trace("predict_retry_lower_conf", from_conf=primary_conf, to_conf=fallback_conf)
+        result = _predict(model, image_path, fallback_conf)
 
     teeth = []
 
@@ -196,10 +202,7 @@ def analyze(image_path: str) -> dict:
             teeth.append(
                 {
                     "fdi": fdi,
-                    "confidence": round(
-                        float(score),
-                        4,
-                    ),
+                    "confidence": round(float(score), 4),
                     "bbox": [
                         round(float(box[0]), 1),
                         round(float(box[1]), 1),
@@ -209,26 +212,18 @@ def analyze(image_path: str) -> dict:
                 }
             )
 
-    teeth.sort(
-        key=lambda x: str(x["fdi"])
-    )
+    teeth.sort(key=lambda x: str(x["fdi"]))
 
     _trace(
         "analyze_complete",
         teeth=len(teeth),
-        unique_fdi=len(
-            {str(x["fdi"]) for x in teeth}
-        ),
+        unique_fdi=len({str(x["fdi"]) for x in teeth}),
     )
 
     return {
         "engine": "dental_ai_vision_motor_1",
         "tooth_count": len(teeth),
-        "unique_fdi_count": len(
-            {str(x["fdi"]) for x in teeth}
-        ),
-        "has_segmentation": (
-            result.masks is not None
-        ),
+        "unique_fdi_count": len({str(x["fdi"]) for x in teeth}),
+        "has_segmentation": result.masks is not None,
         "teeth": teeth,
     }
