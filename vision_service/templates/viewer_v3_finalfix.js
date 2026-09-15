@@ -10,7 +10,8 @@
   const MIN_DISPLAY_CONFIDENCE=.50;
   const IMPACTED_CODES=new Set(['IMPACTED_TOOTH','IMPACTED_THIRD_MOLAR','UNERUPTED_TOOTH']);
   const BONE_LOSS_RE=/BONE_LOSS/;
-  let dataPromise=null;
+  let dataPromise=null,jawRoot=null,jawToothMap=new Map(),highlightTimer=null;
+  const layerState={bone:true,canal:true};
 
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const validFdi=v=>/^[1-4][1-8]$/.test(String(v??''));
@@ -77,7 +78,7 @@
   function toothFindings(t){
     const out=[],seen=new Set();
     for(const f of allFindings()){
-      if(String(f.fdi||'')!==String(t.fdi))continue;
+      if(String(normalizeFdi(f.fdi)||'')!==String(normalizeFdi(t.fdi)))continue;
       const key=String(f.finding_code);if(seen.has(key))continue;seen.add(key);out.push(f);
     }
     return out;
@@ -117,11 +118,10 @@
     const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
     const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=placementCenter,imageX=boxCenter(b)[0];
     const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
-    // The panorama controls mesiodistal spacing.  The old 28%-of-one-tooth cap
+    // The panorama controls mesiodistal spacing. The old 28%-of-one-tooth cap
     // forced missing-tooth cases back into the complete atlas arrangement.
-    // A wider but still bounded correction preserves visible edentulous gaps.
     const spacingLimit=Math.max(maxShift,partSpan(part,0)*1.15),xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
-    // Vertical image position is a panoramic cue for every tooth.  Keep the
+    // Vertical image position is a panoramic cue for every tooth. Keep the
     // depth small for erupted teeth and allow a stronger offset for impactions.
     let zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*(isImpacted?.30:.08);
     return {scale:[sx,sy,sz],rotationY:-axis.tilt*(isImpacted?1:.26),positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
@@ -134,24 +134,19 @@
     if(/FILLING|CROWN|BRIDGE|INLAY|PONTIC|IMPLANT/.test(code))return 0x60d7ff;
     if(BONE_LOSS_RE.test(code))return 0xa990ff;if(IMPACTED_CODES.has(code))return 0xffc857;return 0xffa34d;
   }
-  function toothMaterial(findings){
-    const THREE=window.D3.THREE,has=findings.length>0,color=has?findingColor(findings[0].finding_code):0xf4f1e8;
-    return new THREE.MeshPhysicalMaterial({color:has?new THREE.Color(color).lerp(new THREE.Color(0xf4f1e8),.72):color,roughness:.30,metalness:0,clearcoat:.14,side:THREE.DoubleSide});
+  function toothMaterial(){
+    const THREE=window.D3.THREE;
+    // Findings no longer permanently recolor teeth. The model stays clean and
+    // natural white; selecting a finding gives a temporary highlight instead.
+    return new THREE.MeshPhysicalMaterial({color:0xf5f2ea,roughness:.27,metalness:0,clearcoat:.18,clearcoatRoughness:.32,side:THREE.DoubleSide});
   }
 
   function buildPatientTooth(tooth,resolved,data,stats,findings){
-    const THREE=window.D3.THREE,{part,placementCenter,mirrorX}=resolved,sourceCenter=partCenter(part),transform=patientTransform(tooth,part,data,stats,findings,placementCenter),geometry=geometryFor(part,data.buffer);geometry.translate(-sourceCenter[0],-sourceCenter[1],-sourceCenter[2]);const mesh=new THREE.Mesh(geometry,toothMaterial(findings));
-    if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=tooth;
+    const THREE=window.D3.THREE,{part,placementCenter,mirrorX}=resolved,sourceCenter=partCenter(part),transform=patientTransform(tooth,part,data,stats,findings,placementCenter),geometry=geometryFor(part,data.buffer);geometry.translate(-sourceCenter[0],-sourceCenter[1],-sourceCenter[2]);const mesh=new THREE.Mesh(geometry,toothMaterial());
+    if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=tooth;mesh.userData.patientTooth=true;
     const wrapper=new THREE.Group();wrapper.userData.tooth=tooth;wrapper.userData.patientTransform=transform;
     wrapper.position.set(placementCenter[0]-data.center[0]+transform.positionShift[0],placementCenter[1]-data.center[1],placementCenter[2]-data.center[2]+transform.positionShift[2]);
     wrapper.scale.set(...transform.scale);wrapper.rotation.y=transform.rotationY;wrapper.add(mesh);return {wrapper,mesh,transform};
-  }
-
-  function addFindingMarkers(wrapper,part,findings){
-    if(!findings.length)return;
-    const THREE=window.D3.THREE,size=Math.max(partSpan(part,0),partSpan(part,1),partSpan(part,2));
-    findings.slice(0,3).forEach((f,i)=>{const color=findingColor(f.finding_code),marker=new THREE.Mesh(new THREE.SphereGeometry(Math.max(.55,size*(.035+i*.006)),18,12),new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:.32,transparent:true,opacity:.88,depthWrite:false}));marker.position.set((i-1)*size*.07,0,size*.11);marker.userData.finding=f;wrapper.add(marker)});
-    if(findings.some(f=>BONE_LOSS_RE.test(String(f.finding_code)))){const ring=new THREE.Mesh(new THREE.TorusGeometry(size*.18,size*.022,10,36),new THREE.MeshBasicMaterial({color:0xa990ff,transparent:true,opacity:.72,depthWrite:false}));ring.rotation.x=Math.PI/2;ring.position.set(0,0,size*.10);wrapper.add(ring)}
   }
 
   function addMandibularCanals(scene,mandibleRoot){
@@ -161,8 +156,8 @@
     const box=new THREE.Box3().setFromObject(mandibleRoot),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
     for(const side of [-1,1]){
       const points=[];for(let i=0;i<=28;i++){const u=i/28;points.push(new THREE.Vector3(center.x+side*size.x*(.08+.34*u),box.min.y+size.y*(.34+.12*u-.025*Math.sin(u*Math.PI)),center.z-size.z*(.03+.16*u)))}
-      const curve=new THREE.CatmullRomCurve3(points),geo=new THREE.TubeGeometry(curve,84,Math.max(.014,size.x*.0038),12,false),mat=new THREE.MeshStandardMaterial({color:0xff7898,emissive:0x7f1536,emissiveIntensity:.30,transparent:true,opacity:.94,depthWrite:false});
-      const tube=new THREE.Mesh(geo,mat);tube.userData.anatomicalReference=true;tube.userData.panoramaSupported=helper;scene.add(tube);
+      const curve=new THREE.CatmullRomCurve3(points),geo=new THREE.TubeGeometry(curve,84,Math.max(.014,size.x*.0038),12,false),mat=new THREE.MeshStandardMaterial({color:0xf08daa,emissive:0x7b2645,emissiveIntensity:.24,transparent:true,opacity:.96,depthWrite:false});
+      const tube=new THREE.Mesh(geo,mat);tube.userData.anatomicalReference=true;tube.userData.panoramaSupported=helper;tube.userData.layer='canal';tube.visible=layerState.canal;scene.add(tube);
     }
     return 'panoramik kanal sinyali + anatomik referans derinlik';
   }
@@ -172,17 +167,78 @@
     ctx.controls.target.copy(c);ctx.camera.position.set(c.x+radius*.12,c.y+radius*.04,c.z+dist);ctx.camera.near=Math.max(.01,dist-radius*2.2);ctx.camera.far=dist+radius*4;ctx.camera.updateProjectionMatrix();ctx.controls.minDistance=Math.max(radius*.65,1.5);ctx.controls.maxDistance=dist*2.4;ctx.controls.update();
   }
 
+  function findingTitle(f){
+    const code=String(f?.finding_code||'');
+    const fallback={IMPACTED_TOOTH:'Gömülü diş',IMPACTED_THIRD_MOLAR:'Gömülü 20’lik diş',UNERUPTED_TOOTH:'Sürmemiş diş',BONE_LOSS:'Kemik kaybı',HORIZONTAL_BONE_LOSS:'Yatay kemik kaybı',VERTICAL_BONE_LOSS:'Dikey kemik kaybı',ROOT_CANAL_TREATED:'Kanal tedavili diş',ENDO_POST:'Post',CARIES:'Çürük',DEEP_CARIES:'Derin çürük',RECURRENT_CARIES:'Sekonder çürük',IMPLANT:'İmplant',CROWN:'Kron',BRIDGE:'Köprü',FILLING:'Dolgu',MISSING_TOOTH:'Eksik diş'};
+    return f?.label||fallback[code]||code.replaceAll('_',' ').toLocaleLowerCase('tr-TR').replace(/^./,c=>c.toLocaleUpperCase('tr-TR'));
+  }
+
+  function treatmentItems(){
+    const sources=[result?.treatments,result?.treatment_options,result?.preliminary?.treatments,result?.preliminary?.treatment_options];
+    const raw=sources.find(Array.isArray)||[];
+    return raw.map((x,i)=>({index:i+1,title:typeof x==='string'?x:(x?.label||x?.title||x?.name||x?.treatment||x?.text||'Tedavi seçeneği')})).filter(x=>x.title);
+  }
+
+  function restoreHighlight(){
+    for(const {mesh} of jawToothMap.values()){
+      if(!mesh?.material)continue;
+      mesh.material.color?.set(0xf5f2ea);if(mesh.material.emissive){mesh.material.emissive.set(0x000000);mesh.material.emissiveIntensity=0}mesh.material.needsUpdate=true;
+    }
+  }
+
+  function highlightFinding(f){
+    clearTimeout(highlightTimer);restoreHighlight();
+    const fdi=normalizeFdi(f?.fdi),entry=validFdi(fdi)?jawToothMap.get(String(fdi)):null;
+    if(!entry?.mesh?.material)return;
+    const THREE=window.D3.THREE,color=new THREE.Color(findingColor(f.finding_code));entry.mesh.material.color.copy(color.clone().lerp(new THREE.Color(0xf5f2ea),.28));entry.mesh.material.emissive?.copy(color);entry.mesh.material.emissiveIntensity=.42;entry.mesh.material.needsUpdate=true;
+    highlightTimer=setTimeout(restoreHighlight,1800);
+  }
+
+  function setLayerVisible(layer,visible){
+    layerState[layer]=visible;if(!jawScene?.scene)return;
+    jawScene.scene.traverse(obj=>{if(obj.userData?.layer===layer)obj.visible=visible});
+  }
+
+  function renderSheet(tab='findings'){
+    const sheet=$('analysisSheet'),body=$('sheetBody'),stage=$('stage');if(!sheet||!body||!stage)return;
+    sheet.classList.remove('hidden');stage.classList.add('has-results');
+    document.querySelectorAll('[data-sheet-tab]').forEach(b=>b.classList.toggle('active',b.dataset.sheetTab===tab));
+    body.innerHTML='';
+    const findings=allFindings().sort((a,b)=>findingScore(b)-findingScore(a));
+    if($('findingsCount'))$('findingsCount').textContent=findings.length?`(${findings.length})`:'';
+    if(tab==='findings'){
+      const note=document.createElement('div');note.className='sheet-note';note.textContent='Bulguya dokununca ilgili diş 3D üzerinde geçici olarak vurgulanır.';body.appendChild(note);
+      if(!findings.length){const e=document.createElement('div');e.className='empty-card';e.textContent='%50 ve üzeri gösterilebilir bulgu yok.';body.appendChild(e);return}
+      const list=document.createElement('div');list.className='finding-list';
+      for(const f of findings){const card=document.createElement('button');card.type='button';card.className='finding-card';const main=document.createElement('div');main.className='finding-main';const title=document.createElement('div');title.className='finding-title';const fdi=normalizeFdi(f.fdi);title.textContent=`${validFdi(fdi)?`${fdi} • `:''}${findingTitle(f)}`;const sub=document.createElement('div');sub.className='finding-sub';sub.textContent=validFdi(fdi)?`Diş ${fdi} • 3D’de vurgulamak için dokun`:'Genel bulgu';main.append(title,sub);const score=document.createElement('div');score.className='finding-score';score.textContent=`%${Math.round(findingScore(f)*100)}`;card.append(main,score);card.onclick=()=>highlightFinding(f);list.appendChild(card)}body.appendChild(list);return;
+    }
+    if(tab==='treatments'){
+      const items=treatmentItems();if(!items.length){const e=document.createElement('div');e.className='empty-card';e.textContent='Bu analizde 3D paneline aktarılmış tedavi seçeneği yok.';body.appendChild(e);return}
+      const list=document.createElement('div');list.className='finding-list';for(const item of items){const card=document.createElement('div');card.className='finding-card';const main=document.createElement('div');main.className='finding-main';const title=document.createElement('div');title.className='finding-title';title.textContent=`${item.index}. ${item.title}`;main.appendChild(title);card.appendChild(main);list.appendChild(card)}body.appendChild(list);return;
+    }
+    const list=document.createElement('div');list.className='view-list';
+    const makeToggle=(label,getState,onToggle)=>{const b=document.createElement('button');b.type='button';b.className='view-toggle';const a=document.createElement('span');a.textContent=label;const s=document.createElement('span');const sync=()=>s.textContent=getState()?'Açık':'Kapalı';sync();b.append(a,s);b.onclick=()=>{onToggle(!getState());sync()};return b};
+    list.appendChild(makeToggle('Çene kemiği',()=>layerState.bone,v=>setLayerVisible('bone',v)));
+    list.appendChild(makeToggle('Mandibular kanal',()=>layerState.canal,v=>setLayerVisible('canal',v)));
+    list.appendChild(makeToggle('Panoramik önizleme',()=>!$('panoMini').classList.contains('hidden'),v=>$('panoMini').classList.toggle('hidden',!v)));
+    body.appendChild(list);
+  }
+
   renderJaw=async function(){
-    await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));
+    await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));jawToothMap=new Map();
     const {scene,renderer,camera}=jawScene,data=await loadData(),patient=(result?.teeth||[]).map(t=>{if(t)t.fdi=normalizeFdi(t.fdi);return t}).filter(t=>t?.bbox&&validFdi(t.fdi));
     if(!patient.length)throw new Error('FDI diş tespiti yok');
-    const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
-    const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa8b9de,transparent:true,opacity:.17,roughness:.56,metalness:0,transmission:.06,depthWrite:false,side:window.D3.THREE.DoubleSide});
-    for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);(part.jaw==='maxilla'?maxillaRoot:mandibleRoot).add(mesh)}
+    const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();jawRoot=root;root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
+    // Diagnocat-like palette requested for the clean final view: translucent
+    // pale blue bone, natural white teeth and a distinct pink canal.
+    const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa9b7ea,transparent:true,opacity:.23,roughness:.44,metalness:0,transmission:.10,depthWrite:false,side:window.D3.THREE.DoubleSide});
+    for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);mesh.userData.layer='bone';mesh.visible=layerState.bone;(part.jaw==='maxilla'?maxillaRoot:mandibleRoot).add(mesh)}
     const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0,renderedTeeth=0;
-    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;addFindingMarkers(built.wrapper,resolved.part,findings);clickables.push(built.mesh);(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
+    // Only patient-detected FDI teeth are instantiated. No complete-atlas tooth
+    // layer is rendered behind them, so the old translucent/ghost roots vanish.
+    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;clickables.push(built.mesh);jawToothMap.set(String(tooth.fdi),{mesh:built.mesh,wrapper:built.wrapper,tooth});(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
     root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel=addMandibularCanals(scene,mandibleRoot);
-    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
+    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,reference_teeth_hidden:true,persistent_finding_markers:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
     const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
@@ -194,7 +250,7 @@
       disposeScene(toothScene);toothScene=createBase($('tooth3d'));
       const THREE=window.D3.THREE,c=partCenter(part),patient=(result?.teeth||[]).filter(x=>x?.bbox&&validFdi(normalizeFdi(x.fdi))),stats=patientStats(patient),findings=toothFindings(t),transform=patientTransform(t,part,data,stats,findings,placementCenter),group=new THREE.Group(),pose=new THREE.Group();group.rotation.x=-Math.PI/2;pose.rotation.y=transform.rotationY;
       const geometry=geometryFor(part,data.buffer);geometry.translate(-c[0],-c[1],-c[2]);
-      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf2eee6,roughness:.24,clearcoat:.20,transparent:true,opacity:.80,side:THREE.DoubleSide,depthWrite:true}));if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=t;pose.add(mesh);addFindingMarkers(pose,part,findings);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
+      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf5f2ea,roughness:.24,clearcoat:.20,transparent:true,opacity:.88,side:THREE.DoubleSide,depthWrite:true}));if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=t;pose.add(mesh);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
       $('chips').innerHTML='';const direct=findings.filter(f=>f.evidence_type==='direct');const shown=direct.length?direct:findings;if(!shown.length){const chip=document.createElement('span');chip.className='chip';chip.textContent='Doğrudan bulgu yok';$('chips').appendChild(chip)}else for(const f of shown){const chip=document.createElement('span');chip.className='chip';chip.textContent=f.label||f.finding_code;$('chips').appendChild(chip)}
       const prior=$('metrics').textContent||'';$('metrics').textContent=`${prior}${prior?' • ':''}${PANORAMIC_SIMULATION_LABEL}; bukkolingual derinlik anatomik referanstır.`;
     }catch(err){console.warn('[ANATOMY_DETAIL_FALLBACK]',err)}
@@ -202,10 +258,12 @@
 
   const baseAnalyze=analyze;
   analyze=async function(){
+    $('analysisSheet')?.classList.add('hidden');$('stage')?.classList.remove('has-results');
     await baseAnalyze();if(!result?.anatomy3d)return;
-    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;
+    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;renderSheet('findings');setTimeout(()=>{if(jawScene&&jawRoot)fitCamera(jawScene,jawRoot,1.34)},260);
   };
   $('run').onclick=analyze;
+  document.querySelectorAll('[data-sheet-tab]').forEach(b=>b.addEventListener('click',()=>renderSheet(b.dataset.sheetTab)));
 
   const style=document.createElement('style');style.textContent=`.detail-info{grid-template-columns:min(42vw,250px) 1fr;align-items:start;max-height:34vh;overflow:auto}.detail-info canvas{width:100%;height:auto;max-height:230px;object-fit:contain;background:#000}.chips{max-height:70px;overflow:auto}@media(max-width:620px){.detail-info{grid-template-columns:42vw 1fr;max-height:32vh}.detail-info canvas{width:100%;height:auto;max-height:190px}}`;document.head.appendChild(style);
 })();
