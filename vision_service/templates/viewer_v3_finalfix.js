@@ -116,8 +116,13 @@
     const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
     const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=placementCenter,imageX=boxCenter(b)[0];
     const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
-    const xShift=clamp(desiredX-c[0],-maxShift,maxShift);let zShift=0;
-    if(isImpacted)zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*.30;
+    // The panorama controls mesiodistal spacing.  The old 28%-of-one-tooth cap
+    // forced missing-tooth cases back into the complete atlas arrangement.
+    // A wider but still bounded correction preserves visible edentulous gaps.
+    const spacingLimit=Math.max(maxShift,partSpan(part,0)*1.15),xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
+    // Vertical image position is a panoramic cue for every tooth.  Keep the
+    // depth small for erupted teeth and allow a stronger offset for impactions.
+    let zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*(isImpacted?.30:.08);
     return {scale:[sx,sy,sz],rotationY:-axis.tilt*(isImpacted?1:.26),positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
   }
 
