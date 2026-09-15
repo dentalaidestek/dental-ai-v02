@@ -52,6 +52,15 @@ class GeometryRecoveryTests(unittest.TestCase):
         tooth = {"polygon": [[10, 10], [20, 10], [20, 30], [20, 50], [10, 50], [10, 30]]}
         self.assertLess(self.mod._polygon_tilt_deg(tooth), 10)
 
+    def test_unvalidated_pixel_diagnoses_are_opt_in(self):
+        source = (ROOT / "vision_service" / "derived48.py").read_text(encoding="utf-8")
+        self.assertIn("enable_experimental_pixel_findings: bool = False", source)
+        self.assertEqual(
+            source.count("if gray is not None and enable_experimental_pixel_findings:"),
+            3,
+        )
+        self.assertIn('if rct.get("evidence_type") != "direct":', source)
+
 
 if __name__ == "__main__":
     unittest.main()
