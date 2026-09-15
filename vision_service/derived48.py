@@ -81,7 +81,15 @@ def _polygon_tilt_deg(tooth: dict) -> float | None:
     return abs(math.degrees(math.atan2(vx, vy)))
 
 
-def derive_findings(image_path: str | None, teeth: list[dict], findings: list[dict], helpers: list[dict], *, patient_age: int | None = None) -> list[dict]:
+def derive_findings(
+    image_path: str | None,
+    teeth: list[dict],
+    findings: list[dict],
+    helpers: list[dict],
+    *,
+    patient_age: int | None = None,
+    enable_experimental_pixel_findings: bool = False,
+) -> list[dict]:
     out: list[dict] = []
     gray = load_gray(image_path) if image_path else None
 
@@ -192,6 +200,11 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
                 recovered = _finding("ROOT_CANAL_TREATED", 0.46+min(0.24, score*0.24), bbox=tooth_root_bbox(tooth), fdi=tooth.get("fdi"), evidence=["intraradicular_radiopaque_line_recovery"], measurement={"root_filling_score": round(score,3)})
                 out.append(recovered); rct_candidates.append(recovered); existing_fdis.add(fdi)
     for rct in rct_candidates:
+        # A recovered canal-filling line is strong enough to show the treated
+        # tooth, but not to synthesize post/underfill/instrument/surgery labels.
+        # Those secondary labels require a direct detector result.
+        if rct.get("evidence_type") != "direct":
+            continue
         tooth = next((t for t in teeth if str(t.get("fdi")) == str(rct.get("fdi")) and t.get("fdi") is not None), None) or _nearest_tooth(rct.get("bbox"), teeth)
         if not tooth or gray is None:
             continue
@@ -231,7 +244,7 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
                 break
 
     # 25-28, 31, 33 — per-tooth image geometry.
-    if gray is not None:
+    if gray is not None and enable_experimental_pixel_findings:
         for tooth in teeth:
             root = tooth_root_bbox(tooth); apex = apical_bbox(tooth)
             if not root or not apex:
@@ -304,7 +317,7 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
                 out.append(_finding("FURCATION_BONE_LOSS",max(0.41,bl.get("confidence",0)*0.78),bbox=b,fdi=fdi,evidence=["BONE_LOSS_GENERIC","molar_furcation_region"]))
 
     # 40 — calculus: small bright cervical/interproximal spur.
-    if gray is not None:
+    if gray is not None and enable_experimental_pixel_findings:
         for tooth in teeth:
             crown=tooth_crown_bbox(tooth)
             if not crown: continue
@@ -344,7 +357,7 @@ def derive_findings(image_path: str | None, teeth: list[dict], findings: list[di
                 out.append(_finding("MANDIBULAR_CANAL_PROXIMITY",conf,bbox=b,fdi=nearest.get("fdi"),evidence=["MANDIBULAR_CANAL_HELPER","root_canal_distance"],measurement={"pixel_distance":round(best,1),"tooth_width_ratio":round(normalized,3)}))
 
     # 45-47 — bilateral condylar morphology.
-    if gray is not None:
+    if gray is not None and enable_experimental_pixel_findings:
         cs=condyle_signals(gray)
         for side in ("left","right"):
             s=cs.get(side) or {}
