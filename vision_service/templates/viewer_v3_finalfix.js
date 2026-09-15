@@ -7,6 +7,7 @@
   const MANIFEST_URL=`${ATLAS_ROOT}/manifest.json`;
   const BUFFER_URL=`${ATLAS_ROOT}/open-full-jaw.bin`;
   const PANORAMIC_SIMULATION_LABEL='Panoramik tabanlı anatomik 3D görselleştirme';
+  const MIN_DISPLAY_CONFIDENCE=.50;
   const IMPACTED_CODES=new Set(['IMPACTED_TOOTH','IMPACTED_THIRD_MOLAR','UNERUPTED_TOOTH']);
   const BONE_LOSS_RE=/BONE_LOSS/;
   let dataPromise=null;
@@ -72,7 +73,7 @@
     }
     return [...best.values()];
   }
-  function allFindings(){return dedupeFindings(result?.findings||[])}
+  function allFindings(){return dedupeFindings((result?.findings||[]).filter(f=>findingScore(f)>=MIN_DISPLAY_CONFIDENCE))}
   function toothFindings(t){
     const out=[],seen=new Set();
     for(const f of allFindings()){
@@ -202,7 +203,7 @@
   const baseAnalyze=analyze;
   analyze=async function(){
     await baseAnalyze();if(!result?.anatomy3d)return;
-    const count=allFindings().length,meta=result.anatomy3d;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;
+    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;
   };
   $('run').onclick=analyze;
 
