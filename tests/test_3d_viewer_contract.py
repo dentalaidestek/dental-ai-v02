@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HTML = ROOT / "vision_service" / "templates" / "viewer_v3.html"
 FINAL = ROOT / "vision_service" / "templates" / "viewer_v3_finalfix.js"
+NOTEBOOK = ROOT / "notebooks" / "kaggle_3d_visual_test.ipynb"
 
 
 class Viewer3DContractTests(unittest.TestCase):
@@ -87,6 +88,14 @@ class Viewer3DContractTests(unittest.TestCase):
         script = FINAL.read_text(encoding="utf-8")
         self.assertRegex(script, r"const ATLAS_REV='[0-9a-f]{40}'")
         self.assertNotIn("OMFAtlas/main/", script)
+
+    def test_kaggle_downloads_revision_pinned_liodon_weight(self):
+        notebook = NOTEBOOK.read_text(encoding="utf-8")
+        pipeline = (ROOT / "vision_service" / "pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("liodon_panorama3.onnx", notebook)
+        self.assertIn("93c7037b11275d94cbf6c2f5d1ea86452910dc3a", notebook)
+        self.assertIn("4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71", notebook)
+        self.assertIn('DENTAL_LIODON3_CONF", "0.25"', pipeline)
 
 
 if __name__ == "__main__":
