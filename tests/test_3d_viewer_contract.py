@@ -37,7 +37,9 @@ class Viewer3DContractTests(unittest.TestCase):
     def test_visible_results_are_deduplicated(self):
         script = FINAL.read_text(encoding="utf-8")
         self.assertIn("function dedupeFindings", script)
-        self.assertIn("function allFindings(){return dedupeFindings", script)
+        self.assertIn("const MIN_DISPLAY_CONFIDENCE=.50", script)
+        self.assertIn("findingScore(f)>=MIN_DISPLAY_CONFIDENCE", script)
+        self.assertIn("low_confidence_hidden=hidden", script)
         self.assertIn("const direct=findings.filter", script)
         self.assertIn("displayFindingFamily", script)
         self.assertIn("IMPACTED_THIRD_MOLAR'?'IMPACTED_TOOTH", script)
