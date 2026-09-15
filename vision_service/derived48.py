@@ -134,8 +134,10 @@ def derive_findings(
             out.append(recovered)
             out.append(_finding("IMPACTED_THIRD_MOLAR", recovered["confidence"], bbox=bbox, fdi=tooth.get("fdi"), evidence=["IMPACTED_TOOTH", "third_molar_fdi"]))
 
-    # 4 — unerupted: tooth bbox vertical outlier from quadrant arch, excluding already-impacted regions.
-    if len(teeth) >= 10:
+    # 4 — generic unerupted recovery is experimental. A single global panorama
+    # arch statistic can confuse the normal upper/lower separation with an
+    # unerupted tooth, so it is never emitted in the default clinical result.
+    if enable_experimental_pixel_findings and len(teeth) >= 10:
         centers = []
         for t in teeth:
             b = t.get("bbox") or []
