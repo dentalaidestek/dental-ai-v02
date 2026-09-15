@@ -59,6 +59,7 @@ class GeometryRecoveryTests(unittest.TestCase):
             source.count("if gray is not None and enable_experimental_pixel_findings:"),
             3,
         )
+        self.assertIn("if enable_experimental_pixel_findings and len(teeth) >= 10:", source)
         self.assertIn('if rct.get("evidence_type") != "direct":', source)
 
 
