@@ -119,6 +119,71 @@ SOURCES = {
         negative_coverage="image-level only unless released files prove localization labels",
         note="Screening/secondary benchmark only; not localization gold unless annotations support it.",
     ),
+    "mopg7_v4": GoldSource(
+        key="mopg7_v4",
+        title="MOPG-7 v4: Multi-Clinic Dental Panoramic Radiograph Dataset with Expert YOLO/COCO Labels",
+        locator="https://data.mendeley.com/datasets/r43v452t29/4",
+        access="public",
+        license_note="CC BY 4.0 in Mendeley v4 metadata",
+        annotation_quality=(
+            "2,095 anonymized panoramics from four clinics; initial boxes by a licensed dentist, "
+            "independent review by a second dental professional, followed by quality control; "
+            "9,834 retained boxes."
+        ),
+        exact_codes=("MISSING_TOOTH", "CROWN", "ROOT_CANAL_TREATED", "CARIES"),
+        negative_coverage="seven-class detection release; class-specific negative use requires annotation-completeness audit",
+        note=(
+            "Use Missing Teeth/Crown/Root Canal/Caries only. Wisdom Teeth is not equivalent to impacted third molar, "
+            "and Broken Down Teeth must not be promoted to fracture or residual-root labels."
+        ),
+    ),
+    "dual_labeled_500": GoldSource(
+        key="dual_labeled_500",
+        title="A dual-labeled dataset for panoramic tooth numbering and state assessment — public 500-image subset",
+        locator="https://www.kaggle.com/datasets/zwbzwb12341234/a-dual-labeled-dataset/data",
+        access="public_500_author_request_remaining_1500",
+        license_note="Kaggle metadata currently reports Unknown; rights review required before redistribution or production use",
+        annotation_quality=(
+            "Four doctors jointly annotated tooth polygons, FDI numbering and tooth state; difficult boundaries, "
+            "numbering and status cases were resolved by joint discussion. Full study contains 2,000 panoramics; "
+            "500 images and labels are publicly posted."
+        ),
+        exact_codes=("SUPERNUMERARY_TOOTH", "FILLING", "CROWN", "ROOT_CANAL_TREATED", "CARIES", "RESIDUAL_ROOT"),
+        negative_coverage="all visible teeth receive numbering/state labels in the released annotation scheme; public subset must be audited before scoring negatives",
+        note="FDI 91 is the dataset's explicit supernumerary-tooth label. Use only the actually released 500-image subset unless author access is granted.",
+    ),
+    "pdcnn_perio1747": GoldSource(
+        key="pdcnn_perio1747",
+        title="PDCNN public panoramic periodontitis dataset",
+        locator="https://github.com/PuckBlink/PDCNN",
+        access="public_google_drive_via_repository",
+        license_note="dataset is publicly released by the authors; repository does not state a clear reuse license, so rights review is required",
+        annotation_quality=(
+            "1,747 high-resolution panoramic radiographs with tooth-location and professional-doctor periodontitis annotations; "
+            "repository publishes separate COCO metadata for bone loss and furcation involvement."
+        ),
+        exact_codes=("FURCATION_BONE_LOSS",),
+        negative_coverage="furcation-involvement annotations are suitable for class-localized scoring; inspect JSON category semantics before negative scoring",
+        note="Do not derive horizontal/vertical bone-loss subtype from this source unless a locked geometric rule is validated first.",
+    ),
+    "contact_m3m_iac": GoldSource(
+        key="contact_m3m_iac",
+        title="CONTACT: mandibular third-molar / inferior-alveolar-canal contact dataset",
+        locator="https://www.kaggle.com/datasets/tugcetoprak92/contact-dataset",
+        access="public_kaggle",
+        license_note="verify Kaggle dataset license before redistribution",
+        annotation_quality=(
+            "1,478 M3M/IAC pairs with semantic panoramic annotations; actual root-canal contact determined on CBCT by "
+            "three oral and maxillofacial radiologists, with a fourth expert for disagreements."
+        ),
+        exact_codes=(),
+        partial_codes=("MANDIBULAR_CANAL_PROXIMITY",),
+        negative_coverage="CBCT-confirmed contact/no-contact; includes difficult panoramic overlap without true CBCT contact",
+        note=(
+            "High-value risk benchmark. Kept partial because Vision48 says PROXIMITY rather than strict CONTACT; "
+            "it can become exact only after the production proximity threshold is explicitly locked to a contact endpoint."
+        ),
+    ),
 }
 
 # Known overlap/leakage sources. These may be useful for training, but they must not
