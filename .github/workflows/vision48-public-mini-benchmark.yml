@@ -36,10 +36,10 @@ jobs:
           python benchmark/vision48_gold/run_public_mini_benchmark.py \
             --output benchmark-results/public-mini
 
-      - name: Run Dental OPG 232 locked mini benchmark
+      - name: Run Dental OPG classification locked mini benchmark
         run: |
-          python benchmark/vision48_gold/run_dental_opg_232_benchmark.py \
-            --output benchmark-results/dental-opg-232
+          python benchmark/vision48_gold/run_dental_opg_classification_benchmark.py \
+            --output benchmark-results/dental-opg-classification
 
       - name: Upload benchmark results
         if: always()
