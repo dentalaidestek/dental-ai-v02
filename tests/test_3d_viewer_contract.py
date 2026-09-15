@@ -78,6 +78,11 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("if(xx>yy){vx=1;vy=0}", script)
         self.assertIn("-1.45,1.45", script)
 
+    def test_patient_spacing_is_not_forced_back_to_complete_atlas(self):
+        script = FINAL.read_text(encoding="utf-8")
+        self.assertIn("const spacingLimit=", script)
+        self.assertIn("isImpacted?.30:.08", script)
+
     def test_external_atlas_is_revision_pinned(self):
         script = FINAL.read_text(encoding="utf-8")
         self.assertRegex(script, r"const ATLAS_REV='[0-9a-f]{40}'")
