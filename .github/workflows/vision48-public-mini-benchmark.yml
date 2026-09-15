@@ -25,7 +25,11 @@ jobs:
       - name: Install benchmark dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install kagglehub ultralytics pillow
+          pip install kagglehub ultralytics pillow requests
+
+      - name: Probe additional public benchmark sources
+        run: |
+          python benchmark/vision48_gold/probe_public_sources.py
 
       - name: Download public dual-labeled dataset and run locked 15+/15- benchmark
         run: |
@@ -37,5 +41,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vision48-public-mini-results
-          path: benchmark-results/public-mini
+          path: benchmark-results
           if-no-files-found: warn
