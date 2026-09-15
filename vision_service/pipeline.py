@@ -179,7 +179,9 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
     optional_jobs = [
         ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28")), 0.45, 1280),
         ("insmile12", normalize_insmile12, float(os.getenv("DENTAL_INSMILE12_CONF", "0.35")), 0.45, 640),
-        ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.45")), 0.35, 640),
+        # The published Liodon usage example uses conf=0.25. Keep its native
+        # 640px input and use it as an independent compact control detector.
+        ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.25")), 0.35, 640),
         ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30")), 0.45, 1280),
     ]
     for key, normalizer, conf, iou, imgsz in optional_jobs:
