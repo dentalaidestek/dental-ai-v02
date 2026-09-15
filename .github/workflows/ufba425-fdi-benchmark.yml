@@ -1,0 +1,40 @@
+name: ufba425-fdi-benchmark
+
+on:
+  push:
+    branches:
+      - work/vision48-gold-benchmark-v1
+    paths:
+      - 'benchmark/run_ufba425_fdi_benchmark.py'
+      - '.github/workflows/ufba425-fdi-benchmark.yml'
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/vision48-gold-benchmark-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics huggingface_hub pillow numpy
+
+      - name: Run UFBA-425 external FDI benchmark
+        run: |
+          python benchmark/run_ufba425_fdi_benchmark.py
+
+      - name: Upload UFBA-425 benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ufba425-fdi-result
+          path: benchmark-results/ufba425-fdi
+          if-no-files-found: warn
