@@ -9,11 +9,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
-from vision_service.derived48 import derive_findings
 from vision_service.model_manifest import model_path
 from vision_service.motors.findings9 import normalize_class as normalize_findings9
 from vision_service.motors.impacted_tooth import normalize_class as normalize_impacted
-from vision_service.pipeline import _attach_fdi, _detector_outputs, _merge_findings, analyze_panorama
+from vision_service.pipeline import _attach_fdi, _detector_outputs
 
 app = FastAPI(title="Dental AI Anatomy 3D Direct FDI Test")
 _FDI_MODEL = None
@@ -28,7 +27,6 @@ def _get_fdi_model():
 
 
 def _fdi_from_label(label):
-    """Normalize the FDI class label without assuming the class name is only digits."""
     s = str(label or "").strip()
     try:
         value = int(s)
@@ -48,7 +46,6 @@ def _fdi_from_label(label):
 
 
 def _predict_fdi(image_path: str):
-    """Run direct FDI inference and merge only missing teeth from recovery passes."""
     model = _get_fdi_model()
     passes = (0.40, 0.20, 0.08)
     best_by_fdi: dict[str, dict] = {}
@@ -56,7 +53,6 @@ def _predict_fdi(image_path: str):
     used_conf = passes[0]
 
     def add_result(result, conf: float, recovery: bool):
-        nonlocal best_by_fdi
         if result is None or result.boxes is None:
             return
         boxes = result.boxes.xyxy.detach().cpu().numpy()
@@ -65,9 +61,8 @@ def _predict_fdi(image_path: str):
         names = result.names
         mask_polys = result.masks.xy if result.masks is not None and result.masks.xy is not None else []
         existing = list(best_by_fdi.values())
-        widths = [max(1.0, x["bbox"][2] - x["bbox"][0]) for x in existing]
-        heights = [max(1.0, x["bbox"][3] - x["bbox"][1]) for x in existing]
-        widths.sort(); heights.sort()
+        widths = sorted(max(1.0, x["bbox"][2] - x["bbox"][0]) for x in existing)
+        heights = sorted(max(1.0, x["bbox"][3] - x["bbox"][1]) for x in existing)
         med_w = widths[len(widths)//2] if widths else None
         med_h = heights[len(heights)//2] if heights else None
 
@@ -111,54 +106,76 @@ def _predict_fdi(image_path: str):
         add_result(result, conf, recovery=idx > 0)
         if idx == 1 and len(best_by_fdi) >= 27:
             break
-    teeth = sorted(best_by_fdi.values(), key=lambda x: str(x["fdi"]))
-    return teeth, used_conf, last_result
+
+    return sorted(best_by_fdi.values(), key=lambda x: str(x["fdi"])), used_conf, last_result
 
 
 def _run_pinned_findings(image_path: str, teeth: list[dict]):
+    """Stable 3D-test path: only the pinned direct detectors, no heavy derived chain."""
     findings = []
     helpers = []
     execution = []
     warnings = []
+
     jobs = [
         ("findings9", normalize_findings9, 0.28, 0.45, 1280),
         ("impacted_tooth", normalize_impacted, 0.35, 0.45, 1280),
     ]
     for model_key, normalizer, conf, iou, imgsz in jobs:
         try:
-            f, h = _detector_outputs(image_path=image_path, model_key=model_key, conf=conf, iou=iou, imgsz=imgsz, normalizer=normalizer)
-            findings.extend(f); helpers.extend(h)
-            execution.append({"motor": model_key, "status": "ok", "findings": len(f), "helpers": len(h)})
+            f, h = _detector_outputs(
+                image_path=image_path,
+                model_key=model_key,
+                conf=conf,
+                iou=iou,
+                imgsz=imgsz,
+                normalizer=normalizer,
+            )
+            findings.extend(f)
+            helpers.extend(h)
+            execution.append({"motor": model_key, "status": "ok", "conf": conf, "findings": len(f), "helpers": len(h)})
         except Exception as exc:
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
-            execution.append({"motor": model_key, "status": "error"})
+            execution.append({"motor": model_key, "status": "error", "conf": conf, "error": str(exc)})
 
-    if not findings:
+    if not any(item.get("motor") == "findings9" for item in findings):
         try:
-            f, h = _detector_outputs(image_path=image_path, model_key="findings9", conf=0.18, iou=0.45, imgsz=1280, normalizer=normalize_findings9)
+            f, h = _detector_outputs(
+                image_path=image_path,
+                model_key="findings9",
+                conf=0.18,
+                iou=0.45,
+                imgsz=1280,
+                normalizer=normalize_findings9,
+            )
             for item in f:
                 item["recovery"] = True
-            findings.extend(f); helpers.extend(h)
-            execution.append({"motor": "findings9_recovery", "status": "ok", "findings": len(f), "helpers": len(h)})
+                item["recovery_conf"] = 0.18
+            findings.extend(f)
+            helpers.extend(h)
+            execution.append({"motor": "findings9_recovery", "status": "ok", "conf": 0.18, "findings": len(f), "helpers": len(h)})
         except Exception as exc:
             warnings.append({"motor": "findings9_recovery", "error_type": type(exc).__name__, "message": str(exc)})
+            execution.append({"motor": "findings9_recovery", "status": "error", "conf": 0.18, "error": str(exc)})
 
     for item in findings + helpers:
         _attach_fdi(item, teeth)
-    return findings, helpers, execution, warnings
 
-
-def _merge_direct_findings(existing: list[dict], extra: list[dict]) -> list[dict]:
-    merged = []
-    seen = set()
-    for item in list(existing or []) + list(extra or []):
-        bbox = tuple(round(float(v), 0) for v in (item.get("bbox") or []))
-        key = (str(item.get("fdi") or ""), str(item.get("finding_code") or ""), bbox)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(item)
-    return merged
+    # Conservative duplicate suppression only. Keep spatially separate findings.
+    ordered = sorted(findings, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)
+    kept = []
+    for item in ordered:
+        duplicate = False
+        for old in kept:
+            if old.get("finding_code") != item.get("finding_code"):
+                continue
+            if item.get("fdi") is not None and old.get("fdi") is not None and str(item.get("fdi")) == str(old.get("fdi")):
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append(item)
+    kept.sort(key=lambda x: (str(x.get("fdi") or "99"), str(x.get("finding_code") or "")))
+    return kept, helpers, execution, warnings
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -208,7 +225,14 @@ def anatomy_tooth(fdi: int):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "anatomy3d-direct-fdi", "fdi_path": "legacy-direct-yolo", "jaw_enhancement": True, "real_jaw_reference": True, "occlusion_aware": True, "fdi_recovery": True}
+    return {
+        "ok": True,
+        "service": "anatomy3d-direct-fdi",
+        "fdi_path": "legacy-direct-yolo",
+        "finding_path": "direct-pinned-only",
+        "real_jaw_reference": True,
+        "fdi_recovery": True,
+    }
 
 
 @app.post("/analyze")
@@ -216,44 +240,34 @@ async def analyze_image(image: UploadFile = File(...)):
     suffix = Path(image.filename or "image.jpg").suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
         raise HTTPException(status_code=400, detail="Desteklenmeyen görüntü formatı.")
+
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             shutil.copyfileobj(image.file, tmp)
             temp_path = tmp.name
+
         teeth, used_conf, raw = _predict_fdi(temp_path)
-        try:
-            base = analyze_panorama(temp_path)
-        except Exception as exc:
-            base = {"findings": [], "helpers": [], "motor_execution": [], "warnings": [{"motor": "pipeline", "message": str(exc)}]}
-        pinned_findings, pinned_helpers, pinned_exec, pinned_warnings = _run_pinned_findings(temp_path, teeth)
-        base["findings"] = _merge_direct_findings(list(base.get("findings") or []), pinned_findings)
-        base["helpers"] = list(base.get("helpers") or []) + pinned_helpers
-        base["finding_count"] = len(base["findings"])
-        base["helper_signal_count"] = len(base["helpers"])
-        base["motor_execution"] = list(base.get("motor_execution") or []) + pinned_exec
-        base["warnings"] = list(base.get("warnings") or []) + pinned_warnings
-        for item in list(base.get("findings") or []) + list(base.get("helpers") or []):
-            if not item.get("fdi"):
-                _attach_fdi(item, teeth)
-        # Re-run only the deterministic geometry/CV composition with the richer
-        # direct FDI masks. The generic pipeline's FDI pass does not retain masks,
-        # which previously discarded the visible axis of an impacted third molar.
-        recovered = derive_findings(temp_path, teeth, list(base.get("findings") or []), list(base.get("helpers") or []))
-        base["findings"] = _merge_findings(list(base.get("findings") or []) + recovered)
-        base["finding_count"] = len(base["findings"])
-        base["geometry_recovered_findings"] = len(recovered)
-        base["teeth"] = teeth
-        base["tooth_count"] = len(teeth)
-        base["unique_fdi_count"] = len({str(t.get("fdi")) for t in teeth})
-        base["has_segmentation"] = bool(raw is not None and raw.masks is not None)
-        base["fdi_source"] = "legacy_direct_yolo"
-        base["fdi_conf_used"] = used_conf
-        base["fdi_recovered_count"] = sum(1 for t in teeth if t.get("recovered"))
-        base["pinned_direct_findings_restored"] = True
-        if not teeth:
-            base["fdi_debug"] = {"model": model_path("motor1_fdi").name, "passes": [0.40, 0.20, 0.08], "message": "Direct FDI model returned zero usable FDI labels"}
-        return base
+        findings, helpers, execution, warnings = _run_pinned_findings(temp_path, teeth)
+
+        return {
+            "engine": "dental_ai_3d_direct_test_v2",
+            "modality": "PANORAMIC",
+            "teeth": teeth,
+            "tooth_count": len(teeth),
+            "unique_fdi_count": len({str(t.get("fdi")) for t in teeth}),
+            "has_segmentation": bool(raw is not None and raw.masks is not None),
+            "fdi_source": "legacy_direct_yolo",
+            "fdi_conf_used": used_conf,
+            "fdi_recovered_count": sum(1 for t in teeth if t.get("recovered")),
+            "findings": findings,
+            "finding_count": len(findings),
+            "helpers": helpers,
+            "helper_signal_count": len(helpers),
+            "motor_execution": execution,
+            "warnings": warnings,
+            "finding_path": "direct-pinned-only",
+        }
     finally:
         if temp_path:
             Path(temp_path).unlink(missing_ok=True)
