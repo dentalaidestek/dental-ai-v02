@@ -47,7 +47,9 @@ def _fdi_from_label(label):
 
 def _predict_fdi(image_path: str):
     model = _get_fdi_model()
-    passes = (0.40, 0.20, 0.08)
+    # The low recovery pass is only used to fill missing FDI classes; size and
+    # duplicate checks below prevent it from replacing an already accepted tooth.
+    passes = (0.40, 0.20, 0.10, 0.06)
     best_by_fdi: dict[str, dict] = {}
     last_result = None
     used_conf = passes[0]
@@ -79,7 +81,7 @@ def _predict_fdi(image_path: str):
             if recovery and med_w and med_h:
                 if not (0.42*med_w <= w <= 1.95*med_w and 0.42*med_h <= h <= 2.10*med_h):
                     continue
-                if float(score) < 0.10:
+                if float(score) < max(0.06, conf):
                     continue
             poly = []
             if i < len(mask_polys):
@@ -104,19 +106,15 @@ def _predict_fdi(image_path: str):
         last_result = result
         used_conf = conf
         add_result(result, conf, recovery=idx > 0)
-        if idx == 1 and len(best_by_fdi) >= 27:
+        if idx >= 1 and len(best_by_fdi) >= 28:
             break
 
     return sorted(best_by_fdi.values(), key=lambda x: str(x["fdi"])), used_conf, last_result
 
 
 def _run_pinned_findings(image_path: str, teeth: list[dict]):
-    """Stable 3D-test path: only the pinned direct detectors, no heavy derived chain."""
-    findings = []
-    helpers = []
-    execution = []
-    warnings = []
-
+    """Stable 3D-test path: only pinned direct detectors, no heavy derived chain."""
+    findings, helpers, execution, warnings = [], [], [], []
     jobs = [
         ("findings9", normalize_findings9, 0.28, 0.45, 1280),
         ("impacted_tooth", normalize_impacted, 0.35, 0.45, 1280),
@@ -161,7 +159,6 @@ def _run_pinned_findings(image_path: str, teeth: list[dict]):
     for item in findings + helpers:
         _attach_fdi(item, teeth)
 
-    # Conservative duplicate suppression only. Keep spatially separate findings.
     ordered = sorted(findings, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)
     kept = []
     for item in ordered:
@@ -185,34 +182,36 @@ def viewer():
     return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
+def _js(name: str) -> str:
+    path = Path(__file__).resolve().parent / "templates" / name
+    return path.read_text(encoding="utf-8")
+
+
 @app.get("/viewer-v3.js", response_class=PlainTextResponse)
 def viewer_v3_js():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v3.js"
-    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return PlainTextResponse(_js("viewer_v3.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/viewer-v3-patch.js", response_class=PlainTextResponse)
 def viewer_v3_patch_js():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_patch.js"
-    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return PlainTextResponse(_js("viewer_v3_patch.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/viewer-v3-enhance.js", response_class=PlainTextResponse)
 def viewer_v3_enhance_js():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_enhance.js"
-    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return PlainTextResponse(_js("viewer_v3_enhance.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/viewer-v3-realjaw.js", response_class=PlainTextResponse)
 def viewer_v3_realjaw_js():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_realjaw.js"
-    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return PlainTextResponse(_js("viewer_v3_realjaw.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/viewer-v3-finalfix.js", response_class=PlainTextResponse)
 def viewer_v3_finalfix_js():
-    path = Path(__file__).resolve().parent / "templates" / "viewer_v3_finalfix.js"
-    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    # Keep the stable final viewer, then apply the small correction layer last.
+    content = _js("viewer_v3_finalfix.js") + "\n" + _js("viewer_v3_nightpatch.js")
+    return PlainTextResponse(content, media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/anatomy/tooth/{fdi}.obj", response_class=PlainTextResponse)
@@ -232,6 +231,7 @@ def health():
         "finding_path": "direct-pinned-only",
         "real_jaw_reference": True,
         "fdi_recovery": True,
+        "nightpatch": True,
     }
 
 
@@ -251,7 +251,7 @@ async def analyze_image(image: UploadFile = File(...)):
         findings, helpers, execution, warnings = _run_pinned_findings(temp_path, teeth)
 
         return {
-            "engine": "dental_ai_3d_direct_test_v2",
+            "engine": "dental_ai_3d_direct_test_v3",
             "modality": "PANORAMIC",
             "teeth": teeth,
             "tooth_count": len(teeth),
