@@ -1,0 +1,50 @@
+name: vision48-public-mini-benchmark
+
+on:
+  push:
+    branches:
+      - work/vision48-gold-benchmark-v1
+    paths:
+      - '.github/workflows/vision48-public-mini-benchmark.yml'
+      - 'benchmark/vision48_gold/**'
+  workflow_dispatch:
+
+jobs:
+  mini-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/vision48-gold-benchmark-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install kagglehub ultralytics pillow requests huggingface_hub
+
+      - name: Probe additional public benchmark sources
+        run: |
+          python benchmark/vision48_gold/probe_public_sources.py
+
+      - name: Run dual-labeled locked mini benchmark
+        run: |
+          PYTHONPATH=. python benchmark/vision48_gold/run_public_mini_benchmark.py \
+            --output benchmark-results/public-mini
+
+      - name: Run Dental OPG classification locked mini benchmark
+        run: |
+          PYTHONPATH=. python benchmark/vision48_gold/run_dental_opg_classification_benchmark.py \
+            --output benchmark-results/dental-opg-classification
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision48-public-mini-results
+          path: benchmark-results
+          if-no-files-found: warn
