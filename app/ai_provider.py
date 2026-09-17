@@ -48,16 +48,21 @@ def _safe_http_error_message(code):
 
 
 def _policy_prompt(prompt: str, image_paths=None) -> str:
-    structured = structured_vision_text(image_paths)
+    # The clinical prompt already contains the router's image-type classification
+    # (for example INTRAORAL or PANORAMIC). Pass it as a modality hint so the
+    # local dedicated vision layer selects the correct primary engine.
+    structured = structured_vision_text(image_paths, modality_hint=prompt)
     return f"""{prompt}
 
 DENTAL AI GÖRÜNTÜ GÜVENLİK VE MİMARİ KURALI — ÜST ÖNCELİKLİ:
 - Bu isteğe hiçbir radyografi/fotoğraf pikseli eklenmemiştir. Görüntüyü doğrudan gördüğünü veya incelediğini söyleme.
 - Radyografik/görsel bulgular için TEK izinli kaynak aşağıdaki DentalAI özel görüntü motorlarının yapılandırılmış çıktısıdır.
-- Motor çıktısında bulunmayan bir radyografik bulguyu görüntüden çıkarmış gibi üretme.
+- Motor çıktısında bulunmayan bir radyografik/görsel bulguyu görüntüden çıkarmış gibi üretme.
 - confidence alanı modelin bu örnekteki tespit skorudur; accuracy/mAP değildir.
-- Hekim klinik metni ayrı kanıttır; onu radyografik bulgu gibi sunma.
-- Aşağıdaki motor çıktıları boş/erişilemez ise yeni radyografik bulgu üretme; yalnız klinik metin ve kanıt bağlamıyla devam et.
+- Hekim klinik metni ayrı kanıttır; onu radyografik/görsel bulgu gibi sunma.
+- Aşağıdaki motor çıktıları boş/erişilemez ise yeni görüntü bulgusu üretme; yalnız klinik metin ve kanıt bağlamıyla devam et.
+- INTRAORAL/CLINICAL_PHOTO görüntülerinde ana görsel motor OralDetect'tir. Panoramik motor ağız içi fotoğrafa fallback olarak kullanılmaz.
+- candidate_only=true olan yumuşak doku çıktıları kesin tanı değil, hekim değerlendirmesi gerektiren görsel adaylardır.
 
 DENTALAI_STRUCTURED_VISION_OUTPUT:
 {structured}
