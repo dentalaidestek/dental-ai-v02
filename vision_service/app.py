@@ -9,13 +9,18 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
 from vision_service.engine import MODEL_PATH, VisionError, model_available
+from vision_service.intraoral_oraldetect import (
+    OralDetectError,
+    analyze_intraoral,
+    configured as oraldetect_configured,
+)
 from vision_service.motors.catalog import FINDING_CATALOG
 from vision_service.motors.registry48 import MOTOR_SPECS
 from vision_service.photo3d import Photo3DError, reconstruct
 from vision_service.pipeline import analyze_panorama
 from vision_service.readiness import readiness_snapshot
 
-app = FastAPI(title="Dental AI Vision", version="0.4.0-anatomy3d")
+app = FastAPI(title="Dental AI Vision", version="0.5.0-oraldetect-intraoral")
 VISION_API_KEY = os.getenv("DENTAL_VISION_API_KEY", "").strip()
 
 
@@ -29,7 +34,23 @@ def require_vision_key(x_vision_key: str | None = Header(default=None, alias="X-
 @app.get("/health")
 def health():
     ready = readiness_snapshot()
-    return {"ok": True, "service": "dental-ai-vision", "engine": "dental_ai_panorama_48_v1", "base_model_available": model_available(), "base_model_file": MODEL_PATH.name, "api_protected": bool(VISION_API_KEY), "catalog_total": len(FINDING_CATALOG), "implementation_total": ready["implementation_total"], "implementation_complete": ready["implementation_complete"], "runtime_validation_complete": ready["runtime_validation_complete"], "photo3d": True, "anatomy3d": True}
+    return {
+        "ok": True,
+        "service": "dental-ai-vision",
+        "engine": "dental_ai_panorama_48_v1",
+        "intraoral_engine": "oraldetect",
+        "intraoral_engine_role": "primary",
+        "oraldetect_configured": oraldetect_configured(),
+        "base_model_available": model_available(),
+        "base_model_file": MODEL_PATH.name,
+        "api_protected": bool(VISION_API_KEY),
+        "catalog_total": len(FINDING_CATALOG),
+        "implementation_total": ready["implementation_total"],
+        "implementation_complete": ready["implementation_complete"],
+        "runtime_validation_complete": ready["runtime_validation_complete"],
+        "photo3d": True,
+        "anatomy3d": True,
+    }
 
 
 @app.get("/viewer", response_class=HTMLResponse)
@@ -83,6 +104,32 @@ async def analyze_image(image: UploadFile = File(...), _: None = Depends(require
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     finally:
         if temp_path: Path(temp_path).unlink(missing_ok=True)
+
+
+@app.post("/analyze-intraoral")
+async def analyze_intraoral_image(
+    image: UploadFile = File(...),
+    _: None = Depends(require_vision_key),
+):
+    """Primary intraoral-photo analysis path backed by OralDetect.
+
+    Panoramic Vision48 is intentionally not called here. Intraoral photographs
+    have a separate finding vocabulary and are routed to OralDetect first.
+    """
+    suffix = Path(image.filename or "intraoral.jpg").suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
+        raise HTTPException(status_code=400, detail="Desteklenmeyen ağız içi görüntü formatı.")
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(image.file, tmp)
+            temp_path = tmp.name
+        return analyze_intraoral(temp_path)
+    except OralDetectError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    finally:
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
 
 
 @app.post("/photo3d/reconstruct")
