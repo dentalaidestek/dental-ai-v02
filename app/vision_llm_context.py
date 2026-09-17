@@ -10,8 +10,8 @@ _LOCK = threading.Lock()
 _MAX_CACHE = 32
 
 
-def _fingerprint(paths: list[str]) -> tuple:
-    parts = []
+def _fingerprint(paths: list[str], modality_hint: str = "") -> tuple:
+    parts = [("modality_hint", modality_hint.strip().upper())]
     for raw in paths:
         p = Path(raw)
         try:
@@ -35,10 +35,12 @@ def _slim_result(result: dict) -> dict:
                 "confidence": item.get("confidence"),
                 "measurement": item.get("measurement"),
                 "evidence_type": item.get("evidence_type") or "direct",
+                "candidate_only": bool(item.get("candidate_only", False)),
             }
         )
     return {
         "engine": result.get("engine"),
+        "engine_role": result.get("engine_role"),
         "modality": result.get("modality"),
         "tooth_count": result.get("tooth_count"),
         "unique_fdi_count": result.get("unique_fdi_count"),
@@ -46,34 +48,50 @@ def _slim_result(result: dict) -> dict:
     }
 
 
-def structured_vision_text(image_paths: list[str] | None) -> str:
-    """Convert local DentalAI motor output to text for the LLM.
+def _is_intraoral(modality_hint: str) -> bool:
+    hint = (modality_hint or "").upper()
+    return any(token in hint for token in ("INTRAORAL", "CLINICAL_PHOTO", "AĞIZ İÇİ", "AGIZ ICI"))
 
-    No image bytes are returned or sent to an external model. A path is only read
-    locally by the dedicated DentalAI panoramic motors.
+
+def structured_vision_text(image_paths: list[str] | None, modality_hint: str = "") -> str:
+    """Convert dedicated DentalAI motor output to text for the clinical LLM.
+
+    No image bytes are sent to the external clinical LLM. Intraoral photographs
+    are routed to OralDetect as the primary image engine. Radiographs continue to
+    use the panoramic engine until their own modality-specific routes are added.
     """
     paths = [str(p) for p in (image_paths or []) if p and Path(p).is_file()]
     if not paths:
         return json.dumps({"status": "no_image_motor_context", "findings": []}, ensure_ascii=False)
 
-    key = _fingerprint(paths)
+    intraoral = _is_intraoral(modality_hint)
+    mode_key = "INTRAORAL_ORALDETECT" if intraoral else "PANORAMIC_VISION48"
+    key = _fingerprint(paths, mode_key)
     with _LOCK:
         cached = _CACHE.get(key)
     if cached is not None:
         return cached
 
-    payload = {"status": "ok", "images": []}
+    payload = {"status": "ok", "route": mode_key, "images": []}
     try:
-        from vision_service.pipeline import analyze_panorama
+        if intraoral:
+            from vision_service.intraoral_oraldetect import analyze_intraoral
 
-        # The current diagnostic engine is panoramic. Analyze each local image in
-        # isolation; the caller decides which uploaded files are appropriate.
-        for path in paths[:4]:
-            result = analyze_panorama(path)
-            payload["images"].append(_slim_result(result))
+            # OralDetect is the main/first image motor for intraoral photos. Never
+            # fall back to the panoramic motor for this modality.
+            for path in paths[:4]:
+                result = analyze_intraoral(path)
+                payload["images"].append(_slim_result(result))
+        else:
+            from vision_service.pipeline import analyze_panorama
+
+            for path in paths[:4]:
+                result = analyze_panorama(path)
+                payload["images"].append(_slim_result(result))
     except Exception as exc:
         payload = {
             "status": "vision_motor_unavailable",
+            "route": mode_key,
             "findings": [],
             "error_type": type(exc).__name__,
         }
