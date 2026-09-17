@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
+from vision_service.bitewing_ensemble import BitewingEngineError, analyze_bitewing, configured as bitewing_configured
 from vision_service.engine import MODEL_PATH, VisionError, model_available
 from vision_service.intraoral_oraldetect import OralDetectError, analyze_intraoral, configured as oraldetect_configured
 from vision_service.intraoral_ensemble import IntraoralEnsembleError, analyze_intraoral_ensemble, configured as intraoral_ensemble_configured
@@ -17,7 +18,7 @@ from vision_service.photo3d import Photo3DError, reconstruct
 from vision_service.pipeline import analyze_panorama
 from vision_service.readiness import readiness_snapshot
 
-app = FastAPI(title="Dental AI Vision", version="0.7.0-intraoral-three-motor")
+app = FastAPI(title="Dental AI Vision", version="0.8.0-bitewing-8024-periodontal")
 VISION_API_KEY = os.getenv("DENTAL_VISION_API_KEY", "").strip()
 
 
@@ -29,7 +30,7 @@ def require_vision_key(x_vision_key: str | None = Header(default=None, alias="X-
 @app.get("/health")
 def health():
     ready=readiness_snapshot()
-    return {"ok":True,"service":"dental-ai-vision","engine":"dental_ai_panorama_48_v1","intraoral_engine":"alphadent_daath_resnet50_ensemble","intraoral_engine_role":"primary","intraoral_motors":["alphadent_9class_960","daath_caries","oral_diseases_resnet50"],"intraoral_ensemble_configured":intraoral_ensemble_configured(),"oraldetect_configured":oraldetect_configured(),"oraldetect_role":"fallback_when_available","base_model_available":model_available(),"base_model_file":MODEL_PATH.name,"api_protected":bool(VISION_API_KEY),"catalog_total":len(FINDING_CATALOG),"implementation_total":ready["implementation_total"],"implementation_complete":ready["implementation_complete"],"runtime_validation_complete":ready["runtime_validation_complete"],"photo3d":True,"anatomy3d":True}
+    return {"ok":True,"service":"dental-ai-vision","engine":"dental_ai_panorama_48_v1","intraoral_engine":"alphadent_daath_resnet50_ensemble","intraoral_engine_role":"primary","intraoral_motors":["alphadent_9class_960","daath_caries","oral_diseases_resnet50"],"intraoral_ensemble_configured":intraoral_ensemble_configured(),"oraldetect_configured":oraldetect_configured(),"oraldetect_role":"fallback_when_available","bitewing_engine":"bitewing_8024_periodontal_v1","bitewing_motors":["yolov8_8024_seg","bitewing_periodontal_defect"],"bitewing_configured":bitewing_configured(),"base_model_available":model_available(),"base_model_file":MODEL_PATH.name,"api_protected":bool(VISION_API_KEY),"catalog_total":len(FINDING_CATALOG),"implementation_total":ready["implementation_total"],"implementation_complete":ready["implementation_complete"],"runtime_validation_complete":ready["runtime_validation_complete"],"photo3d":True,"anatomy3d":True}
 
 @app.get("/viewer",response_class=HTMLResponse)
 def viewer():
@@ -65,7 +66,7 @@ async def analyze_image(image:UploadFile=File(...),_:None=Depends(require_vision
 
 @app.post("/analyze-intraoral")
 async def analyze_intraoral_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
-    """Intraoral photos: AlphaDent localization + Daath caries specialist + ResNet50 image-level support. OralDetect remains gated fallback. Panoramic Vision48 is never called here."""
+    """Intraoral photos only. Panoramic and bitewing engines are never called here."""
     suffix=Path(image.filename or "intraoral.jpg").suffix.lower()
     if suffix not in {".jpg",".jpeg",".png",".webp",".bmp",".tif",".tiff"}: raise HTTPException(status_code=400,detail="Desteklenmeyen ağız içi görüntü formatı.")
     temp_path=None
@@ -76,6 +77,19 @@ async def analyze_intraoral_image(image:UploadFile=File(...),_:None=Depends(requ
             result=analyze_intraoral(temp_path); result["engine_role"]="fallback"; result.setdefault("notes",[]).append("Üç motorlu ensemble yapılandırılmadığı için OralDetect fallback kullanıldı."); return result
         raise IntraoralEnsembleError("Ağız içi analiz motoru yapılandırılmadı. INTRAORAL_ENSEMBLE_URL gerekli.")
     except (IntraoralEnsembleError,OralDetectError) as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
+    finally:
+        if temp_path: Path(temp_path).unlink(missing_ok=True)
+
+@app.post("/analyze-bitewing")
+async def analyze_bitewing_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
+    """Bitewing radiographs only: 8024 segmentation + optional periodontal defect pipeline."""
+    suffix=Path(image.filename or "bitewing.jpg").suffix.lower()
+    if suffix not in {".jpg",".jpeg",".png",".webp",".bmp",".tif",".tiff"}: raise HTTPException(status_code=400,detail="Desteklenmeyen bitewing görüntü formatı.")
+    temp_path=None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False,suffix=suffix) as tmp: shutil.copyfileobj(image.file,tmp); temp_path=tmp.name
+        return analyze_bitewing(temp_path)
+    except BitewingEngineError as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
     finally:
         if temp_path: Path(temp_path).unlink(missing_ok=True)
 
