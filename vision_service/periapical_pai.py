@@ -16,6 +16,7 @@ class PeriapicalPAIError(RuntimeError):
 PERIAPICAL_INFERENCE_URL = os.getenv("PERIAPICAL_INFERENCE_URL", "").strip().rstrip("/")
 PERIAPICAL_INFERENCE_API_KEY = os.getenv("PERIAPICAL_INFERENCE_API_KEY", "").strip()
 PERIAPICAL_TIMEOUT_SECONDS = float(os.getenv("PERIAPICAL_TIMEOUT_SECONDS", "90"))
+DISPLAY_CONFIDENCE_THRESHOLD = 0.50
 
 PAI_LABELS = {
     1: "Normal periapikal yapı",
@@ -79,6 +80,10 @@ def _normalize_pai(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _visible_finding(finding: dict[str, Any]) -> bool:
+    return _clamp_score(finding.get("confidence", 0.0)) >= DISPLAY_CONFIDENCE_THRESHOLD
+
+
 def analyze_periapical(image_path: str) -> dict[str, Any]:
     if not configured():
         raise PeriapicalPAIError("Periapikal inference servisi yapılandırılmadı: PERIAPICAL_INFERENCE_URL eksik.")
@@ -87,20 +92,11 @@ def analyze_periapical(image_path: str) -> dict[str, Any]:
         raise PeriapicalPAIError("Periapikal görüntü dosyası bulunamadı.")
 
     body, content_type = _multipart_body(str(path))
-    headers = {
-        "Content-Type": content_type,
-        "Accept": "application/json",
-        "User-Agent": "DentalAI-Periapical/1.0",
-    }
+    headers = {"Content-Type": content_type, "Accept": "application/json", "User-Agent": "DentalAI-Periapical/1.0"}
     if PERIAPICAL_INFERENCE_API_KEY:
         headers["Authorization"] = f"Bearer {PERIAPICAL_INFERENCE_API_KEY}"
 
-    request = urllib.request.Request(
-        f"{PERIAPICAL_INFERENCE_URL}/infer-periapical",
-        data=body,
-        headers=headers,
-        method="POST",
-    )
+    request = urllib.request.Request(f"{PERIAPICAL_INFERENCE_URL}/infer-periapical", data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode())
@@ -112,25 +108,31 @@ def analyze_periapical(image_path: str) -> dict[str, Any]:
 
     if not isinstance(payload, dict):
         raise PeriapicalPAIError("Periapikal inference geçersiz JSON döndürdü.")
-
     pai_payload = payload.get("pai", payload)
     if not isinstance(pai_payload, dict):
         raise PeriapicalPAIError("Periapikal inference PAI çıktısı geçersiz.")
     finding = _normalize_pai(pai_payload)
 
     auxiliary = payload.get("radiographic_findings", [])
-    if not isinstance(auxiliary, list):
-        auxiliary = []
+    if not isinstance(auxiliary, list): auxiliary = []
+    visible_auxiliary = []
+    for item in auxiliary:
+        if not isinstance(item, dict): continue
+        score = item.get("confidence", item.get("score"))
+        if score is None or _clamp_score(score) >= DISPLAY_CONFIDENCE_THRESHOLD:
+            visible_auxiliary.append(item)
 
+    visible_findings = [finding] if _visible_finding(finding) else []
     return {
         "ok": True,
         "engine": "periapical_pai_v1",
         "engine_role": "primary_apical_assessment",
         "modality": "PERIAPICAL",
-        "pai": finding,
-        "findings": [finding],
-        "auxiliary_radiographic_findings": auxiliary,
+        "pai": finding if visible_findings else None,
+        "findings": visible_findings,
+        "auxiliary_radiographic_findings": visible_auxiliary,
         "motors": payload.get("motors", ["pai_meets_ai"]),
+        "display_policy": {"minimum_confidence": DISPLAY_CONFIDENCE_THRESHOLD, "show_confidence_to_user": False},
         "notes": [
             "PAI modeli apeks merkezli periapikal değerlendirme için kullanılır.",
             "PAI çıktısı lezyon sınırı değildir; lokalizasyon varmış gibi gösterilmez.",
