@@ -18,7 +18,9 @@ from app.vision_llm_context import structured_vision_text
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("DENTAL_CLINICAL_AI_MODEL", "gemini-3.8-flash")
+# Stable clinical default previously verified for this project. Render may still
+# override it explicitly with DENTAL_CLINICAL_AI_MODEL when required.
+GEMINI_MODEL = os.getenv("DENTAL_CLINICAL_AI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -48,9 +50,6 @@ def _safe_http_error_message(code):
 
 
 def _policy_prompt(prompt: str, image_paths=None) -> str:
-    # The clinical prompt already contains the router's image-type classification
-    # (for example INTRAORAL or PANORAMIC). Pass it as a modality hint so the
-    # local dedicated vision layer selects the correct primary engine.
     structured = structured_vision_text(image_paths, modality_hint=prompt)
     return f"""{prompt}
 
@@ -61,8 +60,8 @@ DENTAL AI GÖRÜNTÜ GÜVENLİK VE MİMARİ KURALI — ÜST ÖNCELİKLİ:
 - confidence alanı modelin bu örnekteki tespit skorudur; accuracy/mAP değildir.
 - Hekim klinik metni ayrı kanıttır; onu radyografik/görsel bulgu gibi sunma.
 - Aşağıdaki motor çıktıları boş/erişilemez ise yeni görüntü bulgusu üretme; yalnız klinik metin ve kanıt bağlamıyla devam et.
-- INTRAORAL/CLINICAL_PHOTO görüntülerinde ana görsel motor OralDetect'tir. Panoramik motor ağız içi fotoğrafa fallback olarak kullanılmaz.
-- candidate_only=true olan yumuşak doku çıktıları kesin tanı değil, hekim değerlendirmesi gerektiren görsel adaylardır.
+- INTRAORAL/CLINICAL_PHOTO görüntülerinde yalnız ilgili ağız içi motor ailesinin yapılandırılmış çıktısını kullan. Panoramik motor ağız içi fotoğrafa fallback olarak kullanılmaz.
+- candidate_only=true olan çıktılar kesin tanı değil, hekim değerlendirmesi gerektiren görsel adaylardır.
 
 DENTALAI_STRUCTURED_VISION_OUTPUT:
 {structured}
@@ -70,7 +69,6 @@ DENTALAI_STRUCTURED_VISION_OUTPUT:
 
 
 def _build_payload(prompt: str, response_schema=None):
-    # Text-only by design. There is intentionally no inline_data/image/file part.
     generation_config = {"temperature": 0.1, "maxOutputTokens": 1800}
     if response_schema is not None:
         generation_config["responseMimeType"] = "application/json"
@@ -88,10 +86,8 @@ def _build_payload(prompt: str, response_schema=None):
 def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
     """DentalAI clinical LLM provider.
 
-    The public function keeps the legacy image arguments so existing call sites do
-    not break. The arguments are never serialized to Gemini. They are consumed
-    locally only to obtain structured outputs from DentalAI's dedicated vision
-    motors, then discarded from the external request.
+    Legacy image arguments are kept for existing call sites. Pixels are never
+    serialized to Gemini; local DentalAI vision output is converted to text first.
     """
     if not GEMINI_API_KEY:
         raise GeminiAPIError("GEMINI_API_KEY tanımlı değil. Render Environment Variables bölümünü kontrol edin.")
