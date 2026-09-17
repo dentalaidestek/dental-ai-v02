@@ -52,6 +52,7 @@ gallery_src/
 # Local Dental AI patch backups
 .dental_ai_*
 models/vision/*.pt
+models/vision/oraldetect/
 
 vision_service/__pycache__/
 .vision_backups/
