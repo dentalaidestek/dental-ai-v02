@@ -229,6 +229,14 @@ SOURCES = {
         modality="INTRAORAL_PHOTO",
         target_signals=("VISIBLE_CARIES",),
         note="Public downloadable 2025 release: 6,313 dentist-verified intraoral images with decay localization in YOLO/COCO/VOC/LabelMe. Prefer Benchmarking Dataset.zip for held-out evaluation and preserve patient/view grouping when metadata permits.",
+    ),
+    "intraoral_lesion_200": TrainingSource(
+        key="intraoral_lesion_200",
+        access="publication_only_no_verified_download",
+        locator="https://pmc.ncbi.nlm.nih.gov/articles/PMC9696071/",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("CALCULUS","GINGIVAL_INFLAMMATION","DENTAL_ABRASION"),
+        note="Study reports 200 original intraoral-camera images with calculus, gingivitis/tartar and worn-surface lesions. Publication evidence only; do not auto-download or use as locked GT until a primary downloadable artifact and license are verified.",
     )
     "pandent": TrainingSource(
         key="pandent",
