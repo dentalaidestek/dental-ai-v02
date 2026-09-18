@@ -23,6 +23,9 @@ from vision_service.tvem_client import run_sequential as run_tvem
 _MODEL_CACHE: dict[str, Any] = {}
 _MODEL_LOCK = threading.Lock()
 CACHE_LIGHT_MODELS = os.getenv("DENTAL_VISION_CACHE_LIGHT_MODELS", "1").strip() == "1"
+PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
+PANORAMIC_DISPLAY_THRESHOLD = float(os.getenv("PANORAMIC_DISPLAY_THRESHOLD", "0.50"))
+PANORAMIC_FUSION_IOU_THRESHOLD = float(os.getenv("PANORAMIC_FUSION_IOU_THRESHOLD", "0.20"))
 
 
 def _name_for(names, class_id: int) -> str:
@@ -151,68 +154,140 @@ def _merge_findings(items: list[dict]) -> list[dict]:
     return kept
 
 
+def _control_supports(primary: dict, controls: list[dict]) -> dict | None:
+    """Return same-finding spatial support without changing the primary score."""
+    matches = [
+        item for item in controls
+        if item.get("finding_code") == primary.get("finding_code")
+        and bbox_iou(primary.get("bbox"), item.get("bbox")) >= PANORAMIC_FUSION_IOU_THRESHOLD
+    ]
+    if not matches:
+        return None
+    return max(
+        matches,
+        key=lambda item: (
+            bbox_iou(primary.get("bbox"), item.get("bbox")),
+            float(item.get("confidence") or 0.0),
+        ),
+    )
+
+
 def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict:
-    """Run the DentalAI panoramic engine without sending pixels to a general LLM."""
+    """Run primary panoramic motors first; use control motors only to rescue weak candidates."""
     fdi_result = analyze_fdi(image_path)
     teeth = list(fdi_result.get("teeth") or [])
-    findings: list[dict] = []
     helpers: list[dict] = []
     warnings: list[dict] = []
     execution: list[dict] = []
 
-    # Pinned release models.
+    # Primary motors keep 0.02+ internal candidates. >=0.50 findings bypass
+    # control/fusion. Weak candidates are the only direct findings eligible
+    # for corroboration by control motors.
+    primary: list[dict] = []
     release_jobs = [
-        ("findings9", normalize_findings9, float(os.getenv("DENTAL_FINDINGS9_CONF", "0.35")), 0.45, 1280),
-        ("impacted_tooth", normalize_impacted, float(os.getenv("DENTAL_IMPACTED_CONF", "0.40")), 0.45, 1280),
+        ("findings9", normalize_findings9, PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD, 0.45, 1280),
+        ("impacted_tooth", normalize_impacted, PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD, 0.45, 1280),
     ]
     for model_key, normalizer, conf, iou, imgsz in release_jobs:
         try:
-            f, h = _detector_outputs(image_path=image_path, model_key=model_key, conf=conf, iou=iou, imgsz=imgsz, normalizer=normalizer)
-            findings.extend(f); helpers.extend(h)
-            execution.append({"motor": model_key, "status": "ok", "findings": len(f), "helpers": len(h)})
+            f, h = _detector_outputs(
+                image_path=image_path, model_key=model_key, conf=conf,
+                iou=iou, imgsz=imgsz, normalizer=normalizer,
+            )
+            primary.extend(f); helpers.extend(h)
+            execution.append({"motor": model_key, "role": "primary", "status": "ok", "findings": len(f), "helpers": len(h)})
         except Exception as exc:
             warnings.append({"motor": model_key, "error_type": type(exc).__name__, "message": str(exc)})
-            execution.append({"motor": model_key, "status": "error"})
+            execution.append({"motor": model_key, "role": "primary", "status": "error"})
 
-    # Optional ready public YOLO/ONNX sources. Missing files are a normal pre-runtime state.
-    # Each source keeps the resolution/NMS settings it was trained or published with.
-    optional_jobs = [
-        ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.28")), 0.45, 1280),
-        ("insmile12", normalize_insmile12, float(os.getenv("DENTAL_INSMILE12_CONF", "0.35")), 0.45, 640),
-        # The published Liodon usage example uses conf=0.25. Keep its native
-        # 640px input and use it as an independent compact control detector.
-        ("liodon3", normalize_liodon3, float(os.getenv("DENTAL_LIODON3_CONF", "0.25")), 0.35, 640),
-        ("panoreader_periapical", _normalize_periapical, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.30")), 0.45, 1280),
+    strong = [x for x in primary if float(x.get("confidence") or 0.0) >= PANORAMIC_DISPLAY_THRESHOLD]
+    weak = [
+        x for x in primary
+        if PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD <= float(x.get("confidence") or 0.0) < PANORAMIC_DISPLAY_THRESHOLD
     ]
-    for key, normalizer, conf, iou, imgsz in optional_jobs:
+    weak_codes = {x.get("finding_code") for x in weak}
+    controls: list[dict] = []
+
+    # yolo31 and InsMile also provide helper signals consumed by derived48, so
+    # they may run for helper extraction. Their DIRECT findings never enter the
+    # final result by themselves; they can only corroborate weak primary items.
+    helper_control_jobs = [
+        ("yolo31", normalize_yolo31, float(os.getenv("DENTAL_YOLO31_CONF", "0.02")), 0.45, 1280),
+        ("insmile12", normalize_insmile12, float(os.getenv("DENTAL_INSMILE12_CONF", "0.02")), 0.45, 640),
+    ]
+    for key, normalizer, conf, iou, imgsz in helper_control_jobs:
         if not optional_model_path(key).is_file():
-            execution.append({"motor": key, "status": "not_downloaded"})
+            execution.append({"motor": key, "role": "helper+weak_control", "status": "not_downloaded"})
             continue
         try:
             f, h = run_source(image_path, key, normalizer, conf=conf, iou=iou, imgsz=imgsz)
-            findings.extend(f); helpers.extend(h)
-            execution.append({"motor": key, "status": "ok", "findings": len(f), "helpers": len(h)})
+            controls.extend(f); helpers.extend(h)
+            execution.append({"motor": key, "role": "helper+weak_control", "status": "ok", "findings": len(f), "helpers": len(h)})
         except Exception as exc:
             warnings.append({"motor": key, "error_type": type(exc).__name__, "message": str(exc)})
-            execution.append({"motor": key, "status": "error"})
+            execution.append({"motor": key, "role": "helper+weak_control", "status": "error"})
 
-    # TVEM is deliberately sequential load -> infer -> unload to cap memory.
+    # Pure direct control motors run only when a weak primary code exists that
+    # they can actually corroborate.
+    targeted_jobs = [
+        ("liodon3", normalize_liodon3, {"CARIES", "PERIAPICAL_RADIOLUCENCY", "IMPACTED_TOOTH"}, float(os.getenv("DENTAL_LIODON3_CONF", "0.02")), 0.35, 640),
+        ("panoreader_periapical", _normalize_periapical, {"PERIAPICAL_RADIOLUCENCY"}, float(os.getenv("DENTAL_PERIAPICAL_CONF", "0.02")), 0.45, 1280),
+    ]
+    for key, normalizer, supported, conf, iou, imgsz in targeted_jobs:
+        if not (weak_codes & supported):
+            execution.append({"motor": key, "role": "weak_control", "status": "skipped_no_matching_weak_candidate"})
+            continue
+        if not optional_model_path(key).is_file():
+            execution.append({"motor": key, "role": "weak_control", "status": "not_downloaded"})
+            continue
+        try:
+            f, h = run_source(image_path, key, normalizer, conf=conf, iou=iou, imgsz=imgsz)
+            controls.extend(f); helpers.extend(h)
+            execution.append({"motor": key, "role": "weak_control", "status": "ok", "findings": len(f), "helpers": len(h)})
+        except Exception as exc:
+            warnings.append({"motor": key, "error_type": type(exc).__name__, "message": str(exc)})
+            execution.append({"motor": key, "role": "weak_control", "status": "error"})
+
+    # TVEM still supplies anatomy/bone helper signals needed by derived48.
+    # Its disease detections are control evidence only and cannot create a
+    # final direct finding without a weak primary candidate at the same site.
     try:
         tvem_findings, tvem_helpers, tvem_warnings = run_tvem(image_path)
-        findings.extend(tvem_findings); helpers.extend(tvem_helpers); warnings.extend(tvem_warnings)
-        execution.append({"motor": "tvem", "status": "ok" if not tvem_warnings else "partial", "findings": len(tvem_findings), "helpers": len(tvem_helpers)})
+        controls.extend(tvem_findings); helpers.extend(tvem_helpers); warnings.extend(tvem_warnings)
+        execution.append({"motor": "tvem", "role": "helper+weak_control", "status": "ok" if not tvem_warnings else "partial", "findings": len(tvem_findings), "helpers": len(tvem_helpers)})
     except Exception as exc:
         warnings.append({"motor": "tvem", "error_type": type(exc).__name__, "message": str(exc)})
-        execution.append({"motor": "tvem", "status": "error"})
+        execution.append({"motor": "tvem", "role": "helper+weak_control", "status": "error"})
 
-    for item in findings + helpers:
+    for item in primary + controls + helpers:
         _attach_fdi(item, teeth)
 
-    # All composed and CV-derived finding motors run here. They consume only the
-    # dedicated detector outputs, anatomy helpers, FDI geometry and the panorama.
-    derived = derive_findings(image_path, teeth, findings, helpers, patient_age=patient_age)
-    findings.extend(derived)
-    final_findings = _merge_findings(findings)
+    rescued: list[dict] = []
+    for item in weak:
+        support = _control_supports(item, controls)
+        if support is None:
+            continue
+        rescued.append({
+            **item,
+            "candidate_only": False,
+            "display_eligible": True,
+            "fusion_supported": True,
+            "support_motor": support.get("motor"),
+            "support_confidence": support.get("confidence"),
+            "support_iou": round(bbox_iou(item.get("bbox"), support.get("bbox")), 4),
+        })
+
+    for item in strong:
+        item["candidate_only"] = False
+        item["display_eligible"] = True
+        item["fusion_supported"] = False
+
+    # Derived motors may consume helper/control evidence, but direct control
+    # detections themselves are never promoted unless they rescued a weak
+    # primary candidate above.
+    evidence_findings = strong + weak + controls
+    derived = derive_findings(image_path, teeth, evidence_findings, helpers, patient_age=patient_age)
+    final_findings = _merge_findings(strong + rescued + derived)
 
     return {
         "engine": "dental_ai_panorama_48_v1",
@@ -223,9 +298,14 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "teeth": teeth,
         "finding_count": len(final_findings),
         "findings": final_findings,
+        "internal_candidate_threshold": PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD,
+        "display_threshold": PANORAMIC_DISPLAY_THRESHOLD,
+        "weak_candidate_count": len(weak),
+        "rescued_weak_candidate_count": len(rescued),
         "helper_signal_count": len(helpers),
         "helpers": helpers,
         "motor_execution": execution,
         "warnings": warnings,
         "readiness": readiness_snapshot(),
+        "fusion_policy": "Strong primary findings bypass controls; only weak primary candidates may be rescued by same-code spatial support. Confidence scores are never added or averaged.",
     }
