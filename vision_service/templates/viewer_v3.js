@@ -52,10 +52,20 @@ window.addEventListener('message',async ev=>{
       const top=$('file')?.closest('.top');if(top)top.style.display='none';
       const ir=await fetch(d.assetUrl,{credentials:'same-origin'});if(!ir.ok)throw new Error('Görüntü alınamadı');
       const blob=await ir.blob();panoImage.src=URL.createObjectURL(blob);await panoImage.decode();$('panoImg').src=panoImage.src;$('panoMini').classList.remove('hidden');
-      const vr=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});if(!vr.ok){if(vr.status===202){$('status').textContent='Görüntü motoru çalışıyor…';return}throw new Error('Kayıtlı motor sonucu alınamadı')}
-      const snap=await vr.json();result=snap.result||snap;
+      let snap=null;
+      for(let attempt=0;attempt<40;attempt++){
+        const vr=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});
+        if(vr.ok){snap=await vr.json();break}
+        if(vr.status!==202)throw new Error('Kayıtlı motor sonucu alınamadı');
+        $('status').textContent='Görüntü motoru çalışıyor…';
+        await new Promise(resolve=>setTimeout(resolve,1500));
+      }
+      if(!snap)throw new Error('Görüntü motoru sonucu henüz hazır değil');
+      result=snap.result||snap;
+      const pools=['findings','auxiliary_radiographic_findings','image_level_findings'];
+      result.findings=pools.flatMap(k=>Array.isArray(result[k])?result[k]:[]);
       $('status').textContent='Anatomik 3D hazırlanıyor…';
-      await renderJaw();$('status').textContent='3D hazır';
+      await renderJaw();$('status').textContent=(result.unique_fdi_count||result.tooth_count||result.teeth?.length||0)+' diş • '+result.findings.length+' bulgu • 3D hazır';
     }catch(e){$('status').textContent='Analiz tamamlanamadı';showError(String(e))}
   }
   if(d.type==='dental-ai:tooth-analysis-started'&&!d.ok)showError(d.error||'Klinik analiz başlatılamadı');
