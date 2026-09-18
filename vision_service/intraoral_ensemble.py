@@ -88,7 +88,10 @@ def analyze_intraoral_ensemble(image_path):
     alpha=[x for i in ar if isinstance(i,dict) if (x:=_normalize_alpha(i))];daath=[x for i in dr if isinstance(i,dict) if (x:=_normalize_daath(i))];classifier=[x for i in cr if isinstance(i,dict) if (x:=_normalize_classifier(i))]
     findings=_merge_caries(alpha,daath);support={x["finding_code"]:x for x in classifier}
     for f in findings:
-        if f["finding_code"] in support:f["classifier_support"]={"motor":"oral_diseases_resnet50","confidence":support[f["finding_code"]]["confidence"]}
+        if f["finding_code"] in support:
+            s=support[f["finding_code"]]
+            f["classifier_support"]={"motor":"oral_diseases_resnet50","confidence":s["confidence"],"image_level":True,"bbox":None}
+            f.setdefault("internal_evidence",{})["oral_resnet50"]={"raw_label":s["raw_label"],"confidence":s["confidence"],"image_level":True,"bbox":None}
     gradcam=normalize_gradcam_regions(payload.get("gradcam",[]));by_label={x["class_label"].casefold():[] for x in gradcam}
     for x in gradcam:by_label.setdefault(x["class_label"].casefold(),[]).append(x)
     image_level=[]
