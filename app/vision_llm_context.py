@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import threading
+import mimetypes
+import urllib.error
+import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -70,6 +74,59 @@ def _route(modality_hint: str) -> str:
     return "PANORAMIC"
 
 
+def _modal_infer(path: str, modality: str) -> dict:
+    base = __import__("os").getenv("DENTAL_VISION_MODAL_URL", "https://dentalaidestek--dental-ai-inference-api.modal.run").strip().rstrip("/")
+    if not base:
+        raise RuntimeError("DENTAL_VISION_MODAL_URL yapılandırılmadı.")
+    boundary = "----DentalAI" + uuid.uuid4().hex
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    data = Path(path).read_bytes()
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{Path(path).name}\"\r\n"
+        f"Content-Type: {mime}\r\n\r\n"
+    ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{base}/infer?modality={modality}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=float(__import__("os").getenv("DENTAL_VISION_MODAL_TIMEOUT_SECONDS", "120"))) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _modal_panorama_result(path: str) -> dict:
+    from vision_service.cv_signals import bbox_iou
+    from vision_service.motors.findings9 import normalize_class as norm9
+    from vision_service.motors.impacted_tooth import normalize_class as norm4
+    from vision_service.motors.catalog import FINDING_CATALOG
+
+    raw = _modal_infer(path, "panoramic")
+    def score(x): return float(x.get("confidence", x.get("score", 0.0)) or 0.0)
+    def box(x): return x.get("bbox") or x.get("box")
+    def mapped(items, normalizer, motor):
+        out=[]
+        for item in items or []:
+            m=normalizer(str(item.get("label", item.get("class_name", item.get("name","")))))
+            code=m.get("finding_code")
+            if m.get("type")=="finding" and code in FINDING_CATALOG:
+                label, category=FINDING_CATALOG[code]
+                out.append({"finding_code":code,"label":label,"category":category,"confidence":round(score(item),4),"bbox":box(item),"motor":motor,"source_motor":motor,"evidence_type":"direct"})
+        return out
+    primary = mapped(raw.get("findings9"), norm9, "findings9") + mapped(raw.get("oralguard4") or raw.get("impacted"), norm4, "oralguard4")
+    strong=[x for x in primary if score(x)>=0.50]
+    weak=[x for x in primary if 0.02<=score(x)<0.50]
+    rescued=[]
+    for item in weak:
+        matches=[x for x in primary if x.get("motor")!=item.get("motor") and x.get("finding_code")==item.get("finding_code") and score(x)>=0.05 and bbox_iou(box(item),box(x))>=0.20]
+        if matches:
+            support=max(matches,key=lambda x:(bbox_iou(box(item),box(x)),score(x)))
+            rescued.append({**item,"candidate_only":False,"display_eligible":True,"fusion_supported":True,"support_motor":support.get("motor"),"support_confidence":support.get("confidence"),"support_iou":round(bbox_iou(box(item),box(support)),4)})
+    for item in strong:
+        item.update({"candidate_only":False,"display_eligible":True,"fusion_supported":False})
+    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(raw.get("fdi") or []),"teeth":raw.get("fdi") or [],"warnings":[]}
+
+
 def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:
     """Run each image through its own dedicated motor family."""
     pairs = [(str(p), (image_types[i] if image_types and i < len(image_types) else modality_hint)) for i, p in enumerate(image_paths or []) if p and Path(p).is_file()]
@@ -107,8 +164,7 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                 from vision_service.bitewing_ensemble import analyze_bitewing
                 result = analyze_bitewing(path)
             else:
-                from vision_service.pipeline import analyze_panorama
-                result = analyze_panorama(path)
+                result = _modal_panorama_result(path)
 
             result = dict(result or {})
             result.setdefault("modality", asset_route)
