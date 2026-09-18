@@ -100,6 +100,23 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
     return {"modality":modality,"finding_code":finding_code,**counts,"recall":recall,"specificity":spec,
             "localization_rate":loc,"n":len(rows)}
 
+def validate_locked_pool(cases:list[Case]):
+    errors=[]
+    by_target={}
+    hashes=set()
+    for c in cases:
+        if c.polarity not in {"positive","negative"}: errors.append(f"bad polarity:{c.case_id}")
+        p=Path(c.image_path)
+        if not p.is_file(): errors.append(f"missing:{c.case_id}"); continue
+        actual=sha256_file(p)
+        if actual!=c.sha256: errors.append(f"hash mismatch:{c.case_id}")
+        if actual in hashes: errors.append(f"duplicate hash:{c.case_id}")
+        hashes.add(actual)
+        by_target.setdefault((c.modality,c.finding_code),{"positive":0,"negative":0})
+        by_target[(c.modality,c.finding_code)][c.polarity]+=1
+    if errors: raise RuntimeError("Locked test pool integrity failed: "+"; ".join(errors[:20]))
+    return by_target
+
 def write_manifest(cases:list[Case], source_meta:dict[str,Any]):
     atomic_json(ROOT/"locked_test_manifest.json",{
         "schema":1,"created_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
@@ -107,6 +124,19 @@ def write_manifest(cases:list[Case], source_meta:dict[str,Any]):
         "cases":[asdict(c) for c in cases],"sources":source_meta,
         "rule":"TEST_LOCKED hashes/patients are forbidden from train and validation pools."
     })
+
+def forbidden_test_hashes(manifest_path:Path|None=None)->set[str]:
+    manifest_path=manifest_path or ROOT/"locked_test_manifest.json"
+    return {x.get("sha256") for x in load_json(manifest_path,{}).get("cases",[]) if x.get("sha256")}
+
+def assert_training_pool_clean(paths:list[str|Path], manifest_path:Path|None=None):
+    forbidden=forbidden_test_hashes(manifest_path)
+    collisions=[]
+    for p in paths:
+        p=Path(p)
+        if p.is_file() and sha256_file(p) in forbidden: collisions.append(str(p))
+    if collisions: raise RuntimeError("TEST LEAKAGE: "+", ".join(collisions[:20]))
+    return True
 
 def export_report(rows:list[dict]):
     atomic_json(REPORTS/"baseline_report.json",rows)
