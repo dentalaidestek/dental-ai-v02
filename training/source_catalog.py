@@ -141,6 +141,22 @@ SOURCES = {
         modality="INTRAORAL_PHOTO",
         target_signals=("GINGIVAL_INFLAMMATION",),
         note="1,096 high-resolution intraoral images labeled by three periodontists with MGI scores; use only after exact downloadable artifact and license are verified.",
+    ),
+    "panoramic_apical_3926": TrainingSource(
+        key="panoramic_apical_3926",
+        access="public_mendeley",
+        locator="https://doi.org/10.17632/3p6rbrp8yb.2",
+        modality="PANORAMIC",
+        target_signals=("PERIAPICAL_RADIOLUCENCY",),
+        note="3,926 original panoramic radiographs with XML lesion localization, selected from 16,519 radiographs and annotated by three experienced dentists. Use originals only; never mix augmented derivatives into locked holdout.",
+    ),
+    "oral_mamba_3365": TrainingSource(
+        key="oral_mamba_3365",
+        access="publication_verify_download",
+        locator="https://doi.org/10.1186/s12903-024-05072-1",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES","CALCULUS","GINGIVAL_INFLAMMATION"),
+        note="3,365 oral endoscopy images with lesion segmentation for caries, supragingival calculus and gingivitis; annotations reviewed by calibrated clinicians. Download artifact/license must be verified before automatic use.",
     )
     "pandent": TrainingSource(
         key="pandent",
