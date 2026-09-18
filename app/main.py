@@ -4992,6 +4992,97 @@ def guest_analysis_result(request: Request, analysis_id: int):
     )
 
 
+@app.post("/analysis/{analysis_id}/viewer-note")
+async def save_analysis_viewer_note(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user: return JSONResponse({"ok":False}, status_code=401)
+    body = await request.json()
+    tooth = str(body.get("tooth") or "").strip()
+    note = str(body.get("note") or "").strip()
+    if not note: return JSONResponse({"ok":False,"error":"Not boş olamaz."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        patient = s.get(Patient, analysis.patient_id) if analysis else None
+        if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
+            return JSONResponse({"ok":False}, status_code=404)
+        line = (f"[Diş {tooth}] " if tooth else "") + note
+        analysis.clinical_notes = "\n".join(x for x in [analysis.clinical_notes or "", line] if x).strip()
+        if tooth: analysis.tooth_number = tooth
+        s.add(analysis); s.commit()
+    return JSONResponse({"ok":True})
+
+
+@app.post("/analysis/guest/{analysis_id}/viewer-note")
+async def save_guest_viewer_note(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user: return JSONResponse({"ok":False}, status_code=401)
+    body = await request.json()
+    tooth = str(body.get("tooth") or "").strip()
+    note = str(body.get("note") or "").strip()
+    if not note: return JSONResponse({"ok":False,"error":"Not boş olamaz."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):
+            return JSONResponse({"ok":False}, status_code=404)
+        line = (f"[Diş {tooth}] " if tooth else "") + note
+        analysis.clinical_notes = "\n".join(x for x in [analysis.clinical_notes or "", line] if x).strip()
+        if tooth: analysis.tooth_number = tooth
+        s.add(analysis); s.commit()
+    return JSONResponse({"ok":True})
+
+
+@app.post("/analysis/{analysis_id}/viewer-analyze")
+def viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis=s.get(Analysis,analysis_id); patient=s.get(Patient,analysis.patient_id) if analysis else None
+        if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
+    background_tasks.add_task(_run_preliminary_ai,analysis_id)
+    return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
+
+
+@app.post("/analysis/guest/{analysis_id}/viewer-analyze")
+def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis=s.get(GuestAnalysis,analysis_id)
+        if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
+    background_tasks.add_task(_run_guest_preliminary_ai,analysis_id)
+    return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
+
+
+@app.get("/analysis/{analysis_id}/viewer-result")
+def viewer_result(request: Request, analysis_id: int):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis=s.get(Analysis,analysis_id); patient=s.get(Patient,analysis.patient_id) if analysis else None
+        if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        status=analysis.status
+    p=Path(f"uploads/ai_results/{analysis_id}.json")
+    if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
+    try:return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})})
+    except Exception as e:return JSONResponse({"ok":False,"error":str(e)},status_code=500)
+
+
+@app.get("/analysis/guest/{analysis_id}/viewer-result")
+def guest_viewer_result(request: Request, analysis_id: int):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis=s.get(GuestAnalysis,analysis_id)
+        if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        status=analysis.status
+    p=Path(f"uploads/ai_results/guest_{analysis_id}.json")
+    if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
+    try:return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})})
+    except Exception as e:return JSONResponse({"ok":False,"error":str(e)},status_code=500)
+
+
 @app.get("/analysis-assets/{analysis_id}/asset/{asset_id}")
 def analysis_asset(request: Request, analysis_id: int, asset_id: int):
     user = get_current_user(request)
