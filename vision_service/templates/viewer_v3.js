@@ -36,10 +36,24 @@ function renderToothSheet(){
   }
   if(toothTab==='treatments'){
     body.innerHTML='<div class="treatment-box"><div class="sheet-note">Klinik değerlendirme yalnız siz istediğinizde başlatılır. Seçili diş: '+esc(selectedTooth.fdi)+'</div><button id="toothAnalyze" class="analysis-action">Analiz Et</button><div id="toothAnalysisResult" class="treatment-result"></div></div>';
-    $('toothAnalyze').onclick=()=>{const ev=new CustomEvent('dental-ai:analyze-tooth',{detail:{fdi:selectedTooth.fdi,findings:fs}});window.dispatchEvent(ev);const out=$('toothAnalysisResult');out.innerHTML='<div class="result-block"><b>Analiz hazırlanıyor</b>Bu işlem mevcut Dental AI klinik analiz hattına gönderilecektir.</div>'};
+    $('toothAnalyze').onclick=()=>{const detail={fdi:selectedTooth.fdi,findings:fs};window.dispatchEvent(new CustomEvent('dental-ai:analyze-tooth',{detail}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:'dental-ai:analyze-tooth',...detail},location.origin);const out=$('toothAnalysisResult');out.innerHTML='<div class="result-block"><b>Analiz hazırlanıyor</b>Seçili dişin klinik değerlendirmesi başlatıldı.</div>'};
     return;
   }
   body.innerHTML='<div class="view-list"><button class="view-toggle"><span>Tek diş 3D</span><span>Açık</span></button><button class="view-toggle"><span>Panoramik kesit</span><span>İsteğe bağlı</span></button><div class="sheet-note">Bu görünüm seçili dişe odaklanır; genel çene görünümüne Geri ile dönebilirsiniz.</div></div>';
 }
 document.querySelectorAll('[data-tooth-tab]').forEach(b=>b.onclick=()=>{toothTab=b.dataset.toothTab;document.querySelectorAll('[data-tooth-tab]').forEach(x=>x.classList.toggle('active',x===b));renderToothSheet()});
 $('run').onclick=analyze;$('close').onclick=()=>$('detail').classList.remove('open');
+
+window.addEventListener('message',async ev=>{
+  if(ev.origin!==location.origin)return;
+  const d=ev.data||{};
+  if(d.type==='dental-ai:patient-analysis'&&d.assetUrl){
+    try{
+      const r=await fetch(d.assetUrl,{credentials:'same-origin'});if(!r.ok)throw new Error('Görüntü alınamadı');
+      const blob=await r.blob();const file=new File([blob],'analysis-image'+(blob.type==='image/png'?'.png':'.jpg'),{type:blob.type||'image/jpeg'});
+      const dt=new DataTransfer();dt.items.add(file);const input=$('file');input.files=dt.files;input.closest('.top')?.style.setProperty('display','none');
+      await analyze();
+    }catch(e){showError(String(e))}
+  }
+  if(d.type==='dental-ai:tooth-analysis-started'&&!d.ok)showError(d.error||'Klinik analiz başlatılamadı');
+});
