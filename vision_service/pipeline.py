@@ -284,10 +284,10 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         item["display_eligible"] = True
         item["fusion_supported"] = False
 
-    # Derived motors may consume helper/control evidence, but direct control
-    # detections themselves are never promoted unless they rescued a weak
-    # primary candidate above.
-    evidence_findings = strong + weak + controls
+    # Derived motors consume only released direct evidence (strong + rescued).
+    # Unsupported weak/control pathology detections are deliberately excluded so
+    # they cannot be promoted indirectly into a user-visible derived finding.
+    evidence_findings = strong + rescued
     derived = derive_findings(image_path, teeth, evidence_findings, helpers, patient_age=patient_age)
     final_findings = _merge_findings(strong + rescued + derived)
 
