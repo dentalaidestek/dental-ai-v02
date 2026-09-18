@@ -32,6 +32,8 @@ def test_baseline_notebook_is_valid_python():
     assert "ATTACHED_HINTS" in code
     assert "actual={}" in code
     assert "run_identity.json" in code
+    assert "locked_hashes" in code
+    assert "positive_count" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
@@ -48,3 +50,5 @@ def test_harness_has_leakage_guards():
     assert "(c.sha256,c.polarity)" in text
     assert "raw_matches" in text
     assert "localization_iou50_rate" in text
+    assert "compare_reports" in text
+    assert "AFTER-TRAIN TEST POOL CHANGED" in text
