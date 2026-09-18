@@ -53,7 +53,7 @@ def lock_cases(cases:list[Case])->list[Case]:
         out.append(c)
     return out
 
-def balanced_select(cases:list[Case])->tuple[list[Case],str]:
+def balanced_select(cases:list[Case], seed:int=42)->tuple[list[Case],str]:
     pos=[c for c in cases if c.polarity=="positive"]; neg=[c for c in cases if c.polarity=="negative"]
     # deterministic: source id then case id; no cherry-picking by model score
     pos=sorted(pos,key=lambda c:(c.source,c.source_id,c.case_id))[:TARGET_POS]
