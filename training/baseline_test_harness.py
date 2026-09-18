@@ -112,7 +112,7 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
         try:
             pred=infer(c.image_path,modality) or {}
             fs=pred.get("findings",[]) if isinstance(pred,dict) else []
-            matches=[x for x in fs if isinstance(x,dict) and x.get("finding_code")==finding_code]
+            matches=[x for x in fs if isinstance(x,dict) and (x.get("finding_code") or x.get("code") or x.get("label"))==finding_code]
             detected=bool(matches)
             row["detected"]=detected
             gt_boxes=_gt_boxes(c.annotation)
