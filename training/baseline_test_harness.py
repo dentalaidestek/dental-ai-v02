@@ -32,12 +32,21 @@ def load_json(path:Path,default):
 
 def case_key(c:Case)->str:return f"{c.modality}:{c.finding_code}:{c.polarity}:{c.case_id}"
 
+def _image_ok(path:Path)->bool:
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
 def lock_cases(cases:list[Case])->list[Case]:
     """Copy immutable holdout images, hash them, reject leakage/duplicates."""
     seen_hash:dict[str,str]={}; seen_patient:dict[str,str]={}; out=[]
     for c in cases:
         src=Path(c.image_path)
-        if not src.is_file(): continue
+        if not src.is_file() or not _image_ok(src): continue
         digest=sha256_file(src)
         duplicate_key=f"{c.modality}:{c.finding_code}:{c.polarity}:{digest}"
         if duplicate_key in seen_hash: continue
@@ -130,6 +139,7 @@ def validate_locked_pool(cases:list[Case]):
         if c.polarity not in {"positive","negative"}: errors.append(f"bad polarity:{c.case_id}")
         p=Path(c.image_path)
         if not p.is_file(): errors.append(f"missing:{c.case_id}"); continue
+        if not _image_ok(p): errors.append(f"corrupt image:{c.case_id}"); continue
         actual=sha256_file(p)
         if actual!=c.sha256: errors.append(f"hash mismatch:{c.case_id}")
         hk=(c.modality,c.finding_code,c.polarity,actual)
