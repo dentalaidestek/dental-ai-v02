@@ -27,7 +27,16 @@
         </div>
         {% endif %}
         <div class="analysis-field-block">
-            <div class="analysis-step-title"><span>1</span><h2>{% if selected_media %}Ek görüntü{% else %}Fotoğraf / Röntgen{% endif %}</h2></div>
+<div class="analysis-step-title"><span>1</span><h2>Diş</h2></div>
+<label>Diş numarası<input name="tooth_number" placeholder="Örn: 36" maxlength="10"></label>
+</div>
+<div class="analysis-field-block">
+<div class="analysis-step-title"><span>2</span><h2>Kısa klinik bilgi</h2></div>
+<label>Hekim notu<textarea name="clinical_notes" rows="3" placeholder="Örn: Soğukta ağrı, çiğnemede hassasiyet, eski dolgu..."></textarea></label>
+<p class="muted analysis-field-help">Görüntü olmadan da klinik bilgiyle analiz başlatabilirsiniz.</p>
+</div>
+<div class="analysis-field-block">
+            <div class="analysis-step-title"><span>3</span><h2>{% if selected_media %}Ek görüntü{% else %}Fotoğraf / Röntgen{% endif %}</h2></div>
             {% if selected_media %}
             <details class="analysis-extra-upload">
                 <summary>Telefondan ek görüntü ekle <span>İsteğe bağlı</span></summary>
