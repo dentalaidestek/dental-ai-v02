@@ -18,6 +18,7 @@ BITEWING_ENSEMBLE_API_KEY = os.getenv("BITEWING_ENSEMBLE_API_KEY", "").strip()
 BITEWING_ENSEMBLE_TIMEOUT_SECONDS = float(os.getenv("BITEWING_ENSEMBLE_TIMEOUT_SECONDS", "90"))
 BITEWING_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("BITEWING_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
 BITEWING_DISPLAY_THRESHOLD = float(os.getenv("BITEWING_DISPLAY_THRESHOLD", "0.50"))
+BITEWING_FUSION_IOU_THRESHOLD = float(os.getenv("BITEWING_FUSION_IOU_THRESHOLD", "0.20"))
 
 MODEL_8024_LABELS = {
     "caries": ("CARIES", "Çürük şüphesi"),
@@ -97,6 +98,40 @@ def _normalize_8024(item: dict[str, Any]):
     return out
 
 
+def _iou(a, b) -> float:
+    if not a or not b:
+        return 0.0
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    if inter <= 0:
+        return 0.0
+    area_a = max(0.0, a[2]-a[0]) * max(0.0, a[3]-a[1])
+    area_b = max(0.0, b[2]-b[0]) * max(0.0, b[3]-b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _normalize_control(item: dict[str, Any]):
+    raw = _label(item)
+    aliases = {
+        "decay": ("CARIES", "Çürük şüphesi"),
+        "dental filling": ("FILLING", "Dolgu/restorasyon"),
+        "porcelain crown": ("CROWN", "Kron restorasyonu"),
+        "implant": ("IMPLANT", "İmplant"),
+        "root canal filling": ("ROOT_CANAL_TREATED", "Kanal tedavili diş"),
+    }
+    mapped = aliases.get(raw)
+    if not mapped:
+        return None
+    return {
+        "finding_code": mapped[0], "label": mapped[1], "raw_label": raw,
+        "confidence": round(_score(item), 4), "bbox": _bbox(item),
+        "source_motor": "findings9_control", "modality": "BITEWING",
+        "candidate_only": True,
+    }
+
+
 def _normalize_periodontal(item: dict[str, Any]):
     # The open periodontal study uses a tooth-localization/segmentation stage and
     # a downstream defect-angle classifier. Preserve that distinction: its output
@@ -149,7 +184,8 @@ def analyze_bitewing(image_path: str):
 
     raw_8024 = payload.get("model_8024", payload.get("8024", []))
     raw_periodontal = payload.get("periodontal", [])
-    if not isinstance(raw_8024, list) or not isinstance(raw_periodontal, list):
+    raw_control = payload.get("findings9_control", [])
+    if not isinstance(raw_8024, list) or not isinstance(raw_periodontal, list) or not isinstance(raw_control, list):
         raise BitewingEngineError("Bitewing motor çıktıları liste olmalı.")
 
     # Keep weak 8024 evidence for later motor/geometry fusion instead of
@@ -161,9 +197,32 @@ def analyze_bitewing(image_path: str):
         if (x := _normalize_8024(item))
         if x.get("confidence", 0.0) >= BITEWING_INTERNAL_CANDIDATE_THRESHOLD
     ]
+    controls = [x for item in raw_control if isinstance(item, dict) if (x := _normalize_control(item))]
     for x in findings:
-        x["candidate_only"] = x.get("confidence", 0.0) < BITEWING_DISPLAY_THRESHOLD
-        x["display_eligible"] = x.get("confidence", 0.0) >= BITEWING_DISPLAY_THRESHOLD
+        score = x.get("confidence", 0.0)
+        x["candidate_only"] = score < BITEWING_DISPLAY_THRESHOLD
+        x["display_eligible"] = score >= BITEWING_DISPLAY_THRESHOLD
+        x["fusion_supported"] = False
+
+        # Strong 8024 detections bypass the control motor entirely.
+        if score >= BITEWING_DISPLAY_THRESHOLD:
+            continue
+
+        # Only weak 8024 candidates (0.02–0.49) may be rescued, and only by
+        # same-finding spatial corroboration. Never add/average confidences.
+        matches = [
+            y for y in controls
+            if y.get("finding_code") == x.get("finding_code")
+            and _iou(x.get("bbox"), y.get("bbox")) >= BITEWING_FUSION_IOU_THRESHOLD
+        ]
+        if matches:
+            best = max(matches, key=lambda y: (_iou(x.get("bbox"), y.get("bbox")), y.get("confidence", 0.0)))
+            x["fusion_supported"] = True
+            x["support_motor"] = best["source_motor"]
+            x["support_confidence"] = best["confidence"]
+            x["support_iou"] = round(_iou(x.get("bbox"), best.get("bbox")), 4)
+            x["display_eligible"] = True
+            x["candidate_only"] = False
     periodontal = [x for item in raw_periodontal if isinstance(item, dict) if (x := _normalize_periodontal(item))]
     findings.sort(key=lambda x: x.get("confidence", 0), reverse=True)
     periodontal.sort(key=lambda x: x.get("confidence", 0), reverse=True)
@@ -176,11 +235,12 @@ def analyze_bitewing(image_path: str):
         "findings": findings,
         "finding_count": len(findings),
         "display_findings": [x for x in findings if x.get("display_eligible")],
+        "control_findings_used_only_for_weak_candidates": True,
         "display_finding_count": sum(1 for x in findings if x.get("display_eligible")),
         "internal_candidate_threshold": BITEWING_INTERNAL_CANDIDATE_THRESHOLD,
         "display_threshold": BITEWING_DISPLAY_THRESHOLD,
         "periodontal_candidates": periodontal,
-        "motors": ["yolov8_8024_seg", "bitewing_periodontal_defect"],
+        "motors": ["yolov8_8024_seg", "findings9_control_for_weak_candidates", "bitewing_periodontal_defect"],
         "notes": [
             "8024 motoru dental X-ray için yayımlanmıştır; yalnız bitewing ile eğitildiği belgelenmemiştir.",
             "Periodontal motor çıktısı kemik içi defekt değerlendirme adayıdır; piksel düzeyinde kemik kaybı maskesi gibi sunulmaz.",
