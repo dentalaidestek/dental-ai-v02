@@ -39,7 +39,8 @@ def lock_cases(cases:list[Case])->list[Case]:
         src=Path(c.image_path)
         if not src.is_file(): continue
         digest=sha256_file(src)
-        if digest in seen_hash: continue
+        duplicate_key=f"{c.modality}:{c.finding_code}:{c.polarity}:{digest}"
+        if duplicate_key in seen_hash: continue
         # A patient may not contribute to opposite polarity for the same target.
         pk=f"{c.modality}:{c.finding_code}:{c.patient_id}" if c.patient_id else ""
         if pk and pk in seen_patient and seen_patient[pk]!=c.polarity: continue
@@ -48,7 +49,7 @@ def lock_cases(cases:list[Case])->list[Case]:
         dst=dst_dir/f"{digest[:16]}{src.suffix.lower()}"
         if not dst.exists(): shutil.copy2(src,dst)
         c.image_path=str(dst); c.sha256=digest
-        seen_hash[digest]=case_key(c)
+        seen_hash[duplicate_key]=case_key(c)
         if pk: seen_patient[pk]=c.polarity
         out.append(c)
     return out
@@ -122,8 +123,9 @@ def validate_locked_pool(cases:list[Case]):
         if not p.is_file(): errors.append(f"missing:{c.case_id}"); continue
         actual=sha256_file(p)
         if actual!=c.sha256: errors.append(f"hash mismatch:{c.case_id}")
-        if actual in hashes: errors.append(f"duplicate hash:{c.case_id}")
-        hashes.add(actual)
+        hk=(c.modality,c.finding_code,c.polarity,actual)
+        if hk in hashes: errors.append(f"duplicate target hash:{c.case_id}")
+        hashes.add(hk)
         by_target.setdefault((c.modality,c.finding_code),{"positive":0,"negative":0})
         by_target[(c.modality,c.finding_code)][c.polarity]+=1
     if errors: raise RuntimeError("Locked test pool integrity failed: "+"; ".join(errors[:20]))
