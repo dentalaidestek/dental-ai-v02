@@ -30,6 +30,8 @@ def test_baseline_notebook_is_valid_python():
     assert "missing_test_data.json" in code
     assert "INTRA_FOLDER_MAP" in code
     assert "ATTACHED_HINTS" in code
+    assert "actual={}" in code
+    assert "run_identity.json" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
@@ -44,3 +46,5 @@ def test_harness_has_leakage_guards():
     assert "pos_patient" in text
     assert "x.get(\"code\")" in text
     assert "(c.sha256,c.polarity)" in text
+    assert "raw_matches" in text
+    assert "localization_iou50_rate" in text
