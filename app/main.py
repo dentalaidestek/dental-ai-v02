@@ -4850,7 +4850,12 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         if not asset or not asset.file_path or not Path(asset.file_path).is_file():
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
         path = Path(asset.file_path)
-    media_type = _image_content_type(path.suffix.lower()) or "application/octet-stream"
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
 
 
