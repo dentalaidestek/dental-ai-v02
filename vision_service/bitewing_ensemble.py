@@ -16,6 +16,8 @@ class BitewingEngineError(RuntimeError):
 BITEWING_ENSEMBLE_URL = os.getenv("BITEWING_ENSEMBLE_URL", "").strip().rstrip("/")
 BITEWING_ENSEMBLE_API_KEY = os.getenv("BITEWING_ENSEMBLE_API_KEY", "").strip()
 BITEWING_ENSEMBLE_TIMEOUT_SECONDS = float(os.getenv("BITEWING_ENSEMBLE_TIMEOUT_SECONDS", "90"))
+BITEWING_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("BITEWING_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
+BITEWING_DISPLAY_THRESHOLD = float(os.getenv("BITEWING_DISPLAY_THRESHOLD", "0.50"))
 
 MODEL_8024_LABELS = {
     "caries": ("CARIES", "Çürük şüphesi"),
@@ -150,7 +152,18 @@ def analyze_bitewing(image_path: str):
     if not isinstance(raw_8024, list) or not isinstance(raw_periodontal, list):
         raise BitewingEngineError("Bitewing motor çıktıları liste olmalı.")
 
-    findings = [x for item in raw_8024 if isinstance(item, dict) if (x := _normalize_8024(item))]
+    # Keep weak 8024 evidence for later motor/geometry fusion instead of
+    # discarding it at ingestion. This is deliberately separate from the UI
+    # threshold: low-score candidates are internal evidence only.
+    findings = [
+        x for item in raw_8024
+        if isinstance(item, dict)
+        if (x := _normalize_8024(item))
+        if x.get("confidence", 0.0) >= BITEWING_INTERNAL_CANDIDATE_THRESHOLD
+    ]
+    for x in findings:
+        x["candidate_only"] = x.get("confidence", 0.0) < BITEWING_DISPLAY_THRESHOLD
+        x["display_eligible"] = x.get("confidence", 0.0) >= BITEWING_DISPLAY_THRESHOLD
     periodontal = [x for item in raw_periodontal if isinstance(item, dict) if (x := _normalize_periodontal(item))]
     findings.sort(key=lambda x: x.get("confidence", 0), reverse=True)
     periodontal.sort(key=lambda x: x.get("confidence", 0), reverse=True)
@@ -162,11 +175,17 @@ def analyze_bitewing(image_path: str):
         "modality": "BITEWING",
         "findings": findings,
         "finding_count": len(findings),
+        "display_findings": [x for x in findings if x.get("display_eligible")],
+        "display_finding_count": sum(1 for x in findings if x.get("display_eligible")),
+        "internal_candidate_threshold": BITEWING_INTERNAL_CANDIDATE_THRESHOLD,
+        "display_threshold": BITEWING_DISPLAY_THRESHOLD,
         "periodontal_candidates": periodontal,
         "motors": ["yolov8_8024_seg", "bitewing_periodontal_defect"],
         "notes": [
             "8024 motoru dental X-ray için yayımlanmıştır; yalnız bitewing ile eğitildiği belgelenmemiştir.",
             "Periodontal motor çıktısı kemik içi defekt değerlendirme adayıdır; piksel düzeyinde kemik kaybı maskesi gibi sunulmaz.",
+            "8024 için 0.02 ve üzeri zayıf adaylar fusion için iç kanıt olarak korunur; tek başına kullanıcıya gösterilmez.",
+            "Kullanıcı gösterim eşiği 0.50 olarak ayrı tutulur.",
             "Motor güven skorları birbirine eklenmez.",
         ],
     }
