@@ -22,6 +22,8 @@ def test_baseline_notebook_is_valid_python():
     assert "all(0<=v<=1 for v in box)" in code
     assert "locked_distribution.json" in code
     assert "Unsafe path in resume archive" in code
+    assert "if rec:" in code
+    assert "no lesion" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
