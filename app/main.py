@@ -4253,6 +4253,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                     prompt,
                     image_paths=image_paths,
                     response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                    structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
@@ -5198,6 +5199,7 @@ async def guest_final_analysis(
                     prompt,
                     image_paths=image_paths,
                     response_schema=FINAL_RESPONSE_SCHEMA,
+                    structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_final_result(parse_ai_result(ai_text))
 
@@ -5444,6 +5446,7 @@ için en ilgili kanıtları bul.
                 prompt,
                 image_paths=image_paths,
                 response_schema=FINAL_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
             ai_result = validate_final_result(parse_ai_result(ai_text))
 
