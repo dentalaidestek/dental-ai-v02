@@ -213,6 +213,7 @@ class ImageAsset(SQLModel, table=True):
     file_path: str
     image_type: str = "OTHER"
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    vision_snapshot_json: Optional[str] = None
 
 
 class PatientMedia(SQLModel, table=True):
@@ -246,6 +247,7 @@ class GuestImageAsset(SQLModel, table=True):
     file_path: str
     image_type: str = "OTHER"
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    vision_snapshot_json: Optional[str] = None
 
 
 class ClinicalRecord(SQLModel, table=True):
@@ -4366,10 +4368,37 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                     ],
                 }
 
-                vision_payload = structured_vision_payload(
-                    image_paths,
-                    modality_hint=knowledge_context,
-                )
+                asset_types = [asset.image_type or "OTHER" for asset in assets]
+                cached_images = []
+                missing_assets = []
+                for asset in assets:
+                    try:
+                        snap = json.loads(asset.vision_snapshot_json) if asset.vision_snapshot_json else None
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        snap = None
+                    if isinstance(snap, dict):
+                        cached_images.append(snap)
+                    else:
+                        missing_assets.append(asset)
+
+                if missing_assets:
+                    fresh = structured_vision_payload(
+                        [asset.file_path for asset in missing_assets],
+                        modality_hint=knowledge_context,
+                        image_types=[asset.image_type or "OTHER" for asset in missing_assets],
+                    )
+                    for image_result, asset in zip(fresh.get("images") or [], missing_assets):
+                        asset.vision_snapshot_json = json.dumps(image_result, ensure_ascii=False, separators=(",", ":"))
+                        s.add(asset)
+                        cached_images.append(image_result)
+                    s.commit()
+
+                vision_payload = {
+                    "status": "ok" if cached_images else "vision_motor_unavailable",
+                    "route": "MIXED" if len({str(x.get("modality")) for x in cached_images}) > 1 else (cached_images[0].get("modality") if cached_images else "NONE"),
+                    "images": cached_images,
+                    "partial_failures": [],
+                }
                 # Preserve the actual analysis asset identity/time on every motor item.
                 # This prevents old and new captures from becoming indistinguishable.
                 for image_result, asset in zip(vision_payload.get("images") or [], assets):
