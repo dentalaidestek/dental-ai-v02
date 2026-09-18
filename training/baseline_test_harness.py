@@ -54,10 +54,13 @@ def lock_cases(cases:list[Case])->list[Case]:
     return out
 
 def balanced_select(cases:list[Case], seed:int=42)->tuple[list[Case],str]:
+    import random
     pos=[c for c in cases if c.polarity=="positive"]; neg=[c for c in cases if c.polarity=="negative"]
-    # deterministic: source id then case id; no cherry-picking by model score
-    pos=sorted(pos,key=lambda c:(c.source,c.source_id,c.case_id))[:TARGET_POS]
-    neg=sorted(neg,key=lambda c:(c.source,c.source_id,c.case_id))[:TARGET_NEG]
+    # Deterministic pseudo-random holdout: reproducible, but not dataset-order/cherry-pick biased.
+    rng=random.Random(seed)
+    pos=sorted(pos,key=lambda c:(c.source,c.source_id,c.case_id)); neg=sorted(neg,key=lambda c:(c.source,c.source_id,c.case_id))
+    rng.shuffle(pos); rng.shuffle(neg)
+    pos=pos[:TARGET_POS]; neg=neg[:TARGET_NEG]
     status="READY" if len(pos)>=TARGET_POS and len(neg)>=TARGET_NEG else "TEST_DATA_INSUFFICIENT"
     return pos+neg,status
 
