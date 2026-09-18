@@ -4723,12 +4723,15 @@ async def create_guest_analysis(
 
         analysis_id = analysis.id
 
-    background_tasks.add_task(_run_guest_vision, analysis_id)
-
-    return RedirectResponse(
-        url=f"/analysis/guest/{analysis_id}/viewer",
-        status_code=303,
-    )
+    with Session(engine, expire_on_commit=False) as s:
+        has_assets = bool(s.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id == analysis_id)).first())
+    if has_assets:
+        background_tasks.add_task(_run_guest_vision, analysis_id)
+        target = f"/analysis/guest/{analysis_id}/viewer"
+    else:
+        background_tasks.add_task(_run_guest_preliminary_ai, analysis_id)
+        target = f"/analysis/guest/{analysis_id}"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.post("/analysis/new/{patient_id}")
@@ -4837,13 +4840,15 @@ async def create_analysis(
 
         analysis_id = analysis.id
 
-    # Vision-first: run each uploaded asset once; clinical AI later reuses the durable snapshots.
-    background_tasks.add_task(_run_analysis_vision, analysis_id)
-
-    return RedirectResponse(
-        url=f"/analysis/{analysis_id}/viewer",
-        status_code=303
-    )
+    with Session(engine, expire_on_commit=False) as s:
+        has_assets = bool(s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).first())
+    if has_assets:
+        background_tasks.add_task(_run_analysis_vision, analysis_id)
+        target = f"/analysis/{analysis_id}/viewer"
+    else:
+        background_tasks.add_task(_run_preliminary_ai, analysis_id)
+        target = f"/analysis/{analysis_id}"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
