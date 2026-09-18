@@ -4176,8 +4176,9 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
                 asset.vision_snapshot_json = None
                 session.add(asset)
                 logger.error(
-                    "vision motor unavailable asset=%s modality=%s error_type=%s",
-                    getattr(asset, "id", None), getattr(asset, "image_type", None), snap.get("error_type"),
+                    "vision motor unavailable asset=%s modality=%s error_type=%s error=%s",
+                    getattr(asset, "id", None), getattr(asset, "image_type", None),
+                    snap.get("error_type"), snap.get("error_message") or snap.get("error"),
                 )
         session.commit()
 
