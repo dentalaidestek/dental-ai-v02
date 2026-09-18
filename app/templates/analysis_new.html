@@ -59,7 +59,7 @@
                 <summary>Telefondan ek görüntü ekle <span>İsteğe bağlı</span></summary>
                 <label>
                     Görüntü yükle
-                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
+                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp">
                 </label>
                 <p class="muted analysis-field-help">Seçtiğiniz kayıtlı görüntülere ek olarak yeni fotoğraf veya röntgen de ekleyebilirsiniz.</p>
             </details>
@@ -68,7 +68,7 @@
                 Görüntü yükle
                 <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
             </label>
-            <p class="muted analysis-field-help">Seçtiğiniz görüntü türü, yüklediğiniz yeni görüntülere uygulanır.</p>
+            <p class="muted analysis-field-help">Her analiz yüklemesinde tek görüntü kullanılır; böylece seçilen tür doğru motora bağlanır.</p>
             {% endif %}
         </div>
 
