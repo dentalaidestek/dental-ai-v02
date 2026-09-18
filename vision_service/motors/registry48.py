@@ -21,7 +21,7 @@ _SPECS = [
     MotorSpec("SUPERNUMERARY_TOOTH", "composed", ("fdi",), "Duplicate/out-of-arch tooth candidates from FDI topology."),
     MotorSpec("RETAINED_PRIMARY_TOOTH", "composed", ("yolo31:PRIMARY_TOOTH_HELPER", "fdi"), "Primary-tooth helper combined with dentition context."),
     MotorSpec("UNERUPTED_TOOTH", "cv_derived", ("fdi", "tooth_position"), "Off-arch permanent tooth candidate not already classified as impacted."),
-    MotorSpec("IMPACTED_TOOTH", "direct", ("oralguard4:impacted_tooth", "findings9"), "OralGuard 4-class panoramic detector impacted_tooth output; Findings9 may corroborate."),
+    MotorSpec("IMPACTED_TOOTH", "direct", ("oralguard4:impacted_tooth",), "OralGuard 4-class panoramic detector explicit impacted_tooth output; Wisdom Tooth is not treated as impacted."),
     MotorSpec("IMPACTED_THIRD_MOLAR", "composed", ("IMPACTED_TOOTH", "fdi", "WISDOM_TOOTH_PRESENT"), "Impacted finding restricted to third-molar anatomy."),
     MotorSpec("RESIDUAL_ROOT", "direct_fallback", ("tvem11:Residual Root", "yolo31:Retained root", "yolo31:Root Piece"), "Residual-root detector ensemble."),
     MotorSpec("FILLING", "direct", ("findings9",), "Direct panoramic filling detector."),
