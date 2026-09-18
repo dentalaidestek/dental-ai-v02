@@ -4219,6 +4219,19 @@ def _run_analysis_vision(analysis_id: int):
         s.add(analysis)
         s.commit()
 
+def _run_guest_vision(analysis_id: int):
+    """Run guest image motors once; clinical analysis is started separately by the user."""
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        if not analysis:
+            return
+        assets = s.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id == analysis_id)).all()
+        payload = _persisted_vision_payload(s, assets)
+        analysis.status = "VISION_READY" if payload.get("status") in {"ok", "partial"} else "VISION_ERROR"
+        s.add(analysis)
+        s.commit()
+
+
 def _run_guest_preliminary_ai(analysis_id: int):
     from app.ai_engine import (
         PRELIMINARY_RESPONSE_SCHEMA,
@@ -4710,10 +4723,7 @@ async def create_guest_analysis(
 
         analysis_id = analysis.id
 
-    background_tasks.add_task(
-        _run_guest_preliminary_ai,
-        analysis_id,
-    )
+    background_tasks.add_task(_run_guest_vision, analysis_id)
 
     return RedirectResponse(
         url=f"/analysis/guest/{analysis_id}/viewer",
@@ -4888,6 +4898,22 @@ def create_clinical_record(
         ))
         s.commit()
     return RedirectResponse("/admin", status_code=303)
+
+
+@app.get("/analysis/guest/{analysis_id}/clinical")
+def start_guest_clinical_analysis(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        analysis.status = "AI_ANALYZING"
+        s.add(analysis)
+        s.commit()
+    background_tasks.add_task(_run_guest_preliminary_ai, analysis_id)
+    return RedirectResponse(f"/analysis/guest/{analysis_id}", status_code=303)
 
 
 @app.get("/analysis/guest/{analysis_id}", response_class=HTMLResponse)
