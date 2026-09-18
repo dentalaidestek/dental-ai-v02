@@ -130,7 +130,7 @@ def _modal_panorama_result(path: str) -> dict:
             rescued.append({**item,"candidate_only":False,"display_eligible":True,"fusion_supported":True,"support_motor":support.get("motor"),"support_confidence":support.get("confidence"),"support_iou":round(bbox_iou(box(item),box(support)),4)})
     for item in strong:
         item.update({"candidate_only":False,"display_eligible":True,"fusion_supported":False})
-    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(raw.get("fdi") or []),"teeth":raw.get("fdi") or [],"warnings":[]}
+    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(raw.get("fdi") or []),"unique_fdi_count":len({str(t.get("fdi") or t.get("tooth_fdi") or t.get("tooth")) for t in (raw.get("fdi") or []) if isinstance(t,dict) and (t.get("fdi") or t.get("tooth_fdi") or t.get("tooth"))}),"teeth":raw.get("fdi") or [],"warnings":[]}
 
 
 def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:
