@@ -15,6 +15,8 @@ def test_baseline_notebook_is_valid_python():
     assert ">=13" in code
     assert "annotation_exhaustive" in code
     assert "pan_targets=list(REGISTRY48)" in code
+    assert "dentalai_baseline_artifact.zip" in code
+    assert "Restoring previous baseline state" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
