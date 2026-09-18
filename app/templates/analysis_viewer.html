@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.analysis-viewer-wrap{max-width:1100px;margin:0 auto}.analysis-viewer-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}.analysis-viewer-frame{width:100%;height:78vh;min-height:640px;border:0;border-radius:20px;background:#020304;box-shadow:0 14px 44px rgba(16,24,40,.14)}.analysis-viewer-note{font-size:12px;color:#667085;margin:7px 2px}@media(max-width:700px){.analysis-viewer-wrap{margin:0 -10px}.analysis-viewer-head{padding:0 10px}.analysis-viewer-frame{height:calc(100vh - 120px);min-height:620px;border-radius:0}}
+</style>
+<div class="analysis-viewer-wrap">
+  <div class="analysis-viewer-head">
+    <div><strong>{{ patient.anonymous_id }}</strong> · Klinik görüntü değerlendirmesi</div>
+    <a href="/patients/{{ patient.id }}">Hastaya dön</a>
+  </div>
+  {% if assets %}
+  <iframe id="dentalViewer" class="analysis-viewer-frame" src="/viewer?embedded=1" title="Dental AI görüntü ve 3D değerlendirme"></iframe>
+  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Klinik değerlendirme yalnız seçili dişte Tedavi → Analiz Et ile başlatılır.</div>
+  {% else %}
+  <div class="card">Bu analizde görüntü bulunamadı.</div>
+  {% endif %}
+</div>
+<script>
+(()=>{
+  const frame=document.getElementById('dentalViewer');
+  if(!frame)return;
+  const analysisId={{ analysis.id }};
+  const assetUrl={{ ("/analysis-assets/" ~ analysis.id ~ "/primary")|tojson }};
+  frame.addEventListener('load',()=>{
+    frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl},location.origin);
+  });
+  window.addEventListener('message',async ev=>{
+    if(ev.origin!==location.origin||ev.source!==frame.contentWindow)return;
+    const d=ev.data||{};
+    if(d.type!=='dental-ai:analyze-tooth'||!d.fdi)return;
+    try{
+      const r=await fetch('/analysis/'+analysisId+'/tooth/'+encodeURIComponent(d.fdi)+'/analyze',{method:'POST'});
+      const j=await r.json();
+      frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',...j},location.origin);
+      if(r.ok&&j.result_url) location.href=j.result_url;
+    }catch(e){
+      frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',ok:false,error:String(e)},location.origin);
+    }
+  });
+})();
+</script>
+{% endblock %}

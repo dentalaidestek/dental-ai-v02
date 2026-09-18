@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dental AI — Görüntüleme</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17181b;background:#f5f6f8}*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#17181b}.shell{max-width:1180px;margin:0 auto;padding:18px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.brand{display:flex;align-items:center;gap:10px}.brand-mark{width:42px;height:42px;border-radius:14px;background:#111317;color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px}.brand-copy strong{display:block;font-size:17px;letter-spacing:-.02em}.brand-copy small{display:block;margin-top:2px;color:#858b95;font-size:11px}.keybox{display:flex;align-items:center;gap:8px}.keybox input{width:min(290px,42vw);border:1px solid #dfe3e8;border-radius:12px;background:#fff;padding:11px 12px;font:inherit;color:#17181b}.tabs{display:flex;gap:7px;background:#eceef1;border-radius:14px;padding:5px;margin-bottom:14px}.tabs button{flex:1;border:0;border-radius:10px;padding:11px 14px;font:inherit;font-weight:750;background:transparent;color:#656b75;cursor:pointer}.tabs button.active{background:#fff;color:#111317;box-shadow:0 2px 8px rgba(15,23,42,.06)}.card{background:#fff;border:1px solid #e6e8ec;border-radius:20px;box-shadow:0 8px 28px rgba(15,23,42,.035)}.toolbar{display:flex;align-items:center;gap:9px;padding:14px}.filebox{flex:1;min-width:0;border:1px dashed #d4d8df;border-radius:13px;padding:10px 12px;background:#fafafa}.filebox input{width:100%;font:inherit;color:#555c65}.action{border:0;border-radius:12px;padding:11px 16px;font:inherit;font-weight:800;background:#111317;color:#fff;cursor:pointer;white-space:nowrap}.status{font-size:12px;color:#777e88;padding:0 14px 12px}.grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,.8fr);gap:14px;margin-top:14px}.viewer-card{padding:12px}.viewer{position:relative;background:#0c0d0f;border-radius:16px;overflow:hidden;min-height:320px;display:grid;place-items:center}.viewer img{display:block;width:100%;height:auto}.overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.box{fill:transparent;stroke:#ffffff;stroke-width:2.4;vector-effect:non-scaling-stroke;opacity:.92}.box.active{stroke:#f7df4b;stroke-width:4}.side{padding:16px}.side h2{margin:0 0 6px;font-size:18px;letter-spacing:-.025em}.muted{color:#858b95;font-size:12px}.findings{display:grid;gap:8px;margin-top:12px}.item{border:1px solid #e7e9ed;border-radius:13px;padding:11px 12px;cursor:pointer;background:#fff}.item:hover,.item.active{background:#f7f8f9;border-color:#d9dde3}.item strong{font-size:13px;color:#17191d}.item .sub{font-size:11px;color:#8b919b;margin-top:3px}.hidden{display:none}.photo-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.photo-head{padding:16px 16px 0}.photo-head h2{margin:0;font-size:20px;letter-spacing:-.03em}.photo-head p{margin:6px 0 0;color:#7c828c;font-size:12px}.three-card{padding:0;overflow:hidden;background:#050608;border-color:#14161a}.three-wrap{position:relative}.three{height:590px;background:radial-gradient(circle at 50% 36%,#121722 0,#080b10 48%,#020304 100%);overflow:hidden;position:relative}.three:after{content:"Sürükleyerek döndür • Yakınlaştırmak için sıkıştır";position:absolute;left:50%;bottom:14px;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,.68);background:rgba(0,0,0,.34);backdrop-filter:blur(8px);padding:7px 10px;border-radius:999px;pointer-events:none;white-space:nowrap;z-index:4}.view-badge{position:absolute;left:14px;top:14px;z-index:5;color:#e9eef8;background:rgba(12,16,23,.58);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px);border-radius:12px;padding:8px 10px;font-size:11px}.layer-legend{position:absolute;right:14px;top:14px;z-index:5;display:grid;gap:6px}.legend-pill{display:flex;align-items:center;gap:7px;color:#e8edf6;background:rgba(12,16,23,.58);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px);border-radius:999px;padding:7px 9px;font-size:10px}.dot{width:8px;height:8px;border-radius:50%}.dot.tooth{background:#f4f0df;box-shadow:0 0 8px rgba(255,255,255,.4)}.dot.tissue{background:#eaa4bb}.dot.surface{background:#9fb4ff}.photo-note{font-size:11px;color:#8a9099;text-align:center;padding:0 12px 14px}.photo-note strong{color:#666c75}.empty3d{height:100%;display:grid;place-items:center;color:#69707a;text-align:center;padding:30px}.empty3d strong{display:block;color:#d9dde2;font-size:16px;margin-bottom:5px}.empty3d small{color:#8f959e}
+@media(max-width:780px){.shell{padding:10px}.top{align-items:flex-start}.keybox{width:42%}.keybox input{width:100%}.grid{grid-template-columns:1fr}.three{height:470px}.toolbar{flex-direction:column;align-items:stretch}.action{width:100%}.viewer{min-height:230px}}
+@media(max-width:520px){.brand-copy small{display:none}.brand-mark{width:38px;height:38px;border-radius:12px}.tabs{margin-bottom:9px}.card{border-radius:17px}.three{height:410px}.photo-head h2{font-size:18px}.keybox{width:46%}.keybox input{padding:10px;font-size:12px}.side{padding:13px}.three:after{font-size:10px;max-width:90%;overflow:hidden;text-overflow:ellipsis}.layer-legend{top:auto;bottom:48px;right:10px}.view-badge{left:10px;top:10px}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <div class="brand"><div class="brand-mark">AI</div><div class="brand-copy"><strong>Dental AI Görüntüleme</strong><small>Panoramik analiz ve 3D sunum</small></div></div>
+    <div class="keybox"><input id="key" type="password" placeholder="Güvenlik anahtarı" autocomplete="off"></div>
+  </div>
+
+  <div class="tabs"><button id="tabPano" class="active" onclick="tab('pano')">Panoramik</button><button id="tab3d" onclick="tab('photo3d')">3D Görünüm</button></div>
+
+  <section id="pano">
+    <div class="card toolbar">
+      <div class="filebox"><input id="panoFile" type="file" accept="image/*"></div>
+      <button class="action" onclick="analyzePano()">Analiz et</button>
+    </div>
+    <div id="panoStatus" class="status"></div>
+    <div class="grid">
+      <div class="card viewer-card"><div class="viewer" id="viewer"><img id="panoImg"><svg id="overlay" class="overlay"></svg></div></div>
+      <div class="card side"><h2>Tespitler</h2><div id="findingMeta" class="muted">Bir panoramik seçin.</div><div id="findings" class="findings"></div></div>
+    </div>
+  </section>
+
+  <section id="photo3d" class="hidden">
+    <div class="photo-layout">
+      <div class="card">
+        <div class="photo-head"><h2>Ağız içi fotoğraflardan 3D görünüm</h2><p>Tek fotoğraf veya farklı açılardan çekilmiş birden fazla fotoğraf yükleyebilirsiniz.</p></div>
+        <div class="toolbar"><div class="filebox"><input id="photoFiles" type="file" accept="image/*" multiple></div><button class="action" onclick="make3d()">3D oluştur</button></div>
+        <div id="photoStatus" class="status"></div>
+      </div>
+      <div class="card three-card">
+        <div class="three-wrap">
+          <div class="view-badge">Yarı saydam 3D dental görünüm</div>
+          <div class="layer-legend"><div class="legend-pill"><span class="dot tooth"></span>Diş yüzeyi</div><div class="legend-pill"><span class="dot tissue"></span>Yumuşak doku</div><div class="legend-pill"><span class="dot surface"></span>3D yüzey</div></div>
+          <div id="three" class="three"><div class="empty3d"><div><strong>3D görünüm burada açılacak</strong><small>Fotoğraf yükleyip “3D oluştur” düğmesine dokunun.</small></div></div></div>
+        </div>
+      </div>
+      <div class="photo-note"><strong>Not:</strong> Bu görünüm hasta sunumu içindir; CBCT veya gerçek hacimsel tarama değildir.</div>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/controls/OrbitControls.js';
+window.THREE=THREE;window.OrbitControls=OrbitControls;
+</script>
+<script>
+function tab(which){document.getElementById('pano').classList.toggle('hidden',which!=='pano');document.getElementById('photo3d').classList.toggle('hidden',which!=='photo3d');document.getElementById('tabPano').classList.toggle('active',which==='pano');document.getElementById('tab3d').classList.toggle('active',which==='photo3d')}
+let lastResult=null;function key(){return document.getElementById('key').value}
+async function analyzePano(){const f=document.getElementById('panoFile').files[0];if(!f)return;const img=document.getElementById('panoImg');img.src=URL.createObjectURL(f);document.getElementById('panoStatus').textContent='Analiz ediliyor…';const fd=new FormData();fd.append('image',f);const r=await fetch('/analyze',{method:'POST',headers:{'X-Vision-Key':key()},body:fd});if(!r.ok){document.getElementById('panoStatus').textContent='Analiz tamamlanamadı.';return}lastResult=await r.json();document.getElementById('panoStatus').textContent='Analiz tamamlandı.';img.onload=()=>draw();if(img.complete)draw()}
+function draw(active=-1){if(!lastResult)return;const img=document.getElementById('panoImg'),svg=document.getElementById('overlay');const naturalW=img.naturalWidth||1,naturalH=img.naturalHeight||1;svg.setAttribute('viewBox',`0 0 ${naturalW} ${naturalH}`);svg.innerHTML='';const list=document.getElementById('findings');list.innerHTML='';document.getElementById('findingMeta').textContent=`${lastResult.unique_fdi_count||0} diş • ${lastResult.finding_count||0} bulgu`;lastResult.findings.forEach((x,i)=>{if(x.bbox&&x.bbox.length===4){const [x1,y1,x2,y2]=x.bbox;const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');rect.setAttribute('x',x1);rect.setAttribute('y',y1);rect.setAttribute('width',x2-x1);rect.setAttribute('height',y2-y1);rect.setAttribute('class','box'+(i===active?' active':''));svg.appendChild(rect)}const el=document.createElement('div');el.className='item'+(i===active?' active':'');const confidence=Math.round((x.confidence||0)*100);el.innerHTML=`<strong>${x.fdi?'Diş '+x.fdi+' — ':''}${x.label||'Bulgu'}</strong><div class="sub">Güven ${confidence}%</div>`;el.onclick=()=>draw(i);list.appendChild(el)})}
+async function make3d(){const fs=[...document.getElementById('photoFiles').files];if(!fs.length)return;const status=document.getElementById('photoStatus');status.textContent='3D görünüm hazırlanıyor…';const fd=new FormData();fs.forEach(f=>fd.append('images',f));const r=await fetch('/photo3d/reconstruct',{method:'POST',headers:{'X-Vision-Key':key()},body:fd});if(!r.ok){status.textContent='3D görünüm oluşturulamadı.';return}const data=await r.json();status.textContent='3D görünüm hazır.';render3d(data)}
+
+function render3d(data){
+  if(!window.THREE){setTimeout(()=>render3d(data),200);return}
+  const THREE=window.THREE,host=document.getElementById('three');host.innerHTML='';
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x020304);
+  const camera=new THREE.PerspectiveCamera(42,host.clientWidth/host.clientHeight,.01,100);camera.position.set(0,.02,2.25);
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(host.clientWidth,host.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;host.appendChild(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xdce7ff,0x0a0c10,2.2));
+  const keyLight=new THREE.DirectionalLight(0xffffff,3.1);keyLight.position.set(2,2.5,3);scene.add(keyLight);
+  const rim=new THREE.DirectionalLight(0x91a8ff,2.2);rim.position.set(-3,.5,-2);scene.add(rim);
+
+  const positions=data.points.flat();
+  const original=data.colors||[];
+  const stylized=[];const toothPos=[];const tissuePos=[];
+  for(let i=0;i<data.points.length;i++){
+    const rgb=original[i]||[180,180,180];const r=rgb[0],g=rgb[1],b=rgb[2];const mx=Math.max(r,g,b),mn=Math.min(r,g,b);const sat=mx-mn;const lum=(r+g+b)/3;
+    let c;
+    if(lum>155&&sat<72){c=[.95,.93,.84];toothPos.push(...data.points[i]);}
+    else if(r>g*1.08&&r>b*1.02){c=[.86,.55,.65];tissuePos.push(...data.points[i]);}
+    else{c=[.56,.64,.91];}
+    stylized.push(...c);
+  }
+
+  const baseGeo=new THREE.BufferGeometry();baseGeo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));baseGeo.setAttribute('color',new THREE.Float32BufferAttribute(stylized,3));
+  if(data.surface_faces&&data.surface_faces.length){
+    baseGeo.setIndex(data.surface_faces.flat());baseGeo.computeVertexNormals();
+    const shellMat=new THREE.MeshPhysicalMaterial({vertexColors:true,transparent:true,opacity:.78,roughness:.32,metalness:0,clearcoat:.28,clearcoatRoughness:.38,side:THREE.DoubleSide,depthWrite:true});
+    const shell=new THREE.Mesh(baseGeo,shellMat);scene.add(shell);
+    const ghostMat=new THREE.MeshPhysicalMaterial({color:0xa8b9ff,transparent:true,opacity:.12,roughness:.18,transmission:.18,thickness:.2,side:THREE.DoubleSide,depthWrite:false});
+    const ghost=new THREE.Mesh(baseGeo,ghostMat);ghost.scale.setScalar(1.008);scene.add(ghost);
+  }else{
+    const pmat=new THREE.PointsMaterial({size:.016,vertexColors:true,transparent:true,opacity:.92,sizeAttenuation:true});scene.add(new THREE.Points(baseGeo,pmat));
+  }
+
+  function addGlowCloud(arr,color,size,opacity){if(!arr.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));const m=new THREE.PointsMaterial({color,size,transparent:true,opacity,depthWrite:false,sizeAttenuation:true,blending:THREE.AdditiveBlending});scene.add(new THREE.Points(g,m));}
+  addGlowCloud(toothPos,0xfff8e8,.019,.34);addGlowCloud(tissuePos,0xff9fbd,.016,.18);
+
+  const controls=new window.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.enablePan=true;controls.minDistance=.65;controls.maxDistance=5;controls.autoRotate=false;
+  function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)}loop();
+  new ResizeObserver(()=>{camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();renderer.setSize(host.clientWidth,host.clientHeight)}).observe(host)
+}
+</script>
+</body>
+</html>

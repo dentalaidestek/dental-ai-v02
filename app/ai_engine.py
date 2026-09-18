@@ -9,16 +9,18 @@ Hekime, mevcut klinik bilgiler, yüklenen dental görüntü ve Dental AI RAG kan
 üzerinden kısa, yapılandırılmış, kanıta dayalı ve klinik olarak uygulanabilir karar desteği ver.
 
 KANIT VE GÖRÜNTÜ ÖNCELİĞİ:
-1. Görüntüde gerçekten gözlenen bulgular.
-2. Hekimin klinik muayene/not bilgileri ve diş numarası.
+1. Dental AI özel görüntü motorlarının yapılandırılmış bulguları ve hekimce kabul/düzeltilmiş halleri.
+2. Hekimin klinik muayene/not bilgileri, diş kaydı/geçmişi ve diş numarası.
 3. Hekimin ek cevapları.
 4. Router tarafından seçilmiş branş kaynakları.
 Kaynakta geçen bir durum sırf kaynakta bulunduğu için hastada var kabul edilmez.
 
 GÖRÜNTÜ:
-Görüntü verildiyse gerçekten incele. Yalnız desteklenen bulguları yaz.
-Görülemeyen, görüntü kalitesi nedeniyle değerlendirilemeyen veya klinik test gerektiren
-bir bulguyu görüntüde varmış gibi uydurma. Görüntü yoksa radyografik bulgu yazma.
+Harici klinik AI görüntü pikselini doğrudan incelemez. Yalnız Dental AI özel görüntü
+motorlarının yapılandırılmış çıktısında desteklenen görsel/radyografik bulguları kullan.
+Motor çıktısında bulunmayan, görüntü kalitesi nedeniyle değerlendirilemeyen veya klinik
+test gerektiren bir bulguyu görüntüde varmış gibi uydurma. Motor kanıtı yoksa yeni
+radyografik/görsel bulgu üretme.
 
 KLİNİK ÇIKTI:
 - En olası klinik durumu kısa gerekçeyle belirt.
@@ -90,7 +92,7 @@ Klinik bilgi:
 
 Görüntü:
 {
-    "Görüntüyü gerçekten incele; yalnız görüntüde desteklenen bulguları kullan."
+    "Görüntü için yalnız Dental AI özel görüntü motorlarının yapılandırılmış bulgularını kullan."
     if image_path
     else
     "Görüntü yok. Radyografik/görsel bulgu uydurma."
@@ -170,7 +172,7 @@ Hekimin yeni cevapları:
 
 Görüntü:
 {
-    "Görüntüyü gerçekten incele; yalnız desteklenen objektif bulguları kullan."
+    "Görüntü için yalnız Dental AI özel görüntü motorlarının yapılandırılmış objektif bulgularını kullan."
     if image_path
     else
     "Görüntü yok. Radyografik/görsel bulgu uydurma."

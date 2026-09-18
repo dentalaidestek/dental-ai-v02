@@ -19,6 +19,9 @@ from dental_rag.rag import (
     get_specialty_relevant_context,
 )
 from app.clinical_rag_router import route_clinical_case
+from app.vision_llm_context import structured_vision_payload
+from app.modality_classifier import classify_dental_image
+from vision_service.tooth_evidence import build_tooth_evidence_package
 
 # === TEMP_STUDY_TRACE_MAIN_IMPORT_BEGIN ===
 import logging as _study_trace_logging
@@ -211,6 +214,7 @@ class ImageAsset(SQLModel, table=True):
     file_path: str
     image_type: str = "OTHER"
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    vision_snapshot_json: Optional[str] = None
 
 
 class PatientMedia(SQLModel, table=True):
@@ -244,6 +248,7 @@ class GuestImageAsset(SQLModel, table=True):
     file_path: str
     image_type: str = "OTHER"
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    vision_snapshot_json: Optional[str] = None
 
 
 class ClinicalRecord(SQLModel, table=True):
@@ -822,6 +827,17 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    # create_all() does not add columns to existing tables. Keep this additive,
+    # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
+    with engine.begin() as conn:
+        dialect = engine.dialect.name
+        for table in ("imageasset", "guestimageasset"):
+            if dialect == "postgresql":
+                conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS vision_snapshot_json TEXT')
+            elif dialect == "sqlite":
+                cols = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()}
+                if "vision_snapshot_json" not in cols:
+                    conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
     with Session(engine, expire_on_commit=False) as s:
         if not s.exec(select(User)).first():
             s.add(User(username="admin", role="ADMIN", display_name="DENTAL-AI Administrator"))
@@ -3959,6 +3975,8 @@ açısından en ilgili güncel kanıtları bul.
     return (
         "ROUTER TARAFINDAN SEÇİLEN BRANŞLAR:\n"
         + "\n".join(f"- {label}" for label in labels)
+        + "\n\nGÖRÜNTÜ TİPLERİ:\n"
+        + (", ".join(image_types) if image_types else "BELİRSİZ")
         + "\n\n"
         + context
     )
@@ -4076,6 +4094,88 @@ açısından en ilgili güncel kanıtları bul.
     )
 
 
+
+
+VALID_ANALYSIS_IMAGE_TYPES = {"PANORAMIC", "BITEWING", "PERIAPICAL", "INTRAORAL_PHOTO"}
+
+def _analysis_image_type(value: Optional[str]) -> str:
+    normalized = (value or "").strip().upper()
+    return normalized if normalized in VALID_ANALYSIS_IMAGE_TYPES else "PANORAMIC"
+
+
+def _persisted_vision_payload(session: Session, assets, modality_hint: str = "") -> dict:
+    """Return one durable vision snapshot per asset; run a motor only for assets without one."""
+    images, failures = [], []
+    missing = []
+    for asset in assets:
+        try:
+            snap = json.loads(asset.vision_snapshot_json) if asset.vision_snapshot_json else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            snap = None
+        if isinstance(snap, dict):
+            images.append((asset, snap))
+        else:
+            missing.append(asset)
+
+    if missing:
+        fresh = structured_vision_payload(
+            [asset.file_path for asset in missing],
+            modality_hint=modality_hint,
+            image_types=[asset.image_type or "OTHER" for asset in missing],
+        )
+        failures.extend(fresh.get("partial_failures") or [])
+        fresh_images = fresh.get("images") or []
+        for asset, snap in zip(missing, fresh_images):
+            snap = dict(snap)
+            snap["source_image_id"] = f"analysis_asset:{asset.id}"
+            captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+            for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                for finding in snap.get(pool) or []:
+                    if isinstance(finding, dict):
+                        finding["source_image_id"] = snap["source_image_id"]
+                        finding["captured_at"] = finding.get("captured_at") or captured_at
+            asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
+            session.add(asset)
+            images.append((asset, snap))
+        session.commit()
+
+    ordered = []
+    by_id = {getattr(asset, "id", None): snap for asset, snap in images}
+    for asset in assets:
+        snap = by_id.get(getattr(asset, "id", None))
+        if snap is not None:
+            snap = dict(snap)
+            snap["source_image_id"] = f"analysis_asset:{asset.id}"
+            captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+            for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                for finding in snap.get(pool) or []:
+                    if isinstance(finding, dict):
+                        finding["source_image_id"] = snap["source_image_id"]
+                        finding["captured_at"] = finding.get("captured_at") or captured_at
+            ordered.append(snap)
+
+    modalities = {str(x.get("modality")) for x in ordered if x.get("modality")}
+    return {
+        "status": "ok" if ordered and not failures else ("partial" if ordered else "vision_motor_unavailable"),
+        "route": ("MIXED" if len(modalities) > 1 else (next(iter(modalities)) if modalities else "NONE")),
+        "images": ordered,
+        "partial_failures": failures,
+    }
+
+
+
+def _run_analysis_vision(analysis_id: int):
+    """Run dedicated image motors once after upload and persist their snapshots."""
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return
+        assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).all()
+        payload = _persisted_vision_payload(s, assets)
+        analysis.status = "VISION_READY" if payload.get("status") in {"ok", "partial"} else "VISION_ERROR"
+        s.add(analysis)
+        s.commit()
+
 def _run_guest_preliminary_ai(analysis_id: int):
     from app.ai_engine import (
         PRELIMINARY_RESPONSE_SCHEMA,
@@ -4134,6 +4234,9 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 assets=assets,
             )
 
+            vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+            persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
             prompt = build_preliminary_prompt(
                 tooth_number=analysis.tooth_number or "",
                 clinical_notes=analysis.clinical_notes or "",
@@ -4153,6 +4256,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 prompt,
                 image_paths=image_paths,
                 response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
@@ -4178,6 +4282,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                     prompt,
                     image_paths=image_paths,
                     response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                    structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
@@ -4287,6 +4392,8 @@ def _run_preliminary_ai(analysis_id: int):
         )
         # === TEMP_XRAY_TRACE_PATIENT_PRE_IMAGES_END ===
 
+        evidence_package = None
+
         try:
             rag_query = f"""
 Diş: {analysis.tooth_number or ""}
@@ -4304,6 +4411,94 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 analysis=analysis,
                 assets=assets,
             )
+
+            # Build the selected-tooth evidence package before the clinical LLM runs.
+            # Image findings stay owned by dedicated vision motors; Gemini receives
+            # structured evidence, the tooth record and RAG context, never image pixels.
+            tooth_evidence_context = ""
+            try:
+                selected_fdi = int((analysis.tooth_number or "").strip())
+                tooth_status = s.exec(
+                    select(ToothStatus).where(
+                        ToothStatus.patient_id == analysis.patient_id,
+                        ToothStatus.tooth_number == str(selected_fdi),
+                    )
+                ).first()
+                surface_rows = s.exec(
+                    select(ToothSurfaceStatus).where(
+                        ToothSurfaceStatus.patient_id == analysis.patient_id,
+                        ToothSurfaceStatus.tooth_number == str(selected_fdi),
+                    )
+                ).all()
+                treatment_rows = s.exec(
+                    select(Treatment).where(
+                        Treatment.patient_id == analysis.patient_id,
+                        Treatment.tooth_number == str(selected_fdi),
+                    )
+                ).all()
+
+                tooth_record = {
+                    "status": (
+                        {
+                            "status": tooth_status.status,
+                            "note": tooth_status.note,
+                            "updated_at": tooth_status.updated_at.isoformat() if tooth_status.updated_at else None,
+                        }
+                        if tooth_status else None
+                    ),
+                    "surfaces": [
+                        {
+                            "surface": row.surface,
+                            "status": row.status,
+                            "note": row.note,
+                            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                        }
+                        for row in surface_rows
+                    ],
+                    "treatment_history": [
+                        {
+                            "treatment_name": row.treatment_name,
+                            "treatment_date": row.treatment_date,
+                            "material": row.material,
+                            "doctor_note": row.doctor_note,
+                            "result": row.result,
+                        }
+                        for row in treatment_rows
+                    ],
+                }
+
+                vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+
+                persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
+                evidence_package = build_tooth_evidence_package(
+                    tooth_fdi=selected_fdi,
+                    modality_results=vision_payload.get("images") or [],
+                    tooth_record=tooth_record,
+                    manual_findings=(),
+                    clinical_context={
+                        "clinical_notes": analysis.clinical_notes or "",
+                        "chief_complaint": patient.chief_complaint or "",
+                        "vision_status": vision_payload.get("status"),
+                        "vision_route": vision_payload.get("route"),
+                        "partial_failures": vision_payload.get("partial_failures") or [],
+                    },
+                )
+                tooth_evidence_context = json.dumps(
+                    evidence_package,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            except (TypeError, ValueError):
+                # Invalid/missing FDI keeps the legacy flow; never guess a tooth.
+                tooth_evidence_context = ""
+
+            if tooth_evidence_context:
+                knowledge_context += (
+                    "\n\nDENTALAI TOOTH EVIDENCE PACKAGE — SEÇİLEN DİŞ İÇİN YAPILANDIRILMIŞ KANIT:\n"
+                    + tooth_evidence_context
+                    + "\nRejected kanıtı kullanma; unassigned_image_evidence öğelerini seçilen dişe aitmış gibi kabul etme."
+                )
 
             prompt = build_preliminary_prompt(
                 tooth_number=analysis.tooth_number or "",
@@ -4324,6 +4519,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 prompt,
                 image_paths=image_paths,
                 response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
@@ -4348,6 +4544,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                     prompt,
                     image_paths=image_paths,
                     response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
@@ -4382,7 +4579,8 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 {
                     "ai_result": ai_result,
                     "ai_text": ai_text,
-                    "stage": "PRELIMINARY"
+                    "stage": "PRELIMINARY",
+                    "tooth_evidence": evidence_package,
                 },
                 ensure_ascii=False,
                 indent=2
@@ -4431,8 +4629,11 @@ async def create_guest_analysis(
         s.refresh(analysis)
 
         allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+        valid_images = [img for img in images if img and img.filename]
+        if len(valid_images) > 4:
+            return HTMLResponse("Tek analizde en fazla 4 görüntü yükleyebilirsiniz.", status_code=400)
 
-        for image in images:
+        for image in valid_images:
             if not image or not image.filename:
                 continue
 
@@ -4457,7 +4658,7 @@ async def create_guest_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type="OTHER",
+                image_type=classify_dental_image(str(destination)),
             )
 
             s.add(asset)
@@ -4502,8 +4703,9 @@ async def create_analysis(
         requested_media_ids = _parse_patient_media_ids(existing_media_ids)
         if existing_media_id is not None and existing_media_id not in requested_media_ids:
             requested_media_ids.insert(0, existing_media_id)
-        if len(requested_media_ids) > 12:
-            return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+        new_image_count = sum(1 for img in images if img and img.filename)
+        if len(requested_media_ids) + new_image_count > 4:
+            return HTMLResponse("Tek analizde toplam en fazla 4 görüntü kullanabilirsiniz.", status_code=400)
 
         selected_media_items: list[tuple[PatientMedia, Path]] = []
         for selected_id in requested_media_ids:
@@ -4545,7 +4747,7 @@ async def create_analysis(
                 original_filename=selected_media.original_filename,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type=("RADIOGRAPH" if selected_media.media_type == "RADIOGRAPH" else "OTHER"),
+                image_type=classify_dental_image(str(destination)),
             ))
 
         for image in images:
@@ -4573,7 +4775,7 @@ async def create_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type="OTHER",
+                image_type=classify_dental_image(str(destination)),
             )
 
             s.add(asset)
@@ -4582,14 +4784,11 @@ async def create_analysis(
 
         analysis_id = analysis.id
 
-    # Gemma ARTIK sayfayı bekletmiyor.
-    background_tasks.add_task(
-        _run_preliminary_ai,
-        analysis_id
-    )
+    # Vision-first: run each uploaded asset once; clinical AI later reuses the durable snapshots.
+    background_tasks.add_task(_run_analysis_vision, analysis_id)
 
     return RedirectResponse(
-        url=f"/analysis/{analysis_id}",
+        url=f"/analysis/{analysis_id}/viewer",
         status_code=303
     )
 
@@ -4722,6 +4921,80 @@ def guest_analysis_result(request: Request, analysis_id: int):
             "ai_text": ai_text
         }
     )
+
+
+@app.get("/analysis-assets/{analysis_id}/primary")
+def analysis_primary_asset(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
+        asset = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id).order_by(ImageAsset.id.asc())).first()
+        if not asset or not asset.file_path or not Path(asset.file_path).is_file():
+            return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        path = Path(asset.file_path)
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+
+
+@app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
+def analysis_viewer(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu analize erişim yetkiniz yok.", status_code=403)
+        assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).all()
+    return templates.TemplateResponse(
+        request=request,
+        name="analysis_viewer.html",
+        context={"analysis": analysis, "patient": patient, "assets": assets},
+    )
+
+
+@app.post("/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze")
+def analyze_selected_tooth(request: Request, analysis_id: int, tooth_fdi: int, background_tasks: BackgroundTasks):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401)
+    fdi_text = str(tooth_fdi)
+    if len(fdi_text) != 2 or fdi_text[0] not in "12345678" or fdi_text[1] not in "12345678":
+        return JSONResponse({"ok": False, "error": "Geçersiz FDI diş numarası."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return JSONResponse({"ok": False, "error": "Analiz bulunamadı."}, status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return JSONResponse({"ok": False, "error": "Hasta bulunamadı."}, status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return JSONResponse({"ok": False, "error": "Bu analize erişim yetkiniz yok."}, status_code=403)
+        analysis.tooth_number = fdi_text
+        analysis.status = "ANALYZING"
+        s.add(analysis)
+        s.commit()
+    background_tasks.add_task(_run_preliminary_ai, analysis_id)
+    return JSONResponse({"ok": True, "analysis_id": analysis_id, "tooth_fdi": fdi_text, "status": "ANALYZING", "result_url": f"/analysis/{analysis_id}"})
 
 
 @app.get("/analysis/{analysis_id}", response_class=HTMLResponse)
@@ -4908,6 +5181,9 @@ async def guest_final_analysis(
                 extra_text=f"Hekim cevapları: {answers}",
             )
 
+            vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+            persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
             prompt = build_final_prompt(
                 tooth_number=analysis.tooth_number or "",
                 clinical_notes=analysis.clinical_notes or "",
@@ -4928,6 +5204,7 @@ async def guest_final_analysis(
                 prompt,
                 image_paths=image_paths,
                 response_schema=FINAL_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_final_result(parse_ai_result(ai_text))
@@ -4950,6 +5227,7 @@ async def guest_final_analysis(
                     prompt,
                     image_paths=image_paths,
                     response_schema=FINAL_RESPONSE_SCHEMA,
+                    structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_final_result(parse_ai_result(ai_text))
 
@@ -5127,6 +5405,16 @@ async def final_analysis(
     # SADECE SON AŞAMADA GEMINI ÇALIŞIR
     # -----------------------------------------------------
 
+    # The authorization/read session above is intentionally closed before
+    # awaiting form data. Open a fresh session for RAG + durable vision access.
+    s = Session(engine, expire_on_commit=False)
+    analysis = s.get(Analysis, analysis_id)
+    if not analysis:
+        s.close()
+        return HTMLResponse("Analiz bulunamadı.", status_code=404)
+    patient = s.get(Patient, analysis.patient_id)
+    assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis.id)).all()
+
     try:
 
         rag_query = f"""
@@ -5150,6 +5438,9 @@ için en ilgili kanıtları bul.
             extra_text=f"Hekim cevapları: {answers}",
         )
 
+        vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+        persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
         prompt = build_final_prompt(
             tooth_number=analysis.tooth_number or "",
             clinical_notes=analysis.clinical_notes or "",
@@ -5170,6 +5461,7 @@ için en ilgili kanıtları bul.
             prompt,
             image_paths=image_paths,
             response_schema=FINAL_RESPONSE_SCHEMA,
+            structured_vision=persisted_vision_text,
         )
 
         ai_result = validate_final_result(parse_ai_result(ai_text))
@@ -5192,6 +5484,7 @@ için en ilgili kanıtları bul.
                 prompt,
                 image_paths=image_paths,
                 response_schema=FINAL_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
             ai_result = validate_final_result(parse_ai_result(ai_text))
 
@@ -5215,6 +5508,8 @@ için en ilgili kanıtları bul.
     # -----------------------------------------------------
     # NİHAİ SONUCU KAYDET
     # -----------------------------------------------------
+
+    s.close()
 
     result_dir = Path(
         "uploads/ai_results"
