@@ -13,6 +13,8 @@ def test_baseline_notebook_is_valid_python():
     assert "TEST_DATA_INSUFFICIENT" in code
     assert "wilson_lower" in code
     assert ">=13" in code
+    assert "annotation_exhaustive" in code
+    assert "pan_targets=list(REGISTRY48)" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
