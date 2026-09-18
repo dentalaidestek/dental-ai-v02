@@ -5189,7 +5189,53 @@ def guest_analysis_asset_vision(request: Request, analysis_id: int, asset_id: in
         if not asset or asset.guest_analysis_id != analysis_id:
             return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
         if not asset.vision_snapshot_json:
-            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202)
+            # BackgroundTasks can be interrupted by a deploy/restart. The viewer
+            # polls this endpoint, so make the read path self-healing instead of
+            # leaving a valid upload permanently stuck at VISION_PENDING.
+            file_path = asset.file_path
+            image_type = asset.image_type or "OTHER"
+            if not file_path or not Path(file_path).is_file():
+                return JSONResponse({"ok": False, "status": "VISION_FILE_MISSING"}, status_code=404)
+            try:
+                fresh = structured_vision_payload(
+                    [file_path],
+                    image_types=[image_type],
+                )
+                images = fresh.get("images") or []
+                snap = dict(images[0]) if images else None
+                if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable":
+                    snap["source_image_id"] = f"analysis_asset:{asset.id}"
+                    captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+                    for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                        for finding in snap.get(pool) or []:
+                            if isinstance(finding, dict):
+                                finding["source_image_id"] = snap["source_image_id"]
+                                finding["captured_at"] = finding.get("captured_at") or captured_at
+                    asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
+                    session_asset_id = asset.id
+                    s.add(asset)
+                    analysis.status = "VISION_READY"
+                    s.add(analysis)
+                    s.commit()
+                    logger.info(
+                        "guest vision recovered on poll analysis=%s asset=%s modality=%s teeth=%s findings=%s",
+                        analysis_id, session_asset_id, snap.get("modality"),
+                        len(snap.get("teeth") or []),
+                        sum(len(snap.get(k) or []) for k in ("findings","auxiliary_radiographic_findings","image_level_findings")),
+                    )
+                    return JSONResponse(snap, headers={"Cache-Control":"no-store"})
+                logger.error(
+                    "guest vision recovery unavailable analysis=%s asset=%s failures=%s",
+                    analysis_id, asset_id, fresh.get("partial_failures") or [],
+                )
+            except Exception as exc:
+                logger.exception("guest vision recovery failed analysis=%s asset=%s", analysis_id, asset_id)
+                return JSONResponse(
+                    {"ok": False, "status": "VISION_ERROR", "error": str(exc)},
+                    status_code=503,
+                    headers={"Cache-Control":"no-store"},
+                )
+            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202, headers={"Cache-Control":"no-store"})
         try:
             return JSONResponse(json.loads(asset.vision_snapshot_json), headers={"Cache-Control":"no-store"})
         except Exception:
