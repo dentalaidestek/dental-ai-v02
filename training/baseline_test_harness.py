@@ -104,10 +104,11 @@ def _gt_boxes(annotation:dict|None):
 def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_code:str, modality:str)->dict:
     result_path=STATE/f"{modality}__{finding_code}.json"
     old=load_json(result_path,{})
-    done={x["sha256"]:x for x in old.get("cases",[]) if x.get("sha256")}
+    # Cache identity includes polarity; a hash legitimately reused for another target is stored in a different state file.
+    done={(x["sha256"],x.get("polarity")):x for x in old.get("cases",[]) if x.get("sha256")}
     rows=[]
     for c in cases:
-        if c.sha256 in done: rows.append(done[c.sha256]); continue
+        if (c.sha256,c.polarity) in done: rows.append(done[(c.sha256,c.polarity)]); continue
         row={"case_id":c.case_id,"sha256":c.sha256,"polarity":c.polarity,"source":c.source}
         try:
             pred=infer(c.image_path,modality) or {}
