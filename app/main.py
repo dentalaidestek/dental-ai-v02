@@ -4093,6 +4093,60 @@ açısından en ilgili güncel kanıtları bul.
     )
 
 
+
+def _persisted_vision_payload(session: Session, assets, modality_hint: str = "") -> dict:
+    """Return one durable vision snapshot per asset; run a motor only for assets without one."""
+    images, failures = [], []
+    missing = []
+    for asset in assets:
+        try:
+            snap = json.loads(asset.vision_snapshot_json) if asset.vision_snapshot_json else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            snap = None
+        if isinstance(snap, dict):
+            images.append((asset, snap))
+        else:
+            missing.append(asset)
+
+    if missing:
+        fresh = structured_vision_payload(
+            [asset.file_path for asset in missing],
+            modality_hint=modality_hint,
+            image_types=[asset.image_type or "OTHER" for asset in missing],
+        )
+        failures.extend(fresh.get("partial_failures") or [])
+        fresh_images = fresh.get("images") or []
+        for asset, snap in zip(missing, fresh_images):
+            snap = dict(snap)
+            asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
+            session.add(asset)
+            images.append((asset, snap))
+        session.commit()
+
+    ordered = []
+    by_id = {getattr(asset, "id", None): snap for asset, snap in images}
+    for asset in assets:
+        snap = by_id.get(getattr(asset, "id", None))
+        if snap is not None:
+            snap = dict(snap)
+            snap["source_image_id"] = f"analysis_asset:{asset.id}"
+            captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+            for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                for finding in snap.get(pool) or []:
+                    if isinstance(finding, dict):
+                        finding["source_image_id"] = snap["source_image_id"]
+                        finding["captured_at"] = finding.get("captured_at") or captured_at
+            ordered.append(snap)
+
+    modalities = {str(x.get("modality")) for x in ordered if x.get("modality")}
+    return {
+        "status": "ok" if ordered and not failures else ("partial" if ordered else "vision_motor_unavailable"),
+        "route": ("MIXED" if len(modalities) > 1 else (next(iter(modalities)) if modalities else "NONE")),
+        "images": ordered,
+        "partial_failures": failures,
+    }
+
+
 def _run_guest_preliminary_ai(analysis_id: int):
     from app.ai_engine import (
         PRELIMINARY_RESPONSE_SCHEMA,
@@ -4151,6 +4205,9 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 assets=assets,
             )
 
+            vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+            persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
             prompt = build_preliminary_prompt(
                 tooth_number=analysis.tooth_number or "",
                 clinical_notes=analysis.clinical_notes or "",
@@ -4170,6 +4227,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 prompt,
                 image_paths=image_paths,
                 response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
@@ -4379,47 +4437,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                     ],
                 }
 
-                asset_types = [asset.image_type or "OTHER" for asset in assets]
-                cached_images = []
-                missing_assets = []
-                for asset in assets:
-                    try:
-                        snap = json.loads(asset.vision_snapshot_json) if asset.vision_snapshot_json else None
-                    except (TypeError, ValueError, json.JSONDecodeError):
-                        snap = None
-                    if isinstance(snap, dict):
-                        cached_images.append(snap)
-                    else:
-                        missing_assets.append(asset)
-
-                if missing_assets:
-                    fresh = structured_vision_payload(
-                        [asset.file_path for asset in missing_assets],
-                        modality_hint=knowledge_context,
-                        image_types=[asset.image_type or "OTHER" for asset in missing_assets],
-                    )
-                    for image_result, asset in zip(fresh.get("images") or [], missing_assets):
-                        asset.vision_snapshot_json = json.dumps(image_result, ensure_ascii=False, separators=(",", ":"))
-                        s.add(asset)
-                        cached_images.append(image_result)
-                    s.commit()
-
-                vision_payload = {
-                    "status": "ok" if cached_images else "vision_motor_unavailable",
-                    "route": "MIXED" if len({str(x.get("modality")) for x in cached_images}) > 1 else (cached_images[0].get("modality") if cached_images else "NONE"),
-                    "images": cached_images,
-                    "partial_failures": [],
-                }
-                # Preserve the actual analysis asset identity/time on every motor item.
-                # This prevents old and new captures from becoming indistinguishable.
-                for image_result, asset in zip(vision_payload.get("images") or [], assets):
-                    image_result["source_image_id"] = f"analysis_asset:{asset.id}"
-                    captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
-                    for pool_name in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
-                        for finding in image_result.get(pool_name) or []:
-                            if isinstance(finding, dict):
-                                finding["source_image_id"] = image_result["source_image_id"]
-                                finding["captured_at"] = finding.get("captured_at") or captured_at
+                vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
 
                 persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
 
@@ -5134,6 +5152,9 @@ async def guest_final_analysis(
                 extra_text=f"Hekim cevapları: {answers}",
             )
 
+            vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+            persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
             prompt = build_final_prompt(
                 tooth_number=analysis.tooth_number or "",
                 clinical_notes=analysis.clinical_notes or "",
@@ -5154,6 +5175,7 @@ async def guest_final_analysis(
                 prompt,
                 image_paths=image_paths,
                 response_schema=FINAL_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_final_result(parse_ai_result(ai_text))
@@ -5376,6 +5398,9 @@ için en ilgili kanıtları bul.
             extra_text=f"Hekim cevapları: {answers}",
         )
 
+        vision_payload = _persisted_vision_payload(s, assets, knowledge_context)
+        persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
         prompt = build_final_prompt(
             tooth_number=analysis.tooth_number or "",
             clinical_notes=analysis.clinical_notes or "",
@@ -5396,6 +5421,7 @@ için en ilgili kanıtları bul.
             prompt,
             image_paths=image_paths,
             response_schema=FINAL_RESPONSE_SCHEMA,
+            structured_vision=persisted_vision_text,
         )
 
         ai_result = validate_final_result(parse_ai_result(ai_text))
