@@ -19,6 +19,7 @@ BITEWING_ENSEMBLE_TIMEOUT_SECONDS = float(os.getenv("BITEWING_ENSEMBLE_TIMEOUT_S
 BITEWING_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("BITEWING_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
 BITEWING_DISPLAY_THRESHOLD = float(os.getenv("BITEWING_DISPLAY_THRESHOLD", "0.50"))
 BITEWING_FUSION_IOU_THRESHOLD = float(os.getenv("BITEWING_FUSION_IOU_THRESHOLD", "0.20"))
+BITEWING_CONTROL_MIN_CONFIDENCE = float(os.getenv("BITEWING_CONTROL_MIN_CONFIDENCE", "0.05"))
 
 MODEL_8024_LABELS = {
     "caries": ("CARIES", "Çürük şüphesi"),
@@ -213,6 +214,7 @@ def analyze_bitewing(image_path: str):
         matches = [
             y for y in controls
             if y.get("finding_code") == x.get("finding_code")
+            and y.get("confidence", 0.0) >= BITEWING_CONTROL_MIN_CONFIDENCE
             and _iou(x.get("bbox"), y.get("bbox")) >= BITEWING_FUSION_IOU_THRESHOLD
         ]
         if matches:
@@ -239,6 +241,8 @@ def analyze_bitewing(image_path: str):
         "display_finding_count": sum(1 for x in findings if x.get("display_eligible")),
         "internal_candidate_threshold": BITEWING_INTERNAL_CANDIDATE_THRESHOLD,
         "display_threshold": BITEWING_DISPLAY_THRESHOLD,
+        "control_min_confidence": BITEWING_CONTROL_MIN_CONFIDENCE,
+        "fusion_iou_threshold": BITEWING_FUSION_IOU_THRESHOLD,
         "periodontal_candidates": periodontal,
         "motors": ["yolov8_8024_seg", "findings9_control_for_weak_candidates", "bitewing_periodontal_defect"],
         "notes": [
@@ -246,6 +250,7 @@ def analyze_bitewing(image_path: str):
             "Periodontal motor çıktısı kemik içi defekt değerlendirme adayıdır; piksel düzeyinde kemik kaybı maskesi gibi sunulmaz.",
             "8024 için 0.02 ve üzeri zayıf adaylar fusion için iç kanıt olarak korunur; tek başına kullanıcıya gösterilmez.",
             "Kullanıcı gösterim eşiği 0.50 olarak ayrı tutulur.",
+            "Kontrol motoru desteği için aynı normalize bulgu, en az 0.05 kontrol skoru ve en az 0.20 IoU gerekir.",
             "Motor güven skorları birbirine eklenmez.",
         ],
     }
