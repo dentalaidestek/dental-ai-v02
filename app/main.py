@@ -19,6 +19,8 @@ from dental_rag.rag import (
     get_specialty_relevant_context,
 )
 from app.clinical_rag_router import route_clinical_case
+from app.vision_llm_context import structured_vision_payload
+from vision_service.tooth_evidence import build_tooth_evidence_package
 
 # === TEMP_STUDY_TRACE_MAIN_IMPORT_BEGIN ===
 import logging as _study_trace_logging
@@ -3959,6 +3961,8 @@ açısından en ilgili güncel kanıtları bul.
     return (
         "ROUTER TARAFINDAN SEÇİLEN BRANŞLAR:\n"
         + "\n".join(f"- {label}" for label in labels)
+        + "\n\nGÖRÜNTÜ TİPLERİ:\n"
+        + (", ".join(image_types) if image_types else "BELİRSİZ")
         + "\n\n"
         + context
     )
@@ -4304,6 +4308,94 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 analysis=analysis,
                 assets=assets,
             )
+
+            # Build the selected-tooth evidence package before the clinical LLM runs.
+            # Image findings stay owned by dedicated vision motors; Gemini receives
+            # structured evidence, the tooth record and RAG context, never image pixels.
+            tooth_evidence_context = ""
+            try:
+                selected_fdi = int((analysis.tooth_number or "").strip())
+                tooth_status = s.exec(
+                    select(ToothStatus).where(
+                        ToothStatus.patient_id == analysis.patient_id,
+                        ToothStatus.tooth_number == str(selected_fdi),
+                    )
+                ).first()
+                surface_rows = s.exec(
+                    select(ToothSurfaceStatus).where(
+                        ToothSurfaceStatus.patient_id == analysis.patient_id,
+                        ToothSurfaceStatus.tooth_number == str(selected_fdi),
+                    )
+                ).all()
+                treatment_rows = s.exec(
+                    select(Treatment).where(
+                        Treatment.patient_id == analysis.patient_id,
+                        Treatment.tooth_number == str(selected_fdi),
+                    )
+                ).all()
+
+                tooth_record = {
+                    "status": (
+                        {
+                            "status": tooth_status.status,
+                            "note": tooth_status.note,
+                            "updated_at": tooth_status.updated_at.isoformat() if tooth_status.updated_at else None,
+                        }
+                        if tooth_status else None
+                    ),
+                    "surfaces": [
+                        {
+                            "surface": row.surface,
+                            "status": row.status,
+                            "note": row.note,
+                            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                        }
+                        for row in surface_rows
+                    ],
+                    "treatment_history": [
+                        {
+                            "treatment_name": row.treatment_name,
+                            "treatment_date": row.treatment_date,
+                            "material": row.material,
+                            "doctor_note": row.doctor_note,
+                            "result": row.result,
+                        }
+                        for row in treatment_rows
+                    ],
+                }
+
+                vision_payload = structured_vision_payload(
+                    image_paths,
+                    modality_hint=knowledge_context,
+                )
+                evidence_package = build_tooth_evidence_package(
+                    tooth_fdi=selected_fdi,
+                    modality_results=vision_payload.get("images") or [],
+                    tooth_record=tooth_record,
+                    manual_findings=(),
+                    clinical_context={
+                        "clinical_notes": analysis.clinical_notes or "",
+                        "chief_complaint": patient.chief_complaint or "",
+                        "vision_status": vision_payload.get("status"),
+                        "vision_route": vision_payload.get("route"),
+                        "partial_failures": vision_payload.get("partial_failures") or [],
+                    },
+                )
+                tooth_evidence_context = json.dumps(
+                    evidence_package,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            except (TypeError, ValueError):
+                # Invalid/missing FDI keeps the legacy flow; never guess a tooth.
+                tooth_evidence_context = ""
+
+            if tooth_evidence_context:
+                knowledge_context += (
+                    "\n\nDENTALAI TOOTH EVIDENCE PACKAGE — SEÇİLEN DİŞ İÇİN YAPILANDIRILMIŞ KANIT:\n"
+                    + tooth_evidence_context
+                    + "\nRejected kanıtı kullanma; unassigned_image_evidence öğelerini seçilen dişe aitmış gibi kabul etme."
+                )
 
             prompt = build_preliminary_prompt(
                 tooth_number=analysis.tooth_number or "",
