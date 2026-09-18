@@ -31,6 +31,15 @@
         <div class="analysis-field-block">
             <div class="analysis-step-title"><span>3</span><h2>Fotoğraf / Röntgen</h2></div>
             <label>
+                Görüntü türü
+                <select name="image_type" required>
+                    <option value="PANORAMIC">Panoramik röntgen</option>
+                    <option value="BITEWING">Bitewing</option>
+                    <option value="PERIAPICAL">Periapikal</option>
+                    <option value="INTRAORAL_PHOTO">Ağız içi fotoğraf</option>
+                </select>
+            </label>
+            <label>
                 Görüntü yükle
                 <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
             </label>
