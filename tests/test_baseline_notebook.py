@@ -20,6 +20,8 @@ def test_baseline_notebook_is_valid_python():
     assert "Select and lock only after every adapter" in code
     assert "RED_ORAL_LESION_CANDIDATE" in code
     assert "all(0<=v<=1 for v in box)" in code
+    assert "locked_distribution.json" in code
+    assert "Unsafe path in resume archive" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
@@ -31,3 +33,4 @@ def test_harness_has_leakage_guards():
     assert "duplicate target hash" in text
     assert "_image_ok" in text
     assert "_patient_unique" in text
+    assert "pos_patient" in text
