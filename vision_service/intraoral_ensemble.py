@@ -11,7 +11,7 @@ from typing import Any
 from vision_service.gradcam_localizer import normalize_gradcam_regions
 
 class IntraoralEnsembleError(RuntimeError): pass
-INTRAORAL_ENSEMBLE_URL=os.getenv("INTRAORAL_ENSEMBLE_URL","").strip().rstrip("/")
+INTRAORAL_ENSEMBLE_URL=os.getenv("INTRAORAL_ENSEMBLE_URL", os.getenv("DENTAL_VISION_MODAL_URL", "https://dentalaidestek--dental-ai-inference-api.modal.run")).strip().rstrip("/")
 INTRAORAL_ENSEMBLE_API_KEY=os.getenv("INTRAORAL_ENSEMBLE_API_KEY","").strip()
 INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS=float(os.getenv("INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS","90"))
 INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD=float(os.getenv("INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD","0.02"))
