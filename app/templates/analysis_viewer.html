@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-.analysis-viewer-wrap{max-width:1100px;margin:0 auto}.analysis-viewer-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}.analysis-viewer-frame{width:100%;height:78vh;min-height:640px;border:0;border-radius:20px;background:#020304;box-shadow:0 14px 44px rgba(16,24,40,.14)}.analysis-viewer-note{font-size:12px;color:#667085;margin:7px 2px}@media(max-width:700px){.analysis-viewer-wrap{margin:0 -10px}.analysis-viewer-head{padding:0 10px}.analysis-viewer-frame{height:calc(100vh - 120px);min-height:620px;border-radius:0}}
+.analysis-viewer-wrap{max-width:1120px;margin:0 auto}.analysis-viewer-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}.asset-strip{display:flex;gap:8px;overflow:auto;padding:2px 0 10px}.asset-chip{border:1px solid #d7deea;background:#fff;border-radius:999px;padding:9px 12px;font-weight:800;white-space:nowrap;cursor:pointer}.asset-chip.active{background:#172033;color:#fff}.analysis-viewer-frame{width:100%;height:78vh;min-height:640px;border:0;border-radius:20px;background:#020304;box-shadow:0 14px 44px rgba(16,24,40,.14)}.analysis-viewer-note{font-size:12px;color:#667085;margin:7px 2px}@media(max-width:700px){.analysis-viewer-wrap{margin:0 -10px}.analysis-viewer-head,.asset-strip{padding-left:10px;padding-right:10px}.analysis-viewer-frame{height:calc(100vh - 155px);min-height:600px;border-radius:0}}
 </style>
 <div class="analysis-viewer-wrap">
   <div class="analysis-viewer-head">
@@ -9,34 +9,39 @@
     <a href="/patients/{{ patient.id }}">Hastaya dön</a>
   </div>
   {% if assets %}
-  <iframe id="dentalViewer" class="analysis-viewer-frame" src="/viewer?embedded=1" title="Dental AI görüntü ve 3D değerlendirme"></iframe>
-  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Klinik değerlendirme yalnız seçili dişte Tedavi → Analiz Et ile başlatılır.</div>
+  <div class="asset-strip" aria-label="Analiz görüntüleri">
+    {% for asset in assets %}
+    <button class="asset-chip{% if loop.first %} active{% endif %}" data-asset-id="{{ asset.id }}" data-modality="{{ asset.image_type }}">{{ loop.index }} · {{ {"PANORAMIC":"Panoramik","BITEWING":"Bitewing","PERIAPICAL":"Periapikal","INTRAORAL_PHOTO":"Ağız içi"}.get(asset.image_type, "Görüntü") }}</button>
+    {% endfor %}
+  </div>
+  <iframe id="dentalViewer" class="analysis-viewer-frame" title="Dental AI görüntü değerlendirme"></iframe>
+  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Panoramikte hasta dişleriyle 3D görünüm; diğer görüntülerde bölgesel görüntü ve bulgu katmanı kullanılır. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
   {% else %}
   <div class="card">Bu analizde görüntü bulunamadı.</div>
   {% endif %}
 </div>
 <script>
 (()=>{
-  const frame=document.getElementById('dentalViewer');
-  if(!frame)return;
+  const frame=document.getElementById('dentalViewer');if(!frame)return;
   const analysisId={{ analysis.id }};
-  const assetUrl={{ ("/analysis-assets/" ~ analysis.id ~ "/primary")|tojson }};
-  frame.addEventListener('load',()=>{
-    frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl},location.origin);
-  });
+  const assets={{ assets|map(attribute='id')|list|tojson }};
+  const modalities={{ assets|map(attribute='image_type')|list|tojson }};
+  let current=0;
+  const srcFor=m=>m==='PANORAMIC'?'/vision-ui/viewer?embedded=1':'/vision-ui/intraoral-viewer?embedded=1';
+  const assetUrl=i=>'/analysis-assets/'+analysisId+'/'+assets[i];
+  function load(i){
+    current=i;document.querySelectorAll('.asset-chip').forEach((b,n)=>b.classList.toggle('active',n===i));
+    const src=srcFor(modalities[i]);if(frame.getAttribute('src')!==src){frame.src=src}else send();
+  }
+  function send(){frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl:assetUrl(current),modality:modalities[current]},location.origin)}
+  frame.addEventListener('load',send);
+  document.querySelectorAll('.asset-chip').forEach((b,i)=>b.onclick=()=>load(i));
   window.addEventListener('message',async ev=>{
-    if(ev.origin!==location.origin||ev.source!==frame.contentWindow)return;
-    const d=ev.data||{};
+    if(ev.origin!==location.origin||ev.source!==frame.contentWindow)return;const d=ev.data||{};
     if(d.type!=='dental-ai:analyze-tooth'||!d.fdi)return;
-    try{
-      const r=await fetch('/analysis/'+analysisId+'/tooth/'+encodeURIComponent(d.fdi)+'/analyze',{method:'POST'});
-      const j=await r.json();
-      frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',...j},location.origin);
-      if(r.ok&&j.result_url) location.href=j.result_url;
-    }catch(e){
-      frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',ok:false,error:String(e)},location.origin);
-    }
+    try{const r=await fetch('/analysis/'+analysisId+'/tooth/'+encodeURIComponent(d.fdi)+'/analyze',{method:'POST'});const j=await r.json();frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',...j},location.origin);if(r.ok&&j.result_url)location.href=j.result_url}catch(e){frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',ok:false,error:String(e)},location.origin)}
   });
+  load(0);
 })();
 </script>
 {% endblock %}
