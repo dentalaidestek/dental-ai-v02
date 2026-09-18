@@ -57,6 +57,12 @@ def _slim_result(result: dict, *, source_image_id: str | None = None) -> dict:
         "source_image_id": result.get("source_image_id") or source_image_id,
         "tooth_count": result.get("tooth_count"),
         "unique_fdi_count": result.get("unique_fdi_count"),
+        # Panoramic embedded 3D needs the persisted FDI localization. Keep only
+        # the compact geometry/identity fields; never rerun the detector in viewer.
+        "teeth": [
+            {"fdi": t.get("fdi") or t.get("tooth_fdi") or t.get("tooth"), "bbox": t.get("bbox"), "polygon": t.get("polygon") or t.get("segmentation")}
+            for t in (result.get("teeth") or []) if isinstance(t, dict) and t.get("bbox")
+        ],
         "findings": slim_items(result.get("findings")),
         "auxiliary_radiographic_findings": slim_items(result.get("auxiliary_radiographic_findings")),
         "image_level_findings": slim_items(result.get("image_level_findings")),
