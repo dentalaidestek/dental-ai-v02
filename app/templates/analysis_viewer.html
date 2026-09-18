@@ -5,8 +5,8 @@
 </style>
 <div class="analysis-viewer-wrap">
   <div class="analysis-viewer-head">
-    <div><strong>{{ patient.anonymous_id }}</strong> · Klinik görüntü değerlendirmesi</div>
-    <a href="/patients/{{ patient.id }}">Hastaya dön</a>
+    <div><strong>{% if guest %}Hızlı analiz{% else %}{{ patient.anonymous_id }}{% endif %}</strong> · Görüntü değerlendirmesi</div>
+    {% if guest %}<a href="/analysis/guest/{{ analysis.id }}">Genel klinik analize geç</a>{% else %}<a href="/patients/{{ patient.id }}">Hastaya dön</a>{% endif %}
   </div>
   {% if assets %}
   <div class="asset-strip" aria-label="Analiz görüntüleri">
@@ -24,16 +24,18 @@
 (()=>{
   const frame=document.getElementById('dentalViewer');if(!frame)return;
   const analysisId={{ analysis.id }};
+  const guest={{ 'true' if guest else 'false' }};
   const assets={{ assets|map(attribute='id')|list|tojson }};
   const modalities={{ assets|map(attribute='image_type')|list|tojson }};
   let current=0;
   const srcFor=m=>m==='PANORAMIC'?'/vision-ui/viewer?embedded=1':'/vision-ui/intraoral-viewer?embedded=1';
-  const assetUrl=i=>'/analysis-assets/'+analysisId+'/'+assets[i];
+  const assetUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]):('/analysis-assets/'+analysisId+'/asset/'+assets[i]);
+  const visionUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]+'/vision'):('/analysis-assets/'+analysisId+'/asset/'+assets[i]+'/vision');
   function load(i){
     current=i;document.querySelectorAll('.asset-chip').forEach((b,n)=>b.classList.toggle('active',n===i));
     const src=srcFor(modalities[i]);if(frame.getAttribute('src')!==src){frame.src=src}else send();
   }
-  function send(){frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl:assetUrl(current),modality:modalities[current]},location.origin)}
+  function send(){frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl:assetUrl(current),visionUrl:visionUrl(current),modality:modalities[current]},location.origin)}
   frame.addEventListener('load',send);
   document.querySelectorAll('.asset-chip').forEach((b,i)=>b.onclick=()=>load(i));
   window.addEventListener('message',async ev=>{
