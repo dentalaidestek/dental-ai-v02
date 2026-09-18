@@ -38,3 +38,4 @@ def test_harness_has_leakage_guards():
     assert "_patient_unique" in text
     assert "pos_patient" in text
     assert "x.get(\"code\")" in text
+    assert "(c.sha256,c.polarity)" in text
