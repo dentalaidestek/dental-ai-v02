@@ -14,6 +14,8 @@ class IntraoralEnsembleError(RuntimeError): pass
 INTRAORAL_ENSEMBLE_URL=os.getenv("INTRAORAL_ENSEMBLE_URL","").strip().rstrip("/")
 INTRAORAL_ENSEMBLE_API_KEY=os.getenv("INTRAORAL_ENSEMBLE_API_KEY","").strip()
 INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS=float(os.getenv("INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS","90"))
+INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD=float(os.getenv("INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD","0.02"))
+INTRAORAL_DISPLAY_THRESHOLD=float(os.getenv("INTRAORAL_DISPLAY_THRESHOLD","0.50"))
 ALPHADENT_LABELS={"abrasion":("DENTAL_ABRASION","Diş abrazyonu"),"filling":("DENTAL_FILLING","Dolgu/restorasyon"),"crown":("CROWN_RESTORATION","Kron restorasyonu"),**{f"caries {i} class":("VISIBLE_CARIES","Çürük şüphesi") for i in range(1,7)}}
 DAATH_CARIES_LABELS={"d","caries","cavity","decay","dental caries"}
 ORAL_CLASSIFIER_LABELS={"calculus":("CALCULUS","Diş taşı şüphesi"),"caries":("VISIBLE_CARIES","Çürük şüphesi"),"gingivitis":("GINGIVAL_INFLAMMATION","Dişeti iltihabı şüphesi"),"hypodontia":("HYPODONTIA_CANDIDATE","Diş eksikliği şüphesi"),"tooth discoloration":("TOOTH_DISCOLORATION","Diş renklenmesi şüphesi"),"ulcers":("ORAL_ULCER_CANDIDATE","Ağız ülseri şüphesi"),"ulcer":("ORAL_ULCER_CANDIDATE","Ağız ülseri şüphesi")}
@@ -60,8 +62,10 @@ def _dedupe_alpha_caries(alpha_caries):
         groups.append({**best,"raw_label":"caries","alpha_candidates":[{"raw_label":g["raw_label"],"confidence":g["confidence"],"bbox":g.get("bbox")} for g in group],"deduped_count":len(group)})
     return groups
 
-def _merge_caries(alpha,daath):
-    ac=_dedupe_alpha_caries([x for x in alpha if x["finding_code"]=="VISIBLE_CARIES"]);out=[x for x in alpha if x["finding_code"]!="VISIBLE_CARIES" and x["confidence"]>=.50];used=set()
+def _merge_caries(alpha,daath,classifier=None):
+    classifier=classifier or []
+    classifier_caries=next((x for x in classifier if x.get("finding_code")=="VISIBLE_CARIES"),None)
+    ac=_dedupe_alpha_caries([x for x in alpha if x["finding_code"]=="VISIBLE_CARIES" and x["confidence"]>=INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD]);out=[x for x in alpha if x["finding_code"]!="VISIBLE_CARIES" and x["confidence"]>=INTRAORAL_DISPLAY_THRESHOLD];used=set()
     for a in ac:
         bi,bo=None,0.
         for i,d in enumerate(daath):
@@ -70,8 +74,12 @@ def _merge_caries(alpha,daath):
             if o>bo:bi,bo=i,o
         if bi is not None and bo>=.20:
             d=daath[bi];used.add(bi);out.append({**a,"confidence":round(max(a["confidence"],d["confidence"]),4),"source_motor":"alphadent+daath","agreement":True,"agreement_iou":round(bo,4),"motor_scores":{"alphadent":a["confidence"],"daath":d["confidence"]},"internal_evidence":{"alphadent_candidates":a.get("alpha_candidates",[]),"daath":{"raw_label":d["raw_label"],"confidence":d["confidence"],"bbox":d.get("bbox")}}})
-        elif a["confidence"]>=.50:out.append(a)
-    out.extend(d for i,d in enumerate(daath) if i not in used and d["confidence"]>=.70);out=[x for x in out if x.get("confidence",0)>=.50];out.sort(key=lambda x:x.get("confidence",0),reverse=True);return out
+        elif a["confidence"]>=INTRAORAL_DISPLAY_THRESHOLD:out.append(a)
+        elif classifier_caries and classifier_caries["confidence"]>=INTRAORAL_DISPLAY_THRESHOLD:
+            # Image-level ResNet may support a weak localized AlphaDent caries
+            # candidate, but never supplies or changes its bbox.
+            out.append({**a,"source_motor":"alphadent+oral_resnet50_support","agreement":True,"classifier_support":{"motor":"oral_diseases_resnet50","confidence":classifier_caries["confidence"],"image_level":True,"bbox":None},"internal_evidence":{"alphadent_candidates":a.get("alpha_candidates",[]),"oral_resnet50":{"raw_label":classifier_caries["raw_label"],"confidence":classifier_caries["confidence"],"image_level":True,"bbox":None}}})
+    out.extend(d for i,d in enumerate(daath) if i not in used and d["confidence"]>=.70);out.sort(key=lambda x:x.get("confidence",0),reverse=True);return out
 def analyze_intraoral_ensemble(image_path):
     if not configured():raise IntraoralEnsembleError("Ağız içi motor servisi yapılandırılmadı: INTRAORAL_ENSEMBLE_URL eksik.")
     path=Path(image_path)
@@ -86,7 +94,7 @@ def analyze_intraoral_ensemble(image_path):
     ar,dr,cr=payload.get("alphadent",[]),payload.get("daath",[]),payload.get("oral_resnet50",payload.get("classifier",[]))
     if not all(isinstance(x,list) for x in (ar,dr,cr)):raise IntraoralEnsembleError("Yanıtta motor çıktıları liste olmalı.")
     alpha=[x for i in ar if isinstance(i,dict) if (x:=_normalize_alpha(i))];daath=[x for i in dr if isinstance(i,dict) if (x:=_normalize_daath(i))];classifier=[x for i in cr if isinstance(i,dict) if (x:=_normalize_classifier(i))]
-    findings=_merge_caries(alpha,daath);support={x["finding_code"]:x for x in classifier}
+    findings=_merge_caries(alpha,daath,classifier);support={x["finding_code"]:x for x in classifier}
     for f in findings:
         if f["finding_code"] in support:
             s=support[f["finding_code"]]
