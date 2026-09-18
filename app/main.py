@@ -20,6 +20,7 @@ from dental_rag.rag import (
 )
 from app.clinical_rag_router import route_clinical_case
 from app.vision_llm_context import structured_vision_payload
+from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
 
 # === TEMP_STUDY_TRACE_MAIN_IMPORT_BEGIN ===
@@ -4588,7 +4589,6 @@ async def create_guest_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
-    image_type: Optional[str] = Form("PANORAMIC"),
     images: list[UploadFile] = File(default=[]),
 ):
     user = get_current_user(request)
@@ -4609,8 +4609,11 @@ async def create_guest_analysis(
         s.refresh(analysis)
 
         allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+        valid_images = [img for img in images if img and img.filename]
+        if len(valid_images) > 4:
+            return HTMLResponse("Tek analizde en fazla 4 görüntü yükleyebilirsiniz.", status_code=400)
 
-        for image in images:
+        for image in valid_images:
             if not image or not image.filename:
                 continue
 
@@ -4635,7 +4638,7 @@ async def create_guest_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type=_analysis_image_type(image_type),
+                image_type=classify_dental_image(str(destination)),
             )
 
             s.add(asset)
@@ -4662,7 +4665,6 @@ async def create_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
-    image_type: Optional[str] = Form("PANORAMIC"),
     existing_media_id: Optional[int] = Form(None),
     existing_media_ids: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
@@ -4681,8 +4683,9 @@ async def create_analysis(
         requested_media_ids = _parse_patient_media_ids(existing_media_ids)
         if existing_media_id is not None and existing_media_id not in requested_media_ids:
             requested_media_ids.insert(0, existing_media_id)
-        if len(requested_media_ids) > 12:
-            return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+        new_image_count = sum(1 for img in images if img and img.filename)
+        if len(requested_media_ids) + new_image_count > 4:
+            return HTMLResponse("Tek analizde toplam en fazla 4 görüntü kullanabilirsiniz.", status_code=400)
 
         selected_media_items: list[tuple[PatientMedia, Path]] = []
         for selected_id in requested_media_ids:
@@ -4724,7 +4727,7 @@ async def create_analysis(
                 original_filename=selected_media.original_filename,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type=_analysis_image_type(getattr(selected_media, "image_type", None) or image_type),
+                image_type=classify_dental_image(str(destination)),
             ))
 
         for image in images:
@@ -4752,7 +4755,7 @@ async def create_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type=_analysis_image_type(image_type),
+                image_type=classify_dental_image(str(destination)),
             )
 
             s.add(asset)
