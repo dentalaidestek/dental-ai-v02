@@ -109,7 +109,7 @@ SOURCES = {
             "mapped directly to CONDYLAR_FLATTENING until anatomy/class-code semantics and "
             "panoramic applicability are independently verified."
         ),
-    ),,
+    ),
     "prad_periapical": TrainingSource(
         key="prad_periapical",
         access="gated_application",
@@ -237,7 +237,7 @@ SOURCES = {
         modality="INTRAORAL_PHOTO",
         target_signals=("CALCULUS","GINGIVAL_INFLAMMATION","DENTAL_ABRASION"),
         note="Study reports 200 original intraoral-camera images with calculus, gingivitis/tartar and worn-surface lesions. Publication evidence only; do not auto-download or use as locked GT until a primary downloadable artifact and license are verified.",
-    )
+    ),
     "pandent": TrainingSource(
         key="pandent",
         access="gated_manual_approval",
