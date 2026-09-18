@@ -176,6 +176,7 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                 "modality": asset_route,
                 "status": "unavailable",
                 "error_type": type(exc).__name__,
+                "error_message": str(exc)[:1200],
                 "findings": [],
                 "auxiliary_radiographic_findings": [],
                 "image_level_findings": [],
@@ -186,6 +187,7 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                 "modality": asset_route,
                 "status": "unavailable",
                 "error_type": type(exc).__name__,
+                "error_message": str(exc)[:1200],
             })
 
     successful = [x for x in payload["images"] if x.get("ok", True)]
