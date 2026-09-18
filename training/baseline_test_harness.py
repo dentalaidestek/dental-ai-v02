@@ -196,3 +196,26 @@ def disk_guard(min_free_gb:float=3.0):
     free=shutil.disk_usage("/kaggle/working").free/1024**3
     if free<min_free_gb: raise RuntimeError(f"Disk guard: only {free:.1f} GB free")
     return free
+
+
+def compare_reports(before_path:str|Path, after_path:str|Path, contract_path:str|Path)->list[dict]:
+    """Compare before/after metrics only when the after run used the exact locked hash set."""
+    before=load_json(Path(before_path),[])
+    after=load_json(Path(after_path),[])
+    contract=load_json(Path(contract_path),{})
+    expected=set(contract.get("locked_hashes",[]))
+    if not expected:
+        raise RuntimeError("comparison contract has no locked hashes")
+    current=forbidden_test_hashes()
+    if current!=expected:
+        raise RuntimeError("AFTER-TRAIN TEST POOL CHANGED")
+    b={(r.get("modality"),r.get("finding_code")):r for r in before if isinstance(r,dict)}
+    out=[]
+    for a in after:
+        if not isinstance(a,dict): continue
+        k=(a.get("modality"),a.get("finding_code")); old=b.get(k,{})
+        out.append({"modality":k[0],"finding_code":k[1],
+                    "before_recall":old.get("recall"),"after_recall":a.get("recall"),
+                    "before_specificity":old.get("specificity"),"after_specificity":a.get("specificity"),
+                    "before_decision":old.get("decision"),"after_decision":a.get("decision")})
+    return out
