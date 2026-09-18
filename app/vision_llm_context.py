@@ -70,24 +70,27 @@ def _route(modality_hint: str) -> str:
     return "PANORAMIC"
 
 
-def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "") -> dict:
-    """Run only the dedicated motor family for the resolved image modality."""
-    paths = [str(p) for p in (image_paths or []) if p and Path(p).is_file()]
+def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:
+    """Run each image through its own dedicated motor family."""
+    pairs = [(str(p), (image_types[i] if image_types and i < len(image_types) else modality_hint)) for i, p in enumerate(image_paths or []) if p and Path(p).is_file()]
+    paths = [p for p, _ in pairs]
     if not paths:
         return {"status": "no_image_motor_context", "route": "NONE", "images": []}
 
-    route = _route(modality_hint)
-    key = _fingerprint(paths, route)
+    routes = [_route(hint) for _, hint in pairs]
+    route = routes[0] if len(set(routes)) == 1 else "MIXED"
+    key = _fingerprint(paths, "|".join(routes))
     with _LOCK:
         cached = _CACHE.get(key)
     if cached is not None:
         return cached
 
     payload = {"status": "ok", "route": route, "images": [], "partial_failures": []}
-    for index, path in enumerate(paths[:12]):
-        source_id = f"{route.lower()}:{index + 1}:{Path(path).name}"
+    for index, (path, hint) in enumerate(pairs[:12]):
+        asset_route = _route(hint)
+        source_id = f"{asset_route.lower()}:{index + 1}:{Path(path).name}"
         try:
-            if route == "INTRAORAL_PHOTO":
+            if asset_route == "INTRAORAL_PHOTO":
                 from vision_service.intraoral_ensemble import analyze_intraoral_ensemble, configured as ensemble_configured
                 from vision_service.intraoral_oraldetect import analyze_intraoral, configured as oraldetect_configured
                 if ensemble_configured():
@@ -97,10 +100,10 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                     result["engine_role"] = "fallback"
                 else:
                     raise RuntimeError("Ağız içi motor ailesi yapılandırılmadı.")
-            elif route == "PERIAPICAL":
+            elif asset_route == "PERIAPICAL":
                 from vision_service.periapical_pai import analyze_periapical
                 result = analyze_periapical(path)
-            elif route == "BITEWING":
+            elif asset_route == "BITEWING":
                 from vision_service.bitewing_ensemble import analyze_bitewing
                 result = analyze_bitewing(path)
             else:
@@ -108,12 +111,12 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                 result = analyze_panorama(path)
 
             result = dict(result or {})
-            result.setdefault("modality", route)
+            result.setdefault("modality", asset_route)
             payload["images"].append(_slim_result(result, source_image_id=source_id))
         except Exception as exc:
             payload["partial_failures"].append({
                 "source_image_id": source_id,
-                "modality": route,
+                "modality": asset_route,
                 "status": "unavailable",
                 "error_type": type(exc).__name__,
             })
