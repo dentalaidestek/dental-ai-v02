@@ -237,7 +237,23 @@ SOURCES = {
         modality="INTRAORAL_PHOTO",
         target_signals=("CALCULUS","GINGIVAL_INFLAMMATION","DENTAL_ABRASION"),
         note="Study reports 200 original intraoral-camera images with calculus, gingivitis/tartar and worn-surface lesions. Publication evidence only; do not auto-download or use as locked GT until a primary downloadable artifact and license are verified.",
+    ),,
+    "bitewing_caries_124": TrainingSource(
+        key="bitewing_caries_124",
+        access="public_mendeley",
+        locator="https://data.mendeley.com/datasets/f8kr8m5d2v/1",
+        modality="BITEWING",
+        target_signals=("CARIES",),
+        note="124 anonymized bitewing radiographs with dentist caries annotations. Use only the original non-augmented images for locked testing and verify annotation exhaustiveness before deriving negatives.",
     ),
+    "bitewing_caries_748": TrainingSource(
+        key="bitewing_caries_748",
+        access="public_research_dataset",
+        locator="https://doi.org/10.1038/s41597-025-05243-3",
+        modality="BITEWING",
+        target_signals=("CARIES",),
+        note="2025 bitewing caries dataset described in Scientific Data; use the primary linked repository only after confirming downloadable files, license, patient grouping and annotation format.",
+    )
     "pandent": TrainingSource(
         key="pandent",
         access="gated_manual_approval",
