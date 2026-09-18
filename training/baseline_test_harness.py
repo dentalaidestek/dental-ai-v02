@@ -97,6 +97,15 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
             row["detected"]=detected
             gt_boxes=_gt_boxes(c.annotation)
             pred_boxes=[x.get("bbox") for x in matches if x.get("bbox")]
+            # Production motors generally return pixel xyxy, while YOLO GT is normalized.
+            # Normalize predictions only when image dimensions are available and coordinates exceed 1.
+            if gt_boxes and pred_boxes and any(max(map(float,b))>1.5 for b in pred_boxes):
+                try:
+                    from PIL import Image
+                    w,h=Image.open(c.image_path).size
+                    pred_boxes=[[float(b[0])/w,float(b[1])/h,float(b[2])/w,float(b[3])/h] for b in pred_boxes]
+                except Exception:
+                    pred_boxes=[]
             if gt_boxes and pred_boxes:
                 row["max_iou"]=max(bbox_iou(g,p) for g in gt_boxes for p in pred_boxes)
                 row["localized"]=row["max_iou"]>=0.20
