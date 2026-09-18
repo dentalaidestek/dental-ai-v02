@@ -37,7 +37,7 @@ def _multipart_body(image_path: str) -> tuple[bytes, str]:
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     body = b"".join([
         f"--{boundary}\r\n".encode(),
-        f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'.encode(),
+        f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode(),
         f"Content-Type: {mime}\r\n\r\n".encode(),
         path.read_bytes(), b"\r\n",
         f"--{boundary}--\r\n".encode(),
@@ -100,7 +100,7 @@ def analyze_periapical(image_path: str) -> dict[str, Any]:
     if PERIAPICAL_INFERENCE_API_KEY:
         headers["Authorization"] = f"Bearer {PERIAPICAL_INFERENCE_API_KEY}"
 
-    request = urllib.request.Request(f"{PERIAPICAL_INFERENCE_URL}/infer-periapical", data=body, headers=headers, method="POST")
+    request = urllib.request.Request(f"{PERIAPICAL_INFERENCE_URL}/infer?modality=periapical", data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode())
