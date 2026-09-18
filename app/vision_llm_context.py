@@ -82,7 +82,7 @@ def _modal_infer(path: str, modality: str) -> dict:
     mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
     data = Path(path).read_bytes()
     body = (
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{Path(path).name}\"\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{Path(path).name}\"\r\n"
         f"Content-Type: {mime}\r\n\r\n"
     ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(
