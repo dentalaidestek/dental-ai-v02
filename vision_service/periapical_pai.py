@@ -74,6 +74,10 @@ def _normalize_pai(payload: dict[str, Any]) -> dict[str, Any]:
         "probabilities": probabilities,
         "source_motor": payload.get("source_motor", "pai_meets_ai_ensemble"),
         "modality": "PERIAPICAL",
+        # Preserve tooth identity only when the apex-crop/inference worker explicitly supplies it.
+        # Never infer a tooth number from an image-level PAI class.
+        "tooth_fdi": payload.get("tooth_fdi", payload.get("fdi", payload.get("tooth"))),
+        "captured_at": payload.get("captured_at"),
         "candidate_only": True,
         "image_level": True,
         "localization_available": False,
