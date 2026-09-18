@@ -17,6 +17,8 @@ def test_baseline_notebook_is_valid_python():
     assert "pan_targets=list(REGISTRY48)" in code
     assert "dentalai_baseline_artifact.zip" in code
     assert "Restoring previous baseline state" in code
+    assert "Select and lock only after every adapter" in code
+    assert "RED_ORAL_LESION_CANDIDATE" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
