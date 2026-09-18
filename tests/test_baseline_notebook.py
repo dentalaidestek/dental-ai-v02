@@ -24,6 +24,7 @@ def test_baseline_notebook_is_valid_python():
     assert "Unsafe path in resume archive" in code
     assert "if rec:" in code
     assert "no lesion" in code
+    assert "run_summary.json" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
@@ -36,3 +37,4 @@ def test_harness_has_leakage_guards():
     assert "_image_ok" in text
     assert "_patient_unique" in text
     assert "pos_patient" in text
+    assert "x.get(\"code\")" in text
