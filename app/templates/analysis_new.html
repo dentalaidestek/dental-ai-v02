@@ -45,10 +45,6 @@
 
         <div class="analysis-field-block">
             <div class="analysis-step-title"><span>3</span><h2>{% if selected_media %}Ek görüntü{% else %}Fotoğraf / Röntgen{% endif %}</h2></div>
-            <label>
-                Görüntü türü
-                
-            </label>
             {% if selected_media %}
             <details class="analysis-extra-upload">
                 <summary>Telefondan ek görüntü ekle <span>İsteğe bağlı</span></summary>
@@ -56,7 +52,7 @@
                     Görüntü yükle
                     <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
                 </label>
-                <p class="muted analysis-field-help">Seçtiğiniz kayıtlı görüntülere ek olarak yeni fotoğraf veya röntgen de ekleyebilirsiniz.</p>
+                <p class="muted analysis-field-help">Kayıtlı görüntüler dahil toplam en fazla 4 görüntü kullanılabilir. Tür otomatik belirlenir.</p>
             </details>
             {% else %}
             <label>
