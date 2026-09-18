@@ -78,7 +78,10 @@ def balanced_select(cases:list[Case], seed:int=42)->tuple[list[Case],str]:
     rng=random.Random(seed)
     pos=sorted(pos,key=lambda c:(c.source,c.source_id,c.case_id)); neg=sorted(neg,key=lambda c:(c.source,c.source_id,c.case_id))
     rng.shuffle(pos); rng.shuffle(neg)
-    pos=_patient_unique(pos)[:TARGET_POS]; neg=_patient_unique(neg)[:TARGET_NEG]
+    pos=_patient_unique(pos)
+    pos_patient={(c.source,c.patient_id) for c in pos if c.patient_id}
+    neg=[c for c in _patient_unique(neg) if not c.patient_id or (c.source,c.patient_id) not in pos_patient]
+    pos=pos[:TARGET_POS]; neg=neg[:TARGET_NEG]
     status="READY" if len(pos)>=TARGET_POS and len(neg)>=TARGET_NEG else "TEST_DATA_INSUFFICIENT"
     return pos+neg,status
 
