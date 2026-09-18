@@ -108,6 +108,36 @@ def _modal_panorama_result(path: str) -> dict:
     from vision_service.motors.catalog import FINDING_CATALOG
 
     raw = _modal_infer(path, "panoramic")
+    def _fdi_items(payload):
+        # Modal deployments have used both legacy "fdi" and newer "teeth"
+        # envelopes. Normalize them here so persisted snapshots and the 3D
+        # viewer do not silently lose valid tooth localization.
+        candidates = payload.get("fdi")
+        if not candidates:
+            candidates = payload.get("teeth")
+        if not candidates and isinstance(payload.get("result"), dict):
+            nested = payload["result"]
+            candidates = nested.get("fdi") or nested.get("teeth")
+        if isinstance(candidates, dict):
+            candidates = candidates.get("teeth") or candidates.get("detections") or candidates.get("items") or []
+        out = []
+        for item in candidates or []:
+            if not isinstance(item, dict):
+                continue
+            fdi = item.get("fdi") or item.get("tooth_fdi") or item.get("tooth") or item.get("label") or item.get("class_name")
+            bbox = item.get("bbox") or item.get("box") or item.get("xyxy")
+            if fdi is None or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            fdi = str(fdi).strip()
+            if not __import__("re").fullmatch(r"[1-4][1-8]", fdi):
+                continue
+            try:
+                bbox = [float(v) for v in bbox]
+            except (TypeError, ValueError):
+                continue
+            out.append({**item, "fdi": fdi, "bbox": bbox})
+        return out
+    teeth = _fdi_items(raw)
     def score(x): return float(x.get("confidence", x.get("score", 0.0)) or 0.0)
     def box(x): return x.get("bbox") or x.get("box")
     def mapped(items, normalizer, motor):
@@ -130,7 +160,7 @@ def _modal_panorama_result(path: str) -> dict:
             rescued.append({**item,"candidate_only":False,"display_eligible":True,"fusion_supported":True,"support_motor":support.get("motor"),"support_confidence":support.get("confidence"),"support_iou":round(bbox_iou(box(item),box(support)),4)})
     for item in strong:
         item.update({"candidate_only":False,"display_eligible":True,"fusion_supported":False})
-    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(raw.get("fdi") or []),"unique_fdi_count":len({str(t.get("fdi") or t.get("tooth_fdi") or t.get("tooth")) for t in (raw.get("fdi") or []) if isinstance(t,dict) and (t.get("fdi") or t.get("tooth_fdi") or t.get("tooth"))}),"teeth":raw.get("fdi") or [],"warnings":[]}
+    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(teeth),"unique_fdi_count":len({str(t.get("fdi")) for t in teeth}),"teeth":teeth,"warnings":[] if teeth else ["FDI_LOCALIZATION_EMPTY"]}
 
 
 def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:
