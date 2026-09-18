@@ -4291,6 +4291,8 @@ def _run_preliminary_ai(analysis_id: int):
         )
         # === TEMP_XRAY_TRACE_PATIENT_PRE_IMAGES_END ===
 
+        evidence_package = None
+
         try:
             rag_query = f"""
 Diş: {analysis.tooth_number or ""}
@@ -4474,7 +4476,8 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 {
                     "ai_result": ai_result,
                     "ai_text": ai_text,
-                    "stage": "PRELIMINARY"
+                    "stage": "PRELIMINARY",
+                    "tooth_evidence": evidence_package,
                 },
                 ensure_ascii=False,
                 indent=2
