@@ -4421,6 +4421,8 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                                 finding["source_image_id"] = image_result["source_image_id"]
                                 finding["captured_at"] = finding.get("captured_at") or captured_at
 
+                persisted_vision_text = json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":"))
+
                 evidence_package = build_tooth_evidence_package(
                     tooth_fdi=selected_fdi,
                     modality_results=vision_payload.get("images") or [],
@@ -4469,6 +4471,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 prompt,
                 image_paths=image_paths,
                 response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
             )
 
             ai_result = validate_preliminary_result(parse_ai_result(ai_text))
@@ -4493,6 +4496,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                     prompt,
                     image_paths=image_paths,
                     response_schema=PRELIMINARY_RESPONSE_SCHEMA,
+                structured_vision=persisted_vision_text,
                 )
                 ai_result = validate_preliminary_result(parse_ai_result(ai_text))
 
