@@ -16,6 +16,8 @@ INTRAORAL_ENSEMBLE_API_KEY=os.getenv("INTRAORAL_ENSEMBLE_API_KEY","").strip()
 INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS=float(os.getenv("INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS","90"))
 INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD=float(os.getenv("INTRAORAL_INTERNAL_CANDIDATE_THRESHOLD","0.02"))
 INTRAORAL_DISPLAY_THRESHOLD=float(os.getenv("INTRAORAL_DISPLAY_THRESHOLD","0.50"))
+INTRAORAL_SPATIAL_SUPPORT_MIN_CONFIDENCE=float(os.getenv("INTRAORAL_SPATIAL_SUPPORT_MIN_CONFIDENCE","0.05"))
+INTRAORAL_FUSION_IOU_THRESHOLD=float(os.getenv("INTRAORAL_FUSION_IOU_THRESHOLD","0.20"))
 ALPHADENT_LABELS={"abrasion":("DENTAL_ABRASION","Diş abrazyonu"),"filling":("DENTAL_FILLING","Dolgu/restorasyon"),"crown":("CROWN_RESTORATION","Kron restorasyonu"),**{f"caries {i} class":("VISIBLE_CARIES","Çürük şüphesi") for i in range(1,7)}}
 DAATH_CARIES_LABELS={"d","caries","cavity","decay","dental caries"}
 ORAL_CLASSIFIER_LABELS={"calculus":("CALCULUS","Diş taşı şüphesi"),"caries":("VISIBLE_CARIES","Çürük şüphesi"),"gingivitis":("GINGIVAL_INFLAMMATION","Dişeti iltihabı şüphesi"),"hypodontia":("HYPODONTIA_CANDIDATE","Diş eksikliği şüphesi"),"tooth discoloration":("TOOTH_DISCOLORATION","Diş renklenmesi şüphesi"),"ulcers":("ORAL_ULCER_CANDIDATE","Ağız ülseri şüphesi"),"ulcer":("ORAL_ULCER_CANDIDATE","Ağız ülseri şüphesi")}
@@ -69,11 +71,11 @@ def _merge_caries(alpha,daath,classifier=None):
     for a in ac:
         bi,bo=None,0.
         for i,d in enumerate(daath):
-            if i in used:continue
+            if i in used or d.get("confidence",0)<INTRAORAL_SPATIAL_SUPPORT_MIN_CONFIDENCE:continue
             o=_iou(a.get("bbox"),d.get("bbox"))
             if o>bo:bi,bo=i,o
-        if bi is not None and bo>=.20:
-            d=daath[bi];used.add(bi);out.append({**a,"confidence":round(max(a["confidence"],d["confidence"]),4),"source_motor":"alphadent+daath","agreement":True,"agreement_iou":round(bo,4),"motor_scores":{"alphadent":a["confidence"],"daath":d["confidence"]},"internal_evidence":{"alphadent_candidates":a.get("alpha_candidates",[]),"daath":{"raw_label":d["raw_label"],"confidence":d["confidence"],"bbox":d.get("bbox")}}})
+        if bi is not None and bo>=INTRAORAL_FUSION_IOU_THRESHOLD:
+            d=daath[bi];used.add(bi);out.append({**a,"source_motor":"alphadent+daath","agreement":True,"fusion_supported":True,"support_motor":"daath_caries","support_confidence":d["confidence"],"support_iou":round(bo,4),"motor_scores":{"alphadent":a["confidence"],"daath":d["confidence"]},"internal_evidence":{"alphadent_candidates":a.get("alpha_candidates",[]),"daath":{"raw_label":d["raw_label"],"confidence":d["confidence"],"bbox":d.get("bbox")}}})
         elif a["confidence"]>=INTRAORAL_DISPLAY_THRESHOLD:out.append(a)
         elif classifier_caries and classifier_caries["confidence"]>=INTRAORAL_DISPLAY_THRESHOLD:
             # Image-level ResNet may support a weak localized AlphaDent caries
@@ -108,4 +110,4 @@ def analyze_intraoral_ensemble(image_path):
         regions=by_label.get(x["raw_label"],[])
         if regions:x={**x,"attention_regions":regions,"localization_available":True,"localization_type":"gradcam_attention","localization_disclaimer":"Modelin karar verirken odaklandığı bölgedir; doğrulanmış lezyon sınırı değildir."}
         image_level.append(x)
-    return {"ok":True,"engine":"intraoral_ensemble_v2_1","engine_role":"primary","modality":"INTRAORAL_PHOTO","findings":findings,"finding_count":len(findings),"image_level_findings":image_level,"gradcam_attention":gradcam,"motors":["alphadent_9class_960","daath_caries","oral_diseases_resnet50","resnet50_gradcam"],"notes":["AlphaDent ve Daath gerçek detector lokalizasyonu sağlar.","ResNet50 Grad-CAM bölgeleri yalnız model odağıdır; lezyon kutusu olarak sunulmaz.","Motor güven skorları birbirine eklenmez."]}
+    return {"ok":True,"engine":"intraoral_ensemble_v2_1","engine_role":"primary","modality":"INTRAORAL_PHOTO","findings":findings,"finding_count":len(findings),"image_level_findings":image_level,"gradcam_attention":gradcam,"motors":["alphadent_9class_960","daath_caries","oral_diseases_resnet50","resnet50_gradcam"],"notes":["AlphaDent ve Daath gerçek detector lokalizasyonu sağlar.","ResNet50 Grad-CAM bölgeleri yalnız model odağıdır; lezyon kutusu olarak sunulmaz.","Zayıf lokalize çürük adayı için Daath desteği en az 0.05 skor ve 0.20 IoU gerektirir.","Motor güven skorları birbirine eklenmez."]}
