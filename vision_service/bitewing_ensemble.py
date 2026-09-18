@@ -13,7 +13,7 @@ class BitewingEngineError(RuntimeError):
     pass
 
 
-BITEWING_ENSEMBLE_URL = os.getenv("BITEWING_ENSEMBLE_URL", "").strip().rstrip("/")
+BITEWING_ENSEMBLE_URL = os.getenv("BITEWING_ENSEMBLE_URL", os.getenv("DENTAL_VISION_MODAL_URL", "https://dentalaidestek--dental-ai-inference-api.modal.run")).strip().rstrip("/")
 BITEWING_ENSEMBLE_API_KEY = os.getenv("BITEWING_ENSEMBLE_API_KEY", "").strip()
 BITEWING_ENSEMBLE_TIMEOUT_SECONDS = float(os.getenv("BITEWING_ENSEMBLE_TIMEOUT_SECONDS", "90"))
 BITEWING_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("BITEWING_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
