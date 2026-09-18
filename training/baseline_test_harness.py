@@ -68,6 +68,15 @@ def bbox_iou(a,b)->float:
     aa=max(0,a[2]-a[0])*max(0,a[3]-a[1]); bb=max(0,b[2]-b[0])*max(0,b[3]-b[1])
     return inter/(aa+bb-inter) if aa+bb-inter>0 else 0.0
 
+def _gt_boxes(annotation:dict|None):
+    ann=annotation or {}
+    boxes=ann.get("bboxes") or []
+    # Convert normalized YOLO xywh to normalized xyxy when supplied.
+    for q in ann.get("yolo_xywh") or []:
+        if isinstance(q,(list,tuple)) and len(q)==4:
+            x,y,w,h=map(float,q); boxes.append([x-w/2,y-h/2,x+w/2,y+h/2])
+    return boxes
+
 def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_code:str, modality:str)->dict:
     result_path=STATE/f"{modality}__{finding_code}.json"
     old=load_json(result_path,{})
@@ -82,7 +91,7 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
             matches=[x for x in fs if isinstance(x,dict) and x.get("finding_code")==finding_code]
             detected=bool(matches)
             row["detected"]=detected
-            gt_boxes=(c.annotation or {}).get("bboxes",[])
+            gt_boxes=_gt_boxes(c.annotation)
             pred_boxes=[x.get("bbox") for x in matches if x.get("bbox")]
             if gt_boxes and pred_boxes:
                 row["max_iou"]=max(bbox_iou(g,p) for g in gt_boxes for p in pred_boxes)
