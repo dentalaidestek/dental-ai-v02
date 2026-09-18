@@ -5405,6 +5405,16 @@ async def final_analysis(
     # SADECE SON AŞAMADA GEMINI ÇALIŞIR
     # -----------------------------------------------------
 
+    # The authorization/read session above is intentionally closed before
+    # awaiting form data. Open a fresh session for RAG + durable vision access.
+    s = Session(engine, expire_on_commit=False)
+    analysis = s.get(Analysis, analysis_id)
+    if not analysis:
+        s.close()
+        return HTMLResponse("Analiz bulunamadı.", status_code=404)
+    patient = s.get(Patient, analysis.patient_id)
+    assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis.id)).all()
+
     try:
 
         rag_query = f"""
@@ -5498,6 +5508,8 @@ için en ilgili kanıtları bul.
     # -----------------------------------------------------
     # NİHAİ SONUCU KAYDET
     # -----------------------------------------------------
+
+    s.close()
 
     result_dir = Path(
         "uploads/ai_results"
