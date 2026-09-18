@@ -4094,6 +4094,14 @@ açısından en ilgili güncel kanıtları bul.
 
 
 
+
+VALID_ANALYSIS_IMAGE_TYPES = {"PANORAMIC", "BITEWING", "PERIAPICAL", "INTRAORAL_PHOTO"}
+
+def _analysis_image_type(value: Optional[str]) -> str:
+    normalized = (value or "").strip().upper()
+    return normalized if normalized in VALID_ANALYSIS_IMAGE_TYPES else "PANORAMIC"
+
+
 def _persisted_vision_payload(session: Session, assets, modality_hint: str = "") -> dict:
     """Return one durable vision snapshot per asset; run a motor only for assets without one."""
     images, failures = [], []
@@ -4580,6 +4588,7 @@ async def create_guest_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
+    image_type: Optional[str] = Form("PANORAMIC"),
     images: list[UploadFile] = File(default=[]),
 ):
     user = get_current_user(request)
@@ -4626,7 +4635,7 @@ async def create_guest_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type="OTHER",
+                image_type=_analysis_image_type(image_type),
             )
 
             s.add(asset)
@@ -4653,6 +4662,7 @@ async def create_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
+    image_type: Optional[str] = Form("PANORAMIC"),
     existing_media_id: Optional[int] = Form(None),
     existing_media_ids: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
@@ -4714,7 +4724,7 @@ async def create_analysis(
                 original_filename=selected_media.original_filename,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type=("RADIOGRAPH" if selected_media.media_type == "RADIOGRAPH" else "OTHER"),
+                image_type=_analysis_image_type(getattr(selected_media, "image_type", None) or image_type),
             ))
 
         for image in images:
@@ -4742,7 +4752,7 @@ async def create_analysis(
                 original_filename=original_name,
                 stored_filename=stored_name,
                 file_path=str(destination),
-                image_type="OTHER",
+                image_type=_analysis_image_type(image_type),
             )
 
             s.add(asset)
