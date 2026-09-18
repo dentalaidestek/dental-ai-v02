@@ -13,7 +13,7 @@ class PeriapicalPAIError(RuntimeError):
     pass
 
 
-PERIAPICAL_INFERENCE_URL = os.getenv("PERIAPICAL_INFERENCE_URL", "").strip().rstrip("/")
+PERIAPICAL_INFERENCE_URL = os.getenv("PERIAPICAL_INFERENCE_URL", os.getenv("DENTAL_VISION_MODAL_URL", "https://dentalaidestek--dental-ai-inference-api.modal.run")).strip().rstrip("/")
 PERIAPICAL_INFERENCE_API_KEY = os.getenv("PERIAPICAL_INFERENCE_API_KEY", "").strip()
 PERIAPICAL_TIMEOUT_SECONDS = float(os.getenv("PERIAPICAL_TIMEOUT_SECONDS", "90"))
 DISPLAY_CONFIDENCE_THRESHOLD = 0.50
