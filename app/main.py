@@ -826,6 +826,17 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    # create_all() does not add columns to existing tables. Keep this additive,
+    # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
+    with engine.begin() as conn:
+        dialect = engine.dialect.name
+        for table in ("imageasset", "guestimageasset"):
+            if dialect == "postgresql":
+                conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS vision_snapshot_json TEXT')
+            elif dialect == "sqlite":
+                cols = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()}
+                if "vision_snapshot_json" not in cols:
+                    conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
     with Session(engine, expire_on_commit=False) as s:
         if not s.exec(select(User)).first():
             s.add(User(username="admin", role="ADMIN", display_name="DENTAL-AI Administrator"))
