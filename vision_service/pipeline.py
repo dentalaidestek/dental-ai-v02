@@ -26,6 +26,7 @@ CACHE_LIGHT_MODELS = os.getenv("DENTAL_VISION_CACHE_LIGHT_MODELS", "1").strip() 
 PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD", "0.02"))
 PANORAMIC_DISPLAY_THRESHOLD = float(os.getenv("PANORAMIC_DISPLAY_THRESHOLD", "0.50"))
 PANORAMIC_FUSION_IOU_THRESHOLD = float(os.getenv("PANORAMIC_FUSION_IOU_THRESHOLD", "0.20"))
+PANORAMIC_CONTROL_MIN_CONFIDENCE = float(os.getenv("PANORAMIC_CONTROL_MIN_CONFIDENCE", "0.05"))
 
 
 def _name_for(names, class_id: int) -> str:
@@ -159,6 +160,7 @@ def _control_supports(primary: dict, controls: list[dict]) -> dict | None:
     matches = [
         item for item in controls
         if item.get("finding_code") == primary.get("finding_code")
+        and float(item.get("confidence") or 0.0) >= PANORAMIC_CONTROL_MIN_CONFIDENCE
         and bbox_iou(primary.get("bbox"), item.get("bbox")) >= PANORAMIC_FUSION_IOU_THRESHOLD
     ]
     if not matches:
@@ -300,6 +302,8 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "findings": final_findings,
         "internal_candidate_threshold": PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD,
         "display_threshold": PANORAMIC_DISPLAY_THRESHOLD,
+        "control_min_confidence": PANORAMIC_CONTROL_MIN_CONFIDENCE,
+        "fusion_iou_threshold": PANORAMIC_FUSION_IOU_THRESHOLD,
         "weak_candidate_count": len(weak),
         "rescued_weak_candidate_count": len(rescued),
         "helper_signal_count": len(helpers),
@@ -307,5 +311,5 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "motor_execution": execution,
         "warnings": warnings,
         "readiness": readiness_snapshot(),
-        "fusion_policy": "Strong primary findings bypass controls; only weak primary candidates may be rescued by same-code spatial support. Confidence scores are never added or averaged.",
+        "fusion_policy": "Strong primary findings bypass controls; only weak primary candidates may be rescued by same-code spatial support with control confidence >=0.05 and IoU >=0.20. Confidence scores are never added or averaged.",
     }
