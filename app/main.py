@@ -4716,7 +4716,7 @@ async def create_guest_analysis(
     )
 
     return RedirectResponse(
-        url=f"/analysis/guest/{analysis_id}",
+        url=f"/analysis/guest/{analysis_id}/viewer",
         status_code=303,
     )
 
@@ -4966,7 +4966,7 @@ def guest_analysis_result(request: Request, analysis_id: int):
     )
 
 
-@app.get("/analysis-assets/{analysis_id}/{asset_id}")
+@app.get("/analysis-assets/{analysis_id}/asset/{asset_id}")
 def analysis_asset(request: Request, analysis_id: int, asset_id: int):
     user = get_current_user(request)
     if not user:
@@ -4984,6 +4984,79 @@ def analysis_asset(request: Request, analysis_id: int, asset_id: int):
         path = Path(asset.file_path)
     media_type = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+
+
+
+@app.get("/analysis-assets/{analysis_id}/asset/{asset_id}/vision")
+def analysis_asset_vision(request: Request, analysis_id: int, asset_id: int):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "status": "AUTH_REQUIRED"}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        patient = s.get(Patient, analysis.patient_id) if analysis else None
+        asset = s.get(ImageAsset, asset_id)
+        if not analysis or not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+            return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
+        if not asset or asset.analysis_id != analysis_id:
+            return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
+        if not asset.vision_snapshot_json:
+            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202)
+        try:
+            return JSONResponse(json.loads(asset.vision_snapshot_json), headers={"Cache-Control":"no-store"})
+        except Exception:
+            return JSONResponse({"ok": False, "status": "VISION_INVALID"}, status_code=500)
+
+
+@app.get("/analysis/guest/{analysis_id}/viewer", response_class=HTMLResponse)
+def guest_analysis_viewer(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        assets = s.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id == analysis_id)).all()
+    return templates.TemplateResponse(request=request, name="analysis_viewer.html",
+        context={"analysis": analysis, "patient": None, "assets": assets, "guest": True})
+
+
+@app.get("/analysis/guest-assets/{analysis_id}/{asset_id}")
+def guest_analysis_asset(request: Request, analysis_id: int, asset_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        asset = s.get(GuestImageAsset, asset_id)
+        if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        if not asset or asset.guest_analysis_id != analysis_id or not asset.file_path or not Path(asset.file_path).is_file():
+            return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        path = Path(asset.file_path)
+    media_type={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+
+
+@app.get("/analysis/guest-assets/{analysis_id}/{asset_id}/vision")
+def guest_analysis_asset_vision(request: Request, analysis_id: int, asset_id: int):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "status": "AUTH_REQUIRED"}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(GuestAnalysis, analysis_id)
+        asset = s.get(GuestImageAsset, asset_id)
+        if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
+            return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
+        if not asset or asset.guest_analysis_id != analysis_id:
+            return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
+        if not asset.vision_snapshot_json:
+            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202)
+        try:
+            return JSONResponse(json.loads(asset.vision_snapshot_json), headers={"Cache-Control":"no-store"})
+        except Exception:
+            return JSONResponse({"ok": False, "status": "VISION_INVALID"}, status_code=500)
 
 
 @app.get("/analysis-assets/{analysis_id}/primary")
@@ -5031,7 +5104,7 @@ def analysis_viewer(request: Request, analysis_id: int):
     return templates.TemplateResponse(
         request=request,
         name="analysis_viewer.html",
-        context={"analysis": analysis, "patient": patient, "assets": assets},
+        context={"analysis": analysis, "patient": patient, "assets": assets, "guest": False},
     )
 
 
