@@ -24,7 +24,7 @@ ORAL_CLASSIFIER_LABELS={"calculus":("CALCULUS","Diş taşı şüphesi"),"caries"
 def configured(): return bool(INTRAORAL_ENSEMBLE_URL)
 def _multipart_body(image_path):
     boundary="----DentalAIIntraoralEnsembleBoundary"; path=Path(image_path); mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    body=b"".join([f"--{boundary}\r\n".encode(),f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode(),f"Content-Type: {mime}\r\n\r\n".encode(),path.read_bytes(),b"\r\n",f"--{boundary}--\r\n".encode()]); return body,f"multipart/form-data; boundary={boundary}"
+    body=b"".join([f"--{boundary}\r\n".encode(),f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'.encode(),f"Content-Type: {mime}\r\n\r\n".encode(),path.read_bytes(),b"\r\n",f"--{boundary}--\r\n".encode()]); return body,f"multipart/form-data; boundary={boundary}"
 def _bbox(item):
     box=item.get("bbox") or item.get("box")
     if isinstance(box,dict):
