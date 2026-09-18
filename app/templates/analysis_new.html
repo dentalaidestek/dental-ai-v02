@@ -47,19 +47,14 @@
             <div class="analysis-step-title"><span>3</span><h2>{% if selected_media %}Ek görüntü{% else %}Fotoğraf / Röntgen{% endif %}</h2></div>
             <label>
                 Görüntü türü
-                <select name="image_type" required>
-                    <option value="PANORAMIC">Panoramik röntgen</option>
-                    <option value="BITEWING">Bitewing</option>
-                    <option value="PERIAPICAL">Periapikal</option>
-                    <option value="INTRAORAL_PHOTO">Ağız içi fotoğraf</option>
-                </select>
+                
             </label>
             {% if selected_media %}
             <details class="analysis-extra-upload">
                 <summary>Telefondan ek görüntü ekle <span>İsteğe bağlı</span></summary>
                 <label>
                     Görüntü yükle
-                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp">
+                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
                 </label>
                 <p class="muted analysis-field-help">Seçtiğiniz kayıtlı görüntülere ek olarak yeni fotoğraf veya röntgen de ekleyebilirsiniz.</p>
             </details>
@@ -68,7 +63,7 @@
                 Görüntü yükle
                 <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
             </label>
-            <p class="muted analysis-field-help">Her analiz yüklemesinde tek görüntü kullanılır; böylece seçilen tür doğru motora bağlanır.</p>
+            <p class="muted analysis-field-help">En fazla 4 görüntü yükleyebilirsiniz. Görüntü türü otomatik belirlenir.</p>
             {% endif %}
         </div>
 
