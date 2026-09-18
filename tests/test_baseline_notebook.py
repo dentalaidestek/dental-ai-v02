@@ -22,3 +22,5 @@ def test_harness_has_leakage_guards():
     assert "assert_training_pool_clean" in text
     assert "TEST LEAKAGE" in text
     assert "validate_locked_pool" in text
+    assert "duplicate_key" in text
+    assert "duplicate target hash" in text
