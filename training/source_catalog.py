@@ -109,7 +109,39 @@ SOURCES = {
             "mapped directly to CONDYLAR_FLATTENING until anatomy/class-code semantics and "
             "panoramic applicability are independently verified."
         ),
+    ),,
+    "prad_periapical": TrainingSource(
+        key="prad_periapical",
+        access="gated_application",
+        locator="https://github.com/nkicsl/PRAD",
+        modality="PERIAPICAL",
+        target_signals=("APICAL_PERIODONTITIS_PAI","ROOT_CANAL_TREATED","CROWN","FILLING","IMPLANT","ORTHODONTIC_APPLIANCE"),
+        note="PRAD: 5,000 periapical radiographs; nine expert-verified segmentation labels. Access requires application/approval; never treat as automatic.",
     ),
+    "mouthcare_intraoral_sample": TrainingSource(
+        key="mouthcare_intraoral_sample",
+        access="gated_huggingface_auto_approval",
+        locator="MouthCare/intraoral-sample",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES","CALCULUS","GINGIVAL_INFLAMMATION","DENTAL_RESTORATION"),
+        note="480-image/80-patient evaluation sample with dentist-authored polygon annotations for tooth, gum, tartar, cavity, gingivitis and restoration. Keep patient-level split.",
+    ),
+    "intraoral_caries_6313": TrainingSource(
+        key="intraoral_caries_6313",
+        access="restricted_zenodo",
+        locator="https://zenodo.org/records/14769743",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES",),
+        note="6,313 dentist-verified intraoral caries images with YOLO/COCO/VOC/LabelMe annotations. Record is public but files are restricted; do not assume unattended download.",
+    ),
+    "gingivitis_caption_1096": TrainingSource(
+        key="gingivitis_caption_1096",
+        access="public_research_dataset",
+        locator="https://doi.org/10.1016/j.dib.2024.110960",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("GINGIVAL_INFLAMMATION",),
+        note="1,096 high-resolution intraoral images labeled by three periodontists with MGI scores; use only after exact downloadable artifact and license are verified.",
+    )
     "pandent": TrainingSource(
         key="pandent",
         access="gated_manual_approval",
