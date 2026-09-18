@@ -24,7 +24,7 @@ ORAL_CLASSIFIER_LABELS={"calculus":("CALCULUS","Diş taşı şüphesi"),"caries"
 def configured(): return bool(INTRAORAL_ENSEMBLE_URL)
 def _multipart_body(image_path):
     boundary="----DentalAIIntraoralEnsembleBoundary"; path=Path(image_path); mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    body=b"".join([f"--{boundary}\r\n".encode(),f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'.encode(),f"Content-Type: {mime}\r\n\r\n".encode(),path.read_bytes(),b"\r\n",f"--{boundary}--\r\n".encode()]); return body,f"multipart/form-data; boundary={boundary}"
+    body=b"".join([f"--{boundary}\r\n".encode(),f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode(),f"Content-Type: {mime}\r\n\r\n".encode(),path.read_bytes(),b"\r\n",f"--{boundary}--\r\n".encode()]); return body,f"multipart/form-data; boundary={boundary}"
 def _bbox(item):
     box=item.get("bbox") or item.get("box")
     if isinstance(box,dict):
@@ -89,7 +89,7 @@ def analyze_intraoral_ensemble(image_path):
     body,ct=_multipart_body(str(path));headers={"Content-Type":ct,"Accept":"application/json","User-Agent":"DentalAI-Intraoral-Ensemble/2.1"}
     if INTRAORAL_ENSEMBLE_API_KEY:headers["Authorization"]=f"Bearer {INTRAORAL_ENSEMBLE_API_KEY}"
     try:
-        with urllib.request.urlopen(urllib.request.Request(f"{INTRAORAL_ENSEMBLE_URL}/infer",data=body,headers=headers,method="POST"),timeout=INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS) as r:payload=json.loads(r.read().decode())
+        with urllib.request.urlopen(urllib.request.Request(f"{INTRAORAL_ENSEMBLE_URL}/infer?modality=intraoral",data=body,headers=headers,method="POST"),timeout=INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS) as r:payload=json.loads(r.read().decode())
     except urllib.error.HTTPError as exc:raise IntraoralEnsembleError(f"Intraoral ensemble HTTP {exc.code}: {exc.read().decode(errors='replace')[-1200:]}") from exc
     except (urllib.error.URLError,TimeoutError,json.JSONDecodeError) as exc:raise IntraoralEnsembleError(f"Intraoral ensemble erişim/yanıt hatası: {exc}") from exc
     if not isinstance(payload,dict):raise IntraoralEnsembleError("Intraoral ensemble geçersiz JSON döndürdü.")
