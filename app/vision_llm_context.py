@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 
-_CACHE: dict[tuple, str] = {}
+_CACHE: dict[tuple, dict] = {}
 _LOCK = threading.Lock()
 _MAX_CACHE = 32
 
@@ -22,83 +22,115 @@ def _fingerprint(paths: list[str], modality_hint: str = "") -> tuple:
     return tuple(parts)
 
 
-def _slim_result(result: dict) -> dict:
-    findings = []
-    for item in result.get("findings") or []:
-        if not isinstance(item, dict):
-            continue
-        findings.append(
-            {
-                "code": item.get("finding_code"),
-                "label": item.get("label"),
-                "fdi": item.get("fdi"),
-                "confidence": item.get("confidence"),
+def _slim_result(result: dict, *, source_image_id: str | None = None) -> dict:
+    def slim_items(items):
+        out = []
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            out.append({
+                "finding_code": item.get("finding_code") or item.get("code"),
+                "label": item.get("label") or item.get("finding"),
+                "tooth_fdi": item.get("tooth_fdi", item.get("fdi", item.get("tooth"))),
+                "surface": item.get("surface"),
+                "confidence": item.get("confidence", item.get("score")),
                 "measurement": item.get("measurement"),
                 "evidence_type": item.get("evidence_type") or "direct",
                 "candidate_only": bool(item.get("candidate_only", False)),
-            }
-        )
+                "localization_type": item.get("localization_type"),
+                "bbox": item.get("bbox"),
+                "source_motor": item.get("source_motor"),
+                "captured_at": item.get("captured_at"),
+                "review_state": item.get("review_state") or "unreviewed",
+            })
+        return out
+
     return {
+        "ok": result.get("ok", True),
         "engine": result.get("engine"),
         "engine_role": result.get("engine_role"),
         "modality": result.get("modality"),
+        "source_image_id": result.get("source_image_id") or source_image_id,
         "tooth_count": result.get("tooth_count"),
         "unique_fdi_count": result.get("unique_fdi_count"),
-        "findings": findings,
+        "findings": slim_items(result.get("findings")),
+        "auxiliary_radiographic_findings": slim_items(result.get("auxiliary_radiographic_findings")),
+        "image_level_findings": slim_items(result.get("image_level_findings")),
     }
 
 
-def _is_intraoral(modality_hint: str) -> bool:
+def _route(modality_hint: str) -> str:
     hint = (modality_hint or "").upper()
-    return any(token in hint for token in ("INTRAORAL", "CLINICAL_PHOTO", "AĞIZ İÇİ", "AGIZ ICI"))
+    if any(token in hint for token in ("PERIAPICAL", "PERİAPİKAL", "PERIAPİKAL", "PAI")):
+        return "PERIAPICAL"
+    if "BITEWING" in hint:
+        return "BITEWING"
+    if any(token in hint for token in ("INTRAORAL", "CLINICAL_PHOTO", "AĞIZ İÇİ", "AGIZ ICI")):
+        return "INTRAORAL_PHOTO"
+    return "PANORAMIC"
 
 
-def structured_vision_text(image_paths: list[str] | None, modality_hint: str = "") -> str:
-    """Convert dedicated DentalAI motor output to text for the clinical LLM.
-
-    No image bytes are sent to the external clinical LLM. Intraoral photographs
-    are routed to OralDetect as the primary image engine. Radiographs continue to
-    use the panoramic engine until their own modality-specific routes are added.
-    """
+def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "") -> dict:
+    """Run only the dedicated motor family for the resolved image modality."""
     paths = [str(p) for p in (image_paths or []) if p and Path(p).is_file()]
     if not paths:
-        return json.dumps({"status": "no_image_motor_context", "findings": []}, ensure_ascii=False)
+        return {"status": "no_image_motor_context", "route": "NONE", "images": []}
 
-    intraoral = _is_intraoral(modality_hint)
-    mode_key = "INTRAORAL_ORALDETECT" if intraoral else "PANORAMIC_VISION48"
-    key = _fingerprint(paths, mode_key)
+    route = _route(modality_hint)
+    key = _fingerprint(paths, route)
     with _LOCK:
         cached = _CACHE.get(key)
     if cached is not None:
         return cached
 
-    payload = {"status": "ok", "route": mode_key, "images": []}
-    try:
-        if intraoral:
-            from vision_service.intraoral_oraldetect import analyze_intraoral
-
-            # OralDetect is the main/first image motor for intraoral photos. Never
-            # fall back to the panoramic motor for this modality.
-            for path in paths[:4]:
-                result = analyze_intraoral(path)
-                payload["images"].append(_slim_result(result))
-        else:
-            from vision_service.pipeline import analyze_panorama
-
-            for path in paths[:4]:
+    payload = {"status": "ok", "route": route, "images": [], "partial_failures": []}
+    for index, path in enumerate(paths[:12]):
+        source_id = f"{route.lower()}:{index + 1}:{Path(path).name}"
+        try:
+            if route == "INTRAORAL_PHOTO":
+                from vision_service.intraoral_ensemble import analyze_intraoral_ensemble, configured as ensemble_configured
+                from vision_service.intraoral_oraldetect import analyze_intraoral, configured as oraldetect_configured
+                if ensemble_configured():
+                    result = analyze_intraoral_ensemble(path)
+                elif oraldetect_configured():
+                    result = analyze_intraoral(path)
+                    result["engine_role"] = "fallback"
+                else:
+                    raise RuntimeError("Ağız içi motor ailesi yapılandırılmadı.")
+            elif route == "PERIAPICAL":
+                from vision_service.periapical_pai import analyze_periapical
+                result = analyze_periapical(path)
+            elif route == "BITEWING":
+                from vision_service.bitewing_ensemble import analyze_bitewing
+                result = analyze_bitewing(path)
+            else:
+                from vision_service.pipeline import analyze_panorama
                 result = analyze_panorama(path)
-                payload["images"].append(_slim_result(result))
-    except Exception as exc:
-        payload = {
-            "status": "vision_motor_unavailable",
-            "route": mode_key,
-            "findings": [],
-            "error_type": type(exc).__name__,
-        }
 
-    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            result = dict(result or {})
+            result.setdefault("modality", route)
+            payload["images"].append(_slim_result(result, source_image_id=source_id))
+        except Exception as exc:
+            payload["partial_failures"].append({
+                "source_image_id": source_id,
+                "modality": route,
+                "status": "unavailable",
+                "error_type": type(exc).__name__,
+            })
+
+    if not payload["images"]:
+        payload["status"] = "vision_motor_unavailable"
+    elif payload["partial_failures"]:
+        payload["status"] = "partial"
+
     with _LOCK:
         if len(_CACHE) >= _MAX_CACHE:
             _CACHE.pop(next(iter(_CACHE)))
-        _CACHE[key] = text
-    return text
+        _CACHE[key] = payload
+    return payload
+
+
+def structured_vision_text(image_paths: list[str] | None, modality_hint: str = "") -> str:
+    """Serialize dedicated motor output for the external clinical LLM; no pixels leave DentalAI."""
+    payload = structured_vision_payload(image_paths, modality_hint=modality_hint)
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
