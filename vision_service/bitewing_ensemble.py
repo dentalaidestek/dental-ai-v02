@@ -47,7 +47,7 @@ def _multipart_body(image_path: str):
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     body = b"".join([
         f"--{boundary}\r\n".encode(),
-        f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode(),
+        f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'.encode(),
         f"Content-Type: {mime}\r\n\r\n".encode(),
         path.read_bytes(), b"\r\n", f"--{boundary}--\r\n".encode(),
     ])
