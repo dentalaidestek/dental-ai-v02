@@ -49,8 +49,8 @@ def _safe_http_error_message(code):
     return f"Klinik AI isteği başarısız oldu (HTTP {code})."
 
 
-def _policy_prompt(prompt: str, image_paths=None) -> str:
-    structured = structured_vision_text(image_paths, modality_hint=prompt)
+def _policy_prompt(prompt: str, image_paths=None, structured_vision=None) -> str:
+    structured = structured_vision if structured_vision is not None else structured_vision_text(image_paths, modality_hint=prompt)
     return f"""{prompt}
 
 DENTAL AI GÖRÜNTÜ GÜVENLİK VE MİMARİ KURALI — ÜST ÖNCELİKLİ:
@@ -83,7 +83,7 @@ def _build_payload(prompt: str, response_schema=None):
     return payload_bytes
 
 
-def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
+def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None, structured_vision=None):
     """DentalAI clinical LLM provider.
 
     Legacy image arguments are kept for existing call sites. Pixels are never
@@ -98,7 +98,7 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None):
     elif image_path:
         paths.append(image_path)
 
-    final_prompt = _policy_prompt(prompt, paths)
+    final_prompt = _policy_prompt(prompt, paths, structured_vision=structured_vision)
     payload_bytes = _build_payload(final_prompt, response_schema=response_schema)
     last_error = None
 
