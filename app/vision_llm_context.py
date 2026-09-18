@@ -126,16 +126,38 @@ def _modal_panorama_result(path: str) -> dict:
                 continue
             fdi = item.get("fdi") or item.get("tooth_fdi") or item.get("tooth") or item.get("label") or item.get("class_name")
             bbox = item.get("bbox") or item.get("box") or item.get("xyxy")
+            polygon = item.get("polygon") or item.get("segmentation") or item.get("contour")
+            # Some FDI deployments return the tooth identity plus a polygon but
+            # omit bbox. The viewer needs bbox for placement, so derive it from
+            # the real segmentation instead of discarding an otherwise valid tooth.
+            if (not isinstance(bbox, (list, tuple)) or len(bbox) != 4) and isinstance(polygon, (list, tuple)):
+                points = polygon
+                if len(points) == 1 and isinstance(points[0], (list, tuple)):
+                    points = points[0]
+                try:
+                    if points and isinstance(points[0], (int, float)):
+                        points = list(zip(points[0::2], points[1::2]))
+                    xs = [float(p[0]) for p in points if isinstance(p, (list, tuple)) and len(p) >= 2]
+                    ys = [float(p[1]) for p in points if isinstance(p, (list, tuple)) and len(p) >= 2]
+                    if xs and ys:
+                        bbox = [min(xs), min(ys), max(xs), max(ys)]
+                except (TypeError, ValueError, IndexError):
+                    bbox = None
             if fdi is None or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
                 continue
             fdi = str(fdi).strip()
-            if not __import__("re").fullmatch(r"[1-4][1-8]", fdi):
+            m = __import__("re").search(r"(?:^|\\D)([1-4][1-8])(?:\\D|$)", fdi)
+            if not m:
+                digits = __import__("re").sub(r"\\D", "", fdi)
+                m = __import__("re").fullmatch(r"[1-4][1-8]", digits[-2:] if len(digits) >= 2 else "")
+            if not m:
                 continue
+            fdi = m.group(1) if m.lastindex else m.group(0)
             try:
                 bbox = [float(v) for v in bbox]
             except (TypeError, ValueError):
                 continue
-            out.append({**item, "fdi": fdi, "bbox": bbox})
+            out.append({**item, "fdi": fdi, "bbox": bbox, "polygon": polygon})
         return out
     teeth = _fdi_items(raw)
     def score(x): return float(x.get("confidence", x.get("score", 0.0)) or 0.0)
