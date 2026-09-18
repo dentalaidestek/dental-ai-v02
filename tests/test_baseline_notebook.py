@@ -25,6 +25,8 @@ def test_baseline_notebook_is_valid_python():
     assert "if rec:" in code
     assert "no lesion" in code
     assert "run_summary.json" in code
+    assert "MOTOR_ERROR" in code
+    assert "Manifest/hash-set mismatch" in code
 
 def test_harness_has_leakage_guards():
     text=(ROOT/"training"/"baseline_test_harness.py").read_text(encoding="utf-8")
