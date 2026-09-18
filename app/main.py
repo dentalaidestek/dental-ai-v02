@@ -4832,6 +4832,28 @@ def guest_analysis_result(request: Request, analysis_id: int):
     )
 
 
+@app.get("/analysis-assets/{analysis_id}/primary")
+def analysis_primary_asset(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
+        asset = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id).order_by(ImageAsset.id.asc())).first()
+        if not asset or not asset.file_path or not Path(asset.file_path).is_file():
+            return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        path = Path(asset.file_path)
+    media_type = _image_content_type(path.suffix.lower()) or "application/octet-stream"
+    return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+
+
 @app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
 def analysis_viewer(request: Request, analysis_id: int):
     user = get_current_user(request)
