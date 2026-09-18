@@ -49,11 +49,14 @@ window.addEventListener('message',async ev=>{
   const d=ev.data||{};
   if(d.type==='dental-ai:patient-analysis'&&d.assetUrl){
     try{
-      const r=await fetch(d.assetUrl,{credentials:'same-origin'});if(!r.ok)throw new Error('Görüntü alınamadı');
-      const blob=await r.blob();const file=new File([blob],'analysis-image'+(blob.type==='image/png'?'.png':'.jpg'),{type:blob.type||'image/jpeg'});
-      const dt=new DataTransfer();dt.items.add(file);const input=$('file');input.files=dt.files;input.closest('.top')?.style.setProperty('display','none');
-      await analyze();
-    }catch(e){showError(String(e))}
+      const top=$('file')?.closest('.top');if(top)top.style.display='none';
+      const ir=await fetch(d.assetUrl,{credentials:'same-origin'});if(!ir.ok)throw new Error('Görüntü alınamadı');
+      const blob=await ir.blob();panoImage.src=URL.createObjectURL(blob);await panoImage.decode();$('panoImg').src=panoImage.src;$('panoMini').classList.remove('hidden');
+      const vr=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});if(!vr.ok){if(vr.status===202){$('status').textContent='Görüntü motoru çalışıyor…';return}throw new Error('Kayıtlı motor sonucu alınamadı')}
+      const snap=await vr.json();result=snap.result||snap;
+      $('status').textContent='Anatomik 3D hazırlanıyor…';
+      await renderJaw();$('status').textContent='3D hazır';
+    }catch(e){$('status').textContent='Analiz tamamlanamadı';showError(String(e))}
   }
   if(d.type==='dental-ai:tooth-analysis-started'&&!d.ok)showError(d.error||'Klinik analiz başlatılamadı');
 });
