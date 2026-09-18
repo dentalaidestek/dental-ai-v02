@@ -1747,6 +1747,39 @@ def logout_user(request: Request):
     return response
 
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
+
+
+@app.get("/vision-ui/viewer", response_class=HTMLResponse)
+def embedded_panorama_viewer():
+    path = BASE.parent / "vision_service" / "templates" / "viewer_v3.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/vision-ui/intraoral-viewer", response_class=HTMLResponse)
+def embedded_regional_viewer():
+    path = BASE.parent / "vision_service" / "templates" / "intraoral_viewer.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/viewer-v3.js", response_class=FileResponse)
+def embedded_viewer_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3.js", media_type="application/javascript")
+
+
+@app.get("/viewer-v3-finalfix.js", response_class=FileResponse)
+def embedded_viewer_finalfix_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3_finalfix.js", media_type="application/javascript")
+
+
+@app.get("/viewer-v3-postfix.js", response_class=FileResponse)
+def embedded_viewer_postfix_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3_postfix.js", media_type="application/javascript")
+
+
+@app.get("/intraoral-viewer.js", response_class=FileResponse)
+def embedded_intraoral_viewer_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "intraoral_viewer.js", media_type="application/javascript")
+
 @app.get("/uploads/{filename}")
 def protected_upload(request: Request, filename: str):
     user = get_current_user(request)
@@ -4921,6 +4954,26 @@ def guest_analysis_result(request: Request, analysis_id: int):
             "ai_text": ai_text
         }
     )
+
+
+@app.get("/analysis-assets/{analysis_id}/{asset_id}")
+def analysis_asset(request: Request, analysis_id: int, asset_id: int):
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+            return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
+        asset = s.get(ImageAsset, asset_id)
+        if not asset or asset.analysis_id != analysis_id or not asset.file_path or not Path(asset.file_path).is_file():
+            return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        path = Path(asset.file_path)
+    media_type = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=asset.original_filename)
 
 
 @app.get("/analysis-assets/{analysis_id}/primary")
