@@ -4145,7 +4145,8 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
             snap = json.loads(asset.vision_snapshot_json) if asset.vision_snapshot_json else None
         except (TypeError, ValueError, json.JSONDecodeError):
             snap = None
-        if isinstance(snap, dict):
+        # Only successful motor snapshots are durable. Transient failures stay retryable.
+        if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable":
             images.append((asset, snap))
         else:
             missing.append(asset)
@@ -4167,9 +4168,17 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
                     if isinstance(finding, dict):
                         finding["source_image_id"] = snap["source_image_id"]
                         finding["captured_at"] = finding.get("captured_at") or captured_at
-            asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
-            session.add(asset)
-            images.append((asset, snap))
+            if snap.get("ok", True) and snap.get("status") != "unavailable":
+                asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
+                session.add(asset)
+                images.append((asset, snap))
+            else:
+                asset.vision_snapshot_json = None
+                session.add(asset)
+                logger.error(
+                    "vision motor unavailable asset=%s modality=%s error_type=%s",
+                    getattr(asset, "id", None), getattr(asset, "image_type", None), snap.get("error_type"),
+                )
         session.commit()
 
     ordered = []
