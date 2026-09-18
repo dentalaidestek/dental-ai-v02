@@ -116,6 +116,7 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
             matches=[x for x in fs if isinstance(x,dict) and (x.get("finding_code") or x.get("code") or x.get("label"))==finding_code]
             detected=bool(matches)
             row["detected"]=detected
+            row["raw_matches"]=matches
             gt_boxes=_gt_boxes(c.annotation)
             pred_boxes=[x.get("bbox") for x in matches if x.get("bbox")]
             # Production motors generally return pixel xyxy, while YOLO GT is normalized.
