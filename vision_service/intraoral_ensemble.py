@@ -47,8 +47,21 @@ def _normalize_classifier(item):
     raw=_raw_label(item);m=ORAL_CLASSIFIER_LABELS.get(raw)
     if not m:return None
     return {"finding_code":m[0],"label":m[1],"raw_label":raw,"confidence":round(_score(item),4),"source_motor":"oral_diseases_resnet50","candidate_only":True,"image_level":True,"localization_available":False,"modality":"INTRAORAL_PHOTO"}
+def _dedupe_alpha_caries(alpha_caries):
+    """Collapse overlapping AlphaDent Caries 1-6 detections into one canonical lesion."""
+    pending=sorted(alpha_caries,key=lambda x:x.get("confidence",0),reverse=True);groups=[]
+    while pending:
+        seed=pending.pop(0);group=[seed];rest=[]
+        for item in pending:
+            if any(_iou(item.get("bbox"),g.get("bbox"))>=.20 for g in group):group.append(item)
+            else:rest.append(item)
+        pending=rest
+        best=max(group,key=lambda x:x.get("confidence",0))
+        groups.append({**best,"raw_label":"caries","alpha_candidates":[{"raw_label":g["raw_label"],"confidence":g["confidence"],"bbox":g.get("bbox")} for g in group],"deduped_count":len(group)})
+    return groups
+
 def _merge_caries(alpha,daath):
-    ac=[x for x in alpha if x["finding_code"]=="VISIBLE_CARIES"];out=[x for x in alpha if x["finding_code"]!="VISIBLE_CARIES"];used=set()
+    ac=_dedupe_alpha_caries([x for x in alpha if x["finding_code"]=="VISIBLE_CARIES"]);out=[x for x in alpha if x["finding_code"]!="VISIBLE_CARIES" and x["confidence"]>=.50];used=set()
     for a in ac:
         bi,bo=None,0.
         for i,d in enumerate(daath):
@@ -56,9 +69,9 @@ def _merge_caries(alpha,daath):
             o=_iou(a.get("bbox"),d.get("bbox"))
             if o>bo:bi,bo=i,o
         if bi is not None and bo>=.20:
-            d=daath[bi];used.add(bi);out.append({**a,"confidence":round(max(a["confidence"],d["confidence"]),4),"source_motor":"alphadent+daath","agreement":True,"agreement_iou":round(bo,4),"motor_scores":{"alphadent":a["confidence"],"daath":d["confidence"]}})
+            d=daath[bi];used.add(bi);out.append({**a,"confidence":round(max(a["confidence"],d["confidence"]),4),"source_motor":"alphadent+daath","agreement":True,"agreement_iou":round(bo,4),"motor_scores":{"alphadent":a["confidence"],"daath":d["confidence"]},"internal_evidence":{"alphadent_candidates":a.get("alpha_candidates",[]),"daath":{"raw_label":d["raw_label"],"confidence":d["confidence"],"bbox":d.get("bbox")}}})
         elif a["confidence"]>=.50:out.append(a)
-    out.extend(d for i,d in enumerate(daath) if i not in used and d["confidence"]>=.70);out.sort(key=lambda x:x.get("confidence",0),reverse=True);return out
+    out.extend(d for i,d in enumerate(daath) if i not in used and d["confidence"]>=.70);out=[x for x in out if x.get("confidence",0)>=.50];out.sort(key=lambda x:x.get("confidence",0),reverse=True);return out
 def analyze_intraoral_ensemble(image_path):
     if not configured():raise IntraoralEnsembleError("Ağız içi motor servisi yapılandırılmadı: INTRAORAL_ENSEMBLE_URL eksik.")
     path=Path(image_path)
