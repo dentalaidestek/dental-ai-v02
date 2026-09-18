@@ -4370,6 +4370,17 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                     image_paths,
                     modality_hint=knowledge_context,
                 )
+                # Preserve the actual analysis asset identity/time on every motor item.
+                # This prevents old and new captures from becoming indistinguishable.
+                for image_result, asset in zip(vision_payload.get("images") or [], assets):
+                    image_result["source_image_id"] = f"analysis_asset:{asset.id}"
+                    captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+                    for pool_name in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                        for finding in image_result.get(pool_name) or []:
+                            if isinstance(finding, dict):
+                                finding["source_image_id"] = image_result["source_image_id"]
+                                finding["captured_at"] = finding.get("captured_at") or captured_at
+
                 evidence_package = build_tooth_evidence_package(
                     tooth_fdi=selected_fdi,
                     modality_results=vision_payload.get("images") or [],
