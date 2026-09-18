@@ -139,10 +139,11 @@ def evaluate_target(cases:list[Case], infer:Callable[[str,str],dict], finding_co
     counts={k:sum(r.get("outcome")==k for r in rows) for k in ("TP","FN","TN","FP","MOTOR_ERROR")}
     p=counts["TP"]+counts["FN"]; n=counts["TN"]+counts["FP"]
     recall=counts["TP"]/p if p else None; spec=counts["TN"]/n if n else None
-    localized=[r for r in rows if r.get("polarity")=="positive" and "localized" in r]
-    loc=sum(r["localized"] for r in localized)/len(localized) if localized else None
-    return {"modality":modality,"finding_code":finding_code,**counts,"recall":recall,"specificity":spec,
-            "localization_rate":loc,"n":len(rows)}
+    localized=[r for r in rows if r.get("polarity")=="positive" and "max_iou" in r]
+    loc=sum(r["max_iou"]>=0.20 for r in localized)/len(localized) if localized else None
+    loc50=sum(r["max_iou"]>=0.50 for r in localized)/len(localized) if localized else None
+    return {"modality":modality,"finding_code":finding_code,**counts,"recall":recall,"sensitivity":recall,"specificity":spec,
+            "localization_iou20_rate":loc,"localization_iou50_rate":loc50,"localization_rate":loc,"n":len(rows)}
 
 def validate_locked_pool(cases:list[Case]):
     errors=[]
