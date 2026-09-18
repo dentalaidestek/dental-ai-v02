@@ -205,6 +205,30 @@ SOURCES = {
         modality="PANORAMIC",
         target_signals=("BONE_LOSS_GENERIC",),
         note="769 panoramic radiographs with expert-reviewed CEJ/alveolar-ridge/tooth-crown COCO-compatible annotations. Restricted; use only after access approval and never invent horizontal/vertical subtype labels.",
+    ),
+    "bitewing_caries_100_multiannotator": TrainingSource(
+        key="bitewing_caries_100_multiannotator",
+        access="public_mendeley",
+        locator="https://data.mendeley.com/datasets/4fbdxs7s7w/1",
+        modality="BITEWING",
+        target_signals=("CARIES",),
+        note="100 bitewings; COCO caries boxes from 8 independent dentist annotators (5 experienced, 3 less experienced). CC BY-NC 3.0. Suitable for caries baseline and annotator-variability analysis.",
+    ),
+    "periapical_lesions_450": TrainingSource(
+        key="periapical_lesions_450",
+        access="public_zenodo",
+        locator="https://zenodo.org/records/13772918",
+        modality="PERIAPICAL",
+        target_signals=("APICAL_PERIODONTITIS_PAI",),
+        note="450 anterior periapical radiographs classified lesion/no-lesion by five dental specialists. Image-level GT only; never score lesion localization from this source.",
+    ),
+    "intraoral_caries_6313_open": TrainingSource(
+        key="intraoral_caries_6313_open",
+        access="public_zenodo",
+        locator="https://zenodo.org/records/14827784",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES",),
+        note="Public downloadable 2025 release: 6,313 dentist-verified intraoral images with decay localization in YOLO/COCO/VOC/LabelMe. Prefer Benchmarking Dataset.zip for held-out evaluation and preserve patient/view grouping when metadata permits.",
     )
     "pandent": TrainingSource(
         key="pandent",
