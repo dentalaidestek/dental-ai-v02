@@ -4688,14 +4688,16 @@ async def create_analysis(
 
         analysis_id = analysis.id
 
-    # Gemma ARTIK sayfayı bekletmiyor.
-    background_tasks.add_task(
-        _run_preliminary_ai,
-        analysis_id
-    )
+    # Vision-first: clinical AI starts only after selecting a tooth in Tedavi.
+    with Session(engine, expire_on_commit=False) as s:
+        created = s.get(Analysis, analysis_id)
+        if created:
+            created.status = "VISION_READY"
+            s.add(created)
+            s.commit()
 
     return RedirectResponse(
-        url=f"/analysis/{analysis_id}",
+        url=f"/analysis/{analysis_id}/viewer",
         status_code=303
     )
 
@@ -4828,6 +4830,53 @@ def guest_analysis_result(request: Request, analysis_id: int):
             "ai_text": ai_text
         }
     )
+
+
+@app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
+def analysis_viewer(request: Request, analysis_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return HTMLResponse("Analiz bulunamadı.", status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return HTMLResponse("Hasta bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu analize erişim yetkiniz yok.", status_code=403)
+        assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).all()
+    return templates.TemplateResponse(
+        request=request,
+        name="analysis_viewer.html",
+        context={"analysis": analysis, "patient": patient, "assets": assets},
+    )
+
+
+@app.post("/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze")
+def analyze_selected_tooth(request: Request, analysis_id: int, tooth_fdi: int, background_tasks: BackgroundTasks):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401)
+    fdi_text = str(tooth_fdi)
+    if len(fdi_text) != 2 or fdi_text[0] not in "12345678" or fdi_text[1] not in "12345678":
+        return JSONResponse({"ok": False, "error": "Geçersiz FDI diş numarası."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return JSONResponse({"ok": False, "error": "Analiz bulunamadı."}, status_code=404)
+        patient = s.get(Patient, analysis.patient_id)
+        if not patient:
+            return JSONResponse({"ok": False, "error": "Hasta bulunamadı."}, status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return JSONResponse({"ok": False, "error": "Bu analize erişim yetkiniz yok."}, status_code=403)
+        analysis.tooth_number = fdi_text
+        analysis.status = "ANALYZING"
+        s.add(analysis)
+        s.commit()
+    background_tasks.add_task(_run_preliminary_ai, analysis_id)
+    return JSONResponse({"ok": True, "analysis_id": analysis_id, "tooth_fdi": fdi_text, "status": "ANALYZING", "result_url": f"/analysis/{analysis_id}"})
 
 
 @app.get("/analysis/{analysis_id}", response_class=HTMLResponse)
