@@ -4127,6 +4127,13 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
         fresh_images = fresh.get("images") or []
         for asset, snap in zip(missing, fresh_images):
             snap = dict(snap)
+            snap["source_image_id"] = f"analysis_asset:{asset.id}"
+            captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
+            for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
+                for finding in snap.get(pool) or []:
+                    if isinstance(finding, dict):
+                        finding["source_image_id"] = snap["source_image_id"]
+                        finding["captured_at"] = finding.get("captured_at") or captured_at
             asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
             session.add(asset)
             images.append((asset, snap))
@@ -4155,6 +4162,19 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
         "partial_failures": failures,
     }
 
+
+
+def _run_analysis_vision(analysis_id: int):
+    """Run dedicated image motors once after upload and persist their snapshots."""
+    with Session(engine, expire_on_commit=False) as s:
+        analysis = s.get(Analysis, analysis_id)
+        if not analysis:
+            return
+        assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).all()
+        payload = _persisted_vision_payload(s, assets)
+        analysis.status = "VISION_READY" if payload.get("status") in {"ok", "partial"} else "VISION_ERROR"
+        s.add(analysis)
+        s.commit()
 
 def _run_guest_preliminary_ai(analysis_id: int):
     from app.ai_engine import (
@@ -4764,13 +4784,8 @@ async def create_analysis(
 
         analysis_id = analysis.id
 
-    # Vision-first: clinical AI starts only after selecting a tooth in Tedavi.
-    with Session(engine, expire_on_commit=False) as s:
-        created = s.get(Analysis, analysis_id)
-        if created:
-            created.status = "VISION_READY"
-            s.add(created)
-            s.commit()
+    # Vision-first: run each uploaded asset once; clinical AI later reuses the durable snapshots.
+    background_tasks.add_task(_run_analysis_vision, analysis_id)
 
     return RedirectResponse(
         url=f"/analysis/{analysis_id}/viewer",
