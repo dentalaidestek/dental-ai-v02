@@ -129,7 +129,7 @@ def _modal_panorama_result(path: str) -> dict:
 
 def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:
     """Run each image through its own dedicated motor family."""
-    pairs = [(str(p), (image_types[i] if image_types and i < len(image_types) else modality_hint)) for i, p in enumerate(image_paths or []) if p and Path(p).is_file()]
+    pairs = [(str(p), (image_types[i] if image_types and i < len(image_types) else modality_hint)) for i, p in enumerate(image_paths or []) if p]
     paths = [p for p, _ in pairs]
     if not paths:
         return {"status": "no_image_motor_context", "route": "NONE", "images": []}
@@ -143,7 +143,7 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
         return cached
 
     payload = {"status": "ok", "route": route, "images": [], "partial_failures": []}
-    for index, (path, hint) in enumerate(pairs[:12]):
+    for index, (path, hint) in enumerate(pairs[:4]):
         asset_route = _route(hint)
         source_id = f"{asset_route.lower()}:{index + 1}:{Path(path).name}"
         try:
@@ -170,6 +170,17 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
             result.setdefault("modality", asset_route)
             payload["images"].append(_slim_result(result, source_image_id=source_id))
         except Exception as exc:
+            failure = {
+                "ok": False,
+                "source_image_id": source_id,
+                "modality": asset_route,
+                "status": "unavailable",
+                "error_type": type(exc).__name__,
+                "findings": [],
+                "auxiliary_radiographic_findings": [],
+                "image_level_findings": [],
+            }
+            payload["images"].append(failure)
             payload["partial_failures"].append({
                 "source_image_id": source_id,
                 "modality": asset_route,
@@ -177,7 +188,8 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
                 "error_type": type(exc).__name__,
             })
 
-    if not payload["images"]:
+    successful = [x for x in payload["images"] if x.get("ok", True)]
+    if not successful:
         payload["status"] = "vision_motor_unavailable"
     elif payload["partial_failures"]:
         payload["status"] = "partial"
