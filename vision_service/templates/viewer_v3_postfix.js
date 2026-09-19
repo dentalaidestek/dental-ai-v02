@@ -46,12 +46,11 @@
     if(result&&Array.isArray(result.teeth))for(const t of result.teeth)if(t)t.fdi=normalizeFdi(t.fdi);
     await priorRenderJaw();
     const profile=projectionProfile();
-    if(window.jawRoot?.children?.length>=2){
-      const maxilla=window.jawRoot.children[0],mandible=window.jawRoot.children[1],half=desiredHalfSeparation(profile);
-      maxilla.position.z=-half*.72;mandible.position.z=half*.72;
-      if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label;result.anatomy3d.jaw_half_separation_local=half}
-      refitJaw();
-    }
+    // The generated jaw and teeth already share patient-conditioned coordinates.
+    // Never shift whole jaw groups after construction: doing so separates bone
+    // from the teeth and recreates the floating/rail artifact.
+    if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label}
+    refitJaw();
   };
 
   function contactMetrics(tooth,teeth){
