@@ -122,7 +122,8 @@ def _modal_panorama_result(path: str) -> dict:
             candidate_keys = []
             sample = candidate if isinstance(candidate, list) else []
         item_keys = sorted(str(k) for k in sample[0].keys()) if sample and isinstance(sample[0], dict) else []
-        print(f"[FDI_SCHEMA] top_keys={top_keys} candidate_type={type(candidate).__name__} candidate_keys={candidate_keys} count={len(sample) if isinstance(sample, list) else -1} item_keys={item_keys}", flush=True)
+        label_samples = [str(x.get("label")) for x in sample[:40] if isinstance(x, dict)]
+        print(f"[FDI_SCHEMA] top_keys={top_keys} candidate_type={type(candidate).__name__} candidate_keys={candidate_keys} count={len(sample) if isinstance(sample, list) else -1} item_keys={item_keys} labels={label_samples}", flush=True)
     except Exception as diag_exc:
         print(f"[FDI_SCHEMA] diagnostic_error={type(diag_exc).__name__}", flush=True)
     def _fdi_items(payload):
