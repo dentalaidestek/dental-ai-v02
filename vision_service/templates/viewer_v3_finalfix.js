@@ -10,7 +10,7 @@
   const MIN_DISPLAY_CONFIDENCE=.50;
   const IMPACTED_CODES=new Set(['IMPACTED_TOOTH','IMPACTED_THIRD_MOLAR','UNERUPTED_TOOTH']);
   const BONE_LOSS_RE=/BONE_LOSS/;
-  let dataPromise=null,jawRoot=null,jawToothMap=new Map(),highlightTimer=null;
+  let dataPromise=null,jawToothMap=new Map(),highlightTimer=null;
   const layerState={bone:true,canal:true};
   const dedupeTeeth=items=>{const best=new Map();for(const t of items||[]){if(!t?.bbox)continue;const f=normalizeFdi(t.fdi);if(!validFdi(f))continue;t.fdi=f;const s=Number(t.confidence??t.score??0)||0,p=best.get(String(f)),ps=Number(p?.confidence??p?.score??0)||0;if(!p||s>ps)best.set(String(f),t)}return [...best.values()]};
 
@@ -229,7 +229,7 @@
     await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));jawToothMap=new Map();
     const {scene,renderer,camera}=jawScene,data=await loadData(),patient=dedupeTeeth(result?.teeth||[]);
     if(!patient.length)throw new Error('FDI diş tespiti yok');
-    const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();jawRoot=root;root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
+    const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();window.jawRoot=root;root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
     // Diagnocat-like palette requested for the clean final view: translucent
     // pale blue bone, natural white teeth and a distinct pink canal.
     const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa9b7ea,transparent:true,opacity:.23,roughness:.44,metalness:0,transmission:.10,depthWrite:false,side:window.D3.THREE.DoubleSide});
@@ -266,7 +266,7 @@
   analyze=async function(){
     $('analysisSheet')?.classList.add('hidden');$('stage')?.classList.remove('has-results');
     await baseAnalyze();if(!result?.anatomy3d)return;
-    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;renderSheet('findings');setTimeout(()=>{if(jawScene&&jawRoot)fitCamera(jawScene,jawRoot,1.34)},260);
+    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;renderSheet('findings');setTimeout(()=>{if(jawScene&&window.jawRoot)fitCamera(jawScene,window.jawRoot,1.34)},260);
   };
   $('run').onclick=analyze;
   document.querySelectorAll('[data-sheet-tab]').forEach(b=>{b.onclick=()=>renderSheet(b.dataset.sheetTab)});
