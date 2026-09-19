@@ -108,6 +108,23 @@ def _modal_panorama_result(path: str) -> dict:
     from vision_service.motors.catalog import FINDING_CATALOG
 
     raw = _modal_infer(path, "panoramic")
+    # Temporary schema-only diagnostic: never log image bytes or patient data.
+    try:
+        top_keys = sorted(str(k) for k in raw.keys()) if isinstance(raw, dict) else []
+        fdi_obj = raw.get("fdi") if isinstance(raw, dict) else None
+        teeth_obj = raw.get("teeth") if isinstance(raw, dict) else None
+        nested = raw.get("result") if isinstance(raw, dict) and isinstance(raw.get("result"), dict) else {}
+        candidate = fdi_obj or teeth_obj or nested.get("fdi") or nested.get("teeth")
+        if isinstance(candidate, dict):
+            candidate_keys = sorted(str(k) for k in candidate.keys())
+            sample = candidate.get("teeth") or candidate.get("detections") or candidate.get("items") or []
+        else:
+            candidate_keys = []
+            sample = candidate if isinstance(candidate, list) else []
+        item_keys = sorted(str(k) for k in sample[0].keys()) if sample and isinstance(sample[0], dict) else []
+        print(f"[FDI_SCHEMA] top_keys={top_keys} candidate_type={type(candidate).__name__} candidate_keys={candidate_keys} count={len(sample) if isinstance(sample, list) else -1} item_keys={item_keys}", flush=True)
+    except Exception as diag_exc:
+        print(f"[FDI_SCHEMA] diagnostic_error={type(diag_exc).__name__}", flush=True)
     def _fdi_items(payload):
         # Modal deployments have used both legacy "fdi" and newer "teeth"
         # envelopes. Normalize them here so persisted snapshots and the 3D
