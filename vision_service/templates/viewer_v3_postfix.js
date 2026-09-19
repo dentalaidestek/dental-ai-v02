@@ -48,7 +48,7 @@
     const profile=projectionProfile();
     if(jawRoot?.children?.length>=2){
       const maxilla=jawRoot.children[0],mandible=jawRoot.children[1],half=desiredHalfSeparation(profile);
-      maxilla.position.z=-half;mandible.position.z=half;
+      maxilla.position.z=-half*.72;mandible.position.z=half*.72;
       if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label;result.anatomy3d.jaw_half_separation_local=half}
       refitJaw();
     }
