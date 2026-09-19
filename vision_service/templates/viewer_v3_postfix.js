@@ -33,10 +33,10 @@
   }
 
   function refitJaw(){
-    if(!jawScene?.scene||!jawRoot)return;
+    if(!jawScene?.scene||!window.jawRoot)return;
     const THREE=window.D3?.THREE;if(!THREE)return;
-    jawRoot.updateMatrixWorld(true);
-    const box=new THREE.Box3().setFromObject(jawRoot),c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
+    window.jawRoot.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(window.jawRoot),c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
     const radius=Math.max(.1,Math.hypot(s.x,s.y,s.z)/2),fov=jawScene.camera.fov*Math.PI/180,dist=(radius/Math.sin(fov/2))*1.18;
     jawScene.controls.target.copy(c);jawScene.camera.position.set(c.x+radius*.10,c.y+radius*.03,c.z+dist);jawScene.camera.near=Math.max(.01,dist-radius*2.2);jawScene.camera.far=dist+radius*4;jawScene.camera.updateProjectionMatrix();jawScene.controls.update();
   }
@@ -46,8 +46,8 @@
     if(result&&Array.isArray(result.teeth))for(const t of result.teeth)if(t)t.fdi=normalizeFdi(t.fdi);
     await priorRenderJaw();
     const profile=projectionProfile();
-    if(jawRoot?.children?.length>=2){
-      const maxilla=jawRoot.children[0],mandible=jawRoot.children[1],half=desiredHalfSeparation(profile);
+    if(window.jawRoot?.children?.length>=2){
+      const maxilla=window.jawRoot.children[0],mandible=window.jawRoot.children[1],half=desiredHalfSeparation(profile);
       maxilla.position.z=-half*.72;mandible.position.z=half*.72;
       if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label;result.anatomy3d.jaw_half_separation_local=half}
       refitJaw();
