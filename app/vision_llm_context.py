@@ -108,24 +108,6 @@ def _modal_panorama_result(path: str) -> dict:
     from vision_service.motors.catalog import FINDING_CATALOG
 
     raw = _modal_infer(path, "panoramic")
-    # Temporary schema-only diagnostic: never log image bytes or patient data.
-    try:
-        top_keys = sorted(str(k) for k in raw.keys()) if isinstance(raw, dict) else []
-        fdi_obj = raw.get("fdi") if isinstance(raw, dict) else None
-        teeth_obj = raw.get("teeth") if isinstance(raw, dict) else None
-        nested = raw.get("result") if isinstance(raw, dict) and isinstance(raw.get("result"), dict) else {}
-        candidate = fdi_obj or teeth_obj or nested.get("fdi") or nested.get("teeth")
-        if isinstance(candidate, dict):
-            candidate_keys = sorted(str(k) for k in candidate.keys())
-            sample = candidate.get("teeth") or candidate.get("detections") or candidate.get("items") or []
-        else:
-            candidate_keys = []
-            sample = candidate if isinstance(candidate, list) else []
-        item_keys = sorted(str(k) for k in sample[0].keys()) if sample and isinstance(sample[0], dict) else []
-        label_samples = [str(x.get("label")) for x in sample[:40] if isinstance(x, dict)]
-        print(f"[FDI_SCHEMA] top_keys={top_keys} candidate_type={type(candidate).__name__} candidate_keys={candidate_keys} count={len(sample) if isinstance(sample, list) else -1} item_keys={item_keys} labels={label_samples}", flush=True)
-    except Exception as diag_exc:
-        print(f"[FDI_SCHEMA] diagnostic_error={type(diag_exc).__name__}", flush=True)
     def _fdi_items(payload):
         # Modal deployments have used both legacy "fdi" and newer "teeth"
         # envelopes. Normalize them here so persisted snapshots and the 3D
@@ -164,9 +146,9 @@ def _modal_panorama_result(path: str) -> dict:
             if fdi is None or not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
                 continue
             fdi = str(fdi).strip()
-            m = __import__("re").search(r"(?:^|\\D)([1-4][1-8])(?:\\D|$)", fdi)
+            m = __import__("re").search(r"(?:^|\D)([1-4][1-8])(?:\D|$)", fdi)
             if not m:
-                digits = __import__("re").sub(r"\\D", "", fdi)
+                digits = __import__("re").sub(r"\D", "", fdi)
                 m = __import__("re").fullmatch(r"[1-4][1-8]", digits[-2:] if len(digits) >= 2 else "")
             if not m:
                 continue
