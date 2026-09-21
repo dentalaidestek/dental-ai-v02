@@ -231,33 +231,15 @@
     return {root,upperRoot,lowerRoot};
   }
 
+  // Reference rebuild: the final renderer is supplied by viewer_v3_patientmesh.js.
+  // Do not instantiate OMFAtlas teeth or bone on this branch.
   renderJaw=async function(){
-    await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));jawToothMap=new Map();
-    const {scene,renderer,camera}=jawScene,data=await loadData(),patient=dedupeTeeth(result?.teeth||[]);
-    if(!patient.length)throw new Error('FDI diş tespiti yok');
-    const stats=patientStats(patient),jaw=buildPanoramicJaw(patient,stats,data),root=jaw.root,maxillaRoot=jaw.upperRoot,mandibleRoot=jaw.lowerRoot;window.jawRoot=root;root.rotation.x=-Math.PI/2;scene.add(root);
-    const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0,renderedTeeth=0;
-    // Only patient-detected FDI teeth are instantiated. No complete-atlas tooth
-    // layer is rendered behind them, so the old translucent/ghost roots vanish.
-    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;clickables.push(built.mesh);jawToothMap.set(String(tooth.fdi),{mesh:built.mesh,wrapper:built.wrapper,tooth});(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
-    root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel='gösterilmedi';
-    result.anatomy3d={mode:'panoramic_generated_jaw',diagnostic:false,medical_volume:false,patient_specific_depth:false,reference_teeth_hidden:true,persistent_finding_markers:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,jaw_source:'panoramic_contours_required',bone_geometry:'withheld',atlas_revision:ATLAS_REV};
-    const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
+    if(typeof window.renderPatientPanoramicMesh!=='function')throw new Error('Hasta panoramik 3D üreticisi yüklenmedi');
+    return window.renderPatientPanoramicMesh();
   };
 
-  const baseOpenTooth=openTooth;
-  openTooth=async function(t){
-    await baseOpenTooth(t);
-    try{
-      const data=await loadData(),resolved=resolveToothPart(normalizeFdi(t.fdi),data);if(!resolved)return;const {part,placementCenter,mirrorX}=resolved;
-      disposeScene(toothScene);toothScene=createBase($('tooth3d'));
-      const THREE=window.D3.THREE,c=partCenter(part),patient=dedupeTeeth(result?.teeth||[]),stats=patientStats(patient),findings=toothFindings(t),transform=patientTransform(t,part,data,stats,findings,placementCenter),group=new THREE.Group(),pose=new THREE.Group();group.rotation.x=-Math.PI/2;pose.rotation.y=transform.rotationY;
-      const geometry=geometryFor(part,data.buffer);geometry.translate(-c[0],-c[1],-c[2]);
-      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf5f2ea,roughness:.24,clearcoat:.20,transparent:true,opacity:.88,side:THREE.DoubleSide,depthWrite:true}));if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=t;pose.add(mesh);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
-      $('chips').innerHTML='';const direct=findings.filter(f=>f.evidence_type==='direct');const shown=direct.length?direct:findings;if(!shown.length){const chip=document.createElement('span');chip.className='chip';chip.textContent='Doğrudan bulgu yok';$('chips').appendChild(chip)}else for(const f of shown){const chip=document.createElement('span');chip.className='chip';chip.textContent=f.label||f.finding_code;$('chips').appendChild(chip)}
-      const prior=$('metrics').textContent||'';$('metrics').textContent=`${prior}${prior?' • ':''}${PANORAMIC_SIMULATION_LABEL}; bukkolingual derinlik anatomik referanstır.`;
-    }catch(err){console.warn('[ANATOMY_DETAIL_FALLBACK]',err)}
-  };
+  // Keep base patient-detail view; no atlas detail replacement.
+
 
   function renderCurrentToothSheet(){
     if(typeof renderToothSheet==='function')renderToothSheet();
