@@ -245,7 +245,7 @@
 
   const baseOpenTooth=openTooth;
   openTooth=async function(t){
-    await baseOpenTooth(t);
+    try{ baseOpenTooth(t).catch?.(err=>console.warn('[LEGACY_TOOTH_DETAIL_SKIPPED]',err)); }catch(err){ console.warn('[LEGACY_TOOTH_DETAIL_SKIPPED]',err); }
     try{
       const data=await loadData(),resolved=resolveToothPart(normalizeFdi(t.fdi),data);if(!resolved)return;const {part,placementCenter,mirrorX}=resolved;
       disposeScene(toothScene);toothScene=createBase($('tooth3d'));
@@ -265,8 +265,8 @@
   const baseAnalyze=analyze;
   analyze=async function(){
     $('analysisSheet')?.classList.add('hidden');$('stage')?.classList.remove('has-results');
-    await baseAnalyze();if(!result?.anatomy3d)return;
-    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d;result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu • ${meta.rendered_teeth} diş 3D'ye yerleştirildi • ${PANORAMIC_SIMULATION_LABEL}`;renderSheet('findings');setTimeout(()=>{if(jawScene&&window.jawRoot)fitCamera(jawScene,window.jawRoot,1.34)},260);
+    await baseAnalyze();if(!result)return;
+    const count=allFindings().length,hidden=(result.findings||[]).filter(f=>findingScore(f)<MIN_DISPLAY_CONFIDENCE).length,meta=result.anatomy3d||{};if(result.anatomy3d)result.anatomy3d.low_confidence_hidden=hidden;$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • ${count} bulgu${Number.isFinite(meta.rendered_teeth)?` • ${meta.rendered_teeth} diş 3D'ye yerleştirildi`:''} • ${PANORAMIC_SIMULATION_LABEL}`;renderSheet('findings');setTimeout(()=>{if(jawScene&&window.jawRoot)fitCamera(jawScene,window.jawRoot,1.34)},260);
   };
   $('run').onclick=analyze;
   document.querySelectorAll('[data-sheet-tab]').forEach(b=>{b.onclick=()=>renderSheet(b.dataset.sheetTab)});
