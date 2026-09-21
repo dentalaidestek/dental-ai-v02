@@ -115,17 +115,13 @@
 
   function patientTransform(tooth,part,data,stats,findings,placementCenter=partCenter(part)){
     const b=tooth.bbox.map(Number),w=Math.max(1,b[2]-b[0]),h=Math.max(1,b[3]-b[1]),type=stats.byType.get(String(tooth.fdi)[1]);
-    const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH);
-    const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
+    const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH),sx=clamp(w/refW,.88,1.14),sz=clamp(h/refH,.88,1.14),sy=clamp(Math.sqrt(sx*sz),.92,1.08);
     const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=placementCenter,imageX=boxCenter(b)[0];
-    const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
-    // The panorama controls mesiodistal spacing. The old 28%-of-one-tooth cap
-    // forced missing-tooth cases back into the complete atlas arrangement.
-    const spacingLimit=Math.max(maxShift,partSpan(part,0)*1.15),xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
-    // Vertical image position is a panoramic cue for every tooth. Keep the
-    // depth small for erupted teeth and allow a stronger offset for impactions.
-    let zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*(isImpacted?.30:.08);
-    return {scale:[sx,sy,sz],rotationY:-axis.tilt*(isImpacted?1:.26),positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
+    const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),spacingLimit=partSpan(part,0)*1.35,xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
+    // Panorama y is the superior/inferior coordinate after the jaw root's X rotation.
+    // Preserve the full measured long-axis angle for every tooth, not only impactions.
+    const zShift=-clamp(imageOffset,-1.35,1.35)*partSpan(part,2)*(isImpacted?.42:.18);
+    return {scale:[sx,sy,sz],rotationY:-axis.tilt,positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
   }
 
   function findingColor(code){
@@ -227,16 +223,16 @@
 
   function buildPanoramicJaw(teeth,stats,data){
     const THREE=window.D3.THREE,root=new THREE.Group(),upperRoot=new THREE.Group(),lowerRoot=new THREE.Group();root.add(upperRoot,lowerRoot);
-    const boneMat=()=>new THREE.MeshPhysicalMaterial({color:0xa9c9e8,transparent:true,opacity:.24,roughness:.46,metalness:0,transmission:.10,depthWrite:false,side:THREE.DoubleSide});
-    const placedFor=items=>items.map(t=>{const r=resolveToothPart(t.fdi,data);if(!r)return null;const tr=patientTransform(t,r.part,data,stats,toothFindings(t),r.placementCenter),p=r.placementCenter;return {t,x:p[0]-data.center[0]+tr.positionShift[0],y:p[1]-data.center[1],z:p[2]-data.center[2]+tr.positionShift[2],w:partSpan(r.part,0),h:partSpan(r.part,2)}}).filter(Boolean).sort((a,b)=>a.x-b.x);
-    const build=(items,isUp,target)=>{
-      const p=placedFor(items);if(p.length<2)return;
-      const pts=p.map(q=>new THREE.Vector3(q.x,q.y,q.z)),curve=new THREE.CatmullRomCurve3([pts[0].clone(),...pts,pts.at(-1).clone()],false,'catmullrom',.35),mw=median(p.map(q=>q.w)),mh=median(p.map(q=>q.h)),outerR=Math.max(mw*.82,mh*.22),innerR=Math.max(mw*.52,mh*.13);
-      const outer=new THREE.Mesh(new THREE.TubeGeometry(curve,128,outerR,20,false),boneMat()),inner=new THREE.Mesh(new THREE.TubeGeometry(curve,128,innerR,20,false),boneMat());outer.userData.layer='bone';inner.userData.layer='bone';outer.visible=inner.visible=layerState.bone;target.add(outer,inner);
-      // Posterior vertical bone gives the generated mandible/maxilla a jaw volume instead of a thin rail.
-      for(const q of [p[0],p.at(-1)]){const height=Math.max(mh*2.8,mw*4.0),geo=new THREE.CapsuleGeometry(outerR*.72,height,10,20),m=new THREE.Mesh(geo,boneMat());m.position.set(q.x,q.y,q.z+(isUp?-height*.38:height*.38));m.rotation.x=Math.PI/2;m.userData.layer='bone';m.visible=layerState.bone;target.add(m)}
-    };
-    build(teeth.filter(t=>upper(t.fdi)),true,upperRoot);build(teeth.filter(t=>!upper(t.fdi)),false,lowerRoot);return {root,upperRoot,lowerRoot};
+    const mat=()=>new THREE.MeshPhysicalMaterial({color:0xa9c9e8,transparent:true,opacity:.22,roughness:.48,metalness:0,transmission:.14,depthWrite:false,side:THREE.DoubleSide});
+    const placed=items=>items.map(t=>{const r=resolveToothPart(t.fdi,data);if(!r)return null;const tr=patientTransform(t,r.part,data,stats,toothFindings(t),r.placementCenter),p=r.placementCenter;return {x:p[0]-data.center[0]+tr.positionShift[0],y:p[1]-data.center[1],z:p[2]-data.center[2]+tr.positionShift[2],w:partSpan(r.part,0),h:partSpan(r.part,2)}}).filter(Boolean).sort((x,y)=>x.x-y.x);
+    const build=(items,isUp,target)=>{const p=placed(items);if(p.length<2)return;const mw=median(p.map(q=>q.w)),mh=median(p.map(q=>q.h)),depth=Math.max(mw*1.65,mh*.50),vert=Math.max(mh*.56,mw*1.35),shape=new THREE.Shape();
+      // Patient-conditioned frontal jaw envelope from the panoramic tooth arch.
+      const top=p.map(q=>new THREE.Vector2(q.x,q.z+(isUp?-vert*.12:vert*.12))),bot=[...p].reverse().map(q=>new THREE.Vector2(q.x,q.z+(isUp?-vert:vert)));
+      shape.moveTo(top[0].x,top[0].y);for(const q of top.slice(1))shape.lineTo(q.x,q.y);for(const q of bot)shape.lineTo(q.x,q.y);shape.closePath();
+      const body=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:mw*.16,bevelSize:mw*.13,bevelSegments:4,steps:1}),mat());body.position.y=-depth/2;body.userData.layer='bone';body.visible=layerState.bone;target.add(body);
+      // Posterior ramus/tuberosity volumes follow the film's posterior endpoints.
+      for(const q of [p[0],p.at(-1)]){const rh=Math.max(mh*2.7,mw*4.2),rw=Math.max(mw*1.65,depth*.72),geo=new THREE.CapsuleGeometry(rw*.46,rh,10,20),m=new THREE.Mesh(geo,mat());m.position.set(q.x,0,q.z+(isUp?-rh*.46:rh*.46));m.userData.layer='bone';m.visible=layerState.bone;target.add(m)}
+    };build(teeth.filter(t=>upper(t.fdi)),true,upperRoot);build(teeth.filter(t=>!upper(t.fdi)),false,lowerRoot);return {root,upperRoot,lowerRoot};
   }
 
   renderJaw=async function(){
