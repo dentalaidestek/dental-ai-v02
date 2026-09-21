@@ -231,7 +231,15 @@
         if(!isUp){const head=new THREE.Mesh(new THREE.SphereGeometry(posteriorW*.38,24,16),boneMat());head.scale.set(1,.72,.58);head.position.set(q.x,0,q.z+posteriorH*.98);head.userData.layer='bone';head.visible=layerState.bone;target.add(head)}}
       // Broad anterior alveolar volume makes the jaw read as bone surrounding teeth, not a flat slab.
       const mid=p[Math.floor(p.length/2)],front=new THREE.Mesh(new THREE.SphereGeometry(Math.max(mw*2.0,depth*.55),28,18),boneMat());front.scale.set(1.75,.82,.62);front.position.set(mid.x,-depth*.12,mid.z+(isUp?-alveolar*.48:alveolar*.48));front.userData.layer='bone';front.visible=layerState.bone;target.add(front);
-    };body(placed(teeth.filter(t=>upper(t.fdi))),true,upperRoot);body(placed(teeth.filter(t=>!upper(t.fdi))),false,lowerRoot);return {root,upperRoot,lowerRoot};
+    };
+    const up=placed(teeth.filter(t=>upper(t.fdi))),lo=placed(teeth.filter(t=>!upper(t.fdi)));body(up,true,upperRoot);body(lo,false,lowerRoot);
+    // Panoramic-supported maxillary sinus cavities: position and floor height are
+    // estimated from the patient's posterior maxillary tooth envelope. We do not
+    // invent CT-only depth; only the visible 2D relation drives placement.
+    if(up.length>=4){const mw=median(up.map(q=>q.w)),mh=median(up.map(q=>q.h)),left=up.filter(q=>String(q.fdi)[0]==='1'),right=up.filter(q=>String(q.fdi)[0]==='2');for(const side of [left,right]){if(side.length<2)continue;const mol=side.filter(q=>Number(String(q.fdi)[1])>=5);if(!mol.length)continue;const cx=median(mol.map(q=>q.x)),floor=Math.min(...mol.map(q=>q.z))-mh*.72,geo=new THREE.SphereGeometry(Math.max(mw*2.0,mh*.58),30,20),m=new THREE.Mesh(geo,new THREE.MeshPhysicalMaterial({color:0x8fb9d8,transparent:true,opacity:.075,roughness:.55,depthWrite:false,side:THREE.DoubleSide}));m.scale.set(1.45,.82,.72);m.position.set(cx,0,floor-mh*.75);m.userData.layer='bone';m.userData.panoramaDerived='maxillary_sinus';m.visible=layerState.bone;upperRoot.add(m)}}
+    // Alveolar crest follows the detected tooth row on the panorama.
+    const crest=(p,target,isUp)=>{if(p.length<2)return;const pts=p.map(q=>new THREE.Vector3(q.x,0,q.z+(isUp?-q.h*.12:q.h*.12))),curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',.35),r=Math.max(.22,median(p.map(q=>q.w))*.18),m=new THREE.Mesh(new THREE.TubeGeometry(curve,96,r,12,false),boneMat());m.material.opacity=.32;m.userData.layer='bone';m.userData.panoramaDerived='alveolar_crest';m.visible=layerState.bone;target.add(m)};crest(up,upperRoot,true);crest(lo,lowerRoot,false);
+    return {root,upperRoot,lowerRoot};
   }
 
   renderJaw=async function(){
