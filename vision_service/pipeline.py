@@ -187,7 +187,11 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
     teeth = list(fdi_result.get("teeth") or [])
     helpers: list[dict] = []
     warnings: list[dict] = []
-    if "anatomy_warning" in locals(): warnings.append(anatomy_warning)
+    try:
+        anatomy_contours = extract_panorama_anatomy(image_path, teeth)
+    except Exception as exc:
+        anatomy_contours = {}
+        warnings.append({"motor":"panorama_anatomy","error_type":type(exc).__name__,"message":str(exc)})
     execution: list[dict] = []
 
     # Primary motors keep 0.02+ internal candidates. >=0.50 findings bypass
