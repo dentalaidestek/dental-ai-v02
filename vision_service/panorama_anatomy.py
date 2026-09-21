@@ -4,10 +4,11 @@ import numpy as np
 
 def _smooth(points, win=11):
     if len(points)<5:return points
-    a=np.asarray(points,np.float32); k=max(3,min(win,len(a)//2*2-1)); 
+    a=np.asarray(points,np.float32); k=max(3,min(win,len(a)//2*2-1))
     if k<3:return points
-    x=cv2.GaussianBlur(a[:,0].reshape(-1,1),(1,k),0).ravel()
-    y=cv2.GaussianBlur(a[:,1].reshape(-1,1),(1,k),0).ravel()
+    ker=np.ones(k,dtype=np.float32)/k; pad=k//2
+    x=np.convolve(np.pad(a[:,0],(pad,pad),mode='edge'),ker,mode='valid')
+    y=np.convolve(np.pad(a[:,1],(pad,pad),mode='edge'),ker,mode='valid')
     return [[round(float(px),1),round(float(py),1)] for px,py in zip(x,y)]
 
 def _tooth_envelope(teeth, upper):
