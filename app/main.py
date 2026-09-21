@@ -1766,6 +1766,11 @@ def embedded_viewer_js():
     return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3.js", media_type="application/javascript")
 
 
+@app.get("/viewer-v3-patientmesh.js", response_class=FileResponse)
+def embedded_viewer_patientmesh_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3_patientmesh.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/viewer-v3-finalfix.js", response_class=FileResponse)
 def embedded_viewer_finalfix_js():
     return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3_finalfix.js", media_type="application/javascript")
