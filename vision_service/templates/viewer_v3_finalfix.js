@@ -221,24 +221,13 @@
     body.appendChild(list);
   }
 
+  // IMPORTANT: do not fake patient anatomy with spheres/capsules/tubes.
+  // Until real panorama-derived bone/sinus contours are present in the result,
+  // render teeth only. This deliberately removes the previous "airbag" geometry.
   function buildPanoramicJaw(teeth,stats,data){
-    const THREE=window.D3.THREE,root=new THREE.Group(),upperRoot=new THREE.Group(),lowerRoot=new THREE.Group();root.add(upperRoot,lowerRoot);
-    const boneMat=()=>new THREE.MeshPhysicalMaterial({color:0xb8d7ee,transparent:true,opacity:.20,roughness:.40,metalness:0,transmission:.18,depthWrite:false,side:THREE.DoubleSide});
-    const placed=items=>items.map(t=>{const r=resolveToothPart(t.fdi,data);if(!r)return null;const tr=patientTransform(t,r.part,data,stats,toothFindings(t),r.placementCenter),p=r.placementCenter;return {fdi:t.fdi,x:p[0]-data.center[0]+tr.positionShift[0],y:p[1]-data.center[1],z:p[2]-data.center[2]+tr.positionShift[2],w:partSpan(r.part,0),h:partSpan(r.part,2)}}).filter(Boolean).sort((x,y)=>x.x-y.x);
-    const body=(p,isUp,target)=>{if(p.length<2)return;const mw=median(p.map(q=>q.w)),mh=median(p.map(q=>q.h)),depth=Math.max(mw*2.15,mh*.72),alveolar=Math.max(mh*.64,mw*1.45),shape=new THREE.Shape(),crest=p.map(q=>new THREE.Vector2(q.x,q.z+(isUp?-alveolar*.10:alveolar*.10))),base=[...p].reverse().map(q=>new THREE.Vector2(q.x,q.z+(isUp?-alveolar:alveolar)));
-      shape.moveTo(crest[0].x,crest[0].y);for(const q of crest.slice(1))shape.lineTo(q.x,q.y);for(const q of base)shape.lineTo(q.x,q.y);shape.closePath();const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth,steps:1,bevelEnabled:true,bevelThickness:mw*.24,bevelSize:mw*.22,bevelSegments:6}),boneMat());mesh.position.y=-depth/2;mesh.userData.layer='bone';mesh.visible=layerState.bone;target.add(mesh);
-      const ends=[p[0],p.at(-1)];for(const q of ends){const posteriorH=Math.max(mh*(isUp?2.0:3.8),mw*(isUp?3.2:5.4)),posteriorW=Math.max(mw*(isUp?1.9:2.25),depth*.76),geo=new THREE.CapsuleGeometry(posteriorW*.42,posteriorH,12,24),m=new THREE.Mesh(geo,boneMat());m.position.set(q.x,0,q.z+(isUp?-posteriorH*.40:posteriorH*.42));m.scale.y=1.10;m.userData.layer='bone';m.visible=layerState.bone;target.add(m);
-        if(!isUp){const head=new THREE.Mesh(new THREE.SphereGeometry(posteriorW*.38,24,16),boneMat());head.scale.set(1,.72,.58);head.position.set(q.x,0,q.z+posteriorH*.98);head.userData.layer='bone';head.visible=layerState.bone;target.add(head)}}
-      // Broad anterior alveolar volume makes the jaw read as bone surrounding teeth, not a flat slab.
-      const mid=p[Math.floor(p.length/2)],front=new THREE.Mesh(new THREE.SphereGeometry(Math.max(mw*2.0,depth*.55),28,18),boneMat());front.scale.set(1.75,.82,.62);front.position.set(mid.x,-depth*.12,mid.z+(isUp?-alveolar*.48:alveolar*.48));front.userData.layer='bone';front.visible=layerState.bone;target.add(front);
-    };
-    const up=placed(teeth.filter(t=>upper(t.fdi))),lo=placed(teeth.filter(t=>!upper(t.fdi)));body(up,true,upperRoot);body(lo,false,lowerRoot);
-    // Panoramic-supported maxillary sinus cavities: position and floor height are
-    // estimated from the patient's posterior maxillary tooth envelope. We do not
-    // invent CT-only depth; only the visible 2D relation drives placement.
-    if(up.length>=4){const mw=median(up.map(q=>q.w)),mh=median(up.map(q=>q.h)),left=up.filter(q=>String(q.fdi)[0]==='1'),right=up.filter(q=>String(q.fdi)[0]==='2');for(const side of [left,right]){if(side.length<2)continue;const mol=side.filter(q=>Number(String(q.fdi)[1])>=5);if(!mol.length)continue;const cx=median(mol.map(q=>q.x)),floor=Math.min(...mol.map(q=>q.z))-mh*.72,geo=new THREE.SphereGeometry(Math.max(mw*2.0,mh*.58),30,20),m=new THREE.Mesh(geo,new THREE.MeshPhysicalMaterial({color:0x8fb9d8,transparent:true,opacity:.075,roughness:.55,depthWrite:false,side:THREE.DoubleSide}));m.scale.set(1.45,.82,.72);m.position.set(cx,0,floor-mh*.75);m.userData.layer='bone';m.userData.panoramaDerived='maxillary_sinus';m.visible=layerState.bone;upperRoot.add(m)}}
-    // Alveolar crest follows the detected tooth row on the panorama.
-    const crest=(p,target,isUp)=>{if(p.length<2)return;const pts=p.map(q=>new THREE.Vector3(q.x,0,q.z+(isUp?-q.h*.12:q.h*.12))),curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',.35),r=Math.max(.22,median(p.map(q=>q.w))*.18),m=new THREE.Mesh(new THREE.TubeGeometry(curve,96,r,12,false),boneMat());m.material.opacity=.32;m.userData.layer='bone';m.userData.panoramaDerived='alveolar_crest';m.visible=layerState.bone;target.add(m)};crest(up,upperRoot,true);crest(lo,lowerRoot,false);
+    const THREE=window.D3.THREE,root=new THREE.Group(),upperRoot=new THREE.Group(),lowerRoot=new THREE.Group();
+    root.add(upperRoot,lowerRoot);
+    root.userData.boneGeometry='withheld_until_panorama_contours';
     return {root,upperRoot,lowerRoot};
   }
 
@@ -252,7 +241,7 @@
     // layer is rendered behind them, so the old translucent/ghost roots vanish.
     for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;clickables.push(built.mesh);jawToothMap.set(String(tooth.fdi),{mesh:built.mesh,wrapper:built.wrapper,tooth});(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
     root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel='gösterilmedi';
-    result.anatomy3d={mode:'panoramic_generated_jaw',diagnostic:false,medical_volume:false,patient_specific_depth:false,reference_teeth_hidden:true,persistent_finding_markers:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,jaw_source:'panoramic_geometry',atlas_revision:ATLAS_REV};
+    result.anatomy3d={mode:'panoramic_generated_jaw',diagnostic:false,medical_volume:false,patient_specific_depth:false,reference_teeth_hidden:true,persistent_finding_markers:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,jaw_source:'panoramic_contours_required',bone_geometry:'withheld',atlas_revision:ATLAS_REV};
     const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
