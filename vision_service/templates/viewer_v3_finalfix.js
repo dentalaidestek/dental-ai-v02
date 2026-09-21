@@ -115,13 +115,17 @@
 
   function patientTransform(tooth,part,data,stats,findings,placementCenter=partCenter(part)){
     const b=tooth.bbox.map(Number),w=Math.max(1,b[2]-b[0]),h=Math.max(1,b[3]-b[1]),type=stats.byType.get(String(tooth.fdi)[1]);
-    const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH),sx=clamp(w/refW,.88,1.14),sz=clamp(h/refH,.88,1.14),sy=clamp(Math.sqrt(sx*sz),.92,1.08);
+    const refW=Math.max(1,median(type?.w||[])||stats.medianW),refH=Math.max(1,median(type?.h||[])||stats.medianH);
+    const sx=clamp(w/refW,.90,1.10),sy=clamp(h/refH,.92,1.08),sz=clamp(Math.sqrt(sx*sy),.94,1.06);
     const axis=polygonAxis(tooth),archCy=upper(tooth.fdi)?stats.archY.upper:stats.archY.lower,imageOffset=(boxCenter(b)[1]-archCy)/stats.medianH,thirdMolar=String(tooth.fdi)[1]==='8',visuallyImpacted=thirdMolar&&(Math.abs(axis.tilt)>.42||Math.abs(imageOffset)>.55),isImpacted=findings.some(f=>IMPACTED_CODES.has(f.finding_code))||visuallyImpacted,c=placementCenter,imageX=boxCenter(b)[0];
-    const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),spacingLimit=partSpan(part,0)*1.35,xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
-    // Panorama y is the superior/inferior coordinate after the jaw root's X rotation.
-    // Preserve the full measured long-axis angle for every tooth, not only impactions.
-    const zShift=-clamp(imageOffset,-1.35,1.35)*partSpan(part,2)*(isImpacted?.42:.18);
-    return {scale:[sx,sy,sz],rotationY:-axis.tilt,positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
+    const n=clamp((imageX-stats.minX)/Math.max(1,stats.maxX-stats.minX),0,1),desiredX=data.toothMinX+n*(data.toothMaxX-data.toothMinX),maxShift=partSpan(part,0)*.28;
+    // The panorama controls mesiodistal spacing. The old 28%-of-one-tooth cap
+    // forced missing-tooth cases back into the complete atlas arrangement.
+    const spacingLimit=Math.max(maxShift,partSpan(part,0)*1.15),xShift=clamp(desiredX-c[0],-spacingLimit,spacingLimit);
+    // Vertical image position is a panoramic cue for every tooth. Keep the
+    // depth small for erupted teeth and allow a stronger offset for impactions.
+    let zShift=-clamp(imageOffset,-1.1,1.1)*partSpan(part,2)*(isImpacted?.30:.08);
+    return {scale:[sx,sy,sz],rotationY:-axis.tilt*(isImpacted?1:.26),positionShift:[xShift,0,zShift],impacted:isImpacted,axisReliable:axis.reliable};
   }
 
   function findingColor(code){
@@ -221,25 +225,37 @@
     body.appendChild(list);
   }
 
-  // IMPORTANT: do not fake patient anatomy with spheres/capsules/tubes.
-  // Until real panorama-derived bone/sinus contours are present in the result,
-  // render teeth only. This deliberately removes the previous "airbag" geometry.
-  function buildPanoramicJaw(teeth,stats,data){
-    const THREE=window.D3.THREE,root=new THREE.Group(),upperRoot=new THREE.Group(),lowerRoot=new THREE.Group();
-    root.add(upperRoot,lowerRoot);
-    root.userData.boneGeometry='withheld_until_panorama_contours';
-    return {root,upperRoot,lowerRoot};
-  }
-
-  // Reference rebuild: the final renderer is supplied by viewer_v3_patientmesh.js.
-  // Do not instantiate OMFAtlas teeth or bone on this branch.
   renderJaw=async function(){
-    if(typeof window.renderPatientPanoramicMesh!=='function')throw new Error('Hasta panoramik 3D üreticisi yüklenmedi');
-    return window.renderPatientPanoramicMesh();
+    await waitD3();disposeScene(jawScene);jawScene=createBase($('jaw3d'));jawToothMap=new Map();
+    const {scene,renderer,camera}=jawScene,data=await loadData(),patient=dedupeTeeth(result?.teeth||[]);
+    if(!patient.length)throw new Error('FDI diş tespiti yok');
+    const stats=patientStats(patient),root=new window.D3.THREE.Group(),maxillaRoot=new window.D3.THREE.Group(),mandibleRoot=new window.D3.THREE.Group();window.jawRoot=root;root.rotation.x=-Math.PI/2;maxillaRoot.position.z=-2.8;mandibleRoot.position.z=2.8;root.add(maxillaRoot,mandibleRoot);scene.add(root);
+    // Diagnocat-like palette requested for the clean final view: translucent
+    // pale blue bone, natural white teeth and a distinct pink canal.
+    const boneMat=()=>new window.D3.THREE.MeshPhysicalMaterial({color:0xa9b7ea,transparent:true,opacity:.23,roughness:.44,metalness:0,transmission:.10,depthWrite:false,side:window.D3.THREE.DoubleSide});
+    for(const part of data.bones){const mesh=new window.D3.THREE.Mesh(geometryFor(part,data.buffer),boneMat());mesh.position.set(-data.center[0],-data.center[1],-data.center[2]);mesh.userData.layer='bone';mesh.visible=layerState.bone;(part.jaw==='maxilla'?maxillaRoot:mandibleRoot).add(mesh)}
+    const clickables=[];let impactedAdjusted=0,axisAdjusted=0,atlasFallbacks=0,renderedTeeth=0;
+    // Only patient-detected FDI teeth are instantiated. No complete-atlas tooth
+    // layer is rendered behind them, so the old translucent/ghost roots vanish.
+    for(const tooth of patient){const resolved=resolveToothPart(tooth.fdi,data);if(!resolved)continue;const findings=toothFindings(tooth),built=buildPatientTooth(tooth,resolved,data,stats,findings);renderedTeeth++;if(built.transform.impacted)impactedAdjusted++;if(built.transform.axisReliable)axisAdjusted++;if(resolved.atlasFallback)atlasFallbacks++;clickables.push(built.mesh);jawToothMap.set(String(tooth.fdi),{mesh:built.mesh,wrapper:built.wrapper,tooth});(upper(tooth.fdi)?maxillaRoot:mandibleRoot).add(built.wrapper)}
+    root.scale.setScalar(.058);fitCamera(jawScene,root,1.24);const canalLabel=addMandibularCanals(scene,mandibleRoot);
+    result.anatomy3d={mode:'panoramic_conditioned_reference',diagnostic:false,medical_volume:false,patient_specific_depth:false,reference_teeth_hidden:true,persistent_finding_markers:false,rendered_teeth:renderedTeeth,axis_adjusted:axisAdjusted,impacted_adjusted:impactedAdjusted,atlas_fallbacks:atlasFallbacks,occlusion_compaction_mm:5.6,canal:canalLabel,atlas_revision:ATLAS_REV};
+    const THREE=window.D3.THREE,ray=new THREE.Raycaster(),mouse=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',ev=>{const r=renderer.domElement.getBoundingClientRect();mouse.x=((ev.clientX-r.left)/r.width)*2-1;mouse.y=-((ev.clientY-r.top)/r.height)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(clickables,false)[0];if(hit?.object?.userData?.tooth)openTooth(hit.object.userData.tooth)});
   };
 
-  // Keep base patient-detail view; no atlas detail replacement.
-
+  const baseOpenTooth=openTooth;
+  openTooth=async function(t){
+    await baseOpenTooth(t);
+    try{
+      const data=await loadData(),resolved=resolveToothPart(normalizeFdi(t.fdi),data);if(!resolved)return;const {part,placementCenter,mirrorX}=resolved;
+      disposeScene(toothScene);toothScene=createBase($('tooth3d'));
+      const THREE=window.D3.THREE,c=partCenter(part),patient=dedupeTeeth(result?.teeth||[]),stats=patientStats(patient),findings=toothFindings(t),transform=patientTransform(t,part,data,stats,findings,placementCenter),group=new THREE.Group(),pose=new THREE.Group();group.rotation.x=-Math.PI/2;pose.rotation.y=transform.rotationY;
+      const geometry=geometryFor(part,data.buffer);geometry.translate(-c[0],-c[1],-c[2]);
+      const mesh=new THREE.Mesh(geometry,new THREE.MeshPhysicalMaterial({color:0xf5f2ea,roughness:.24,clearcoat:.20,transparent:true,opacity:.88,side:THREE.DoubleSide,depthWrite:true}));if(mirrorX)mesh.scale.x=-1;mesh.userData.tooth=t;pose.add(mesh);pose.scale.set(...transform.scale);group.add(pose);toothScene.scene.add(group);group.scale.setScalar(.065);fitCamera(toothScene,group,1.72);
+      $('chips').innerHTML='';const direct=findings.filter(f=>f.evidence_type==='direct');const shown=direct.length?direct:findings;if(!shown.length){const chip=document.createElement('span');chip.className='chip';chip.textContent='Doğrudan bulgu yok';$('chips').appendChild(chip)}else for(const f of shown){const chip=document.createElement('span');chip.className='chip';chip.textContent=f.label||f.finding_code;$('chips').appendChild(chip)}
+      const prior=$('metrics').textContent||'';$('metrics').textContent=`${prior}${prior?' • ':''}${PANORAMIC_SIMULATION_LABEL}; bukkolingual derinlik anatomik referanstır.`;
+    }catch(err){console.warn('[ANATOMY_DETAIL_FALLBACK]',err)}
+  };
 
   function renderCurrentToothSheet(){
     if(typeof renderToothSheet==='function')renderToothSheet();

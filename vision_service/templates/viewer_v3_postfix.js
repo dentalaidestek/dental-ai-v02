@@ -46,7 +46,12 @@
     if(result&&Array.isArray(result.teeth))for(const t of result.teeth)if(t)t.fdi=normalizeFdi(t.fdi);
     await priorRenderJaw();
     const profile=projectionProfile();
-    if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label}
+    if(window.jawRoot?.children?.length>=2){
+      const maxilla=window.jawRoot.children[0],mandible=window.jawRoot.children[1],half=desiredHalfSeparation(profile);
+      maxilla.position.z=-half*.72;mandible.position.z=half*.72;
+      if(result?.anatomy3d){result.anatomy3d.projection_gap_norm=profile.gapNorm;result.anatomy3d.projection_pairs=profile.pairs;result.anatomy3d.projection_label=profile.label;result.anatomy3d.jaw_half_separation_local=half}
+      refitJaw();
+    }
   };
 
   function contactMetrics(tooth,teeth){
@@ -92,7 +97,7 @@
   analyze=async function(){
     await priorAnalyze();if(!result)return;
     const profile=projectionProfile(),trusted=(result.findings||[]).filter(f=>f?.finding_code&&score(f)>=MIN_CONF),hidden=(result.findings||[]).filter(f=>f?.finding_code&&score(f)<MIN_CONF).length,n=result.unique_fdi_count||result.tooth_count||0;
-    const hiddenText=hidden?` • ${hidden} düşük güven gizli`:'';const bone=result?.anatomy3d?.bone_contours_rendered?` • çene konturu: filmden`:` • çene konturu bekleniyor`;$('status').textContent=`${n} diş • ${trusted.length} güvenilir bulgu${hiddenText}${bone} • projeksiyon: ${profile.label}`;
+    const hiddenText=hidden?` • ${hidden} düşük güven gizli`:'';$('status').textContent=`${n} diş • ${trusted.length} güvenilir bulgu${hiddenText} • projeksiyon: ${profile.label}`;
   };
   $('run').onclick=analyze;
 })();
