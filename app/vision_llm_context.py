@@ -44,6 +44,7 @@ def _slim_result(result: dict, *, source_image_id: str | None = None) -> dict:
                 "localization_type": item.get("localization_type"),
                 "bbox": item.get("bbox"),
                 "source_motor": item.get("source_motor"),
+                "polygon": item.get("polygon") or item.get("segmentation") or item.get("contour"),
                 "captured_at": item.get("captured_at"),
                 "review_state": item.get("review_state") or "unreviewed",
             })
@@ -66,6 +67,9 @@ def _slim_result(result: dict, *, source_image_id: str | None = None) -> dict:
         "findings": slim_items(result.get("findings")),
         "auxiliary_radiographic_findings": slim_items(result.get("auxiliary_radiographic_findings")),
         "image_level_findings": slim_items(result.get("image_level_findings")),
+        # Preserve only genuine image-derived anatomy contours. The viewer must
+        # never manufacture sinus/jaw geometry from tooth positions.
+        "anatomy_contours": result.get("anatomy_contours") or result.get("contours") or {},
     }
 
 
@@ -108,6 +112,7 @@ def _modal_panorama_result(path: str) -> dict:
     from vision_service.motors.catalog import FINDING_CATALOG
 
     raw = _modal_infer(path, "panoramic")
+    anatomy_contours = raw.get("anatomy_contours") or raw.get("contours") or (raw.get("result", {}).get("anatomy_contours") if isinstance(raw.get("result"), dict) else {}) or {}
     def _fdi_items(payload):
         # Modal deployments have used both legacy "fdi" and newer "teeth"
         # envelopes. Normalize them here so persisted snapshots and the 3D
@@ -182,7 +187,7 @@ def _modal_panorama_result(path: str) -> dict:
             rescued.append({**item,"candidate_only":False,"display_eligible":True,"fusion_supported":True,"support_motor":support.get("motor"),"support_confidence":support.get("confidence"),"support_iou":round(bbox_iou(box(item),box(support)),4)})
     for item in strong:
         item.update({"candidate_only":False,"display_eligible":True,"fusion_supported":False})
-    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(teeth),"unique_fdi_count":len({str(t.get("fdi")) for t in teeth}),"teeth":teeth,"warnings":[] if teeth else ["FDI_LOCALIZATION_EMPTY"]}
+    return {"ok":True,"engine":"dental_ai_panorama_modal_v1","modality":"PANORAMIC","findings":strong+rescued,"tooth_count":len(teeth),"unique_fdi_count":len({str(t.get("fdi")) for t in teeth}),"teeth":teeth,"anatomy_contours":anatomy_contours,"warnings":[] if teeth else ["FDI_LOCALIZATION_EMPTY"]}
 
 
 def structured_vision_payload(image_paths: list[str] | None, modality_hint: str = "", image_types: list[str] | None = None) -> dict:

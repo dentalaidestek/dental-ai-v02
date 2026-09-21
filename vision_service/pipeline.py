@@ -16,6 +16,7 @@ from vision_service.motors.insmile12 import normalize_class as normalize_insmile
 from vision_service.motors.liodon3 import normalize_class as normalize_liodon3
 from vision_service.motors.yolo31 import normalize_class as normalize_yolo31
 from vision_service.optional_yolo import run_source
+from vision_service.panorama_anatomy import extract_panorama_anatomy
 from vision_service.readiness import readiness_snapshot
 from vision_service.tvem_client import run_sequential as run_tvem
 
@@ -62,6 +63,12 @@ def _detector_outputs(*, image_path: str, model_key: str, conf: float, iou: floa
     class_count = len(names) if hasattr(names, "__len__") else None
     findings: list[dict] = []
     helpers: list[dict] = []
+    try:
+        anatomy_contours = extract_panorama_anatomy(image_path, teeth)
+    except Exception as exc:
+        anatomy_contours = {}
+        # Anatomy extraction is display support only; never fail diagnostic motors.
+        anatomy_warning = {"motor":"panorama_anatomy","error_type":type(exc).__name__,"message":str(exc)}
 
     for box, score, class_id in zip(boxes, scores, classes):
         raw_class = _name_for(names, int(class_id))
@@ -180,6 +187,11 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
     teeth = list(fdi_result.get("teeth") or [])
     helpers: list[dict] = []
     warnings: list[dict] = []
+    try:
+        anatomy_contours = extract_panorama_anatomy(image_path, teeth)
+    except Exception as exc:
+        anatomy_contours = {}
+        warnings.append({"motor":"panorama_anatomy","error_type":type(exc).__name__,"message":str(exc)})
     execution: list[dict] = []
 
     # Primary motors keep 0.02+ internal candidates. >=0.50 findings bypass
@@ -298,6 +310,8 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "unique_fdi_count": fdi_result.get("unique_fdi_count", len({str(t.get('fdi')) for t in teeth})),
         "has_segmentation": bool(fdi_result.get("has_segmentation")),
         "teeth": teeth,
+        "anatomy_contours": anatomy_contours,
+        "anatomy_contour_source": "panorama_image_edges_v1" if anatomy_contours else "unavailable",
         "finding_count": len(final_findings),
         "findings": final_findings,
         "internal_candidate_threshold": PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD,
