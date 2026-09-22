@@ -318,6 +318,24 @@ SOURCES = {
         target_signals=("TOOTH_FRACTURE",),
         note="2026 public dental crack dataset with specialist bounding boxes and YOLO/VOC/COCO annotations.",
     ),
+
+    "oral_diseases_attached": TrainingSource(
+        key="oral_diseases_attached",
+        access="attached_kaggle_input",
+        locator="salmansajid05/oral-diseases",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES","CALCULUS","GINGIVAL_INFLAMMATION","ORAL_ULCER_CANDIDATE","TOOTH_DISCOLORATION","HYPODONTIA_CANDIDATE"),
+        note="Mounted Kaggle source. Six condition folders provide positive image-level GT only; other folders are not treated as exhaustive negatives.",
+    ),
+    "oral_infection_attached": TrainingSource(
+        key="oral_infection_attached",
+        access="attached_kaggle_input",
+        locator="sizlingdhairya1/oral-infection",
+        modality="INTRAORAL_PHOTO",
+        target_signals=("VISIBLE_CARIES","CALCULUS","GINGIVAL_INFLAMMATION","ORAL_ULCER_CANDIDATE","TOOTH_DISCOLORATION","HYPODONTIA_CANDIDATE"),
+        note="Mounted Kaggle source. Folder semantics are consumed only when exact class labels are present; no cross-class negatives are invented.",
+    ),
+
     "pandent": TrainingSource(
         key="pandent",
         access="gated_manual_approval",
