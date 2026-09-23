@@ -3129,7 +3129,7 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     )).all()
     missed_today = len(expert_cases)
     _consultation_event(session, case.id, "MISSED_REQUEST_COUNTED", case.expert_user_id, {"missed_today": missed_today})
-    if missed_today >= 3:
+    if missed_today == 3:
         state = _expert_policy_state(session, case.expert_user_id)
         blocked_until = now + timedelta(hours=24)
         if not state.new_case_blocked_until or state.new_case_blocked_until < blocked_until:
@@ -3254,6 +3254,25 @@ def admin_consultation_dispute_review(request: Request, case_id: int):
     return templates.TemplateResponse(request=request, name="admin_consultation_dispute.html", context={
         "user": user, "case": case, "messages": messages,
     })
+
+
+@app.get("/admin/consultation-disputes/{case_id}/message-media/{message_id}")
+def admin_consultation_dispute_media(request: Request, case_id: int, message_id: int):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        message = s.get(ConsultationMessage, message_id)
+        if not case or case.status != "DISPUTE" or not case.dispute_opened_at or not message or message.case_id != case.id or not message.media_path:
+            return HTMLResponse("Aktif itiraz kapsamında erişilebilir medya bulunamadı.", status_code=403)
+        path = Path(message.media_path)
+        if not path.exists() or not path.is_file():
+            return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="VIEW_MEDIA"))
+        _consultation_event(s, case.id, "DISPUTE_ADMIN_MEDIA_ACCESSED", user.id, {"message_id": message.id})
+        s.commit()
+        return FileResponse(path)
 
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
@@ -3476,6 +3495,7 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
+        _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.verification_status == "VERIFIED",
