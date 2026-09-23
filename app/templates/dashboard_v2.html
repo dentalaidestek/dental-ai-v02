@@ -1,47 +1,41 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>@import url('/static/dashboard-v2.css?v=20260923-cards');</style>
+<style>@import url('/static/dashboard-v2.css?v=20260923-full');</style>
 
 <div class="visual-dashboard">
   <section class="visual-welcome">
+    <div class="visual-welcome-copy">
+      <span class="visual-eyebrow">HOŞ GELDİNİZ</span>
+      <h1>{{ dashboard_greeting }}</h1>
+      <p>Kliniğini tek ekrandan yönet, Dental AI araçlarına hızlıca eriş.</p>
+    </div>
     <div class="visual-welcome-icon" aria-hidden="true">
       <svg viewBox="0 0 64 64"><path d="M20 9c6 0 8 4 12 4s6-4 12-4c9 0 14 8 11 18-2 7-6 11-8 18-2 8-4 13-8 13-5 0-3-16-7-16s-2 16-7 16c-4 0-6-5-8-13-2-7-6-11-8-18C6 17 11 9 20 9Z"/><path d="M23 20c3 1 5 2 9 2s6-1 9-2"/></svg>
     </div>
-    <div>
-      <h1>{{ dashboard_greeting }}</h1>
-      <p>Hasta yönetimi, diş şeması ve Dental AI araçlarına hızlıca eriş.</p>
-    </div>
   </section>
-
-  <form action="/patients/search" method="get" class="visual-search" aria-label="Hasta ara">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-    <input type="text" name="q" placeholder="Hasta adı, soyadı veya hasta no ara..." autocomplete="off">
-    <button type="submit">Ara</button>
-  </form>
 
   <section class="visual-card-grid" aria-label="Ana işlemler">
     <a class="visual-feature-card visual-patients" href="/patients">
-      <div class="visual-art visual-patient-art" aria-hidden="true"><img src="/static/dashboard/dental_ai_patients_card.webp" alt=""></div>
+      <div class="visual-art" aria-hidden="true"><img src="/static/dashboard/dental_ai_patients_card.webp" alt=""></div>
       <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Hastalar</strong><small>Hasta kayıtlarını görüntüle ve yönet</small></div><span class="visual-arrow">→</span>
     </a>
-
     <a class="visual-feature-card visual-chart" href="/tooth-charts">
       <div class="visual-art" aria-hidden="true"><img src="/static/dashboard/dental_ai_tooth_chart_card.webp" alt=""></div>
       <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Diş Şeması</strong><small>Odontogram ve diş haritasını aç</small></div><span class="visual-arrow">→</span>
     </a>
-
     <a class="visual-feature-card visual-ai" href="/analysis/new">
       <div class="visual-art" aria-hidden="true"><img src="/static/dashboard/dental_ai_analysis_card.webp" alt=""></div>
       <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Dental AI ile Analiz</strong><small>Röntgen, fotoğraf veya klinik bilgiyle analiz başlat</small></div><span class="visual-arrow">→</span>
     </a>
   </section>
 
-  <section class="visual-program">
-    <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program">Tüm Program</a></div>
-    {% if dashboard_event %}
-      <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
-    {% else %}<div class="visual-empty">Yaklaşan program kaydı yok. <a href="/program/new">Programa ekle</a></div>{% endif %}
+  <section class="visual-search-card">
+    <div class="visual-search-title"><span>⌕</span><div><strong>Hasta Ara</strong><small>Kayıtlı hastaya hızlıca ulaş</small></div></div>
+    <form action="/patients/search" method="get" class="visual-search" aria-label="Hasta ara">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <input type="text" name="q" placeholder="Ad, soyad veya hasta no..." autocomplete="off"><button type="submit">Ara</button>
+    </form>
   </section>
 
   <section class="visual-recent">
@@ -57,6 +51,13 @@
     </div>
   </section>
 
+  <section class="visual-program">
+    <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program">Tüm Program</a></div>
+    {% if dashboard_event %}
+      <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
+    {% else %}<div class="visual-empty">Yaklaşan program kaydı yok. <a href="/program/new">Programa ekle</a></div>{% endif %}
+  </section>
+
   <section class="visual-guest">
     <div class="visual-section-head"><h2>Son Analizler</h2><a href="/analyses">Tüm Analizler</a></div>
     {% if guest_analyses %}{% for a in guest_analyses %}
@@ -66,4 +67,5 @@
 
   <div class="visual-notice">⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
+<script>document.body.classList.add('dashboard-home');</script>
 {% endblock %}
