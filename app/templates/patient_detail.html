@@ -2,8 +2,6 @@
 
 {% block content %}
 <div class="patient-detail-page">
-    <a class="workspace-back-link patient-back-link" href="/patients">← Hastalar</a>
-
     <section class="card patient-hero-card">
         <div class="patient-hero-main">
             <div class="patient-avatar" aria-hidden="true">
@@ -89,40 +87,30 @@
             </div>
         </div>
 
-        <form class="patient-media-upload" method="post" action="/patients/{{ patient.id }}/media" enctype="multipart/form-data">
+        <form class="patient-media-upload patient-media-upload-compact" method="post" action="/patients/{{ patient.id }}/media" enctype="multipart/form-data">
             <input type="hidden" name="media_type" id="patientMediaType" value="PHOTO">
             <input type="file" id="patientMediaFiles" name="files" accept="image/jpeg,image/png,image/webp" multiple hidden required>
-
             <div class="patient-media-type-actions">
-                <button type="button" class="patient-media-pick active" data-media-type="PHOTO">📷 Fotoğraf Ekle</button>
-                <button type="button" class="patient-media-pick" data-media-type="RADIOGRAPH">🩻 Röntgen Ekle</button>
+                <button type="button" class="patient-media-pick patient-media-radiograph" data-media-type="RADIOGRAPH">🩻 <span>Röntgen Ekle</span></button>
+                <button type="button" class="patient-media-pick patient-media-photo" data-media-type="PHOTO">📷 <span>Fotoğraf Ekle</span></button>
             </div>
-
-            <div class="patient-media-selected" id="patientMediaSelected">Henüz görüntü seçilmedi.</div>
-
-            <details class="patient-media-details">
-                <summary>Diş numarası / kısa not ekle <span>⌄</span></summary>
-                <div class="patient-media-fields">
-                    <label>
-                        Diş numarası <small>(isteğe bağlı)</small>
-                        <input name="tooth_number" maxlength="10" placeholder="Örn: 36">
-                    </label>
-                    <label>
-                        Hekim notu <small>(isteğe bağlı)</small>
-                        <textarea name="note" rows="2" maxlength="500" placeholder="Örn: Kontrol öncesi panoramik görüntü"></textarea>
-                    </label>
-                </div>
-            </details>
-
-            <button type="submit" class="patient-media-save" id="patientMediaSave" disabled>Görüntüleri Kaydet</button>
+            <div class="patient-media-pending" id="patientMediaPending" hidden>
+                <span id="patientMediaSelected">Henüz görüntü seçilmedi.</span>
+                <button type="submit" class="patient-media-save" id="patientMediaSave" disabled>Kaydet</button>
+            </div>
         </form>
 
         {% if patient_media %}
         <button type="button" class="patient-media-open-gallery" onclick="openPatientMediaGallery()">
-            <span>Görselleri Görüntüle</span>
-            <strong>{{ patient_media|length }}</strong>
-            <span aria-hidden="true">›</span>
+            <span><strong>{{ patient_media|length }}</strong> Klinik Görsel</span>
+            <span>Tümünü Gör <b aria-hidden="true">→</b></span>
         </button>
+        <div class="patient-media-profile-preview" onclick="openPatientMediaGallery()" role="button" tabindex="0" aria-label="Klinik görselleri aç">
+            {% for media in patient_media[:3] %}
+            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
+            {% endfor %}
+            {% if patient_media|length > 3 %}<span class="patient-media-preview-more">+{{ patient_media|length - 3 }}</span>{% endif %}
+        </div>
 
         <div id="patientMediaGalleryModal" class="patient-media-gallery-modal" aria-hidden="true" onclick="if(event.target === this) closePatientMediaGallery()">
             <div class="patient-media-gallery-dialog" role="dialog" aria-modal="true" aria-label="Klinik görseller">
@@ -395,6 +383,7 @@ document.addEventListener("keydown", function(event) {
     const typeInput = document.getElementById("patientMediaType");
     const selected = document.getElementById("patientMediaSelected");
     const save = document.getElementById("patientMediaSave");
+    const pending = document.getElementById("patientMediaPending");
     const pickButtons = document.querySelectorAll(".patient-media-pick");
     if (!fileInput || !typeInput || !selected || !save) return;
 
@@ -406,6 +395,7 @@ document.addEventListener("keydown", function(event) {
             fileInput.value = "";
             selected.textContent = "Henüz görüntü seçilmedi.";
             save.disabled = true;
+            if (pending) pending.hidden = true;
             fileInput.click();
         });
     });
@@ -418,6 +408,7 @@ document.addEventListener("keydown", function(event) {
             return;
         }
         selected.textContent = count === 1 ? fileInput.files[0].name : count + " görüntü seçildi";
+        if (pending) pending.hidden = false;
         save.disabled = false;
     });
 })();
