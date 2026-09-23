@@ -116,16 +116,58 @@ document.addEventListener("keydown", function(event) {
     }
 });
 if (document.getElementById("mobileMessagesBadge")) {
-    fetch("/messages/unread-count", {credentials:"same-origin"})
-      .then(r => r.ok ? r.json() : {count:0})
-      .then(data => {
+    let liveReady = false, lastLiveMessageId = Number(sessionStorage.getItem("daiLastLiveMessageId") || 0);
+    function paintMessageBadge(count) {
         const badge = document.getElementById("mobileMessagesBadge");
-        const count = Number(data.count || 0);
-        if (count > 0) {
-            badge.textContent = count > 99 ? "99+" : String(count);
-            badge.hidden = false;
+        count = Number(count || 0);
+        badge.hidden = count < 1;
+        badge.textContent = count > 99 ? "99+" : String(count);
+    }
+    function showLiveMessage(latest) {
+        let toast = document.getElementById("daiMessageToast");
+        if (!toast) {
+            toast = document.createElement("a");
+            toast.id = "daiMessageToast";
+            toast.className = "dai-message-toast";
+            document.body.appendChild(toast);
         }
-      }).catch(() => {});
+        toast.href = "/expert-support/cases/" + latest.case_id;
+        toast.innerHTML = "<b>" + String(latest.sender || "Yeni mesaj").replace(/[<>&]/g,"") + "</b><span>" + String(latest.preview || "Yeni mesaj").replace(/[<>&]/g,"") + "</span>";
+        toast.classList.add("show");
+        clearTimeout(window.__daiToastTimer);
+        window.__daiToastTimer = setTimeout(()=>toast.classList.remove("show"), 4500);
+        if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+            new Notification("Dental AI · Yeni mesaj", {body:(latest.sender || "") + ": " + (latest.preview || ""), tag:"case-"+latest.case_id});
+        }
+    }
+    async function pollMessages() {
+        try {
+            const r = await fetch("/messages/live-status", {credentials:"same-origin", cache:"no-store"});
+            if (!r.ok) return;
+            const data = await r.json();
+            paintMessageBadge(data.count);
+            const latest = data.latest;
+            if (liveReady && latest && Number(latest.id) > lastLiveMessageId) {
+                lastLiveMessageId = Number(latest.id);
+                sessionStorage.setItem("daiLastLiveMessageId", String(lastLiveMessageId));
+                showLiveMessage(latest);
+                const p = location.pathname;
+                const typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+                if (!typing && (p === "/messages" || p === "/expert-support/cases/" + latest.case_id)) setTimeout(()=>location.reload(), 650);
+            } else if (!liveReady && latest) {
+                lastLiveMessageId = Math.max(lastLiveMessageId, Number(latest.id));
+                sessionStorage.setItem("daiLastLiveMessageId", String(lastLiveMessageId));
+            }
+            liveReady = true;
+        } catch(e) {}
+    }
+    pollMessages();
+    setInterval(pollMessages, 4000);
+    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) pollMessages(); });
+    document.addEventListener("click", function enableDentalNotifications(){
+        if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(()=>{});
+        document.removeEventListener("click", enableDentalNotifications);
+    }, {once:true});
 }
 </script>
 </body>
