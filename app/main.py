@@ -78,6 +78,12 @@ from app.auth import (
 )
 
 BASE = Path(__file__).resolve().parent
+
+# Keep legacy TIMESTAMP WITHOUT TIME ZONE storage while avoiding datetime.utcnow(),
+# which newer SQLModel/Pydantic stacks reject/deprecate in stricter datetime paths.
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
@@ -97,7 +103,7 @@ class User(SQLModel, table=True):
     password_hash: Optional[str] = None
     email: Optional[str] = Field(default=None, index=True)
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -122,7 +128,7 @@ class AgreementAcceptance(SQLModel, table=True):
     user_id: int = Field(index=True)
     agreement_type: str = Field(index=True)
     agreement_version: str
-    accepted_at: datetime = Field(default_factory=datetime.utcnow)
+    accepted_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 
@@ -137,7 +143,7 @@ class SessionToken(SQLModel, table=True):
     token_hash: str = Field(index=True)
     user_id: int = Field(index=True)
     expires_at: datetime
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class PasswordResetToken(SQLModel, table=True):
@@ -146,7 +152,7 @@ class PasswordResetToken(SQLModel, table=True):
     token_hash: str = Field(index=True)
     expires_at: datetime
     used_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class Patient(SQLModel, table=True):
@@ -160,7 +166,7 @@ class Patient(SQLModel, table=True):
     age: Optional[int] = None
     chief_complaint: Optional[str] = None
     owner_user_id: Optional[int] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 class Analysis(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -170,7 +176,7 @@ class Analysis(SQLModel, table=True):
     radiograph_path: Optional[str] = None
     clinical_notes: Optional[str] = None
     status: str = "DRAFT"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 class ToothStatus(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -178,7 +184,7 @@ class ToothStatus(SQLModel, table=True):
     tooth_number: str = Field(index=True)
     status: str = "HEALTHY"
     note: Optional[str] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class ToothSurfaceStatus(SQLModel, table=True):
@@ -190,7 +196,7 @@ class ToothSurfaceStatus(SQLModel, table=True):
     surface: str
     status: str = "HEALTHY"
     note: Optional[str] = None
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class Treatment(SQLModel, table=True):
@@ -203,7 +209,7 @@ class Treatment(SQLModel, table=True):
     doctor_note: Optional[str] = None
     result: Optional[str] = None
     analysis_id: Optional[int] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class ImageAsset(SQLModel, table=True):
@@ -213,7 +219,7 @@ class ImageAsset(SQLModel, table=True):
     stored_filename: str
     file_path: str
     image_type: str = "OTHER"
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = Field(default_factory=_utcnow_naive)
     vision_snapshot_json: Optional[str] = None
 
 
@@ -228,7 +234,7 @@ class PatientMedia(SQLModel, table=True):
     media_type: str = Field(default="PHOTO", index=True)
     tooth_number: Optional[str] = None
     note: Optional[str] = None
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    uploaded_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
 class GuestAnalysis(SQLModel, table=True):
@@ -237,7 +243,7 @@ class GuestAnalysis(SQLModel, table=True):
     tooth_number: Optional[str] = None
     clinical_notes: Optional[str] = None
     status: str = "DRAFT"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 class GuestImageAsset(SQLModel, table=True):
@@ -247,7 +253,7 @@ class GuestImageAsset(SQLModel, table=True):
     stored_filename: str
     file_path: str
     image_type: str = "OTHER"
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = Field(default_factory=_utcnow_naive)
     vision_snapshot_json: Optional[str] = None
 
 
@@ -269,8 +275,8 @@ class StudyCourse(SQLModel, table=True):
     owner_user_id: int = Field(index=True)
     title: str = Field(index=True)
     description: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
 class StudyMaterial(SQLModel, table=True):
@@ -288,7 +294,7 @@ class StudyMaterial(SQLModel, table=True):
     gemini_file_name: Optional[str] = None
     gemini_file_uri: Optional[str] = None
     gemini_file_expires_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
 class StudyChatMessage(SQLModel, table=True):
@@ -300,7 +306,7 @@ class StudyChatMessage(SQLModel, table=True):
     content: str
     source_ids_json: Optional[str] = None
     mode: str = "NOTES_PLUS"
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
 class ScheduleEvent(SQLModel, table=True):
@@ -324,8 +330,8 @@ class ScheduleEvent(SQLModel, table=True):
     recurrence_rule: str = "NONE"
     recurrence_until: Optional[str] = None
     timezone_name: str = "Europe/Istanbul"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 PROFESSIONAL_TITLES = {
@@ -876,7 +882,7 @@ def get_current_user(request: Request) -> Optional[User]:
         if not session_token:
             return None
 
-        if session_token.expires_at <= datetime.utcnow():
+        if session_token.expires_at <= _utcnow_naive():
             s.delete(session_token)
             s.commit()
             return None
@@ -892,7 +898,7 @@ def get_current_user(request: Request) -> Optional[User]:
 def create_user_session(response: RedirectResponse, user_id: int) -> None:
     token = create_session_token()
 
-    expires_at = datetime.utcnow().replace(
+    expires_at = _utcnow_naive().replace(
         microsecond=0
     )
 
@@ -1347,7 +1353,7 @@ def change_username(request: Request, username: str = Form(...)):
         return RedirectResponse("/login", status_code=303)
 
     username = username.strip().lower()
-    now = datetime.utcnow()
+    now = _utcnow_naive()
 
     with Session(engine, expire_on_commit=False) as s:
         db_user = s.get(User, user.id)
@@ -1541,7 +1547,7 @@ def forgot_password_request(
         ).first()
 
         if user and user.is_active and user.password_hash:
-            now = datetime.utcnow()
+            now = _utcnow_naive()
 
             old_tokens = s.exec(
                 select(PasswordResetToken).where(
@@ -1611,7 +1617,7 @@ def reset_password_page(
                 select(PasswordResetToken).where(
                     PasswordResetToken.token_hash == token_hash,
                     PasswordResetToken.used_at == None,
-                    PasswordResetToken.expires_at > datetime.utcnow(),
+                    PasswordResetToken.expires_at > _utcnow_naive(),
                 )
             ).first()
 
@@ -1678,7 +1684,7 @@ def reset_password(
             select(PasswordResetToken).where(
                 PasswordResetToken.token_hash == token_hash,
                 PasswordResetToken.used_at == None,
-                PasswordResetToken.expires_at > datetime.utcnow(),
+                PasswordResetToken.expires_at > _utcnow_naive(),
             )
         ).first()
 
@@ -1709,7 +1715,7 @@ def reset_password(
             )
 
         user.password_hash = hash_password(password)
-        reset_token.used_at = datetime.utcnow()
+        reset_token.used_at = _utcnow_naive()
 
         # Güvenlik: eski oturumları da sonlandır.
         session_tokens = s.exec(
@@ -1952,7 +1958,7 @@ def rename_study_course(request: Request, course_id: int, title: str = Form(...)
         if not course:
             return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
         course.title = clean_title
-        course.updated_at = datetime.utcnow()
+        course.updated_at = _utcnow_naive()
         s.add(course)
         s.commit()
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
@@ -2126,7 +2132,7 @@ async def upload_study_materials(
 
             if added == 0:
                 return HTMLResponse("Kaydedilecek geçerli PDF veya görsel bulunamadı.", status_code=400)
-            course.updated_at = datetime.utcnow()
+            course.updated_at = _utcnow_naive()
             s.add(course)
             s.commit()
             # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_BEGIN ===
@@ -2212,7 +2218,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
         s.delete(material)
         course = _owned_study_course(s, user, course_id)
         if course:
-            course.updated_at = datetime.utcnow()
+            course.updated_at = _utcnow_naive()
             s.add(course)
         s.commit()
     if local_path:
@@ -2430,7 +2436,7 @@ def study_ai_ask(
                 source_ids_json=source_json,
                 mode="RAG_NOTES_ONLY",
             ))
-            course.updated_at = datetime.utcnow()
+            course.updated_at = _utcnow_naive()
             s.add(course)
             s.commit()
 
@@ -2761,7 +2767,7 @@ def program_edit(
 
         for key, value in payload.items():
             setattr(event, key, value)
-        event.updated_at = datetime.utcnow()
+        event.updated_at = _utcnow_naive()
         s.add(event)
         s.commit()
 
@@ -2784,7 +2790,7 @@ def program_complete(request: Request, event_id: int):
                 status_code=400,
             )
         event.status = "COMPLETED"
-        event.updated_at = datetime.utcnow()
+        event.updated_at = _utcnow_naive()
         s.add(event)
         s.commit()
 
@@ -2802,7 +2808,7 @@ def program_delete(request: Request, event_id: int):
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
         event.status = "DELETED"
-        event.updated_at = datetime.utcnow()
+        event.updated_at = _utcnow_naive()
         s.add(event)
         s.commit()
 
@@ -2928,7 +2934,7 @@ def create_patient(
     if birth_date:
         try:
             birth = datetime.strptime(birth_date, "%Y-%m-%d").date()
-            today = datetime.utcnow().date()
+            today = _utcnow_naive().date()
             calculated_age = today.year - birth.year - (
                 (today.month, today.day) < (birth.month, birth.day)
             )
@@ -3250,7 +3256,7 @@ def update_tooth_status(
             if existing_surface:
                 existing_surface.status = status
                 existing_surface.note = note.strip() if note else None
-                existing_surface.updated_at = datetime.utcnow()
+                existing_surface.updated_at = _utcnow_naive()
             else:
                 surface_status = ToothSurfaceStatus(
                     patient_id=patient_id,
@@ -3271,7 +3277,7 @@ def update_tooth_status(
         if existing:
             existing.status = status
             existing.note = note.strip() if note else None
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = _utcnow_naive()
         else:
             tooth = ToothStatus(
                 patient_id=patient_id,
@@ -3300,7 +3306,7 @@ def update_tooth_status(
                 patient_id=patient_id,
                 tooth_number=tooth_number,
                 treatment_name=treatment_name,
-                treatment_date=datetime.utcnow().strftime("%Y-%m-%d"),
+                treatment_date=_utcnow_naive().strftime("%Y-%m-%d"),
                 doctor_note=note.strip() if note else None,
             )
             s.add(treatment)
