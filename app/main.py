@@ -3104,7 +3104,7 @@ def admin_expert_verification_update(
 
 
 @app.get("/expert-support", response_class=HTMLResponse)
-def expert_support_directory(request: Request, specialty: str = "", available: str = ""):
+def expert_support_directory(request: Request, specialty: str = "", available: str = "", patient_id: Optional[int] = None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3132,7 +3132,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
         own_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
     return templates.TemplateResponse(request=request, name="expert_support.html", context={
         "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
-        "selected_specialty": specialty, "available_only": available == "1", "own_profile": own_profile,
+        "selected_specialty": specialty, "available_only": available == "1", "own_profile": own_profile, "selected_patient_id": patient_id,
     })
 
 
