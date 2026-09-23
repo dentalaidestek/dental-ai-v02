@@ -3114,6 +3114,38 @@ def admin_expert_verification_update(
     return RedirectResponse("/admin/expert-verifications", status_code=303)
 
 
+@app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
+def expert_support_public_profile(request: Request, expert_user_id: int, patient_id: Optional[int] = None):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.exec(select(ExpertProfile).where(
+            ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.identity_verified == True,
+            ExpertProfile.specialty_verified == True,
+        )).first()
+        expert = s.get(User, expert_user_id)
+        if not profile or not expert:
+            return HTMLResponse("Doğrulanmış uzman profili bulunamadı.", status_code=404)
+        active_count = len(s.exec(select(ConsultationCase).where(
+            ConsultationCase.expert_user_id == expert_user_id,
+            ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+        )).all())
+        reviews = s.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id).order_by(ExpertReview.created_at.desc())).all()
+        completed_count = len(s.exec(select(ConsultationCase).where(
+            ConsultationCase.expert_user_id == expert_user_id,
+            ConsultationCase.status == "COMPLETED",
+        )).all())
+        rating_avg = round(sum(x.rating for x in reviews) / len(reviews), 1) if reviews else None
+    return templates.TemplateResponse(request=request, name="expert_public_profile.html", context={
+        "user": user, "profile": profile, "expert": expert, "active_count": active_count,
+        "completed_count": completed_count, "rating_avg": rating_avg, "review_count": len(reviews),
+        "patient_id": patient_id,
+    })
+
+
 @app.get("/expert-support", response_class=HTMLResponse)
 def expert_support_directory(request: Request, specialty: str = "", available: str = "", patient_id: Optional[int] = None):
     user = get_current_user(request)
