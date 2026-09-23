@@ -304,6 +304,16 @@ class ConsultationCase(SQLModel, table=True):
     dispute_opened_at: Optional[datetime] = None
 
 
+class ExpertReview(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True, unique=True)
+    reviewer_user_id: int = Field(index=True)
+    expert_user_id: int = Field(index=True)
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class ConsultationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True)
@@ -3319,6 +3329,26 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
+        s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.post("/expert-support/cases/{case_id}/review")
+def expert_support_review(request: Request, case_id: int, rating: int = Form(...), comment: str = Form("")):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if rating < 1 or rating > 5:
+        return HTMLResponse("Puan 1 ile 5 arasında olmalıdır.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or case.requester_user_id != user.id or case.status != "COMPLETED":
+            return HTMLResponse("Bu danışmanlık için değerlendirme yapılamaz.", status_code=403)
+        existing = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
+        if existing:
+            return HTMLResponse("Bu danışmanlık daha önce değerlendirildi.", status_code=409)
+        s.add(ExpertReview(case_id=case.id, reviewer_user_id=user.id, expert_user_id=case.expert_user_id, rating=rating, comment=comment.strip() or None))
+        _consultation_event(s, case.id, "REVIEW_CREATED", user.id, {"rating": rating})
         s.commit()
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
