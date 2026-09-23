@@ -3318,7 +3318,7 @@ def expert_support_case_room(request: Request, case_id: int):
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
         # Zaman aşımını sayfa açılışında idempotent olarak uygula.
         if case.status == "REQUESTED" and now > case.expert_response_deadline:
-            case.status = "EXPERT_TIMEOUT"; _consultation_event(s, case.id, "EXPERT_TIMEOUT"); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None; s.add(case); s.commit()
+            case.status = "EXPERT_TIMEOUT"; _consultation_event(s, case.id, "EXPERT_TIMEOUT"); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first();\n            if payment:\n                payment.status = "REFUND_REQUIRED"; payment.updated_at = now; s.add(payment); s.add(case); s.commit()
         if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
             case.status = "PROPOSAL_EXPIRED"; _consultation_event(s, case.id, "PROPOSAL_EXPIRED"); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None; s.add(case); s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
@@ -3477,7 +3477,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
         elif user.id == case.requester_user_id and action == "CONTINUE":
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
         elif user.id == case.requester_user_id and action == "DISPUTE":
-            case.status = "DISPUTE"; case.dispute_opened_at = now; payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "ON_HOLD" if payment else "NOT_STARTED"; s.add(payment) if payment else None; _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
+            case.status = "DISPUTE"; case.dispute_opened_at = now; payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first();\n            if payment:\n                payment.status = "ON_HOLD"; payment.updated_at = now; s.add(payment); _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
         else:
             return HTMLResponse("Geçersiz işlem.", status_code=400)
         s.add(case); s.commit()
