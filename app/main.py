@@ -3217,7 +3217,7 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
                 _consultation_event(s, case.id, "ACCEPTED_NOW", user.id)
             else:
                 case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
-                case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=5)
+                case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=3)
                 _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes})
         else:
             return HTMLResponse("Geçersiz karar.", status_code=400)
