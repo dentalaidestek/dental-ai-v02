@@ -3295,12 +3295,39 @@ def expert_support_case_room(request: Request, case_id: int):
         if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
             case.status = "PROPOSAL_EXPIRED"; _consultation_event(s, case.id, "PROPOSAL_EXPIRED"); s.add(case); s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
+        case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
+        shared_media = []
+        for link in case_media_links:
+            media = s.get(PatientMedia, link.patient_media_id)
+            if media:
+                shared_media.append({"link": link, "media": media})
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
-        "start_options": EXPERT_START_OPTIONS, "now": now,
+        "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
     })
+
+
+@app.get("/expert-support/cases/{case_id}/media/{case_media_id}")
+def expert_support_case_media(request: Request, case_id: int, case_media_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        link = s.get(ConsultationCaseMedia, case_media_id)
+        if not link or link.case_id != case.id:
+            return HTMLResponse("Görsel bulunamadı.", status_code=404)
+        media = s.get(PatientMedia, link.patient_media_id)
+        if not media:
+            return HTMLResponse("Görsel bulunamadı.", status_code=404)
+        path = Path(media.file_path)
+        if not path.exists() or not path.is_file():
+            return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        return FileResponse(path)
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
