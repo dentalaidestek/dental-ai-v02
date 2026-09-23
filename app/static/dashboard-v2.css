@@ -32,3 +32,42 @@
 .dashboard-home .visual-patient-row{min-height:58px;border:0;border-top:1px solid #edf2f5;border-radius:0;background:#fff}.dashboard-home .visual-patient-row:first-child{border-top:0}.dashboard-home .visual-avatar{font-size:12px;font-weight:800;color:#2d4660}
 .dashboard-home .visual-notice{background:#fff4dc;border-radius:14px;color:#a55a00;font-size:9.5px;padding:12px 14px;text-align:left}
 }
+
+
+/* 2026-09-23 mobile density pass — match approved reference proportions */
+@media(max-width:760px){
+  .dashboard-home > .topbar{min-height:62px!important;padding:8px 14px!important}
+  .dashboard-home > .topbar .brand-icon{width:42px!important;height:42px!important}
+  .dashboard-home > .topbar .menu-toggle{width:44px!important;height:44px!important;padding:9px!important}
+  .dashboard-home main{margin:10px auto 0!important;padding:0 10px!important;max-width:540px!important}
+  .dashboard-home .visual-dashboard{padding:0 0 76px!important;gap:7px!important}
+  .dashboard-home .visual-welcome{min-height:116px!important;height:116px;padding:12px 14px!important;border-radius:19px!important}
+  .dashboard-home .visual-welcome-copy{width:58%!important}
+  .dashboard-home .visual-eyebrow{font-size:12px!important;margin-bottom:3px!important}
+  .dashboard-home .visual-welcome h1{font-size:19px!important;line-height:1.05!important}
+  .dashboard-home .visual-welcome p{font-size:9.5px!important;line-height:1.3!important;margin-top:6px!important;max-width:190px!important}
+  .dashboard-home .visual-welcome-tooth{right:3px!important;top:3px!important;width:49%!important;height:110px!important}
+  .dashboard-home .visual-search{height:46px!important;border-radius:14px!important;padding:4px 6px 4px 11px!important;gap:6px!important}
+  .dashboard-home .visual-search svg{width:18px!important;height:18px!important}
+  .dashboard-home .visual-search input{font-size:14px!important;padding:7px 1px!important}
+  .dashboard-home .visual-search button{min-width:60px!important;height:36px!important;padding:6px 12px!important;border-radius:10px!important;font-size:14px!important}
+  .dashboard-home .visual-card-grid{gap:6px!important}
+  .dashboard-home .visual-feature-card{height:78px!important;border-radius:15px!important}
+  .dashboard-home .visual-feature-card .visual-art{width:45%!important}
+  .dashboard-home .visual-card-copy{left:16px!important;right:40%!important;top:14px!important}
+  .dashboard-home .visual-card-copy strong{font-size:16px!important;line-height:1.05!important}
+  .dashboard-home .visual-card-copy small{font-size:9px!important;line-height:1.2!important;margin-top:4px!important;max-width:190px!important}
+  .dashboard-home .visual-arrow{right:12px!important;top:23px!important;font-size:24px!important}
+  .dashboard-home .visual-program,.dashboard-home .visual-recent,.dashboard-home .visual-guest{padding:10px!important;border-radius:16px!important}
+  .dashboard-home .visual-section-head{margin-bottom:7px!important}
+  .dashboard-home .visual-section-head h2{font-size:15px!important}
+  .dashboard-home .visual-section-head a{font-size:10px!important}
+  .dashboard-home .visual-empty{min-height:72px!important;gap:4px!important;padding:8px!important;font-size:10px!important}
+  .dashboard-home .visual-empty .empty-icon{font-size:20px!important}
+  .dashboard-home .visual-empty a{padding:6px 11px!important;border-radius:7px!important;color:#fff!important;font-size:10px!important}
+  .dashboard-home .mobile-bottom-nav{min-height:62px!important;padding-top:5px!important;padding-bottom:max(5px,env(safe-area-inset-bottom))!important}
+  .dashboard-home .mobile-nav-item{background:transparent!important;border:0!important;padding:4px 2px!important;min-width:0!important}
+  .dashboard-home .mobile-nav-item .ui-icon{width:20px!important;height:20px!important}
+  .dashboard-home .mobile-nav-item span{font-size:9px!important}
+  .dashboard-home .mobile-nav-more{font-family:inherit;color:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+}
