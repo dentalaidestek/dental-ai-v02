@@ -1,46 +1,104 @@
 {% extends "base.html" %}
 
-{% macro icon(name) -%}
-{% if name == "new_patient" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-{% elif name == "ai" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/><path d="M9.5 4.5a2.8 2.8 0 0 1 5 0V20"/></svg>
-{% elif name == "tooth" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg>
-{% elif name == "program" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
-{% elif name == "notes" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>
-{% elif name == "appointment" %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5"/></svg>
-{% else %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>{% endif %}
-{%- endmacro %}
-
 {% block content %}
-<style>@import url('/static/dashboard-v2.css?v=1');</style>
-<div class="workspace-dashboard">
-  <section class="workspace-hero workspace-hero-compact" aria-label="Karşılama"><h1>{{ dashboard_greeting }}</h1></section>
-  <form action="/patients/search" method="get" class="workspace-search" aria-label="Hasta ara">
-    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-    <input type="text" name="q" placeholder="Hasta adı, soyadı veya hasta no ara..." autocomplete="off"><button type="submit" class="workspace-search-button">Ara</button>
+<style>@import url('/static/dashboard-v2.css?v=20260923-cards');</style>
+
+<div class="visual-dashboard">
+  <section class="visual-welcome">
+    <div class="visual-welcome-icon" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><path d="M20 9c6 0 8 4 12 4s6-4 12-4c9 0 14 8 11 18-2 7-6 11-8 18-2 8-4 13-8 13-5 0-3-16-7-16s-2 16-7 16c-4 0-6-5-8-13-2-7-6-11-8-18C6 17 11 9 20 9Z"/><path d="M23 20c3 1 5 2 9 2s6-1 9-2"/></svg>
+    </div>
+    <div>
+      <h1>{{ dashboard_greeting }}</h1>
+      <p>Hasta yönetimi, diş şeması ve Dental AI araçlarına hızlıca eriş.</p>
+    </div>
+  </section>
+
+  <form action="/patients/search" method="get" class="visual-search" aria-label="Hasta ara">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+    <input type="text" name="q" placeholder="Hasta adı, soyadı veya hasta no ara..." autocomplete="off">
+    <button type="submit">Ara</button>
   </form>
-  <a class="workspace-ai-cta" href="/analysis/new" aria-label="Dental AI ile analiz yap"><span class="workspace-ai-cta-icon">{{ icon("ai") }}</span><span class="workspace-ai-cta-copy"><strong>Dental AI ile Analiz Yap</strong><small>Röntgen, fotoğraf veya klinik bilgiyle yeni analiz başlat</small></span><span class="workspace-ai-cta-arrow">›</span></a>
 
-  <section class="workspace-program-today workspace-section workspace-program-compact">
-    <div class="workspace-card-heading workspace-program-heading"><div><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program <span class="workspace-date-inline">{{ local_now.strftime('%d.%m.%Y') }}</span>{% else %}Yaklaşan Program{% endif %}</h2></div><a href="/program">Tüm Program</a></div>
-    {% if dashboard_event %}<div class="workspace-today-list"><a class="workspace-today-row" href="/program/{{ dashboard_event.id }}/edit"><span class="workspace-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span class="workspace-today-text"><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event_label == 'Yaklaşan' %}{{ dashboard_event.start_local.strftime('%d.%m.%Y') }} · {% endif %}{{ dashboard_event.type_label }}{% if dashboard_event.patient %} · {{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }}{% endif %}{% if dashboard_event.location %} · {{ dashboard_event.location }}{% endif %}</small></span><span class="workspace-row-arrow">›</span></a></div>{% else %}<div class="workspace-empty-compact workspace-program-empty">Yaklaşan program kaydı yok. <a href="/program/new">Programa ekle</a></div>{% endif %}
+  <section class="visual-card-grid" aria-label="Ana işlemler">
+    <a class="visual-feature-card visual-patients" href="/patients">
+      <div class="visual-art visual-patient-art" aria-hidden="true">
+        <svg viewBox="0 0 640 300" preserveAspectRatio="xMidYMid slice">
+          <defs><linearGradient id="pg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dff6ff"/><stop offset="1" stop-color="#5dbfe8"/></linearGradient></defs>
+          <rect width="640" height="300" fill="url(#pg)"/>
+          <circle cx="458" cy="112" r="58" fill="#f4c9ad"/>
+          <path d="M397 104c7-63 112-76 125-2-30-21-79-23-125 2Z" fill="#27384a"/>
+          <path d="M350 300c9-92 58-137 109-137s103 44 116 137Z" fill="#fff"/>
+          <path d="M416 182c18 20 64 20 84 0l29 118H387Z" fill="#36a9d6"/>
+          <circle cx="440" cy="111" r="5" fill="#334155"/><circle cx="480" cy="111" r="5" fill="#334155"/>
+          <path d="M444 140c11 8 25 8 35 0" fill="none" stroke="#a75d59" stroke-width="4" stroke-linecap="round"/>
+          <path d="M86 73h180M86 111h140M86 149h108" stroke="#fff" stroke-opacity=".7" stroke-width="13" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Hastalar</strong><small>Hasta kayıtlarını görüntüle ve yönet</small></div><span class="visual-arrow">→</span>
+    </a>
+
+    <a class="visual-feature-card visual-chart" href="/tooth-charts">
+      <div class="visual-art" aria-hidden="true">
+        <svg viewBox="0 0 640 300" preserveAspectRatio="xMidYMid slice">
+          <defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#112a42"/><stop offset="1" stop-color="#178bc1"/></linearGradient></defs>
+          <rect width="640" height="300" fill="url(#tg)"/>
+          <g fill="#fff" stroke="#9eddf4" stroke-width="3" opacity=".96">
+            <path d="M115 67c-22 5-28 27-20 48l12 34c5 17 9 42 22 42s10-34 19-34 7 34 20 34 18-25 23-42l12-34c8-21 2-43-20-48-17-4-24 8-34 8s-17-12-34-8Z"/>
+            <path d="M235 52c-24 5-31 30-22 53l13 38c6 18 10 47 25 47 14 0 11-38 21-38s8 38 22 38c15 0 20-29 26-47l13-38c9-23 2-48-22-53-19-4-27 9-38 9s-19-13-38-9Z"/>
+            <path d="M383 52c-24 5-31 30-22 53l13 38c6 18 10 47 25 47 14 0 11-38 21-38s8 38 22 38c15 0 20-29 26-47l13-38c9-23 2-48-22-53-19-4-27 9-38 9s-19-13-38-9Z"/>
+          </g>
+          <path d="M90 222c120 38 340 38 460 0" fill="none" stroke="#6ee7f7" stroke-width="4" stroke-dasharray="8 9"/>
+          <g fill="#69e3f3"><circle cx="147" cy="236" r="7"/><circle cx="274" cy="250" r="7"/><circle cx="420" cy="248" r="7"/><circle cx="516" cy="230" r="7"/></g>
+        </svg>
+      </div>
+      <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Diş Şeması</strong><small>Odontogram ve diş haritasını aç</small></div><span class="visual-arrow">→</span>
+    </a>
+
+    <a class="visual-feature-card visual-ai" href="/analysis/new">
+      <div class="visual-art" aria-hidden="true">
+        <svg viewBox="0 0 640 300" preserveAspectRatio="xMidYMid slice">
+          <defs><radialGradient id="ag"><stop stop-color="#46d9f1"/><stop offset=".48" stop-color="#125b84"/><stop offset="1" stop-color="#071725"/></radialGradient></defs>
+          <rect width="640" height="300" fill="url(#ag)"/>
+          <g transform="translate(330 25)" fill="none" stroke="#dffaff" stroke-width="5">
+            <path d="M-55 12c34 0 40 22 55 22S21 12 55 12c54 0 70 54 50 101-14 34-21 112-49 112-24 0-18-78-56-78s-32 78-56 78c-28 0-35-78-49-112-20-47-4-101 50-101Z"/>
+            <circle cx="0" cy="112" r="58" stroke-width="2" opacity=".65"/><circle cx="0" cy="112" r="43" stroke-width="2" opacity=".5"/>
+          </g>
+          <text x="330" y="149" fill="white" text-anchor="middle" font-size="40" font-weight="800" font-family="Arial">AI</text>
+          <g stroke="#8eeaf7" opacity=".55"><path d="M60 65h125M60 92h80M485 72h92M510 99h67M80 236h118M470 236h108"/></g>
+        </svg>
+      </div>
+      <div class="visual-card-overlay"></div><div class="visual-card-copy"><strong>Dental AI ile Analiz</strong><small>Röntgen, fotoğraf veya klinik bilgiyle analiz başlat</small></div><span class="visual-arrow">→</span>
+    </a>
   </section>
 
-  <section class="workspace-section workspace-shortcuts-card">
-    <div class="workspace-card-heading"><div><h2>Kısayollar</h2></div><a href="/features">Tüm Özellikler</a></div>
-    <div class="workspace-action-grid">{% for action in quick_actions %}<a class="workspace-action-card" href="{{ action.href }}"><span class="workspace-action-icon">{{ icon(action.key) }}</span><span><strong>{{ action.label }}</strong><small>{{ action.hint }}</small></span></a>{% endfor %}</div>
+  <section class="visual-program">
+    <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program">Tüm Program</a></div>
+    {% if dashboard_event %}
+      <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
+    {% else %}<div class="visual-empty">Yaklaşan program kaydı yok. <a href="/program/new">Programa ekle</a></div>{% endif %}
   </section>
 
-  <section class="patient-card workspace-section workspace-patients-card">
-    <div class="patient-header"><div><h2><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg> Hastalarım</h2></div><a class="workspace-text-link" href="/patients">Tüm Hastalar</a></div>
-    <div class="patient-list workspace-patient-list">{% for p in patients[:5] %}<a class="patient-row workspace-patient-row" href="/patients/{{ p.id }}"><div><div class="patient-name">{{ p.first_name or "" }} {{ p.last_name or "" }}</div><div class="patient-age">{% if p.age %}{{ p.age }} yaş{% else %}Hasta kaydı{% endif %}</div></div><span class="workspace-row-arrow">›</span></a>{% endfor %}</div>
-    {% if not patients %}<div class="workspace-empty-compact">Henüz hasta kaydı yok. <a href="/patients/new">İlk hastayı oluştur</a></div>{% endif %}
+  <section class="visual-recent">
+    <div class="visual-section-head"><h2>Son Hastalar</h2><a href="/patients">Tüm Hastalar</a></div>
+    <div class="visual-recent-list">
+      {% for p in patients[:5] %}
+      <a class="visual-patient-row" href="/patients/{{ p.id }}">
+        <span class="visual-avatar" aria-hidden="true"><svg viewBox="0 0 40 40"><circle cx="20" cy="14" r="8"/><path d="M7 38c1-10 6-15 13-15s12 5 13 15"/></svg></span>
+        <span><strong>{{ p.first_name or "" }} {{ p.last_name or "" }}</strong><small>{% if p.age %}{{ p.age }} yaş{% else %}Hasta kaydı{% endif %}</small></span><b>›</b>
+      </a>
+      {% endfor %}
+      {% if not patients %}<div class="visual-empty">Henüz hasta kaydı yok. <a href="/patients/new">İlk hastayı oluştur</a></div>{% endif %}
+    </div>
   </section>
 
-  <section class="patient-card workspace-section workspace-analyses-card">
-    <div class="patient-header"><div><div class="workspace-section-kicker">Dental AI</div><h2>Hasta Kaydı Olmadan Yapılan Analizler</h2></div><a class="workspace-text-link" href="/analyses">Tüm Analizler</a></div>
-    {% if guest_analyses %}<div class="patient-list">{% for a in guest_analyses %}<a class="patient-row workspace-patient-row" href="/analysis/guest/{{ a.id }}"><div class="guest-analysis-info"><div class="patient-name">Diş {{ a.tooth_number or '-' }}</div><div class="patient-age">{{ a.created_at.strftime('%d.%m.%Y %H:%M') if a.created_at else '' }}</div></div><span class="workspace-row-arrow">›</span></a>{% endfor %}</div>{% else %}<div class="workspace-empty-compact">Hasta kaydı olmadan yapılmış analiz bulunmuyor.</div>{% endif %}
+  <section class="visual-guest">
+    <div class="visual-section-head"><h2>Son Analizler</h2><a href="/analyses">Tüm Analizler</a></div>
+    {% if guest_analyses %}{% for a in guest_analyses %}
+      <a class="visual-row" href="/analysis/guest/{{ a.id }}"><span class="visual-mini-ai">AI</span><span><strong>Diş {{ a.tooth_number or '-' }}</strong><small>{{ a.created_at.strftime('%d.%m.%Y %H:%M') if a.created_at else '' }}</small></span><b>›</b></a>
+    {% endfor %}{% else %}<div class="visual-empty">Hasta kaydı olmadan yapılmış analiz bulunmuyor.</div>{% endif %}
   </section>
 
-  <div class="notice workspace-notice">⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
+  <div class="visual-notice">⚠️ Bu sürüm araştırma/prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
 {% endblock %}
