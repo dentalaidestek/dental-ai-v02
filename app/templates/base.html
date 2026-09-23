@@ -40,6 +40,7 @@
         <a href="/contact"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg> İletişim</a>
         {% if user.role == "ADMIN" %}
         <a href="/admin"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg> Yönetici</a>
+        <a href="/admin/expert-verifications">Uzman Doğrulamaları</a>
         {% endif %}
     </div>
     {% endif %}
