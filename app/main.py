@@ -344,6 +344,17 @@ class ExpertReview(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class ConsultationInboxState(SQLModel, table=True):
+    """Kullanıcıya özel gelen kutusu durumu. Sohbeti diğer taraftan silmez."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    user_id: int = Field(index=True)
+    last_read_at: Optional[datetime] = Field(default=None, index=True)
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
+    recover_until: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
 class ConsultationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True)
@@ -3294,6 +3305,170 @@ def expert_support_request_create(
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
 
 
+def _consultation_inbox_state(session: Session, case_id: int, user_id: int) -> ConsultationInboxState:
+    state = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.case_id == case_id,
+        ConsultationInboxState.user_id == user_id,
+    )).first()
+    if not state:
+        state = ConsultationInboxState(case_id=case_id, user_id=user_id)
+        session.add(state)
+        session.flush()
+    return state
+
+
+def _consultation_display_status(case: ConsultationCase, user_id: int, now: datetime) -> tuple[str, str]:
+    if case.status == "REQUESTED":
+        if now > case.expert_response_deadline:
+            return "MISSED", "Kaçırılan Talep"
+        return ("NEW_REQUEST", "Yeni Talep") if user_id == case.expert_user_id else ("WAITING", "Uzman Yanıtı Bekleniyor")
+    if case.status == "PROPOSED":
+        return ("ACTION_REQUIRED", "Süre Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Süre Onayı Bekleniyor")
+    if case.status in {"EXPERT_TIMEOUT", "PROPOSAL_EXPIRED"}:
+        return "MISSED", "Kaçırılan"
+    if case.status == "PROPOSAL_REJECTED":
+        return "CLOSED", "Süre Onaylanmadı"
+    if case.status == "REJECTED":
+        return "CLOSED", "Reddedildi"
+    if case.status == "WAITING_START":
+        if case.consultation_start_deadline and now > case.consultation_start_deadline and not case.expert_started_at:
+            return "DELAYED", "Gecikmiş"
+        return "WAITING", "Başlangıç Bekleniyor"
+    if case.status == "ACTIVE":
+        return "ACTIVE", "Aktif"
+    if case.status == "EXPERT_COMPLETED":
+        return ("ACTION_REQUIRED", "Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Kullanıcı Onayı Bekleniyor")
+    if case.status == "DISPUTE":
+        return "DISPUTE", "Sorun Bildirildi"
+    if case.status == "COMPLETED":
+        return "HISTORY", "Tamamlandı"
+    return "HISTORY", case.status.replace("_", " ").title()
+
+
+@app.get("/messages", response_class=HTMLResponse)
+def consultation_messages_inbox(request: Request, filter: str = "all"):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        cases = s.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        ).order_by(ConsultationCase.requested_at.desc())).all()
+        rows = []
+        for case in cases:
+            state = _consultation_inbox_state(s, case.id, user.id)
+            if state.deleted_at:
+                continue
+            messages = s.exec(select(ConsultationMessage).where(
+                ConsultationMessage.case_id == case.id
+            ).order_by(ConsultationMessage.created_at.desc())).all()
+            last_message = messages[0] if messages else None
+            unread = sum(1 for m in messages if m.sender_user_id != user.id and (not state.last_read_at or m.created_at > state.last_read_at))
+            status_key, status_label = _consultation_display_status(case, user.id, now)
+            other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+            other = s.get(User, other_id)
+            row = {"case": case, "state": state, "last_message": last_message, "unread": unread,
+                   "status_key": status_key, "status_label": status_label, "other": other}
+            if filter == "unread" and unread == 0:
+                continue
+            if filter == "waiting" and status_key not in {"WAITING", "ACTION_REQUIRED", "NEW_REQUEST", "ACTIVE"}:
+                continue
+            if filter == "missed" and status_key not in {"MISSED", "DELAYED"}:
+                continue
+            if filter == "history" and status_key not in {"HISTORY", "CLOSED", "DISPUTE"}:
+                continue
+            rows.append(row)
+        s.commit()
+    return templates.TemplateResponse(request=request, name="messages.html", context={
+        "user": user, "rows": rows, "selected_filter": filter, "now": now,
+    })
+
+
+@app.get("/messages/deleted", response_class=HTMLResponse)
+def consultation_deleted_messages(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        states = s.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.user_id == user.id,
+            ConsultationInboxState.deleted_at != None,
+        ).order_by(ConsultationInboxState.deleted_at.desc())).all()
+        rows = []
+        for state in states:
+            if state.recover_until and state.recover_until >= now:
+                case = s.get(ConsultationCase, state.case_id)
+                if case:
+                    other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+                    rows.append({"case": case, "state": state, "other": s.get(User, other_id)})
+    return templates.TemplateResponse(request=request, name="messages_deleted.html", context={"user": user, "rows": rows, "now": now})
+
+
+@app.post("/messages/{case_id}/delete")
+def consultation_message_delete_for_user(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        state = _consultation_inbox_state(s, case.id, user.id)
+        state.deleted_at = now
+        state.recover_until = now + timedelta(days=7)
+        s.add(state)
+        _consultation_event(s, case.id, "INBOX_DELETED", user.id, {"recover_until": state.recover_until.isoformat()})
+        s.commit()
+    return RedirectResponse("/messages", status_code=303)
+
+
+@app.post("/messages/{case_id}/restore")
+def consultation_message_restore_for_user(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        state = s.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.case_id == case_id,
+            ConsultationInboxState.user_id == user.id,
+        )).first()
+        if not state or not state.deleted_at or not state.recover_until or state.recover_until < now:
+            return HTMLResponse("Bu sohbet artık geri yüklenemez.", status_code=410)
+        state.deleted_at = None
+        state.recover_until = None
+        s.add(state)
+        _consultation_event(s, case_id, "INBOX_RESTORED", user.id)
+        s.commit()
+    return RedirectResponse("/messages", status_code=303)
+
+
+@app.get("/messages/unread-count")
+def consultation_unread_count(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return {"count": 0}
+    with Session(engine, expire_on_commit=False) as s:
+        cases = s.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        )).all()
+        total = 0
+        for case in cases:
+            state = _consultation_inbox_state(s, case.id, user.id)
+            if state.deleted_at:
+                continue
+            messages = s.exec(select(ConsultationMessage).where(
+                ConsultationMessage.case_id == case.id,
+                ConsultationMessage.sender_user_id != user.id,
+            )).all()
+            total += sum(1 for m in messages if not state.last_read_at or m.created_at > state.last_read_at)
+        s.commit()
+    return {"count": total}
+
+
 @app.get("/expert-support/cases", response_class=HTMLResponse)
 def expert_support_cases(request: Request):
     user = get_current_user(request)
@@ -3316,6 +3491,11 @@ def expert_support_case_room(request: Request, case_id: int):
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
+        state = _consultation_inbox_state(s, case.id, user.id)
+        state.last_read_at = now
+        state.deleted_at = None
+        state.recover_until = None
+        s.add(state)
         # Zaman aşımını sayfa açılışında idempotent olarak uygula.
         if case.status == "REQUESTED" and now > case.expert_response_deadline:
             case.status = "EXPERT_TIMEOUT"
