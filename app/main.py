@@ -3318,9 +3318,9 @@ def expert_support_case_room(request: Request, case_id: int):
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
         # Zaman aşımını sayfa açılışında idempotent olarak uygula.
         if case.status == "REQUESTED" and now > case.expert_response_deadline:
-            case.status = "EXPERT_TIMEOUT"; _consultation_event(s, case.id, "EXPERT_TIMEOUT"); s.add(case); s.commit()
+            case.status = "EXPERT_TIMEOUT"; _consultation_event(s, case.id, "EXPERT_TIMEOUT"); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None; s.add(case); s.commit()
         if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
-            case.status = "PROPOSAL_EXPIRED"; _consultation_event(s, case.id, "PROPOSAL_EXPIRED"); s.add(case); s.commit()
+            case.status = "PROPOSAL_EXPIRED"; _consultation_event(s, case.id, "PROPOSAL_EXPIRED"); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None; s.add(case); s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
         case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
         shared_media = []
@@ -3370,7 +3370,7 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
         if case.status != "REQUESTED" or now > case.expert_response_deadline:
             return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
         if decision == "REJECT":
-            case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id)
+            case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None
         elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
             minutes, label = EXPERT_START_OPTIONS[start_option]
             if start_option == "NOW":
@@ -3403,7 +3403,7 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
             _consultation_event(s, case.id, "PROPOSAL_ACCEPTED", user.id, {"start_deadline": case.consultation_start_deadline.isoformat()})
         else:
-            case.status = "PROPOSAL_REJECTED"; _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id)
+            case.status = "PROPOSAL_REJECTED"; _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id); payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "REFUND_REQUIRED" if payment else "NOT_STARTED"; s.add(payment) if payment else None
         s.add(case); s.commit()
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -3467,6 +3467,9 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
+            payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+            if payment:
+                payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "REQUESTER_COMPLETED", user.id)
         elif user.id == case.expert_user_id and action == "COMPLETE":
             case.expert_completed_at = now; case.status = "EXPERT_COMPLETED"
@@ -3474,7 +3477,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
         elif user.id == case.requester_user_id and action == "CONTINUE":
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
         elif user.id == case.requester_user_id and action == "DISPUTE":
-            case.status = "DISPUTE"; case.dispute_opened_at = now; _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
+            case.status = "DISPUTE"; case.dispute_opened_at = now; payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first(); payment.status = "ON_HOLD" if payment else "NOT_STARTED"; s.add(payment) if payment else None; _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
         else:
             return HTMLResponse("Geçersiz işlem.", status_code=400)
         s.add(case); s.commit()
