@@ -1,7 +1,68 @@
 {% extends "base.html" %}{% block content %}
-<div class="expert-shell">
-<header class="expert-hero"><div><span class="expert-kicker">Meslektaş desteği</span><h1>Uzmandan Destek Al</h1><p>Vakanızı doğrulanmış bir meslektaşınızla değerlendirin.</p></div><a class="expert-secondary" href="/expert-support/cases">Vakalarım</a></header>
-<div class="expert-toolbar"><form method="get"><select name="specialty"><option value="">Tüm branşlar</option>{% for s in specialties %}<option value="{{ s }}" {% if s==selected_specialty %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><label><input type="checkbox" name="available" value="1" {% if available_only %}checked{% endif %}> Yalnızca müsait</label><button>Filtrele</button></form></div>
-{% if own_profile %}<a class="expert-own-profile" href="/expert-support/profile">Uzman profilimi yönet · {{ own_profile.verification_status }}</a>{% else %}<a class="expert-own-profile" href="/expert-support/profile">Uzman olarak başvur</a>{% endif %}
-{% if request.query_params.get("watch") %}<div class="expert-success">Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi.</div>{% endif %}<div class="expert-grid">{% for item in experts %}<article class="expert-card"><div class="expert-avatar">{{ (item.expert.display_name or '?')[:1] }}</div><div class="expert-main"><div class="expert-name"><a href="/expert-support/expert/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">{{ item.expert.display_name }}</a></div><div class="expert-badges"><span>✓ Doğrulanmış</span><span>{{ item.profile.specialty }}</span>{% if item.profile.academic_title_verified and item.profile.academic_title %}<span>{{ item.profile.academic_title }}</span>{% endif %}</div>{% if item.profile.institution %}<p>{{ item.profile.institution }}</p>{% endif %}<div class="expert-meta"><b>{{ item.profile.consultation_price }} TL</b><span>{{ item.active_count }}/5 aktif vaka</span>{% if item.performance.rating_avg %}<span>⭐ {{ item.performance.rating_avg }}</span>{% endif %}{% if item.performance.avg_response_minutes is not none %}<span>Ort. yanıt {{ item.performance.avg_response_minutes }} dk</span>{% endif %}<span>{% if item.profile.availability=="AVAILABLE" %}● Müsait{% elif item.profile.availability=="BUSY" %}● Meşgul{% elif item.profile.availability=="SCHEDULED" %}● Randevulu{% else %}● Pasif{% endif %}</span></div>{% if item.profile.bio %}<p class="expert-card-bio">{{ item.profile.bio[:110] }}{% if item.profile.bio|length > 110 %}…{% endif %}</p>{% endif %}</div>{% if item.profile.availability=="AVAILABLE" and item.active_count < 5 %}<a class="expert-primary" href="/expert-support/request/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">Vaka Gönder</a>{% else %}<span class="expert-disabled">Şu an müsait değil</span>{% endif %}</article>{% else %}<div class="expert-empty">Bu filtrede doğrulanmış ve müsait uzman bulunmuyor.{% if selected_specialty %}<form method="post" action="/expert-support/availability-watch" style="margin-top:12px"><input type="hidden" name="specialty" value="{{ selected_specialty }}"><button class="expert-primary" type="submit">Müsait olduğunda haber ver</button></form>{% endif %}</div>{% endfor %}</div>
-</div>{% endblock %}
+<div class="expert-shell expert-directory">
+  <header class="expert-directory-head">
+    <div><span class="expert-kicker">Meslektaş desteği</span><h1>Uzmandan Destek Al</h1><p>Vakanız için uygun ve müsait uzmanlarla görüşün.</p></div>
+    <a class="expert-cases-link" href="/expert-support/cases">Vakalarım</a>
+  </header>
+
+  <form class="expert-searchbar" method="get">
+    {% if selected_patient_id %}<input type="hidden" name="patient_id" value="{{ selected_patient_id }}">{% endif %}
+    <span aria-hidden="true">⌕</span><input name="q" value="{{ search_query }}" placeholder="Uzman adı, branş veya kurum ara…" autocomplete="off">
+    {% if selected_specialty %}<input type="hidden" name="specialty" value="{{ selected_specialty }}">{% endif %}
+    {% if available_only %}<input type="hidden" name="available" value="1">{% endif %}
+    {% if selected_title %}<input type="hidden" name="title" value="{{ selected_title }}">{% endif %}
+    <button type="submit">Ara</button>
+  </form>
+
+  <div class="expert-filter-row">
+    <button type="button" class="expert-filter-trigger" onclick="document.getElementById('expertFilterSheet').showModal()">☷ Filtrele
+      {% if selected_specialty or available_only or selected_title %}<b>•</b>{% endif %}
+    </button>
+    {% if selected_specialty %}<span class="expert-filter-chip">{{ selected_specialty }}</span>{% endif %}
+    {% if selected_title %}<span class="expert-filter-chip">{{ selected_title }}</span>{% endif %}
+    {% if available_only %}<span class="expert-filter-chip">Müsait</span>{% endif %}
+  </div>
+
+  <dialog id="expertFilterSheet" class="expert-filter-sheet">
+    <form method="get">
+      {% if selected_patient_id %}<input type="hidden" name="patient_id" value="{{ selected_patient_id }}">{% endif %}
+      {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+      <div class="expert-filter-sheet-head"><div><strong>Uzmanları Filtrele</strong><small>Sonuçları ihtiyacınıza göre daraltın.</small></div><button type="button" onclick="document.getElementById('expertFilterSheet').close()" aria-label="Kapat">×</button></div>
+      <label>Branş<select name="specialty"><option value="">Tüm branşlar</option>{% for s in specialties %}<option value="{{ s }}" {% if s==selected_specialty %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+      <label>Unvan<select name="title"><option value="">Tüm unvanlar</option>{% for t in expert_titles %}<option value="{{ t }}" {% if t==selected_title %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+      <label class="expert-available-check"><input type="checkbox" name="available" value="1" {% if available_only %}checked{% endif %}><span>Yalnızca müsait uzmanlar</span></label>
+      <div class="expert-filter-actions"><a href="/expert-support{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">Temizle</a><button type="submit">Uygula</button></div>
+    </form>
+  </dialog>
+
+  {% if request.query_params.get("watch") %}<div class="expert-success">Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi.</div>{% endif %}
+
+  <div class="expert-grid">
+  {% for item in experts %}
+    <article class="expert-card expert-result-card">
+      <div class="expert-result-top">
+        <div class="expert-avatar">{{ (item.expert.display_name or '?')[:1] }}</div>
+        <div class="expert-result-identity">
+          <div class="expert-name"><a href="/expert-support/expert/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">{{ item.profile.academic_title ~ ' ' if item.profile.academic_title else '' }}{{ item.expert.display_name }} <span class="expert-verified" title="Doğrulanmış uzman">✓</span></a></div>
+          <span>{{ item.profile.specialty }}</span>{% if item.profile.institution %}<small>{{ item.profile.institution }}</small>{% endif %}
+        </div>
+        <span class="expert-live {% if item.profile.availability!='AVAILABLE' %}off{% endif %}"></span>
+      </div>
+      <div class="expert-result-stats">
+        <span><b>★ {% if item.performance.rating_avg %}{{ item.performance.rating_avg }}{% else %}—{% endif %}</b><small>Değerlendirme</small></span>
+        <span><b>{% if item.performance.avg_response_minutes is not none %}{{ item.performance.avg_response_minutes }} dk{% else %}—{% endif %}</b><small>Ort. yanıt</small></span>
+        <span><b>{{ item.profile.consultation_price }} TL</b><small>Danışmanlık</small></span>
+      </div>
+      <div class="expert-result-actions">
+        <a class="expert-profile-button" href="/expert-support/expert/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">Profili Gör</a>
+        {% if item.profile.availability=="AVAILABLE" and item.active_count < 5 %}
+        <a class="expert-primary" href="/expert-support/request/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">Vaka Gönder</a>
+        {% else %}<span class="expert-disabled">Şu an müsait değil</span>{% endif %}
+      </div>
+    </article>
+  {% else %}
+    <div class="expert-empty"><strong>Bu filtrelere uygun uzman bulunamadı.</strong>{% if selected_specialty %}<form method="post" action="/expert-support/availability-watch"><input type="hidden" name="specialty" value="{{ selected_specialty }}"><button class="expert-primary" type="submit">Müsait olduğunda haber ver</button></form>{% endif %}</div>
+  {% endfor %}
+  </div>
+</div>
+{% endblock %}
