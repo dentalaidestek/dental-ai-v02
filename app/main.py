@@ -3361,7 +3361,7 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
 
 
 @app.get("/expert-support", response_class=HTMLResponse)
-def expert_support_directory(request: Request, specialty: str = "", available: str = "", patient_id: Optional[int] = None):
+def expert_support_directory(request: Request, specialty: str = "", available: str = "", title: str = "", q: str = "", patient_id: Optional[int] = None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3376,12 +3376,22 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
             query = query.where(ExpertProfile.specialty == specialty)
         if available == "1":
             query = query.where(ExpertProfile.availability == "AVAILABLE")
+        if title:
+            if title == "Diş Hekimi":
+                query = query.where(ExpertProfile.academic_title == None)
+            else:
+                query = query.where(ExpertProfile.academic_title == title)
         profiles = s.exec(query.order_by(ExpertProfile.updated_at.desc())).all()
         cards = []
         for p in profiles:
             expert_user = s.get(User, p.user_id)
             if not expert_user:
                 continue
+            if q.strip():
+                needle = q.strip().casefold()
+                haystack = " ".join(filter(None, [expert_user.display_name, p.specialty, p.institution, p.academic_title])).casefold()
+                if needle not in haystack:
+                    continue
             active_count = len(s.exec(select(ConsultationCase).where(
                 ConsultationCase.expert_user_id == p.user_id,
                 ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
@@ -3392,7 +3402,9 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
         own_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
     return templates.TemplateResponse(request=request, name="expert_support.html", context={
         "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
-        "selected_specialty": specialty, "available_only": available == "1", "own_profile": own_profile, "selected_patient_id": patient_id,
+        "selected_specialty": specialty, "available_only": available == "1", "selected_title": title, "search_query": q,
+        "expert_titles": ["Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."],
+        "own_profile": own_profile, "selected_patient_id": patient_id,
     })
 
 
