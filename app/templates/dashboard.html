@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>@import url('/static/dashboard-v2.css?v=20260923-mobile-approved');</style>
+<style>@import url('/static/dashboard-v2.css?v=20260923-mobile-compact2');</style>
 <div class="visual-dashboard">
   <section class="visual-welcome">
     <div class="visual-welcome-copy">
       <span class="visual-eyebrow">{{ dashboard_greeting }}</span>
-      <h1>{% if professional_title %}{{ professional_title }} {% endif %}{{ user.first_name or '' }} {{ user.last_name or '' }}</h1>
+      <h1>{% if professional_title %}{{ professional_title }} {% endif %}{{ user.display_name or user.username }}</h1>
       <p>“Her gülüş, daha sağlıklı bir gelecek demektir.”</p>
     </div>
     <img class="visual-welcome-tooth" src="/static/dashboard/mobile/welcome_tooth.webp" alt="" aria-hidden="true">
@@ -40,7 +40,7 @@
     {% if dashboard_event %}
     <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
     {% else %}
-    <div class="visual-empty"><span class="empty-icon">▦</span><span>Bugün için program bulunmuyor.</span><a href="/program/new">Programa Ekle</a></div>
+    <div class="visual-empty"><span class="empty-icon">▦</span><span>{% if dashboard_event_label == 'Bugün' %}Bugün için program bulunmuyor.{% else %}Yaklaşan program bulunmuyor.{% endif %}</span><a href="/program/new">Programa Ekle</a></div>
     {% endif %}
   </section>
 
