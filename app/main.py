@@ -257,6 +257,74 @@ class GuestImageAsset(SQLModel, table=True):
     vision_snapshot_json: Optional[str] = None
 
 
+class ExpertProfile(SQLModel, table=True):
+    """Uzmandan Destek Al için doğrulanabilir profesyonel profil."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, unique=True)
+    specialty: str = Field(index=True)
+    academic_title: Optional[str] = Field(default=None, index=True)
+    institution: Optional[str] = None
+    bio: Optional[str] = None
+    consultation_price: int = 0
+    availability: str = Field(default="PASSIVE", index=True)
+    max_active_cases: int = 5
+    identity_verified: bool = False
+    specialty_verified: bool = False
+    academic_title_verified: bool = False
+    verification_status: str = Field(default="PENDING", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class ConsultationCase(SQLModel, table=True):
+    """Hekimler arası vaka danışmanlığı; Dental AI analizi bu kayda dahil edilmez."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    requester_user_id: int = Field(index=True)
+    expert_user_id: int = Field(index=True)
+    patient_id: Optional[int] = Field(default=None, index=True)
+    specialty: str = Field(index=True)
+    tooth_region: Optional[str] = None
+    clinical_summary: str
+    requester_opinion: Optional[str] = None
+    question: str
+    status: str = Field(default="REQUESTED", index=True)
+    price_amount: int = 0
+    requested_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    expert_response_deadline: datetime = Field(index=True)
+    proposed_start_minutes: Optional[int] = None
+    proposed_start_label: Optional[str] = None
+    proposed_at: Optional[datetime] = None
+    requester_decision_deadline: Optional[datetime] = None
+    requester_accepted_at: Optional[datetime] = None
+    consultation_start_deadline: Optional[datetime] = None
+    expert_started_at: Optional[datetime] = None
+    expert_completed_at: Optional[datetime] = None
+    requester_completed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    dispute_opened_at: Optional[datetime] = None
+
+
+class ConsultationMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    sender_user_id: int = Field(index=True)
+    message_type: str = Field(default="TEXT", index=True)
+    content: Optional[str] = None
+    media_path: Optional[str] = None
+    annotation_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class ConsultationEvent(SQLModel, table=True):
+    """Performans ve uyuşmazlık incelemesi için değiştirilemez zaman çizgisi kaydı."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    actor_user_id: Optional[int] = Field(default=None, index=True)
+    event_type: str = Field(index=True)
+    metadata_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class ClinicalRecord(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     clinical_id: str = Field(index=True)
@@ -2897,6 +2965,339 @@ def home(request: Request):
             "local_now": local_now,
         }
     )
+
+
+# === Uzmandan Destek Al / V1 temel akış ===
+EXPERT_SPECIALTIES = (
+    "Endodonti", "Ortodonti", "Pedodonti", "Periodontoloji",
+    "Protetik Diş Tedavisi", "Restoratif Diş Tedavisi",
+    "Ağız, Diş ve Çene Cerrahisi", "Ağız, Diş ve Çene Radyolojisi",
+)
+EXPERT_AVAILABILITY = {"AVAILABLE", "BUSY", "SCHEDULED", "PASSIVE"}
+EXPERT_START_OPTIONS = {
+    "NOW": (0, "Şimdi"),
+    "30M": (30, "30 dakika içinde"),
+    "1H": (60, "1 saat içinde"),
+    "3H": (180, "3 saat içinde"),
+    "TODAY": (360, "Bugün içinde"),
+}
+
+
+def _expert_minimum_price(title: Optional[str]) -> int:
+    return {
+        "Asistan / Araştırma Görevlisi": 100,
+        "Diş Hekimi": 100,
+        "Uzman Diş Hekimi": 200,
+        "Dr. Öğr. Üyesi": 250,
+        "Doç. Dr.": 300,
+        "Prof. Dr.": 400,
+    }.get(title or "", 100)
+
+
+def _consultation_event(session: Session, case_id: int, event_type: str, actor_user_id: Optional[int] = None, metadata: Optional[dict] = None):
+    session.add(ConsultationEvent(
+        case_id=case_id,
+        actor_user_id=actor_user_id,
+        event_type=event_type,
+        metadata_json=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+    ))
+
+
+@app.get("/expert-support", response_class=HTMLResponse)
+def expert_support_directory(request: Request, specialty: str = "", available: str = ""):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        query = select(ExpertProfile).where(
+            ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.identity_verified == True,
+            ExpertProfile.specialty_verified == True,
+        )
+        if specialty in EXPERT_SPECIALTIES:
+            query = query.where(ExpertProfile.specialty == specialty)
+        if available == "1":
+            query = query.where(ExpertProfile.availability == "AVAILABLE")
+        profiles = s.exec(query.order_by(ExpertProfile.updated_at.desc())).all()
+        cards = []
+        for p in profiles:
+            expert_user = s.get(User, p.user_id)
+            if not expert_user:
+                continue
+            active_count = len(s.exec(select(ConsultationCase).where(
+                ConsultationCase.expert_user_id == p.user_id,
+                ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+            )).all())
+            cards.append({"profile": p, "expert": expert_user, "active_count": active_count})
+        own_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+    return templates.TemplateResponse(request=request, name="expert_support.html", context={
+        "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
+        "selected_specialty": specialty, "available_only": available == "1", "own_profile": own_profile,
+    })
+
+
+@app.get("/expert-support/profile", response_class=HTMLResponse)
+def expert_support_profile_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+        doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == user.id)).first()
+    title = meta.professional_title if meta else "Diş Hekimi"
+    return templates.TemplateResponse(request=request, name="expert_profile_edit.html", context={
+        "user": user, "profile": profile, "doctor": doctor, "professional_title": title,
+        "specialties": EXPERT_SPECIALTIES, "minimum_price": _expert_minimum_price(title),
+    })
+
+
+@app.post("/expert-support/profile")
+def expert_support_profile_save(
+    request: Request,
+    specialty: str = Form(...),
+    institution: str = Form(""),
+    bio: str = Form(""),
+    consultation_price: int = Form(...),
+    availability: str = Form("PASSIVE"),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if specialty not in EXPERT_SPECIALTIES or availability not in EXPERT_AVAILABILITY:
+        return HTMLResponse("Geçersiz uzman profili bilgisi.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+        title = meta.professional_title if meta else "Diş Hekimi"
+        minimum = _expert_minimum_price(title)
+        if consultation_price < minimum:
+            return HTMLResponse(f"Bu mesleki unvan için minimum danışmanlık ücreti {minimum} TL.", status_code=400)
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        if not profile:
+            profile = ExpertProfile(user_id=user.id, specialty=specialty)
+        profile.specialty = specialty
+        profile.academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
+        profile.institution = institution.strip() or None
+        profile.bio = bio.strip() or None
+        profile.consultation_price = consultation_price
+        profile.availability = availability
+        profile.max_active_cases = 5
+        profile.updated_at = _utcnow_naive()
+        # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
+        if profile.verification_status != "VERIFIED":
+            profile.verification_status = "PENDING"
+        s.add(profile)
+        s.commit()
+    return RedirectResponse("/expert-support/profile?saved=1", status_code=303)
+
+
+@app.get("/expert-support/request/{expert_user_id}", response_class=HTMLResponse)
+def expert_support_request_page(request: Request, expert_user_id: int, patient_id: Optional[int] = None):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.exec(select(ExpertProfile).where(
+            ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.availability == "AVAILABLE",
+        )).first()
+        expert = s.get(User, expert_user_id)
+        patient = s.get(Patient, patient_id) if patient_id else None
+        if patient and patient.owner_user_id != user.id:
+            patient = None
+    if not profile or not expert:
+        return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
+    return templates.TemplateResponse(request=request, name="expert_request.html", context={
+        "user": user, "expert": expert, "profile": profile, "patient": patient,
+    })
+
+
+@app.post("/expert-support/request/{expert_user_id}")
+def expert_support_request_create(
+    request: Request,
+    expert_user_id: int,
+    clinical_summary: str = Form(...),
+    requester_opinion: str = Form(""),
+    question: str = Form(...),
+    tooth_region: str = Form(""),
+    patient_id: Optional[int] = Form(None),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if expert_user_id == user.id:
+        return HTMLResponse("Kendinize vaka gönderemezsiniz.", status_code=400)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.exec(select(ExpertProfile).where(
+            ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.availability == "AVAILABLE",
+        )).first()
+        if not profile:
+            return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
+        active_count = len(s.exec(select(ConsultationCase).where(
+            ConsultationCase.expert_user_id == expert_user_id,
+            ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+        )).all())
+        if active_count >= min(profile.max_active_cases, 5):
+            return HTMLResponse("Uzmanın 5 aktif vaka slotu dolu.", status_code=409)
+        if patient_id:
+            patient = s.get(Patient, patient_id)
+            if not patient or patient.owner_user_id != user.id:
+                return HTMLResponse("Hasta kaydına erişim yok.", status_code=403)
+        case = ConsultationCase(
+            requester_user_id=user.id, expert_user_id=expert_user_id, patient_id=patient_id,
+            specialty=profile.specialty, tooth_region=tooth_region.strip() or None,
+            clinical_summary=clinical_summary.strip(), requester_opinion=requester_opinion.strip() or None,
+            question=question.strip(), price_amount=profile.consultation_price,
+            expert_response_deadline=now + timedelta(minutes=10),
+        )
+        s.add(case); s.commit(); s.refresh(case)
+        _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat()})
+        s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
+
+
+@app.get("/expert-support/cases", response_class=HTMLResponse)
+def expert_support_cases(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        cases = s.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        ).order_by(ConsultationCase.requested_at.desc())).all()
+    return templates.TemplateResponse(request=request, name="expert_cases.html", context={"user": user, "cases": cases})
+
+
+@app.get("/expert-support/cases/{case_id}", response_class=HTMLResponse)
+def expert_support_case_room(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Vaka bulunamadı.", status_code=404)
+        # Zaman aşımını sayfa açılışında idempotent olarak uygula.
+        if case.status == "REQUESTED" and now > case.expert_response_deadline:
+            case.status = "EXPERT_TIMEOUT"; _consultation_event(s, case.id, "EXPERT_TIMEOUT"); s.add(case); s.commit()
+        if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
+            case.status = "PROPOSAL_EXPIRED"; _consultation_event(s, case.id, "PROPOSAL_EXPIRED"); s.add(case); s.commit()
+        messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
+        requester = s.get(User, case.requester_user_id)
+        expert = s.get(User, case.expert_user_id)
+    return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
+        "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
+        "start_options": EXPERT_START_OPTIONS, "now": now,
+    })
+
+
+@app.post("/expert-support/cases/{case_id}/expert-response")
+def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW")):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or case.expert_user_id != user.id:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "REQUESTED" or now > case.expert_response_deadline:
+            return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
+        if decision == "REJECT":
+            case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id)
+        elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
+            minutes, label = EXPERT_START_OPTIONS[start_option]
+            if start_option == "NOW":
+                case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
+                _consultation_event(s, case.id, "ACCEPTED_NOW", user.id)
+            else:
+                case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
+                case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=5)
+                _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes})
+        else:
+            return HTMLResponse("Geçersiz karar.", status_code=400)
+        s.add(case); s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.post("/expert-support/cases/{case_id}/proposal")
+def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or case.requester_user_id != user.id:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline:
+            return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
+        if decision == "ACCEPT":
+            case.status = "WAITING_START"; case.requester_accepted_at = now
+            case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
+            _consultation_event(s, case.id, "PROPOSAL_ACCEPTED", user.id, {"start_deadline": case.consultation_start_deadline.isoformat()})
+        else:
+            case.status = "PROPOSAL_REJECTED"; _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id)
+        s.add(case); s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.post("/expert-support/cases/{case_id}/message")
+def expert_support_message(request: Request, case_id: int, content: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    text_value = content.strip()
+    if not text_value:
+        return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+            return HTMLResponse("Bu vaka mesajlaşmaya açık değil.", status_code=409)
+        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value))
+        if user.id == case.expert_user_id and case.expert_started_at is None:
+            case.expert_started_at = now
+            if case.status == "WAITING_START":
+                case.status = "ACTIVE"
+            _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
+            s.add(case)
+        _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
+        s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.post("/expert-support/cases/{case_id}/complete")
+def expert_support_complete(request: Request, case_id: int, action: str = Form("COMPLETE")):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if user.id == case.requester_user_id and action == "COMPLETE":
+            case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
+            _consultation_event(s, case.id, "REQUESTER_COMPLETED", user.id)
+        elif user.id == case.expert_user_id and action == "COMPLETE":
+            case.expert_completed_at = now; case.status = "EXPERT_COMPLETED"
+            _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
+        elif user.id == case.requester_user_id and action == "CONTINUE":
+            case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
+        elif user.id == case.requester_user_id and action == "DISPUTE":
+            case.status = "DISPUTE"; case.dispute_opened_at = now; _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
+        else:
+            return HTMLResponse("Geçersiz işlem.", status_code=400)
+        s.add(case); s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.get("/patients/new", response_class=HTMLResponse)
