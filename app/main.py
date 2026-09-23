@@ -3366,6 +3366,22 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             last_message = messages[0] if messages else None
             unread = sum(1 for m in messages if m.sender_user_id != user.id and (not state.last_read_at or m.created_at > state.last_read_at))
             status_key, status_label = _consultation_display_status(case, user.id, now)
+            if status_key == "MISSED":
+                existing_missed = s.exec(select(ConsultationEvent).where(
+                    ConsultationEvent.case_id == case.id,
+                    ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "PROPOSAL_EXPIRED", "INBOX_MISSED_RECORDED"]),
+                )).first()
+                if not existing_missed:
+                    _consultation_event(s, case.id, "INBOX_MISSED_RECORDED", None)
+            if status_key == "DELAYED":
+                existing_delayed = s.exec(select(ConsultationEvent).where(
+                    ConsultationEvent.case_id == case.id,
+                    ConsultationEvent.event_type == "START_DEADLINE_MISSED",
+                )).first()
+                if not existing_delayed:
+                    _consultation_event(s, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {
+                        "deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None
+                    })
             other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
             other = s.get(User, other_id)
             row = {"case": case, "state": state, "last_message": last_message, "unread": unread,
