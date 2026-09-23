@@ -1,12 +1,8 @@
 {% extends "base.html" %}{% block content %}
-<div class="messages-page">
-<header class="messages-head"><div><span class="workspace-section-kicker">Uzman desteği</span><h1>Mesajlar</h1><p>Aktif görüşmeler, bekleyen yanıtlar ve geçmiş vakalar.</p></div><a href="/expert-support">＋ Yeni Vaka</a></header>
+<div class="messages-page messages-mobile">
+<header class="messages-head"><div><span class="workspace-section-kicker">Uzman desteği</span><h1>Mesajlar</h1><p>Vaka görüşmeleriniz</p></div><a href="/expert-support">＋ Yeni Vaka</a></header>
 <nav class="messages-filters" aria-label="Mesaj filtreleri">
-<a href="/messages" class="{% if selected_filter=='all' %}active{% endif %}">Tümü</a>
-<a href="/messages?filter=unread" class="{% if selected_filter=='unread' %}active{% endif %}">Okunmamış</a>
-<a href="/messages?filter=waiting" class="{% if selected_filter=='waiting' %}active{% endif %}">Bekleyen</a>
-<a href="/messages?filter=missed" class="{% if selected_filter=='missed' %}active{% endif %}">Kaçırılan</a>
-<a href="/messages?filter=history" class="{% if selected_filter=='history' %}active{% endif %}">Geçmiş</a>
+<a href="/messages" class="{% if selected_filter=='all' %}active{% endif %}">Tümü</a><a href="/messages?filter=unread" class="{% if selected_filter=='unread' %}active{% endif %}">Okunmamış</a><a href="/messages?filter=waiting" class="{% if selected_filter=='waiting' %}active{% endif %}">Aktif</a><a href="/messages?filter=missed" class="{% if selected_filter=='missed' %}active{% endif %}">Kaçırılan</a><a href="/messages?filter=history" class="{% if selected_filter=='history' %}active{% endif %}">Geçmiş</a>
 </nav>
 <div class="messages-list">
 {% for row in rows %}
@@ -14,13 +10,20 @@
 <a class="message-row-main" href="/expert-support/cases/{{ row.case.id }}">
 <div class="message-avatar">{{ ((row.other.display_name if row.other else 'U') or 'U')[:1] }}</div>
 <div class="message-copy"><div class="message-title"><strong>{{ row.other.display_name if row.other else 'Kullanıcı' }}</strong><span class="message-status status-{{ row.status_key|lower }}">{{ row.status_label }}</span></div>
-<div class="message-case">Vaka #{{ row.case.id }} · {{ row.case.specialty }}{% if row.case.tooth_region %} · {{ row.case.tooth_region }}{% endif %}</div>
-<div class="message-preview">{% if row.last_message %}{{ row.last_message.content or 'Klinik içerik' }}{% else %}{{ row.case.question }}{% endif %}</div></div>
-<div class="message-side">{% if row.last_message %}<time>{{ row.last_message.created_at.strftime('%d.%m · %H:%M') }}</time>{% else %}<time>{{ row.case.requested_at.strftime('%d.%m · %H:%M') }}</time>{% endif %}{% if row.unread %}<b class="message-unread">{{ row.unread }}</b>{% endif %}</div>
+<div class="message-case">{{ row.case.specialty }} · Vaka #{{ row.case.id }}{% if row.case.tooth_region %} · {{ row.case.tooth_region }}{% endif %}</div>
+<div class="message-preview">{% if row.last_message %}{{ row.last_message.content or 'Klinik içerik' }}{% else %}{{ row.case.question }}{% endif %}</div>
+{% if row.case.status=="WAITING_START" and row.case.consultation_start_deadline %}
+<div class="message-countdown" data-deadline="{{ row.case.consultation_start_deadline.isoformat() }}">Uzmanın görüşmeyi başlatması için <b>--:--</b></div>
+{% endif %}</div>
+<div class="message-side">{% if row.last_message %}<time>{{ row.last_message.created_at.strftime('%H:%M') }}</time>{% else %}<time>{{ row.case.requested_at.strftime('%H:%M') }}</time>{% endif %}{% if row.unread %}<b class="message-unread">{{ row.unread }}</b>{% endif %}<span class="message-chevron">›</span></div>
 </a>
 <details class="message-more"><summary aria-label="Sohbet işlemleri">⋮</summary><form method="post" action="/messages/{{ row.case.id }}/delete" onsubmit="return confirm('Bu sohbet Mesajlar listenizden kaldırılsın mı? 7 gün içinde geri yükleyebilirsiniz.');"><button type="submit">Sohbeti kaldır</button></form></details>
 </article>
-{% else %}<div class="messages-empty"><strong>Bu bölümde mesaj yok.</strong><span>Yeni uzman görüşmeleri burada görünecek.</span></div>{% endfor %}
+{% else %}<div class="messages-empty"><strong>Henüz görüşme yok.</strong><span>Uzmanla başlattığınız vakalar burada görünecek.</span><a href="/expert-support">Uzman Bul</a></div>{% endfor %}
 </div>
 <a class="messages-deleted-link" href="/messages/deleted">Son 7 günde kaldırılan sohbetler</a>
-</div>{% endblock %}
+</div>
+<script>
+function tickExpertCountdowns(){document.querySelectorAll(".message-countdown").forEach(el=>{const end=new Date(el.dataset.deadline+"Z").getTime(),left=Math.max(0,end-Date.now()),sec=Math.floor(left/1000),m=Math.floor(sec/60),s=sec%60,b=el.querySelector("b");if(b)b.textContent=left>0?String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):"Süre doldu";el.classList.toggle("expired",left<=0);});} tickExpertCountdowns();setInterval(tickExpertCountdowns,1000);
+</script>
+{% endblock %}
