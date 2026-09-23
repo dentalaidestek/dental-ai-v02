@@ -304,6 +304,28 @@ class ConsultationCase(SQLModel, table=True):
     dispute_opened_at: Optional[datetime] = None
 
 
+class ConsultationCaseMedia(SQLModel, table=True):
+    """Vakaya açıkça seçilerek eklenen klinik medya; kapsamlı hasta erişimi vermez."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    patient_media_id: int = Field(index=True)
+    added_by_user_id: int = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class ConsultationPayment(SQLModel, table=True):
+    """Ödeme sağlayıcısı entegrasyonu için sunucu tarafı durum kaydı; kart verisi tutulmaz."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True, unique=True)
+    provider: Optional[str] = None
+    provider_transaction_id: Optional[str] = Field(default=None, index=True)
+    amount: int
+    platform_fee_rate: int = 20
+    status: str = Field(default="NOT_STARTED", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+
+
 class ExpertReview(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True, unique=True)
@@ -3100,6 +3122,10 @@ def expert_support_profile_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as eligibility_session:
+        eligibility_meta = eligibility_session.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+    if eligibility_meta and eligibility_meta.professional_title == "Öğrenci":
+        return HTMLResponse("Öğrenci hesapları uzman danışman olarak başvuramaz; uzmanlardan destek alabilir.", status_code=403)
     with Session(engine, expire_on_commit=False) as s:
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
@@ -3128,6 +3154,8 @@ def expert_support_profile_save(
     with Session(engine, expire_on_commit=False) as s:
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         title = meta.professional_title if meta else "Diş Hekimi"
+        if title == "Öğrenci":
+            return HTMLResponse("Öğrenci hesapları uzman danışman olamaz.", status_code=403)
         minimum = _expert_minimum_price(title)
         if consultation_price < minimum:
             return HTMLResponse(f"Bu mesleki unvan için minimum danışmanlık ücreti {minimum} TL.", status_code=400)
@@ -3165,10 +3193,14 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
         patient = s.get(Patient, patient_id) if patient_id else None
         if patient and patient.owner_user_id != user.id:
             patient = None
+        patient_media = s.exec(select(PatientMedia).where(
+            PatientMedia.patient_id == patient.id,
+            PatientMedia.owner_user_id == user.id,
+        ).order_by(PatientMedia.uploaded_at.desc())).all() if patient else []
     if not profile or not expert:
         return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
     return templates.TemplateResponse(request=request, name="expert_request.html", context={
-        "user": user, "expert": expert, "profile": profile, "patient": patient,
+        "user": user, "expert": expert, "profile": profile, "patient": patient, "patient_media": patient_media,
     })
 
 
@@ -3181,6 +3213,7 @@ def expert_support_request_create(
     question: str = Form(...),
     tooth_region: str = Form(""),
     patient_id: Optional[int] = Form(None),
+    media_ids: str = Form(""),
 ):
     user = get_current_user(request)
     if not user:
@@ -3214,7 +3247,22 @@ def expert_support_request_create(
             expert_response_deadline=now + timedelta(minutes=10),
         )
         s.add(case); s.commit(); s.refresh(case)
-        _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat()})
+        selected_media_ids = []
+        for raw_media_id in media_ids.split(","):
+            try:
+                selected_media_ids.append(int(raw_media_id.strip()))
+            except (TypeError, ValueError):
+                continue
+        if patient_id and selected_media_ids:
+            allowed_media = s.exec(select(PatientMedia).where(
+                PatientMedia.patient_id == patient_id,
+                PatientMedia.owner_user_id == user.id,
+                PatientMedia.id.in_(selected_media_ids),
+            )).all()
+            for media in allowed_media:
+                s.add(ConsultationCaseMedia(case_id=case.id, patient_media_id=media.id, added_by_user_id=user.id))
+        s.add(ConsultationPayment(case_id=case.id, amount=profile.consultation_price, status="NOT_STARTED"))
+        _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat(), "shared_media_count": len(selected_media_ids)})
         s.commit()
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
 
