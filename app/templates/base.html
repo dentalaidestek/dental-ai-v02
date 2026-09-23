@@ -59,8 +59,8 @@
     <a href="/analysis/new" class="mobile-nav-item{% if request.url.path.startswith('/analysis') or request.url.path.startswith('/analyses') %} active{% endif %}"{% if request.url.path.startswith('/analysis') or request.url.path.startswith('/analyses') %} aria-current="page"{% endif %}>
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/></svg><span>Analiz</span>
     </a>
-    <a href="/tooth-charts" class="mobile-nav-item{% if request.url.path.startswith('/tooth-charts') %} active{% endif %}"{% if request.url.path.startswith('/tooth-charts') %} aria-current="page"{% endif %}>
-        <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg><span>Diş Şeması</span>
+    <a href="/messages" class="mobile-nav-item mobile-nav-messages{% if request.url.path.startswith('/messages') or request.url.path.startswith('/expert-support/cases') %} active{% endif %}"{% if request.url.path.startswith('/messages') %} aria-current="page"{% endif %}>
+        <span class="mobile-nav-icon-wrap"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z"/><path d="M8 9h8M8 12h5"/></svg><b id="mobileMessagesBadge" class="mobile-messages-badge" hidden></b></span><span>Mesajlar</span>
     </a>
     <a href="/account" class="mobile-nav-item{% if request.url.path.startswith('/account') %} active{% endif %}"{% if request.url.path.startswith('/account') %} aria-current="page"{% endif %}>
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><span>Profil</span>
@@ -115,6 +115,18 @@ document.addEventListener("keydown", function(event) {
         toggleQuickAdd(false);
     }
 });
+if (document.getElementById("mobileMessagesBadge")) {
+    fetch("/messages/unread-count", {credentials:"same-origin"})
+      .then(r => r.ok ? r.json() : {count:0})
+      .then(data => {
+        const badge = document.getElementById("mobileMessagesBadge");
+        const count = Number(data.count || 0);
+        if (count > 0) {
+            badge.textContent = count > 99 ? "99+" : String(count);
+            badge.hidden = false;
+        }
+      }).catch(() => {});
+}
 </script>
 </body>
 </html>
