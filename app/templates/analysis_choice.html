@@ -1,103 +1,11 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="analysis-choice-page">
-    <div class="choice-header">
-        <h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Yeni Analiz</h1>
-        <p>Analizi bir hasta profiline bağlayarak veya hasta oluşturmadan başlatabilirsiniz.</p>
-    </div>
-
-    <div class="choice-grid">
-        <a class="choice-card" href="/patients/new?next=analysis">
-            <div class="choice-icon">👤</div>
-            <h2>Hasta oluşturarak devam et</h2>
-            <p>
-                Hasta bilgilerini kaydedersiniz. Yapılan analizler ve sonraki işlemler
-                bu hastanın profilinde kayıt altında tutulur.
-            </p>
-            <span class="choice-note">Hasta profiline kaydedilir</span>
-        </a>
-
-        <a class="choice-card" href="/analysis/guest/new">
-            <div class="choice-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"/></svg></div>
-            <h2>Hasta oluşturmadan analiz et</h2>
-            <p>
-                Hasta kaydı oluşturulmaz. Klinik bilgi ve görsellerle doğrudan
-                analiz yaparsınız. Sonuç yalnızca Son Analizler bölümünde görünür.
-            </p>
-            <span class="choice-note">Hasta profiline kaydedilmez</span>
-        </a>
-    </div>
-</div>
-
-<style>
-.analysis-choice-page {
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-.choice-header {
-    margin-bottom: 22px;
-}
-
-.choice-header h1 {
-    margin-bottom: 6px;
-}
-
-.choice-header p {
-    margin: 0;
-    opacity: .7;
-}
-
-.choice-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 18px;
-}
-
-.choice-card {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow: 0 3px 12px rgba(0,0,0,.08);
-    border: 1px solid rgba(128,128,128,.18);
-    transition: transform .2s ease, box-shadow .2s ease;
-}
-
-.choice-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 18px rgba(0,0,0,.12);
-}
-
-.choice-icon {
-    font-size: 34px;
-    margin-bottom: 12px;
-}
-
-.choice-card h2 {
-    margin: 0 0 10px;
-}
-
-.choice-card p {
-    margin: 0 0 14px;
-    line-height: 1.6;
-    opacity: .78;
-}
-
-.choice-note {
-    display: inline-block;
-    font-size: 13px;
-    font-weight: 700;
-    opacity: .7;
-}
-
-@media (max-width: 700px) {
-    .choice-grid {
-        grid-template-columns: 1fr;
-    }
-}
-</style>
+<section class="mobile-choice">
+  <header class="mobile-choice-head"><span class="choice-badge">✦</span><div><h1>Yeni Analiz</h1><p>Analizi hasta kaydı oluşturarak veya hızlıca başlatabilirsiniz.</p></div></header>
+  <div class="mobile-choice-list">
+    <a class="mobile-choice-card choice-patient" href="/patients/new?next=analysis"><span class="choice-card-icon">👤</span><span class="choice-card-copy"><strong>Hasta Oluşturarak Analiz</strong><small>Hasta bilgilerini kaydedin. Analizler ve sonraki işlemler hasta profilinde saklansın.</small></span><b>›</b></a>
+    <a class="mobile-choice-card choice-fast" href="/analysis/guest/new"><span class="choice-card-icon">✦</span><span class="choice-card-copy"><strong>Hızlı Analiz</strong><small>Hasta kaydı oluşturmadan doğrudan analize başlayın.</small></span><b>›</b></a>
+  </div>
+  <aside class="choice-help"><span>i</span><p><strong>Hangisini seçmeliyim?</strong> Hasta geçmişini saklamak istiyorsanız ilk seçeneği; yalnızca hızlı analiz için ikinci seçeneği kullanın.</p></aside>
+</section>
 {% endblock %}
