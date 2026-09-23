@@ -3759,6 +3759,45 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
     return RedirectResponse("/messages", status_code=303)
 
 
+@app.get("/messages/live-status")
+def consultation_live_status(request: Request):
+    """Lightweight polling endpoint for near-real-time inbox updates."""
+    user = get_current_user(request)
+    if not user:
+        return {"count": 0, "latest": None}
+    with Session(engine, expire_on_commit=False) as s:
+        cases = s.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        )).all()
+        total = 0
+        latest = None
+        latest_dt = None
+        for case in cases:
+            state = _consultation_inbox_state(s, case.id, user.id)
+            if state.deleted_at:
+                continue
+            incoming = s.exec(select(ConsultationMessage).where(
+                ConsultationMessage.case_id == case.id,
+                ConsultationMessage.sender_user_id != user.id,
+            ).order_by(ConsultationMessage.created_at.desc())).all()
+            unread = [m for m in incoming if not state.last_read_at or m.created_at > state.last_read_at]
+            total += len(unread)
+            if unread:
+                m = unread[0]
+                if latest_dt is None or m.created_at > latest_dt:
+                    sender = s.get(User, m.sender_user_id)
+                    preview = (m.content or ("Görsel gönderildi" if m.message_type == "IMAGE" else "Yeni mesaj")).strip()
+                    latest = {
+                        "id": m.id, "case_id": case.id,
+                        "sender": sender.display_name if sender else "Yeni mesaj",
+                        "preview": preview[:90],
+                        "created_at": m.created_at.isoformat(),
+                    }
+                    latest_dt = m.created_at
+        s.commit()
+    return {"count": total, "latest": latest}
+
+
 @app.get("/messages/unread-count")
 def consultation_unread_count(request: Request):
     user = get_current_user(request)
