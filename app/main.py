@@ -3003,6 +3003,55 @@ def _consultation_event(session: Session, case_id: int, event_type: str, actor_u
     ))
 
 
+@app.get("/admin/expert-verifications", response_class=HTMLResponse)
+def admin_expert_verifications(request: Request):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        profiles = s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
+        rows = []
+        for profile in profiles:
+            expert_user = s.get(User, profile.user_id)
+            doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == profile.user_id)).first()
+            rows.append({"profile": profile, "expert": expert_user, "doctor": doctor})
+    return templates.TemplateResponse(request=request, name="admin_expert_verifications.html", context={"user": user, "rows": rows})
+
+
+@app.post("/admin/expert-verifications/{profile_id}")
+def admin_expert_verification_update(
+    request: Request,
+    profile_id: int,
+    decision: str = Form(...),
+    identity_verified: Optional[str] = Form(None),
+    specialty_verified: Optional[str] = Form(None),
+    academic_title_verified: Optional[str] = Form(None),
+):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    if decision not in {"VERIFY", "REJECT", "PENDING"}:
+        return HTMLResponse("Geçersiz doğrulama kararı.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.get(ExpertProfile, profile_id)
+        if not profile:
+            return HTMLResponse("Profil bulunamadı.", status_code=404)
+        profile.identity_verified = identity_verified == "yes"
+        profile.specialty_verified = specialty_verified == "yes"
+        profile.academic_title_verified = academic_title_verified == "yes"
+        if decision == "VERIFY" and profile.identity_verified and profile.specialty_verified:
+            profile.verification_status = "VERIFIED"
+        elif decision == "REJECT":
+            profile.verification_status = "REJECTED"
+            profile.availability = "PASSIVE"
+        else:
+            profile.verification_status = "PENDING"
+        profile.updated_at = _utcnow_naive()
+        s.add(profile)
+        s.commit()
+    return RedirectResponse("/admin/expert-verifications", status_code=303)
+
+
 @app.get("/expert-support", response_class=HTMLResponse)
 def expert_support_directory(request: Request, specialty: str = "", available: str = ""):
     user = get_current_user(request)
