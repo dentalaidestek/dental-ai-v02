@@ -1,5 +1,5 @@
 fastapi
-sqlmodel
+sqlmodel==0.0.24
 jinja2
 python-multipart
 
