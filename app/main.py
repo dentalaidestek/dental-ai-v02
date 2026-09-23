@@ -265,6 +265,8 @@ class ExpertProfile(SQLModel, table=True):
     academic_title: Optional[str] = Field(default=None, index=True)
     institution: Optional[str] = None
     bio: Optional[str] = None
+    orcid_url: Optional[str] = None
+    publications_text: Optional[str] = None
     consultation_price: int = 0
     availability: str = Field(default="PASSIVE", index=True)
     max_active_cases: int = 5
@@ -302,6 +304,8 @@ class ConsultationCase(SQLModel, table=True):
     requester_completed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     dispute_opened_at: Optional[datetime] = None
+    completion_confirmation_deadline: Optional[datetime] = None
+    urgency: str = "NORMAL"
 
 
 class ExpertAvailabilityWatch(SQLModel, table=True):
@@ -363,6 +367,8 @@ class ConsultationMessage(SQLModel, table=True):
     content: Optional[str] = None
     media_path: Optional[str] = None
     annotation_json: Optional[str] = None
+    reply_to_message_id: Optional[int] = Field(default=None, index=True)
+    original_media_path: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -3030,7 +3036,12 @@ EXPERT_START_OPTIONS = {
     "30M": (30, "30 dakika içinde"),
     "1H": (60, "1 saat içinde"),
     "3H": (180, "3 saat içinde"),
-    "TODAY": (360, "Bugün içinde"),
+}
+CONSULTATION_URGENCIES = {
+    "ASAP": "Acil / en kısa sürede",
+    "1H": "1 saat içinde",
+    "TODAY": "Bugün",
+    "NORMAL": "Acil değil",
 }
 
 
@@ -3181,6 +3192,8 @@ def expert_support_profile_save(
     specialty: str = Form(...),
     institution: str = Form(""),
     bio: str = Form(""),
+    orcid_url: str = Form(""),
+    publications_text: str = Form(""),
     consultation_price: int = Form(...),
     availability: str = Form("PASSIVE"),
 ):
@@ -3204,6 +3217,8 @@ def expert_support_profile_save(
         profile.academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
         profile.institution = institution.strip() or None
         profile.bio = bio.strip() or None
+        profile.orcid_url = orcid_url.strip() or None
+        profile.publications_text = publications_text.strip() or None
         profile.consultation_price = consultation_price
         profile.availability = availability
         profile.max_active_cases = 5
@@ -3252,10 +3267,13 @@ def expert_support_request_create(
     tooth_region: str = Form(""),
     patient_id: Optional[int] = Form(None),
     media_ids: str = Form(""),
+    urgency: str = Form("NORMAL"),
 ):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    if urgency not in CONSULTATION_URGENCIES:
+        urgency = "NORMAL"
     if expert_user_id == user.id:
         return HTMLResponse("Kendinize vaka gönderemezsiniz.", status_code=400)
     now = _utcnow_naive()
@@ -3283,6 +3301,7 @@ def expert_support_request_create(
             clinical_summary=clinical_summary.strip(), requester_opinion=requester_opinion.strip() or None,
             question=question.strip(), price_amount=profile.consultation_price,
             expert_response_deadline=now + timedelta(minutes=10),
+            urgency=urgency,
         )
         s.add(case); s.commit(); s.refresh(case)
         selected_media_ids = []
@@ -3593,6 +3612,9 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
             minutes, label = EXPERT_START_OPTIONS[start_option]
             if start_option == "NOW":
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
+                payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+                if payment:
+                    payment.status = "AUTHORIZATION_REQUIRED"; payment.updated_at = now; s.add(payment)
                 _consultation_event(s, case.id, "ACCEPTED_NOW", user.id)
             else:
                 case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
@@ -3619,6 +3641,9 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
         if decision == "ACCEPT":
             case.status = "WAITING_START"; case.requester_accepted_at = now
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
+            payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+            if payment:
+                payment.status = "AUTHORIZATION_REQUIRED"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "PROPOSAL_ACCEPTED", user.id, {"start_deadline": case.consultation_start_deadline.isoformat()})
         else:
             case.status = "PROPOSAL_REJECTED"
@@ -3632,8 +3657,70 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
+@app.post("/expert-support/cases/{case_id}/media-message")
+async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+            return HTMLResponse("Bu vakaya medya gönderilemez.", status_code=403)
+        raw = await file.read()
+        if not raw or len(raw) > 25 * 1024 * 1024:
+            return HTMLResponse("Dosya boş veya 25 MB sınırını aşıyor.", status_code=400)
+        suffix = Path(file.filename or "").suffix.lower()
+        allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
+        if suffix not in allowed:
+            return HTMLResponse("Desteklenmeyen dosya türü.", status_code=400)
+        case_dir = UPLOAD_DIR / "consultations" / str(case.id)
+        case_dir.mkdir(parents=True, exist_ok=True)
+        stored = f"{secrets.token_hex(16)}{suffix}"
+        path = case_dir / stored
+        path.write_bytes(raw)
+        kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path)))
+        _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
+        s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.get("/expert-support/cases/{case_id}/message-media/{message_id}")
+def expert_support_message_media(request: Request, case_id: int, message_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        msg = s.get(ConsultationMessage, message_id)
+        if not case or not msg or msg.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or not msg.media_path:
+            return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        path = Path(msg.media_path)
+        if not path.exists() or not path.is_file():
+            return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        return FileResponse(path)
+
+
+@app.post("/expert-support/cases/{case_id}/annotate/{message_id}")
+def expert_support_annotate_message(request: Request, case_id: int, message_id: int, annotation_json: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if len(annotation_json) > 100000:
+        return HTMLResponse("İşaretleme verisi çok büyük.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        original = s.get(ConsultationMessage, message_id)
+        if not case or not original or original.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or original.message_type != "IMAGE":
+            return HTMLResponse("Bu görüntü işaretlenemez.", status_code=403)
+        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type="ANNOTATION", content="Görüntü işaretlemesi", original_media_path=original.media_path, annotation_json=annotation_json, reply_to_message_id=original.id))
+        _consultation_event(s, case.id, "IMAGE_ANNOTATED", user.id)
+        s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
 @app.post("/expert-support/cases/{case_id}/message")
-def expert_support_message(request: Request, case_id: int, content: str = Form(...)):
+def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3647,7 +3734,11 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
             return HTMLResponse("Bu vaka mesajlaşmaya açık değil.", status_code=409)
-        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value))
+        if reply_to_message_id:
+            replied = s.get(ConsultationMessage, reply_to_message_id)
+            if not replied or replied.case_id != case.id:
+                reply_to_message_id = None
+        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id))
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -3696,7 +3787,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "REQUESTER_COMPLETED", user.id)
         elif user.id == case.expert_user_id and action == "COMPLETE":
-            case.expert_completed_at = now; case.status = "EXPERT_COMPLETED"
+            case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
         elif user.id == case.requester_user_id and action == "CONTINUE":
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
