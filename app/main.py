@@ -304,6 +304,14 @@ class ConsultationCase(SQLModel, table=True):
     dispute_opened_at: Optional[datetime] = None
 
 
+class ExpertAvailabilityWatch(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    specialty: str = Field(index=True)
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
 class ConsultationCaseMedia(SQLModel, table=True):
     """Vakaya açıkça seçilerek eklenen klinik medya; kapsamlı hasta erişimi vermez."""
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -3115,6 +3123,25 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
         "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
         "selected_specialty": specialty, "available_only": available == "1", "own_profile": own_profile,
     })
+
+
+@app.post("/expert-support/availability-watch")
+def expert_support_availability_watch(request: Request, specialty: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if specialty not in EXPERT_SPECIALTIES:
+        return HTMLResponse("Geçersiz branş.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        existing = s.exec(select(ExpertAvailabilityWatch).where(
+            ExpertAvailabilityWatch.user_id == user.id,
+            ExpertAvailabilityWatch.specialty == specialty,
+            ExpertAvailabilityWatch.is_active == True,
+        )).first()
+        if not existing:
+            s.add(ExpertAvailabilityWatch(user_id=user.id, specialty=specialty))
+            s.commit()
+    return RedirectResponse(f"/expert-support?specialty={specialty}&watch=1", status_code=303)
 
 
 @app.get("/expert-support/profile", response_class=HTMLResponse)
