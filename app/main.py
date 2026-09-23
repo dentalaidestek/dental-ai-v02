@@ -278,6 +278,26 @@ class ExpertProfile(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class ExpertPolicyState(SQLModel, table=True):
+    """Uzmanın vaka kabul kuralları, otomatik kısıtlaması ve kural onayı."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    expert_user_id: int = Field(index=True, unique=True)
+    rules_version: str = "2026-09-v1"
+    rules_accepted_at: Optional[datetime] = Field(default=None, index=True)
+    new_case_blocked_until: Optional[datetime] = Field(default=None, index=True)
+    block_reason: Optional[str] = None
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class DisputeAccessAudit(SQLModel, table=True):
+    """Sorun/itiraz içeriğine yapılan yetkili erişimlerin değiştirilemez denetim kaydı."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    admin_user_id: int = Field(index=True)
+    action: str = Field(default="VIEW", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class ConsultationCase(SQLModel, table=True):
     """Hekimler arası vaka danışmanlığı; Dental AI analizi bu kayda dahil edilmez."""
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -3065,6 +3085,177 @@ def _consultation_event(session: Session, case_id: int, event_type: str, actor_u
     ))
 
 
+EXPERT_RULES_VERSION = "2026-09-v1"
+
+
+def _expert_policy_state(session: Session, expert_user_id: int) -> ExpertPolicyState:
+    state = session.exec(select(ExpertPolicyState).where(ExpertPolicyState.expert_user_id == expert_user_id)).first()
+    if not state:
+        state = ExpertPolicyState(expert_user_id=expert_user_id, rules_version=EXPERT_RULES_VERSION)
+        session.add(state)
+        session.flush()
+    return state
+
+
+def _expert_is_blocked(state: ExpertPolicyState, now: Optional[datetime] = None) -> bool:
+    now = now or _utcnow_naive()
+    return bool(state.new_case_blocked_until and state.new_case_blocked_until > now)
+
+
+def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optional[datetime] = None) -> bool:
+    """10 dk yanıtsız talebi bir kez işler; aynı yerel günde 3. kaçırmada 24 saat yeni vaka engeli verir."""
+    now = now or _utcnow_naive()
+    if case.status != "REQUESTED" or now <= case.expert_response_deadline:
+        return False
+    existing = session.exec(select(ConsultationEvent).where(
+        ConsultationEvent.case_id == case.id,
+        ConsultationEvent.event_type == "EXPERT_TIMEOUT",
+    )).first()
+    case.status = "EXPERT_TIMEOUT"
+    session.add(case)
+    if existing:
+        return False
+    _consultation_event(session, case.id, "EXPERT_TIMEOUT", case.expert_user_id, {"deadline": case.expert_response_deadline.isoformat()})
+    local_now = _utc_to_local(now) or now
+    day_start_local = datetime.combine(local_now.date(), time.min)
+    day_end_local = datetime.combine(local_now.date(), time.max)
+    day_start_utc = day_start_local.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc = day_end_local.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+    expert_cases = session.exec(select(ConsultationCase).where(
+        ConsultationCase.expert_user_id == case.expert_user_id,
+        ConsultationCase.status == "EXPERT_TIMEOUT",
+        ConsultationCase.requested_at >= day_start_utc,
+        ConsultationCase.requested_at <= day_end_utc,
+    )).all()
+    missed_today = len(expert_cases)
+    _consultation_event(session, case.id, "MISSED_REQUEST_COUNTED", case.expert_user_id, {"missed_today": missed_today})
+    if missed_today >= 3:
+        state = _expert_policy_state(session, case.expert_user_id)
+        blocked_until = now + timedelta(hours=24)
+        if not state.new_case_blocked_until or state.new_case_blocked_until < blocked_until:
+            state.new_case_blocked_until = blocked_until
+            state.block_reason = "Aynı gün içinde 3 vaka talebinin 10 dakika boyunca yanıtsız bırakılması"
+            state.updated_at = now
+            session.add(state)
+            _consultation_event(session, case.id, "NEW_CASE_BLOCKED_24H", case.expert_user_id, {"blocked_until": blocked_until.isoformat(), "missed_today": missed_today})
+    payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+    if payment:
+        payment.status = "REFUND_REQUIRED"
+        payment.updated_at = now
+        session.add(payment)
+    return True
+
+
+def _expert_performance(session: Session, expert_user_id: int) -> dict:
+    cases = session.exec(select(ConsultationCase).where(ConsultationCase.expert_user_id == expert_user_id)).all()
+    reviews = session.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id)).all()
+    completed = [x for x in cases if x.status == "COMPLETED"]
+    responded = [x for x in cases if x.proposed_at or x.requester_accepted_at or x.expert_started_at]
+    response_seconds = []
+    for case in responded:
+        first = case.proposed_at or case.requester_accepted_at or case.expert_started_at
+        if first and first >= case.requested_at:
+            response_seconds.append((first - case.requested_at).total_seconds())
+    avg_response_minutes = round(sum(response_seconds) / len(response_seconds) / 60, 1) if response_seconds else None
+    rating_avg = round(sum(x.rating for x in reviews) / len(reviews), 1) if reviews else None
+    missed_30_since = _utcnow_naive() - timedelta(days=30)
+    missed_30 = len([x for x in cases if x.status == "EXPERT_TIMEOUT" and x.requested_at >= missed_30_since])
+    return {"rating_avg": rating_avg, "review_count": len(reviews), "completed_count": len(completed),
+            "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
+
+
+def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
+    now = _utcnow_naive()
+    query = select(ConsultationCase).where(
+        ConsultationCase.status == "REQUESTED",
+        ConsultationCase.expert_response_deadline < now,
+    )
+    if expert_user_id is not None:
+        query = query.where(ConsultationCase.expert_user_id == expert_user_id)
+    for pending in session.exec(query).all():
+        _apply_expert_timeout(session, pending, now)
+    session.commit()
+
+
+@app.get("/expert-support/rules", response_class=HTMLResponse)
+def expert_support_rules(request: Request, next: str = "/expert-support/profile"):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        state = _expert_policy_state(s, user.id)
+        s.commit()
+    safe_next = next if next.startswith("/") and not next.startswith("//") else "/expert-support/profile"
+    return templates.TemplateResponse(request=request, name="expert_rules.html", context={
+        "user": user, "state": state, "rules_version": EXPERT_RULES_VERSION, "next_url": safe_next, "now": _utcnow_naive(),
+    })
+
+
+@app.post("/expert-support/rules/accept")
+def expert_support_rules_accept(request: Request, rules_version: str = Form(...), next_url: str = Form("/expert-support/profile")):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if rules_version != EXPERT_RULES_VERSION:
+        return HTMLResponse("Kurallar güncellendi. Lütfen güncel metni yeniden okuyun.", status_code=409)
+    with Session(engine, expire_on_commit=False) as s:
+        state = _expert_policy_state(s, user.id)
+        state.rules_version = EXPERT_RULES_VERSION
+        state.rules_accepted_at = _utcnow_naive()
+        state.updated_at = _utcnow_naive()
+        s.add(state); s.commit()
+    safe_next = next_url if next_url.startswith("/") and not next_url.startswith("//") else "/expert-support/profile"
+    return RedirectResponse(safe_next, status_code=303)
+
+
+@app.get("/expert-support/performance", response_class=HTMLResponse)
+def expert_support_performance(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        _expire_pending_expert_requests(s, user.id)
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        if not profile:
+            return RedirectResponse("/expert-support/profile", status_code=303)
+        performance = _expert_performance(s, user.id)
+        policy_state = _expert_policy_state(s, user.id)
+        events = s.exec(select(ConsultationEvent).where(
+            ConsultationEvent.actor_user_id == user.id,
+            ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "MISSED_REQUEST_COUNTED", "NEW_CASE_BLOCKED_24H", "START_DEADLINE_MISSED"]),
+        ).order_by(ConsultationEvent.created_at.desc())).all()[:30]
+        s.commit()
+    return templates.TemplateResponse(request=request, name="expert_performance.html", context={
+        "user": user, "profile": profile, "performance": performance, "policy_state": policy_state, "events": events, "now": _utcnow_naive(),
+    })
+
+
+@app.get("/expert-support/performance-info", response_class=HTMLResponse)
+def expert_support_performance_info(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request=request, name="expert_performance_info.html", context={"user": user})
+
+
+@app.get("/admin/consultation-disputes/{case_id}", response_class=HTMLResponse)
+def admin_consultation_dispute_review(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or case.status != "DISPUTE" or not case.dispute_opened_at:
+            return HTMLResponse("Aktif bir sorun/itiraz incelemesi bulunamadı.", status_code=403)
+        messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
+        s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="VIEW"))
+        _consultation_event(s, case.id, "DISPUTE_ADMIN_ACCESSED", user.id)
+        s.commit()
+    return templates.TemplateResponse(request=request, name="admin_consultation_dispute.html", context={
+        "user": user, "case": case, "messages": messages,
+    })
+
+
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
 def admin_expert_verifications(request: Request):
     user = get_current_user(request)
@@ -3120,6 +3311,7 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
+        _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.verification_status == "VERIFIED",
@@ -3138,11 +3330,14 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
             ConsultationCase.expert_user_id == expert_user_id,
             ConsultationCase.status == "COMPLETED",
         )).all())
-        rating_avg = round(sum(x.rating for x in reviews) / len(reviews), 1) if reviews else None
+        performance = _expert_performance(s, expert_user_id)
+        policy_state = _expert_policy_state(s, expert_user_id)
+        rating_avg = performance["rating_avg"]
+        s.commit()
     return templates.TemplateResponse(request=request, name="expert_public_profile.html", context={
         "user": user, "profile": profile, "expert": expert, "active_count": active_count,
         "completed_count": completed_count, "rating_avg": rating_avg, "review_count": len(reviews),
-        "patient_id": patient_id,
+        "patient_id": patient_id, "performance": performance, "policy_state": policy_state, "now": _utcnow_naive(),
     })
 
 
@@ -3152,6 +3347,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
+        _expire_pending_expert_requests(s)
         query = select(ExpertProfile).where(
             ExpertProfile.verification_status == "VERIFIED",
             ExpertProfile.identity_verified == True,
@@ -3171,7 +3367,9 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
                 ConsultationCase.expert_user_id == p.user_id,
                 ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
             )).all())
-            cards.append({"profile": p, "expert": expert_user, "active_count": active_count})
+            policy = _expert_policy_state(s, p.user_id)
+            perf = _expert_performance(s, p.user_id)
+            cards.append({"profile": p, "expert": expert_user, "active_count": active_count, "policy": policy, "performance": perf})
         own_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
     return templates.TemplateResponse(request=request, name="expert_support.html", context={
         "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
@@ -3211,10 +3409,13 @@ def expert_support_profile_page(request: Request):
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == user.id)).first()
+        policy_state = _expert_policy_state(s, user.id)
+        s.commit()
     title = meta.professional_title if meta else "Diş Hekimi"
     return templates.TemplateResponse(request=request, name="expert_profile_edit.html", context={
         "user": user, "profile": profile, "doctor": doctor, "professional_title": title,
         "specialties": EXPERT_SPECIALTIES, "minimum_price": _expert_minimum_price(title),
+        "policy_state": policy_state, "rules_version": EXPERT_RULES_VERSION, "now": _utcnow_naive(),
     })
 
 
@@ -3252,6 +3453,12 @@ def expert_support_profile_save(
         profile.orcid_url = orcid_url.strip() or None
         profile.publications_text = publications_text.strip() or None
         profile.consultation_price = consultation_price
+        policy_state = _expert_policy_state(s, user.id)
+        if availability == "AVAILABLE":
+            if policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
+                return RedirectResponse("/expert-support/rules?next=/expert-support/profile", status_code=303)
+            if _expert_is_blocked(policy_state):
+                availability = "PASSIVE"
         profile.availability = availability
         profile.max_active_cases = 5
         profile.updated_at = _utcnow_naive()
@@ -3274,6 +3481,9 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
             ExpertProfile.verification_status == "VERIFIED",
             ExpertProfile.availability == "AVAILABLE",
         )).first()
+        policy_state = _expert_policy_state(s, expert_user_id)
+        if _expert_is_blocked(policy_state):
+            profile = None
         expert = s.get(User, expert_user_id)
         patient = s.get(Patient, patient_id) if patient_id else None
         if patient and patient.owner_user_id != user.id:
@@ -3310,6 +3520,10 @@ def expert_support_request_create(
         return HTMLResponse("Kendinize vaka gönderemezsiniz.", status_code=400)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
+        _expire_pending_expert_requests(s, expert_user_id)
+        policy_state = _expert_policy_state(s, expert_user_id)
+        if _expert_is_blocked(policy_state):
+            return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.", status_code=409)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.verification_status == "VERIFIED",
@@ -3565,14 +3779,7 @@ def expert_support_case_room(request: Request, case_id: int):
         s.add(state)
         # Zaman aşımını sayfa açılışında idempotent olarak uygula.
         if case.status == "REQUESTED" and now > case.expert_response_deadline:
-            case.status = "EXPERT_TIMEOUT"
-            _consultation_event(s, case.id, "EXPERT_TIMEOUT")
-            payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
-                payment.status = "REFUND_REQUIRED"
-                payment.updated_at = now
-                s.add(payment)
-            s.add(case)
+            _apply_expert_timeout(s, case, now)
             s.commit()
         if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
             case.status = "PROPOSAL_EXPIRED"
