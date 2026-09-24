@@ -9,7 +9,7 @@
 <section class="expert-status-banner is-rejected"><strong>Başvurunuz onaylanmadı</strong><span>Bilgilerinizi kontrol edip yönetici desteğiyle yeniden değerlendirme isteyebilirsiniz.</span></section>
 {% endif %}
   <section id="expertNotificationGate" class="expert-notification-gate" hidden>
-    <div><strong>Bildirimleri açmanız gerekiyor</strong><small>Uzman olarak vaka kabul edebilmek için yeni vaka ve mesaj bildirimleri açık olmalıdır.</small></div>
+    <div><strong id="expertNotificationTitle">Bildirimleri açmanız gerekiyor</strong><small id="expertNotificationDetail">Uzman olarak vaka kabul edebilmek için yeni vaka ve mesaj bildirimleri açık olmalıdır.</small></div>
     <button type="button" id="enableExpertNotifications">Bildirimleri Aç</button>
   </section>
   {% if request.query_params.get('saved') %}<div class="expert-success">Profil kaydedildi.</div>{% endif %}
@@ -63,8 +63,49 @@
 <script>
 function syncExpertAvailability(on){const input=document.getElementById("availabilitySelect"), text=document.getElementById("availabilityText");if(on && !expertNotificationsAllowed()){const t=document.getElementById("availabilityToggle");if(t)t.checked=false;if(input)input.value="BUSY";if(text)text.textContent="Meşgul";showExpertNotificationGate();return;}if(input) input.value=on?"AVAILABLE":"BUSY";if(text) text.textContent=on?"Müsait":"Meşgul";}
 function expertNotificationsAllowed(){return "Notification" in window && Notification.permission==="granted";}
-function showExpertNotificationGate(){const g=document.getElementById("expertNotificationGate");if(g)g.hidden=expertNotificationsAllowed();}
-async function requestExpertNotifications(){if(!("Notification" in window)){alert("Bu tarayıcı bildirimleri desteklemiyor. Uzman profili için bildirim destekleyen güncel bir tarayıcı kullanın.");return;}const p=await Notification.requestPermission();showExpertNotificationGate();if(p!=="granted")alert("Uzman profili oluşturmak ve müsait duruma geçmek için bildirim izni gereklidir.");}
+function expertNotificationState(){
+  if(!("Notification" in window)) return "unsupported";
+  return Notification.permission || "default";
+}
+function showExpertNotificationGate(){
+  const g=document.getElementById("expertNotificationGate"),title=document.getElementById("expertNotificationTitle"),detail=document.getElementById("expertNotificationDetail"),button=document.getElementById("enableExpertNotifications");
+  if(!g)return;
+  const state=expertNotificationState();
+  g.hidden=false;
+  if(state==="granted"){
+    if(title)title.textContent="Bildirimler açık ✓";
+    if(detail)detail.textContent="Yeni vaka ve mesaj bildirimleri için tarayıcı izni açık. Müsait durumuna geçebilirsiniz.";
+    if(button)button.hidden=true;
+    return;
+  }
+  if(button)button.hidden=false;
+  if(state==="denied"){
+    if(title)title.textContent="Bildirim izni verilmedi";
+    if(detail)detail.textContent="Tarayıcı bu site için bildirimleri engelliyor. Site ayarlarından Bildirimler iznini açtıktan sonra bu sayfaya dönün.";
+    if(button)button.textContent="Tekrar Kontrol Et";
+    return;
+  }
+  if(state==="unsupported"){
+    if(title)title.textContent="Tarayıcı bildirimleri desteklemiyor";
+    if(detail)detail.textContent="Uzman olarak müsait duruma geçmek için bildirim destekleyen güncel bir tarayıcı kullanın.";
+    if(button)button.hidden=true;
+    return;
+  }
+  if(title)title.textContent="Bildirimleri açmanız gerekiyor";
+  if(detail)detail.textContent="Uzman olarak vaka kabul edebilmek için yeni vaka ve mesaj bildirimleri açık olmalıdır.";
+  if(button)button.textContent="Bildirimleri Aç";
+}
+async function requestExpertNotifications(){
+  const state=expertNotificationState();
+  if(state==="unsupported"){showExpertNotificationGate();return;}
+  if(state==="denied"){showExpertNotificationGate();return;}
+  if(state!=="granted"){
+    try{await Notification.requestPermission();}catch(e){}
+  }
+  showExpertNotificationGate();
+}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)showExpertNotificationGate();});
+window.addEventListener("pageshow",showExpertNotificationGate);
 document.addEventListener("DOMContentLoaded",()=>{const toggle=document.getElementById("availabilityToggle");if(toggle&&!toggle.disabled)showExpertNotificationGate();const b=document.getElementById("enableExpertNotifications");if(b)b.onclick=requestExpertNotifications;const form=document.querySelector(".expert-form-compact");if(form)form.addEventListener("submit",async e=>{const availability=document.getElementById("availabilitySelect");if(availability&&availability.value==="AVAILABLE"&&!expertNotificationsAllowed()){e.preventDefault();showExpertNotificationGate();await requestExpertNotifications();}});setupExpertPhotoCrop();});
 function setupExpertPhotoCrop(){const input=document.getElementById('expertPhotoInput'),dialog=document.getElementById('expertCropDialog'),canvas=document.getElementById('expertCropCanvas'),zoom=document.getElementById('expertCropZoom'),apply=document.getElementById('expertCropApply');if(!input||!dialog)return;const ctx=canvas.getContext('2d');let img=null,scale=1,dx=0,dy=0,drag=false,px=0,py=0;function draw(){if(!img)return;ctx.clearRect(0,0,640,640);const base=Math.max(640/img.width,640/img.height),s=base*Number(zoom.value);scale=s;const w=img.width*s,h=img.height*s;dx=Math.min(0,Math.max(640-w,dx));dy=Math.min(0,Math.max(640-h,dy));ctx.drawImage(img,dx,dy,w,h);}input.addEventListener('change',()=>{const file=input.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{img=new Image();img.onload=()=>{zoom.value='1';dx=(640-Math.max(640,img.width*Math.max(640/img.width,640/img.height)))/2;dy=(640-Math.max(640,img.height*Math.max(640/img.width,640/img.height)))/2;draw();dialog.showModal();};img.src=reader.result;};reader.readAsDataURL(file);});zoom.addEventListener('input',draw);canvas.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!drag)return;dx+=(e.clientX-px)*2;dy+=(e.clientY-py)*2;px=e.clientX;py=e.clientY;draw();});canvas.addEventListener('pointerup',()=>drag=false);apply.addEventListener('click',()=>{const data=canvas.toDataURL('image/jpeg',.9);document.getElementById('profilePhotoData').value=data;document.getElementById('expertPhotoPreview').innerHTML='<img src="'+data+'" alt="Kırpılmış profil fotoğrafı">';dialog.close();});}
 </script>

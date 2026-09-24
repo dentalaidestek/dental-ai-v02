@@ -3660,7 +3660,11 @@ def admin_expert_verifications(request: Request):
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
     with Session(engine, expire_on_commit=False) as s:
-        profiles = s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
+        profiles = s.exec(select(ExpertProfile).where(
+            (ExpertProfile.application_status != "APPROVED") |
+            (ExpertProfile.verification_status != "VERIFIED") |
+            (ExpertProfile.specialty_verified == False)
+        ).order_by(ExpertProfile.updated_at.desc())).all()
         rows = []
         for profile in profiles:
             expert_user = s.get(User, profile.user_id)
@@ -3728,7 +3732,9 @@ def admin_expert_credential_document(request: Request, profile_id: int):
         media_type = profile.credential_document_mime or "application/octet-stream"
     if not path.is_file():
         return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
-    return FileResponse(path, media_type=media_type, filename=filename)
+    response = FileResponse(path, media_type=media_type)
+    response.headers["Content-Disposition"] = f'inline; filename="{filename.replace(chr(34), "")}"'
+    return response
 
 
 @app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
@@ -6783,6 +6789,40 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         return response
 
 
+def _admin_user_storage_summary(session: Session, user_id: int):
+    def size(path_value):
+        if not path_value:
+            return 0
+        try:
+            p = Path(path_value)
+            return p.stat().st_size if p.is_file() else 0
+        except OSError:
+            return 0
+    patient_media = session.exec(select(PatientMedia).where(PatientMedia.owner_user_id == user_id)).all()
+    chat_media = session.exec(select(ConsultationMessage).where(ConsultationMessage.sender_user_id == user_id)).all()
+    study_materials = session.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id == user_id)).all()
+    patient_ids = [p.id for p in session.exec(select(Patient).where(Patient.owner_user_id == user_id)).all()]
+    analyses = session.exec(select(Analysis)).all()
+    analysis_ids = [a.id for a in analyses if a.patient_id in patient_ids]
+    analysis_assets = [a for a in session.exec(select(ImageAsset)).all() if a.analysis_id in analysis_ids]
+    guest_ids = [g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id == user_id)).all()]
+    guest_assets = [a for a in session.exec(select(GuestImageAsset)).all() if a.guest_analysis_id in guest_ids]
+    categories = [
+        ("Hasta dosyaları", sum(size(x.file_path) for x in patient_media)),
+        ("Analiz görüntüleri", sum(size(x.file_path) for x in analysis_assets)),
+        ("Sohbet ekleri", sum(size(x.media_path) + size(x.original_media_path) for x in chat_media)),
+        ("Akademik dosyalar", sum(size(x.file_path) for x in study_materials)),
+        ("Misafir analizleri", sum(size(x.file_path) for x in guest_assets)),
+    ]
+    total = sum(v for _, v in categories)
+    return {
+        "total_bytes": total,
+        "total_gb": round(total / (1024 ** 3), 3),
+        "total_mb": round(total / (1024 ** 2), 1),
+        "categories": [{"name": name, "bytes": value, "gb": round(value/(1024**3),3), "mb": round(value/(1024**2),1)} for name, value in categories],
+    }
+
+
 @app.get(ADMIN_CENTER_PATH + "/users/{user_id}", response_class=HTMLResponse)
 def admin_center_user_detail(request: Request, user_id: int):
     admin=_admin_only(request)
@@ -6799,10 +6839,11 @@ def admin_center_user_detail(request: Request, user_id: int):
         audits=s.exec(select(AdminAuditLog).where(AdminAuditLog.target_user_id==user_id).order_by(AdminAuditLog.created_at.desc())).all()[:30]
         performance=_expert_performance(s,user_id) if profile else None
         policy=_expert_policy_state(s,user_id) if profile else None
+        storage=_admin_user_storage_summary(s,user_id)
         s.commit()
     return templates.TemplateResponse(request=request,name="admin_user_detail.html",context={
         "user":admin,"target":target,"meta":meta,"profile":profile,"requested":requested,"received":received,
-        "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"admin_path":ADMIN_CENTER_PATH,
+        "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"storage":storage,"admin_path":ADMIN_CENTER_PATH,
     })
 
 

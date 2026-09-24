@@ -102,10 +102,6 @@
         </form>
 
         {% if patient_media %}
-        <button type="button" class="patient-media-open-gallery" onclick="openPatientMediaGallery()">
-            <span><strong>{{ patient_media|length }}</strong> Klinik Görsel</span>
-            <span>Tümünü Gör <b aria-hidden="true">→</b></span>
-        </button>
         <div class="patient-media-profile-preview" onclick="openPatientMediaGallery()" role="button" tabindex="0" aria-label="Klinik görselleri aç">
             {% for media in patient_media[:3] %}
             <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
