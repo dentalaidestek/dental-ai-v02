@@ -6424,6 +6424,11 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
     })
 
 
+@app.get(ADMIN_CENTER_PATH + "/login")
+def admin_center_login_get():
+    return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+
+
 @app.post(ADMIN_CENTER_PATH + "/login")
 def admin_center_login(request: Request, username: str = Form(...), password: str = Form(...)):
     with Session(engine, expire_on_commit=False) as s:
