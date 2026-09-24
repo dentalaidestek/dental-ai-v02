@@ -15,7 +15,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
     {% endfor %}
   </div>
   <iframe id="dentalViewer" class="analysis-viewer-frame" title="Dental AI görüntü değerlendirme"></iframe>
-  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Panoramikte hasta dişleriyle 3D görünüm; diğer görüntülerde bölgesel görüntü ve bulgu katmanı kullanılır. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
+  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Görüntü olduğu gibi gösterilir; motorun gerçek lokalizasyonu varsa bulgu katmanında vurgulanır. Lokalizasyon yoksa bulgu yalnız listede gösterilir. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
   {% else %}
   <div class="card">Bu analizde görüntü bulunamadı.</div>
   {% endif %}
@@ -28,7 +28,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
   const assets={{ assets|map(attribute='id')|list|tojson }};
   const modalities={{ assets|map(attribute='image_type')|list|tojson }};
   let current=0;
-  const srcFor=m=>m==='PANORAMIC'?'/vision-ui/viewer?embedded=1':'/vision-ui/intraoral-viewer?embedded=1';
+  const srcFor=m=>m==='INTRAORAL_PHOTO'?'/vision-ui/intraoral-viewer?embedded=1':'/vision-ui/intraoral-viewer?embedded=1';
   const assetUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]):('/analysis-assets/'+analysisId+'/asset/'+assets[i]);
   const visionUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]+'/vision'):('/analysis-assets/'+analysisId+'/asset/'+assets[i]+'/vision');
   function load(i){
