@@ -7133,9 +7133,12 @@ async def viewer_analyze(request: Request, analysis_id: int, background_tasks: B
 
 
 @app.post("/analysis/guest/{analysis_id}/viewer-analyze")
-def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+async def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
+    try: body=await request.json()
+    except Exception: body={}
+    teeth=[str(x).strip() for x in (body.get("teeth") or []) if str(x).strip()]
     with Session(engine, expire_on_commit=False) as s:
         analysis=s.get(GuestAnalysis,analysis_id)
         if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
@@ -7156,7 +7159,11 @@ def viewer_result(request: Request, analysis_id: int):
         status=analysis.status
     p=Path(f"uploads/ai_results/{analysis_id}.json")
     if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
-    try:return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})})
+    try:
+        result=json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})
+        if isinstance(result,dict) and result.get("status") in {"AI_ERROR","AI_INVALID"}:
+            return JSONResponse({"ok":False,"status":result.get("status"),"error":result.get("error") or "Tedavi analizi tamamlanamadı."})
+        return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":result})
     except Exception as e:return JSONResponse({"ok":False,"error":str(e)},status_code=500)
 
 
@@ -7170,7 +7177,11 @@ def guest_viewer_result(request: Request, analysis_id: int):
         status=analysis.status
     p=Path(f"uploads/ai_results/guest_{analysis_id}.json")
     if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
-    try:return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})})
+    try:
+        result=json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})
+        if isinstance(result,dict) and result.get("status") in {"AI_ERROR","AI_INVALID"}:
+            return JSONResponse({"ok":False,"status":result.get("status"),"error":result.get("error") or "Tedavi analizi tamamlanamadı."})
+        return JSONResponse({"ok":True,"status":"AI_ANALYZED","result":result})
     except Exception as e:return JSONResponse({"ok":False,"error":str(e)},status_code=500)
 
 
