@@ -4788,3 +4788,23 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .admin-pro input::placeholder,.admin-pro textarea::placeholder{color:#64748b!important;opacity:1}
 .admin-pro-card{color:#fff}
 .admin-stack+.admin-stack{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+
+
+/* Role-aware expert entry: compact action immediately left of the hamburger. */
+.expert-header-entry{
+  margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:36px;
+  padding:7px 10px;border-radius:10px;text-decoration:none;font-size:12px;font-weight:750;
+  line-height:1.05;color:#fff;background:rgba(37,99,235,.22);border:1px solid rgba(147,197,253,.38);
+  box-shadow:0 4px 14px rgba(2,6,23,.16);white-space:nowrap
+}
+.expert-header-entry .ui-icon{width:17px;height:17px;flex:0 0 17px}
+.expert-header-entry-verified{background:rgba(5,150,105,.24);border-color:rgba(110,231,183,.36)}
+.expert-header-entry-pending{background:rgba(217,119,6,.25);border-color:rgba(253,186,116,.42)}
+.menu-toggle{margin-left:8px}
+@media(max-width:520px){
+  .expert-header-entry{max-width:126px;padding:7px 8px;font-size:11px}
+  .expert-header-entry span{white-space:normal;text-align:left}
+}
+@media(max-width:380px){
+  .expert-header-entry{max-width:108px}
+}
