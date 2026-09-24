@@ -1255,14 +1255,18 @@ def contact_page(request: Request):
     )
 
 
-@app.post("/contact")
+@app.get("/support-request", response_class=HTMLResponse)
+def support_request_page(request: Request):
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur"})
+
+@app.post("/support-request")
 def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...)):
     user=get_current_user(request)
     subject=subject.strip()[:160];message=message.strip()[:4000]
     if not subject or not message:return HTMLResponse("Konu ve mesaj gerekli.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message));s.commit()
-    return RedirectResponse("/contact?sent=1",status_code=303)
+    return RedirectResponse("/support-request?sent=1",status_code=303)
 
 
 @app.get("/legal/{document}", response_class=HTMLResponse)
