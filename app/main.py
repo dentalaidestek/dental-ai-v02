@@ -1,5 +1,6 @@
 import os
 import json
+import html
 import re
 import uuid
 import secrets
