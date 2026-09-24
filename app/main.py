@@ -1167,6 +1167,18 @@ def delete_user_session(request: Request) -> None:
             s.commit()
 
 
+def send_expert_device_code(recipient_email: str, code: str) -> None:
+    api_key=os.getenv("BREVO_API_KEY")
+    if not api_key: raise RuntimeError("BREVO_API_KEY tanımlı değil.")
+    payload={"sender":{"name":os.getenv("BREVO_SENDER_NAME","DENTAL AI Destek"),"email":os.getenv("BREVO_SENDER_EMAIL","destek@dentalai.tr")},"to":[{"email":recipient_email}],"subject":"DENTAL AI - Yeni cihaz doğrulama kodu","htmlContent":f"<div style='font-family:Arial,sans-serif'><h2>DENTAL AI</h2><p>Uzman hesabınıza yeni bir cihazdan giriş yapılmak isteniyor.</p><p style='font-size:28px;font-weight:700;letter-spacing:5px'>{code}</p><p>Kod 10 dakika geçerlidir. Bu giriş size ait değilse kodu paylaşmayın.</p></div>","textContent":f"DENTAL AI yeni cihaz doğrulama kodunuz: {code}\nKod 10 dakika geçerlidir."}
+    req=urllib.request.Request("https://api.brevo.com/v3/smtp/email",data=json.dumps(payload).encode("utf-8"),method="POST",headers={"accept":"application/json","api-key":api_key,"content-type":"application/json"})
+    with urllib.request.urlopen(req,timeout=20) as response:
+        if response.status<200 or response.status>=300: raise RuntimeError("Doğrulama e-postası gönderilemedi.")
+
+def _is_verified_expert(session: Session, user_id: int) -> bool:
+    p=session.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
+    return bool(p and p.verification_status=="VERIFIED")
+
 def send_brevo_password_reset_email(
     recipient_email: str,
     reset_link: str,
