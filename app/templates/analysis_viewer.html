@@ -28,7 +28,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
   const assets={{ assets|map(attribute='id')|list|tojson }};
   const modalities={{ assets|map(attribute='image_type')|list|tojson }};
   let current=0;
-  const srcFor=m=>m==='INTRAORAL_PHOTO'?'/vision-ui/intraoral-viewer?embedded=1':'/vision-ui/intraoral-viewer?embedded=1';
+  const srcFor=m=>m==='INTRAORAL_PHOTO'?'/vision-ui/intraoral-viewer?embedded=1':'/vision-ui/radiograph-viewer?embedded=1';
   const assetUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]):('/analysis-assets/'+analysisId+'/asset/'+assets[i]);
   const visionUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]+'/vision'):('/analysis-assets/'+analysisId+'/asset/'+assets[i]+'/vision');
   function load(i){
