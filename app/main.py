@@ -132,6 +132,24 @@ class AgreementAcceptance(SQLModel, table=True):
 
 
 
+class AdminNotice(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    title: str
+    message: str
+    is_read: bool = False
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class AdminAuditLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    admin_user_id: int = Field(index=True)
+    action: str = Field(index=True)
+    target_user_id: Optional[int] = Field(default=None, index=True)
+    detail: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class PatientProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True, unique=True)
@@ -6079,58 +6097,116 @@ async def create_analysis(
     return RedirectResponse(url=target, status_code=303)
 
 
+ADMIN_CENTER_PATH = "/dayedunyaxayine4721"
+
+def _admin_only(request: Request) -> Optional[User]:
+    user = get_current_user(request)
+    return user if user and user.role == "ADMIN" and user.is_active else None
+
+
 @app.get("/admin", response_class=HTMLResponse)
-def admin(request: Request):
-    user = get_current_user(request)
+def legacy_admin_hidden(request: Request):
+    return HTMLResponse("Sayfa bulunamadı.", status_code=404)
+
+
+@app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
+def admin_center(request: Request, q: str = ""):
+    user = _admin_only(request)
     if not user:
-        return RedirectResponse("/login", status_code=303)
-    if user.role != "ADMIN":
-        return HTMLResponse("Bu sayfaya erişim yetkiniz yok.", status_code=403)
-
+        return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error": None})
     with Session(engine, expire_on_commit=False) as s:
-        users = s.exec(select(User)).all()
-        patients = s.exec(select(Patient).order_by(Patient.id.desc())).all()
-        analyses = s.exec(select(Analysis).order_by(Analysis.id.desc())).all()
-        records = s.exec(select(ClinicalRecord).order_by(ClinicalRecord.id.desc())).all()
+        query = select(User).order_by(User.created_at.desc())
+        users = s.exec(query).all()
+        if q.strip():
+            needle=q.strip().casefold()
+            users=[u for u in users if needle in (u.username or "").casefold() or needle in (u.display_name or "").casefold() or needle in (u.email or "").casefold()]
+        pending = s.exec(select(ExpertProfile).where(ExpertProfile.verification_status == "PENDING").order_by(ExpertProfile.updated_at.desc())).all()
+        pending_rows=[{"profile":p,"expert":s.get(User,p.user_id)} for p in pending]
+        notices=s.exec(select(AdminNotice).order_by(AdminNotice.created_at.desc())).all()[:20]
+        audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all()[:30]
+        patients_count=len(s.exec(select(Patient)).all())
+        analyses_count=len(s.exec(select(Analysis)).all())
+    return templates.TemplateResponse(request=request, name="admin_center.html", context={
+        "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
+        "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
+    })
 
-    return templates.TemplateResponse(
-        request=request,
-        name="admin.html",
-        context={
-            "users": users,
-            "patients": patients,
-            "analyses": analyses,
-            "records": records
-        }
-    )
 
-
-@app.post("/admin/clinical-record")
-def create_clinical_record(
-    request: Request,
-    clinical_id: str = Form(...),
-    topic: str = Form(...),
-    clinical_question: str = Form(...),
-    claim: str = Form(...),
-    evidence_grade: str = Form("UNASSESSED"),
-    consensus_status: str = Form("UNASSESSED"),
-    ai_use: str = Form("NOT_DEFINED"),
-    safety_notes: Optional[str] = Form(None),
-):
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
-    if user.role != "ADMIN":
-        return HTMLResponse("Bu işlem için yönetici yetkisi gerekiyor.", status_code=403)
-
+@app.post(ADMIN_CENTER_PATH + "/login")
+def admin_center_login(request: Request, username: str = Form(...), password: str = Form(...)):
     with Session(engine, expire_on_commit=False) as s:
-        s.add(ClinicalRecord(
-            clinical_id=clinical_id, topic=topic, clinical_question=clinical_question,
-            claim=claim, evidence_grade=evidence_grade,
-            consensus_status=consensus_status, ai_use=ai_use, safety_notes=safety_notes
-        ))
-        s.commit()
-    return RedirectResponse("/admin", status_code=303)
+        user=s.exec(select(User).where(User.username == username.strip())).first()
+        if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
+        response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+        create_user_session(response,user.id)
+        return response
+
+
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/status")
+def admin_center_user_status(request: Request, user_id: int, action: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    if user_id == admin.id: return HTMLResponse("Kendi yönetici hesabınızı bu ekrandan devre dışı bırakamazsınız.",status_code=409)
+    with Session(engine, expire_on_commit=False) as s:
+        target=s.get(User,user_id)
+        if not target: return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
+        if action == "BAN":
+            target.is_active=False
+            sessions=s.exec(select(SessionToken).where(SessionToken.user_id==target.id)).all()
+            for token in sessions: s.delete(token)
+        elif action == "UNBAN":
+            target.is_active=True
+        else: return HTMLResponse("Geçersiz işlem.",status_code=400)
+        s.add(target);s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=target.id,detail=target.username));s.commit()
+    return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+
+
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/expert-status")
+def admin_center_expert_status(request: Request, user_id: int, action: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
+        if not profile: return HTMLResponse("Uzman profili bulunamadı.",status_code=404)
+        if action == "PAUSE": profile.availability="PASSIVE"
+        elif action == "RESUME":
+            if profile.verification_status!="VERIFIED": return HTMLResponse("Doğrulanmamış uzman aktifleştirilemez.",status_code=409)
+            profile.availability="AVAILABLE"
+        else: return HTMLResponse("Geçersiz işlem.",status_code=400)
+        profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+action,target_user_id=user_id));s.commit()
+    return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+
+
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/notice")
+def admin_center_notice(request: Request, user_id: int, title: str = Form(...), message: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    title=title.strip();message=message.strip()
+    if not title or not message: return HTMLResponse("Başlık ve mesaj gerekli.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        target=s.get(User,user_id)
+        if not target: return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
+        s.add(AdminNotice(user_id=user_id,title=title[:120],message=message[:2000]))
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="NOTICE_SENT",target_user_id=user_id,detail=title[:120]));s.commit()
+    return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+
+
+@app.post(ADMIN_CENTER_PATH + "/expert-verifications/{profile_id}")
+def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    if decision not in {"VERIFY","REJECT","PENDING"}: return HTMLResponse("Geçersiz karar.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        profile=s.get(ExpertProfile,profile_id)
+        if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
+        if decision=="VERIFY":
+            profile.identity_verified=True;profile.specialty_verified=True;profile.verification_status="VERIFIED"
+        elif decision=="REJECT":
+            profile.verification_status="REJECTED";profile.availability="PASSIVE"
+        else: profile.verification_status="PENDING"
+        profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+decision,target_user_id=profile.user_id));s.commit()
+    return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
 @app.get("/analysis/guest/{analysis_id}/clinical")
