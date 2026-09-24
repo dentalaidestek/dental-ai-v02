@@ -414,6 +414,22 @@ class ConsultationInboxState(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class UserBlock(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    blocker_user_id: int = Field(index=True)
+    blocked_user_id: int = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+class UserReport(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reporter_user_id: int = Field(index=True)
+    reported_user_id: int = Field(index=True)
+    case_id: Optional[int] = Field(default=None, index=True)
+    reason: str
+    detail: Optional[str] = None
+    status: str = Field(default="OPEN", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
 class ConsultationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True)
@@ -4094,6 +4110,62 @@ def expert_support_annotate_message(request: Request, case_id: int, message_id: 
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
+PROFANITY_PATTERNS = [
+    r"\bam+k\b", r"\ba[mn]ına\s*koy", r"\bsik(?:er|eyim|iyim|ik|iş|mek)?\b",
+    r"\bsiktir\b", r"\borospu\b", r"\bpiç\b", r"\bgöt\b", r"\byarrak\b",
+    r"\bam(?:cık|cik)\b", r"\bpezevenk\b", r"\bkahpe\b",
+]
+
+def _contains_profanity(value: str) -> bool:
+    normalized=value.casefold().replace("ı","i")
+    return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in PROFANITY_PATTERNS)
+
+def _users_blocked(session: Session, a: int, b: int) -> bool:
+    return session.exec(select(UserBlock).where(
+        ((UserBlock.blocker_user_id==a)&(UserBlock.blocked_user_id==b)) |
+        ((UserBlock.blocker_user_id==b)&(UserBlock.blocked_user_id==a))
+    )).first() is not None
+
+@app.post("/expert-support/cases/{case_id}/block")
+def consultation_block_user(request: Request, case_id: int):
+    user=get_current_user(request)
+    if not user:return RedirectResponse("/login",status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        if not case or user.id not in {case.requester_user_id,case.expert_user_id}:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+        other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
+        existing=s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id,UserBlock.blocked_user_id==other)).first()
+        if not existing:s.add(UserBlock(blocker_user_id=user.id,blocked_user_id=other))
+        _consultation_event(s,case.id,"USER_BLOCKED",user.id,{"blocked_user_id":other});s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}?blocked=1",status_code=303)
+
+@app.post("/expert-support/cases/{case_id}/unblock")
+def consultation_unblock_user(request: Request, case_id: int):
+    user=get_current_user(request)
+    if not user:return RedirectResponse("/login",status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        if not case or user.id not in {case.requester_user_id,case.expert_user_id}:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+        other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
+        row=s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id,UserBlock.blocked_user_id==other)).first()
+        if row:s.delete(row)
+        _consultation_event(s,case.id,"USER_UNBLOCKED",user.id,{"blocked_user_id":other});s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}",status_code=303)
+
+@app.post("/expert-support/cases/{case_id}/report")
+def consultation_report_user(request: Request, case_id: int, reason: str = Form(...), detail: str = Form("")):
+    user=get_current_user(request)
+    if not user:return RedirectResponse("/login",status_code=303)
+    allowed={"HARASSMENT","PROFANITY","SPAM","INAPPROPRIATE","OTHER"}
+    if reason not in allowed:return HTMLResponse("Geçersiz bildirim nedeni.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        if not case or user.id not in {case.requester_user_id,case.expert_user_id}:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+        other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
+        s.add(UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None))
+        _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason});s.commit()
+    return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
+
 @app.post("/expert-support/cases/{case_id}/message")
 def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
     user = get_current_user(request)
@@ -4109,6 +4181,13 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
             return HTMLResponse("Bu vaka mesajlaşmaya açık değil.", status_code=409)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s, user.id, other_id):
+            return HTMLResponse("Bu kullanıcıyla mesajlaşma engellenmiş.", status_code=403)
+        if _contains_profanity(text_value):
+            _consultation_event(s, case.id, "PROFANITY_BLOCKED", user.id)
+            s.commit()
+            return RedirectResponse(f"/expert-support/cases/{case_id}?moderation=profanity", status_code=303)
         if reply_to_message_id:
             replied = s.get(ConsultationMessage, reply_to_message_id)
             if not replied or replied.case_id != case.id:
