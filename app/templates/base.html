@@ -39,8 +39,8 @@
         <a href="/legal"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></svg> Sözleşmeler</a>
         <a href="/contact"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg> İletişim</a>
         {% if user.role == "ADMIN" %}
-        <a href="/admin"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg> Yönetici</a>
-        <a href="/admin/expert-verifications">Uzman Doğrulamaları</a>
+        <a href="/dayedunyaxayine4721"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg> Yönetici</a>
+        <a href="/dayedunyaxayine4721">Uzman Doğrulamaları</a>
         {% endif %}
     </div>
     {% endif %}
@@ -115,6 +115,7 @@ document.addEventListener("keydown", function(event) {
         toggleQuickAdd(false);
     }
 });
+fetch("/account/admin-notices",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{notices:[]}).then(data=>{const n=(data.notices||[])[0];if(!n)return;const box=document.createElement("div");box.className="dai-admin-notice";box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";box.querySelector("b").textContent=n.title;box.querySelector("span").textContent=n.message;box.querySelector("button").onclick=()=>{fetch("/account/admin-notices/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});box.remove();};document.body.appendChild(box);}).catch(()=>{});
 if (document.getElementById("mobileMessagesBadge")) {
     let liveReady = false, lastLiveMessageId = Number(sessionStorage.getItem("daiLastLiveMessageId") || 0);
     function paintMessageBadge(count) {
