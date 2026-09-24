@@ -5,7 +5,7 @@ window.DentalEmbeddedLoad=async d=>{
   if(!d||!d.assetUrl)return;
   const fileTop=document.querySelector('.top'),legend=document.querySelector('.legend');
   if(fileTop)fileTop.style.display='none';
-  photo.src=d.assetUrl;await photo.decode();const v=photo.parentElement;const target=Math.min(window.innerHeight*.58,v.clientWidth*(photo.naturalHeight/photo.naturalWidth));v.style.height=Math.max(220,target)+'px';resize();
+  photo.src=d.assetUrl;try{await photo.decode()}catch(e){await new Promise((resolve,reject)=>{photo.onload=resolve;photo.onerror=()=>reject(new Error('Radyografik görüntü yüklenemedi.'));});}const v=photo.parentElement;const target=Math.min(window.innerHeight*.58,v.clientWidth*(photo.naturalHeight/photo.naturalWidth));v.style.height=Math.max(220,target)+'px';resize();
   if(legend)legend.textContent='';
   let snap=null;
   for(let attempt=0;attempt<12;attempt++){
