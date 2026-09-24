@@ -6,7 +6,7 @@
   <section class="visual-welcome">
     <div class="visual-welcome-copy">
       <span class="visual-eyebrow">{{ dashboard_greeting }}</span>
-      <h1>{% if professional_title %}{{ professional_title }} {% endif %}{{ user.display_name or user.username }}</h1>
+      <h1>{{ professional_name(professional_title, user.display_name or user.username) }}</h1>
       <p>“Her gülüş, daha sağlıklı bir gelecek demektir.”</p>
     </div>
     <img class="visual-welcome-tooth" src="/static/dashboard/mobile/welcome_tooth.webp" alt="" aria-hidden="true">

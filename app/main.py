@@ -4,11 +4,15 @@ import html
 import re
 import uuid
 import secrets
+import base64
+import binascii
+import io
 import urllib.request
 import urllib.error
 from urllib.parse import quote_plus
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 import shutil
 UPLOAD_DIR = Path("uploads")
@@ -104,6 +108,7 @@ class User(SQLModel, table=True):
     display_name: str
     password_hash: Optional[str] = None
     email: Optional[str] = Field(default=None, index=True)
+    profile_photo_path: Optional[str] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
@@ -306,12 +311,17 @@ class ExpertProfile(SQLModel, table=True):
     consultation_price: int = 0
     availability: str = Field(default="PASSIVE", index=True)
     max_active_cases: int = 5
+    phone: Optional[str] = Field(default=None, index=True)
+    phone_verified: bool = False
+    credential_document_path: Optional[str] = None
+    credential_document_name: Optional[str] = None
+    credential_document_mime: Optional[str] = None
     identity_verified: bool = False
     specialty_verified: bool = False
     academic_title_verified: bool = False
-    # Başvuru kabulü ile belge/kimlik doğrulaması birbirinden bağımsızdır.
-    # SUBMITTED -> APPROVED yalnızca uzman ağına başvurunun kabul edildiğini,
-    # verification_status=VERIFIED ise belgelerin ayrıca doğrulandığını anlatır.
+    # identity_verified eski sürümlerle veritabanı uyumluluğu için tutulur; uzman
+    # yetkilendirmesinde kullanılmaz. Tek doğrulama, e-Devlet mesleki belgesinin
+    # yönetici tarafından incelenmesidir.
     application_status: str = Field(default="SUBMITTED", index=True)
     verification_status: str = Field(default="PENDING", index=True)
     application_reviewed_at: Optional[datetime] = Field(default=None, index=True)
@@ -1073,6 +1083,31 @@ def init_db():
                 cols = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()}
                 if "vision_snapshot_json" not in cols:
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
+        if dialect == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
+            for statement in (
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone VARCHAR',
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE',
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS credential_document_path VARCHAR',
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS credential_document_name VARCHAR',
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS credential_document_mime VARCHAR',
+            ):
+                conn.exec_driver_sql(statement)
+        elif dialect == "sqlite":
+            user_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
+            if "profile_photo_path" not in user_cols:
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN profile_photo_path VARCHAR')
+            expert_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("expertprofile")').fetchall()}
+            additions = {
+                "phone": "VARCHAR",
+                "phone_verified": "BOOLEAN NOT NULL DEFAULT 0",
+                "credential_document_path": "VARCHAR",
+                "credential_document_name": "VARCHAR",
+                "credential_document_mime": "VARCHAR",
+            }
+            for column, sql_type in additions.items():
+                if column not in expert_cols:
+                    conn.exec_driver_sql(f'ALTER TABLE "expertprofile" ADD COLUMN {column} {sql_type}')
         # Eski sürüm başvuru onayını yanlışlıkla kimlik/branş doğrulaması olarak
         # kaydediyordu. Yeni alanlar ilk kez eklenirken eski VERIFIED kayıtlarını
         # güvenli duruma çek: başvuru onaylı, belge doğrulaması bekliyor.
@@ -1223,8 +1258,9 @@ def _is_verified_expert(session: Session, user_id: int) -> bool:
         p
         and p.application_status == "APPROVED"
         and p.verification_status == "VERIFIED"
-        and p.identity_verified
         and p.specialty_verified
+        and bool(p.credential_document_path)
+        and bool(p.phone)
     )
 
 def send_brevo_password_reset_email(
@@ -1586,12 +1622,43 @@ def account_page(request: Request):
             "next_username_change_at": next_username_change_at,
             "error": None,
             "success": (
-                "Mesleki durumunuz güncellendi. Ana ekran öncelikleriniz yeni durumunuza göre düzenlendi; mevcut kayıtlarınız silinmedi."
-                if request.query_params.get("profile_updated") == "1"
-                else None
+                "Profil fotoğrafınız güncellendi."
+                if request.query_params.get("photo_saved") == "1"
+                else "Mesleki durumunuz güncellendi. Ana ekran öncelikleriniz yeni durumunuza göre düzenlendi; mevcut kayıtlarınız silinmedi."
+                if request.query_params.get("profile_updated") == "1" else None
             ),
         },
     )
+
+
+@app.get("/profile-photo/{user_id}")
+def profile_photo(request: Request, user_id: int):
+    viewer = get_current_user(request)
+    if not viewer:
+        return HTMLResponse("Giriş gerekli.", status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        target = s.get(User, user_id)
+        path = Path(target.profile_photo_path) if target and target.profile_photo_path else None
+    if not path or not path.is_file():
+        return HTMLResponse("Profil fotoğrafı bulunamadı.", status_code=404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/account/profile-photo")
+def account_profile_photo(request: Request, profile_photo_data: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        path = _save_profile_photo(user.id, profile_photo_data)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        db_user = s.get(User, user.id)
+        db_user.profile_photo_path = path
+        s.add(db_user)
+        s.commit()
+    return RedirectResponse("/account?photo_saved=1", status_code=303)
 
 
 @app.post("/account/professional-title")
@@ -1636,6 +1703,18 @@ def change_professional_title(
                 "Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."
             }
             s.add(doctor_profile)
+
+        if current_title and current_title != professional_title:
+            expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+            if expert_profile:
+                expert_profile.application_status = "SUBMITTED"
+                expert_profile.verification_status = "PENDING"
+                expert_profile.specialty_verified = False
+                expert_profile.academic_title_verified = False
+                expert_profile.verified_at = None
+                expert_profile.availability = "PASSIVE"
+                expert_profile.updated_at = _utcnow_naive()
+                s.add(expert_profile)
 
         s.commit()
 
@@ -2182,28 +2261,30 @@ def protected_upload(request: Request, filename: str):
 def template_user_context(request: Request):
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
+    profile_verified = False
     if user:
         with Session(engine, expire_on_commit=False) as s:
             meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+            profile_verified = _is_verified_expert(s, user.id)
         title = (meta.professional_title if meta else "") or ""
         eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
         if title in eligible_titles:
             expert_nav["eligible"] = True
             expert_nav["href"] = "/expert-support/profile"
-            if profile and _is_verified_expert(s, user.id):
+            if profile and profile_verified:
                 expert_nav["state"] = "VERIFIED"
                 expert_nav["label"] = "Uzman Profilim"
             elif profile and profile.application_status == "APPROVED":
                 expert_nav["state"] = "APPROVED"
-                expert_nav["label"] = "Doğrulama Bekliyor"
+                expert_nav["label"] = "Belge İnceleniyor"
             elif profile and profile.application_status == "SUBMITTED":
                 expert_nav["state"] = "PENDING"
                 expert_nav["label"] = "Başvurum"
             else:
                 expert_nav["state"] = "ELIGIBLE"
                 expert_nav["label"] = "Uzman Ağına Katıl"
-    return {"user": user, "expert_nav": expert_nav}
+    return {"user": user, "expert_nav": expert_nav, "professional_name": _professional_display_name}
 
 templates = Jinja2Templates(
     directory=BASE/"templates",
@@ -3280,7 +3361,72 @@ CONSULTATION_URGENCIES = {
     "NORMAL": "Acil değil",
 }
 CONSULTATION_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+EXPERT_CREDENTIAL_MAX_BYTES = 10 * 1024 * 1024
 PAYMENT_FUNDED_STATUSES = {"AUTHORIZED", "PAID", "CAPTURED", "ON_HOLD"}
+
+
+def _professional_display_name(title: Optional[str], name: Optional[str]) -> str:
+    """Kullanıcı adının önüne Türkiye'deki diş hekimliği unvanını tek kez ekler."""
+    clean_name = (name or "").strip()
+    prefixes = {
+        "Diş Hekimi": "Dt.",
+        "Uzman Diş Hekimi": "Uzm. Dt.",
+        "Asistan / Araştırma Görevlisi": "Arş. Gör. Dt.",
+        "Dr. Öğr. Üyesi": "Dr. Öğr. Üyesi",
+        "Doç. Dr.": "Doç. Dr.",
+        "Prof. Dr.": "Prof. Dr.",
+    }
+    prefix = prefixes.get(title or "", "")
+    return f"{prefix} {clean_name}".strip()
+
+
+def _normalize_expert_phone(value: Optional[str]) -> Optional[str]:
+    digits = re.sub(r"\D", "", value or "")
+    if digits.startswith("90") and len(digits) == 12:
+        digits = "0" + digits[2:]
+    return digits if len(digits) == 11 and digits.startswith("05") else None
+
+
+def _sms_provider_enabled() -> bool:
+    return bool(os.getenv("SMS_PROVIDER_ENABLED", "0") == "1" and os.getenv("SMS_API_KEY"))
+
+
+# Sağlayıcı bağlandığında yalnız kritik olaylar SMS üretir. Günlük mesaj, fotoğraf,
+# yanıt ve değerlendirme bildirimleri push + uygulama içi bildirim olarak kalır.
+SMS_CRITICAL_EVENTS = {
+    "PHONE_VERIFICATION",
+    "ACCOUNT_SECURITY",
+    "PAID_CASE_PUSH_UNANSWERED_2M",
+    "EXPERT_NOT_STARTED_15M_BEFORE_DEADLINE",
+}
+SMS_EXCLUDED_EVENTS = {"CHAT_MESSAGE", "PHOTO", "REPLY", "REVIEW", "SHORT_OFFER_WINDOW"}
+
+
+def _save_profile_photo(user_id: int, encoded: str) -> str:
+    if not encoded or "," not in encoded:
+        raise ValueError("Profil fotoğrafı seçilmedi.")
+    header, payload = encoded.split(",", 1)
+    if header not in {"data:image/jpeg;base64", "data:image/png;base64", "data:image/webp;base64"}:
+        raise ValueError("Profil fotoğrafı JPG, PNG veya WEBP olmalıdır.")
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Profil fotoğrafı okunamadı.") from exc
+    if not raw or len(raw) > 8 * 1024 * 1024:
+        raise ValueError("Profil fotoğrafı en fazla 8 MB olabilir.")
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            source.verify()
+        with Image.open(io.BytesIO(raw)) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
+            photo_dir = UPLOAD_DIR / "profile_photos"
+            photo_dir.mkdir(parents=True, exist_ok=True)
+            destination = photo_dir / f"user_{user_id}.jpg"
+            image.save(destination, "JPEG", quality=90, optimize=True)
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("Geçerli bir profil fotoğrafı yükleyin.") from exc
+    return str(destination)
 
 
 def _iyzico_enabled() -> bool:
@@ -3528,32 +3674,37 @@ def admin_expert_verification_update(
     request: Request,
     profile_id: int,
     decision: str = Form(...),
-    identity_verified: Optional[str] = Form(None),
-    specialty_verified: Optional[str] = Form(None),
-    academic_title_verified: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    if decision not in {"VERIFY", "REJECT", "PENDING"}:
+    if decision not in {"APPROVE", "REJECT", "PENDING"}:
         return HTMLResponse("Geçersiz doğrulama kararı.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         profile = s.get(ExpertProfile, profile_id)
         if not profile:
             return HTMLResponse("Profil bulunamadı.", status_code=404)
-        if decision == "VERIFY" and profile.application_status != "APPROVED":
-            return HTMLResponse("Önce uzman ağı başvurusu onaylanmalıdır.", status_code=409)
-        profile.identity_verified = identity_verified == "yes"
-        profile.specialty_verified = specialty_verified == "yes"
-        profile.academic_title_verified = academic_title_verified == "yes"
-        if decision == "VERIFY" and profile.identity_verified and profile.specialty_verified:
+        expert = s.get(User, profile.user_id)
+        if decision == "APPROVE":
+            if not profile.credential_document_path or not Path(profile.credential_document_path).is_file():
+                return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.", status_code=409)
+            if not expert or not expert.profile_photo_path or not Path(expert.profile_photo_path).is_file():
+                return HTMLResponse("Onay için profil fotoğrafı gereklidir.", status_code=409)
+            if not profile.phone:
+                return HTMLResponse("Onay için telefon numarası gereklidir.", status_code=409)
+            profile.application_status = "APPROVED"
             profile.verification_status = "VERIFIED"
+            profile.specialty_verified = True
+            profile.academic_title_verified = bool(profile.academic_title)
+            profile.application_reviewed_at = _utcnow_naive()
             profile.verified_at = _utcnow_naive()
         elif decision == "REJECT":
+            profile.application_status = "REJECTED"
             profile.verification_status = "REJECTED"
             profile.availability = "PASSIVE"
             profile.verified_at = None
         else:
+            profile.application_status = "SUBMITTED"
             profile.verification_status = "PENDING"
             profile.availability = "PASSIVE"
             profile.verified_at = None
@@ -3561,6 +3712,23 @@ def admin_expert_verification_update(
         s.add(profile)
         s.commit()
     return RedirectResponse("/admin/expert-verifications", status_code=303)
+
+
+@app.get("/admin/expert-verifications/{profile_id}/document")
+def admin_expert_credential_document(request: Request, profile_id: int):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.get(ExpertProfile, profile_id)
+        if not profile or not profile.credential_document_path:
+            return HTMLResponse("Belge bulunamadı.", status_code=404)
+        path = Path(profile.credential_document_path)
+        filename = profile.credential_document_name or path.name
+        media_type = profile.credential_document_mime or "application/octet-stream"
+    if not path.is_file():
+        return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
+    return FileResponse(path, media_type=media_type, filename=filename)
 
 
 @app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
@@ -3574,8 +3742,9 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
+            ExpertProfile.credential_document_path != None,
+            ExpertProfile.phone != None,
         )).first()
         expert = s.get(User, expert_user_id)
         if not profile or not expert:
@@ -3610,15 +3779,16 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
         query = select(ExpertProfile).where(
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
+            ExpertProfile.credential_document_path != None,
+            ExpertProfile.phone != None,
         )
         if specialty in EXPERT_SPECIALTIES:
             query = query.where(ExpertProfile.specialty == specialty)
         if available == "1":
             query = query.where(ExpertProfile.availability == "AVAILABLE")
         if title:
-            if title == "Diş Hekimi":
+            if title == "Uzman Diş Hekimi":
                 query = query.where(ExpertProfile.academic_title == None)
             else:
                 query = query.where(ExpertProfile.academic_title == title)
@@ -3644,7 +3814,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
     return templates.TemplateResponse(request=request, name="expert_support.html", context={
         "user": user, "experts": cards, "specialties": EXPERT_SPECIALTIES,
         "selected_specialty": specialty, "available_only": available == "1", "selected_title": title, "search_query": q,
-        "expert_titles": ["Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."],
+        "expert_titles": ["Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."],
         "own_profile": own_profile, "selected_patient_id": patient_id,
     })
 
@@ -3675,8 +3845,9 @@ def expert_support_profile_page(request: Request):
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as eligibility_session:
         eligibility_meta = eligibility_session.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
-    if eligibility_meta and eligibility_meta.professional_title == "Öğrenci":
-        return HTMLResponse("Öğrenci hesapları uzman danışman olarak başvuramaz; uzmanlardan destek alabilir.", status_code=403)
+    eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
+    if not eligibility_meta or eligibility_meta.professional_title not in eligible_titles:
+        return HTMLResponse("Yalnızca uzmanlık hizmeti verebilecek ve bunu e-Devlet belgesiyle doğrulayabilecek hesaplar başvurabilir.", status_code=403)
     with Session(engine, expire_on_commit=False) as s:
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
@@ -3688,19 +3859,23 @@ def expert_support_profile_page(request: Request):
         "user": user, "profile": profile, "doctor": doctor, "professional_title": title,
         "specialties": EXPERT_SPECIALTIES, "minimum_price": _expert_minimum_price(title),
         "policy_state": policy_state, "rules_version": EXPERT_RULES_VERSION, "now": _utcnow_naive(),
+        "sms_provider_enabled": _sms_provider_enabled(),
     })
 
 
 @app.post("/expert-support/profile")
-def expert_support_profile_save(
+async def expert_support_profile_save(
     request: Request,
     specialty: str = Form(...),
+    phone: str = Form(...),
     institution: str = Form(""),
     bio: str = Form(""),
     orcid_url: str = Form(""),
     publications_text: str = Form(""),
     consultation_price: int = Form(...),
     availability: str = Form("PASSIVE"),
+    profile_photo_data: str = Form(""),
+    credential_document: Optional[UploadFile] = File(None),
 ):
     user = get_current_user(request)
     if not user:
@@ -3710,17 +3885,49 @@ def expert_support_profile_save(
     with Session(engine, expire_on_commit=False) as s:
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         title = meta.professional_title if meta else "Diş Hekimi"
-        if title == "Öğrenci":
-            return HTMLResponse("Öğrenci hesapları uzman danışman olamaz.", status_code=403)
+        eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
+        if title not in eligible_titles:
+            return HTMLResponse("Bu mesleki unvan uzman danışman başvurusu yapamaz.", status_code=403)
+        normalized_phone = _normalize_expert_phone(phone)
+        if not normalized_phone:
+            return HTMLResponse("Telefon numarası 05 ile başlayan 11 haneli bir cep telefonu olmalıdır.", status_code=400)
         minimum = _expert_minimum_price(title)
         if consultation_price < minimum:
             return HTMLResponse(f"Bu mesleki unvan için minimum danışmanlık ücreti {minimum} TL.", status_code=400)
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         if not profile:
             profile = ExpertProfile(user_id=user.id, specialty=specialty, application_status="SUBMITTED")
+        db_user = s.get(User, user.id)
+        if profile_photo_data:
+            try:
+                db_user.profile_photo_path = _save_profile_photo(user.id, profile_photo_data)
+            except ValueError as exc:
+                return HTMLResponse(str(exc), status_code=400)
+            s.add(db_user)
+        if not db_user.profile_photo_path:
+            return HTMLResponse("Uzman başvurusu için yüzünüzün net göründüğü profil fotoğrafı zorunludur.", status_code=400)
+        document_changed = False
+        if credential_document and credential_document.filename:
+            suffix = Path(credential_document.filename).suffix.lower()
+            allowed = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+            if suffix not in allowed:
+                return HTMLResponse("e-Devlet belgesi PDF, JPG veya PNG olmalıdır.", status_code=400)
+            document_bytes = await credential_document.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
+            if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
+                return HTMLResponse("e-Devlet belgesi boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
+            document_dir = UPLOAD_DIR / "expert_credentials" / f"user_{user.id}"
+            document_dir.mkdir(parents=True, exist_ok=True)
+            destination = document_dir / f"credential_{uuid.uuid4().hex}{suffix}"
+            destination.write_bytes(document_bytes)
+            profile.credential_document_path = str(destination)
+            profile.credential_document_name = Path(credential_document.filename).name[:240]
+            profile.credential_document_mime = allowed[suffix]
+            document_changed = True
+        if not profile.credential_document_path:
+            return HTMLResponse("Unvan ve branşınızı gösteren e-Devlet belgesi zorunludur.", status_code=400)
         next_academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
         verification_sensitive_change = bool(
-            profile.id and (profile.specialty != specialty or profile.academic_title != next_academic_title)
+            profile.id and (profile.specialty != specialty or profile.academic_title != next_academic_title or document_changed)
         )
         profile.specialty = specialty
         profile.academic_title = next_academic_title
@@ -3729,6 +3936,9 @@ def expert_support_profile_save(
         profile.orcid_url = orcid_url.strip() or None
         profile.publications_text = publications_text.strip() or None
         profile.consultation_price = consultation_price
+        if profile.phone != normalized_phone:
+            profile.phone_verified = False
+        profile.phone = normalized_phone
         policy_state = _expert_policy_state(s, user.id)
         if availability == "AVAILABLE":
             if not _is_verified_expert(s, user.id):
@@ -3744,6 +3954,8 @@ def expert_support_profile_save(
             profile.specialty_verified = False
             profile.academic_title_verified = False
             profile.verification_status = "PENDING"
+            profile.application_status = "SUBMITTED"
+            profile.application_reviewed_at = None
             profile.verified_at = None
             profile.availability = "PASSIVE"
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
@@ -3765,8 +3977,9 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
+            ExpertProfile.credential_document_path != None,
+            ExpertProfile.phone != None,
             ExpertProfile.availability == "AVAILABLE",
         )).first()
         policy_state = _expert_policy_state(s, expert_user_id)
@@ -3816,8 +4029,9 @@ def expert_support_request_create(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
+            ExpertProfile.credential_document_path != None,
+            ExpertProfile.phone != None,
             ExpertProfile.availability == "AVAILABLE",
         )).first()
         if not profile:
@@ -6683,18 +6897,22 @@ def admin_center_verify(request: Request, profile_id: int, decision: str = Form(
         profile=s.get(ExpertProfile,profile_id)
         if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
         if decision=="APPROVE":
+            expert=s.get(User,profile.user_id)
+            if not profile.credential_document_path or not Path(profile.credential_document_path).is_file(): return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.",status_code=409)
+            if not expert or not expert.profile_photo_path or not Path(expert.profile_photo_path).is_file(): return HTMLResponse("Onay için profil fotoğrafı gereklidir.",status_code=409)
+            if not profile.phone: return HTMLResponse("Onay için telefon numarası gereklidir.",status_code=409)
             profile.application_status="APPROVED"
             profile.application_reviewed_at=_utcnow_naive()
-            profile.verification_status="PENDING"
+            profile.verification_status="VERIFIED"
             profile.identity_verified=False
-            profile.specialty_verified=False
-            profile.academic_title_verified=False
-            profile.verified_at=None
+            profile.specialty_verified=True
+            profile.academic_title_verified=bool(profile.academic_title)
+            profile.verified_at=_utcnow_naive()
             profile.availability="PASSIVE"
         elif decision=="REJECT":
-            profile.application_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.availability="PASSIVE"
+            profile.application_status="REJECTED";profile.verification_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.verified_at=None;profile.availability="PASSIVE"
         else:
-            profile.application_status="SUBMITTED";profile.application_reviewed_at=None;profile.availability="PASSIVE"
+            profile.application_status="SUBMITTED";profile.verification_status="PENDING";profile.specialty_verified=False;profile.application_reviewed_at=None;profile.verified_at=None;profile.availability="PASSIVE"
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+decision,target_user_id=profile.user_id));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 

@@ -111,6 +111,7 @@
     .account-profile-hero{display:flex;align-items:center;gap:14px;padding-bottom:18px;margin-bottom:16px;border-bottom:1px solid #eef2f7}
     .account-profile-avatar{width:62px;height:62px;flex:0 0 62px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#dbeafe,#e0e7ff);color:#1d4ed8;font-size:24px;font-weight:900}
     .account-profile-copy{min-width:0}.account-profile-copy span{font-size:11px;color:#2563eb;text-transform:uppercase;letter-spacing:.08em;font-weight:850}.account-profile-copy h1{font-size:23px;margin:3px 0!important;color:#0f172a}.account-profile-copy p{margin:0;color:#64748b}
+    .account-photo-form{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:-6px 0 16px}.account-photo-form label{cursor:pointer;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:11px;padding:9px 12px;font-weight:800;font-size:12px}.account-photo-form small{color:#64748b;font-size:11px;flex:1;min-width:220px}
     .account-card h2{font-size:18px;color:#0f172a}.account-card>p{color:#64748b;font-size:14px;line-height:1.5}
     .info-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.info-item{padding:12px 13px;background:#f8fafc;border:1px solid #f1f5f9;border-radius:13px}.info-label{font-size:11px}.info-value{font-size:14px}
     .password-form input,.password-form select{min-height:46px;border-radius:12px;background:#fff}.password-form button{min-height:46px;border-radius:12px}
@@ -121,7 +122,8 @@
 <div class="account-container">
 
     <div class="account-card">
-        <div class="account-profile-hero"><div class="account-profile-avatar">{{ (user.display_name or user.username or '?')[:1] }}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
+        <div class="account-profile-hero"><div class="account-profile-avatar">{% if user.profile_photo_path %}<img src="/profile-photo/{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or user.username or '?')[:1] }}{% endif %}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
+        <form method="post" action="/account/profile-photo" id="accountPhotoForm" class="account-photo-form"><input type="file" id="accountPhotoInput" accept="image/jpeg,image/png,image/webp" hidden><input type="hidden" name="profile_photo_data" id="accountPhotoData"><label for="accountPhotoInput">Fotoğraf seç ve yuvarlak kırp</label><small>Öğrenci ve diş hekimi profillerinde isteğe bağlıdır; uzmanlık hizmeti verecek profillerde zorunludur.</small></form>
 
         {% if error %}
         <div class="error">{{ error }}</div>
@@ -266,6 +268,8 @@
 
 </div>
 
+<dialog class="expert-crop-dialog" id="accountCropDialog"><form method="dialog"><header><strong>Profil fotoğrafını kırp</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="accountCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="accountCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><small>Fotoğrafı konumlandırmak için görüntüyü sürükleyin.</small><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="accountCropApply" class="expert-primary">Kaydet</button></div></form></dialog>
+
 <script>
 function confirmProfessionalTitleChange(form) {
     const select = document.getElementById('professional_title');
@@ -289,6 +293,8 @@ function confirmProfessionalTitleChange(form) {
 document.addEventListener('DOMContentLoaded', function() {
     const select = document.getElementById('professional_title');
     if (select) select.dataset.initialValue = select.value;
+    setupAccountPhotoCrop();
 });
+function setupAccountPhotoCrop(){const input=document.getElementById('accountPhotoInput'),dialog=document.getElementById('accountCropDialog'),canvas=document.getElementById('accountCropCanvas'),zoom=document.getElementById('accountCropZoom'),apply=document.getElementById('accountCropApply');if(!input)return;const ctx=canvas.getContext('2d');let img=null,dx=0,dy=0,drag=false,px=0,py=0;function draw(){if(!img)return;ctx.clearRect(0,0,640,640);const s=Math.max(640/img.width,640/img.height)*Number(zoom.value),w=img.width*s,h=img.height*s;dx=Math.min(0,Math.max(640-w,dx));dy=Math.min(0,Math.max(640-h,dy));ctx.drawImage(img,dx,dy,w,h);}input.addEventListener('change',()=>{const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{img=new Image();img.onload=()=>{zoom.value='1';const s=Math.max(640/img.width,640/img.height);dx=(640-img.width*s)/2;dy=(640-img.height*s)/2;draw();dialog.showModal();};img.src=r.result;};r.readAsDataURL(f);});zoom.addEventListener('input',draw);canvas.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(!drag)return;dx+=(e.clientX-px)*2;dy+=(e.clientY-py)*2;px=e.clientX;py=e.clientY;draw()});canvas.addEventListener('pointerup',()=>drag=false);apply.addEventListener('click',()=>{document.getElementById('accountPhotoData').value=canvas.toDataURL('image/jpeg',.9);document.getElementById('accountPhotoForm').submit()});}
 </script>
 {% endblock %}

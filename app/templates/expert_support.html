@@ -41,9 +41,9 @@
   {% for item in experts %}
     <article class="expert-card expert-result-card">
       <div class="expert-result-top">
-        <div class="expert-avatar">{{ (item.expert.display_name or '?')[:1] }}</div>
+        <div class="expert-avatar">{% if item.expert.profile_photo_path %}<img src="/profile-photo/{{ item.expert.id }}" alt="{{ item.expert.display_name }}">{% else %}{{ (item.expert.display_name or '?')[:1] }}{% endif %}</div>
         <div class="expert-result-identity">
-          <div class="expert-name"><a href="/expert-support/expert/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">{{ item.profile.academic_title ~ ' ' if item.profile.academic_title else '' }}{{ item.expert.display_name }} <span class="expert-verified" title="Doğrulanmış uzman">✓</span></a></div>
+          <div class="expert-name"><a href="/expert-support/expert/{{ item.expert.id }}{% if selected_patient_id %}?patient_id={{ selected_patient_id }}{% endif %}">{{ professional_name(item.profile.academic_title or 'Uzman Diş Hekimi', item.expert.display_name) }} <span class="expert-verified" title="Mesleki belgesi doğrulanmış uzman">✓</span></a></div>
           <span>{{ item.profile.specialty }}</span>{% if item.profile.institution %}<small>{{ item.profile.institution }}</small>{% endif %}
         </div>
         <span class="expert-live {% if item.profile.availability!='AVAILABLE' %}off{% endif %}"></span>
