@@ -2,7 +2,7 @@ import unittest
 
 from vision_service.motors.findings9 import normalize_class as normalize_findings9
 from vision_service.motors.yolo31 import normalize_class as normalize_yolo31
-from vision_service.pipeline import _merge_findings
+from vision_service.pipeline import _merge_findings, _release_strong_findings
 
 
 class PipelineContractTests(unittest.TestCase):
@@ -23,6 +23,34 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["motor"], "a")
         self.assertIn("b", result[0].get("supporting_motors", []))
+
+    def test_strong_filling_requires_a_second_motor(self):
+        primary = [{"finding_code":"FILLING","confidence":0.91,"bbox":[10,10,40,40],"motor":"findings9"}]
+        released, rejected = _release_strong_findings(primary, [])
+        self.assertEqual(released, [])
+        self.assertEqual(len(rejected), 1)
+
+    def test_tvem_can_confirm_a_strong_filling(self):
+        primary = [{"finding_code":"FILLING","confidence":0.91,"bbox":[10,10,40,40],"motor":"findings9"}]
+        controls = [{"finding_code":"FILLING","confidence":0.72,"bbox":[12,12,41,41],"motor":"tvem:11diseases"}]
+        released, rejected = _release_strong_findings(primary, controls)
+        self.assertEqual(rejected, [])
+        self.assertEqual(len(released), 1)
+        self.assertTrue(released[0]["fusion_supported"])
+        self.assertEqual(released[0]["support_motor"], "tvem:11diseases")
+
+    def test_low_confidence_control_does_not_confirm_filling(self):
+        primary = [{"finding_code":"FILLING","confidence":0.91,"bbox":[10,10,40,40],"motor":"findings9"}]
+        controls = [{"finding_code":"FILLING","confidence":0.12,"bbox":[12,12,41,41],"motor":"yolo31"}]
+        released, rejected = _release_strong_findings(primary, controls)
+        self.assertEqual(released, [])
+        self.assertEqual(len(rejected), 1)
+
+    def test_other_strong_findings_keep_existing_release_policy(self):
+        primary = [{"finding_code":"CROWN","confidence":0.88,"bbox":[10,10,40,40],"motor":"findings9"}]
+        released, rejected = _release_strong_findings(primary, [])
+        self.assertEqual(rejected, [])
+        self.assertEqual(len(released), 1)
 
 
 if __name__ == "__main__":

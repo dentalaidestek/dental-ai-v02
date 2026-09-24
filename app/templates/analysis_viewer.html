@@ -27,7 +27,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
   const guest={{ 'true' if guest else 'false' }};
   const assets={{ assets|map(attribute='id')|list|tojson }};
   const modalities={{ assets|map(attribute='image_type')|list|tojson }};
-  let current=0;
+  let current=0,lastSentKey='';
   const srcFor=m=>m==='INTRAORAL_PHOTO'?'/vision-ui/intraoral-viewer?embedded=1':'/vision-ui/radiograph-viewer?embedded=1';
   const assetUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]):('/analysis-assets/'+analysisId+'/asset/'+assets[i]);
   const visionUrl=i=>guest?('/analysis/guest-assets/'+analysisId+'/'+assets[i]+'/vision'):('/analysis-assets/'+analysisId+'/asset/'+assets[i]+'/vision');
@@ -35,7 +35,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
     current=i;document.querySelectorAll('.asset-chip').forEach((b,n)=>b.classList.toggle('active',n===i));
     const src=srcFor(modalities[i]);if(frame.getAttribute('src')!==src){frame.src=src}else send();
   }
-  function send(){frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl:assetUrl(current),visionUrl:visionUrl(current),modality:modalities[current]},location.origin)}
+  function send(){const key=[analysisId,assets[current],modalities[current],frame.getAttribute('src')].join('|');if(lastSentKey===key)return;lastSentKey=key;frame.contentWindow?.postMessage({type:'dental-ai:patient-analysis',analysisId,assetUrl:assetUrl(current),visionUrl:visionUrl(current),modality:modalities[current]},location.origin)}
   frame.addEventListener('load',send);
   document.querySelectorAll('.asset-chip').forEach((b,i)=>b.onclick=()=>load(i));
   window.addEventListener('message',async ev=>{
