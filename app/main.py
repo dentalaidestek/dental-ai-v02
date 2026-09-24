@@ -6291,6 +6291,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+        reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
         admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
         completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
@@ -6301,7 +6302,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
-        "tickets":tickets,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
+        "tickets":tickets,"reports":reports,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
     })
 
 
