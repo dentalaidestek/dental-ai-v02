@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from vision_service.cv_signals import bbox_iou
@@ -28,6 +29,12 @@ PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD = float(os.getenv("PANORAMIC_INTERNAL_CAN
 PANORAMIC_DISPLAY_THRESHOLD = float(os.getenv("PANORAMIC_DISPLAY_THRESHOLD", "0.50"))
 PANORAMIC_FUSION_IOU_THRESHOLD = float(os.getenv("PANORAMIC_FUSION_IOU_THRESHOLD", "0.20"))
 PANORAMIC_CONTROL_MIN_CONFIDENCE = float(os.getenv("PANORAMIC_CONTROL_MIN_CONFIDENCE", "0.05"))
+PANORAMIC_SECOND_MOTOR_MIN_CONFIDENCE = float(os.getenv("PANORAMIC_SECOND_MOTOR_MIN_CONFIDENCE", "0.30"))
+PANORAMIC_SECOND_MOTOR_REQUIRED_CODES = frozenset(
+    code.strip().upper()
+    for code in os.getenv("PANORAMIC_SECOND_MOTOR_REQUIRED_CODES", "FILLING").split(",")
+    if code.strip()
+)
 
 
 def _name_for(names, class_id: int) -> str:
@@ -162,12 +169,18 @@ def _merge_findings(items: list[dict]) -> list[dict]:
     return kept
 
 
-def _control_supports(primary: dict, controls: list[dict]) -> dict | None:
+def _control_supports(
+    primary: dict,
+    controls: list[dict],
+    *,
+    min_confidence: float = PANORAMIC_CONTROL_MIN_CONFIDENCE,
+) -> dict | None:
     """Return same-finding spatial support without changing the primary score."""
     matches = [
         item for item in controls
         if item.get("finding_code") == primary.get("finding_code")
-        and float(item.get("confidence") or 0.0) >= PANORAMIC_CONTROL_MIN_CONFIDENCE
+        and item.get("motor") != primary.get("motor")
+        and float(item.get("confidence") or 0.0) >= min_confidence
         and bbox_iou(primary.get("bbox"), item.get("bbox")) >= PANORAMIC_FUSION_IOU_THRESHOLD
     ]
     if not matches:
@@ -179,6 +192,43 @@ def _control_supports(primary: dict, controls: list[dict]) -> dict | None:
             float(item.get("confidence") or 0.0),
         ),
     )
+
+
+def _release_strong_findings(strong: list[dict], controls: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Require independent spatial confirmation for configured high-risk codes."""
+    released: list[dict] = []
+    rejected: list[dict] = []
+    for item in strong:
+        code = str(item.get("finding_code") or "").upper()
+        if code not in PANORAMIC_SECOND_MOTOR_REQUIRED_CODES:
+            released.append({
+                **item,
+                "candidate_only": False,
+                "display_eligible": True,
+                "fusion_supported": False,
+            })
+            continue
+        support = _control_supports(
+            item,
+            controls,
+            min_confidence=PANORAMIC_SECOND_MOTOR_MIN_CONFIDENCE,
+        )
+        if support is None:
+            rejected.append({**item, "candidate_only": True, "display_eligible": False})
+            continue
+        released.append({
+            **item,
+            "candidate_only": False,
+            "display_eligible": True,
+            "fusion_supported": True,
+            "verification_status": "second_motor_confirmed",
+            "verification_label": "2 motorla doğrulandı",
+            "description": "İki bağımsız görüntü motoru aynı bölgede dolgu/restorasyon bulgusunu destekledi.",
+            "support_motor": support.get("motor"),
+            "support_confidence": support.get("confidence"),
+            "support_iou": round(bbox_iou(item.get("bbox"), support.get("bbox")), 4),
+        })
+    return released, rejected
 
 
 def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict:
@@ -194,9 +244,13 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         warnings.append({"motor":"panorama_anatomy","error_type":type(exc).__name__,"message":str(exc)})
     execution: list[dict] = []
 
-    # Primary motors keep 0.02+ internal candidates. >=0.50 findings bypass
-    # control/fusion. Weak candidates are the only direct findings eligible
-    # for corroboration by control motors.
+    # Reuse the paid TVEM pass for confirmation. Starting it here overlaps its
+    # remote latency with the local detector work and avoids a second call.
+    tvem_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dental-tvem")
+    tvem_future = tvem_executor.submit(run_tvem, image_path)
+
+    # Primary motors keep 0.02+ internal candidates. Configured high-risk
+    # classes still require an independent motor even at >=0.50 confidence.
     primary: list[dict] = []
     release_jobs = [
         ("findings9", normalize_findings9, PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD, 0.45, 1280),
@@ -266,19 +320,30 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
     # Its disease detections are control evidence only and cannot create a
     # final direct finding without a weak primary candidate at the same site.
     try:
-        tvem_findings, tvem_helpers, tvem_warnings = run_tvem(image_path)
+        tvem_findings, tvem_helpers, tvem_warnings = tvem_future.result()
         controls.extend(tvem_findings); helpers.extend(tvem_helpers); warnings.extend(tvem_warnings)
         execution.append({"motor": "tvem", "role": "helper+weak_control", "status": "ok" if not tvem_warnings else "partial", "findings": len(tvem_findings), "helpers": len(tvem_helpers)})
     except Exception as exc:
         warnings.append({"motor": "tvem", "error_type": type(exc).__name__, "message": str(exc)})
         execution.append({"motor": "tvem", "role": "helper+weak_control", "status": "error"})
+    finally:
+        tvem_executor.shutdown(wait=False, cancel_futures=True)
 
     for item in primary + controls + helpers:
         _attach_fdi(item, teeth)
 
     rescued: list[dict] = []
     for item in weak:
-        support = _control_supports(item, controls)
+        code = str(item.get("finding_code") or "").upper()
+        support = _control_supports(
+            item,
+            controls,
+            min_confidence=(
+                PANORAMIC_SECOND_MOTOR_MIN_CONFIDENCE
+                if code in PANORAMIC_SECOND_MOTOR_REQUIRED_CODES
+                else PANORAMIC_CONTROL_MIN_CONFIDENCE
+            ),
+        )
         if support is None:
             continue
         rescued.append({
@@ -286,22 +351,24 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
             "candidate_only": False,
             "display_eligible": True,
             "fusion_supported": True,
+            "verification_status": "second_motor_confirmed",
+            **({
+                "verification_label": "2 motorla doğrulandı",
+                "description": "İki bağımsız görüntü motoru aynı bölgedeki bulguyu destekledi.",
+            } if code in PANORAMIC_SECOND_MOTOR_REQUIRED_CODES else {}),
             "support_motor": support.get("motor"),
             "support_confidence": support.get("confidence"),
             "support_iou": round(bbox_iou(item.get("bbox"), support.get("bbox")), 4),
         })
 
-    for item in strong:
-        item["candidate_only"] = False
-        item["display_eligible"] = True
-        item["fusion_supported"] = False
+    released_strong, rejected_strong = _release_strong_findings(strong, controls)
 
     # Derived motors consume only released direct evidence (strong + rescued).
     # Unsupported weak/control pathology detections are deliberately excluded so
     # they cannot be promoted indirectly into a user-visible derived finding.
-    evidence_findings = strong + rescued
+    evidence_findings = released_strong + rescued
     derived = derive_findings(image_path, teeth, evidence_findings, helpers, patient_age=patient_age)
-    final_findings = _merge_findings(strong + rescued + derived)
+    final_findings = _merge_findings(released_strong + rescued + derived)
 
     return {
         "engine": "dental_ai_panorama_48_v1",
@@ -317,6 +384,9 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "internal_candidate_threshold": PANORAMIC_INTERNAL_CANDIDATE_THRESHOLD,
         "display_threshold": PANORAMIC_DISPLAY_THRESHOLD,
         "control_min_confidence": PANORAMIC_CONTROL_MIN_CONFIDENCE,
+        "second_motor_min_confidence": PANORAMIC_SECOND_MOTOR_MIN_CONFIDENCE,
+        "second_motor_required_codes": sorted(PANORAMIC_SECOND_MOTOR_REQUIRED_CODES),
+        "second_motor_rejected_count": len(rejected_strong),
         "fusion_iou_threshold": PANORAMIC_FUSION_IOU_THRESHOLD,
         "weak_candidate_count": len(weak),
         "rescued_weak_candidate_count": len(rescued),
@@ -325,5 +395,5 @@ def analyze_panorama(image_path: str, *, patient_age: int | None = None) -> dict
         "motor_execution": execution,
         "warnings": warnings,
         "readiness": readiness_snapshot(),
-        "fusion_policy": "Strong primary findings bypass controls; only weak primary candidates may be rescued by same-code spatial support with control confidence >=0.05 and IoU >=0.20. Confidence scores are never added or averaged.",
+        "fusion_policy": "Configured high-risk codes, including FILLING, require an independent same-code motor at confidence >=0.30 and IoU >=0.20 even when the primary score is strong. Other weak primary candidates may be rescued by spatial control support. Confidence scores are never added or averaged.",
     }
