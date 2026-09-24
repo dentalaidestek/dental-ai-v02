@@ -1768,6 +1768,48 @@ def login_user(
         return response
 
 
+@app.post("/api/mobile/expert/device/check")
+def mobile_expert_device_check(login: str = Form(...), password: str = Form(...), device_key: str = Form(...), device_name: str = Form("Mobil cihaz"), platform: str = Form("mobile"), public_key: str = Form("")):
+    login=login.strip().lower(); device_key=device_key.strip()
+    if len(device_key)<24:return JSONResponse({"ok":False,"error":"Geçersiz cihaz anahtarı."},status_code=400)
+    device_hash=hash_session_token(device_key)
+    with Session(engine,expire_on_commit=False) as s:
+        user=s.exec(select(User).where((User.username==login)|(User.email==login))).first()
+        if not user or not user.is_active or not user.password_hash or not verify_password(password,user.password_hash):
+            return JSONResponse({"ok":False,"error":"Giriş bilgileri hatalı."},status_code=401)
+        if not _is_verified_expert(s,user.id):return JSONResponse({"ok":True,"device_verification_required":False})
+        trusted=s.exec(select(ExpertTrustedDevice).where(ExpertTrustedDevice.user_id==user.id,ExpertTrustedDevice.device_key_hash==device_hash,ExpertTrustedDevice.is_active==True)).first()
+        if trusted:
+            trusted.last_seen_at=_utcnow_naive();s.add(trusted);s.commit()
+            return JSONResponse({"ok":True,"device_verification_required":False})
+        if not user.email:return JSONResponse({"ok":False,"error":"Uzman hesabında doğrulanmış e-posta bulunamadı."},status_code=409)
+        now=_utcnow_naive()
+        recent=s.exec(select(ExpertDeviceChallenge).where(ExpertDeviceChallenge.user_id==user.id,ExpertDeviceChallenge.device_key_hash==device_hash,ExpertDeviceChallenge.used_at==None,ExpertDeviceChallenge.expires_at>now).order_by(ExpertDeviceChallenge.created_at.desc())).first()
+        if recent and recent.created_at>now-timedelta(seconds=60):return JSONResponse({"ok":True,"device_verification_required":True,"challenge_id":recent.id,"code_sent":False})
+        code=f"{secrets.randbelow(1000000):06d}"
+        ch=ExpertDeviceChallenge(user_id=user.id,device_key_hash=device_hash,device_name=device_name.strip()[:120],platform=platform.strip()[:40],public_key=public_key.strip()[:8000] or None,code_hash=hash_session_token(code),expires_at=now+timedelta(minutes=10))
+        s.add(ch);s.commit();s.refresh(ch)
+        try:send_expert_device_code(user.email,code)
+        except Exception:return JSONResponse({"ok":False,"error":"Doğrulama kodu gönderilemedi. Lütfen daha sonra tekrar deneyin."},status_code=503)
+        return JSONResponse({"ok":True,"device_verification_required":True,"challenge_id":ch.id,"code_sent":True})
+
+@app.post("/api/mobile/expert/device/verify")
+def mobile_expert_device_verify(challenge_id: int = Form(...), code: str = Form(...)):
+    now=_utcnow_naive()
+    with Session(engine,expire_on_commit=False) as s:
+        ch=s.get(ExpertDeviceChallenge,challenge_id)
+        if not ch or ch.used_at or ch.expires_at<=now:return JSONResponse({"ok":False,"error":"Kod geçersiz veya süresi dolmuş."},status_code=400)
+        if ch.attempts>=5:return JSONResponse({"ok":False,"error":"Çok fazla hatalı deneme. Yeni kod isteyin."},status_code=429)
+        if not secrets.compare_digest(ch.code_hash,hash_session_token(code.strip())):
+            ch.attempts+=1;s.add(ch);s.commit();return JSONResponse({"ok":False,"error":"Doğrulama kodu hatalı.","attempts_left":max(0,5-ch.attempts)},status_code=400)
+        ch.used_at=now;s.add(ch)
+        old=s.exec(select(ExpertTrustedDevice).where(ExpertTrustedDevice.user_id==ch.user_id,ExpertTrustedDevice.device_key_hash==ch.device_key_hash)).first()
+        if old:
+            old.is_active=True;old.revoked_at=None;old.verified_at=now;old.last_seen_at=now;old.device_name=ch.device_name;old.platform=ch.platform;old.public_key=ch.public_key;s.add(old)
+        else:s.add(ExpertTrustedDevice(user_id=ch.user_id,device_key_hash=ch.device_key_hash,device_name=ch.device_name,platform=ch.platform,public_key=ch.public_key))
+        s.commit()
+        return JSONResponse({"ok":True,"device_verified":True})
+
 @app.get("/forgot-password", response_class=HTMLResponse)
 def forgot_password_page(request: Request):
     return templates.TemplateResponse(
