@@ -15,7 +15,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
     {% endfor %}
   </div>
   <iframe id="dentalViewer" class="analysis-viewer-frame" title="Dental AI görüntü değerlendirme"></iframe>
-  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Görüntü olduğu gibi gösterilir; motorun gerçek lokalizasyonu varsa bulgu katmanında vurgulanır. Lokalizasyon yoksa bulgu yalnız listede gösterilir. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
+  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Film ekrana sığdırılır. Kesin konum varsa bulgu film üzerinde gösterilir; yoksa bulgu yalnız listede kalır. Grad-CAM yalnız dikkat bölgesidir. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
   {% else %}
   <div class="card">Bu analizde görüntü bulunamadı.</div>
   {% endif %}
@@ -42,7 +42,32 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
     if(ev.origin!==location.origin||ev.source!==frame.contentWindow)return;const d=ev.data||{};if(d.type==='dental-ai:viewer-ready'){send();return}
     if(d.type==='dental-ai:save-manual-finding'){if(guest){frame.contentWindow?.postMessage({type:'dental-ai:manual-finding-saved',ok:false,error:'Hasta kaydı gerekli.'},location.origin);return}const r=await fetch('/analysis/'+analysisId+'/viewer-finding',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tooth:d.tooth||'',finding:d.finding||'',note:d.note||''})});frame.contentWindow?.postMessage({type:'dental-ai:manual-finding-saved',ok:r.ok},location.origin);return}
     if(d.type==='dental-ai:save-clinical-note'){const url=guest?('/analysis/guest/'+analysisId+'/viewer-note'):('/analysis/'+analysisId+'/viewer-note');const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tooth:d.tooth||'',note:d.note||''})});frame.contentWindow?.postMessage({type:'dental-ai:clinical-note-saved',ok:r.ok},location.origin);return}
-    if(d.type==='dental-ai:run-treatment-analysis'){const run=guest?('/analysis/guest/'+analysisId+'/viewer-analyze'):('/analysis/'+analysisId+'/viewer-analyze');const res=guest?('/analysis/guest/'+analysisId+'/viewer-result'):('/analysis/'+analysisId+'/viewer-result');const rr=await fetch(run,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({teeth:Array.isArray(d.teeth)?d.teeth:[]})});if(!rr.ok){frame.contentWindow?.postMessage({type:'dental-ai:treatment-result',ok:false},location.origin);return}for(let n=0;n<40;n++){await new Promise(x=>setTimeout(x,1500));const q=await fetch(res,{cache:'no-store'});if(q.ok){const j=await q.json();frame.contentWindow?.postMessage({type:'dental-ai:treatment-result',...j},location.origin);return}}frame.contentWindow?.postMessage({type:'dental-ai:treatment-result',ok:false,error:'Analiz süresi aşıldı.'},location.origin);return}
+    if(d.type==='dental-ai:run-treatment-analysis'){
+      const run=guest?('/analysis/guest/'+analysisId+'/viewer-analyze'):('/analysis/'+analysisId+'/viewer-analyze');
+      const res=guest?('/analysis/guest/'+analysisId+'/viewer-result'):('/analysis/'+analysisId+'/viewer-result');
+      try{
+        const rr=await fetch(run,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({teeth:Array.isArray(d.teeth)?d.teeth:[]})});
+        const started=await rr.json().catch(()=>({}));
+        if(!rr.ok||started.ok===false)throw new Error(started.error||'Tedavi analizi başlatılamadı.');
+        for(let n=0;n<80;n++){
+          await new Promise(x=>setTimeout(x,1500));
+          const q=await fetch(res,{cache:'no-store'});
+          const result=await q.json().catch(()=>({}));
+          if(q.status===202||result.status==='AI_ANALYZING')continue;
+          if(!q.ok||result.ok===false||result.status==='AI_ERROR'||result.status==='AI_INVALID'){
+            throw new Error(result.error||'Tedavi analizi tamamlanamadı.');
+          }
+          if(result.status==='AI_ANALYZED'){
+            frame.contentWindow?.postMessage({type:'dental-ai:treatment-result',...result},location.origin);
+            return;
+          }
+        }
+        throw new Error('Analiz süresi aşıldı.');
+      }catch(error){
+        frame.contentWindow?.postMessage({type:'dental-ai:treatment-result',ok:false,error:String(error.message||error)},location.origin);
+      }
+      return;
+    }
     if(d.type!=='dental-ai:analyze-tooth'||!d.fdi)return;
     try{const r=await fetch('/analysis/'+analysisId+'/tooth/'+encodeURIComponent(d.fdi)+'/analyze',{method:'POST'});const j=await r.json();frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',...j},location.origin);if(r.ok&&j.result_url)location.href=j.result_url}catch(e){frame.contentWindow?.postMessage({type:'dental-ai:tooth-analysis-started',ok:false,error:String(e)},location.origin)}
   });
