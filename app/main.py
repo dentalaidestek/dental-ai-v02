@@ -6233,6 +6233,29 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         return response
 
 
+@app.get(ADMIN_CENTER_PATH + "/users/{user_id}", response_class=HTMLResponse)
+def admin_center_user_detail(request: Request, user_id: int):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        target=s.get(User,user_id)
+        if not target:return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
+        meta=s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id==user_id)).first()
+        profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
+        requested=s.exec(select(ConsultationCase).where(ConsultationCase.requester_user_id==user_id).order_by(ConsultationCase.requested_at.desc())).all()
+        received=s.exec(select(ConsultationCase).where(ConsultationCase.expert_user_id==user_id).order_by(ConsultationCase.requested_at.desc())).all()
+        events=s.exec(select(ConsultationEvent).where(ConsultationEvent.actor_user_id==user_id).order_by(ConsultationEvent.created_at.desc())).all()[:50]
+        notices=s.exec(select(AdminNotice).where(AdminNotice.user_id==user_id).order_by(AdminNotice.created_at.desc())).all()[:30]
+        audits=s.exec(select(AdminAuditLog).where(AdminAuditLog.target_user_id==user_id).order_by(AdminAuditLog.created_at.desc())).all()[:30]
+        performance=_expert_performance(s,user_id) if profile else None
+        policy=_expert_policy_state(s,user_id) if profile else None
+        s.commit()
+    return templates.TemplateResponse(request=request,name="admin_user_detail.html",context={
+        "user":admin,"target":target,"meta":meta,"profile":profile,"requested":requested,"received":received,
+        "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"admin_path":ADMIN_CENTER_PATH,
+    })
+
+
 @app.post(ADMIN_CENTER_PATH + "/settings")
 def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
     admin=_admin_only(request)
