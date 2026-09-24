@@ -132,6 +132,22 @@ class AgreementAcceptance(SQLModel, table=True):
 
 
 
+class SiteSetting(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(index=True, unique=True)
+    value: Optional[str] = None
+    updated_by_user_id: Optional[int] = Field(default=None, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+class SupportTicket(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, index=True)
+    subject: str
+    message: str
+    status: str = Field(default="OPEN", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
 class AdminNotice(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
@@ -6129,8 +6145,15 @@ def legacy_admin_hidden(request: Request):
     return HTMLResponse("Sayfa bulunamadı.", status_code=404)
 
 
+ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","inbox":"Gelen Mesajlar","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
+
+def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
+    row=session.exec(select(SiteSetting).where(SiteSetting.key==key)).first()
+    if not row: row=SiteSetting(key=key)
+    row.value=value; row.updated_by_user_id=admin_id; row.updated_at=_utcnow_naive(); session.add(row)
+
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
-def admin_center(request: Request, q: str = ""):
+def admin_center(request: Request, q: str = "", section: str = "home"):
     user = _admin_only(request)
     if not user:
         return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error": None})
@@ -6146,9 +6169,21 @@ def admin_center(request: Request, q: str = ""):
         audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all()[:30]
         patients_count=len(s.exec(select(Patient)).all())
         analyses_count=len(s.exec(select(Analysis)).all())
+        expert_profiles=s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
+        cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
+        payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
+        tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+        admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
+        settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
+        completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
+        gross_revenue=sum(p.amount for p in completed_payments)
+        platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed_payments)
+    section=section if section in ADMIN_SECTIONS else "home"
     return templates.TemplateResponse(request=request, name="admin_center.html", context={
         "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
+        "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
+        "tickets":tickets,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
     })
 
 
@@ -6162,6 +6197,39 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         create_user_session(response,user.id)
         return response
 
+
+@app.post(ADMIN_CENTER_PATH + "/settings")
+def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    allowed={"home_title","home_subtitle","announcement","faq_text","legal_text","maintenance_mode","maintenance_message","site_name","support_email"}
+    if key not in allowed:return HTMLResponse("Bu ayar panelden değiştirilemez.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        _set_site_setting(s,key,value.strip(),admin.id);s.add(AdminAuditLog(admin_user_id=admin.id,action="SETTING_UPDATED",detail=key));s.commit()
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section={section}",status_code=303)
+
+@app.post(ADMIN_CENTER_PATH + "/broadcast")
+def admin_center_broadcast(request: Request, title: str = Form(...), message: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    title=title.strip()[:120];message=message.strip()[:2000]
+    if not title or not message:return HTMLResponse("Başlık ve mesaj gerekli.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        targets=s.exec(select(User).where(User.is_active==True)).all()
+        for target in targets:s.add(AdminNotice(user_id=target.id,title=title,message=message))
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="BROADCAST_SENT",detail=f"{title} · {len(targets)} kullanıcı"));s.commit()
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
+
+@app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
+def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
+        ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket);s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_"+status,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/status")
 def admin_center_user_status(request: Request, user_id: int, action: str = Form(...)):
