@@ -313,6 +313,32 @@ class ExpertProfile(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class ExpertTrustedDevice(SQLModel, table=True):
+    """Mobil uzman hesabında doğrulanmış cihaz kaydı. Ham donanım kimliği tutulmaz."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_key_hash: str = Field(index=True)
+    device_name: Optional[str] = None
+    platform: Optional[str] = None
+    public_key: Optional[str] = None
+    is_active: bool = True
+    verified_at: datetime = Field(default_factory=_utcnow_naive)
+    last_seen_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    revoked_at: Optional[datetime] = None
+
+class ExpertDeviceChallenge(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_key_hash: str = Field(index=True)
+    device_name: Optional[str] = None
+    platform: Optional[str] = None
+    public_key: Optional[str] = None
+    code_hash: str
+    expires_at: datetime = Field(index=True)
+    attempts: int = 0
+    used_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
 class ExpertPolicyState(SQLModel, table=True):
     """Uzmanın vaka kabul kuralları, otomatik kısıtlaması ve kural onayı."""
     id: Optional[int] = Field(default=None, primary_key=True)
