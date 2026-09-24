@@ -4063,6 +4063,7 @@ def expert_support_case_room(request: Request, case_id: int):
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
+        "other_last_read_at": _consultation_inbox_state(s, case.id, other_id).last_read_at,
     })
 
 
