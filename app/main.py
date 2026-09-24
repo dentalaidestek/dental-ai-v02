@@ -7116,12 +7116,17 @@ async def save_viewer_finding(request: Request, analysis_id: int):
     return JSONResponse({"ok":True})
 
 @app.post("/analysis/{analysis_id}/viewer-analyze")
-def viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+async def viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
+    try: body=await request.json()
+    except Exception: body={}
+    teeth=[str(x).strip() for x in (body.get("teeth") or []) if str(x).strip()]
     with Session(engine, expire_on_commit=False) as s:
         analysis=s.get(Analysis,analysis_id); patient=s.get(Patient,analysis.patient_id) if analysis else None
         if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        if teeth:
+            analysis.tooth_number=",".join(teeth)
         analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
     background_tasks.add_task(_run_preliminary_ai,analysis_id)
     return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
@@ -7134,6 +7139,8 @@ def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: B
     with Session(engine, expire_on_commit=False) as s:
         analysis=s.get(GuestAnalysis,analysis_id)
         if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
+        if teeth:
+            analysis.tooth_number=",".join(teeth)
         analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
     background_tasks.add_task(_run_guest_preliminary_ai,analysis_id)
     return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
