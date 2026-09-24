@@ -5,7 +5,7 @@ window.DentalEmbeddedLoad=async d=>{
   if(!d||!d.assetUrl)return;
   const fileTop=document.querySelector('.top'),legend=document.querySelector('.legend');
   if(fileTop)fileTop.style.display='none';
-  photo.src=d.assetUrl;await photo.decode();const v=photo.parentElement;const target=Math.min(window.innerHeight*.58,v.clientWidth*(photo.naturalHeight/photo.naturalWidth));v.style.height=Math.max(220,target)+'px';resize();
+  photo.src=d.assetUrl;try{await photo.decode()}catch(e){await new Promise((resolve,reject)=>{photo.onload=resolve;photo.onerror=()=>reject(new Error('Radyografik görüntü yüklenemedi.'));});}const v=photo.parentElement;const target=Math.min(window.innerHeight*.58,v.clientWidth*(photo.naturalHeight/photo.naturalWidth));v.style.height=Math.max(220,target)+'px';resize();
   if(legend)legend.textContent='';
   let snap=null;
   for(let attempt=0;attempt<12;attempt++){
@@ -21,4 +21,4 @@ window.DentalEmbeddedLoad=async d=>{
 };
 })();
 ;(()=>{window.addEventListener('message',ev=>{if(ev.origin!==location.origin)return;const d=ev.data||{};if(d.type==='dental-ai:manual-finding-saved'){const el=document.getElementById('clinicalSaved');if(el)el.textContent=d.ok?'Bulgu kaydedildi.':'Bulgu kaydedilemedi.'}if(d.type==='dental-ai:clinical-note-saved'){const el=document.getElementById('clinicalSaved');if(el)el.textContent=d.ok?'Kaydedildi.':'Kaydedilemedi.'}if(d.type==='dental-ai:treatment-result'){if(!d.ok){panel.innerHTML='<div class="empty">Tedavi analizi tamamlanamadı.</div>';return}const r=d.result||{},items=r.treatment_options||r.treatments||[];panel.innerHTML=items.length?items.map((x,i)=>'<article class="card"><div class="title">'+(i+1)+'. '+(typeof x==='string'?x:(x.title||x.name||x.treatment||'Tedavi seçeneği'))+'</div>'+(typeof x==='object'&&x.description?'<div class="description">'+x.description+'</div>':'')+'</article>').join(''):'<div class="empty">Tedavi seçeneği oluşturulamadı.</div>'}})})();
-;(()=>{window.addEventListener('message',async ev=>{if(ev.origin!==location.origin)return;const d=ev.data||{};if(d.type!=='dental-ai:patient-analysis')return;try{await window.DentalEmbeddedLoad(d)}catch(e){const er=document.getElementById('error');if(er){er.textContent=String(e.message||e);er.style.display='block'}}})})();
+;(()=>{const receive=async d=>{try{await window.DentalEmbeddedLoad(d)}catch(e){const er=document.getElementById('error');if(er){er.textContent=String(e.message||e);er.style.display='block'}}};window.addEventListener('message',ev=>{if(ev.origin!==location.origin)return;const d=ev.data||{};if(d.type==='dental-ai:patient-analysis')receive(d)});parent.postMessage({type:'dental-ai:viewer-ready'},location.origin)})();
