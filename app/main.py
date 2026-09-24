@@ -6270,6 +6270,39 @@ def site_runtime_config():
         data={r.key:(r.value or "") for r in rows}
     return {"announcement":data.get("announcement",""),"home_title":data.get("home_title",""),"home_subtitle":data.get("home_subtitle",""),"site_name":data.get("site_name","DENTAL AI")}
 
+ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "").strip()
+ADMIN_BOOTSTRAP_TOKEN = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "").strip()
+
+@app.get(ADMIN_CENTER_PATH + "/setup", response_class=HTMLResponse)
+def admin_first_setup_page(request: Request, token: str = ""):
+    if not ADMIN_BOOTSTRAP_USERNAME or not ADMIN_BOOTSTRAP_TOKEN or not secrets.compare_digest(token, ADMIN_BOOTSTRAP_TOKEN):
+        return HTMLResponse("Sayfa bulunamadı.",status_code=404)
+    with Session(engine, expire_on_commit=False) as s:
+        admin=s.exec(select(User).where(User.username==ADMIN_BOOTSTRAP_USERNAME,User.role=="ADMIN")).first()
+        if admin and admin.password_hash:return HTMLResponse("Bu tek kullanımlık kurulum bağlantısı artık geçersiz.",status_code=410)
+    return templates.TemplateResponse(request=request,name="admin_setup.html",context={"admin_path":ADMIN_CENTER_PATH,"token":token,"username":ADMIN_BOOTSTRAP_USERNAME,"error":None})
+
+@app.post(ADMIN_CENTER_PATH + "/setup", response_class=HTMLResponse)
+def admin_first_setup(request: Request, token: str = Form(...), password: str = Form(...), password_confirm: str = Form(...)):
+    if not ADMIN_BOOTSTRAP_USERNAME or not ADMIN_BOOTSTRAP_TOKEN or not secrets.compare_digest(token, ADMIN_BOOTSTRAP_TOKEN):
+        return HTMLResponse("Sayfa bulunamadı.",status_code=404)
+    def page(error,status=400):
+        return templates.TemplateResponse(request=request,name="admin_setup.html",context={"admin_path":ADMIN_CENTER_PATH,"token":token,"username":ADMIN_BOOTSTRAP_USERNAME,"error":error},status_code=status)
+    if len(password)<12:return page("Yönetici şifresi en az 12 karakter olmalıdır.")
+    if password!=password_confirm:return page("Şifreler eşleşmiyor.")
+    with Session(engine, expire_on_commit=False) as s:
+        admin=s.exec(select(User).where(User.username==ADMIN_BOOTSTRAP_USERNAME,User.role=="ADMIN")).first()
+        if admin and admin.password_hash:return HTMLResponse("Bu tek kullanımlık kurulum bağlantısı artık geçersiz.",status_code=410)
+        if not admin:
+            existing=s.exec(select(User).where(User.username==ADMIN_BOOTSTRAP_USERNAME)).first()
+            if existing:return page("Bu kullanıcı adı başka bir hesapta kullanılıyor.",409)
+            admin=User(username=ADMIN_BOOTSTRAP_USERNAME,role="ADMIN",display_name="Dental AI Yöneticisi",is_active=True)
+            s.add(admin);s.flush()
+        admin.password_hash=hash_password(password);admin.is_active=True;s.add(admin)
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="ADMIN_INITIAL_PASSWORD_SET",target_user_id=admin.id,detail="Tek kullanımlık güvenli kurulum"));s.commit()
+    return RedirectResponse(ADMIN_CENTER_PATH+"?setup=success",status_code=303)
+
+
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
 def admin_center(request: Request, q: str = "", section: str = "home"):
     user = _admin_only(request)
