@@ -3777,6 +3777,26 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
     return RedirectResponse("/messages", status_code=303)
 
 
+@app.get("/account/admin-notices")
+def account_admin_notices(request: Request):
+    user=get_current_user(request)
+    if not user: return {"notices":[]}
+    with Session(engine, expire_on_commit=False) as s:
+        rows=s.exec(select(AdminNotice).where(AdminNotice.user_id==user.id,AdminNotice.is_read==False).order_by(AdminNotice.created_at.desc())).all()[:5]
+        return {"notices":[{"id":n.id,"title":n.title,"message":n.message,"created_at":n.created_at.isoformat()} for n in rows]}
+
+
+@app.post("/account/admin-notices/{notice_id}/read")
+def account_admin_notice_read(request: Request, notice_id: int):
+    user=get_current_user(request)
+    if not user: return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        n=s.get(AdminNotice,notice_id)
+        if not n or n.user_id!=user.id: return JSONResponse({"ok":False},status_code=404)
+        n.is_read=True;s.add(n);s.commit()
+    return {"ok":True}
+
+
 @app.get("/messages/live-status")
 def consultation_live_status(request: Request):
     """Lightweight polling endpoint for near-real-time inbox updates."""
