@@ -69,12 +69,13 @@
             ilgili konular için bizimle iletişime geçebilirsiniz.
         </p>
 
-        <div class="contact-item">
-            <strong>E-posta</strong>
-            <a href="mailto:destek@dentalai.tr">
-                destek@dentalai.tr
-            </a>
-        </div>
+        {% if request.query_params.get('sent') %}<div class="notice"><strong>Talebiniz alındı.</strong> Yönetim paneline iletildi.</div>{% endif %}
+        <form method="post" action="/contact" class="form" style="margin-top:18px">
+            <label>Konu<input name="subject" maxlength="160" required></label>
+            <label>Mesaj<textarea name="message" rows="5" maxlength="4000" required></textarea></label>
+            <button type="submit">Destek Talebi Gönder</button>
+        </form>
+        <div class="contact-item"><strong>E-posta</strong><a href="mailto:destek@dentalai.tr">destek@dentalai.tr</a></div>
 
         <p class="small-note">
             Kişisel veri ve gizlilik konulu başvurularda, talebinizi
