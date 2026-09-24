@@ -4808,3 +4808,21 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 @media(max-width:380px){
   .expert-header-entry{max-width:108px}
 }
+
+
+/* Mobile conversation list */
+.messages-chat-list{max-width:720px;margin:0 auto;padding:18px 14px 100px}
+.messages-chat-head{display:flex;align-items:center;justify-content:space-between}
+.messages-new-case{display:grid!important;place-items:center;width:38px;height:38px;padding:0!important;border-radius:50%;font-size:24px!important;line-height:1;color:#fff!important;background:#2563eb!important;text-decoration:none}
+.messages-search-wrap{display:flex;align-items:center;gap:8px;background:#f1f5f9;border-radius:12px;padding:0 12px;margin:10px 0}
+.messages-search-wrap input{width:100%;border:0;outline:0;background:transparent;padding:11px 0;font-size:14px}
+.messages-filters-compact{display:flex;align-items:center;gap:7px;overflow:visible}
+.messages-filters-compact>a,.messages-filter-more>summary{padding:7px 10px!important;border-radius:999px;font-size:12px;white-space:nowrap}
+.messages-filter-more{position:relative}.messages-filter-more summary{list-style:none;cursor:pointer;background:#eef2f7}.messages-filter-more summary::-webkit-details-marker{display:none}
+.messages-filter-more>div{position:absolute;right:0;top:38px;z-index:12;min-width:130px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.14);padding:6px}
+.messages-filter-more>div a{display:block;padding:9px 10px;text-decoration:none;color:#0f172a}
+.message-avatar{position:relative}.message-avatar i{position:absolute;right:0;bottom:1px;width:9px;height:9px;border-radius:50%;background:#22c55e;border:2px solid #fff}
+.messages-empty-compact{min-height:160px!important;padding:26px 18px!important}
+.case-live-status{position:sticky;top:8px;z-index:8;margin:10px 0;padding:12px 14px;border:1px solid #bfdbfe;border-radius:14px;background:#eff6ff;box-shadow:0 6px 18px rgba(15,23,42,.08);display:flex;justify-content:space-between;gap:10px;align-items:center}
+.case-live-status strong{font-size:13px;color:#0f172a}.case-live-status span{font-size:12px;color:#475569;text-align:right}.case-live-status b{color:#1d4ed8;font-variant-numeric:tabular-nums}.case-live-status-action{background:#fff7ed;border-color:#fed7aa}.case-live-status.expired{opacity:.7}
+.visual-expert-art{display:flex;align-items:center;justify-content:center}.visual-expert-art svg{width:92%;height:92%;fill:none;stroke:currentColor;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
