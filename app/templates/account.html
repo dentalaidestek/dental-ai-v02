@@ -105,12 +105,23 @@
         }
     }
 </style>
+<style>
+    .account-container{max-width:760px;margin:8px auto 90px;padding:0 12px 28px}
+    .account-card{border:1px solid #e2e8f0;border-radius:20px;padding:20px;margin-bottom:12px;box-shadow:0 8px 28px rgba(15,23,42,.055)}
+    .account-profile-hero{display:flex;align-items:center;gap:14px;padding-bottom:18px;margin-bottom:16px;border-bottom:1px solid #eef2f7}
+    .account-profile-avatar{width:62px;height:62px;flex:0 0 62px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#dbeafe,#e0e7ff);color:#1d4ed8;font-size:24px;font-weight:900}
+    .account-profile-copy{min-width:0}.account-profile-copy span{font-size:11px;color:#2563eb;text-transform:uppercase;letter-spacing:.08em;font-weight:850}.account-profile-copy h1{font-size:23px;margin:3px 0!important;color:#0f172a}.account-profile-copy p{margin:0;color:#64748b}
+    .account-card h2{font-size:18px;color:#0f172a}.account-card>p{color:#64748b;font-size:14px;line-height:1.5}
+    .info-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.info-item{padding:12px 13px;background:#f8fafc;border:1px solid #f1f5f9;border-radius:13px}.info-label{font-size:11px}.info-value{font-size:14px}
+    .password-form input,.password-form select{min-height:46px;border-radius:12px;background:#fff}.password-form button{min-height:46px;border-radius:12px}
+    @media(max-width:650px){.account-card{padding:15px}.account-profile-avatar{width:54px;height:54px;flex-basis:54px;border-radius:16px}.account-profile-copy h1{font-size:20px}.info-grid{grid-template-columns:1fr 1fr}.info-item:nth-child(2){grid-column:auto}.info-value{font-size:13px}.account-card h2{font-size:16px}}
+    @media(max-width:390px){.info-grid{grid-template-columns:1fr}}
+</style>
 
 <div class="account-container">
 
     <div class="account-card">
-        <h1><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M9 17h6"/><path d="M12 14v6"/></svg> Hesabım</h1>
-        <p>Hekim kayıt bilgileriniz</p>
+        <div class="account-profile-hero"><div class="account-profile-avatar">{{ (user.display_name or user.username or '?')[:1] }}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
 
         {% if error %}
         <div class="error">{{ error }}</div>
@@ -137,8 +148,8 @@
             </div>
 
             <div class="info-item">
-                <div class="info-label">Rol</div>
-                <div class="info-value">{{ user.role or "-" }}</div>
+                <div class="info-label">Hesap Türü</div>
+                <div class="info-value">{% if user.role == 'ADMIN' %}Yönetici{% elif user.role == 'DOCTOR' %}Hekim hesabı{% else %}{{ user.role or '-' }}{% endif %}</div>
             </div>
 
             {% if doctor_profile %}

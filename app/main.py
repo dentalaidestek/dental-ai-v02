@@ -6,6 +6,7 @@ import uuid
 import secrets
 import urllib.request
 import urllib.error
+from urllib.parse import quote_plus
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -308,7 +309,13 @@ class ExpertProfile(SQLModel, table=True):
     identity_verified: bool = False
     specialty_verified: bool = False
     academic_title_verified: bool = False
+    # Başvuru kabulü ile belge/kimlik doğrulaması birbirinden bağımsızdır.
+    # SUBMITTED -> APPROVED yalnızca uzman ağına başvurunun kabul edildiğini,
+    # verification_status=VERIFIED ise belgelerin ayrıca doğrulandığını anlatır.
+    application_status: str = Field(default="SUBMITTED", index=True)
     verification_status: str = Field(default="PENDING", index=True)
+    application_reviewed_at: Optional[datetime] = Field(default=None, index=True)
+    verified_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive)
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
@@ -1066,6 +1073,41 @@ def init_db():
                 cols = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()}
                 if "vision_snapshot_json" not in cols:
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
+        # Eski sürüm başvuru onayını yanlışlıkla kimlik/branş doğrulaması olarak
+        # kaydediyordu. Yeni alanlar ilk kez eklenirken eski VERIFIED kayıtlarını
+        # güvenli duruma çek: başvuru onaylı, belge doğrulaması bekliyor.
+        if dialect == "postgresql":
+            existing = {
+                row[0] for row in conn.exec_driver_sql(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='expertprofile'"
+                ).fetchall()
+            }
+            application_was_missing = "application_status" not in existing
+            conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS application_status VARCHAR NOT NULL DEFAULT \'SUBMITTED\'')
+            conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS application_reviewed_at TIMESTAMP')
+            conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP')
+        elif dialect == "sqlite":
+            existing = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("expertprofile")').fetchall()}
+            application_was_missing = "application_status" not in existing
+            if "application_status" not in existing:
+                conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN application_status VARCHAR NOT NULL DEFAULT \'SUBMITTED\'')
+            if "application_reviewed_at" not in existing:
+                conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN application_reviewed_at TIMESTAMP')
+            if "verified_at" not in existing:
+                conn.exec_driver_sql('ALTER TABLE "expertprofile" ADD COLUMN verified_at TIMESTAMP')
+        else:
+            application_was_missing = False
+        if application_was_missing:
+            conn.exec_driver_sql(
+                "UPDATE expertprofile SET application_status = CASE "
+                "WHEN verification_status='REJECTED' THEN 'REJECTED' "
+                "WHEN verification_status='VERIFIED' THEN 'APPROVED' ELSE 'SUBMITTED' END"
+            )
+            conn.exec_driver_sql(
+                "UPDATE expertprofile SET verification_status='PENDING', "
+                "identity_verified=FALSE, specialty_verified=FALSE, academic_title_verified=FALSE, verified_at=NULL, availability='PASSIVE' "
+                "WHERE application_status='APPROVED' AND verification_status='VERIFIED'"
+            )
     with Session(engine, expire_on_commit=False) as s:
         if not s.exec(select(User)).first():
             s.add(User(username="admin", role="ADMIN", display_name="DENTAL-AI Administrator"))
@@ -1177,7 +1219,13 @@ def send_expert_device_code(recipient_email: str, code: str) -> None:
 
 def _is_verified_expert(session: Session, user_id: int) -> bool:
     p=session.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
-    return bool(p and p.verification_status=="VERIFIED")
+    return bool(
+        p
+        and p.application_status == "APPROVED"
+        and p.verification_status == "VERIFIED"
+        and p.identity_verified
+        and p.specialty_verified
+    )
 
 def send_brevo_password_reset_email(
     recipient_email: str,
@@ -2143,10 +2191,13 @@ def template_user_context(request: Request):
         if title in eligible_titles:
             expert_nav["eligible"] = True
             expert_nav["href"] = "/expert-support/profile"
-            if profile and profile.verification_status == "VERIFIED":
+            if profile and _is_verified_expert(s, user.id):
                 expert_nav["state"] = "VERIFIED"
                 expert_nav["label"] = "Uzman Profilim"
-            elif profile and profile.verification_status == "PENDING":
+            elif profile and profile.application_status == "APPROVED":
+                expert_nav["state"] = "APPROVED"
+                expert_nav["label"] = "Doğrulama Bekliyor"
+            elif profile and profile.application_status == "SUBMITTED":
                 expert_nav["state"] = "PENDING"
                 expert_nav["label"] = "Başvurum"
             else:
@@ -3228,6 +3279,24 @@ CONSULTATION_URGENCIES = {
     "TODAY": "Bugün",
     "NORMAL": "Acil değil",
 }
+CONSULTATION_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+PAYMENT_FUNDED_STATUSES = {"AUTHORIZED", "PAID", "CAPTURED", "ON_HOLD"}
+
+
+def _iyzico_enabled() -> bool:
+    """Kart verisi uygulamaya gelmez; sağlayıcı akışı yalnız anahtarlar tanımlıysa canlı sayılır."""
+    return bool(
+        os.getenv("IYZICO_PAYMENTS_ENABLED", "0") == "1"
+        and os.getenv("IYZICO_API_KEY")
+        and os.getenv("IYZICO_SECRET_KEY")
+    )
+
+
+def _payment_cancel_or_refund(payment: Optional[ConsultationPayment], now: datetime) -> None:
+    if not payment:
+        return
+    payment.status = "REFUND_REQUIRED" if payment.status in PAYMENT_FUNDED_STATUSES else "CANCELLED"
+    payment.updated_at = now
 
 
 def _expert_minimum_price(title: Optional[str]) -> int:
@@ -3305,8 +3374,7 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
             _consultation_event(session, case.id, "NEW_CASE_BLOCKED_24H", case.expert_user_id, {"blocked_until": blocked_until.isoformat(), "missed_today": missed_today})
     payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
     if payment:
-        payment.status = "REFUND_REQUIRED"
-        payment.updated_at = now
+        _payment_cancel_or_refund(payment, now)
         session.add(payment)
     return True
 
@@ -3473,16 +3541,22 @@ def admin_expert_verification_update(
         profile = s.get(ExpertProfile, profile_id)
         if not profile:
             return HTMLResponse("Profil bulunamadı.", status_code=404)
+        if decision == "VERIFY" and profile.application_status != "APPROVED":
+            return HTMLResponse("Önce uzman ağı başvurusu onaylanmalıdır.", status_code=409)
         profile.identity_verified = identity_verified == "yes"
         profile.specialty_verified = specialty_verified == "yes"
         profile.academic_title_verified = academic_title_verified == "yes"
         if decision == "VERIFY" and profile.identity_verified and profile.specialty_verified:
             profile.verification_status = "VERIFIED"
+            profile.verified_at = _utcnow_naive()
         elif decision == "REJECT":
             profile.verification_status = "REJECTED"
             profile.availability = "PASSIVE"
+            profile.verified_at = None
         else:
             profile.verification_status = "PENDING"
+            profile.availability = "PASSIVE"
+            profile.verified_at = None
         profile.updated_at = _utcnow_naive()
         s.add(profile)
         s.commit()
@@ -3498,6 +3572,7 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
         _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
             ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
@@ -3533,6 +3608,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
     with Session(engine, expire_on_commit=False) as s:
         _expire_pending_expert_requests(s)
         query = select(ExpertProfile).where(
+            ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
             ExpertProfile.identity_verified == True,
             ExpertProfile.specialty_verified == True,
@@ -3641,9 +3717,13 @@ def expert_support_profile_save(
             return HTMLResponse(f"Bu mesleki unvan için minimum danışmanlık ücreti {minimum} TL.", status_code=400)
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         if not profile:
-            profile = ExpertProfile(user_id=user.id, specialty=specialty)
+            profile = ExpertProfile(user_id=user.id, specialty=specialty, application_status="SUBMITTED")
+        next_academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
+        verification_sensitive_change = bool(
+            profile.id and (profile.specialty != specialty or profile.academic_title != next_academic_title)
+        )
         profile.specialty = specialty
-        profile.academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
+        profile.academic_title = next_academic_title
         profile.institution = institution.strip() or None
         profile.bio = bio.strip() or None
         profile.orcid_url = orcid_url.strip() or None
@@ -3651,13 +3731,21 @@ def expert_support_profile_save(
         profile.consultation_price = consultation_price
         policy_state = _expert_policy_state(s, user.id)
         if availability == "AVAILABLE":
-            if policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
+            if not _is_verified_expert(s, user.id):
+                availability = "PASSIVE"
+            elif policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
                 return RedirectResponse("/expert-support/rules?next=/expert-support/profile", status_code=303)
-            if _expert_is_blocked(policy_state):
+            elif _expert_is_blocked(policy_state):
                 availability = "PASSIVE"
         profile.availability = availability
         profile.max_active_cases = 5
         profile.updated_at = _utcnow_naive()
+        if verification_sensitive_change:
+            profile.specialty_verified = False
+            profile.academic_title_verified = False
+            profile.verification_status = "PENDING"
+            profile.verified_at = None
+            profile.availability = "PASSIVE"
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
         if profile.verification_status != "VERIFIED":
             profile.verification_status = "PENDING"
@@ -3675,7 +3763,10 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
         _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.identity_verified == True,
+            ExpertProfile.specialty_verified == True,
             ExpertProfile.availability == "AVAILABLE",
         )).first()
         policy_state = _expert_policy_state(s, expert_user_id)
@@ -3723,7 +3814,10 @@ def expert_support_request_create(
             return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.", status_code=409)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
+            ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
+            ExpertProfile.identity_verified == True,
+            ExpertProfile.specialty_verified == True,
             ExpertProfile.availability == "AVAILABLE",
         )).first()
         if not profile:
@@ -3761,7 +3855,12 @@ def expert_support_request_create(
             )).all()
             for media in allowed_media:
                 s.add(ConsultationCaseMedia(case_id=case.id, patient_media_id=media.id, added_by_user_id=user.id))
-        s.add(ConsultationPayment(case_id=case.id, amount=profile.consultation_price, status="NOT_STARTED"))
+        s.add(ConsultationPayment(
+            case_id=case.id,
+            provider="iyzico",
+            amount=profile.consultation_price,
+            status="NOT_STARTED" if _iyzico_enabled() else "INTEGRATION_PENDING",
+        ))
         _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat(), "shared_media_count": len(selected_media_ids)})
         s.commit()
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
@@ -4042,8 +4141,7 @@ def expert_support_case_room(request: Request, case_id: int):
             _consultation_event(s, case.id, "PROPOSAL_EXPIRED")
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment:
-                payment.status = "REFUND_REQUIRED"
-                payment.updated_at = now
+                _payment_cancel_or_refund(payment, now)
                 s.add(payment)
             s.add(case)
             s.commit()
@@ -4057,12 +4155,20 @@ def expert_support_case_room(request: Request, case_id: int):
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        other_state = s.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.case_id == case.id,
+            ConsultationInboxState.user_id == other_id,
+        )).first()
+        other_read_at = other_state.last_read_at if other_state else None
+        payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
+        "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
+        "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
 
@@ -4104,8 +4210,7 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
             _consultation_event(s, case.id, "REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment:
-                payment.status = "REFUND_REQUIRED"
-                payment.updated_at = now
+                _payment_cancel_or_refund(payment, now)
                 s.add(payment)
         elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
             minutes, label = EXPERT_START_OPTIONS[start_option]
@@ -4113,7 +4218,7 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
                 if payment:
-                    payment.status = "AUTHORIZATION_REQUIRED"; payment.updated_at = now; s.add(payment)
+                    payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
                 _consultation_event(s, case.id, "ACCEPTED_NOW", user.id)
             else:
                 case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
@@ -4142,15 +4247,14 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment:
-                payment.status = "AUTHORIZATION_REQUIRED"; payment.updated_at = now; s.add(payment)
+                payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "PROPOSAL_ACCEPTED", user.id, {"start_deadline": case.consultation_start_deadline.isoformat()})
         else:
             case.status = "PROPOSAL_REJECTED"
             _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment:
-                payment.status = "REFUND_REQUIRED"
-                payment.updated_at = now
+                _payment_cancel_or_refund(payment, now)
                 s.add(payment)
         s.add(case); s.commit()
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
@@ -4164,19 +4268,22 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
-            return HTMLResponse("Bu vakaya medya gönderilemez.", status_code=403)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Bu vakaya dosya gönderilemez.')}", status_code=303)
         raw = await file.read()
-        if not raw or len(raw) > 25 * 1024 * 1024:
-            return HTMLResponse("Dosya boş veya 25 MB sınırını aşıyor.", status_code=400)
+        if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
+            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya boş veya 25 MB sınırını aşıyor.')}", status_code=303)
         suffix = Path(file.filename or "").suffix.lower()
         allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
         if suffix not in allowed:
-            return HTMLResponse("Desteklenmeyen dosya türü.", status_code=400)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Desteklenmeyen dosya türü.')}", status_code=303)
         case_dir = UPLOAD_DIR / "consultations" / str(case.id)
         case_dir.mkdir(parents=True, exist_ok=True)
         stored = f"{secrets.token_hex(16)}{suffix}"
         path = case_dir / stored
-        path.write_bytes(raw)
+        try:
+            path.write_bytes(raw)
+        except OSError:
+            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya yüklenemedi. Lütfen tekrar deneyin.')}", status_code=303)
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
         s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path)))
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
@@ -4281,17 +4388,19 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         return RedirectResponse("/login", status_code=303)
     text_value = content.strip()
     if not text_value:
-        return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Boş mesaj gönderilemez.')}", status_code=303)
+    if len(text_value) > 4000:
+        return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
-            return HTMLResponse("Bu vaka mesajlaşmaya açık değil.", status_code=409)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
-            return HTMLResponse("Bu kullanıcıyla mesajlaşma engellenmiş.", status_code=403)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu kullanıcıyla mesajlaşma engellenmiş.')}", status_code=303)
         if _contains_profanity(text_value):
             _consultation_event(s, case.id, "PROFANITY_BLOCKED", user.id)
             s.commit()
@@ -4345,7 +4454,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
         if user.id == case.requester_user_id and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
+            if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "REQUESTER_COMPLETED", user.id)
         elif user.id == case.expert_user_id and action == "COMPLETE":
@@ -4357,7 +4466,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             case.status = "DISPUTE"
             case.dispute_opened_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
+            if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "ON_HOLD"
                 payment.updated_at = now
                 s.add(payment)
@@ -6418,7 +6527,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         if q.strip():
             needle=q.strip().casefold()
             users=[u for u in users if needle in (u.username or "").casefold() or needle in (u.display_name or "").casefold() or needle in (u.email or "").casefold()]
-        pending = s.exec(select(ExpertProfile).where(ExpertProfile.verification_status == "PENDING").order_by(ExpertProfile.updated_at.desc())).all()
+        pending = s.exec(select(ExpertProfile).where(ExpertProfile.application_status == "SUBMITTED").order_by(ExpertProfile.updated_at.desc())).all()
         pending_rows=[{"profile":p,"expert":s.get(User,p.user_id)} for p in pending]
         notices=s.exec(select(AdminNotice).order_by(AdminNotice.created_at.desc())).all()[:20]
         audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all()[:30]
@@ -6544,7 +6653,7 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
         if not profile: return HTMLResponse("Uzman profili bulunamadı.",status_code=404)
         if action == "PAUSE": profile.availability="PASSIVE"
         elif action == "RESUME":
-            if profile.verification_status!="VERIFIED": return HTMLResponse("Doğrulanmamış uzman aktifleştirilemez.",status_code=409)
+            if not _is_verified_expert(s, user_id): return HTMLResponse("Başvurusu ve belgeleri doğrulanmamış uzman aktifleştirilemez.",status_code=409)
             profile.availability="AVAILABLE"
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+action,target_user_id=user_id));s.commit()
@@ -6569,15 +6678,23 @@ def admin_center_notice(request: Request, user_id: int, title: str = Form(...), 
 def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
     admin=_admin_only(request)
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
-    if decision not in {"VERIFY","REJECT","PENDING"}: return HTMLResponse("Geçersiz karar.",status_code=400)
+    if decision not in {"APPROVE","REJECT","SUBMITTED"}: return HTMLResponse("Geçersiz karar.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         profile=s.get(ExpertProfile,profile_id)
         if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
-        if decision=="VERIFY":
-            profile.identity_verified=True;profile.specialty_verified=True;profile.verification_status="VERIFIED"
+        if decision=="APPROVE":
+            profile.application_status="APPROVED"
+            profile.application_reviewed_at=_utcnow_naive()
+            profile.verification_status="PENDING"
+            profile.identity_verified=False
+            profile.specialty_verified=False
+            profile.academic_title_verified=False
+            profile.verified_at=None
+            profile.availability="PASSIVE"
         elif decision=="REJECT":
-            profile.verification_status="REJECTED";profile.availability="PASSIVE"
-        else: profile.verification_status="PENDING"
+            profile.application_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.availability="PASSIVE"
+        else:
+            profile.application_status="SUBMITTED";profile.application_reviewed_at=None;profile.availability="PASSIVE"
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+decision,target_user_id=profile.user_id));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 

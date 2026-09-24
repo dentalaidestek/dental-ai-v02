@@ -1,7 +1,12 @@
 {% extends "base.html" %}{% block content %}
 <div class="expert-shell expert-profile-page">
-{% if request.query_params.get('saved') and profile and profile.verification_status == 'PENDING' %}
+{% if request.query_params.get('saved') and profile and profile.application_status == 'SUBMITTED' %}
 <section class="expert-application-success"><strong>Başvurunuz alındı</strong><span>Uzman profiliniz ve doğrulama bilgileriniz inceleniyor. Başvurunuz en geç 1–3 iş günü içerisinde sonuçlandırılacaktır.</span></section>
+{% endif %}
+{% if profile and profile.application_status == 'APPROVED' and profile.verification_status != 'VERIFIED' %}
+<section class="expert-status-banner is-review"><strong>Başvurunuz onaylandı</strong><span>Bu onay kimlik veya uzmanlık doğrulaması değildir. Belgeleriniz ayrıca doğrulandıktan sonra profiliniz uzman listesinde yayınlanır.</span></section>
+{% elif profile and profile.application_status == 'REJECTED' %}
+<section class="expert-status-banner is-rejected"><strong>Başvurunuz onaylanmadı</strong><span>Bilgilerinizi kontrol edip yönetici desteğiyle yeniden değerlendirme isteyebilirsiniz.</span></section>
 {% endif %}
   <section id="expertNotificationGate" class="expert-notification-gate" hidden>
     <div><strong>Bildirimleri açmanız gerekiyor</strong><small>Uzman olarak vaka kabul edebilmek için yeni vaka ve mesaj bildirimleri açık olmalıdır.</small></div>
@@ -16,8 +21,13 @@
     </div>
     <div class="expert-profile-main">
       <div class="expert-profile-name-row"><div><h1>{{ professional_title }} {{ user.display_name }}</h1><p>{{ profile.specialty }}{% if profile.institution %} · {{ profile.institution }}{% endif %}</p></div>
-      <label class="expert-availability-switch"><input id="availabilityToggle" type="checkbox" {% if profile.availability=="AVAILABLE" %}checked{% endif %} onchange="syncExpertAvailability(this.checked)"><span></span><b id="availabilityText">{% if profile.availability=="AVAILABLE" %}Müsait{% else %}Meşgul{% endif %}</b></label></div>
-      <div class="expert-profile-badges"><span>✓ Doğrulanmış profil</span>{% if profile.academic_title_verified and profile.academic_title %}<span>✓ {{ profile.academic_title }}</span>{% endif %}</div>
+      <label class="expert-availability-switch"><input id="availabilityToggle" type="checkbox" {% if profile.availability=="AVAILABLE" %}checked{% endif %} {% if profile.application_status!='APPROVED' or profile.verification_status!='VERIFIED' or not profile.identity_verified or not profile.specialty_verified %}disabled{% endif %} onchange="syncExpertAvailability(this.checked)"><span></span><b id="availabilityText">{% if profile.availability=="AVAILABLE" %}Müsait{% else %}Meşgul{% endif %}</b></label></div>
+      <div class="expert-profile-badges">
+        {% if profile.application_status == 'APPROVED' %}<span class="application-approved">✓ Başvurusu onaylandı</span>{% elif profile.application_status == 'SUBMITTED' %}<span class="verification-pending">Başvuru inceleniyor</span>{% endif %}
+        {% if profile.verification_status == 'VERIFIED' and profile.identity_verified %}<span>✓ Kimliği doğrulandı</span>{% else %}<span class="verification-pending">Kimlik doğrulaması bekliyor</span>{% endif %}
+        {% if profile.verification_status == 'VERIFIED' and profile.specialty_verified %}<span>✓ Uzmanlığı doğrulandı</span>{% else %}<span class="verification-pending">Uzmanlık doğrulaması bekliyor</span>{% endif %}
+        {% if profile.academic_title_verified and profile.academic_title %}<span>✓ {{ profile.academic_title }}</span>{% endif %}
+      </div>
       {% if profile.bio %}<p class="expert-profile-bio">{{ profile.bio }}</p>{% endif %}
       <div class="expert-profile-stats">
         <a href="/expert-support/performance"><b>Performans</b><small>Detayları gör</small></a>
@@ -52,6 +62,6 @@ function syncExpertAvailability(on){const input=document.getElementById("availab
 function expertNotificationsAllowed(){return "Notification" in window && Notification.permission==="granted";}
 function showExpertNotificationGate(){const g=document.getElementById("expertNotificationGate");if(g)g.hidden=expertNotificationsAllowed();}
 async function requestExpertNotifications(){if(!("Notification" in window)){alert("Bu tarayıcı bildirimleri desteklemiyor. Uzman profili için bildirim destekleyen güncel bir tarayıcı kullanın.");return;}const p=await Notification.requestPermission();showExpertNotificationGate();if(p!=="granted")alert("Uzman profili oluşturmak ve müsait duruma geçmek için bildirim izni gereklidir.");}
-document.addEventListener("DOMContentLoaded",()=>{showExpertNotificationGate();const b=document.getElementById("enableExpertNotifications");if(b)b.onclick=requestExpertNotifications;const form=document.querySelector(".expert-form-compact");if(form)form.addEventListener("submit",async e=>{if(!expertNotificationsAllowed()){e.preventDefault();showExpertNotificationGate();await requestExpertNotifications();}});});
+document.addEventListener("DOMContentLoaded",()=>{const toggle=document.getElementById("availabilityToggle");if(toggle&&!toggle.disabled)showExpertNotificationGate();const b=document.getElementById("enableExpertNotifications");if(b)b.onclick=requestExpertNotifications;const form=document.querySelector(".expert-form-compact");if(form)form.addEventListener("submit",async e=>{const availability=document.getElementById("availabilitySelect");if(availability&&availability.value==="AVAILABLE"&&!expertNotificationsAllowed()){e.preventDefault();showExpertNotificationGate();await requestExpertNotifications();}});});
 </script>
 {% endblock %}
