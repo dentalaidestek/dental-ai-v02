@@ -1,5 +1,9 @@
 {% extends "base.html" %}{% block content %}
 <div class="expert-shell expert-profile-page">
+  <section id="expertNotificationGate" class="expert-notification-gate" hidden>
+    <div><strong>Bildirimleri açmanız gerekiyor</strong><small>Uzman olarak vaka kabul edebilmek için yeni vaka ve mesaj bildirimleri açık olmalıdır.</small></div>
+    <button type="button" id="enableExpertNotifications">Bildirimleri Aç</button>
+  </section>
   {% if request.query_params.get('saved') %}<div class="expert-success">Profil kaydedildi.</div>{% endif %}
   {% if profile %}
   <section class="expert-my-profile-card">
@@ -35,12 +39,16 @@
       <label>Danışmanlık ücreti<input type="number" name="consultation_price" min="{{ minimum_price }}" value="{{ profile.consultation_price if profile and profile.consultation_price else minimum_price }}" required><small>Minimum {{ minimum_price }} TL · tamamlanan danışmanlıkta planlanan platform payı %20.</small></label>
       <input id="availabilitySelect" type="hidden" name="availability" value="{{ profile.availability if profile else 'PASSIVE' }}">
       <div class="expert-rule">Aynı anda en fazla <b>5 açık vaka</b> kabul edilebilir.</div>
-      <button class="expert-primary" type="submit">Değişiklikleri Kaydet</button>
+      <button class="expert-primary expert-profile-save" type="submit">Değişiklikleri Kaydet</button>
     </form>
   </details>
   <div class="expert-profile-links expert-profile-links-compact"><a href="/expert-support/performance">Performansım</a><a href="/expert-support/performance-info">Performans nasıl değerlendirilir?</a><a href="/expert-support/rules">Vaka kabul kuralları</a></div>
 </div>
 <script>
-function syncExpertAvailability(on){const input=document.getElementById("availabilitySelect"), text=document.getElementById("availabilityText");if(input) input.value=on?"AVAILABLE":"BUSY";if(text) text.textContent=on?"Müsait":"Meşgul";}
+function syncExpertAvailability(on){const input=document.getElementById("availabilitySelect"), text=document.getElementById("availabilityText");if(on && !expertNotificationsAllowed()){const t=document.getElementById("availabilityToggle");if(t)t.checked=false;if(input)input.value="BUSY";if(text)text.textContent="Meşgul";showExpertNotificationGate();return;}if(input) input.value=on?"AVAILABLE":"BUSY";if(text) text.textContent=on?"Müsait":"Meşgul";}
+function expertNotificationsAllowed(){return "Notification" in window && Notification.permission==="granted";}
+function showExpertNotificationGate(){const g=document.getElementById("expertNotificationGate");if(g)g.hidden=expertNotificationsAllowed();}
+async function requestExpertNotifications(){if(!("Notification" in window)){alert("Bu tarayıcı bildirimleri desteklemiyor. Uzman profili için bildirim destekleyen güncel bir tarayıcı kullanın.");return;}const p=await Notification.requestPermission();showExpertNotificationGate();if(p!=="granted")alert("Uzman profili oluşturmak ve müsait duruma geçmek için bildirim izni gereklidir.");}
+document.addEventListener("DOMContentLoaded",()=>{showExpertNotificationGate();const b=document.getElementById("enableExpertNotifications");if(b)b.onclick=requestExpertNotifications;const form=document.querySelector(".expert-form-compact");if(form)form.addEventListener("submit",async e=>{if(!expertNotificationsAllowed()){e.preventDefault();showExpertNotificationGate();await requestExpertNotifications();}});});
 </script>
 {% endblock %}
