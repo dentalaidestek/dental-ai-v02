@@ -6152,6 +6152,30 @@ def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
     if not row: row=SiteSetting(key=key)
     row.value=value; row.updated_by_user_id=admin_id; row.updated_at=_utcnow_naive(); session.add(row)
 
+@app.middleware("http")
+async def admin_maintenance_guard(request: Request, call_next):
+    path=request.url.path
+    if path.startswith("/static") or path.startswith(ADMIN_CENTER_PATH) or path in {"/login","/logout","/site/runtime-config"}:
+        return await call_next(request)
+    try:
+        with Session(engine, expire_on_commit=False) as s:
+            row=s.exec(select(SiteSetting).where(SiteSetting.key=="maintenance_mode")).first()
+            if row and row.value=="1":
+                user=get_current_user(request)
+                if not user or user.role!="ADMIN":
+                    msg=s.exec(select(SiteSetting).where(SiteSetting.key=="maintenance_message")).first()
+                    return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><title>Dental AI Bakım</title><div style='font-family:system-ui;max-width:420px;margin:20vh auto;padding:24px'><h2>Dental AI kısa süreli bakımda</h2><p>"+html.escape((msg.value if msg else "") or "Kısa süre sonra tekrar deneyin.")+"</p></div>",status_code=503)
+    except Exception:
+        pass
+    return await call_next(request)
+
+@app.get("/site/runtime-config")
+def site_runtime_config():
+    with Session(engine, expire_on_commit=False) as s:
+        rows=s.exec(select(SiteSetting)).all()
+        data={r.key:(r.value or "") for r in rows}
+    return {"announcement":data.get("announcement",""),"home_title":data.get("home_title",""),"home_subtitle":data.get("home_subtitle",""),"site_name":data.get("site_name","DENTAL AI")}
+
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
 def admin_center(request: Request, q: str = "", section: str = "home"):
     user = _admin_only(request)
