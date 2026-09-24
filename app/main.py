@@ -3952,9 +3952,13 @@ def expert_support_case_room(request: Request, case_id: int):
                 shared_media.append({"link": link, "media": media})
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
+        blocked_either = _users_blocked(s, user.id, other_id)
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
+        "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
     })
 
 
