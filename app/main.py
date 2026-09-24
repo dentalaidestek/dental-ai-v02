@@ -2184,6 +2184,17 @@ def embedded_regional_viewer():
     return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/vision-ui/radiograph-viewer", response_class=HTMLResponse)
+def embedded_radiograph_viewer():
+    path = BASE.parent / "vision_service" / "templates" / "radiograph_viewer.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/radiograph-viewer.js", response_class=FileResponse)
+def embedded_radiograph_viewer_js():
+    return FileResponse(BASE.parent / "vision_service" / "templates" / "radiograph_viewer.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/viewer-v3.js", response_class=FileResponse)
 def embedded_viewer_js():
     return FileResponse(BASE.parent / "vision_service" / "templates" / "viewer_v3.js", media_type="application/javascript")
