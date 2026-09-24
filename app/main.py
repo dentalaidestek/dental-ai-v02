@@ -1239,6 +1239,16 @@ def contact_page(request: Request):
     )
 
 
+@app.post("/contact")
+def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...)):
+    user=get_current_user(request)
+    subject=subject.strip()[:160];message=message.strip()[:4000]
+    if not subject or not message:return HTMLResponse("Konu ve mesaj gerekli.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message));s.commit()
+    return RedirectResponse("/contact?sent=1",status_code=303)
+
+
 @app.get("/legal/{document}", response_class=HTMLResponse)
 def legal_document(request: Request, document: str):
     legal = LEGAL_TEXTS.get(document)
