@@ -6461,6 +6461,50 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         return response
 
 
+def _file_size_bytes(path_value: Optional[str]) -> int:
+    if not path_value:
+        return 0
+    try:
+        p=Path(path_value)
+        return p.stat().st_size if p.exists() and p.is_file() else 0
+    except OSError:
+        return 0
+
+def _admin_user_storage(session: Session, user_id: int):
+    patient_media=session.exec(select(PatientMedia).where(PatientMedia.owner_user_id==user_id)).all()
+    consultation_messages=session.exec(select(ConsultationMessage).where(ConsultationMessage.sender_user_id==user_id)).all()
+    study_materials=session.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id==user_id)).all()
+    guest_ids=[g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id==user_id)).all()]
+    guest_assets=session.exec(select(GuestImageAsset)).all() if guest_ids else []
+    guest_assets=[x for x in guest_assets if x.guest_analysis_id in guest_ids]
+    patient_ids=[p.id for p in session.exec(select(Patient).where(Patient.owner_user_id==user_id)).all()]
+    analysis_ids=[a.id for a in session.exec(select(Analysis)).all() if a.patient_id in patient_ids]
+    analysis_assets=[x for x in session.exec(select(ImageAsset)).all() if x.analysis_id in analysis_ids]
+    categories={
+        "Hasta dosyaları":sum(_file_size_bytes(x.file_path) for x in patient_media),
+        "Sohbet ekleri":sum(_file_size_bytes(x.media_path) for x in consultation_messages),
+        "Akademik dosyalar":sum(_file_size_bytes(x.file_path) for x in study_materials),
+        "Misafir analizleri":sum(_file_size_bytes(x.file_path) for x in guest_assets),
+        "Analiz görüntüleri":sum(_file_size_bytes(x.file_path) for x in analysis_assets),
+    }
+    total=sum(categories.values())
+    return {"total_bytes":total,"total_gb":round(total/(1024**3),3),"categories":[{"name":k,"bytes":v,"gb":round(v/(1024**3),3),"mb":round(v/(1024**2),1)} for k,v in categories.items()]}
+
+def _admin_stale_chat_media(session: Session, user_id: int, now: datetime):
+    cases=session.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user_id)|(ConsultationCase.expert_user_id==user_id))).all()
+    rows=[]
+    cutoff=now-timedelta(days=7)
+    for case in cases:
+        states=session.exec(select(ConsultationInboxState).where(ConsultationInboxState.case_id==case.id)).all()
+        last_open=max([x.last_read_at for x in states if x.last_read_at] or [case.requested_at])
+        if last_open>cutoff:
+            continue
+        media=session.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.media_path!=None)).all()
+        size=sum(_file_size_bytes(x.media_path) for x in media)
+        if size:
+            rows.append({"case":case,"last_open":last_open,"file_count":len(media),"bytes":size,"mb":round(size/(1024**2),1)})
+    return rows
+
 @app.get(ADMIN_CENTER_PATH + "/users/{user_id}", response_class=HTMLResponse)
 def admin_center_user_detail(request: Request, user_id: int):
     admin=_admin_only(request)
@@ -6477,11 +6521,43 @@ def admin_center_user_detail(request: Request, user_id: int):
         audits=s.exec(select(AdminAuditLog).where(AdminAuditLog.target_user_id==user_id).order_by(AdminAuditLog.created_at.desc())).all()[:30]
         performance=_expert_performance(s,user_id) if profile else None
         policy=_expert_policy_state(s,user_id) if profile else None
+        storage=_admin_user_storage(s,user_id)
+        stale_chat_media=_admin_stale_chat_media(s,user_id,_utcnow_naive())
         s.commit()
     return templates.TemplateResponse(request=request,name="admin_user_detail.html",context={
         "user":admin,"target":target,"meta":meta,"profile":profile,"requested":requested,"received":received,
-        "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"admin_path":ADMIN_CENTER_PATH,
+        "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"storage":storage,"stale_chat_media":stale_chat_media,"admin_path":ADMIN_CENTER_PATH,
     })
+
+
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/stale-chat-media/{case_id}/delete")
+def admin_delete_stale_chat_media(request: Request, user_id: int, case_id: int):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    now=_utcnow_naive();cutoff=now-timedelta(days=7)
+    with Session(engine, expire_on_commit=False) as s:
+        target=s.get(User,user_id);case=s.get(ConsultationCase,case_id)
+        if not target or not case or user_id not in {case.requester_user_id,case.expert_user_id}:
+            return HTMLResponse("Kayıt bulunamadı.",status_code=404)
+        states=s.exec(select(ConsultationInboxState).where(ConsultationInboxState.case_id==case.id)).all()
+        last_open=max([x.last_read_at for x in states if x.last_read_at] or [case.requested_at])
+        if last_open>cutoff:return HTMLResponse("Bu sohbet son 7 gün içinde açılmış; dosyaları silinemez.",status_code=409)
+        media=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.media_path!=None)).all()
+        deleted_files=0;freed=0
+        for msg in media:
+            if msg.media_path:
+                p=Path(msg.media_path)
+                try:
+                    if p.exists() and p.is_file():
+                        freed+=p.stat().st_size;p.unlink();deleted_files+=1
+                except OSError:
+                    pass
+                msg.media_path=None
+                if msg.message_type in {"IMAGE","VOICE","FILE"}: msg.content="Dosya yönetici tarafından depolamadan kaldırıldı."
+                s.add(msg)
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="STALE_CHAT_MEDIA_DELETED",target_user_id=user_id,detail=f"Vaka #{case.id} · {deleted_files} dosya · {freed} bayt"))
+        s.commit()
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}/users/{user_id}",status_code=303)
 
 
 @app.post(ADMIN_CENTER_PATH + "/settings")
