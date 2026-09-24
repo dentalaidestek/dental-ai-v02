@@ -4775,3 +4775,16 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .support-request-page{max-width:680px}.support-request-form{display:grid;gap:14px;margin-top:4px}.support-request-form label{display:grid;gap:6px;font-size:.82rem;font-weight:750;color:#334155}.support-request-form input,.support-request-form textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:11px 12px;font:inherit;color:#0f172a}.support-request-form textarea{resize:vertical;min-height:150px}.support-request-form button{justify-self:start;border:0;border-radius:10px;background:#2563eb;color:#fff;padding:10px 15px;font-weight:800}
 
 .admin-support-ticket{border-top:1px solid #1d3047;padding:10px 0;display:grid;gap:8px}.admin-support-user{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.admin-support-user a,.admin-support-user span{display:grid;text-decoration:none}.admin-support-user b{font-size:.62rem;color:#eaf2ff}.admin-support-user small,.admin-support-user time{font-size:.5rem;color:#8ea2ba}.admin-support-body{display:grid;gap:3px}.admin-support-body>b{font-size:.6rem}.admin-support-body p{margin:0!important;color:#c9d6e6!important;white-space:pre-wrap}.admin-support-body small{font-size:.5rem;color:#8ea2ba}.admin-support-ticket>form{display:flex;gap:5px}
+
+/* Admin mobile readability */
+.admin-pro,.admin-pro *{text-shadow:none}
+.admin-pro{color:#fff}
+.admin-pro-top b,.admin-pro-top>span,.admin-welcome h1,.admin-pro-card h1,.admin-pro-card h2,.admin-line b,.admin-person summary b,.admin-support-body>b{color:#fff!important}
+.admin-pro-top small,.admin-welcome small,.admin-welcome p,.admin-pro-card p,.admin-pro-card label,.admin-stack label,.admin-line small,.admin-line time,.admin-person summary small,.admin-note,.admin-empty,.admin-support-user small,.admin-support-user time,.admin-support-body p,.admin-support-body small{color:#d8e3f0!important}
+.admin-pro-menu strong{color:#aebed0!important}
+.admin-pro-menu a{color:#eaf2ff!important}
+.admin-pro-menu a:hover,.admin-pro-menu a.active{color:#fff!important}
+.admin-pro input,.admin-pro textarea,.admin-pro select{color:#111827!important;background:#fff!important;border-color:#cbd5e1!important}
+.admin-pro input::placeholder,.admin-pro textarea::placeholder{color:#64748b!important;opacity:1}
+.admin-pro-card{color:#fff}
+.admin-stack+.admin-stack{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
