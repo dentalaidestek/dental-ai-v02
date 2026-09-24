@@ -33,6 +33,13 @@ def health():
 @app.get("/viewer",response_class=HTMLResponse)
 def viewer():
     path=Path(__file__).resolve().parent/"templates"/"viewer_v3.html"; return HTMLResponse(path.read_text(encoding="utf-8"),headers={"Cache-Control":"no-store"})
+@app.get("/radiograph-viewer",response_class=HTMLResponse)
+def radiograph_viewer():
+    path=Path(__file__).resolve().parent/"templates"/"radiograph_viewer.html"; return HTMLResponse(path.read_text(encoding="utf-8"),headers={"Cache-Control":"no-store"})
+@app.get("/radiograph-viewer.js",response_class=PlainTextResponse)
+def radiograph_viewer_js():
+    path=Path(__file__).resolve().parent/"templates"/"radiograph_viewer.js"; return PlainTextResponse(path.read_text(encoding="utf-8"),media_type="application/javascript",headers={"Cache-Control":"no-store"})
+
 @app.get("/intraoral-viewer",response_class=HTMLResponse)
 def intraoral_viewer():
     path=Path(__file__).resolve().parent/"templates"/"intraoral_viewer.html"; return HTMLResponse(path.read_text(encoding="utf-8"),headers={"Cache-Control":"no-store"})
