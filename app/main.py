@@ -2132,7 +2132,27 @@ def protected_upload(request: Request, filename: str):
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
     return FileResponse(path)
 def template_user_context(request: Request):
-    return {"user": get_current_user(request)}
+    user = get_current_user(request)
+    expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
+    if user:
+        with Session(engine, expire_on_commit=False) as s:
+            meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+            profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        title = (meta.professional_title if meta else "") or ""
+        eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
+        if title in eligible_titles:
+            expert_nav["eligible"] = True
+            expert_nav["href"] = "/expert-support/profile"
+            if profile and profile.verification_status == "VERIFIED":
+                expert_nav["state"] = "VERIFIED"
+                expert_nav["label"] = "Uzman Profilim"
+            elif profile and profile.verification_status == "PENDING":
+                expert_nav["state"] = "PENDING"
+                expert_nav["label"] = "Başvurum"
+            else:
+                expert_nav["state"] = "ELIGIBLE"
+                expert_nav["label"] = "Uzman Ağına Katıl"
+    return {"user": user, "expert_nav": expert_nav}
 
 templates = Jinja2Templates(
     directory=BASE/"templates",
