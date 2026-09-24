@@ -4755,3 +4755,6 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 
 /* LIVE CONSULTATION MESSAGE TOAST */
 .dai-message-toast{position:fixed;z-index:1200;left:12px;right:12px;bottom:78px;max-width:430px;margin:auto;display:grid;gap:2px;padding:10px 12px;border:1px solid #dbeafe;border-radius:13px;background:#fff;box-shadow:0 12px 32px rgba(15,23,42,.18);text-decoration:none;transform:translateY(18px);opacity:0;pointer-events:none;transition:.2s ease}.dai-message-toast.show{transform:none;opacity:1;pointer-events:auto}.dai-message-toast b{font-size:.72rem;color:#0f172a}.dai-message-toast span{font-size:.64rem;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* EXPERT NOTIFICATION REQUIREMENT */
+.expert-notification-gate{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:0 0 9px;padding:9px 10px;border:1px solid #fed7aa;border-radius:12px;background:#fff7ed}.expert-notification-gate[hidden]{display:none}.expert-notification-gate div{display:grid;gap:2px}.expert-notification-gate strong{font-size:.68rem;color:#9a3412}.expert-notification-gate small{font-size:.57rem;line-height:1.3;color:#7c2d12}.expert-notification-gate button{flex:0 0 auto;border:0;border-radius:9px;background:#0f4c81;color:#fff;font-size:.6rem;font-weight:800;padding:7px 9px}
