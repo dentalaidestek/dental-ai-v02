@@ -78,6 +78,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
 from app.auth import (
@@ -4320,7 +4321,7 @@ def _consultation_display_status(case: ConsultationCase, user_id: int, now: date
     if case.status == "ACTIVE":
         return "ACTIVE", "Aktif"
     if case.status == "EXPERT_COMPLETED":
-        return ("ACTION_REQUIRED", "Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Kullanıcı Onayı Bekleniyor")
+        return ("ACTION_REQUIRED", "Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Hekim Onayı Bekleniyor")
     if case.status == "DISPUTE":
         return "DISPUTE", "Sorun Bildirildi"
     if case.status == "COMPLETED":
@@ -4619,6 +4620,7 @@ def expert_support_case_room(request: Request, case_id: int):
         )).first()
         other_read_at = other_state.last_read_at if other_state else None
         payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+        review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
@@ -4626,6 +4628,7 @@ def expert_support_case_room(request: Request, case_id: int):
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
+        "review": review,
         "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
@@ -4873,7 +4876,7 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu vaka mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
-        # Bekleme süresinde uzman görüşmeyi erken başlatabilir; hasta ise süre dolmadan yazamaz.
+        # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
             remaining = max(1, int((case.consultation_start_deadline - now).total_seconds()))
             if wants_json: return JSONResponse({"ok": False, "error": "Uzmanın belirttiği başlangıç süresi henüz dolmadı.", "remaining_seconds": remaining}, status_code=423)
@@ -5006,6 +5009,17 @@ def _record_message_realtime_events(session: Session, case: ConsultationCase,
             _message_realtime_payload(case, message, sender, viewer_user_id),
         ))
     return events
+
+
+def _record_case_status_realtime_events(session: Session, case: ConsultationCase) -> list[RealtimeEvent]:
+    """Persist the same case transition for both participants and all their open tabs."""
+    payload = {"case_id": case.id, "status": case.status}
+    return [
+        _record_realtime_event(
+            session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, payload
+        )
+        for viewer_user_id in {case.requester_user_id, case.expert_user_id}
+    ]
 
 
 @app.get("/sync/events")
@@ -5148,45 +5162,53 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
 @app.post("/expert-support/cases/{case_id}/review")
 def expert_support_review(request: Request, case_id: int, rating: int = Form(...), comment: str = Form("")):
     user = get_current_user(request)
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     if not user:
-        return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     if rating < 1 or rating > 5:
-        return HTMLResponse("Puan 1 ile 5 arasında olmalıdır.", status_code=400)
+        return JSONResponse({"ok": False, "error": "Puan 1 ile 5 arasında olmalıdır."}, status_code=400) if wants_json else HTMLResponse("Puan 1 ile 5 arasında olmalıdır.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or case.requester_user_id != user.id or case.status != "COMPLETED":
-            return HTMLResponse("Bu danışmanlık için değerlendirme yapılamaz.", status_code=403)
+            return JSONResponse({"ok": False, "error": "Bu danışmanlık için değerlendirme yapılamaz."}, status_code=403) if wants_json else HTMLResponse("Bu danışmanlık için değerlendirme yapılamaz.", status_code=403)
         existing = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         if existing:
-            return HTMLResponse("Bu danışmanlık daha önce değerlendirildi.", status_code=409)
+            return JSONResponse({"ok": False, "error": "Bu danışmanlık daha önce değerlendirildi."}, status_code=409) if wants_json else HTMLResponse("Bu danışmanlık daha önce değerlendirildi.", status_code=409)
         s.add(ExpertReview(case_id=case.id, reviewer_user_id=user.id, expert_user_id=case.expert_user_id, rating=rating, comment=comment.strip() or None))
         _consultation_event(s, case.id, "REVIEW_CREATED", user.id, {"rating": rating})
-        s.commit()
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            return JSONResponse({"ok": False, "error": "Bu danışmanlık daha önce değerlendirildi."}, status_code=409) if wants_json else HTMLResponse("Bu danışmanlık daha önce değerlendirildi.", status_code=409)
+    if wants_json:
+        return JSONResponse({"ok": True})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.post("/expert-support/cases/{case_id}/complete")
-def expert_support_complete(request: Request, case_id: int, action: str = Form("COMPLETE")):
+async def expert_support_complete(request: Request, case_id: int, action: str = Form("COMPLETE")):
     user = get_current_user(request)
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     if not user:
-        return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if user.id == case.requester_user_id and action == "COMPLETE":
+        if user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "REQUESTER_COMPLETED", user.id)
-        elif user.id == case.expert_user_id and action == "COMPLETE":
+        elif user.id == case.expert_user_id and case.status == "ACTIVE" and action == "COMPLETE":
             case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
-        elif user.id == case.requester_user_id and action == "CONTINUE":
+        elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "CONTINUE":
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
-        elif user.id == case.requester_user_id and action == "DISPUTE":
+        elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "DISPUTE":
             case.status = "DISPUTE"
             case.dispute_opened_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -5196,8 +5218,16 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
                 s.add(payment)
             _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
         else:
-            return HTMLResponse("Geçersiz işlem.", status_code=400)
-        s.add(case); s.commit()
+            return JSONResponse({"ok": False, "error": "Bu işlem mevcut danışmanlık durumunda uygulanamaz."}, status_code=409) if wants_json else HTMLResponse("Geçersiz işlem.", status_code=400)
+        s.add(case)
+        realtime_events = _record_case_status_realtime_events(s, case)
+        s.commit()
+        status = case.status
+    await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
+    if wants_json:
+        return JSONResponse({"ok": True, "status": status})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
