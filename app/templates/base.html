@@ -129,7 +129,72 @@ document.addEventListener("keydown", function(event) {
     }
 });
 fetch("/account/admin-notices",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{notices:[]}).then(data=>{const n=(data.notices||[])[0];if(!n)return;const box=document.createElement("div");box.className="dai-admin-notice";box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";box.querySelector("b").textContent=n.title;box.querySelector("span").textContent=n.message;box.querySelector("button").onclick=()=>{fetch("/account/admin-notices/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});box.remove();};document.body.appendChild(box);}).catch(()=>{});
-if (document.getElementById("mobileMessagesBadge")) {
+if (!window.__daiMessagesPartialNavigationStarted) {
+    window.__daiMessagesPartialNavigationStarted = true;
+    let messagesSnapshot = null, partialNavigationController = null, partialNavigationBusy = false;
+    const casePathPattern = /^\/expert-support\/cases\/\d+\/?$/;
+
+    function rememberMessagesView() {
+        if (messagesSnapshot || !document.querySelector("main .messages-chat-list")) return Boolean(messagesSnapshot);
+        const main=document.querySelector("main"), host=document.createElement("div");
+        host.id="daiMessagesSnapshotHost"; host.hidden=true; host.inert=true;
+        while(main.firstChild) host.appendChild(main.firstChild); document.body.appendChild(host);
+        const bottomNav=document.querySelector(".mobile-bottom-nav");
+        messagesSnapshot={host,title:document.title,url:location.pathname+location.search+location.hash,scrollX:scrollX,scrollY:scrollY,bottomNavHidden:bottomNav?.hidden||false};
+        return true;
+    }
+    function runPartialScripts(scripts) {
+        scripts.forEach(source=>{
+            const script=document.createElement("script");
+            for(const attr of source.attributes) script.setAttribute(attr.name,attr.value);
+            if(source.src) script.src=source.src; else script.textContent=source.textContent;
+            document.body.appendChild(script); script.remove();
+        });
+    }
+    async function openCaseWithoutReload(url,{pushHistory=true}={}) {
+        if(partialNavigationBusy||!rememberMessagesView()) return;
+        partialNavigationBusy=true;
+        partialNavigationController?.abort(); partialNavigationController=new AbortController();
+        try{
+            const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:partialNavigationController.signal,headers:{"X-Requested-With":"partial-navigation"}});
+            if(!response.ok) throw new Error("case-load-failed");
+            const doc=new DOMParser().parseFromString(await response.text(),"text/html"), incomingMain=doc.querySelector("main");
+            if(!incomingMain?.querySelector(".expert-room")) throw new Error("case-room-missing");
+            const scripts=[...incomingMain.querySelectorAll("script")]; scripts.forEach(script=>script.remove());
+            if(pushHistory) history.pushState({daiPartialCase:true},"",url); else history.replaceState({daiPartialCase:true},"",url);
+            const main=document.querySelector("main"); main.replaceChildren(...Array.from(incomingMain.childNodes,x=>document.importNode(x,true)));
+            document.title=doc.title||document.title;
+            const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=true;
+            scrollTo(0,0); runPartialScripts(scripts);
+        } catch(error) {
+            if(error.name!=="AbortError") location.assign(url);
+        } finally { partialNavigationBusy=false; }
+    }
+    function restoreMessagesView() {
+        if(!messagesSnapshot) return false;
+        partialNavigationController?.abort(); window.__daiCaseRoomCleanup?.();
+        const snapshot=messagesSnapshot; messagesSnapshot=null;
+        document.querySelector("main").replaceChildren(...snapshot.host.childNodes); snapshot.host.remove();
+        document.title=snapshot.title;
+        const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=snapshot.bottomNavHidden;
+        requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(snapshot.scrollX,snapshot.scrollY)));
+        return true;
+    }
+    document.addEventListener("click",event=>{
+        if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+        const back=event.target.closest?.('.case-room-back[href="/messages"]');
+        if(back&&messagesSnapshot){event.preventDefault();history.back();return;}
+        const link=event.target.closest?.(".messages-list .message-row-main");
+        if(!link||!document.querySelector("main .messages-chat-list")||link.target==="_blank"||link.origin!==location.origin||!casePathPattern.test(link.pathname))return;
+        event.preventDefault();openCaseWithoutReload(link.href);
+    });
+    window.addEventListener("popstate",()=>{
+        if(location.pathname==="/messages"&&messagesSnapshot){restoreMessagesView();return;}
+        if(casePathPattern.test(location.pathname)&&document.querySelector("main .messages-chat-list"))openCaseWithoutReload(location.href,{pushHistory:false});
+    });
+}
+if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectionStarted) {
+    window.__daiSyncConnectionStarted = true;
     let lastEventId = Number(sessionStorage.getItem("daiLastEventId") || 0);
     let syncSocket = null, reconnectTimer = null, pingTimer = null;
 
@@ -203,13 +268,14 @@ if (document.getElementById("mobileMessagesBadge")) {
         }
     }
     function connectSync() {
+        if(syncSocket&&(syncSocket.readyState===WebSocket.CONNECTING||syncSocket.readyState===WebSocket.OPEN))return;
         clearTimeout(reconnectTimer); clearInterval(pingTimer);
         const proto=location.protocol==="https:"?"wss:":"ws:";
-        syncSocket=new WebSocket(proto+"//"+location.host+"/ws/sync");
-        syncSocket.onopen=()=>{syncSocket.send(JSON.stringify({type:"resume",after_id:lastEventId}));pingTimer=setInterval(()=>{if(syncSocket&&syncSocket.readyState===1)syncSocket.send(JSON.stringify({type:"ping"}));},25000);};
-        syncSocket.onmessage=e=>{try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
-        syncSocket.onclose=()=>{clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
-        syncSocket.onerror=()=>{try{syncSocket.close();}catch(_){}};
+        const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
+        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"resume",after_id:lastEventId}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
+        connection.onmessage=e=>{if(syncSocket!==connection)return;try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
+        connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
+        connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
     fetch("/messages/unread-count",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{count:0}).then(d=>paintMessageBadge(d.count)).catch(()=>{});
     catchUpEvents().finally(connectSync);
