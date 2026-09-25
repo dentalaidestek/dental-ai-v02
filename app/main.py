@@ -3987,8 +3987,8 @@ async def expert_support_availability_update(request: Request):
                         title="Uzman müsait",
                         message=f"{profile.specialty} alanında bir uzman şu anda yeni vaka kabul ediyor.",
                     ))
-                watch.is_active = False
-                s.add(watch)
+                    watch.is_active = False
+                    s.add(watch)
         s.commit()
     return JSONResponse({"ok": True, "availability": availability})
 
