@@ -47,54 +47,64 @@
             </span>
             <span class="patient-details-arrow" aria-hidden="true">⌄</span>
         </summary>
-        <div class="patient-info-grid">
-            <div class="patient-info-item">
-                <span>Ad Soyad</span>
-                <strong data-patient-field="display_name">{{ patient.first_name or "" }} {{ patient.last_name or "" }}</strong>
+        <form class="patient-info-edit-form" method="post" action="/patients/{{ patient.id }}/edit">
+            <div class="patient-info-grid">
+                <label class="patient-info-item">
+                    <span>Ad</span>
+                    <input name="first_name" value="{{ patient.first_name or '' }}" required>
+                </label>
+                <label class="patient-info-item">
+                    <span>Soyad</span>
+                    <input name="last_name" value="{{ patient.last_name or '' }}" required>
+                </label>
+                <label class="patient-info-item">
+                    <span>Telefon</span>
+                    <input name="phone" value="{{ patient.phone or '' }}" pattern="05[0-9]{9}" inputmode="numeric">
+                </label>
+                <label class="patient-info-item">
+                    <span>TC Kimlik No</span>
+                    <input name="tc_kimlik_no" value="{{ patient.tc_kimlik_no or '' }}" maxlength="11" inputmode="numeric">
+                </label>
+                <label class="patient-info-item">
+                    <span>Doğum Tarihi</span>
+                    <input type="date" name="birth_date" value="{{ patient.birth_date or '' }}">
+                </label>
+                <div class="patient-info-item">
+                    <span>Yaş</span>
+                    <strong data-patient-field="age">{{ patient.age if patient.age is not none else "-" }}</strong>
+                </div>
+                <div class="patient-info-item">
+                    <span>Hasta No</span>
+                    <strong data-patient-field="anonymous_id">{{ patient.anonymous_id }}</strong>
+                </div>
+                <label class="patient-info-item patient-info-address">
+                    <span>Adres</span>
+                    <textarea name="address" rows="2">{{ patient_profile.address if patient_profile and patient_profile.address else '' }}</textarea>
+                </label>
+                <label class="patient-info-item patient-info-address">
+                    <span>Başvuru şikâyeti</span>
+                    <textarea name="chief_complaint" rows="2">{{ patient.chief_complaint or '' }}</textarea>
+                </label>
             </div>
-            <div class="patient-info-item">
-                <span>Telefon</span>
-                <strong data-patient-field="phone">{{ patient.phone or "-" }}</strong>
+            <div class="patient-info-actions">
+                <button class="patient-info-save" type="submit">Değişiklikleri Kaydet</button>
+                <button class="patient-info-delete-trigger" type="button" onclick="openPatientDeleteModal()">Hasta Kaydını Sil</button>
             </div>
-            <div class="patient-info-item">
-                <span>TC Kimlik No</span>
-                <strong data-patient-field="tc_kimlik_no">{{ patient.tc_kimlik_no or "-" }}</strong>
-            </div>
-            <div class="patient-info-item">
-                <span>Doğum Tarihi</span>
-                <strong data-patient-field="birth_date">{{ patient.birth_date or "-" }}</strong>
-            </div>
-            <div class="patient-info-item">
-                <span>Yaş</span>
-                <strong data-patient-field="age">{{ patient.age if patient.age is not none else "-" }}</strong>
-            </div>
-            <div class="patient-info-item">
-                <span>Hasta No</span>
-                <strong data-patient-field="anonymous_id">{{ patient.anonymous_id }}</strong>
-            </div>
-            <div class="patient-info-item patient-info-address">
-                <span>Adres</span>
-                <strong data-patient-field="address">{{ patient_profile.address if patient_profile and patient_profile.address else "-" }}</strong>
-            </div>
-        </div>
+        </form>
     </details>
 
-    <details class="card patient-info-card">
-        <summary><span><strong>Hasta kaydını düzenle</strong><small>Temel hasta bilgilerini güncelleyin</small></span><span class="patient-details-arrow" aria-hidden="true">⌄</span></summary>
-        <form class="patient-form" method="post" action="/patients/{{ patient.id }}/edit">
-            <div class="form-grid">
-                <label><span>Ad</span><input name="first_name" value="{{ patient.first_name or '' }}" required></label>
-                <label><span>Soyad</span><input name="last_name" value="{{ patient.last_name or '' }}" required></label>
-                <label><span>Doğum Tarihi</span><input type="date" name="birth_date" value="{{ patient.birth_date or '' }}"></label>
-                <label><span>Telefon</span><input name="phone" value="{{ patient.phone or '' }}" pattern="05[0-9]{9}" inputmode="numeric"></label>
-                <label><span>TC Kimlik No</span><input name="tc_kimlik_no" value="{{ patient.tc_kimlik_no or '' }}" maxlength="11"></label>
-                <label><span>Adres</span><textarea name="address">{{ patient_profile.address if patient_profile and patient_profile.address else '' }}</textarea></label>
-                <label style="grid-column:1/-1"><span>Başvuru şikâyeti</span><textarea name="chief_complaint">{{ patient.chief_complaint or '' }}</textarea></label>
+    <div class="patient-delete-modal" id="patientDeleteModal" aria-hidden="true" onclick="if(event.target===this) closePatientDeleteModal()">
+        <div class="patient-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="patientDeleteTitle">
+            <strong id="patientDeleteTitle">Hasta kaydı silinsin mi?</strong>
+            <p>Bu işlem geri alınamaz. Devam etmek istediğinizi ikinci kez onaylayın.</p>
+            <div class="patient-delete-actions">
+                <button type="button" class="patient-delete-cancel" onclick="closePatientDeleteModal()">Vazgeç</button>
+                <form method="post" action="/patients/{{ patient.id }}/delete">
+                    <button type="submit" class="patient-delete-confirm">Hasta Kaydını Sil</button>
+                </form>
             </div>
-            <div class="form-footer"><button class="btn save-btn" type="submit">Değişiklikleri kaydet</button></div>
-        </form>
-        <form method="post" action="/patients/{{ patient.id }}/delete" onsubmit="return confirm('Bu hasta kaydı silinecek. Devam edilsin mi?')"><button class="btn" type="submit">Hasta kaydını sil</button></form>
-    </details>
+        </div>
+    </div>
 
     <section class="card patient-section-card patient-media-section" id="clinical-media">
         <div class="patient-section-heading patient-media-heading">
@@ -545,4 +555,43 @@ document.addEventListener("keydown", function (event) {
     closePatientMediaGallery();
 });
 </script>
+
+<script>
+function openPatientDeleteModal() {
+    const modal = document.getElementById("patientDeleteModal");
+    if (!modal) return;
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+}
+function closePatientDeleteModal() {
+    const modal = document.getElementById("patientDeleteModal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+}
+document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") closePatientDeleteModal();
+});
+</script>
+<style>
+.patient-info-edit-form{padding:0;margin:0}
+.patient-info-item input,.patient-info-item textarea{width:100%;box-sizing:border-box;border:0;background:transparent;color:inherit;font:inherit;font-weight:700;padding:2px 0;outline:none;resize:vertical}
+.patient-info-item input:focus,.patient-info-item textarea:focus{box-shadow:0 1px 0 currentColor}
+.patient-info-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 0 2px;flex-wrap:wrap}
+.patient-info-save,.patient-info-delete-trigger,.patient-delete-actions button{min-height:38px;border-radius:10px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer}
+.patient-info-save{border:0;background:#2563eb;color:#fff}
+.patient-info-delete-trigger{border:1px solid #e5e7eb;background:transparent;color:#b42318}
+.patient-delete-modal{position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.42);display:none;align-items:center;justify-content:center;padding:20px}
+.patient-delete-modal.open{display:flex}
+.patient-delete-dialog{width:min(100%,390px);background:#fff;border-radius:18px;padding:20px;box-shadow:0 24px 70px rgba(15,23,42,.22)}
+.patient-delete-dialog>strong{display:block;font-size:18px}
+.patient-delete-dialog>p{margin:8px 0 18px;color:#64748b;line-height:1.45}
+.patient-delete-actions{display:flex;gap:10px;justify-content:flex-end}
+.patient-delete-actions form{margin:0}
+.patient-delete-cancel{border:1px solid #dbe2ea;background:#fff;color:#334155}
+.patient-delete-confirm{border:0;background:#b42318;color:#fff}
+@media(max-width:640px){.patient-info-actions{justify-content:stretch}.patient-info-save{flex:1}.patient-info-delete-trigger{flex:0 0 auto}.patient-delete-actions>*{flex:1}.patient-delete-actions form{display:flex}.patient-delete-confirm{width:100%}}
+</style>
 {% endblock %}
