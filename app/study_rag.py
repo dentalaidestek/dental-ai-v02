@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from app.object_storage import ensure_local as storage_ensure_local
 from typing import Optional
 
 from pypdf import PdfReader, PdfWriter
@@ -293,7 +295,7 @@ def ensure_material_index(session: Session, material) -> int:
     # === TEMP_STUDY_TRACE_MATERIAL_START_END ===
     if not material.id:
         raise StudyRAGError("Ders notu kaydı tamamlanmamış.")
-    path = Path(material.file_path)
+    path = storage_ensure_local(material.file_path)
     if not path.is_file():
         raise StudyRAGError(f"Not dosyası sunucuda bulunamadı: {material.display_name}")
 
@@ -657,7 +659,7 @@ def _material_map(materials: list) -> dict[int, object]:
 
 
 def _page_attachment(material, page_number: int | None, *, show_source: bool = False) -> dict | None:
-    path = Path(material.file_path)
+    path = storage_ensure_local(material.file_path)
     if not path.is_file():
         return None
     if material.mime_type == "application/pdf" and page_number:

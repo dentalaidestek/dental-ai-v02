@@ -82,6 +82,16 @@ from app.auth import (
     create_session_token,
     hash_session_token,
 )
+from app.object_storage import (
+    check_connection as storage_check_connection,
+    delete as storage_delete,
+    ensure_local as storage_ensure_local,
+    exists as storage_exists,
+    persist_file as storage_persist_file,
+    size as storage_size,
+    write_bytes as storage_write_bytes,
+    write_text as storage_write_text,
+)
 
 BASE = Path(__file__).resolve().parent
 
@@ -1638,9 +1648,10 @@ def profile_photo(request: Request, user_id: int):
         return HTMLResponse("Giriş gerekli.", status_code=401)
     with Session(engine, expire_on_commit=False) as s:
         target = s.get(User, user_id)
-        path = Path(target.profile_photo_path) if target and target.profile_photo_path else None
-    if not path or not path.is_file():
+        reference = target.profile_photo_path if target else None
+    if not storage_exists(reference):
         return HTMLResponse("Profil fotoğrafı bulunamadı.", status_code=404)
+    path = storage_ensure_local(reference)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
 
 
@@ -2238,7 +2249,7 @@ def protected_upload(request: Request, filename: str):
                 return HTMLResponse("Dosya bulunamadı.", status_code=404)
             if user.role != "ADMIN" and patient.owner_user_id != user.id:
                 return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
-            path = Path(asset.file_path)
+            reference = asset.file_path
         else:
             guest_asset = s.exec(
                 select(GuestImageAsset).where(GuestImageAsset.stored_filename == safe_name)
@@ -2249,7 +2260,7 @@ def protected_upload(request: Request, filename: str):
                     return HTMLResponse("Dosya bulunamadı.", status_code=404)
                 if user.role != "ADMIN" and analysis.owner_user_id != user.id:
                     return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
-                path = Path(guest_asset.file_path)
+                reference = guest_asset.file_path
             else:
                 rel = f"uploads/{safe_name}"
                 legacy_analysis = s.exec(
@@ -2264,10 +2275,11 @@ def protected_upload(request: Request, filename: str):
                     return HTMLResponse("Dosya bulunamadı.", status_code=404)
                 if user.role != "ADMIN" and patient.owner_user_id != user.id:
                     return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
-                path = UPLOAD_DIR / safe_name
+                reference = UPLOAD_DIR / safe_name
 
-    if not path.is_file():
+    if not storage_exists(reference):
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
+    path = storage_ensure_local(reference)
     return FileResponse(path)
 def template_user_context(request: Request):
     user = get_current_user(request)
@@ -2304,6 +2316,7 @@ templates = Jinja2Templates(
 
 @app.on_event("startup")
 def startup():
+    storage_check_connection()
     init_db()
 
 
@@ -2423,7 +2436,7 @@ def delete_study_course(request: Request, course_id: int):
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    local_paths: list[Path] = []
+    stored_paths: list[str] = []
     gemini_names: list[str] = []
     with Session(engine, expire_on_commit=False) as s:
         course = _owned_study_course(s, user, course_id)
@@ -2440,7 +2453,7 @@ def delete_study_course(request: Request, course_id: int):
             .where(StudyChatMessage.owner_user_id == user.id)
         ).all()
         for material in materials:
-            local_paths.append(Path(material.file_path))
+            stored_paths.append(material.file_path)
             if material.gemini_file_name:
                 gemini_names.append(material.gemini_file_name)
             s.delete(material)
@@ -2450,8 +2463,8 @@ def delete_study_course(request: Request, course_id: int):
         s.delete(course)
         s.commit()
 
-    for path in local_paths:
-        path.unlink(missing_ok=True)
+    for path in stored_paths:
+        storage_delete(path)
     for name in gemini_names:
         delete_study_ai_file(name)
     return RedirectResponse("/notes?deleted=1", status_code=303)
@@ -2558,6 +2571,7 @@ async def upload_study_materials(
                         output.write(chunk)
                 if not _study_file_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
+                storage_persist_file(destination, content_type=mime_type)
 
                 # === TEMP_STUDY_TRACE_UPLOAD_FILE_BEGIN ===
                 trace_event(
@@ -2607,7 +2621,7 @@ async def upload_study_materials(
         )
         # === TEMP_STUDY_TRACE_UPLOAD_VALUE_ERROR_END ===
         for path in saved_paths:
-            path.unlink(missing_ok=True)
+            storage_delete(path)
         return HTMLResponse(str(exc), status_code=400)
     except Exception:
         # === TEMP_STUDY_TRACE_UPLOAD_ERROR_BEGIN ===
@@ -2621,7 +2635,7 @@ async def upload_study_materials(
         )
         # === TEMP_STUDY_TRACE_UPLOAD_ERROR_END ===
         for path in saved_paths:
-            path.unlink(missing_ok=True)
+            storage_delete(path)
         raise
 
     # Index once after upload; the user does not wait for embedding work.
@@ -2641,11 +2655,12 @@ def study_material_file(request: Request, course_id: int, material_id: int):
         material = _owned_study_material(s, user, course_id, material_id)
         if not material:
             return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
-        path = Path(material.file_path)
+        reference = material.file_path
         filename = material.original_filename
         mime_type = material.mime_type
-    if not path.is_file():
+    if not storage_exists(reference):
         return HTMLResponse("Not dosyası sunucuda bulunamadı.", status_code=404)
+    path = storage_ensure_local(reference)
     return FileResponse(path, media_type=mime_type)
 
 
@@ -2660,7 +2675,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
         material = _owned_study_material(s, user, course_id, material_id)
         if not material:
             return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
-        local_path = Path(material.file_path)
+        local_path = material.file_path
         gemini_name = material.gemini_file_name
         delete_material_rag_index(
             s,
@@ -2675,7 +2690,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             s.add(course)
         s.commit()
     if local_path:
-        local_path.unlink(missing_ok=True)
+        storage_delete(local_path)
     if gemini_name:
         delete_study_ai_file(gemini_name)
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
@@ -3435,6 +3450,7 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
             photo_dir.mkdir(parents=True, exist_ok=True)
             destination = photo_dir / f"user_{user_id}.jpg"
             image.save(destination, "JPEG", quality=90, optimize=True)
+            storage_persist_file(destination, content_type="image/jpeg")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("Geçerli bir profil fotoğrafı yükleyin.") from exc
     return str(destination)
@@ -3656,9 +3672,9 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
         message = s.get(ConsultationMessage, message_id)
         if not case or case.status != "DISPUTE" or not case.dispute_opened_at or not message or message.case_id != case.id or not message.media_path:
             return HTMLResponse("Aktif itiraz kapsamında erişilebilir medya bulunamadı.", status_code=403)
-        path = Path(message.media_path)
-        if not path.exists() or not path.is_file():
+        if not storage_exists(message.media_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        path = storage_ensure_local(message.media_path)
         s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="VIEW_MEDIA"))
         _consultation_event(s, case.id, "DISPUTE_ADMIN_MEDIA_ACCESSED", user.id, {"message_id": message.id})
         s.commit()
@@ -3701,9 +3717,9 @@ def admin_expert_verification_update(
             return HTMLResponse("Profil bulunamadı.", status_code=404)
         expert = s.get(User, profile.user_id)
         if decision == "APPROVE":
-            if not profile.credential_document_path or not Path(profile.credential_document_path).is_file():
+            if not storage_exists(profile.credential_document_path):
                 return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.", status_code=409)
-            if not expert or not expert.profile_photo_path or not Path(expert.profile_photo_path).is_file():
+            if not expert or not storage_exists(expert.profile_photo_path):
                 return HTMLResponse("Onay için profil fotoğrafı gereklidir.", status_code=409)
             if not profile.phone:
                 return HTMLResponse("Onay için telefon numarası gereklidir.", status_code=409)
@@ -3738,11 +3754,12 @@ def admin_expert_credential_document(request: Request, profile_id: int):
         profile = s.get(ExpertProfile, profile_id)
         if not profile or not profile.credential_document_path:
             return HTMLResponse("Belge bulunamadı.", status_code=404)
-        path = Path(profile.credential_document_path)
-        filename = profile.credential_document_name or path.name
+        reference = profile.credential_document_path
+        filename = profile.credential_document_name or Path(reference).name
         media_type = profile.credential_document_mime or "application/octet-stream"
-    if not path.is_file():
+    if not storage_exists(reference):
         return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
+    path = storage_ensure_local(reference)
     response = FileResponse(path, media_type=media_type)
     response.headers["Content-Disposition"] = f'inline; filename="{filename.replace(chr(34), "")}"'
     return response
@@ -3935,7 +3952,7 @@ async def expert_support_profile_save(
             document_dir = UPLOAD_DIR / "expert_credentials" / f"user_{user.id}"
             document_dir.mkdir(parents=True, exist_ok=True)
             destination = document_dir / f"credential_{uuid.uuid4().hex}{suffix}"
-            destination.write_bytes(document_bytes)
+            storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
             profile.credential_document_path = str(destination)
             profile.credential_document_name = Path(credential_document.filename).name[:240]
             profile.credential_document_mime = allowed[suffix]
@@ -4418,9 +4435,9 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
         media = s.get(PatientMedia, link.patient_media_id)
         if not media:
             return HTMLResponse("Görsel bulunamadı.", status_code=404)
-        path = Path(media.file_path)
-        if not path.exists() or not path.is_file():
+        if not storage_exists(media.file_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        path = storage_ensure_local(media.file_path)
         return FileResponse(path)
 
 
@@ -4512,7 +4529,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         stored = f"{secrets.token_hex(16)}{suffix}"
         path = case_dir / stored
         try:
-            path.write_bytes(raw)
+            storage_write_bytes(path, raw, content_type=file.content_type)
         except OSError:
             return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya yüklenemedi. Lütfen tekrar deneyin.')}", status_code=303)
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
@@ -4532,9 +4549,9 @@ def expert_support_message_media(request: Request, case_id: int, message_id: int
         msg = s.get(ConsultationMessage, message_id)
         if not case or not msg or msg.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or not msg.media_path:
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
-        path = Path(msg.media_path)
-        if not path.exists() or not path.is_file():
+        if not storage_exists(msg.media_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        path = storage_ensure_local(msg.media_path)
         return FileResponse(path)
 
 
@@ -5461,6 +5478,7 @@ async def upload_patient_media(
 
                 if not _patient_media_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
+                storage_persist_file(destination)
 
                 s.add(PatientMedia(
                     patient_id=patient_id,
@@ -5479,11 +5497,11 @@ async def upload_patient_media(
             s.commit()
     except ValueError as exc:
         for path in saved_paths:
-            path.unlink(missing_ok=True)
+            storage_delete(path)
         return HTMLResponse(str(exc), status_code=400)
     except Exception:
         for path in saved_paths:
-            path.unlink(missing_ok=True)
+            storage_delete(path)
         raise
 
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
@@ -5504,10 +5522,11 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
         if user.role != "ADMIN" and media.owner_user_id != user.id:
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
-        path = Path(media.file_path)
+        reference = media.file_path
 
-    if not path.is_file():
+    if not storage_exists(reference):
         return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+    path = storage_ensure_local(reference)
     return FileResponse(path)
 
 
@@ -5527,12 +5546,12 @@ def delete_patient_media(request: Request, patient_id: int, media_id: int):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
         if user.role != "ADMIN" and media.owner_user_id != user.id:
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
-        file_path = Path(media.file_path)
+        file_path = media.file_path
         s.delete(media)
         s.commit()
 
     if file_path:
-        file_path.unlink(missing_ok=True)
+        storage_delete(file_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
 
@@ -5542,7 +5561,7 @@ def delete_all_patient_media(request: Request, patient_id: int):
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    file_paths: list[Path] = []
+    file_paths: list[str] = []
     with Session(engine, expire_on_commit=False) as s:
         patient = s.get(Patient, patient_id)
         if not patient:
@@ -5558,12 +5577,12 @@ def delete_all_patient_media(request: Request, patient_id: int):
             )
         ).all()
         for media in media_items:
-            file_paths.append(Path(media.file_path))
+            file_paths.append(media.file_path)
             s.delete(media)
         s.commit()
 
     for file_path in file_paths:
-        file_path.unlink(missing_ok=True)
+        storage_delete(file_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
 
@@ -5745,7 +5764,7 @@ def _get_specialty_rag_context(
         clinical_notes=analysis.clinical_notes or "",
         chief_complaint=patient.chief_complaint or "",
         extra_text=extra_text or "",
-        image_paths=[asset.file_path for asset in assets if asset.file_path],
+        image_paths=[str(storage_ensure_local(asset.file_path)) for asset in assets if asset.file_path],
         stored_image_types=image_types,
         cache_key=f"patient:{patient.id}:{analysis.id}",
         top_k=5,
@@ -5861,7 +5880,7 @@ def _get_guest_specialty_rag_context(
         clinical_notes=analysis.clinical_notes or "",
         chief_complaint="",
         extra_text=extra_text or "",
-        image_paths=[asset.file_path for asset in assets if asset.file_path],
+        image_paths=[str(storage_ensure_local(asset.file_path)) for asset in assets if asset.file_path],
         stored_image_types=image_types,
         cache_key=f"guest:{analysis.id}",
         top_k=5,
@@ -5973,7 +5992,7 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
 
     if missing:
         fresh = structured_vision_payload(
-            [asset.file_path for asset in missing],
+            [str(storage_ensure_local(asset.file_path)) for asset in missing],
             modality_hint=modality_hint,
             image_types=[asset.image_type or "OTHER" for asset in missing],
         )
@@ -6089,7 +6108,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
         ).all()
 
         image_paths = [
-            asset.file_path
+            str(storage_ensure_local(asset.file_path))
             for asset in assets
             if asset.file_path
         ]
@@ -6187,7 +6206,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
 
         result_file = result_dir / f"guest_{analysis_id}.json"
 
-        result_file.write_text(
+        storage_write_text(result_file,
             json.dumps(
                 {
                     "ai_result": ai_result,
@@ -6253,7 +6272,7 @@ def _run_preliminary_ai(analysis_id: int):
         ).all()
 
         image_paths = [
-            asset.file_path
+            str(storage_ensure_local(asset.file_path))
             for asset in assets
             if asset.file_path
         ]
@@ -6450,7 +6469,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
 
         result_file = result_dir / f"{analysis_id}.json"
 
-        result_file.write_text(
+        storage_write_text(result_file,
             json.dumps(
                 {
                     "ai_result": ai_result,
@@ -6529,6 +6548,8 @@ async def create_guest_analysis(
             with destination.open("wb") as buffer:
                 shutil.copyfileobj(image.file, buffer)
 
+            storage_persist_file(destination)
+
             asset = GuestImageAsset(
                 guest_analysis_id=analysis.id,
                 original_filename=original_name,
@@ -6590,7 +6611,7 @@ async def create_analysis(
                 return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
             if user.role != "ADMIN" and media.owner_user_id != user.id:
                 return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
-            media_path = Path(media.file_path)
+            media_path = storage_ensure_local(media.file_path) if storage_exists(media.file_path) else Path(media.file_path)
             if media_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not media_path.is_file():
                 return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
             selected_media_items.append((media, media_path))
@@ -6618,6 +6639,7 @@ async def create_analysis(
             )
             destination = UPLOAD_DIR / stored_name
             shutil.copy2(selected_media_path, destination)
+            storage_persist_file(destination)
             s.add(ImageAsset(
                 analysis_id=analysis.id,
                 original_filename=selected_media.original_filename,
@@ -6645,6 +6667,8 @@ async def create_analysis(
 
             with destination.open("wb") as buffer:
                 shutil.copyfileobj(image.file, buffer)
+
+            storage_persist_file(destination)
 
             asset = ImageAsset(
                 analysis_id=analysis.id,
@@ -6802,13 +6826,7 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
 
 def _admin_user_storage_summary(session: Session, user_id: int):
     def size(path_value):
-        if not path_value:
-            return 0
-        try:
-            p = Path(path_value)
-            return p.stat().st_size if p.is_file() else 0
-        except OSError:
-            return 0
+        return storage_size(path_value)
     patient_media = session.exec(select(PatientMedia).where(PatientMedia.owner_user_id == user_id)).all()
     chat_media = session.exec(select(ConsultationMessage).where(ConsultationMessage.sender_user_id == user_id)).all()
     study_materials = session.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id == user_id)).all()
@@ -6950,8 +6968,8 @@ def admin_center_verify(request: Request, profile_id: int, decision: str = Form(
         if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
         if decision=="APPROVE":
             expert=s.get(User,profile.user_id)
-            if not profile.credential_document_path or not Path(profile.credential_document_path).is_file(): return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.",status_code=409)
-            if not expert or not expert.profile_photo_path or not Path(expert.profile_photo_path).is_file(): return HTMLResponse("Onay için profil fotoğrafı gereklidir.",status_code=409)
+            if not storage_exists(profile.credential_document_path): return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.",status_code=409)
+            if not expert or not storage_exists(expert.profile_photo_path): return HTMLResponse("Onay için profil fotoğrafı gereklidir.",status_code=409)
             if not profile.phone: return HTMLResponse("Onay için telefon numarası gereklidir.",status_code=409)
             profile.application_status="APPROVED"
             profile.application_reviewed_at=_utcnow_naive()
@@ -7024,7 +7042,8 @@ def guest_analysis_result(request: Request, analysis_id: int):
 
     ai_text = ""
 
-    if result_file.exists():
+    if storage_exists(result_file):
+        result_file = storage_ensure_local(result_file)
         try:
             saved = json.loads(
                 result_file.read_text(
@@ -7158,7 +7177,8 @@ def viewer_result(request: Request, analysis_id: int):
         if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         status=analysis.status
     p=Path(f"uploads/ai_results/{analysis_id}.json")
-    if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
+    if status!="AI_ANALYZED" or not storage_exists(p):return JSONResponse({"ok":True,"status":status},status_code=202)
+    p = storage_ensure_local(p)
     try:
         result=json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})
         if isinstance(result,dict) and result.get("status") in {"AI_ERROR","AI_INVALID"}:
@@ -7176,7 +7196,8 @@ def guest_viewer_result(request: Request, analysis_id: int):
         if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         status=analysis.status
     p=Path(f"uploads/ai_results/guest_{analysis_id}.json")
-    if status!="AI_ANALYZED" or not p.exists():return JSONResponse({"ok":True,"status":status},status_code=202)
+    if status!="AI_ANALYZED" or not storage_exists(p):return JSONResponse({"ok":True,"status":status},status_code=202)
+    p = storage_ensure_local(p)
     try:
         result=json.loads(p.read_text(encoding="utf-8")).get("ai_result",{})
         if isinstance(result,dict) and result.get("status") in {"AI_ERROR","AI_INVALID"}:
@@ -7198,9 +7219,9 @@ def analysis_asset(request: Request, analysis_id: int, asset_id: int):
         if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
             return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
         asset = s.get(ImageAsset, asset_id)
-        if not asset or asset.analysis_id != analysis_id or not asset.file_path or not Path(asset.file_path).is_file():
+        if not asset or asset.analysis_id != analysis_id or not storage_exists(asset.file_path):
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
-        path = Path(asset.file_path)
+        path = storage_ensure_local(asset.file_path)
     media_type = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
 
@@ -7225,8 +7246,9 @@ def analysis_asset_vision(request: Request, analysis_id: int, asset_id: int):
             # PANORAMIC/BITEWING/PERIAPICAL findings are not left permanently blank.
             file_path = asset.file_path
             image_type = asset.image_type or "OTHER"
-            if not file_path or not Path(file_path).is_file():
+            if not storage_exists(file_path):
                 return JSONResponse({"ok": False, "status": "VISION_FILE_MISSING"}, status_code=404)
+            file_path = str(storage_ensure_local(file_path))
             try:
                 fresh = structured_vision_payload([file_path], image_types=[image_type])
                 images = fresh.get("images") or []
@@ -7279,9 +7301,9 @@ def guest_analysis_asset(request: Request, analysis_id: int, asset_id: int):
         asset = s.get(GuestImageAsset, asset_id)
         if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
             return HTMLResponse("Analiz bulunamadı.", status_code=404)
-        if not asset or asset.guest_analysis_id != analysis_id or not asset.file_path or not Path(asset.file_path).is_file():
+        if not asset or asset.guest_analysis_id != analysis_id or not storage_exists(asset.file_path):
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
-        path = Path(asset.file_path)
+        path = storage_ensure_local(asset.file_path)
     media_type={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
 
@@ -7304,8 +7326,9 @@ def guest_analysis_asset_vision(request: Request, analysis_id: int, asset_id: in
             # leaving a valid upload permanently stuck at VISION_PENDING.
             file_path = asset.file_path
             image_type = asset.image_type or "OTHER"
-            if not file_path or not Path(file_path).is_file():
+            if not storage_exists(file_path):
                 return JSONResponse({"ok": False, "status": "VISION_FILE_MISSING"}, status_code=404)
+            file_path = str(storage_ensure_local(file_path))
             try:
                 fresh = structured_vision_payload(
                     [file_path],
@@ -7367,9 +7390,9 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
         asset = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id).order_by(ImageAsset.id.asc())).first()
-        if not asset or not asset.file_path or not Path(asset.file_path).is_file():
+        if not asset or not storage_exists(asset.file_path):
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
-        path = Path(asset.file_path)
+        path = storage_ensure_local(asset.file_path)
     media_type = {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
@@ -7473,7 +7496,8 @@ def analysis_result(request: Request, analysis_id: int):
 
     ai_text = ""
 
-    if result_file.exists():
+    if storage_exists(result_file):
+        result_file = storage_ensure_local(result_file)
 
         try:
             saved = json.loads(
@@ -7575,7 +7599,7 @@ async def guest_final_analysis(
         ).all()
 
         image_paths = [
-            asset.file_path
+            str(storage_ensure_local(asset.file_path))
             for asset in assets
             if asset.file_path
         ]
@@ -7690,7 +7714,7 @@ async def guest_final_analysis(
             f"guest_{analysis_id}.json"
         )
 
-        result_file.write_text(
+        storage_write_text(result_file,
             json.dumps(
                 {
                     "ai_result": ai_result,
@@ -7796,7 +7820,7 @@ async def final_analysis(
         ).all()
 
         image_paths = [
-            asset.file_path
+            str(storage_ensure_local(asset.file_path))
             for asset in assets
             if asset.file_path
         ]
@@ -7954,7 +7978,7 @@ için en ilgili kanıtları bul.
         f"{analysis_id}.json"
     )
 
-    result_file.write_text(
+    storage_write_text(result_file,
         json.dumps(
             {
                 "ai_result": ai_result,
