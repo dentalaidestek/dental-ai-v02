@@ -1156,6 +1156,7 @@ def init_db():
                 if "vision_snapshot_json" not in cols:
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
         if dialect == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone VARCHAR',
@@ -1166,6 +1167,9 @@ def init_db():
             ):
                 conn.exec_driver_sql(statement)
         elif dialect == "sqlite":
+            consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
+            if "expert_proposal_note" not in consultation_cols:
+                conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
             user_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
             if "profile_photo_path" not in user_cols:
                 conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN profile_photo_path VARCHAR')
