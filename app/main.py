@@ -4647,25 +4647,28 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
 
 @app.post("/expert-support/cases/{case_id}/media-message")
 async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...)):
+    wants_json = request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", "")
+    def upload_error(message: str, status_code: int = 400):
+        return JSONResponse({"ok": False, "error": message}, status_code=status_code) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus(message)}", status_code=303)
     user = get_current_user(request)
     if not user:
-        return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
-            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Bu vakaya dosya gönderilemez.')}", status_code=303)
+            return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
-            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Uzmanın belirttiği başlangıç süresi henüz dolmadı.')}", status_code=303)
+            return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
         if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
         raw = await file.read()
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
-            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya boş veya 25 MB sınırını aşıyor.')}", status_code=303)
+            return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
         suffix = Path(file.filename or "").suffix.lower()
         allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
         if suffix not in allowed:
-            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Desteklenmeyen dosya türü.')}", status_code=303)
+            return upload_error("Desteklenmeyen dosya türü.")
         case_dir = UPLOAD_DIR / "consultations" / str(case.id)
         case_dir.mkdir(parents=True, exist_ok=True)
         stored = f"{secrets.token_hex(16)}{suffix}"
@@ -4673,7 +4676,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         try:
             storage_write_bytes(path, raw, content_type=file.content_type)
         except OSError:
-            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya yüklenemedi. Lütfen tekrar deneyin.')}", status_code=303)
+            return upload_error("Dosya yüklenemedi. Lütfen tekrar deneyin.")
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path))
         s.add(message)
@@ -4681,7 +4684,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         s.commit(); s.refresh(message)
         payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
-    return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+    return JSONResponse({"ok": True, "message": payload["message"]}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.get("/expert-support/cases/{case_id}/message-media/{message_id}")
