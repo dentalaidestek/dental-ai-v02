@@ -10,7 +10,7 @@
 </nav>
 <div class="messages-list">
 {% for row in rows %}
-<article class="message-row {% if row.unread %}unread{% endif %}" data-unread="{{ 1 if row.unread else 0 }}" data-status="{{ row.status_key }}" data-search="{{ ((row.other.display_name if row.other else '') ~ ' ' ~ row.case.specialty ~ ' ' ~ (row.last_message.content if row.last_message and row.last_message.content else row.case.question))|lower|e }}">
+<article class="message-row {% if row.unread %}unread{% endif %}" data-case-id="{{ row.case.id }}" data-unread="{{ 1 if row.unread else 0 }}" data-status="{{ row.status_key }}" data-search="{{ ((row.other.display_name if row.other else '') ~ ' ' ~ row.case.specialty ~ ' ' ~ (row.last_message.content if row.last_message and row.last_message.content else row.case.question))|lower|e }}">
 <a class="message-row-main" href="/expert-support/cases/{{ row.case.id }}">
 <div class="message-avatar">{% if row.other and row.other.profile_photo_path %}<img src="/profile-photo/{{ row.other.id }}" alt="">{% else %}{{ ((row.other.display_name if row.other else 'U') or 'U')[:1] }}{% endif %}{% if row.status_key in ['ACTIVE','NEW_REQUEST','ACTION_REQUIRED'] %}<i aria-hidden="true"></i>{% endif %}</div>
 <div class="message-copy"><div class="message-title"><strong>{{ row.other.display_name if row.other else 'Kullanıcı' }}</strong><span class="message-status status-{{ row.status_key|lower }}">{{ row.status_label }}</span></div>
@@ -35,23 +35,40 @@ function applyMessageFilters(){const q=(messageSearch?.value||"").trim().toLocal
 filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();}));
 if(messageSearch)messageSearch.addEventListener("input",applyMessageFilters);
 let messagesRefreshTimer=null;
-function refreshMessagesList(){
+function placeRowByPriority(row){
+  const list=document.querySelector(".messages-list");if(!list||!row)return;
+  const isNew=row.dataset.status==="NEW_REQUEST";
+  if(isNew){list.prepend(row);return;}
+  const newRequests=[...list.querySelectorAll('.message-row[data-status="NEW_REQUEST"]')].filter(x=>x!==row);
+  if(newRequests.length)newRequests[newRequests.length-1].after(row);else list.prepend(row);
+}
+function applyIncomingMessage(data){
+  const row=document.querySelector('.message-row[data-case-id="'+Number(data.case_id||0)+'"]');
+  if(!row){refreshMessagesList(true);return;}
+  const preview=row.querySelector(".message-preview"),time=row.querySelector(".message-side time");
+  if(preview)preview.textContent=data.preview||"Yeni mesaj";
+  if(time&&data.created_at){const d=new Date(data.created_at+"Z");time.textContent=d.toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});}
+  const current=Number(row.dataset.unread||0)+1;row.dataset.unread=String(current);row.classList.add("unread");
+  let badge=row.querySelector(".message-unread");if(!badge){badge=document.createElement("b");badge.className="message-unread";row.querySelector(".message-side")?.appendChild(badge);}if(badge)badge.textContent=String(current);
+  const search=(row.dataset.search||"")+" "+(data.preview||"");row.dataset.search=search.toLocaleLowerCase("tr");
+  placeRowByPriority(row);applyMessageFilters();
+}
+function refreshMessagesList(immediate=false){
   clearTimeout(messagesRefreshTimer);
-  messagesRefreshTimer=setTimeout(async()=>{
-    try{
-      const res=await fetch(location.pathname+location.search,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"fetch"}});
-      if(!res.ok)return;
-      const doc=new DOMParser().parseFromString(await res.text(),"text/html");
-      const next=doc.querySelector(".messages-list"),current=document.querySelector(".messages-list");
-      if(next&&current){current.replaceWith(next);tickExpertCountdowns();applyMessageFilters();}
-    }catch(_){}
-  },80);
+  const run=async()=>{try{
+    const res=await fetch("/messages",{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"fetch"}});
+    if(!res.ok)return;const doc=new DOMParser().parseFromString(await res.text(),"text/html");
+    const next=doc.querySelector(".messages-list"),current=document.querySelector(".messages-list");
+    if(next&&current){current.replaceWith(next);tickExpertCountdowns();applyMessageFilters();}
+  }catch(_){}};
+  if(immediate)run();else messagesRefreshTimer=setTimeout(run,80);
 }
 window.addEventListener("dai:sync-event",e=>{
-  const evt=e.detail||{};
-  if(evt.event_type==="MESSAGE_CREATED"||evt.event_type==="CASE_CREATED"||evt.event_type==="CASE_STATUS_UPDATED") refreshMessagesList();
+  const evt=e.detail||{},data=evt.payload||{};
+  if(evt.event_type==="MESSAGE_CREATED")applyIncomingMessage(data);
+  else if(evt.event_type==="CASE_CREATED"||evt.event_type==="CASE_STATUS_UPDATED")refreshMessagesList(true);
 });
-window.addEventListener("dai:case-created",refreshMessagesList);
-window.addEventListener("dai:case-status-updated",refreshMessagesList);
+window.addEventListener("dai:case-created",()=>refreshMessagesList(true));
+window.addEventListener("dai:case-status-updated",()=>refreshMessagesList(true));
 </script>
 {% endblock %}
