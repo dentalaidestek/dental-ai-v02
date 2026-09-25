@@ -520,6 +520,17 @@ class ConsultationEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class RealtimeEvent(SQLModel, table=True):
+    """Per-user durable event log used by web/mobile realtime synchronization."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    event_type: str = Field(index=True)
+    entity_type: Optional[str] = Field(default=None, index=True)
+    entity_id: Optional[str] = Field(default=None, index=True)
+    payload_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class ClinicalRecord(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     clinical_id: str = Field(index=True)
@@ -4842,6 +4853,100 @@ def expert_support_messages_live(request: Request, case_id: int, after_id: int =
         if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
         rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id)).all()
         return {"ok":True,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+
+class UserRealtimeSocketHub:
+    """Authenticated per-user realtime channel backed by a durable event log."""
+    def __init__(self):
+        self.users: dict[int, set[WebSocket]] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.users.setdefault(user_id, set()).add(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket):
+        sockets = self.users.get(user_id)
+        if not sockets:
+            return
+        sockets.discard(websocket)
+        if not sockets:
+            self.users.pop(user_id, None)
+
+    async def send(self, user_id: int, payload: dict):
+        stale = []
+        for socket in list(self.users.get(user_id, set())):
+            try:
+                await socket.send_json(payload)
+            except Exception:
+                stale.append(socket)
+        for socket in stale:
+            self.disconnect(user_id, socket)
+
+
+user_realtime_socket_hub = UserRealtimeSocketHub()
+
+
+def _realtime_event_payload(event: RealtimeEvent) -> dict:
+    try:
+        data = json.loads(event.payload_json) if event.payload_json else {}
+    except Exception:
+        data = {}
+    return {"type":"event","event_id":event.id,"event_type":event.event_type,
+            "entity_type":event.entity_type,"entity_id":event.entity_id,
+            "payload":data,"created_at":event.created_at.isoformat()}
+
+
+def _record_realtime_event(session: Session, user_id: int, event_type: str,
+                           entity_type: Optional[str] = None, entity_id: Optional[object] = None,
+                           payload: Optional[dict] = None) -> RealtimeEvent:
+    event = RealtimeEvent(user_id=user_id,event_type=event_type,entity_type=entity_type,
+                          entity_id=str(entity_id) if entity_id is not None else None,
+                          payload_json=json.dumps(payload or {},ensure_ascii=False,default=str))
+    session.add(event)
+    session.flush()
+    return event
+
+
+@app.get("/sync/events")
+def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+    after_id=max(0,int(after_id or 0)); limit=min(max(int(limit or 200),1),500)
+    with Session(engine,expire_on_commit=False) as s:
+        events=s.exec(select(RealtimeEvent).where(RealtimeEvent.user_id==user.id,RealtimeEvent.id>after_id)
+                      .order_by(RealtimeEvent.id.asc()).limit(limit)).all()
+    return {"ok":True,"events":[_realtime_event_payload(e) for e in events],
+            "last_event_id":events[-1].id if events else after_id,"has_more":len(events)==limit}
+
+
+@app.websocket("/ws/sync")
+async def realtime_sync_socket(websocket: WebSocket):
+    user=get_current_user(websocket)
+    if not user:
+        await websocket.close(code=4401); return
+    await user_realtime_socket_hub.connect(user.id,websocket)
+    try:
+        await websocket.send_json({"type":"ready","user_id":user.id})
+        while True:
+            data=await websocket.receive_json(); kind=str(data.get("type") or "")
+            if kind=="ping":
+                await websocket.send_json({"type":"pong"})
+            elif kind=="resume":
+                try: after_id=max(0,int(data.get("after_id") or 0))
+                except (TypeError,ValueError): after_id=0
+                with Session(engine,expire_on_commit=False) as s:
+                    events=s.exec(select(RealtimeEvent).where(RealtimeEvent.user_id==user.id,RealtimeEvent.id>after_id)
+                                  .order_by(RealtimeEvent.id.asc()).limit(500)).all()
+                for event in events: await websocket.send_json(_realtime_event_payload(event))
+                await websocket.send_json({"type":"resume_complete","last_event_id":events[-1].id if events else after_id,
+                                           "has_more":len(events)==500})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        user_realtime_socket_hub.disconnect(user.id,websocket)
+
 
 class ConsultationSocketHub:
     def __init__(self):
