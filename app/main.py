@@ -2414,22 +2414,6 @@ templates = Jinja2Templates(
 def startup():
     storage_check_connection()
     init_db()
-    with Session(engine, expire_on_commit=False) as session:
-        for account in session.exec(select(User).order_by(User.id)).all():
-            meta = session.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == account.id)).first()
-            logger.warning(
-                "EXPERT_IDENTITY_AUDIT user_id=%s username=%s display_name=%s role=%s active=%s has_email=%s professional_title=%s",
-                account.id, account.username, account.display_name, account.role,
-                account.is_active, bool(account.email), meta.professional_title if meta else None,
-            )
-        for profile in session.exec(select(ExpertProfile).order_by(ExpertProfile.id)).all():
-            linked = session.get(User, profile.user_id)
-            logger.warning(
-                "EXPERT_IDENTITY_AUDIT profile_id=%s profile_user_id=%s linked_username=%s linked_role=%s status=%s/%s availability=%s",
-                profile.id, profile.user_id, linked.username if linked else None,
-                linked.role if linked else None, profile.application_status,
-                profile.verification_status, profile.availability,
-            )
 
 
 @app.get("/notes", response_class=HTMLResponse)
@@ -3930,6 +3914,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
     with Session(engine, expire_on_commit=False) as s:
         _expire_pending_expert_requests(s)
         query = select(ExpertProfile).where(
+            ExpertProfile.user_id != user.id,
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
             ExpertProfile.specialty_verified == True,
@@ -4189,6 +4174,8 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    if expert_user_id == user.id:
+        return HTMLResponse("Kendi uzman profilinize vaka gönderemezsiniz.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
