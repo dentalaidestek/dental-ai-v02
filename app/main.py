@@ -4765,6 +4765,7 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
 
 @app.post("/expert-support/cases/{case_id}/message")
 def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
+    wants_json = "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4779,7 +4780,17 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu vaka mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
+        # Bekleme süresinde uzman görüşmeyi erken başlatabilir; hasta ise süre dolmadan yazamaz.
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            remaining = max(1, int((case.consultation_start_deadline - now).total_seconds()))
+            if wants_json: return JSONResponse({"ok": False, "error": "Uzmanın belirttiği başlangıç süresi henüz dolmadı.", "remaining_seconds": remaining}, status_code=423)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Uzmanın belirttiği başlangıç süresi henüz dolmadı.')}", status_code=303)
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
+            case.status = "ACTIVE"
+            _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id)
+            s.add(case)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu kullanıcıyla mesajlaşma engellenmiş.')}", status_code=303)
@@ -4791,7 +4802,8 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             replied = s.get(ConsultationMessage, reply_to_message_id)
             if not replied or replied.case_id != case.id:
                 reply_to_message_id = None
-        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id))
+        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id)
+        s.add(message)
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -4800,7 +4812,22 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
         s.commit()
+        s.refresh(message)
+        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
+    if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+@app.get("/expert-support/cases/{case_id}/messages-live")
+def expert_support_messages_live(request: Request, case_id: int, after_id: int = 0):
+    user = get_current_user(request)
+    if not user: return JSONResponse({"ok": False}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}: return JSONResponse({"ok": False}, status_code=403)
+        rows = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id, ConsultationMessage.id > after_id).order_by(ConsultationMessage.id)).all()
+        state = _consultation_inbox_state(s, case.id, user.id); state.last_read_at = _utcnow_naive(); s.add(state); s.commit()
+        return {"ok": True, "messages": [{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows], "status":case.status, "start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
 
 
 @app.post("/expert-support/cases/{case_id}/review")
