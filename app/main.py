@@ -4679,7 +4679,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         s.add(message)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
         s.commit(); s.refresh(message)
-        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -4920,7 +4920,7 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     if case.status=="WAITING_START": case.status="ACTIVE"
                     _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
                 _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
-                payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+                payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
             await consultation_socket_hub.broadcast(case_id,payload)
     except WebSocketDisconnect:
         consultation_socket_hub.disconnect(case_id,websocket)
