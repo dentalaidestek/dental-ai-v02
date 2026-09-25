@@ -4879,3 +4879,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .expert-patient-pin strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .expert-patient-pin span,.expert-patient-pin small{font-size:11px;color:#64748b}
 @media(max-width:700px){.expert-patient-pin{top:4px}.expert-room-head>span{display:none}.case-room-menu{margin-left:0}}
+
+/* Consultation chat mobile scroll hardening */
+.expert-room .expert-chat{display:flex;flex-direction:column;overflow-y:scroll!important;-webkit-overflow-scrolling:touch;touch-action:pan-y;min-height:0;scrollbar-gutter:stable}
+.expert-room .expert-bubble{flex:0 0 auto}
+@media(max-width:700px){.expert-room .expert-chat{height:clamp(300px,52dvh,560px);max-height:calc(100dvh - 250px);overflow-y:scroll!important}.expert-room .expert-compose-stack{flex:0 0 auto}}
