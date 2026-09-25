@@ -4333,7 +4333,7 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
                    "status_key": status_key, "status_label": status_label, "other": other}
             if filter == "unread" and unread == 0:
                 continue
-            if filter == "waiting" and status_key not in {"WAITING", "ACTION_REQUIRED", "NEW_REQUEST", "ACTIVE"}:
+            if filter == "waiting" and status_key not in {"WAITING", "ACTION_REQUIRED", "NEW_REQUEST"}:
                 continue
             if filter == "missed" and status_key not in {"MISSED", "DELAYED"}:
                 continue
