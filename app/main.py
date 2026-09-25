@@ -4,6 +4,8 @@ import html
 import re
 import uuid
 import secrets
+import hashlib
+import hmac
 import base64
 import binascii
 import io
@@ -180,6 +182,16 @@ class AdminAuditLog(SQLModel, table=True):
     action: str = Field(index=True)
     target_user_id: Optional[int] = Field(default=None, index=True)
     detail: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class DeletedAccountEmail(SQLModel, table=True):
+    """Permanent registration block for an administratively deleted account."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email_fingerprint: str = Field(index=True, unique=True)
+    deleted_user_id: int = Field(index=True, unique=True)
+    deleted_by_admin_id: int = Field(index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -713,6 +725,42 @@ def _normalize_patient_phone(value: Optional[str]) -> str:
     elif len(digits) == 10 and digits.startswith("5"):
         digits = "0" + digits
     return digits
+
+
+def _canonical_registration_email(value: str) -> str:
+    """Normalize mailbox aliases for duplicate and deleted-account checks."""
+
+    email = (value or "").strip().casefold()
+    local, separator, domain = email.rpartition("@")
+    if not separator or not local or not domain:
+        return email
+    if domain in {"gmail.com", "googlemail.com"}:
+        local = local.split("+", 1)[0].replace(".", "")
+        domain = "gmail.com"
+    return f"{local}@{domain}"
+
+
+def _deleted_email_fingerprint(value: str) -> str:
+    secret = (
+        os.getenv("ACCOUNT_BLOCKLIST_SECRET")
+        or os.getenv("ADMIN_BOOTSTRAP_TOKEN")
+        or "dental-ai-local-blocklist-key"
+    )
+    canonical = _canonical_registration_email(value)
+    return hmac.new(
+        secret.encode("utf-8"),
+        canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _email_is_permanently_blocked(session: Session, email: str) -> bool:
+    fingerprint = _deleted_email_fingerprint(email)
+    return session.exec(
+        select(DeletedAccountEmail).where(
+            DeletedAccountEmail.email_fingerprint == fingerprint
+        )
+    ).first() is not None
 
 
 def _find_duplicate_patient(
@@ -1519,6 +1567,14 @@ def register_user(
         )
 
     with Session(engine, expire_on_commit=False) as s:
+        if _email_is_permanently_blocked(s, email):
+            return templates.TemplateResponse(
+                request=request,
+                name="register.html",
+                context={"error": "Bu e-posta adresiyle yeniden üyelik oluşturulamaz."},
+                status_code=403,
+            )
+
         existing_username = s.exec(
             select(User).where(User.username == username)
         ).first()
@@ -1531,9 +1587,15 @@ def register_user(
                 status_code=400,
             )
 
-        existing_email = s.exec(
-            select(User).where(User.email == email)
-        ).first()
+        canonical_email = _canonical_registration_email(email)
+        existing_email = next(
+            (
+                row
+                for row in s.exec(select(User).where(User.email != None)).all()
+                if _canonical_registration_email(row.email or "") == canonical_email
+            ),
+            None,
+        )
 
         if existing_email:
             return templates.TemplateResponse(
@@ -6779,6 +6841,10 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
     with Session(engine, expire_on_commit=False) as s:
         query = select(User).order_by(User.created_at.desc())
         users = s.exec(query).all()
+        deleted_user_ids = {
+            row.deleted_user_id for row in s.exec(select(DeletedAccountEmail)).all()
+        }
+        users = [u for u in users if u.id not in deleted_user_ids]
         if q.strip():
             needle=q.strip().casefold()
             users=[u for u in users if needle in (u.username or "").casefold() or needle in (u.display_name or "").casefold() or needle in (u.email or "").casefold()]
@@ -6788,7 +6854,10 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all()[:30]
         patients_count=len(s.exec(select(Patient)).all())
         analyses_count=len(s.exec(select(Analysis)).all())
-        expert_profiles=s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
+        expert_profiles=[
+            p for p in s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
+            if p.user_id not in deleted_user_ids
+        ]
         cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
@@ -6917,6 +6986,8 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
     with Session(engine, expire_on_commit=False) as s:
         target=s.get(User,user_id)
         if not target: return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
+        deleted=s.exec(select(DeletedAccountEmail).where(DeletedAccountEmail.deleted_user_id==target.id)).first()
+        if deleted:return HTMLResponse("Silinmiş hesap yeniden etkinleştirilemez.",status_code=409)
         if action == "BAN":
             target.is_active=False
             sessions=s.exec(select(SessionToken).where(SessionToken.user_id==target.id)).all()
@@ -6926,6 +6997,107 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         s.add(target);s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=target.id,detail=target.username));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
+
+
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/delete")
+def admin_center_delete_user(
+    request: Request,
+    user_id: int,
+    confirm_username: str = Form(...),
+):
+    admin = _admin_only(request)
+    if not admin:
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    if user_id == admin.id:
+        return HTMLResponse("Kendi yönetici hesabınızı silemezsiniz.", status_code=409)
+
+    storage_paths: list[str] = []
+    with Session(engine, expire_on_commit=False) as s:
+        target = s.get(User, user_id)
+        if not target:
+            return HTMLResponse("Kullanıcı bulunamadı.", status_code=404)
+        if target.role == "ADMIN":
+            return HTMLResponse("Yönetici hesapları bu ekrandan silinemez.", status_code=409)
+        if not secrets.compare_digest(
+            confirm_username.strip().casefold(),
+            (target.username or "").strip().casefold(),
+        ):
+            return HTMLResponse("Onay için kullanıcı adını eksiksiz yazın.", status_code=400)
+        if not target.email:
+            return HTMLResponse("Bu hesapta engellenecek e-posta adresi bulunamadı.", status_code=409)
+
+        previous = s.exec(
+            select(DeletedAccountEmail).where(DeletedAccountEmail.deleted_user_id == target.id)
+        ).first()
+        if previous:
+            return HTMLResponse("Bu hesap daha önce silinmiş.", status_code=409)
+
+        fingerprint = _deleted_email_fingerprint(target.email)
+        blocked = s.exec(
+            select(DeletedAccountEmail).where(
+                DeletedAccountEmail.email_fingerprint == fingerprint
+            )
+        ).first()
+        if blocked and blocked.deleted_user_id != target.id:
+            return HTMLResponse("Bu e-posta daha önce başka bir silinen hesapla engellenmiş.", status_code=409)
+        if not blocked:
+            s.add(DeletedAccountEmail(
+                email_fingerprint=fingerprint,
+                deleted_user_id=target.id,
+                deleted_by_admin_id=admin.id,
+            ))
+
+        if target.profile_photo_path:
+            storage_paths.append(target.profile_photo_path)
+
+        profile = s.exec(
+            select(ExpertProfile).where(ExpertProfile.user_id == target.id)
+        ).first()
+        if profile:
+            if profile.credential_document_path:
+                storage_paths.append(profile.credential_document_path)
+            profile.phone = None
+            profile.phone_verified = False
+            profile.credential_document_path = None
+            profile.credential_document_name = None
+            profile.credential_document_mime = None
+            profile.availability = "PASSIVE"
+            profile.application_status = "REJECTED"
+            profile.verification_status = "REJECTED"
+            profile.identity_verified = False
+            profile.specialty_verified = False
+            profile.academic_title_verified = False
+            profile.verified_at = None
+            profile.updated_at = _utcnow_naive()
+            s.add(profile)
+
+        for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge):
+            rows = s.exec(select(model).where(model.user_id == target.id)).all()
+            for row in rows:
+                s.delete(row)
+
+        # Keep an anonymized referential anchor for cases, payments and audits.
+        target.username = f"deleted_user_{target.id}_{uuid.uuid4().hex[:10]}"
+        target.display_name = "Silinmiş Kullanıcı"
+        target.email = None
+        target.password_hash = None
+        target.profile_photo_path = None
+        target.is_active = False
+        s.add(target)
+        s.add(AdminAuditLog(
+            admin_user_id=admin.id,
+            action="USER_PERMANENTLY_DELETED",
+            target_user_id=target.id,
+            detail="Hesap anonimleştirildi · e-posta yeniden kayıt engeline alındı",
+        ))
+        s.commit()
+
+    for path in set(storage_paths):
+        try:
+            storage_delete(path)
+        except Exception:
+            logger.exception("Deleted account storage cleanup failed for %s", path)
+    return RedirectResponse(ADMIN_CENTER_PATH + "?section=users&deleted=1", status_code=303)
 
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/expert-status")
