@@ -4612,68 +4612,64 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
 @app.post("/expert-support/cases/{case_id}/expert-response")
 async def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
     user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    if not user: return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
-        if not case or case.expert_user_id != user.id:
-            return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "REQUESTED" or now > case.expert_response_deadline:
-            return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
+        if not case or case.expert_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "REQUESTED" or now > case.expert_response_deadline: return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
         if decision == "REJECT":
-            case.status = "REJECTED"
-            _consultation_event(s, case.id, "REJECTED", user.id)
+            case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
-                _payment_cancel_or_refund(payment, now)
-                s.add(payment)
+            if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
         elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
             minutes, label = EXPERT_START_OPTIONS[start_option]
             if start_option == "NOW":
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-                if payment:
-                    payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
+                if payment: payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
                 _consultation_event(s, case.id, "ACCEPTED_NOW", user.id)
             else:
                 case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
                 case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=3)
                 case.expert_proposal_note = proposal_note.strip()[:500] or None
                 _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes, "note": case.expert_proposal_note})
-        else:
-            return HTMLResponse("Geçersiz karar.", status_code=400)
-        s.add(case); s.commit()
+        else: return HTMLResponse("Geçersiz karar.", status_code=400)
+        s.add(case)
+        evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
+        s.commit()
+        status = case.status
+    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
+    await _publish_realtime_event(evt)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.post("/expert-support/cases/{case_id}/proposal")
-def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
+async def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
     user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=303)
+    if not user: return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
-        if not case or case.requester_user_id != user.id:
-            return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline:
-            return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
-        if decision == "ACCEPT":
+        if not case or case.requester_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
+        rejected = decision != "ACCEPT"
+        if not rejected:
             case.status = "WAITING_START"; case.requester_accepted_at = now
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
-                payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
+            if payment: payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
             _consultation_event(s, case.id, "PROPOSAL_ACCEPTED", user.id, {"start_deadline": case.consultation_start_deadline.isoformat()})
         else:
-            case.status = "PROPOSAL_REJECTED"
-            _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id)
+            case.status = "PROPOSAL_REJECTED"; _consultation_event(s, case.id, "PROPOSAL_REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
-                _payment_cancel_or_refund(payment, now)
-                s.add(payment)
-        s.add(case); s.commit()
+            if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
+        s.add(case)
+        evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
+        s.commit(); status=case.status; patient_id=case.patient_id
+    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
+    await _publish_realtime_event(evt)
+    if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
