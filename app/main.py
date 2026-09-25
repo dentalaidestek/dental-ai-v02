@@ -4182,7 +4182,7 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
 
 
 @app.post("/expert-support/request/{expert_user_id}")
-def expert_support_request_create(
+async def expert_support_request_create(
     request: Request,
     expert_user_id: int,
     clinical_summary: str = Form(...),
@@ -4257,7 +4257,10 @@ def expert_support_request_create(
             status="NOT_STARTED" if _iyzico_enabled() else "INTEGRATION_PENDING",
         ))
         _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat(), "shared_media_count": len(selected_media_ids)})
+        expert_event=_record_realtime_event(s, expert_user_id, "CASE_CREATED", "consultation_case", case.id,
+            {"case_id":case.id,"requester_user_id":user.id,"status":case.status,"urgency":case.urgency})
         s.commit()
+    await _publish_realtime_event(expert_event)
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
 
 
@@ -4693,8 +4696,13 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         s.add(message)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
         s.commit(); s.refresh(message)
+        sender=s.get(User,user.id)
+        other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
+        realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+        s.commit()
         payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
+    await _publish_realtime_event(realtime_event)
     return JSONResponse({"ok": True, "message": payload["message"]}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -4789,7 +4797,7 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
     return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/message")
-def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
+async def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
     wants_json = "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     user = get_current_user(request)
     if not user:
@@ -4838,7 +4846,11 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
         s.commit()
         s.refresh(message)
+        sender=s.get(User,user.id)
+        realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+        s.commit()
         payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
+    await _publish_realtime_event(realtime_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -4904,6 +4916,18 @@ def _record_realtime_event(session: Session, user_id: int, event_type: str,
     session.add(event)
     session.flush()
     return event
+
+
+async def _publish_realtime_event(event: RealtimeEvent) -> None:
+    """Push an already committed durable event to every active session of its user."""
+    await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
+
+
+def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User]) -> dict:
+    preview=(message.content or ("Görsel gönderildi" if message.message_type=="IMAGE" else "Yeni mesaj")).strip()
+    return {"case_id":case.id,"message_id":message.id,"sender_user_id":message.sender_user_id,
+            "sender":sender.display_name if sender else "Yeni mesaj","preview":preview[:90],
+            "message_type":message.message_type,"created_at":message.created_at.isoformat()}
 
 
 @app.get("/sync/events")
@@ -5028,8 +5052,12 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     if case.status=="WAITING_START": case.status="ACTIVE"
                     _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
                 _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
+                sender=s.get(User,user.id)
+                realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+                s.commit()
                 payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
             await consultation_socket_hub.broadcast(case_id,payload)
+            await _publish_realtime_event(realtime_event)
     except WebSocketDisconnect:
         consultation_socket_hub.disconnect(case_id,websocket)
     except Exception:
@@ -7435,7 +7463,7 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
 
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/notice")
-def admin_center_notice(request: Request, user_id: int, title: str = Form(...), message: str = Form(...)):
+async def admin_center_notice(request: Request, user_id: int, title: str = Form(...), message: str = Form(...)):
     admin=_admin_only(request)
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     title=title.strip();message=message.strip()
@@ -7444,7 +7472,9 @@ def admin_center_notice(request: Request, user_id: int, title: str = Form(...), 
         target=s.get(User,user_id)
         if not target: return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
         s.add(AdminNotice(user_id=user_id,title=title[:120],message=message[:2000]))
+        notice_event=_record_realtime_event(s,user_id,"NOTICE_CREATED","admin_notice",None,{"title":title[:120],"message":message[:2000]})
         s.add(AdminAuditLog(admin_user_id=admin.id,action="NOTICE_SENT",target_user_id=user_id,detail=title[:120]));s.commit()
+    await _publish_realtime_event(notice_event)
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
