@@ -4654,6 +4654,11 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
             return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Bu vakaya dosya gönderilemez.')}", status_code=303)
+        now = _utcnow_naive()
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Uzmanın belirttiği başlangıç süresi henüz dolmadı.')}", status_code=303)
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
+            case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
         raw = await file.read()
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
             return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya boş veya 25 MB sınırını aşıyor.')}", status_code=303)
@@ -4670,9 +4675,12 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         except OSError:
             return RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus('Dosya yüklenemedi. Lütfen tekrar deneyin.')}", status_code=303)
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
-        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path)))
+        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path))
+        s.add(message)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
-        s.commit()
+        s.commit(); s.refresh(message)
+        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+    await consultation_socket_hub.broadcast(case_id,payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
