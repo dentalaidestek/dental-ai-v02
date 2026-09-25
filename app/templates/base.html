@@ -183,6 +183,9 @@ if (document.getElementById("mobileMessagesBadge")) {
         if(evt.event_type==="MESSAGE_CREATED"){bumpMessageBadge();showLiveMessage(data);}
         else if(evt.event_type==="CASE_CREATED"){
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
+        } else if(evt.event_type==="CASE_STATUS_UPDATED"){
+            window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
+            if(location.pathname==="/messages") location.reload();
         } else if(evt.event_type==="NOTICE_CREATED"){showAdminNotice(data);}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
