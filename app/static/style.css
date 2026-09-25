@@ -4884,3 +4884,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .expert-room .expert-chat{display:flex;flex-direction:column;overflow-y:scroll!important;-webkit-overflow-scrolling:touch;touch-action:pan-y;min-height:0;scrollbar-gutter:stable}
 .expert-room .expert-bubble{flex:0 0 auto}
 @media(max-width:700px){.expert-room .expert-chat{height:clamp(300px,52dvh,560px);max-height:calc(100dvh - 250px);overflow-y:scroll!important}.expert-room .expert-compose-stack{flex:0 0 auto}}
+
+/* Keep consultation actions accessible while the conversation scrolls */
+.expert-room-head{position:sticky;top:0;z-index:1250;background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}
+.case-room-menu{position:relative;z-index:1300;flex:0 0 auto}
+@media(max-width:700px){.expert-room-head{top:0}.case-room-menu>summary{position:relative;z-index:1301}}
