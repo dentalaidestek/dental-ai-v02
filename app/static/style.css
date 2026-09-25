@@ -4848,3 +4848,20 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .case-live-status strong{font-size:13px;color:#0f172a}.case-live-status span{font-size:12px;color:#475569;text-align:right}.case-live-status b{color:#1d4ed8;font-variant-numeric:tabular-nums}.case-live-status-action{background:#fff7ed;border-color:#fed7aa}.case-live-status.expired{opacity:.7}
 .visual-expert-art{display:flex;align-items:center;justify-content:center}.visual-expert-art svg{width:92%;height:92%;fill:none;stroke:currentColor;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
 .admin-delete-zone{margin-top:14px;padding-top:12px;border-top:1px solid #5f2632}.admin-delete-zone summary{cursor:pointer;color:#fda4af;font-size:.62rem;font-weight:850}.admin-delete-zone p{margin:8px 0!important;font-size:.55rem}.admin-delete-zone label{display:grid;gap:5px;font-size:.56rem}.admin-delete-zone input{width:100%;box-sizing:border-box;border:1px solid #713240;border-radius:9px;padding:9px;background:#111c2b;color:#fff}.admin-delete-zone .danger{background:#b91c1c}
+
+/* Consultation chat realtime mobile shell */
+.expert-room .expert-chat{height:min(52vh,560px);min-height:300px;overflow-y:auto;overscroll-behavior:contain;scroll-behavior:smooth;padding-bottom:18px}
+.expert-room .expert-bubble{font-size:14px;line-height:1.42;padding:8px 10px;touch-action:pan-y;user-select:text}
+.expert-room .expert-bubble small{font-size:10px}
+.expert-room .expert-compose-stack{position:sticky;bottom:calc(64px + env(safe-area-inset-bottom));z-index:1100;width:100%;grid-template-columns:42px minmax(0,1fr);margin-top:8px}
+.expert-reply-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-left:3px solid #2563eb;background:#eff6ff;border-radius:9px;color:#334155;font-size:11px}
+.expert-reply-preview[hidden]{display:none}
+.expert-reply-preview button{padding:2px 7px;background:transparent;color:#64748b;font-size:18px}
+.expert-wait-lock{position:sticky;bottom:calc(64px + env(safe-area-inset-bottom));z-index:1090;padding:11px 13px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;color:#475569;font-size:13px;text-align:center}
+@media(max-width:700px){
+ .expert-room{padding-left:10px;padding-right:10px}
+ .expert-room .expert-chat{height:calc(100dvh - 360px);min-height:280px;border-radius:14px}
+ .expert-room .expert-compose-stack{left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));border-radius:15px}
+ .expert-room .expert-composer input{font-size:14px;min-width:0}
+ .expert-room .expert-composer button{font-size:14px;padding:10px 13px}
+}
