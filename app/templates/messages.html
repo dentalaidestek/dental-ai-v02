@@ -3,14 +3,14 @@
 <header class="messages-head messages-chat-head"><div><span class="workspace-section-kicker">Uzman desteği</span><h1>Mesajlar</h1><p>Vaka görüşmeleriniz yalnızca siz ve karşı tarafça görülebilir.</p></div><a class="messages-new-case" href="/expert-support" aria-label="Yeni danışmanlık"><span>＋</span><b>Uzman bul</b></a></header>
 <div class="messages-search-wrap"><span>⌕</span><input id="messageSearch" type="search" placeholder="Sohbetlerde ara" autocomplete="off"></div>
 <nav class="messages-filters messages-filters-compact" aria-label="Mesaj filtreleri">
-<a href="/messages" class="{% if selected_filter=='all' %}active{% endif %}">Tümü</a>
-<a href="/messages?filter=unread" class="{% if selected_filter=='unread' %}active{% endif %}">Okunmamış</a>
-<a href="/messages?filter=waiting" class="{% if selected_filter=='waiting' %}active{% endif %}">Bekleyen</a>
-<details class="messages-filter-more"><summary aria-label="Diğer filtreler">Filtrele</summary><div><a href="/messages?filter=missed">Kaçırılan</a><a href="/messages?filter=history">Geçmiş</a></div></details>
+<a href="/messages" data-message-filter="all" class="active">Tümü</a>
+<a href="/messages?filter=unread" data-message-filter="unread">Okunmamış</a>
+<a href="/messages?filter=waiting" data-message-filter="waiting">Bekleyen</a>
+<details class="messages-filter-more"><summary aria-label="Diğer filtreler">Filtrele</summary><div><a href="/messages?filter=missed" data-message-filter="missed">Kaçırılan</a><a href="/messages?filter=history" data-message-filter="history">Geçmiş</a></div></details>
 </nav>
 <div class="messages-list">
 {% for row in rows %}
-<article class="message-row {% if row.unread %}unread{% endif %}" data-search="{{ ((row.other.display_name if row.other else '') ~ ' ' ~ row.case.specialty ~ ' ' ~ (row.last_message.content if row.last_message and row.last_message.content else row.case.question))|lower|e }}">
+<article class="message-row {% if row.unread %}unread{% endif %}" data-unread="{{ 1 if row.unread else 0 }}" data-status="{{ row.status_key }}" data-search="{{ ((row.other.display_name if row.other else '') ~ ' ' ~ row.case.specialty ~ ' ' ~ (row.last_message.content if row.last_message and row.last_message.content else row.case.question))|lower|e }}">
 <a class="message-row-main" href="/expert-support/cases/{{ row.case.id }}">
 <div class="message-avatar">{% if row.other and row.other.profile_photo_path %}<img src="/profile-photo/{{ row.other.id }}" alt="">{% else %}{{ ((row.other.display_name if row.other else 'U') or 'U')[:1] }}{% endif %}{% if row.status_key in ['ACTIVE','NEW_REQUEST','ACTION_REQUIRED'] %}<i aria-hidden="true"></i>{% endif %}</div>
 <div class="message-copy"><div class="message-title"><strong>{{ row.other.display_name if row.other else 'Kullanıcı' }}</strong><span class="message-status status-{{ row.status_key|lower }}">{{ row.status_label }}</span></div>
@@ -30,6 +30,9 @@
 </div>
 <script>
 function tickExpertCountdowns(){document.querySelectorAll(".message-countdown").forEach(el=>{const end=new Date(el.dataset.deadline+"Z").getTime(),left=Math.max(0,end-Date.now()),sec=Math.floor(left/1000),m=Math.floor(sec/60),s=sec%60,b=el.querySelector("b");if(b)b.textContent=left>0?String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):"Süre doldu";el.classList.toggle("expired",left<=0);});} tickExpertCountdowns();setInterval(tickExpertCountdowns,1000);
-const messageSearch=document.getElementById("messageSearch");if(messageSearch)messageSearch.addEventListener("input",()=>{const q=messageSearch.value.trim().toLocaleLowerCase("tr");document.querySelectorAll(".message-row").forEach(row=>row.hidden=q&&!row.dataset.search.includes(q));});
+const messageSearch=document.getElementById("messageSearch"),filterLinks=[...document.querySelectorAll("[data-message-filter]")];let activeMessageFilter="all";
+function applyMessageFilters(){const q=(messageSearch?.value||"").trim().toLocaleLowerCase("tr");document.querySelectorAll(".message-row").forEach(row=>{const status=row.dataset.status||"",matchesFilter=activeMessageFilter==="all"||(activeMessageFilter==="unread"&&row.dataset.unread==="1")||(activeMessageFilter==="waiting"&&["WAITING","ACTION_REQUIRED","NEW_REQUEST"].includes(status))||(activeMessageFilter==="missed"&&["MISSED","DELAYED"].includes(status))||(activeMessageFilter==="history"&&["HISTORY","CLOSED","DISPUTE"].includes(status));row.hidden=!matchesFilter||!!(q&&!row.dataset.search.includes(q));});}
+filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();}));
+if(messageSearch)messageSearch.addEventListener("input",applyMessageFilters);
 </script>
 {% endblock %}
