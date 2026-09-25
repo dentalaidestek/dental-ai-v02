@@ -4822,8 +4822,10 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         return RedirectResponse("/login", status_code=303)
     text_value = content.strip()
     if not text_value:
+        if wants_json: return JSONResponse({"ok": False, "error": "Boş mesaj gönderilemez."}, status_code=400)
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Boş mesaj gönderilemez.')}", status_code=303)
     if len(text_value) > 4000:
+        if wants_json: return JSONResponse({"ok": False, "error": "Mesaj 4000 karakteri aşamaz."}, status_code=400)
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
@@ -4844,10 +4846,12 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
             s.add(case)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu kullanıcıyla mesajlaşma engellenmiş."}, status_code=403)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu kullanıcıyla mesajlaşma engellenmiş.')}", status_code=303)
         if _contains_profanity(text_value):
             _consultation_event(s, case.id, "PROFANITY_BLOCKED", user.id)
             s.commit()
+            if wants_json: return JSONResponse({"ok": False, "error": "Mesaj içerik filtresine takıldı."}, status_code=422)
             return RedirectResponse(f"/expert-support/cases/{case_id}?moderation=profanity", status_code=303)
         if reply_to_message_id:
             replied = s.get(ConsultationMessage, reply_to_message_id)
@@ -4868,6 +4872,7 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
         s.commit()
         payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
+    await consultation_socket_hub.broadcast(case_id, {"type": "message", "message": payload["message"]})
     await _publish_realtime_event(realtime_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
@@ -4945,7 +4950,7 @@ def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessa
     preview=(message.content or ("Görsel gönderildi" if message.message_type=="IMAGE" else "Yeni mesaj")).strip()
     return {"case_id":case.id,"message_id":message.id,"sender_user_id":message.sender_user_id,
             "sender":sender.display_name if sender else "Yeni mesaj","preview":preview[:90],
-            "message_type":message.message_type,"created_at":message.created_at.isoformat()}
+            "message_type":message.message_type,"created_at":message.created_at.isoformat(),"case_status":case.status}
 
 
 @app.get("/sync/events")
