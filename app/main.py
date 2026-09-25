@@ -1716,6 +1716,12 @@ def account_page(request: Request):
     )
 
 
+def _profile_photo_version(reference: Optional[str]) -> str:
+    if not reference:
+        return "0"
+    return hashlib.sha256(str(reference).encode("utf-8")).hexdigest()[:16]
+
+
 @app.get("/profile-photo/{user_id}")
 def profile_photo(request: Request, user_id: int):
     viewer = get_current_user(request)
@@ -1727,11 +1733,11 @@ def profile_photo(request: Request, user_id: int):
     if not storage_exists(reference):
         return HTMLResponse("Profil fotoğrafı bulunamadı.", status_code=404)
     path = storage_ensure_local(reference)
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/account/profile-photo")
-def account_profile_photo(request: Request, profile_photo_data: str = Form(...)):
+async def account_profile_photo(request: Request, profile_photo_data: str = Form(...)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -1743,12 +1749,16 @@ def account_profile_photo(request: Request, profile_photo_data: str = Form(...))
         db_user = s.get(User, user.id)
         db_user.profile_photo_path = path
         s.add(db_user)
+        photo_version=_profile_photo_version(path)
+        photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
+            {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
         s.commit()
+    await _publish_realtime_event(photo_event)
     return RedirectResponse("/account?photo_saved=1", status_code=303)
 
 
 @app.post("/account/professional-title")
-def change_professional_title(
+async def change_professional_title(
     request: Request,
     professional_title: str = Form(...),
     confirm_change: str = Form(""),
@@ -1802,13 +1812,16 @@ def change_professional_title(
                 expert_profile.updated_at = _utcnow_naive()
                 s.add(expert_profile)
 
+        profile_event=_record_realtime_event(s,user.id,"PROFILE_UPDATED","user",user.id,
+            {"user_id":user.id,"professional_title":professional_title})
         s.commit()
 
+    await _publish_realtime_event(profile_event)
     return RedirectResponse("/account?profile_updated=1", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
-def change_username(request: Request, username: str = Form(...)):
+async def change_username(request: Request, username: str = Form(...)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -1869,7 +1882,10 @@ def change_username(request: Request, username: str = Form(...)):
         s.commit()
         s.refresh(db_user)
         s.refresh(account_meta)
-
+        profile_event=_record_realtime_event(s,user.id,"PROFILE_UPDATED","user",user.id,
+            {"user_id":user.id,"username":db_user.username})
+        s.commit()
+        await _publish_realtime_event(profile_event)
         return render_account(success="Kullanıcı adınız başarıyla değiştirildi. 15 gün boyunca tekrar değiştirilemez.")
 
 
@@ -7133,7 +7149,9 @@ def site_runtime_config():
     with Session(engine, expire_on_commit=False) as s:
         rows=s.exec(select(SiteSetting)).all()
         data={r.key:(r.value or "") for r in rows}
-    return {"announcement":data.get("announcement",""),"home_title":data.get("home_title",""),"home_subtitle":data.get("home_subtitle",""),"site_name":data.get("site_name","DENTAL AI")}
+        version=max((r.updated_at for r in rows),default=datetime(1970,1,1)).isoformat()
+    payload={"announcement":data.get("announcement",""),"home_title":data.get("home_title",""),"home_subtitle":data.get("home_subtitle",""),"site_name":data.get("site_name","DENTAL AI"),"version":version}
+    return JSONResponse(payload,headers={"Cache-Control":"private, max-age=300, stale-while-revalidate=86400"})
 
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "").strip()
 ADMIN_BOOTSTRAP_TOKEN = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "").strip()
@@ -7281,13 +7299,18 @@ def admin_center_user_detail(request: Request, user_id: int):
 
 
 @app.post(ADMIN_CENTER_PATH + "/settings")
-def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
+async def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     allowed={"home_title","home_subtitle","announcement","faq_text","legal_text","maintenance_mode","maintenance_message","site_name","support_email"}
     if key not in allowed:return HTMLResponse("Bu ayar panelden değiştirilemez.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        _set_site_setting(s,key,value.strip(),admin.id);s.add(AdminAuditLog(admin_user_id=admin.id,action="SETTING_UPDATED",detail=key));s.commit()
+        _set_site_setting(s,key,value.strip(),admin.id)
+        targets=s.exec(select(User.id).where(User.is_active==True)).all()
+        setting_events=[_record_realtime_event(s,int(uid),"SITE_CONFIG_UPDATED","site_setting",key,{"key":key,"value":value.strip()}) for uid in targets]
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="SETTING_UPDATED",detail=key));s.commit()
+    for setting_event in setting_events:
+        await _publish_realtime_event(setting_event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section={section}",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/broadcast")
