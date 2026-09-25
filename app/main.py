@@ -4086,14 +4086,10 @@ async def expert_support_profile_save(
             profile.phone_verified = False
         profile.phone = normalized_phone
         policy_state = _expert_policy_state(s, user.id)
-        if availability == "AVAILABLE":
-            if not _is_verified_expert(s, user.id):
-                availability = "PASSIVE"
-            elif policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
-                return RedirectResponse("/expert-support/rules?next=/expert-support/profile", status_code=303)
-            elif _expert_is_blocked(policy_state):
-                availability = "PASSIVE"
-        profile.availability = availability
+        # Availability is managed independently by the live status endpoint.
+        # Profile edits must not overwrite a newer status from another page/tab.
+        if not profile.id:
+            profile.availability = "PASSIVE"
         profile.max_active_cases = 5
         profile.updated_at = _utcnow_naive()
         if verification_sensitive_change:
