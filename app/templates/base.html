@@ -180,7 +180,7 @@ if (document.getElementById("mobileMessagesBadge")) {
         const id=Number(evt.event_id||0); if(id&&id<=lastEventId)return;
         if(id){lastEventId=id;sessionStorage.setItem("daiLastEventId",String(id));}
         const data=evt.payload||{};
-        if(evt.event_type==="MESSAGE_CREATED"){bumpMessageBadge();showLiveMessage(data);}
+        if(evt.event_type==="MESSAGE_CREATED"&&!data.is_outgoing){bumpMessageBadge();showLiveMessage(data);}
         else if(evt.event_type==="CASE_CREATED"){
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){

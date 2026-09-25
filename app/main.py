@@ -4375,9 +4375,44 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             if filter == "history" and status_key not in {"HISTORY", "CLOSED", "DISPUTE"}:
                 continue
             rows.append(row)
+        rows.sort(key=lambda row: (
+            row["status_key"] != "NEW_REQUEST",
+            -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
+        ))
         s.commit()
     return templates.TemplateResponse(request=request, name="messages.html", context={
         "user": user, "rows": rows, "selected_filter": filter, "now": now,
+    })
+
+
+@app.get("/messages/{case_id}/row", response_class=HTMLResponse)
+def consultation_message_row(request: Request, case_id: int):
+    """Return one inbox card for realtime insertion without reloading the inbox."""
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Sohbet bulunamadı.", status_code=404)
+        state = _consultation_inbox_state(s, case.id, user.id)
+        if state.deleted_at:
+            return HTMLResponse("Sohbet bulunamadı.", status_code=404)
+        messages = s.exec(select(ConsultationMessage).where(
+            ConsultationMessage.case_id == case.id
+        ).order_by(ConsultationMessage.created_at.desc())).all()
+        last_message = messages[0] if messages else None
+        unread = sum(1 for message in messages if message.sender_user_id != user.id and (
+            not state.last_read_at or message.created_at > state.last_read_at
+        ))
+        status_key, status_label = _consultation_display_status(case, user.id, now)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        row = {"case": case, "state": state, "last_message": last_message, "unread": unread,
+               "status_key": status_key, "status_label": status_label, "other": s.get(User, other_id)}
+        s.commit()
+    return templates.TemplateResponse(request=request, name="_message_row.html", context={
+        "user": user, "row": row, "now": now,
     })
 
 
@@ -4715,12 +4750,12 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
         s.commit(); s.refresh(message)
         sender=s.get(User,user.id)
-        other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
-        realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+        realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
         payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
-    await _publish_realtime_event(realtime_event)
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     return JSONResponse({"ok": True, "message": payload["message"]}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -4869,11 +4904,12 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         s.commit()
         s.refresh(message)
         sender=s.get(User,user.id)
-        realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+        realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
         payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id, {"type": "message", "message": payload["message"]})
-    await _publish_realtime_event(realtime_event)
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -4946,11 +4982,27 @@ async def _publish_realtime_event(event: RealtimeEvent) -> None:
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
 
 
-def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User]) -> dict:
+def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User],
+                              viewer_user_id: Optional[int] = None) -> dict:
     preview=(message.content or ("Görsel gönderildi" if message.message_type=="IMAGE" else "Yeni mesaj")).strip()
+    status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive()) if viewer_user_id else (None, None)
     return {"case_id":case.id,"message_id":message.id,"sender_user_id":message.sender_user_id,
             "sender":sender.display_name if sender else "Yeni mesaj","preview":preview[:90],
-            "message_type":message.message_type,"created_at":message.created_at.isoformat(),"case_status":case.status}
+            "message_type":message.message_type,"created_at":message.created_at.isoformat(),"case_status":case.status,
+            "status_key":status_key,"status_label":status_label,
+            "is_outgoing":bool(viewer_user_id and viewer_user_id==message.sender_user_id)}
+
+
+def _record_message_realtime_events(session: Session, case: ConsultationCase,
+                                    message: ConsultationMessage, sender: Optional[User]) -> list[RealtimeEvent]:
+    """Persist one durable event per participant so every open session stays in sync."""
+    events = []
+    for viewer_user_id in {case.requester_user_id, case.expert_user_id}:
+        events.append(_record_realtime_event(
+            session, viewer_user_id, "MESSAGE_CREATED", "consultation_message", message.id,
+            _message_realtime_payload(case, message, sender, viewer_user_id),
+        ))
+    return events
 
 
 @app.get("/sync/events")
@@ -5076,11 +5128,12 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
                 _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
                 sender=s.get(User,user.id)
-                realtime_event=_record_realtime_event(s,other_id,"MESSAGE_CREATED","consultation_message",message.id,_message_realtime_payload(case,message,sender))
+                realtime_events=_record_message_realtime_events(s,case,message,sender)
                 s.commit()
                 payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
             await consultation_socket_hub.broadcast(case_id,payload)
-            await _publish_realtime_event(realtime_event)
+            for realtime_event in realtime_events:
+                await _publish_realtime_event(realtime_event)
     except WebSocketDisconnect:
         consultation_socket_hub.disconnect(case_id,websocket)
     except Exception:

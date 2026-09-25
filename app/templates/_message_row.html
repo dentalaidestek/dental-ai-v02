@@ -1,0 +1,14 @@
+<article class="message-row {% if row.unread %}unread{% endif %}" data-case-id="{{ row.case.id }}" data-unread="{{ row.unread }}" data-status="{{ row.status_key }}" data-last-message-id="{{ row.last_message.id if row.last_message else 0 }}" data-sort-at="{{ (row.last_message.created_at if row.last_message else row.case.requested_at).isoformat() }}" data-search="{{ ((row.other.display_name if row.other else '') ~ ' ' ~ row.case.specialty ~ ' ' ~ (row.last_message.content if row.last_message and row.last_message.content else row.case.question))|lower|e }}">
+<a class="message-row-main" href="/expert-support/cases/{{ row.case.id }}">
+<div class="message-avatar">{% if row.other and row.other.profile_photo_path %}<img src="/profile-photo/{{ row.other.id }}" alt="">{% else %}{{ ((row.other.display_name if row.other else 'U') or 'U')[:1] }}{% endif %}{% if row.status_key in ['ACTIVE','NEW_REQUEST','ACTION_REQUIRED'] %}<i aria-hidden="true"></i>{% endif %}</div>
+<div class="message-copy"><div class="message-title"><strong>{{ row.other.display_name if row.other else 'Kullanıcı' }}</strong><span class="message-status status-{{ row.status_key|lower }}">{{ row.status_label }}</span></div>
+<div class="message-case">{{ row.case.specialty }} · Vaka #{{ row.case.id }}{% if row.case.tooth_region %} · {{ row.case.tooth_region }}{% endif %}</div>
+<div class="message-preview">{% if row.last_message %}{{ row.last_message.content or 'Klinik içerik' }}{% else %}{{ row.case.question }}{% endif %}</div>
+{% if row.case.status=="REQUESTED" and user.id==row.case.expert_user_id %}<div class="message-countdown" data-deadline="{{ row.case.expert_response_deadline.isoformat() }}">Kabul için kalan süre <b>--:--</b></div>{% endif %}
+{% if row.case.status=="PROPOSED" and user.id==row.case.requester_user_id and row.case.requester_decision_deadline %}<div class="message-countdown" data-deadline="{{ row.case.requester_decision_deadline.isoformat() }}">Onay için kalan süre <b>--:--</b></div>{% endif %}
+{% if row.case.status=="WAITING_START" and row.case.consultation_start_deadline %}<div class="message-countdown" data-deadline="{{ row.case.consultation_start_deadline.isoformat() }}">Görüşmenin başlamasına <b>--:--</b></div>{% endif %}
+</div>
+<div class="message-side">{% if row.last_message %}<time datetime="{{ row.last_message.created_at.isoformat() }}">{{ row.last_message.created_at.strftime('%H:%M') }}</time>{% else %}<time datetime="{{ row.case.requested_at.isoformat() }}">{{ row.case.requested_at.strftime('%H:%M') }}</time>{% endif %}{% if row.unread %}<b class="message-unread">{{ row.unread }}</b>{% endif %}</div>
+</a>
+<details class="message-more"><summary aria-label="Sohbet işlemleri">⋮</summary><form method="post" action="/messages/{{ row.case.id }}/delete" onsubmit="return confirm('Bu sohbet Mesajlar listenizden kaldırılsın mı? 7 gün içinde geri yükleyebilirsiniz.');"><button type="submit">Sohbeti kaldır</button></form></details>
+</article>
