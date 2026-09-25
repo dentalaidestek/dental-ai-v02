@@ -428,6 +428,7 @@ class ConsultationCase(SQLModel, table=True):
     dispute_opened_at: Optional[datetime] = None
     completion_confirmation_deadline: Optional[datetime] = None
     urgency: str = "NORMAL"
+    expert_proposal_note: Optional[str] = None
 
 
 class ExpertAvailabilityWatch(SQLModel, table=True):
