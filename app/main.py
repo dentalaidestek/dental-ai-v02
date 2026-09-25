@@ -7306,8 +7306,8 @@ async def admin_center_settings(request: Request, section: str = Form(...), key:
     if key not in allowed:return HTMLResponse("Bu ayar panelden değiştirilemez.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         _set_site_setting(s,key,value.strip(),admin.id)
-        targets=s.exec(select(User.id).where(User.is_active==True)).all()
-        setting_events=[_record_realtime_event(s,int(uid),"SITE_CONFIG_UPDATED","site_setting",key,{"key":key,"value":value.strip()}) for uid in targets]
+        targets=s.exec(select(User).where(User.is_active==True)).all()
+        setting_events=[_record_realtime_event(s,target.id,"SITE_CONFIG_UPDATED","site_setting",key,{"key":key,"value":value.strip()}) for target in targets]
         s.add(AdminAuditLog(admin_user_id=admin.id,action="SETTING_UPDATED",detail=key));s.commit()
     for setting_event in setting_events:
         await _publish_realtime_event(setting_event)
