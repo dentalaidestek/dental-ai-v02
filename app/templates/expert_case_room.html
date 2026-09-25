@@ -43,7 +43,33 @@ async function catchUp(){try{const r=await fetch("/expert-support/cases/{{ case.
 function connectChat(){clearTimeout(reconnectTimer);const proto=location.protocol==="https:"?"wss:":"ws:";socket=new WebSocket(proto+"//"+location.host+"/ws/expert-support/cases/{{ case.id }}");socket.onopen=()=>{composerError&&(composerError.hidden=true);catchUp().finally(scrollChatToBottom);socket.send(JSON.stringify({type:"read"}))};socket.onmessage=e=>{let data;try{data=JSON.parse(e.data)}catch(_){return}if(data.type==="message"){addMessage(data.message);socket.send(JSON.stringify({type:"read"}))}else if(data.type==="read"&&Number(data.user_id)!==Number(chat.dataset.userId)){document.querySelectorAll(".expert-bubble.mine .message-receipt").forEach(x=>{x.textContent="✓✓ Okundu";x.classList.add("read")})}else if(data.type==="case_status"){refreshCaseRoom()}else if(data.type==="error")showComposerError(data.error||"Mesaj gönderilemedi.")};socket.onclose=()=>{reconnectTimer=setTimeout(connectChat,1500)};socket.onerror=()=>socket.close()}
 let selectedAttachment=null,attachmentObjectUrl=null,uploadInFlight=false;
 if(textForm)textForm.addEventListener("submit",async e=>{e.preventDefault();const input=textForm.querySelector('input[name="content"]'),value=input.value.trim();if(selectedAttachment){const uploaded=await sendAttachment();if(uploaded&&value)sendText(value,input);return}if(value)sendText(value,input)});
-function sendText(value,input){if(socket&&socket.readyState===WebSocket.OPEN){socket.send(JSON.stringify({type:"send",content:value,reply_to_message_id:replyInput.value||null}));input.value="";replyInput.value="";replyPreview.hidden=true;scrollChatToBottom(true);return}showComposerError("Bağlantı yenileniyor. Mesajınız gönderilmedi; tekrar deneyin.");connectChat()}
+let pendingTextSends=new Map();
+function optimisticText(value,replyId){
+ const key="pending-"+Date.now()+"-"+Math.random().toString(36).slice(2),d=document.createElement("div");
+ d.className="expert-bubble mine pending";d.id=key;
+ d.innerHTML=(replyId?'<span class="expert-reply-ref">↩ Yanıt</span>':"")+'<p>'+esc(value)+'</p><small>Şimdi <span class="message-receipt">◷ Gönderiliyor…</span></small>';
+ chat?.appendChild(d);scrollChatToBottom(true);return {key,el:d};
+}
+function markPendingFailed(item,message){
+ if(!item?.el)return;item.el.classList.remove("pending");item.el.classList.add("send-failed");
+ const receipt=item.el.querySelector(".message-receipt");if(receipt)receipt.innerHTML='Gönderilemedi · <button type="button" class="retry-send">Tekrar dene</button>';
+ item.el.querySelector(".retry-send")?.addEventListener("click",()=>retryPending(item));
+ if(message)showComposerError(message);
+}
+async function deliverPending(item){
+ try{
+  const fd=new FormData();fd.append("content",item.value);if(item.replyId)fd.append("reply_to_message_id",item.replyId);
+  const res=await fetch("/expert-support/cases/{{ case.id }}/message",{method:"POST",body:fd,credentials:"same-origin",headers:{"Accept":"application/json","X-Requested-With":"XMLHttpRequest"}});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok||!data.ok){markPendingFailed(item,data.error||"Mesaj gönderilemedi.");return}
+  item.el?.remove();pendingTextSends.delete(item.key);addMessage(data.message);
+ }catch(_){markPendingFailed(item,"Bağlantı kurulamadı. Mesajınız ekranda bekliyor.");}
+}
+function retryPending(item){item.el?.classList.remove("send-failed");item.el?.classList.add("pending");const receipt=item.el?.querySelector(".message-receipt");if(receipt)receipt.textContent="◷ Gönderiliyor…";deliverPending(item)}
+function sendText(value,input){
+ const replyId=replyInput.value||"",visual=optimisticText(value,replyId),item={...visual,value,replyId};
+ pendingTextSends.set(item.key,item);input.value="";replyInput.value="";replyPreview.hidden=true;deliverPending(item);
+}
 function chooseReply(id){replyInput.value=id;replyPreview.hidden=false;textForm?.querySelector('input[name="content"]')?.focus()}
 document.getElementById("replyCancel")?.addEventListener("click",()=>{replyInput.value="";replyPreview.hidden=true});
 function bindSwipe(el){let x=0,y=0;el.addEventListener("touchstart",e=>{x=e.touches[0].clientX;y=e.touches[0].clientY},{passive:true});el.addEventListener("touchend",e=>{const dx=e.changedTouches[0].clientX-x,dy=Math.abs(e.changedTouches[0].clientY-y);if(dx>55&&dy<40)chooseReply(el.dataset.messageId)},{passive:true})}
