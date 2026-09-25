@@ -130,61 +130,71 @@ document.addEventListener("keydown", function(event) {
 });
 fetch("/account/admin-notices",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{notices:[]}).then(data=>{const n=(data.notices||[])[0];if(!n)return;const box=document.createElement("div");box.className="dai-admin-notice";box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";box.querySelector("b").textContent=n.title;box.querySelector("span").textContent=n.message;box.querySelector("button").onclick=()=>{fetch("/account/admin-notices/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});box.remove();};document.body.appendChild(box);}).catch(()=>{});
 if (document.getElementById("mobileMessagesBadge")) {
-    let liveReady = false, lastLiveMessageId = Number(sessionStorage.getItem("daiLastLiveMessageId") || 0);
+    let lastEventId = Number(sessionStorage.getItem("daiLastEventId") || 0);
+    let syncSocket = null, reconnectTimer = null, pingTimer = null;
+
     function paintMessageBadge(count) {
-        const badge = document.getElementById("mobileMessagesBadge");
-        count = Number(count || 0);
-        badge.hidden = count < 1;
-        badge.textContent = count > 99 ? "99+" : String(count);
+        const badge=document.getElementById("mobileMessagesBadge");
+        count=Number(count||0); badge.hidden=count<1; badge.textContent=count>99?"99+":String(count);
     }
-    function showLiveMessage(latest) {
-        let toast = document.getElementById("daiMessageToast");
-        if (!toast) {
-            toast = document.createElement("a");
-            toast.id = "daiMessageToast";
-            toast.className = "dai-message-toast";
-            document.body.appendChild(toast);
+    function bumpMessageBadge() {
+        const badge=document.getElementById("mobileMessagesBadge");
+        const current=badge && !badge.hidden ? Number(badge.textContent||0) : 0;
+        paintMessageBadge(current+1);
+    }
+    function showLiveMessage(data) {
+        let toast=document.getElementById("daiMessageToast");
+        if(!toast){toast=document.createElement("a");toast.id="daiMessageToast";toast.className="dai-message-toast";document.body.appendChild(toast);}
+        toast.href="/expert-support/cases/"+data.case_id;
+        toast.innerHTML="<b>"+String(data.sender||"Yeni mesaj").replace(/[<>&]/g,"")+"</b><span>"+String(data.preview||"Yeni mesaj").replace(/[<>&]/g,"")+"</span>";
+        toast.classList.add("show"); clearTimeout(window.__daiToastTimer);
+        window.__daiToastTimer=setTimeout(()=>toast.classList.remove("show"),4500);
+        if(document.hidden&&"Notification" in window&&Notification.permission==="granted")
+            new Notification("Dental AI · Yeni mesaj",{body:(data.sender||"")+": "+(data.preview||""),tag:"case-"+data.case_id});
+    }
+    function showAdminNotice(data) {
+        const box=document.createElement("div");box.className="dai-admin-notice";
+        box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";
+        box.querySelector("b").textContent=data.title||"Dental AI";
+        box.querySelector("span").textContent=data.message||"";
+        box.querySelector("button").onclick=()=>box.remove(); document.body.appendChild(box);
+    }
+    function applySyncEvent(evt) {
+        if(!evt||evt.type!=="event")return;
+        const id=Number(evt.event_id||0); if(id&&id<=lastEventId)return;
+        if(id){lastEventId=id;sessionStorage.setItem("daiLastEventId",String(id));}
+        const data=evt.payload||{};
+        if(evt.event_type==="MESSAGE_CREATED"){bumpMessageBadge();showLiveMessage(data);}
+        else if(evt.event_type==="CASE_CREATED"){
+            if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
+        } else if(evt.event_type==="NOTICE_CREATED"){showAdminNotice(data);}
+        window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+    }
+    async function catchUpEvents() {
+        let after=lastEventId, more=true;
+        while(more){
+            const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
+            if(!r.ok)return;
+            const data=await r.json(); (data.events||[]).forEach(applySyncEvent);
+            after=Number(data.last_event_id||after); more=Boolean(data.has_more);
         }
-        toast.href = "/expert-support/cases/" + latest.case_id;
-        toast.innerHTML = "<b>" + String(latest.sender || "Yeni mesaj").replace(/[<>&]/g,"") + "</b><span>" + String(latest.preview || "Yeni mesaj").replace(/[<>&]/g,"") + "</span>";
-        toast.classList.add("show");
-        clearTimeout(window.__daiToastTimer);
-        window.__daiToastTimer = setTimeout(()=>toast.classList.remove("show"), 4500);
-        if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-            new Notification("Dental AI · Yeni mesaj", {body:(latest.sender || "") + ": " + (latest.preview || ""), tag:"case-"+latest.case_id});
-        }
     }
-    async function pollMessages() {
-        try {
-            const r = await fetch("/messages/live-status", {credentials:"same-origin", cache:"no-store"});
-            if (!r.ok) return;
-            const data = await r.json();
-            paintMessageBadge(data.count);
-            const latest = data.latest;
-            if (liveReady && latest && Number(latest.id) > lastLiveMessageId) {
-                lastLiveMessageId = Number(latest.id);
-                sessionStorage.setItem("daiLastLiveMessageId", String(lastLiveMessageId));
-                showLiveMessage(latest);
-                const p = location.pathname;
-                const typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
-                if (!typing && p === "/messages") setTimeout(()=>location.reload(), 650);
-            } else if (!liveReady && latest) {
-                lastLiveMessageId = Math.max(lastLiveMessageId, Number(latest.id));
-                sessionStorage.setItem("daiLastLiveMessageId", String(lastLiveMessageId));
-            }
-            liveReady = true;
-        } catch(e) {}
+    function connectSync() {
+        clearTimeout(reconnectTimer); clearInterval(pingTimer);
+        const proto=location.protocol==="https:"?"wss:":"ws:";
+        syncSocket=new WebSocket(proto+"//"+location.host+"/ws/sync");
+        syncSocket.onopen=()=>{syncSocket.send(JSON.stringify({type:"resume",after_id:lastEventId}));pingTimer=setInterval(()=>{if(syncSocket&&syncSocket.readyState===1)syncSocket.send(JSON.stringify({type:"ping"}));},25000);};
+        syncSocket.onmessage=e=>{try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
+        syncSocket.onclose=()=>{clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
+        syncSocket.onerror=()=>{try{syncSocket.close();}catch(_){}};
     }
-    const inConsultationRoom = location.pathname.startsWith("/expert-support/cases/");
-    if (!inConsultationRoom) {
-        pollMessages();
-        setInterval(pollMessages, 12000);
-    }
-    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && !inConsultationRoom) pollMessages(); });
-    document.addEventListener("click", function enableDentalNotifications(){
-        if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(()=>{});
-        document.removeEventListener("click", enableDentalNotifications);
-    }, {once:true});
+    fetch("/messages/unread-count",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{count:0}).then(d=>paintMessageBadge(d.count)).catch(()=>{});
+    catchUpEvents().finally(connectSync);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
+    document.addEventListener("click",function enableDentalNotifications(){
+        if("Notification" in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
+        document.removeEventListener("click",enableDentalNotifications);
+    },{once:true});
 }
 </script>
 <script>
