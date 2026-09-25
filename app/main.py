@@ -3966,9 +3966,24 @@ async def expert_support_availability_update(request: Request):
             )).all())
             if active_count >= profile.max_active_cases:
                 return JSONResponse({"ok": False, "detail": "Açık vaka sınırına ulaştığınız için şu anda müsait duruma geçemezsiniz."}, status_code=409)
+        became_available = availability == "AVAILABLE" and profile.availability != "AVAILABLE"
         profile.availability = availability
         profile.updated_at = _utcnow_naive()
         s.add(profile)
+        if became_available:
+            watches = s.exec(select(ExpertAvailabilityWatch).where(
+                ExpertAvailabilityWatch.specialty == profile.specialty,
+                ExpertAvailabilityWatch.is_active == True,
+            )).all()
+            for watch in watches:
+                if watch.user_id != user.id:
+                    s.add(AdminNotice(
+                        user_id=watch.user_id,
+                        title="Uzman müsait",
+                        message=f"{profile.specialty} alanında bir uzman şu anda yeni vaka kabul ediyor.",
+                    ))
+                watch.is_active = False
+                s.add(watch)
         s.commit()
     return JSONResponse({"ok": True, "availability": availability})
 
