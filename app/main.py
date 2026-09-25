@@ -7177,6 +7177,17 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
         if action == "PAUSE": profile.availability="PASSIVE"
         elif action == "RESUME":
             if not _is_verified_expert(s, user_id): return HTMLResponse("Başvurusu ve belgeleri doğrulanmamış uzman aktifleştirilemez.",status_code=409)
+            policy_state=_expert_policy_state(s,user_id)
+            if policy_state.rules_version!=EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
+                return HTMLResponse("Uzman güncel vaka kabul kurallarını onaylamadan aktifleştirilemez.",status_code=409)
+            if _expert_is_blocked(policy_state):
+                return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.",status_code=409)
+            active_count=len(s.exec(select(ConsultationCase).where(
+                ConsultationCase.expert_user_id==user_id,
+                ConsultationCase.status.in_(["ACTIVE","WAITING_START","EXPERT_COMPLETED"]),
+            )).all())
+            if active_count>=min(profile.max_active_cases,5):
+                return HTMLResponse("Uzmanın aktif vaka kapasitesi dolu.",status_code=409)
             profile.availability="AVAILABLE"
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+action,target_user_id=user_id));s.commit()
