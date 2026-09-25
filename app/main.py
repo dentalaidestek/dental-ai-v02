@@ -3584,6 +3584,11 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     session.add(case)
     if existing:
         return False
+    expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == case.expert_user_id)).first()
+    if expert_profile and expert_profile.availability == "AVAILABLE":
+        expert_profile.availability = "BUSY"
+        expert_profile.updated_at = now
+        session.add(expert_profile)
     _consultation_event(session, case.id, "EXPERT_TIMEOUT", case.expert_user_id, {"deadline": case.expert_response_deadline.isoformat()})
     local_now = _utc_to_local(now) or now
     day_start_local = datetime.combine(local_now.date(), time.min)
