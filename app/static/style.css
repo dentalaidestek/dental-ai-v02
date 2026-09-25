@@ -4889,3 +4889,26 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .expert-room-head{position:sticky;top:0;z-index:1250;background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}
 .case-room-menu{position:relative;z-index:1300;flex:0 0 auto}
 @media(max-width:700px){.expert-room-head{top:0}.case-room-menu>summary{position:relative;z-index:1301}}
+
+/* Consultation room v4: fixed mobile shell */
+.case-room-back{width:34px;height:34px;display:grid;place-items:center;text-decoration:none;font-size:30px;line-height:1;color:#2563eb;border-radius:50%;flex:0 0 34px}
+.case-room-title{min-width:0;display:grid;gap:1px;flex:1}.case-room-title b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.case-room-title small{font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.expert-attachment-preview{grid-column:1/-1;display:grid;grid-template-columns:42px minmax(0,1fr) 28px;align-items:center;gap:8px;padding:7px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px}.expert-attachment-preview[hidden]{display:none}.expert-attachment-preview img{width:42px;height:42px;object-fit:cover;border-radius:8px}.expert-attachment-preview span{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.expert-attachment-preview button{width:28px;height:28px;padding:0;border:0;border-radius:50%;background:#e2e8f0;color:#0f172a;font-size:20px}.expert-attachment-preview #attachmentThumb{font-size:10px;font-weight:800;color:#475569;text-align:center}
+.expert-send-circle{width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;padding:0!important;border-radius:50%!important;font-size:24px!important;line-height:1!important;display:grid!important;place-items:center!important}
+@media(max-width:700px){
+ body:has(.expert-room){overflow:hidden}
+ body:has(.expert-room) main{height:calc(100dvh - 64px - env(safe-area-inset-bottom));overflow:hidden}
+ .expert-room{height:100%;max-width:none!important;padding:0 10px!important;display:flex;flex-direction:column;overflow:hidden}
+ .expert-room-head{position:relative!important;top:auto!important;flex:0 0 auto;min-height:54px!important;margin:0!important;padding:7px 5px!important;border-radius:0 0 14px 14px!important;box-shadow:0 4px 12px rgba(15,23,42,.06)}
+ .expert-patient-pin{position:relative!important;top:auto!important;flex:0 0 auto;margin:5px 0!important;padding:6px 8px!important;border-radius:11px!important;box-shadow:none!important}
+ .expert-patient-avatar{width:30px!important;height:30px!important;font-size:11px!important}.expert-patient-pin strong{font-size:12px!important}.expert-patient-pin span,.expert-patient-pin small{font-size:9px!important}
+ .expert-room>.expert-case-summary,.expert-room>.case-payment-status,.expert-room>.case-live-status{flex:0 0 auto;margin:4px 0!important;padding:7px 9px!important}
+ .expert-room>.expert-case-summary p{margin:3px 0!important;font-size:11px!important}.expert-room>.expert-case-summary details{font-size:11px!important}
+ .expert-room .expert-chat{flex:1 1 auto!important;height:auto!important;min-height:0!important;max-height:none!important;margin:4px 0 0!important;padding:8px 2px 18px!important;overflow-y:auto!important;scroll-padding-bottom:24px}
+ .expert-room .expert-compose-stack{position:fixed!important;left:10px!important;right:10px!important;bottom:calc(64px + env(safe-area-inset-bottom))!important;width:auto!important;z-index:1400;margin:0!important;padding:7px!important;border-radius:18px!important;background:#fff;box-shadow:0 -5px 20px rgba(15,23,42,.10);grid-template-columns:42px minmax(0,1fr)!important}
+ .expert-room .expert-chat{padding-bottom:92px!important}
+ .expert-media-composer label{width:42px!important;height:42px!important;min-width:42px!important;border-radius:50%!important;display:grid!important;place-items:center!important}
+ .expert-room .expert-composer{display:grid!important;grid-template-columns:minmax(0,1fr) 42px!important;gap:7px!important;align-items:center!important}
+ .expert-room .expert-composer input{height:42px!important;border-radius:21px!important;padding:0 14px!important}
+ .case-room-menu{margin-left:0!important}.case-room-menu>summary{width:34px!important;height:34px!important}
+}
