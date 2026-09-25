@@ -32,7 +32,7 @@
         <a href="/expert-support/performance"><b>Performans</b><small>Detayları gör</small></a>
         <span><b>{{ profile.consultation_price }} TL</b><small>Danışmanlık</small></span>
       </div>
-      {% if profile.publications_text or profile.orcid_url %}<div class="expert-academic"><strong>Akademik çalışmalar</strong>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<small>ORCID · {{ profile.orcid_url }}</small>{% endif %}</div>{% endif %}
+      {% if profile.publications_text or profile.orcid_url %}<div class="expert-academic"><strong>Akademik çalışmalar</strong>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<a href="{{ profile.orcid_url }}" target="_blank" rel="noopener noreferrer">ORCID profilini görüntüle</a>{% endif %}</div>{% endif %}
     </div>
   </section>
   {% else %}
@@ -50,18 +50,37 @@
       <label>Kurum<input name="institution" value="{{ profile.institution if profile and profile.institution else '' }}"></label>
       <label>Hakkında<textarea name="bio" rows="3">{{ profile.bio if profile and profile.bio else '' }}</textarea></label>
       <label>Yayınlar / tezler<textarea name="publications_text" rows="3" placeholder="Makale, tez, DOI veya akademik çalışma">{{ profile.publications_text if profile and profile.publications_text else '' }}</textarea></label>
-      <label>ORCID<input name="orcid_url" value="{{ profile.orcid_url if profile and profile.orcid_url else '' }}" placeholder="ORCID profil bağlantısı"></label>
+      <label>ORCID iD<input name="orcid_url" value="{{ profile.orcid_url.rsplit('/', 1)[-1] if profile and profile.orcid_url else '' }}" placeholder="0000-0000-0000-0000" inputmode="text"><small>ORCID iD doğrulanır ve profilinizde yalnızca çalışan ORCID profil bağlantısı gösterilir.</small></label>
       <label>Danışmanlık ücreti<input type="number" name="consultation_price" min="{{ minimum_price }}" value="{{ profile.consultation_price if profile and profile.consultation_price else minimum_price }}" required><small>Minimum {{ minimum_price }} TL · tamamlanan danışmanlıkta planlanan platform payı %20.</small></label>
       <input id="availabilitySelect" type="hidden" name="availability" value="{{ profile.availability if profile else 'PASSIVE' }}">
       <div class="expert-rule">Aynı anda en fazla <b>5 açık vaka</b> kabul edilebilir.</div>
-      <button class="expert-primary expert-profile-save" type="submit">Değişiklikleri Kaydet</button>
+      <button class="expert-primary expert-profile-save" type="submit">{% if profile %}Değişiklikleri Kaydet{% else %}Uzmanlık Başvurusunu Gönder{% endif %}</button>
     </form>
   </details>
   <div class="expert-profile-links expert-profile-links-compact"><a href="/expert-support/performance">Performansım</a><a href="/expert-support/performance-info">Performans nasıl değerlendirilir?</a><a href="/expert-support/rules">Vaka kabul kuralları</a></div>
 </div>
 <dialog class="expert-crop-dialog" id="expertCropDialog"><form method="dialog"><header><strong>Profil fotoğrafını kırp</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="expertCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="expertCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><small>Fotoğrafı konumlandırmak için görüntüyü sürükleyin.</small><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="expertCropApply" class="expert-primary">Kırpmayı kullan</button></div></form></dialog>
 <script>
-function syncExpertAvailability(on){const input=document.getElementById("availabilitySelect"), text=document.getElementById("availabilityText");if(input) input.value=on?"AVAILABLE":"BUSY";if(text) text.textContent=on?"Müsait":"Meşgul";if(on&&!expertNotificationsAllowed())showExpertNotificationGate();}
+async function syncExpertAvailability(on){
+  const toggle=document.getElementById("availabilityToggle"),input=document.getElementById("availabilitySelect"),text=document.getElementById("availabilityText");
+  const previous=input&&input.value==="AVAILABLE";
+  if(input)input.value=on?"AVAILABLE":"BUSY";
+  if(text)text.textContent=on?"Müsait":"Meşgul";
+  if(toggle)toggle.disabled=true;
+  try{
+    const response=await fetch("/expert-support/availability",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({availability:on?"AVAILABLE":"BUSY"})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok)throw new Error(data.detail||"Müsaitlik durumu kaydedilemedi.");
+    if(input)input.value=data.availability;
+    if(text)text.textContent=data.availability==="AVAILABLE"?"Müsait":"Meşgul";
+    if(on&&!expertNotificationsAllowed())showExpertNotificationGate();
+  }catch(error){
+    if(toggle)toggle.checked=previous;
+    if(input)input.value=previous?"AVAILABLE":"BUSY";
+    if(text)text.textContent=previous?"Müsait":"Meşgul";
+    alert(error.message||"Müsaitlik durumu kaydedilemedi.");
+  }finally{if(toggle)toggle.disabled=false;}
+}
 function expertNotificationsAllowed(){return "Notification" in window && Notification.permission==="granted";}
 function expertNotificationState(){
   if(!("Notification" in window)) return "unsupported";
