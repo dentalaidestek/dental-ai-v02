@@ -4865,3 +4865,17 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
  .expert-room .expert-composer input{font-size:14px;min-width:0}
  .expert-room .expert-composer button{font-size:14px;padding:10px 13px}
 }
+
+.expert-room-head{position:relative}
+.case-room-menu{margin-left:auto;position:relative}
+.case-room-menu>summary{list-style:none;cursor:pointer;font-size:25px;line-height:1;width:38px;height:38px;display:grid;place-items:center;border-radius:10px}
+.case-room-menu>summary::-webkit-details-marker{display:none}
+.case-room-menu-panel{position:absolute;right:0;top:44px;z-index:1300;width:min(310px,86vw);padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 16px 40px rgba(15,23,42,.14)}
+.case-room-menu-panel form{display:grid;gap:7px;margin:0 0 8px}
+.case-room-menu-panel button,.case-room-menu-panel select,.case-room-menu-panel input{width:100%;font-size:13px}
+.expert-patient-pin{position:sticky;top:6px;z-index:1050;display:flex;align-items:center;gap:10px;padding:9px 11px;margin:8px 0;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.06)}
+.expert-patient-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#eef4ff;font-size:13px;font-weight:750;color:#1e3a5f}
+.expert-patient-pin>div:nth-child(2){min-width:0;display:grid;gap:1px;flex:1}
+.expert-patient-pin strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.expert-patient-pin span,.expert-patient-pin small{font-size:11px;color:#64748b}
+@media(max-width:700px){.expert-patient-pin{top:4px}.expert-room-head>span{display:none}.case-room-menu{margin-left:0}}
