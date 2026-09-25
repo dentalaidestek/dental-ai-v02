@@ -3960,6 +3960,12 @@ async def expert_support_availability_update(request: Request):
                 return JSONResponse({"ok": False, "detail": "Önce güncel vaka kabul kurallarını onaylayın.", "rules_url": "/expert-support/rules?next=/expert-support/profile"}, status_code=409)
             if _expert_is_blocked(policy_state):
                 return JSONResponse({"ok": False, "detail": "Hesabınız şu anda yeni vaka kabul edemiyor."}, status_code=409)
+            active_count = len(s.exec(select(ConsultationCase).where(
+                ConsultationCase.expert_user_id == user.id,
+                ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+            )).all())
+            if active_count >= profile.max_active_cases:
+                return JSONResponse({"ok": False, "detail": "Açık vaka sınırına ulaştığınız için şu anda müsait duruma geçemezsiniz."}, status_code=409)
         profile.availability = availability
         profile.updated_at = _utcnow_naive()
         s.add(profile)
