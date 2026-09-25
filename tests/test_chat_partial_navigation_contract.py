@@ -30,7 +30,8 @@ def test_messages_to_case_uses_scoped_partial_navigation():
 
 def test_back_restores_live_list_dom_and_scroll_without_fetch():
     assert 'host.id="daiMessagesSnapshotHost"' in BASE
-    assert "while(main.firstChild) host.appendChild(main.firstChild)" in BASE
+    assert "function stashMessagesView()" in BASE
+    assert "while(main.firstChild)host.appendChild(main.firstChild)" in BASE
     assert "replaceChildren(...snapshot.host.childNodes)" in BASE
     assert "scrollTo(snapshot.scrollX,snapshot.scrollY)" in BASE
     assert 'if(back&&messagesSnapshot){event.preventDefault();history.back();return;}' in BASE
@@ -115,3 +116,20 @@ def test_messages_and_direct_case_url_keep_server_rendered_fallback(monkeypatch)
     assert partial.status_code == 200
     assert 'class="expert-shell expert-room"' in direct.text
     assert 'class="expert-shell expert-room"' in partial.text
+
+
+def test_partial_navigation_keeps_messages_visible_until_case_is_ready():
+    remember = BASE.split("function rememberMessagesView()", 1)[1].split("function stashMessagesView()", 1)[0]
+    assert "while(main.firstChild)" not in remember
+    open_case = BASE.split("async function openCaseWithoutReload", 1)[1].split("function restoreMessagesView()", 1)[0]
+    assert open_case.index("await fetch(url") < open_case.index("stashMessagesView()")
+    assert open_case.index("incomingMain?.querySelector") < open_case.index("stashMessagesView()")
+
+
+def test_opening_case_clears_snapshot_unread_badge_before_back_restore():
+    assert "function markSnapshotCaseRead(url)" in BASE
+    assert 'row.dataset.unread="0"' in BASE
+    assert 'row.classList.remove("unread")' in BASE
+    assert 'row.querySelector(".message-unread")?.remove()' in BASE
+    open_case = BASE.split("async function openCaseWithoutReload", 1)[1].split("function restoreMessagesView()", 1)[0]
+    assert open_case.index("markSnapshotCaseRead(url)") < open_case.index("stashMessagesView()")
