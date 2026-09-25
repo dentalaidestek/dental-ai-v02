@@ -2414,6 +2414,20 @@ templates = Jinja2Templates(
 def startup():
     storage_check_connection()
     init_db()
+    with Session(engine, expire_on_commit=False) as session:
+        for account in session.exec(select(User).order_by(User.id)).all():
+            logger.warning(
+                "EXPERT_IDENTITY_AUDIT user_id=%s username=%s role=%s active=%s",
+                account.id, account.username, account.role, account.is_active,
+            )
+        for profile in session.exec(select(ExpertProfile).order_by(ExpertProfile.id)).all():
+            linked = session.get(User, profile.user_id)
+            logger.warning(
+                "EXPERT_IDENTITY_AUDIT profile_id=%s profile_user_id=%s linked_username=%s linked_role=%s status=%s/%s availability=%s",
+                profile.id, profile.user_id, linked.username if linked else None,
+                linked.role if linked else None, profile.application_status,
+                profile.verification_status, profile.availability,
+            )
 
 
 @app.get("/notes", response_class=HTMLResponse)
