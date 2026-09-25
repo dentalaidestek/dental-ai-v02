@@ -3821,10 +3821,12 @@ def admin_expert_credential_document(request: Request, profile_id: int):
         media_type = profile.credential_document_mime or "application/octet-stream"
     if not storage_exists(reference):
         return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
-    path = storage_ensure_local(reference)
-    response = FileResponse(path, media_type=media_type)
-    response.headers["Content-Disposition"] = f'inline; filename="{filename.replace(chr(34), "")}"'
-    return response
+    try:
+        path = storage_ensure_local(reference)
+    except Exception:
+        logger.exception("Admin expert credential could not be loaded from storage: profile_id=%s", profile_id)
+        return HTMLResponse("Belge depodan yüklenemedi.", status_code=503)
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
 
 
 @app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
@@ -3934,6 +3936,37 @@ def expert_support_availability_watch(request: Request, specialty: str = Form(..
     return RedirectResponse(f"/expert-support?specialty={specialty}&watch=1", status_code=303)
 
 
+@app.post("/expert-support/availability")
+async def expert_support_availability_update(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "detail": "Oturum gerekli."}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    availability = str(body.get("availability") or "").upper()
+    if availability not in {"AVAILABLE", "BUSY"}:
+        return JSONResponse({"ok": False, "detail": "Geçersiz müsaitlik durumu."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        if not profile:
+            return JSONResponse({"ok": False, "detail": "Uzman profili bulunamadı."}, status_code=404)
+        if availability == "AVAILABLE":
+            if not _is_verified_expert(s, user.id):
+                return JSONResponse({"ok": False, "detail": "Uzman doğrulaması tamamlanmadan müsait duruma geçilemez."}, status_code=409)
+            policy_state = _expert_policy_state(s, user.id)
+            if policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
+                return JSONResponse({"ok": False, "detail": "Önce güncel vaka kabul kurallarını onaylayın.", "rules_url": "/expert-support/rules?next=/expert-support/profile"}, status_code=409)
+            if _expert_is_blocked(policy_state):
+                return JSONResponse({"ok": False, "detail": "Hesabınız şu anda yeni vaka kabul edemiyor."}, status_code=409)
+        profile.availability = availability
+        profile.updated_at = _utcnow_naive()
+        s.add(profile)
+        s.commit()
+    return JSONResponse({"ok": True, "availability": availability})
+
+
 @app.get("/expert-support/profile", response_class=HTMLResponse)
 def expert_support_profile_page(request: Request):
     user = get_current_user(request)
@@ -4029,7 +4062,24 @@ async def expert_support_profile_save(
         profile.academic_title = next_academic_title
         profile.institution = institution.strip() or None
         profile.bio = bio.strip() or None
-        profile.orcid_url = orcid_url.strip() or None
+        raw_orcid = orcid_url.strip()
+        if raw_orcid:
+            raw_orcid = re.sub(r"^https?://(?:www\.)?orcid\.org/", "", raw_orcid, flags=re.IGNORECASE).strip().strip("/")
+            compact_orcid = raw_orcid.replace("-", "")
+            if not re.fullmatch(r"\d{15}[\dXx]", compact_orcid):
+                return HTMLResponse("ORCID iD geçersiz. Örnek: 0000-0002-1825-0097", status_code=400)
+            total = 0
+            for digit in compact_orcid[:15]:
+                total = (total + int(digit)) * 2
+            remainder = total % 11
+            result = (12 - remainder) % 11
+            check_digit = "X" if result == 10 else str(result)
+            if compact_orcid[-1].upper() != check_digit:
+                return HTMLResponse("ORCID iD doğrulama hanesi geçersiz.", status_code=400)
+            normalized_orcid = "-".join([compact_orcid[0:4], compact_orcid[4:8], compact_orcid[8:12], compact_orcid[12:16].upper()])
+            profile.orcid_url = f"https://orcid.org/{normalized_orcid}"
+        else:
+            profile.orcid_url = None
         profile.publications_text = publications_text.strip() or None
         profile.consultation_price = consultation_price
         if profile.phone != normalized_phone:
