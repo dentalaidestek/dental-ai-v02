@@ -122,8 +122,8 @@
 <div class="account-container">
 
     <div class="account-card">
-        <div class="account-profile-hero"><div class="account-profile-avatar">{% if user.profile_photo_path %}<img src="/profile-photo/{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or user.username or '?')[:1] }}{% endif %}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
-        <form method="post" action="/account/profile-photo" id="accountPhotoForm" class="account-photo-form"><input type="file" id="accountPhotoInput" accept="image/jpeg,image/png,image/webp" hidden><input type="hidden" name="profile_photo_data" id="accountPhotoData"><label for="accountPhotoInput">Fotoğraf seç ve yuvarlak kırp</label><small>Öğrenci ve diş hekimi profillerinde isteğe bağlıdır; uzmanlık hizmeti verecek profillerde zorunludur.</small></form>
+        <div class="account-profile-hero"><div class="account-profile-avatar" data-profile-avatar-user-id="{{ user.id }}">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or user.username or '?')[:1] }}{% endif %}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
+        <form method="post" action="/account/profile-photo" id="accountPhotoForm" class="account-photo-form"><input type="file" id="accountPhotoInput" accept="image/jpeg,image/png,image/webp" hidden><input type="hidden" name="profile_photo_data" id="accountPhotoData"><label for="accountPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></form>
 
         {% if error %}
         <div class="error">{{ error }}</div>
@@ -268,7 +268,7 @@
 
 </div>
 
-<dialog class="expert-crop-dialog" id="accountCropDialog"><form method="dialog"><header><strong>Profil fotoğrafını kırp</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="accountCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="accountCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><small>Fotoğrafı konumlandırmak için görüntüyü sürükleyin.</small><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="accountCropApply" class="expert-primary">Kaydet</button></div></form></dialog>
+<dialog class="expert-crop-dialog" id="accountCropDialog"><form method="dialog"><header><strong>Profil fotoğrafı</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="accountCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="accountCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="accountCropApply" class="expert-primary">Kaydet</button></div></form></dialog>
 
 <script>
 function confirmProfessionalTitleChange(form) {

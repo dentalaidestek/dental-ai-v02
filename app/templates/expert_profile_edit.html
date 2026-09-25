@@ -16,7 +16,7 @@
   {% if profile %}
   <section class="expert-my-profile-card">
     <div class="expert-profile-avatar-wrap">
-      <div class="expert-profile-avatar">{% if user.profile_photo_path %}<img src="/profile-photo/{{ user.id }}?v={{ profile.updated_at.timestamp()|int }}" alt="{{ user.display_name }} profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div>
+      <div class="expert-profile-avatar" data-profile-avatar-user-id="{{ user.id }}">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="{{ user.display_name }} profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div>
       <a href="#profileEdit" class="expert-avatar-edit">Profili Düzenle</a>
     </div>
     <div class="expert-profile-main">
@@ -42,7 +42,7 @@
   <details class="expert-edit-panel" id="profileEdit" {% if not profile %}open{% endif %}>
     <summary><span><strong>Profili Düzenle</strong><small>Fotoğraf, mesleki bilgiler, hakkında ve akademik çalışmalar</small></span><b>⌄</b></summary>
     <form class="expert-form expert-form-compact" method="post" enctype="multipart/form-data">
-      <div class="expert-photo-field"><span>Profil fotoğrafı <b>*</b></span><div class="expert-photo-picker"><div class="expert-photo-preview" id="expertPhotoPreview">{% if user.profile_photo_path %}<img src="/profile-photo/{{ user.id }}?v={{ profile.updated_at.timestamp()|int if profile else 0 }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div><label class="expert-secondary" for="expertPhotoInput">Fotoğraf seç ve kırp</label></div><input id="expertPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><input id="profilePhotoData" type="hidden" name="profile_photo_data"><small>Yüzünüzün net göründüğü fotoğraf uzman listesinde yuvarlak gösterilir ve başvuru için zorunludur.</small></div>
+      <div class="expert-photo-field"><span>Profil fotoğrafı <b>*</b></span><div class="expert-photo-picker"><div class="expert-photo-preview" id="expertPhotoPreview">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div><label class="expert-secondary" for="expertPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></div><input id="expertPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><input id="profilePhotoData" type="hidden" name="profile_photo_data"></div>
       <label>Mesleki unvan<input value="{{ professional_title }}" disabled><small>Unvan değişikliği Hesabım bölümünden yapılır ve doğrulama gerektirebilir.</small></label>
       <label>Telefon numarası<input name="phone" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX" value="{{ profile.phone if profile and profile.phone else '' }}" required><small>{% if sms_provider_enabled %}Numaranızı SMS koduyla doğrulayacaksınız.{% else %}Numaranız kaydedilir. Uygun maliyetli SMS sağlayıcısı bağlandığında doğrulama açılacaktır.{% endif %}</small></label>
       <label>Branş<select name="specialty" required>{% for s in specialties %}<option value="{{ s }}" {% if profile and profile.specialty==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><small>Uzmanlık alanı doğrulama belgesine göre yayınlanır.</small></label>
@@ -59,7 +59,7 @@
   </details>
   <div class="expert-profile-links expert-profile-links-compact"><a href="/expert-support/performance">Performansım</a><a href="/expert-support/performance-info">Performans nasıl değerlendirilir?</a><a href="/expert-support/rules">Vaka kabul kuralları</a></div>
 </div>
-<dialog class="expert-crop-dialog" id="expertCropDialog"><form method="dialog"><header><strong>Profil fotoğrafını kırp</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="expertCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="expertCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><small>Fotoğrafı konumlandırmak için görüntüyü sürükleyin.</small><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="expertCropApply" class="expert-primary">Kırpmayı kullan</button></div></form></dialog>
+<dialog class="expert-crop-dialog" id="expertCropDialog"><form method="dialog"><header><strong>Profil fotoğrafı</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="expertCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="expertCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="expertCropApply" class="expert-primary">Kullan</button></div></form></dialog>
 <script>
 async function syncExpertAvailability(on){
   const toggle=document.getElementById("availabilityToggle"),input=document.getElementById("availabilitySelect"),text=document.getElementById("availabilityText");

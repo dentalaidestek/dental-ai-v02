@@ -146,7 +146,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(!messagesSnapshot||messagesSnapshot.host) return;
         const main=document.querySelector("main"),host=document.createElement("div");
         host.id="daiMessagesSnapshotHost";host.hidden=true;host.inert=true;
-        while(main.firstChild)host.appendChild(main.firstChild);
+        while(main.firstChild) host.appendChild(main.firstChild);
         document.body.appendChild(host);messagesSnapshot.host=host;
     }
     function markSnapshotCaseRead(url) {
@@ -251,11 +251,55 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             else if(n)n.remove();
         }
     }
-    function refreshProfileImages(photoUrl) {
-        document.querySelectorAll('img[src*="/profile-photo/"]').forEach(img=>{
-            const raw=img.getAttribute("src")||"";
-            if(photoUrl && raw.includes("/profile-photo/"))img.src=photoUrl;
+    function refreshProfileImages(userId,photoUrl) {
+        if(!userId||!photoUrl)return;
+        document.querySelectorAll("img[data-profile-user-id]").forEach(img=>{
+            if(Number(img.dataset.profileUserId)===Number(userId))img.src=photoUrl;
         });
+        document.querySelectorAll("[data-profile-avatar-user-id]").forEach(host=>{
+            if(Number(host.dataset.profileAvatarUserId)!==Number(userId))return;
+            let img=host.querySelector("img[data-profile-user-id]");
+            if(!img){img=document.createElement("img");img.dataset.profileUserId=String(userId);img.alt="Profil fotoğrafı";host.replaceChildren(img);}
+            img.src=photoUrl;
+        });
+    }
+    const patientFetches=new Map();
+    function applyPatientRecord(patient) {
+        if(!patient?.id)return;
+        document.querySelectorAll("select[data-patient-select]").forEach(select=>{
+            let option=select.querySelector('option[data-patient-id="'+patient.id+'"]');
+            if(!option&&Object.prototype.hasOwnProperty.call(patient,"phone")){option=document.createElement("option");option.value=patient.id;option.dataset.patientId=patient.id;select.appendChild(option);}
+            if(option)option.textContent=patient.display_name||patient.anonymous_id;
+        });
+        document.querySelectorAll("[data-patient-id]").forEach(root=>{
+            if(Number(root.dataset.patientId)!==Number(patient.id))return;
+            root.querySelectorAll("[data-patient-field]").forEach(el=>{
+                const field=el.dataset.patientField;
+                let value=patient[field];
+                if(field==="age_label")value=patient.age==null?"Hasta kaydı":patient.age+" yaş";
+                if(field==="phone_label")value="Telefon: "+(patient.phone||"-");
+                if(field==="anonymous_label")value="Hasta No: "+(patient.anonymous_id||"-");
+                if(field==="complaint_label")value=patient.chief_complaint||"Belirtilmemiş";
+                el.textContent=value===null||value===undefined||value===""?"-":String(value);
+            });
+            if(root.dataset.patientSearch!==undefined)root.dataset.patientSearch=[patient.display_name,patient.anonymous_id,patient.phone].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR");
+        });
+        window.dispatchEvent(new CustomEvent("dai:patient-record",{detail:patient}));
+    }
+    window.__daiApplyPatientRecord=applyPatientRecord;
+    function applyPatientEvent(eventType,data,eventId) {
+        const patientId=Number(data.patient_id||0);if(!patientId)return;
+        if(eventType==="PATIENT_DELETED"){
+            const isOpenDetail=Number(document.querySelector("[data-patient-detail-id]")?.dataset.patientDetailId)===patientId;
+            document.querySelectorAll("[data-patient-id]").forEach(el=>{if(Number(el.dataset.patientId)===patientId)el.remove();});
+            window.dispatchEvent(new CustomEvent("dai:patient-deleted",{detail:{patient_id:patientId}}));
+            if(isOpenDetail)location.assign("/patients?deleted=1");
+            return;
+        }
+        const key=patientId+":"+(eventId||data.version||"");if(patientFetches.has(key))return;
+        const request=fetch("/patients/"+patientId+"/realtime",{credentials:"same-origin",cache:"no-store"})
+            .then(r=>r.ok?r.json():null).then(result=>{if(result?.patient)applyPatientRecord(result.patient);})
+            .finally(()=>patientFetches.delete(key));patientFetches.set(key,request);
     }
     function applySyncEvent(evt) {
         if(!evt||evt.type!=="event")return;
@@ -268,8 +312,9 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){showAdminNotice(data);}
-        else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.photo_url);}
+        else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
+        else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
             const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
         }

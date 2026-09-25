@@ -75,9 +75,9 @@
     <div class="card">
         <h1>🦷 Yeni Tedavi Kaydı</h1>
 
-        <p>
+        <p data-patient-id="{{ patient.id }}">
             Hasta:
-            <strong>
+            <strong data-patient-field="display_name">
                 {{ patient.first_name or "" }}
                 {{ patient.last_name or "" }}
             </strong>

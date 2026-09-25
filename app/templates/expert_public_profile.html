@@ -2,7 +2,7 @@
 <div class="expert-shell expert-public-page">
   <a class="expert-back-link" href="/expert-support">‹ Uzmanlara dön</a>
   <section class="expert-public-hero">
-    <div class="expert-public-avatar">{% if expert.profile_photo_path %}<img src="/profile-photo/{{ expert.id }}" alt="{{ expert.display_name }} profil fotoğrafı">{% else %}{{ (expert.display_name or '?')[:1] }}{% endif %}</div>
+    <div class="expert-public-avatar">{% if expert.profile_photo_path %}<img src="{{ profile_photo_url(expert) }}" data-profile-user-id="{{ expert.id }}" alt="{{ expert.display_name }} profil fotoğrafı">{% else %}{{ (expert.display_name or '?')[:1] }}{% endif %}</div>
     <div class="expert-public-copy"><span class="expert-kicker">Belgesi doğrulanmış uzman</span><h1>{{ professional_name(profile.academic_title or 'Uzman Diş Hekimi', expert.display_name) }}</h1><p>{{ profile.specialty }}{% if profile.institution %} · {{ profile.institution }}{% endif %}</p><div class="expert-profile-badges"><span>✓ e-Devlet mesleki belgesi doğrulandı</span>{% if profile.academic_title_verified and profile.academic_title %}<span>✓ Akademik unvan</span>{% endif %}</div></div>
     <span class="expert-public-availability {% if profile.availability!='AVAILABLE' %}off{% endif %}">{% if profile.availability=='AVAILABLE' %}Müsait{% else %}Meşgul{% endif %}</span>
   </section>

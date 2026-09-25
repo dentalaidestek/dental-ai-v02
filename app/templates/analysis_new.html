@@ -4,9 +4,9 @@
 <div class="analysis-compose-page">
     <div class="analysis-compose-heading">
         <h1>🦷 Dental AI Analizi</h1>
-        <div class="analysis-context-strip analysis-context-patient">
-            <strong>{{ patient.anonymous_id }}{% if patient.age %} · {{ patient.age }} yaş{% endif %}</strong>
-            {% if patient.chief_complaint %}<span>Ana şikâyet: {{ patient.chief_complaint }}</span>{% else %}<span>Analiz bu hasta profiline kaydedilir.</span>{% endif %}
+        <div class="analysis-context-strip analysis-context-patient" data-patient-id="{{ patient.id }}">
+            <strong><span data-patient-field="anonymous_id">{{ patient.anonymous_id }}</span> · <span data-patient-field="age_label">{% if patient.age %}{{ patient.age }} yaş{% else %}Hasta kaydı{% endif %}</span></strong>
+            <span>Ana şikâyet: <span data-patient-field="complaint_label">{{ patient.chief_complaint or 'Belirtilmemiş' }}</span></span>
         </div>
     </div>
 

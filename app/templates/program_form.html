@@ -37,10 +37,10 @@
 
             <label class="program-field program-field-wide">
                 <span>Hasta bağlantısı <small>(isteğe bağlı)</small></span>
-                <select name="patient_id">
+                <select name="patient_id" data-patient-select>
                     <option value="">Hasta bağlama</option>
                     {% for patient in patients %}
-                    <option value="{{ patient.id }}" {% if initial_patient_id|string == patient.id|string %}selected{% endif %}>{{ patient.first_name or '' }} {{ patient.last_name or '' }}</option>
+                    <option value="{{ patient.id }}" data-patient-id="{{ patient.id }}" {% if initial_patient_id|string == patient.id|string %}selected{% endif %}>{{ patient.first_name or '' }} {{ patient.last_name or '' }}</option>
                     {% endfor %}
                 </select>
             </label>

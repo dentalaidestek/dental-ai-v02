@@ -50,15 +50,12 @@
 
   <section class="visual-recent">
     <div class="visual-section-head"><h2>Son Hastalar</h2><a href="/patients">Tümünü Gör →</a></div>
-    {% if patients %}
-    <div class="visual-recent-list">
+    <div class="visual-recent-list" id="dashboardPatientList">
       {% for p in patients[:3] %}
-      <a class="visual-patient-row" href="/patients/{{ p.id }}"><span class="visual-avatar">{{ (p.first_name or '?')[:1] }}{{ (p.last_name or '')[:1] }}</span><span><strong>{{ p.first_name or '' }} {{ p.last_name or '' }}</strong><small>{% if p.age %}{{ p.age }} yaş{% else %}Hasta kaydı{% endif %}</small></span><b>›</b></a>
+      <a class="visual-patient-row" href="/patients/{{ p.id }}" data-patient-id="{{ p.id }}"><span class="visual-avatar" data-patient-field="initials">{{ (p.first_name or '?')[:1] }}{{ (p.last_name or '')[:1] }}</span><span><strong data-patient-field="display_name">{{ p.first_name or '' }} {{ p.last_name or '' }}</strong><small data-patient-field="age_label">{% if p.age %}{{ p.age }} yaş{% else %}Hasta kaydı{% endif %}</small></span><b>›</b></a>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="visual-empty"><span class="empty-icon">♙</span><span>Henüz hasta kaydı yok.</span><a href="/patients/new">Hasta Ekle</a></div>
-    {% endif %}
+    <div class="visual-empty" id="dashboardPatientEmpty"{% if patients %} hidden{% endif %}><span class="empty-icon">♙</span><span>Henüz hasta kaydı yok.</span><a href="/patients/new">Hasta Ekle</a></div>
   </section>
 
   <section class="visual-guest">
@@ -74,5 +71,5 @@
 
   <div class="visual-notice">ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
-<script>document.body.classList.add('dashboard-home');</script>
+<script>document.body.classList.add('dashboard-home');(()=>{const list=document.getElementById('dashboardPatientList'),empty=document.getElementById('dashboardPatientEmpty');if(!list)return;const sync=()=>{while(list.children.length>3)list.lastElementChild.remove();if(empty)empty.hidden=Boolean(list.children.length)};window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='visual-patient-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.innerHTML='<span class="visual-avatar" data-patient-field="initials"></span><span><strong data-patient-field="display_name"></strong><small data-patient-field="age_label"></small></span><b>›</b>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}else list.prepend(row);sync();});window.addEventListener('dai:patient-deleted',sync);sync();})();</script>
 {% endblock %}

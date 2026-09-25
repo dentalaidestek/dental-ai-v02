@@ -1728,6 +1728,21 @@ def _profile_photo_version(reference: Optional[str]) -> str:
     return hashlib.sha256(str(reference).encode("utf-8")).hexdigest()[:16]
 
 
+def _profile_photo_url(user: Optional[User]) -> Optional[str]:
+    if not user or not user.id or not user.profile_photo_path:
+        return None
+    return f"/profile-photo/{user.id}?v={_profile_photo_version(user.profile_photo_path)}"
+
+
+def _remove_replaced_profile_photo(previous: Optional[str], current: Optional[str]) -> None:
+    """Remove only the superseded object, after the DB points at the new object."""
+    if previous and previous != current:
+        try:
+            storage_delete(previous)
+        except Exception:
+            logger.warning("Superseded profile photo could not be removed", exc_info=True)
+
+
 @app.get("/profile-photo/{user_id}")
 def profile_photo(request: Request, user_id: int):
     viewer = get_current_user(request)
@@ -1751,14 +1766,21 @@ async def account_profile_photo(request: Request, profile_photo_data: str = Form
         path = _save_profile_photo(user.id, profile_photo_data)
     except ValueError as exc:
         return HTMLResponse(str(exc), status_code=400)
-    with Session(engine, expire_on_commit=False) as s:
-        db_user = s.get(User, user.id)
-        db_user.profile_photo_path = path
-        s.add(db_user)
-        photo_version=_profile_photo_version(path)
-        photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
-            {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
-        s.commit()
+    previous_path = None
+    try:
+        with Session(engine, expire_on_commit=False) as s:
+            db_user = s.get(User, user.id)
+            previous_path = db_user.profile_photo_path
+            db_user.profile_photo_path = path
+            s.add(db_user)
+            photo_version=_profile_photo_version(path)
+            photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
+                {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
+            s.commit()
+    except Exception:
+        storage_delete(path)
+        raise
+    _remove_replaced_profile_photo(previous_path, path)
     await _publish_realtime_event(photo_event)
     return RedirectResponse("/account?photo_saved=1", status_code=303)
 
@@ -2404,7 +2426,12 @@ def template_user_context(request: Request):
             else:
                 expert_nav["state"] = "ELIGIBLE"
                 expert_nav["label"] = "Uzman Ağına Katıl"
-    return {"user": user, "expert_nav": expert_nav, "professional_name": _professional_display_name}
+    return {
+        "user": user,
+        "expert_nav": expert_nav,
+        "professional_name": _professional_display_name,
+        "profile_photo_url": _profile_photo_url,
+    }
 
 templates = Jinja2Templates(
     directory=BASE/"templates",
@@ -4073,6 +4100,9 @@ async def expert_support_profile_save(
         return RedirectResponse("/login", status_code=303)
     if specialty not in EXPERT_SPECIALTIES or availability not in EXPERT_AVAILABILITY:
         return HTMLResponse("Geçersiz uzman profili bilgisi.", status_code=400)
+    photo_event = None
+    previous_photo_path = None
+    new_photo_path = None
     with Session(engine, expire_on_commit=False) as s:
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         title = meta.professional_title if meta else "Diş Hekimi"
@@ -4089,13 +4119,7 @@ async def expert_support_profile_save(
         if not profile:
             profile = ExpertProfile(user_id=user.id, specialty=specialty, application_status="SUBMITTED")
         db_user = s.get(User, user.id)
-        if profile_photo_data:
-            try:
-                db_user.profile_photo_path = _save_profile_photo(user.id, profile_photo_data)
-            except ValueError as exc:
-                return HTMLResponse(str(exc), status_code=400)
-            s.add(db_user)
-        if not db_user.profile_photo_path:
+        if not db_user.profile_photo_path and not profile_photo_data:
             return HTMLResponse("Uzman başvurusu için yüzünüzün net göründüğü profil fotoğrafı zorunludur.", status_code=400)
         document_changed = False
         if credential_document and credential_document.filename:
@@ -4165,8 +4189,30 @@ async def expert_support_profile_save(
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
         if profile.verification_status != "VERIFIED":
             profile.verification_status = "PENDING"
+        if profile_photo_data:
+            try:
+                new_photo_path = _save_profile_photo(user.id, profile_photo_data)
+            except ValueError as exc:
+                return HTMLResponse(str(exc), status_code=400)
+            previous_photo_path = db_user.profile_photo_path
+            db_user.profile_photo_path = new_photo_path
+            s.add(db_user)
+            photo_version = _profile_photo_version(new_photo_path)
+            photo_event = _record_realtime_event(
+                s, user.id, "PROFILE_PHOTO_UPDATED", "user", user.id,
+                {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
+            )
         s.add(profile)
-        s.commit()
+        try:
+            s.commit()
+        except Exception:
+            if new_photo_path:
+                storage_delete(new_photo_path)
+            raise
+    if new_photo_path:
+        _remove_replaced_profile_photo(previous_photo_path, new_photo_path)
+    if photo_event:
+        await _publish_realtime_event(photo_event)
     return RedirectResponse("/expert-support/profile?saved=1", status_code=303)
 
 
@@ -5022,6 +5068,74 @@ def _record_case_status_realtime_events(session: Session, case: ConsultationCase
     ]
 
 
+def _patient_realtime_recipient_ids(session: Session, patient: Patient) -> set[int]:
+    """Only the owner and users already authorized through a shared case receive the event."""
+    recipients = {patient.owner_user_id} if patient.owner_user_id else set()
+    cases = session.exec(
+        select(ConsultationCase).where(ConsultationCase.patient_id == patient.id)
+    ).all()
+    for case in cases:
+        recipients.update({case.requester_user_id, case.expert_user_id})
+    return {int(user_id) for user_id in recipients if user_id}
+
+
+def _patient_realtime_version(patient: Patient) -> str:
+    value = "|".join(str(value or "") for value in (
+        patient.id, patient.first_name, patient.last_name, patient.phone,
+        patient.birth_date, patient.age, patient.chief_complaint,
+    ))
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _record_patient_realtime_events(
+    session: Session, patient: Patient, event_type: str
+) -> list[RealtimeEvent]:
+    payload = {"patient_id": patient.id, "version": _patient_realtime_version(patient)}
+    return [
+        _record_realtime_event(
+            session, recipient_id, event_type, "patient", patient.id, payload
+        )
+        for recipient_id in _patient_realtime_recipient_ids(session, patient)
+    ]
+
+
+def _patient_realtime_access(session: Session, user: User, patient: Patient) -> tuple[bool, bool]:
+    is_owner = patient.owner_user_id == user.id
+    if is_owner or (user.role == "ADMIN" and patient.owner_user_id in {None, user.id}):
+        return True, True
+    shared_case = session.exec(
+        select(ConsultationCase).where(
+            ConsultationCase.patient_id == patient.id,
+            ((ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)),
+        )
+    ).first()
+    return shared_case is not None, False
+
+
+def _patient_realtime_snapshot(
+    patient: Patient, profile: Optional[PatientProfile], *, include_private: bool
+) -> dict:
+    data = {
+        "id": patient.id,
+        "first_name": patient.first_name or "",
+        "last_name": patient.last_name or "",
+        "display_name": f"{patient.first_name or ''} {patient.last_name or ''}".strip(),
+        "initials": f"{(patient.first_name or '?')[:1]}{(patient.last_name or '')[:1]}".upper(),
+        "anonymous_id": patient.anonymous_id,
+        "age": patient.age,
+        "chief_complaint": patient.chief_complaint or "",
+        "version": _patient_realtime_version(patient),
+    }
+    if include_private:
+        data.update({
+            "phone": patient.phone or "",
+            "tc_kimlik_no": patient.tc_kimlik_no or "",
+            "birth_date": patient.birth_date or "",
+            "address": profile.address if profile and profile.address else "",
+        })
+    return data
+
+
 @app.get("/sync/events")
 def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
     user = get_current_user(request)
@@ -5243,7 +5357,7 @@ def new_patient(request: Request):
     )
 
 @app.post("/patients/new")
-def create_patient(
+async def create_patient(
     request: Request,
     first_name: str = Form(...),
     last_name: str = Form(...),
@@ -5334,15 +5448,18 @@ def create_patient(
         )
 
         s.add(patient)
-        s.commit()
-        s.refresh(patient)
+        s.flush()
 
         patient_profile = PatientProfile(
             patient_id=patient.id,
             address=address.strip() if address else None,
         )
         s.add(patient_profile)
+        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_CREATED")
         s.commit()
+
+        for patient_event in patient_events:
+            await _publish_realtime_event(patient_event)
 
         if request.query_params.get("next") == "analysis":
             return RedirectResponse(
@@ -5833,6 +5950,99 @@ def tooth_chart(request: Request, patient_id: int):
                 "lower_teeth": lower_teeth,
             },
         )
+
+@app.get("/patients/{patient_id}/realtime")
+def patient_realtime_snapshot(request: Request, patient_id: int):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        if not patient:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+        allowed, include_private = _patient_realtime_access(s, user, patient)
+        if not allowed:
+            return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
+        return {"ok": True, "patient": _patient_realtime_snapshot(patient, profile, include_private=include_private)}
+
+
+@app.post("/patients/{patient_id}/edit")
+async def edit_patient(
+    request: Request,
+    patient_id: int,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    birth_date: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    tc_kimlik_no: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    chief_complaint: Optional[str] = Form(None),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    first_name, last_name = first_name.strip(), last_name.strip()
+    phone = phone.strip() if phone else None
+    if not first_name or not last_name:
+        return HTMLResponse("Ad ve soyad zorunludur.", status_code=400)
+    if phone and (not phone.isdigit() or len(phone) != 11 or not phone.startswith("05")):
+        return HTMLResponse("Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır.", status_code=400)
+    calculated_age = None
+    if birth_date:
+        try:
+            birth = datetime.strptime(birth_date, "%Y-%m-%d").date()
+            today = _utcnow_naive().date()
+            calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        except ValueError:
+            return HTMLResponse("Doğum tarihi geçersiz.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        patient = _owned_patient(s, user, patient_id)
+        if not patient:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        patient.first_name = first_name
+        patient.last_name = last_name
+        patient.birth_date = birth_date or None
+        patient.age = calculated_age
+        patient.phone = phone
+        patient.tc_kimlik_no = tc_kimlik_no.strip() if tc_kimlik_no else None
+        patient.chief_complaint = chief_complaint.strip() if chief_complaint else None
+        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
+        if not profile:
+            profile = PatientProfile(patient_id=patient.id)
+        profile.address = address.strip() if address else None
+        s.add(patient)
+        s.add(profile)
+        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_UPDATED")
+        s.commit()
+    for patient_event in patient_events:
+        await _publish_realtime_event(patient_event)
+    if "application/json" in request.headers.get("accept", ""):
+        return {"ok": True, "patient_id": patient_id}
+    return RedirectResponse(f"/patients/{patient_id}?updated=1", status_code=303)
+
+
+@app.post("/patients/{patient_id}/delete")
+async def delete_patient(request: Request, patient_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        patient = _owned_patient(s, user, patient_id)
+        if not patient:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_DELETED")
+        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
+        if profile:
+            s.delete(profile)
+        s.delete(patient)
+        s.commit()
+    for patient_event in patient_events:
+        await _publish_realtime_event(patient_event)
+    if "application/json" in request.headers.get("accept", ""):
+        return {"ok": True, "patient_id": patient_id}
+    return RedirectResponse("/patients?deleted=1", status_code=303)
+
 
 @app.get("/patients/{patient_id}", response_class=HTMLResponse)
 def patient_detail(request: Request, patient_id: int):

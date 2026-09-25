@@ -105,18 +105,18 @@
                 <p class="muted">{{ patients|length }} sonuç gösteriliyor.</p>
 
                 {% for patient in patients %}
-                    <div class="patient">
-                        <strong>
+                    <div class="patient" data-patient-id="{{ patient.id }}">
+                        <strong data-patient-field="display_name">
                             {{ patient.first_name or "" }}
                             {{ patient.last_name or "" }}
                         </strong>
 
-                        <div class="muted">
+                        <div class="muted" data-patient-field="anonymous_label">
                             Hasta No: {{ patient.anonymous_id }}
                         </div>
 
                         <div class="muted">
-                            TC: {{ patient.tc_kimlik_no or "-" }}
+                            TC: <span data-patient-field="tc_kimlik_no">{{ patient.tc_kimlik_no or "-" }}</span>
                         </div>
 
                         <br>

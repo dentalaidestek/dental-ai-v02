@@ -1,24 +1,24 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="patient-detail-page">
+<div class="patient-detail-page" data-patient-detail-id="{{ patient.id }}" data-patient-id="{{ patient.id }}">
     <section class="card patient-hero-card">
         <div class="patient-consult-top"><a class="patient-consult-button" href="/expert-support?patient_id={{ patient.id }}">Uzmana Danış</a></div>
         <div class="patient-hero-main">
-            <div class="patient-avatar" aria-hidden="true">
+            <div class="patient-avatar" aria-hidden="true" data-patient-field="initials">
                 {{ (patient.first_name or 'H')[:1] }}{{ (patient.last_name or '')[:1] }}
             </div>
             <div class="patient-hero-copy">
                 <div class="workspace-section-kicker">Hasta Profili</div>
-                <h1>{{ patient.first_name or "" }} {{ patient.last_name or "" }}</h1>
+                <h1 data-patient-field="display_name">{{ patient.first_name or "" }} {{ patient.last_name or "" }}</h1>
                 <div class="patient-hero-meta">
-                    {% if patient.age is not none %}<span>{{ patient.age }} yaş</span>{% endif %}
-                    {% if patient.phone %}<span>{{ patient.phone }}</span>{% endif %}
-                    <span>{{ patient.anonymous_id }}</span>
+                    <span data-patient-field="age_label">{% if patient.age is not none %}{{ patient.age }} yaş{% else %}Hasta kaydı{% endif %}</span>
+                    <span data-patient-field="phone">{{ patient.phone or '-' }}</span>
+                    <span data-patient-field="anonymous_id">{{ patient.anonymous_id }}</span>
                 </div>
                 <div class="patient-chief-complaint">
                     <span>Başvuru şikâyeti</span>
-                    <strong>{{ patient.chief_complaint or "Belirtilmemiş" }}</strong>
+                    <strong data-patient-field="complaint_label">{{ patient.chief_complaint or "Belirtilmemiş" }}</strong>
                 </div>
             </div>
         </div>
@@ -50,33 +50,50 @@
         <div class="patient-info-grid">
             <div class="patient-info-item">
                 <span>Ad Soyad</span>
-                <strong>{{ patient.first_name or "" }} {{ patient.last_name or "" }}</strong>
+                <strong data-patient-field="display_name">{{ patient.first_name or "" }} {{ patient.last_name or "" }}</strong>
             </div>
             <div class="patient-info-item">
                 <span>Telefon</span>
-                <strong>{{ patient.phone or "-" }}</strong>
+                <strong data-patient-field="phone">{{ patient.phone or "-" }}</strong>
             </div>
             <div class="patient-info-item">
                 <span>TC Kimlik No</span>
-                <strong>{{ patient.tc_kimlik_no or "-" }}</strong>
+                <strong data-patient-field="tc_kimlik_no">{{ patient.tc_kimlik_no or "-" }}</strong>
             </div>
             <div class="patient-info-item">
                 <span>Doğum Tarihi</span>
-                <strong>{{ patient.birth_date or "-" }}</strong>
+                <strong data-patient-field="birth_date">{{ patient.birth_date or "-" }}</strong>
             </div>
             <div class="patient-info-item">
                 <span>Yaş</span>
-                <strong>{{ patient.age if patient.age is not none else "-" }}</strong>
+                <strong data-patient-field="age">{{ patient.age if patient.age is not none else "-" }}</strong>
             </div>
             <div class="patient-info-item">
                 <span>Hasta No</span>
-                <strong>{{ patient.anonymous_id }}</strong>
+                <strong data-patient-field="anonymous_id">{{ patient.anonymous_id }}</strong>
             </div>
             <div class="patient-info-item patient-info-address">
                 <span>Adres</span>
-                <strong>{{ patient_profile.address if patient_profile and patient_profile.address else "-" }}</strong>
+                <strong data-patient-field="address">{{ patient_profile.address if patient_profile and patient_profile.address else "-" }}</strong>
             </div>
         </div>
+    </details>
+
+    <details class="card patient-info-card">
+        <summary><span><strong>Hasta kaydını düzenle</strong><small>Temel hasta bilgilerini güncelleyin</small></span><span class="patient-details-arrow" aria-hidden="true">⌄</span></summary>
+        <form class="patient-form" method="post" action="/patients/{{ patient.id }}/edit">
+            <div class="form-grid">
+                <label><span>Ad</span><input name="first_name" value="{{ patient.first_name or '' }}" required></label>
+                <label><span>Soyad</span><input name="last_name" value="{{ patient.last_name or '' }}" required></label>
+                <label><span>Doğum Tarihi</span><input type="date" name="birth_date" value="{{ patient.birth_date or '' }}"></label>
+                <label><span>Telefon</span><input name="phone" value="{{ patient.phone or '' }}" pattern="05[0-9]{9}" inputmode="numeric"></label>
+                <label><span>TC Kimlik No</span><input name="tc_kimlik_no" value="{{ patient.tc_kimlik_no or '' }}" maxlength="11"></label>
+                <label><span>Adres</span><textarea name="address">{{ patient_profile.address if patient_profile and patient_profile.address else '' }}</textarea></label>
+                <label style="grid-column:1/-1"><span>Başvuru şikâyeti</span><textarea name="chief_complaint">{{ patient.chief_complaint or '' }}</textarea></label>
+            </div>
+            <div class="form-footer"><button class="btn save-btn" type="submit">Değişiklikleri kaydet</button></div>
+        </form>
+        <form method="post" action="/patients/{{ patient.id }}/delete" onsubmit="return confirm('Bu hasta kaydı silinecek. Devam edilsin mi?')"><button class="btn" type="submit">Hasta kaydını sil</button></form>
     </details>
 
     <section class="card patient-section-card patient-media-section" id="clinical-media">

@@ -6,20 +6,23 @@
     <a class="directory-add" href="/patients/new">＋ Yeni Hasta</a>
   </header>
   <div class="directory-search"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="patientListSearch" type="search" placeholder="Hasta adı, numarası veya telefonu ile ara..." autocomplete="off"></div>
-  {% if patients %}
   <div class="directory-list" id="patientDirectoryList">
     {% for patient in patients %}
-    <a class="directory-row" href="/patients/{{ patient.id }}" data-search="{{ (patient.first_name or '')|lower }} {{ (patient.last_name or '')|lower }} {{ (patient.anonymous_id or '')|lower }} {{ (patient.phone or '')|lower }}">
-      <span class="directory-avatar">{{ (patient.first_name or '?')[:1]|upper }}{{ (patient.last_name or '')[:1]|upper }}</span>
-      <span class="directory-copy"><strong>{{ patient.first_name or "" }} {{ patient.last_name or "" }}</strong><small>Hasta No: {{ patient.anonymous_id or "-" }}</small><small>Telefon: {{ patient.phone or "-" }}</small></span>
+    <a class="directory-row" href="/patients/{{ patient.id }}" data-patient-id="{{ patient.id }}" data-patient-search data-search="{{ (patient.first_name or '')|lower }} {{ (patient.last_name or '')|lower }} {{ (patient.anonymous_id or '')|lower }} {{ (patient.phone or '')|lower }}">
+      <span class="directory-avatar" data-patient-field="initials">{{ (patient.first_name or '?')[:1]|upper }}{{ (patient.last_name or '')[:1]|upper }}</span>
+      <span class="directory-copy"><strong data-patient-field="display_name">{{ patient.first_name or "" }} {{ patient.last_name or "" }}</strong><small data-patient-field="anonymous_label">Hasta No: {{ patient.anonymous_id or "-" }}</small><small data-patient-field="phone_label">Telefon: {{ patient.phone or "-" }}</small></span>
       <span class="directory-chevron">›</span>
     </a>
     {% endfor %}
   </div>
   <p class="directory-no-match" id="patientNoMatch" hidden>Eşleşen hasta bulunamadı.</p>
-  {% else %}<div class="directory-empty">Henüz kayıtlı hasta bulunmuyor.<a href="/patients/new">İlk hastayı ekle</a></div>{% endif %}
+  <div class="directory-empty" id="patientDirectoryEmpty"{% if patients %} hidden{% endif %}>Henüz kayıtlı hasta bulunmuyor.<a href="/patients/new">İlk hastayı ekle</a></div>
 </section>
 <script>
-(()=>{const q=document.getElementById('patientListSearch'),list=document.getElementById('patientDirectoryList'),empty=document.getElementById('patientNoMatch');if(!q||!list)return;q.addEventListener('input',()=>{const v=q.value.trim().toLocaleLowerCase('tr-TR');let n=0;list.querySelectorAll('.directory-row').forEach(r=>{const ok=!v||r.dataset.search.includes(v);r.hidden=!ok;if(ok)n++;});if(empty)empty.hidden=n!==0;});})();
+(()=>{const q=document.getElementById('patientListSearch'),list=document.getElementById('patientDirectoryList'),noMatch=document.getElementById('patientNoMatch'),empty=document.getElementById('patientDirectoryEmpty');if(!q||!list)return;
+const filter=()=>{const v=q.value.trim().toLocaleLowerCase('tr-TR');let n=0;list.querySelectorAll('.directory-row').forEach(r=>{const ok=!v||(r.dataset.search||'').includes(v);r.hidden=!ok;if(ok)n++;});if(noMatch)noMatch.hidden=n!==0||!list.children.length;if(empty)empty.hidden=Boolean(list.children.length);};
+q.addEventListener('input',filter);
+window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='directory-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.dataset.patientSearch='';row.innerHTML='<span class="directory-avatar" data-patient-field="initials"></span><span class="directory-copy"><strong data-patient-field="display_name"></strong><small data-patient-field="anonymous_label"></small><small data-patient-field="phone_label"></small></span><span class="directory-chevron">›</span>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}filter();});
+window.addEventListener('dai:patient-deleted',filter);filter();})();
 </script>
 {% endblock %}
