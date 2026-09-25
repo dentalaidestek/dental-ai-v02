@@ -159,6 +159,22 @@ if (document.getElementById("mobileMessagesBadge")) {
         box.querySelector("span").textContent=data.message||"";
         box.querySelector("button").onclick=()=>box.remove(); document.body.appendChild(box);
     }
+    function applySiteConfig(cfg) {
+        if(cfg.site_name)document.querySelectorAll(".brand-title,.app-brand-title").forEach(el=>el.textContent=cfg.site_name);
+        if(cfg.home_title){const el=document.querySelector(".visual-welcome h1");if(el)el.textContent=cfg.home_title;}
+        if(cfg.home_subtitle){const el=document.querySelector(".visual-welcome p");if(el)el.textContent=cfg.home_subtitle;}
+        if(Object.prototype.hasOwnProperty.call(cfg,"announcement")){
+            let n=document.getElementById("siteAdminAnnouncement");
+            if(cfg.announcement){if(!n){n=document.createElement("div");n.id="siteAdminAnnouncement";n.className="site-admin-announcement";const main=document.querySelector("main");if(main)main.prepend(n);}if(n)n.textContent=cfg.announcement;}
+            else if(n)n.remove();
+        }
+    }
+    function refreshProfileImages(photoUrl) {
+        document.querySelectorAll('img[src*="/profile-photo/"]').forEach(img=>{
+            const raw=img.getAttribute("src")||"";
+            if(photoUrl && raw.includes("/profile-photo/"))img.src=photoUrl;
+        });
+    }
     function applySyncEvent(evt) {
         if(!evt||evt.type!=="event")return;
         const id=Number(evt.event_id||0); if(id&&id<=lastEventId)return;
@@ -168,6 +184,11 @@ if (document.getElementById("mobileMessagesBadge")) {
         else if(evt.event_type==="CASE_CREATED"){
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){showAdminNotice(data);}
+        else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.photo_url);}
+        else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
+        else if(evt.event_type==="SITE_CONFIG_UPDATED"){
+            const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
+        }
         window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function catchUpEvents() {
@@ -198,11 +219,13 @@ if (document.getElementById("mobileMessagesBadge")) {
 }
 </script>
 <script>
-fetch("/site/runtime-config",{cache:"no-store"}).then(r=>r.ok?r.json():{}).then(cfg=>{
- if(cfg.site_name){document.querySelectorAll(".brand-title,.app-brand-title").forEach(el=>el.textContent=cfg.site_name);}
- if(cfg.home_title){const el=document.querySelector(".visual-welcome h1");if(el)el.textContent=cfg.home_title;}
- if(cfg.home_subtitle){const el=document.querySelector(".visual-welcome p");if(el)el.textContent=cfg.home_subtitle;}
- if(cfg.announcement){let n=document.getElementById("siteAdminAnnouncement");if(!n){n=document.createElement("div");n.id="siteAdminAnnouncement";n.className="site-admin-announcement";const main=document.querySelector("main");if(main)main.prepend(n);}if(n)n.textContent=cfg.announcement;}
+fetch("/site/runtime-config",{credentials:"same-origin"}).then(r=>r.ok?r.json():{}).then(cfg=>{
+ if(typeof applySiteConfig==="function")applySiteConfig(cfg);
+ else {
+   if(cfg.site_name)document.querySelectorAll(".brand-title,.app-brand-title").forEach(el=>el.textContent=cfg.site_name);
+   if(cfg.home_title){const el=document.querySelector(".visual-welcome h1");if(el)el.textContent=cfg.home_title;}
+   if(cfg.home_subtitle){const el=document.querySelector(".visual-welcome p");if(el)el.textContent=cfg.home_subtitle;}
+ }
 }).catch(()=>{});
 </script>
 </body>
