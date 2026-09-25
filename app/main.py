@@ -72,6 +72,8 @@ from fastapi import (
     File,
     BackgroundTasks,
     Cookie,
+    WebSocket,
+    WebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -4534,6 +4536,7 @@ def expert_support_case_room(request: Request, case_id: int):
             media = s.get(PatientMedia, link.patient_media_id)
             if media:
                 shared_media.append({"link": link, "media": media})
+        patient = s.get(Patient, case.patient_id) if case.patient_id else None
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
@@ -4546,7 +4549,7 @@ def expert_support_case_room(request: Request, case_id: int):
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
-        "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert,
+        "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert, "patient": patient,
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
@@ -4765,6 +4768,7 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
 
 @app.post("/expert-support/cases/{case_id}/message")
 def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
+    wants_json = "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4779,7 +4783,17 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu vaka mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
+        # Bekleme süresinde uzman görüşmeyi erken başlatabilir; hasta ise süre dolmadan yazamaz.
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            remaining = max(1, int((case.consultation_start_deadline - now).total_seconds()))
+            if wants_json: return JSONResponse({"ok": False, "error": "Uzmanın belirttiği başlangıç süresi henüz dolmadı.", "remaining_seconds": remaining}, status_code=423)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Uzmanın belirttiği başlangıç süresi henüz dolmadı.')}", status_code=303)
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
+            case.status = "ACTIVE"
+            _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id)
+            s.add(case)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu kullanıcıyla mesajlaşma engellenmiş.')}", status_code=303)
@@ -4791,7 +4805,8 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             replied = s.get(ConsultationMessage, reply_to_message_id)
             if not replied or replied.case_id != case.id:
                 reply_to_message_id = None
-        s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id))
+        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id)
+        s.add(message)
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -4800,7 +4815,111 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
         s.commit()
+        s.refresh(message)
+        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
+    if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+
+
+
+@app.get("/expert-support/cases/{case_id}/messages-live")
+def expert_support_messages_live(request: Request, case_id: int, after_id: int = 0):
+    user = get_current_user(request)
+    if not user: return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
+        rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id)).all()
+        return {"ok":True,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+
+class ConsultationSocketHub:
+    def __init__(self):
+        self.rooms: dict[int, set[WebSocket]] = {}
+
+    async def connect(self, case_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.rooms.setdefault(case_id, set()).add(websocket)
+
+    def disconnect(self, case_id: int, websocket: WebSocket):
+        room = self.rooms.get(case_id)
+        if not room: return
+        room.discard(websocket)
+        if not room: self.rooms.pop(case_id, None)
+
+    async def broadcast(self, case_id: int, payload: dict):
+        stale = []
+        for socket in list(self.rooms.get(case_id, set())):
+            try: await socket.send_json(payload)
+            except Exception: stale.append(socket)
+        for socket in stale: self.disconnect(case_id, socket)
+
+consultation_socket_hub = ConsultationSocketHub()
+
+@app.websocket("/ws/expert-support/cases/{case_id}")
+async def expert_support_case_socket(websocket: WebSocket, case_id: int):
+    user = get_current_user(websocket)
+    if not user:
+        await websocket.close(code=4401); return
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            await websocket.close(code=4403); return
+    await consultation_socket_hub.connect(case_id, websocket)
+    try:
+        await websocket.send_json({"type":"ready","case_id":case_id})
+        while True:
+            data = await websocket.receive_json()
+            kind = str(data.get("type") or "")
+            if kind == "ping":
+                await websocket.send_json({"type":"pong"}); continue
+            if kind == "read":
+                with Session(engine, expire_on_commit=False) as s:
+                    state = _consultation_inbox_state(s, case_id, user.id)
+                    state.last_read_at = _utcnow_naive(); s.add(state); s.commit()
+                await consultation_socket_hub.broadcast(case_id, {"type":"read","user_id":user.id,"at":_utcnow_naive().isoformat()})
+                continue
+            if kind != "send": continue
+            text_value = str(data.get("content") or "").strip()
+            if not text_value or len(text_value) > 4000:
+                await websocket.send_json({"type":"error","error":"Mesaj boş olamaz ve 4000 karakteri aşamaz."}); continue
+            now = _utcnow_naive()
+            with Session(engine, expire_on_commit=False) as s:
+                case = s.get(ConsultationCase, case_id)
+                if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+                    await websocket.send_json({"type":"error","error":"Yetkisiz işlem."}); continue
+                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED"}:
+                    await websocket.send_json({"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}); continue
+                if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                    await websocket.send_json({"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}); continue
+                if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
+                    case.status = "ACTIVE"; _consultation_event(s,case.id,"REQUESTER_STARTED_AFTER_DEADLINE",user.id); s.add(case)
+                other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+                if _users_blocked(s,user.id,other_id):
+                    await websocket.send_json({"type":"error","error":"Bu kullanıcıyla mesajlaşma engellenmiş."}); continue
+                if _contains_profanity(text_value):
+                    _consultation_event(s,case.id,"PROFANITY_BLOCKED",user.id); s.commit()
+                    await websocket.send_json({"type":"error","error":"Bu mesaj gönderilmedi. Hakaret/küfür içeren mesajlara izin verilmez."}); continue
+                reply_id = data.get("reply_to_message_id")
+                try: reply_id = int(reply_id) if reply_id else None
+                except (TypeError,ValueError): reply_id = None
+                if reply_id:
+                    replied=s.get(ConsultationMessage,reply_id)
+                    if not replied or replied.case_id != case.id: reply_id=None
+                message=ConsultationMessage(case_id=case.id,sender_user_id=user.id,content=text_value,reply_to_message_id=reply_id)
+                s.add(message)
+                if user.id == case.expert_user_id and case.expert_started_at is None:
+                    case.expert_started_at=now
+                    if case.status=="WAITING_START": case.status="ACTIVE"
+                    _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
+                _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
+                payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+            await consultation_socket_hub.broadcast(case_id,payload)
+    except WebSocketDisconnect:
+        consultation_socket_hub.disconnect(case_id,websocket)
+    except Exception:
+        consultation_socket_hub.disconnect(case_id,websocket)
+        try: await websocket.close(code=1011)
+        except Exception: pass
 
 
 @app.post("/expert-support/cases/{case_id}/review")

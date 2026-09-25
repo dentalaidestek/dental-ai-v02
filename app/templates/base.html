@@ -167,7 +167,7 @@ if (document.getElementById("mobileMessagesBadge")) {
                 showLiveMessage(latest);
                 const p = location.pathname;
                 const typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
-                if (!typing && (p === "/messages" || p === "/expert-support/cases/" + latest.case_id)) setTimeout(()=>location.reload(), 650);
+                if (!typing && p === "/messages") setTimeout(()=>location.reload(), 650);
             } else if (!liveReady && latest) {
                 lastLiveMessageId = Math.max(lastLiveMessageId, Number(latest.id));
                 sessionStorage.setItem("daiLastLiveMessageId", String(lastLiveMessageId));
@@ -175,9 +175,12 @@ if (document.getElementById("mobileMessagesBadge")) {
             liveReady = true;
         } catch(e) {}
     }
-    pollMessages();
-    setInterval(pollMessages, 4000);
-    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) pollMessages(); });
+    const inConsultationRoom = location.pathname.startsWith("/expert-support/cases/");
+    if (!inConsultationRoom) {
+        pollMessages();
+        setInterval(pollMessages, 12000);
+    }
+    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && !inConsultationRoom) pollMessages(); });
     document.addEventListener("click", function enableDentalNotifications(){
         if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(()=>{});
         document.removeEventListener("click", enableDentalNotifications);
