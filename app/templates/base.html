@@ -166,9 +166,11 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             document.body.appendChild(script); script.remove();
         });
     }
-    async function openCaseWithoutReload(url,{pushHistory=true}={}) {
+    async function openCaseWithoutReload(url,{pushHistory=true,sourceLink=null}={}) {
         if(partialNavigationBusy||!rememberMessagesView()) return;
         partialNavigationBusy=true;
+        const loadingRow=sourceLink?.closest?.(".message-row")||null;
+        if(loadingRow){loadingRow.classList.add("message-row-loading");loadingRow.setAttribute("aria-busy","true");}
         partialNavigationController?.abort(); partialNavigationController=new AbortController();
         try{
             const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:partialNavigationController.signal,headers:{"X-Requested-With":"partial-navigation"}});
@@ -184,7 +186,10 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             scrollTo(0,0); runPartialScripts(scripts);
         } catch(error) {
             if(error.name!=="AbortError") location.assign(url);
-        } finally { partialNavigationBusy=false; }
+        } finally {
+            loadingRow?.classList.remove("message-row-loading");loadingRow?.removeAttribute("aria-busy");
+            partialNavigationBusy=false;
+        }
     }
     function restoreMessagesView() {
         if(!messagesSnapshot) return false;
@@ -203,7 +208,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(back&&messagesSnapshot){event.preventDefault();history.back();return;}
         const link=event.target.closest?.(".messages-list .message-row-main");
         if(!link||!document.querySelector("main .messages-chat-list")||link.target==="_blank"||link.origin!==location.origin||!casePathPattern.test(link.pathname))return;
-        event.preventDefault();openCaseWithoutReload(link.href);
+        event.preventDefault();openCaseWithoutReload(link.href,{sourceLink:link});
     });
     window.addEventListener("popstate",()=>{
         if(location.pathname==="/messages"&&messagesSnapshot){restoreMessagesView();return;}
