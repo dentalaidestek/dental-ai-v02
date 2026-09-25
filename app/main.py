@@ -4610,7 +4610,7 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
-def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW")):
+async def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4639,7 +4639,8 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
             else:
                 case.status = "PROPOSED"; case.proposed_start_minutes = minutes; case.proposed_start_label = label
                 case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=3)
-                _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes})
+                case.expert_proposal_note = proposal_note.strip()[:500] or None
+                _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes, "note": case.expert_proposal_note})
         else:
             return HTMLResponse("Geçersiz karar.", status_code=400)
         s.add(case); s.commit()
