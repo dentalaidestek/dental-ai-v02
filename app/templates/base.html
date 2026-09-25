@@ -135,13 +135,28 @@ if (!window.__daiMessagesPartialNavigationStarted) {
     const casePathPattern = /^\/expert-support\/cases\/\d+\/?$/;
 
     function rememberMessagesView() {
-        if (messagesSnapshot || !document.querySelector("main .messages-chat-list")) return Boolean(messagesSnapshot);
-        const main=document.querySelector("main"), host=document.createElement("div");
-        host.id="daiMessagesSnapshotHost"; host.hidden=true; host.inert=true;
-        while(main.firstChild) host.appendChild(main.firstChild); document.body.appendChild(host);
+        if (messagesSnapshot) return true;
+        const main=document.querySelector("main"), list=main?.querySelector(".messages-chat-list");
+        if(!main||!list) return false;
         const bottomNav=document.querySelector(".mobile-bottom-nav");
-        messagesSnapshot={host,title:document.title,url:location.pathname+location.search+location.hash,scrollX:scrollX,scrollY:scrollY,bottomNavHidden:bottomNav?.hidden||false};
+        messagesSnapshot={host:null,title:document.title,url:location.pathname+location.search+location.hash,scrollX:scrollX,scrollY:scrollY,bottomNavHidden:bottomNav?.hidden||false};
         return true;
+    }
+    function stashMessagesView() {
+        if(!messagesSnapshot||messagesSnapshot.host) return;
+        const main=document.querySelector("main"),host=document.createElement("div");
+        host.id="daiMessagesSnapshotHost";host.hidden=true;host.inert=true;
+        while(main.firstChild)host.appendChild(main.firstChild);
+        document.body.appendChild(host);messagesSnapshot.host=host;
+    }
+    function markSnapshotCaseRead(url) {
+        if(!messagesSnapshot)return;
+        const match=new URL(url,location.origin).pathname.match(/^\/expert-support\/cases\/(\d+)\/?$/);
+        if(!match)return;
+        const root=messagesSnapshot.host||document;
+        const row=root.querySelector('.message-row[data-case-id="'+match[1]+'"]');
+        if(!row)return;
+        row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();
     }
     function runPartialScripts(scripts) {
         scripts.forEach(source=>{
@@ -161,6 +176,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             const doc=new DOMParser().parseFromString(await response.text(),"text/html"), incomingMain=doc.querySelector("main");
             if(!incomingMain?.querySelector(".expert-room")) throw new Error("case-room-missing");
             const scripts=[...incomingMain.querySelectorAll("script")]; scripts.forEach(script=>script.remove());
+            markSnapshotCaseRead(url);stashMessagesView();
             if(pushHistory) history.pushState({daiPartialCase:true},"",url); else history.replaceState({daiPartialCase:true},"",url);
             const main=document.querySelector("main"); main.replaceChildren(...Array.from(incomingMain.childNodes,x=>document.importNode(x,true)));
             document.title=doc.title||document.title;
@@ -174,6 +190,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(!messagesSnapshot) return false;
         partialNavigationController?.abort(); window.__daiCaseRoomCleanup?.();
         const snapshot=messagesSnapshot; messagesSnapshot=null;
+        if(!snapshot.host)return false;
         document.querySelector("main").replaceChildren(...snapshot.host.childNodes); snapshot.host.remove();
         document.title=snapshot.title;
         const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=snapshot.bottomNavHidden;
