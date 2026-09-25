@@ -4822,6 +4822,16 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
 
 
 
+@app.get("/expert-support/cases/{case_id}/messages-live")
+def expert_support_messages_live(request: Request, case_id: int, after_id: int = 0):
+    user = get_current_user(request)
+    if not user: return JSONResponse({"ok":False},status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
+        rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id)).all()
+        return {"ok":True,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+
 class ConsultationSocketHub:
     def __init__(self):
         self.rooms: dict[int, set[WebSocket]] = {}
