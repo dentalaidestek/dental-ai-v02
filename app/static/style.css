@@ -4912,3 +4912,18 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
  .expert-room .expert-composer input{height:42px!important;border-radius:21px!important;padding:0 14px!important}
  .case-room-menu{margin-left:0!important}.case-room-menu>summary{width:34px!important;height:34px!important}
 }
+
+/* Consultation room v5: conversation gets the viewport */
+.case-payment-compact{padding:7px 10px!important;min-height:0!important;border-radius:12px!important;align-items:center!important}
+.case-payment-compact div{display:flex!important;align-items:center!important;gap:7px!important;min-width:0}.case-payment-compact strong{font-size:11px!important}.case-payment-compact span{font-size:10px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.case-payment-compact>b{font-size:12px!important;white-space:nowrap}
+.expert-send-circle[aria-busy="true"]{opacity:.55;pointer-events:none}
+@media(max-width:700px){
+ body:has(.expert-room) .mobile-bottom-nav{display:none!important}
+ body:has(.expert-room) main{height:calc(100dvh - 64px)!important;padding-bottom:0!important;overflow:hidden!important}
+ .expert-room{height:100%!important;min-height:0!important}
+ .expert-room .expert-compose-stack{bottom:max(8px,env(safe-area-inset-bottom))!important}
+ .expert-room .expert-chat{padding-bottom:104px!important;scroll-padding-bottom:104px!important}
+ .expert-room>.case-payment-status{margin:3px 0!important}
+ .expert-room>.expert-case-summary{margin:3px 0!important;padding:7px 9px!important;border-radius:12px!important}
+ .expert-room>.expert-case-summary>b{font-size:12px!important}.expert-room>.expert-case-summary>p{font-size:11px!important;margin:2px 0!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.expert-room>.expert-case-summary>details{font-size:10px!important}
+}
