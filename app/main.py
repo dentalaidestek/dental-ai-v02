@@ -3539,7 +3539,7 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
             image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
             photo_dir = UPLOAD_DIR / "profile_photos"
             photo_dir.mkdir(parents=True, exist_ok=True)
-            destination = photo_dir / f"user_{user_id}.jpg"
+            destination = photo_dir / ("user_" + str(user_id) + "_" + hashlib.sha256(raw).hexdigest()[:16] + ".jpg")
             image.save(destination, "JPEG", quality=90, optimize=True)
             storage_persist_file(destination, content_type="image/jpeg")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
