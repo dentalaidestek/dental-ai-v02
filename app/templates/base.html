@@ -175,9 +175,12 @@ if (document.getElementById("mobileMessagesBadge")) {
             liveReady = true;
         } catch(e) {}
     }
-    pollMessages();
-    setInterval(pollMessages, 12000);
-    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) pollMessages(); });
+    const inConsultationRoom = location.pathname.startsWith("/expert-support/cases/");
+    if (!inConsultationRoom) {
+        pollMessages();
+        setInterval(pollMessages, 12000);
+    }
+    document.addEventListener("visibilitychange", ()=>{ if (!document.hidden && !inConsultationRoom) pollMessages(); });
     document.addEventListener("click", function enableDentalNotifications(){
         if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(()=>{});
         document.removeEventListener("click", enableDentalNotifications);
