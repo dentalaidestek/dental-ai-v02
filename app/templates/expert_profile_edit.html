@@ -32,7 +32,7 @@
         <a href="/expert-support/performance"><b>Performans</b><small>Detayları gör</small></a>
         <span><b>{{ profile.consultation_price }} TL</b><small>Danışmanlık</small></span>
       </div>
-      {% if profile.publications_text or profile.orcid_url %}<div class="expert-academic"><strong>Akademik çalışmalar</strong>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<small>ORCID · {{ profile.orcid_url }}</small>{% endif %}</div>{% endif %}
+      {% if profile.publications_text or profile.orcid_url %}<div class="expert-academic"><strong>Akademik çalışmalar</strong>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<a href="{{ profile.orcid_url }}" target="_blank" rel="noopener noreferrer">ORCID profilini görüntüle</a>{% endif %}</div>{% endif %}
     </div>
   </section>
   {% else %}
