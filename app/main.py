@@ -4226,6 +4226,7 @@ async def expert_support_availability_update(request: Request):
     availability = str(body.get("availability") or "").upper()
     if availability not in {"AVAILABLE", "BUSY"}:
         return JSONResponse({"ok": False, "detail": "Geçersiz müsaitlik durumu."}, status_code=400)
+    notice_events: list[RealtimeEvent] = []
     with Session(engine, expire_on_commit=False) as s:
         profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
         if not profile:
@@ -4255,14 +4256,25 @@ async def expert_support_availability_update(request: Request):
             )).all()
             for watch in watches:
                 if watch.user_id != user.id:
-                    s.add(AdminNotice(
+                    _, event, _ = _notify_user(
+                        s,
                         user_id=watch.user_id,
+                        actor_user_id=user.id,
+                        notice_type="EXPERT_AVAILABLE",
                         title="Uzman müsait",
                         message=f"{profile.specialty} alanında bir uzman şu anda yeni vaka kabul ediyor.",
-                    ))
+                        related_type="expert_profile",
+                        related_id=profile.id,
+                        dedup_key=f"availability-watch:{watch.id}",
+                        target_url="/expert-support",
+                    )
+                    if event:
+                        notice_events.append(event)
                     watch.is_active = False
                     s.add(watch)
         s.commit()
+    for event in notice_events:
+        await _publish_realtime_event(event)
     return JSONResponse({"ok": True, "availability": availability})
 
 
@@ -8208,15 +8220,33 @@ async def admin_center_settings(request: Request, section: str = Form(...), key:
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section={section}",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/broadcast")
-def admin_center_broadcast(request: Request, title: str = Form(...), message: str = Form(...)):
+async def admin_center_broadcast(request: Request, title: str = Form(...), message: str = Form(...)):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     title=title.strip()[:120];message=message.strip()[:2000]
     if not title or not message:return HTMLResponse("Başlık ve mesaj gerekli.",status_code=400)
+    notice_events: list[RealtimeEvent] = []
     with Session(engine, expire_on_commit=False) as s:
         targets=s.exec(select(User).where(User.is_active==True)).all()
-        for target in targets:s.add(AdminNotice(user_id=target.id,title=title,message=message))
-        s.add(AdminAuditLog(admin_user_id=admin.id,action="BROADCAST_SENT",detail=f"{title} · {len(targets)} kullanıcı"));s.commit()
+        broadcast_key=f"admin-broadcast:{admin.id}:{_utcnow_naive().isoformat()}:{hashlib.sha256((title + chr(0) + message).encode('utf-8')).hexdigest()[:16]}"
+        delivered=0
+        for target in targets:
+            _, event, created = _notify_user(
+                s,
+                user_id=target.id,
+                actor_user_id=admin.id,
+                notice_type="ADMIN_BROADCAST",
+                title=title,
+                message=message,
+                dedup_key=broadcast_key,
+            )
+            if event:
+                notice_events.append(event)
+            if created:
+                delivered += 1
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="BROADCAST_SENT",detail=f"{title} · {delivered} kullanıcı"));s.commit()
+    for event in notice_events:
+        await _publish_realtime_event(event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.get(ADMIN_CENTER_PATH + "/support-fragment", response_class=HTMLResponse)
