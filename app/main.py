@@ -1506,6 +1506,19 @@ def support_request_page(request: Request):
                 conversation_options.append({"case":case,"other":other})
     return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {}})
 
+@app.get("/support-request/fragment", response_class=HTMLResponse)
+def support_request_fragment(request: Request):
+    user=get_current_user(request)
+    if not user:return HTMLResponse("",status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
+        reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
+        ticket_ids=[t.id for t in tickets if t.id is not None]
+        messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
+        by_ticket={ticket_id:[] for ticket_id in ticket_ids}
+        for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
+    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket})
+
 @app.post("/support-request")
 async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
@@ -7813,6 +7826,27 @@ def admin_center_broadcast(request: Request, title: str = Form(...), message: st
         for target in targets:s.add(AdminNotice(user_id=target.id,title=title,message=message))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="BROADCAST_SENT",detail=f"{title} · {len(targets)} kullanıcı"));s.commit()
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
+
+@app.get(ADMIN_CENTER_PATH + "/support-fragment", response_class=HTMLResponse)
+def admin_center_support_fragment(request: Request, section: str = "support"):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("",status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        if section=="complaints":
+            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+            user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
+            users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
+            rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id)} for r in reports]
+            return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"admin_path":ADMIN_CENTER_PATH})
+        tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+        ids=[t.id for t in tickets if t.id is not None]
+        messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ids)).order_by(SupportTicketMessage.created_at)).all() if ids else []
+        by_ticket={ticket_id:[] for ticket_id in ids}
+        for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
+        user_ids={t.user_id for t in tickets if t.user_id}
+        users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
+        rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":by_ticket.get(t.id,[])} for t in tickets]
+        return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
 async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
