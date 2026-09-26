@@ -4552,8 +4552,17 @@ async def expert_support_request_create(
         _consultation_event(s, case.id, "REQUESTED", user.id, {"deadline": case.expert_response_deadline.isoformat(), "shared_media_count": len(selected_media_ids)})
         expert_event=_record_realtime_event(s, expert_user_id, "CASE_CREATED", "consultation_case", case.id,
             {"case_id":case.id,"requester_user_id":user.id,"status":case.status,"urgency":case.urgency})
+        _, notice_event, _ = _notify_user(
+            s, user_id=expert_user_id, actor_user_id=user.id,
+            notice_type="CONSULTATION_REQUEST", title="Yeni danışmanlık talebi",
+            message="Yeni bir danışmanlık talebiniz var. Yanıt süresi dolmadan talebi inceleyin.",
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:request", target_url=f"/expert-support/cases/{case.id}",
+        )
         s.commit()
     await _publish_realtime_event(expert_event)
+    if notice_event:
+        await _publish_realtime_event(notice_event)
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
 
 
@@ -5109,11 +5118,40 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
                 _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes, "note": case.expert_proposal_note})
         else: return HTMLResponse("Geçersiz karar.", status_code=400)
         s.add(case)
+        notification_events = _resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST", related_type="consultation_case", related_id=case.id)
+        if case.status == "REJECTED":
+            _, notice_event, _ = _notify_user(
+                s, user_id=case.requester_user_id, actor_user_id=user.id,
+                notice_type="CONSULTATION_REJECTED", title="Danışmanlık talebi yanıtlandı",
+                message="Uzman danışmanlık talebinizi kabul etmedi.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:rejected", target_url=f"/expert-support/cases/{case.id}",
+            )
+        elif case.status == "ACTIVE":
+            _, notice_event, _ = _notify_user(
+                s, user_id=case.requester_user_id, actor_user_id=user.id,
+                notice_type="CONSULTATION_ACCEPTED", title="Danışmanlık talebiniz kabul edildi",
+                message="Uzman talebinizi kabul etti ve danışmanlık başlatıldı.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:accepted-now", target_url=f"/expert-support/cases/{case.id}",
+            )
+        else:
+            _, notice_event, _ = _notify_user(
+                s, user_id=case.requester_user_id, actor_user_id=user.id,
+                notice_type="CONSULTATION_PROPOSAL", title="Uzman başlangıç süresi önerdi",
+                message=f"Uzman danışmanlık için {case.proposed_start_label or 'bir başlangıç süresi'} önerdi. Onayınız bekleniyor.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:proposal:{case.proposed_at.isoformat() if case.proposed_at else ''}", target_url=f"/expert-support/cases/{case.id}",
+            )
+        if notice_event:
+            notification_events.append(notice_event)
         evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
         s.commit()
         status = case.status
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
     await _publish_realtime_event(evt)
+    for notification_event in notification_events:
+        await _publish_realtime_event(notification_event)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -5138,10 +5176,25 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
         s.add(case)
+        notification_events = _resolve_notifications(s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL", related_type="consultation_case", related_id=case.id)
+        if rejected:
+            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_REJECTED", "Başlangıç önerisi reddedildi", "Talep sahibi önerdiğiniz başlangıç süresini kabul etmedi."
+        else:
+            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_ACCEPTED", "Başlangıç önerisi kabul edildi", "Talep sahibi önerdiğiniz başlangıç süresini kabul etti."
+        _, notice_event, _ = _notify_user(
+            s, user_id=case.expert_user_id, actor_user_id=user.id,
+            notice_type=notice_type, title=notice_title, message=notice_message,
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:proposal-decision:{case.status}", target_url=f"/expert-support/cases/{case.id}",
+        )
+        if notice_event:
+            notification_events.append(notice_event)
         evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
         s.commit(); status=case.status; patient_id=case.patient_id
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
     await _publish_realtime_event(evt)
+    for notification_event in notification_events:
+        await _publish_realtime_event(notification_event)
     if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
