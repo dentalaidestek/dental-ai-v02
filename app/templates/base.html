@@ -290,8 +290,9 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         toast.innerHTML="<b>"+String(data.sender||"Yeni mesaj").replace(/[<>&]/g,"")+"</b><span>"+String(data.preview||"Yeni mesaj").replace(/[<>&]/g,"")+"</span>";
         toast.classList.add("show"); clearTimeout(window.__daiToastTimer);
         window.__daiToastTimer=setTimeout(()=>toast.classList.remove("show"),4500);
-        if(document.hidden&&"Notification" in window&&Notification.permission==="granted")
-            new Notification("Dental AI · Yeni mesaj",{body:(data.sender||"")+": "+(data.preview||""),tag:"case-"+data.case_id});
+        // OS delivery belongs exclusively to the privacy-minimized Service Worker
+        // Web Push path. Realtime only updates in-site UI, avoiding duplicate
+        // background notifications and leaking sender/message preview on lockscreen.
     }
     function paintNotificationBadge(count) {
         const badge=document.getElementById("notificationBadge");
