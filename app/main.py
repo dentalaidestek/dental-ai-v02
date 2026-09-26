@@ -4520,16 +4520,26 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     visible_ids = [case.id for case in visible_cases]
-    last_message_id_rows = session.exec(
-        select(ConsultationMessage.case_id, func.max(ConsultationMessage.id))
+    last_created_rows = session.exec(
+        select(ConsultationMessage.case_id, func.max(ConsultationMessage.created_at))
         .where(ConsultationMessage.case_id.in_(visible_ids))
         .group_by(ConsultationMessage.case_id)
     ).all()
-    last_message_ids = [message_id for _, message_id in last_message_id_rows if message_id is not None]
-    last_messages = session.exec(
-        select(ConsultationMessage).where(ConsultationMessage.id.in_(last_message_ids))
-    ).all() if last_message_ids else []
-    last_message_by_case = {message.case_id: message for message in last_messages}
+    last_created_by_case = {case_id: created_at for case_id, created_at in last_created_rows}
+    last_message_candidates = session.exec(
+        select(ConsultationMessage).where(
+            ConsultationMessage.case_id.in_(visible_ids),
+            sa_or(*[
+                (ConsultationMessage.case_id == case_id) & (ConsultationMessage.created_at == created_at)
+                for case_id, created_at in last_created_by_case.items()
+            ]),
+        )
+    ).all() if last_created_by_case else []
+    last_message_by_case = {}
+    for message in last_message_candidates:
+        current = last_message_by_case.get(message.case_id)
+        if current is None or (message.id or 0) > (current.id or 0):
+            last_message_by_case[message.case_id] = message
 
     unread_by_case = {}
     unread_conditions = []
