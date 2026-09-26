@@ -1459,6 +1459,17 @@ def contact_page(request: Request):
     )
 
 
+def _support_case_is_selectable(session: Session, case: ConsultationCase, user_id: int, now: Optional[datetime] = None) -> bool:
+    """Only real conversations are reportable; requester may also report an unanswered expert timeout."""
+    if user_id not in {case.requester_user_id, case.expert_user_id}:
+        return False
+    has_message=session.exec(select(ConsultationMessage.id).where(ConsultationMessage.case_id==case.id).limit(1)).first() is not None
+    if has_message:
+        return True
+    now=now or _utcnow_naive()
+    return user_id==case.requester_user_id and now>case.expert_response_deadline
+
+
 @app.get("/support-request", response_class=HTMLResponse)
 def support_request_page(request: Request):
     user=get_current_user(request)
@@ -1473,16 +1484,8 @@ def support_request_page(request: Request):
             messaged_case_ids={m.case_id for m in messages}
             now=_utcnow_naive()
             for case in cases:
-                # A real interaction makes the case selectable for either party.
-                # If nobody has messaged, only the requester may select a case where
-                # the expert's response window expired without any expert message.
                 has_message=case.id in messaged_case_ids
-                expert_timed_out_without_message=(
-                    user.id==case.requester_user_id
-                    and not has_message
-                    and now>case.expert_response_deadline
-                )
-                if not has_message and not expert_timed_out_without_message:
+                if not has_message and not (user.id==case.requester_user_id and now>case.expert_response_deadline):
                     continue
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
@@ -1499,7 +1502,7 @@ def contact_submit(request: Request, subject: str = Form(...), message: str = Fo
         if case_id is not None:
             if not user:return HTMLResponse("Bir konuşmayı destek talebine bağlamak için giriş yapmalısınız.",status_code=403)
             case=s.get(ConsultationCase,case_id)
-            if not case or user.id not in {case.requester_user_id,case.expert_user_id}:
+            if not case or not _support_case_is_selectable(s,case,user.id):
                 return HTMLResponse("Bu konuşmayı destek talebine bağlama yetkiniz yok.",status_code=403)
             linked_case_id=case.id
         s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message,case_id=linked_case_id));s.commit()
@@ -4890,7 +4893,7 @@ def consultation_block_user(request: Request, case_id: int):
     if not user:return RedirectResponse("/login",status_code=303)
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
-        if not case or user.id not in {case.requester_user_id,case.expert_user_id}:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id,UserBlock.blocked_user_id==other)).first()
         if not existing:s.add(UserBlock(blocker_user_id=user.id,blocked_user_id=other))
