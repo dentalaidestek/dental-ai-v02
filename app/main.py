@@ -166,6 +166,7 @@ class SupportTicket(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, index=True)
     subject: str
     message: str
+    case_id: Optional[int] = Field(default=None, index=True)
     status: str = Field(default="OPEN", index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
@@ -1158,6 +1159,7 @@ def init_db():
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
         if dialect == "postgresql":
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
+            conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone VARCHAR',
@@ -1171,6 +1173,9 @@ def init_db():
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
+            support_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("supportticket")').fetchall()}
+            if "case_id" not in support_cols:
+                conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN case_id INTEGER')
             user_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
             if "profile_photo_path" not in user_cols:
                 conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN profile_photo_path VARCHAR')
@@ -1457,20 +1462,32 @@ def contact_page(request: Request):
 @app.get("/support-request", response_class=HTMLResponse)
 def support_request_page(request: Request):
     user=get_current_user(request)
-    tickets=[]; reports=[]
+    tickets=[]; reports=[]; conversation_options=[]
     if user:
         with Session(engine, expire_on_commit=False) as s:
             tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
             reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports})
+            cases=s.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user.id) | (ConsultationCase.expert_user_id==user.id)).order_by(ConsultationCase.requested_at.desc())).all()
+            for case in cases:
+                other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
+                other=s.get(User,other_id)
+                conversation_options.append({"case":case,"other":other})
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options})
 
 @app.post("/support-request")
-def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...)):
+def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: Optional[int] = Form(None)):
     user=get_current_user(request)
     subject=subject.strip()[:160];message=message.strip()[:4000]
     if not subject or not message:return HTMLResponse("Konu ve mesaj gerekli.",status_code=400)
+    linked_case_id=None
     with Session(engine, expire_on_commit=False) as s:
-        s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message));s.commit()
+        if case_id is not None:
+            if not user:return HTMLResponse("Bir konuşmayı destek talebine bağlamak için giriş yapmalısınız.",status_code=403)
+            case=s.get(ConsultationCase,case_id)
+            if not case or user.id not in {case.requester_user_id,case.expert_user_id}:
+                return HTMLResponse("Bu konuşmayı destek talebine bağlama yetkiniz yok.",status_code=403)
+            linked_case_id=case.id
+        s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message,case_id=linked_case_id));s.commit()
     return RedirectResponse("/support-request?sent=1",status_code=303)
 
 
@@ -3777,6 +3794,37 @@ def expert_support_performance_info(request: Request):
     if not user:
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request=request, name="expert_performance_info.html", context={"user": user})
+
+
+@app.get("/admin/consultation-review/{case_id}", response_class=HTMLResponse)
+def admin_consultation_report_review(request: Request, case_id: int):
+    user=get_current_user(request)
+    if not user or user.role!="ADMIN":return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id)
+        report=s.exec(select(UserReport).where(UserReport.case_id==case_id)).first()
+        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id)).first()
+        if not case or (not report and not ticket):return HTMLResponse("Bu konuşmaya bağlı bir bildirim veya destek talebi bulunamadı.",status_code=403)
+        messages=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id).order_by(ConsultationMessage.created_at)).all()
+        s.add(DisputeAccessAudit(case_id=case.id,admin_user_id=user.id,action="REPORT_REVIEW"))
+        _consultation_event(s,case.id,"REPORT_ADMIN_ACCESSED",user.id)
+        s.commit()
+    return templates.TemplateResponse(request=request,name="admin_consultation_dispute.html",context={"user":user,"case":case,"messages":messages})
+
+@app.get("/admin/consultation-review/{case_id}/message-media/{message_id}")
+def admin_consultation_report_media(request: Request, case_id: int, message_id: int):
+    user=get_current_user(request)
+    if not user or user.role!="ADMIN":return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        case=s.get(ConsultationCase,case_id);message=s.get(ConsultationMessage,message_id)
+        report=s.exec(select(UserReport).where(UserReport.case_id==case_id)).first()
+        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id)).first()
+        if not case or (not report and not ticket) or not message or message.case_id!=case.id or not message.media_path:
+            return HTMLResponse("Bu inceleme kapsamında erişilebilir medya bulunamadı.",status_code=403)
+        if not storage_exists(message.media_path):return HTMLResponse("Dosya bulunamadı.",status_code=404)
+        path=storage_ensure_local(message.media_path)
+        s.add(DisputeAccessAudit(case_id=case.id,admin_user_id=user.id,action="REPORT_VIEW_MEDIA"));s.commit()
+        return FileResponse(path)
 
 
 @app.get("/admin/consultation-disputes/{case_id}", response_class=HTMLResponse)
