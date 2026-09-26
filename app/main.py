@@ -5022,7 +5022,7 @@ def expert_support_cases(request: Request):
 
 
 @app.get("/expert-support/cases/{case_id}", response_class=HTMLResponse)
-def expert_support_case_room(request: Request, case_id: int):
+async def expert_support_case_room(request: Request, case_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
