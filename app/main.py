@@ -7621,7 +7621,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         # Other admin sections must not fan out into per-user filesystem/database work.
         storage_by_user={}
         if section in {"users","search","bans","notice"}:
-            storage_by_user={u.id:_admin_user_storage_summary(s,u.id) for u in visible_users}
+            storage_by_user=_admin_user_storage_summaries(s,visible_users)
         admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
         completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
@@ -7651,6 +7651,54 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
         create_user_session(response,user.id)
         return response
+
+
+def _admin_user_storage_summaries(session: Session, users: list[User]) -> dict[int, dict]:
+    """Bulk storage accounting for admin lists; fixed query count instead of per-user N+1."""
+    user_ids=[u.id for u in users if u.id is not None]
+    if not user_ids:return {}
+    patient_media=session.exec(select(PatientMedia).where(PatientMedia.owner_user_id.in_(user_ids))).all()
+    chat_media=session.exec(select(ConsultationMessage).where(ConsultationMessage.sender_user_id.in_(user_ids))).all()
+    study_materials=session.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id.in_(user_ids))).all()
+    patients=session.exec(select(Patient).where(Patient.owner_user_id.in_(user_ids))).all()
+    patient_owner={p.id:p.owner_user_id for p in patients if p.id is not None}
+    patient_ids=list(patient_owner)
+    analyses=session.exec(select(Analysis).where(Analysis.patient_id.in_(patient_ids))).all() if patient_ids else []
+    analysis_owner={a.id:patient_owner.get(a.patient_id) for a in analyses if a.id is not None}
+    analysis_ids=list(analysis_owner)
+    assets=session.exec(select(ImageAsset).where(ImageAsset.analysis_id.in_(analysis_ids))).all() if analysis_ids else []
+    guests=session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id.in_(user_ids))).all()
+    guest_owner={g.id:g.owner_user_id for g in guests if g.id is not None}
+    guest_ids=list(guest_owner)
+    guest_assets=session.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id.in_(guest_ids))).all() if guest_ids else []
+    profiles=session.exec(select(ExpertProfile).where(ExpertProfile.user_id.in_(user_ids))).all()
+    profile_by_user={p.user_id:p for p in profiles}
+    account_by_user={u.id:u for u in users if u.id is not None}
+    values={uid:{"Hasta dosyaları":0,"Analiz görüntüleri":0,"Sohbet ekleri":0,"Akademik dosyalar":0,"Misafir analizleri":0,"Uzmanlık belgesi":0,"Profil fotoğrafı":0} for uid in user_ids}
+    for item in patient_media:values[item.owner_user_id]["Hasta dosyaları"]+=storage_size(item.file_path)
+    for item in assets:
+        uid=analysis_owner.get(item.analysis_id)
+        if uid in values:values[uid]["Analiz görüntüleri"]+=storage_size(item.file_path)
+    for item in chat_media:values[item.sender_user_id]["Sohbet ekleri"]+=storage_size(item.media_path)+storage_size(item.original_media_path)
+    for item in study_materials:values[item.owner_user_id]["Akademik dosyalar"]+=storage_size(item.file_path)
+    for item in guest_assets:
+        uid=guest_owner.get(item.guest_analysis_id)
+        if uid in values:values[uid]["Misafir analizleri"]+=storage_size(item.file_path)
+    for uid in user_ids:
+        profile=profile_by_user.get(uid);account=account_by_user.get(uid)
+        if profile and profile.credential_document_path:values[uid]["Uzmanlık belgesi"]+=storage_size(profile.credential_document_path)
+        if account and account.profile_photo_path:values[uid]["Profil fotoğrafı"]+=storage_size(account.profile_photo_path)
+    def human_bytes(value:int)->str:
+        amount=float(value)
+        for unit in ("B","KB","MB","GB","TB"):
+            if amount<1024 or unit=="TB":return f"{int(amount)} {unit}" if unit=="B" else f"{amount:.1f} {unit}"
+            amount/=1024
+        return f"{value} B"
+    result={}
+    for uid,cats in values.items():
+        total=sum(cats.values())
+        result[uid]={"total_bytes":total,"display":human_bytes(total),"total_gb":round(total/(1024**3),3),"total_mb":round(total/(1024**2),1),"categories":[{"name":name,"bytes":value,"display":human_bytes(value),"gb":round(value/(1024**3),3),"mb":round(value/(1024**2),1)} for name,value in cats.items()]}
+    return result
 
 
 def _admin_user_storage_summary(session: Session, user_id: int):
