@@ -461,7 +461,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         clearTimeout(reconnectTimer); clearInterval(pingTimer);
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
-        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
+        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
         connection.onmessage=e=>{if(syncSocket!==connection)return;try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
@@ -470,7 +470,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     catchUpEvents().finally(()=>{refreshUnreadCount();refreshNotificationCenter();connectSync();});
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
-    document.addEventListener("visibilitychange",()=>{if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
+    document.addEventListener("visibilitychange",()=>{if(syncSocket?.readyState===WebSocket.OPEN)syncSocket.send(JSON.stringify({type:"visibility",visible:!document.hidden}));if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
 }
 </script>
 <script>
