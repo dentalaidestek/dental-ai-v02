@@ -461,6 +461,20 @@ class ConsultationCase(SQLModel, table=True):
     expert_proposal_note: Optional[str] = None
 
 
+class ConsultationDeadlineJob(SQLModel, table=True):
+    """Durable PostgreSQL-backed queue for consultation deadline work."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    job_type: str = Field(index=True)
+    run_at: datetime = Field(index=True)
+    dedup_key: str = Field(index=True, unique=True)
+    status: str = Field(default="PENDING", index=True)
+    attempts: int = 0
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    completed_at: Optional[datetime] = None
+
+
 class ExpertAvailabilityWatch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
@@ -1228,6 +1242,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_requester_decision_deadline ON "consultationcase" (status, requester_decision_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -3972,202 +3988,161 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
 
 _consultation_deadline_wakeup = asyncio.Event()
 CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
-CONSULTATION_DEADLINE_BATCH_SIZE = 200
+CONSULTATION_DEADLINE_BATCH_SIZE = 100
 
 
 def _wake_consultation_deadline_worker() -> None:
-    """Wake the local worker only when a transaction creates a new deadline."""
+    """Fast path only; durable queue rows remain the source of truth."""
     _consultation_deadline_wakeup.set()
 
 
-def _next_consultation_deadline() -> Optional[datetime]:
-    """Read only the nearest relevant deadline using indexed ORDER BY/LIMIT queries."""
-    candidates: list[datetime] = []
+def _enqueue_deadline_job(session: Session, case_id: int, job_type: str, run_at: datetime, cycle: str) -> None:
+    """Enqueue inside the caller's domain transaction; unique dedup makes retries safe."""
+    key = f"consultation-deadline:{case_id}:{job_type}:{cycle}"
+    if session.exec(select(ConsultationDeadlineJob.id).where(ConsultationDeadlineJob.dedup_key == key)).first():
+        return
+    session.add(ConsultationDeadlineJob(case_id=case_id, job_type=job_type, run_at=run_at, dedup_key=key))
+
+
+def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: datetime) -> None:
+    cycle = deadline.isoformat()
+    warning_at = max(_utcnow_naive(), deadline - timedelta(minutes=2))
+    _enqueue_deadline_job(session, case_id, f"{kind}_WARNING", warning_at, cycle)
+    _enqueue_deadline_job(session, case_id, f"{kind}_DUE", deadline, cycle)
+
+
+def _next_consultation_job_at() -> Optional[datetime]:
     with Session(engine) as s:
-        specs = (
-            ("REQUESTED", ConsultationCase.expert_response_deadline),
-            ("PROPOSED", ConsultationCase.requester_decision_deadline),
-            ("WAITING_START", ConsultationCase.consultation_start_deadline),
-            ("EXPERT_COMPLETED", ConsultationCase.completion_confirmation_deadline),
-        )
-        for status, column in specs:
-            value = s.exec(
-                select(column).where(
-                    ConsultationCase.status == status,
-                    column != None,
-                ).order_by(column.asc()).limit(1)
-            ).first()
-            if value:
-                candidates.append(value)
-    return min(candidates) if candidates else None
+        return s.exec(select(ConsultationDeadlineJob.run_at).where(
+            ConsultationDeadlineJob.status == "PENDING"
+        ).order_by(ConsultationDeadlineJob.run_at.asc()).limit(1)).first()
+
+
+def _resolve_deadline_warning(session: Session, case: ConsultationCase) -> list[RealtimeEvent]:
+    return _resolve_notifications(
+        session, user_id=case.expert_user_id if case.status in {"REQUESTED", "WAITING_START"} else case.requester_user_id,
+        notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id,
+    )
+
+
+def _deadline_job_is_current(case: ConsultationCase, job: ConsultationDeadlineJob) -> bool:
+    jt = job.job_type
+    if jt.startswith("EXPERT_RESPONSE_"):
+        deadline, status = case.expert_response_deadline, "REQUESTED"
+    elif jt.startswith("PROPOSAL_"):
+        deadline, status = case.requester_decision_deadline, "PROPOSED"
+    elif jt.startswith("START_"):
+        deadline, status = case.consultation_start_deadline, "WAITING_START"
+    elif jt.startswith("COMPLETION_"):
+        deadline, status = case.completion_confirmation_deadline, "EXPERT_COMPLETED"
+    else:
+        return False
+    return bool(case.status == status and deadline and deadline.isoformat() in job.dedup_key)
+
+
+def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: datetime) -> tuple[list[RealtimeEvent], list[RealtimeEvent]]:
+    notices: list[RealtimeEvent] = []
+    case_events: list[RealtimeEvent] = []
+    case = session.get(ConsultationCase, job.case_id)
+    if not case or not _deadline_job_is_current(case, job):
+        return notices, case_events
+    jt = job.job_type
+    deadline = (case.expert_response_deadline if jt.startswith("EXPERT_RESPONSE_") else
+                case.requester_decision_deadline if jt.startswith("PROPOSAL_") else
+                case.consultation_start_deadline if jt.startswith("START_") else
+                case.completion_confirmation_deadline)
+    if not deadline:
+        return notices, case_events
+    if jt.endswith("_WARNING"):
+        if now >= deadline:
+            return notices, case_events
+        if jt.startswith("EXPERT_RESPONSE_"):
+            recipient, title, message, key = case.expert_user_id, "Danışmanlık talebi için süre azalıyor", "Yeni danışmanlık talebini yanıtlamak için yaklaşık 2 dakikanız kaldı.", "expert-response"
+        elif jt.startswith("PROPOSAL_"):
+            recipient, title, message, key = case.requester_user_id, "Başlangıç önerisi için süre azalıyor", "Uzmanın başlangıç önerisini yanıtlamak için yaklaşık 2 dakikanız kaldı.", "proposal"
+        elif jt.startswith("START_"):
+            recipient, title, message, key = case.expert_user_id, "Danışmanlık başlangıç süresi yaklaşıyor", "Kabul edilen danışmanlığı başlatmak için yaklaşık 2 dakikanız kaldı.", "start"
+        else:
+            recipient, title, message, key = case.requester_user_id, "Tamamlama onayı için süre azalıyor", "Danışmanlık tamamlama kararınızı vermek için yaklaşık 2 dakikanız kaldı.", "completion"
+        _, event, _ = _notify_user(session, user_id=recipient, actor_user_id=None,
+            notice_type="CONSULTATION_DEADLINE_WARNING", title=title, message=message,
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"deadline-warning:{key}:{case.id}:{deadline.isoformat()}", target_url=f"/expert-support/cases/{case.id}")
+        if event: notices.append(event)
+        return notices, case_events
+    if now < deadline:
+        return notices, case_events
+    notices.extend(_resolve_deadline_warning(session, case))
+    if jt == "EXPERT_RESPONSE_DUE":
+        if _apply_expert_timeout(session, case, now):
+            case_events.extend(_record_case_status_realtime_events(session, case))
+    elif jt == "PROPOSAL_DUE":
+        case.status = "PROPOSAL_EXPIRED"; session.add(case)
+        _consultation_event(session, case.id, "PROPOSAL_EXPIRED")
+        payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+        if payment: _payment_cancel_or_refund(payment, now); session.add(payment)
+        notices.extend(_resolve_notifications(session, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL", related_type="consultation_case", related_id=case.id))
+        for recipient_id, message in ((case.requester_user_id, "Başlangıç önerisi karar süresi içinde yanıtlanmadığı için kapatıldı."),(case.expert_user_id, "Talep sahibi başlangıç önerisine karar süresi içinde yanıt vermedi.")):
+            _, event, _ = _notify_user(session, user_id=recipient_id, actor_user_id=None, notice_type="CONSULTATION_PROPOSAL_EXPIRED", title="Başlangıç önerisinin süresi doldu", message=message, related_type="consultation_case", related_id=case.id, dedup_key=f"consultation:{case.id}:proposal-expired", target_url=f"/expert-support/cases/{case.id}")
+            if event: notices.append(event)
+        notices.extend(_sync_expert_capacity(session, case.expert_user_id, actor_user_id=None))
+        case_events.extend(_record_case_status_realtime_events(session, case))
+    elif jt == "START_DUE" and not case.expert_started_at:
+        existing = session.exec(select(ConsultationEvent).where(ConsultationEvent.case_id == case.id, ConsultationEvent.event_type == "START_DEADLINE_MISSED")).first()
+        if not existing: _consultation_event(session, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {"deadline": deadline.isoformat()})
+    # COMPLETION_DUE intentionally only resolves the warning. Product semantics
+    # do not define automatic completion/dispute after 24h.
+    return notices, case_events
+
+
+async def _process_consultation_deadline_jobs() -> bool:
+    """Drain one bounded due batch. PostgreSQL workers skip rows locked elsewhere."""
+    now = _utcnow_naive(); publish_events: list[RealtimeEvent] = []; case_events: list[RealtimeEvent] = []
+    with Session(engine, expire_on_commit=False) as s:
+        stmt = select(ConsultationDeadlineJob).where(
+            ConsultationDeadlineJob.status == "PENDING", ConsultationDeadlineJob.run_at <= now
+        ).order_by(ConsultationDeadlineJob.run_at.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)
+        if engine.dialect.name == "postgresql": stmt = stmt.with_for_update(skip_locked=True)
+        jobs = s.exec(stmt).all()
+        for job in jobs:
+            try:
+                notices, events = _process_deadline_job(s, job, now)
+                publish_events.extend(notices); case_events.extend(events)
+                job.status = "DONE"; job.completed_at = now; job.last_error = None; s.add(job)
+            except Exception as exc:
+                job.attempts += 1; job.last_error = str(exc)[:1000]
+                if job.attempts >= 5:
+                    job.status = "FAILED"
+                else:
+                    job.run_at = now + timedelta(seconds=min(300, 5 * (2 ** (job.attempts - 1))))
+                s.add(job)
+                logger.exception("Consultation deadline job failed: %s", job.id)
+        s.commit()
+    for event in case_events: await _publish_realtime_event(event)
+    for event in publish_events: await _publish_realtime_event(event)
+    return len(jobs) >= CONSULTATION_DEADLINE_BATCH_SIZE
 
 
 async def _consultation_deadline_worker() -> None:
-    """DB-authoritative scheduler: process due work, then sleep until the next warning."""
+    """Hybrid scheduler: local wake-up for speed, durable DB queue for correctness."""
     while True:
         try:
-            # Startup/restart recovery happens immediately. This also makes the
-            # local asyncio.Event an optimization only; correctness lives in DB.
-            await _process_consultation_deadlines()
-            next_deadline = _next_consultation_deadline()
-            if next_deadline is None:
-                wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS
-            else:
-                warning_at = next_deadline - timedelta(minutes=2)
-                wait_seconds = max(1.0, min(
-                    (warning_at - _utcnow_naive()).total_seconds(),
-                    CONSULTATION_DEADLINE_RECOVERY_SECONDS,
-                ))
+            while await _process_consultation_deadline_jobs():
+                await asyncio.sleep(0)
+            next_at = _next_consultation_job_at()
+            wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS if next_at is None else max(0.05, min((next_at - _utcnow_naive()).total_seconds(), CONSULTATION_DEADLINE_RECOVERY_SECONDS))
             _consultation_deadline_wakeup.clear()
-            try:
-                await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
-            except asyncio.TimeoutError:
-                pass
+            # Re-check after clear to close the enqueue-vs-clear lost-wakeup race.
+            refreshed = _next_consultation_job_at()
+            if refreshed and refreshed <= _utcnow_naive():
+                continue
+            try: await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
+            except asyncio.TimeoutError: pass
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Consultation deadline worker iteration failed")
             await asyncio.sleep(5)
-
-
-async def _process_consultation_deadlines() -> None:
-    now = _utcnow_naive()
-    warning_cutoff = now + timedelta(minutes=2)
-    publish_events: list[RealtimeEvent] = []
-    case_events: list[RealtimeEvent] = []
-
-    with Session(engine, expire_on_commit=False) as s:
-        # 10-minute expert response deadline: warn the expert, then apply the
-        # existing timeout/policy path when the deadline actually passes.
-        requested = s.exec(select(ConsultationCase).where(
-            ConsultationCase.status == "REQUESTED",
-            ConsultationCase.expert_response_deadline <= warning_cutoff,
-        ).order_by(ConsultationCase.expert_response_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
-        for case in requested:
-            if case.expert_response_deadline > now:
-                _, event, _ = _notify_user(
-                    s, user_id=case.expert_user_id, actor_user_id=None,
-                    notice_type="CONSULTATION_DEADLINE_WARNING",
-                    title="Danışmanlık talebi için süre azalıyor",
-                    message="Yeni danışmanlık talebini yanıtlamak için yaklaşık 2 dakikanız kaldı.",
-                    related_type="consultation_case", related_id=case.id,
-                    dedup_key=f"deadline-warning:expert-response:{case.id}:{case.expert_response_deadline.isoformat()}",
-                    target_url=f"/expert-support/cases/{case.id}",
-                )
-                if event:
-                    publish_events.append(event)
-            elif _apply_expert_timeout(s, case, now):
-                case_events.extend(_record_case_status_realtime_events(s, case))
-
-        # Three-minute requester proposal decision deadline.
-        proposed = s.exec(select(ConsultationCase).where(
-            ConsultationCase.status == "PROPOSED",
-            ConsultationCase.requester_decision_deadline != None,
-            ConsultationCase.requester_decision_deadline <= warning_cutoff,
-        ).order_by(ConsultationCase.requester_decision_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
-        for case in proposed:
-            deadline = case.requester_decision_deadline
-            if deadline and deadline > now:
-                _, event, _ = _notify_user(
-                    s, user_id=case.requester_user_id, actor_user_id=None,
-                    notice_type="CONSULTATION_DEADLINE_WARNING",
-                    title="Başlangıç önerisi için süre azalıyor",
-                    message="Uzmanın başlangıç önerisini yanıtlamak için yaklaşık 2 dakikanız kaldı.",
-                    related_type="consultation_case", related_id=case.id,
-                    dedup_key=f"deadline-warning:proposal:{case.id}:{deadline.isoformat()}",
-                    target_url=f"/expert-support/cases/{case.id}",
-                )
-                if event:
-                    publish_events.append(event)
-            elif deadline:
-                case.status = "PROPOSAL_EXPIRED"
-                _consultation_event(s, case.id, "PROPOSAL_EXPIRED")
-                payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-                if payment:
-                    _payment_cancel_or_refund(payment, now)
-                    s.add(payment)
-                publish_events.extend(_resolve_notifications(
-                    s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL",
-                    related_type="consultation_case", related_id=case.id,
-                ))
-                for recipient_id, message in (
-                    (case.requester_user_id, "Başlangıç önerisi karar süresi içinde yanıtlanmadığı için kapatıldı."),
-                    (case.expert_user_id, "Talep sahibi başlangıç önerisine karar süresi içinde yanıt vermedi."),
-                ):
-                    _, event, _ = _notify_user(
-                        s, user_id=recipient_id, actor_user_id=None,
-                        notice_type="CONSULTATION_PROPOSAL_EXPIRED",
-                        title="Başlangıç önerisinin süresi doldu", message=message,
-                        related_type="consultation_case", related_id=case.id,
-                        dedup_key=f"consultation:{case.id}:proposal-expired",
-                        target_url=f"/expert-support/cases/{case.id}",
-                    )
-                    if event:
-                        publish_events.append(event)
-                s.add(case)
-                publish_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=None))
-                case_events.extend(_record_case_status_realtime_events(s, case))
-
-        # Accepted delayed starts remain WAITING_START after the deadline; the
-        # deadline is a performance miss, not an automatic case cancellation.
-        waiting = s.exec(select(ConsultationCase).where(
-            ConsultationCase.status == "WAITING_START",
-            ConsultationCase.consultation_start_deadline != None,
-            ConsultationCase.consultation_start_deadline <= warning_cutoff,
-        ).order_by(ConsultationCase.consultation_start_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
-        for case in waiting:
-            deadline = case.consultation_start_deadline
-            if not deadline:
-                continue
-            if deadline > now:
-                _, event, _ = _notify_user(
-                    s, user_id=case.expert_user_id, actor_user_id=None,
-                    notice_type="CONSULTATION_DEADLINE_WARNING",
-                    title="Danışmanlık başlangıç süresi yaklaşıyor",
-                    message="Kabul edilen danışmanlığı başlatmak için yaklaşık 2 dakikanız kaldı.",
-                    related_type="consultation_case", related_id=case.id,
-                    dedup_key=f"deadline-warning:start:{case.id}:{deadline.isoformat()}",
-                    target_url=f"/expert-support/cases/{case.id}",
-                )
-                if event:
-                    publish_events.append(event)
-            elif not case.expert_started_at:
-                existing = s.exec(select(ConsultationEvent).where(
-                    ConsultationEvent.case_id == case.id,
-                    ConsultationEvent.event_type == "START_DEADLINE_MISSED",
-                )).first()
-                if not existing:
-                    _consultation_event(s, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {"deadline": deadline.isoformat()})
-
-        # Completion confirmation is intentionally only warned here. The
-        # existing product state machine does not define an automatic action at
-        # 24h, so Phase 5 must not silently invent auto-completion/dispute.
-        completing = s.exec(select(ConsultationCase).where(
-            ConsultationCase.status == "EXPERT_COMPLETED",
-            ConsultationCase.completion_confirmation_deadline != None,
-            ConsultationCase.completion_confirmation_deadline <= warning_cutoff,
-        ).order_by(ConsultationCase.completion_confirmation_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
-        for case in completing:
-            deadline = case.completion_confirmation_deadline
-            if deadline and deadline > now:
-                _, event, _ = _notify_user(
-                    s, user_id=case.requester_user_id, actor_user_id=None,
-                    notice_type="CONSULTATION_DEADLINE_WARNING",
-                    title="Tamamlama onayı için süre azalıyor",
-                    message="Danışmanlık tamamlama kararınızı vermek için yaklaşık 2 dakikanız kaldı.",
-                    related_type="consultation_case", related_id=case.id,
-                    dedup_key=f"deadline-warning:completion:{case.id}:{deadline.isoformat()}",
-                    target_url=f"/expert-support/cases/{case.id}",
-                )
-                if event:
-                    publish_events.append(event)
-
-        s.commit()
-
-    for event in case_events:
-        await _publish_realtime_event(event)
-    for event in publish_events:
-        await _publish_realtime_event(event)
 
 
 def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
@@ -4774,7 +4749,8 @@ async def expert_support_request_create(
             expert_response_deadline=now + timedelta(minutes=10),
             urgency=urgency,
         )
-        s.add(case); s.commit(); s.refresh(case)
+        s.add(case); s.flush(); s.refresh(case)
+        _enqueue_deadline_pair(s, case.id, "EXPERT_RESPONSE", case.expert_response_deadline)
         selected_media_ids = []
         for raw_media_id in media_ids.split(","):
             try:
@@ -4981,15 +4957,6 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
                 )).first()
                 if not existing_missed:
                     _consultation_event(s, case.id, "INBOX_MISSED_RECORDED", None)
-            if status_key == "DELAYED":
-                existing_delayed = s.exec(select(ConsultationEvent).where(
-                    ConsultationEvent.case_id == case.id,
-                    ConsultationEvent.event_type == "START_DEADLINE_MISSED",
-                )).first()
-                if not existing_delayed:
-                    _consultation_event(s, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {
-                        "deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None
-                    })
         if filter == "unread":
             rows = [row for row in rows if row["unread"] > 0]
         elif filter == "waiting":
@@ -5261,44 +5228,7 @@ async def expert_support_case_room(request: Request, case_id: int):
         state.deleted_at = None
         state.recover_until = None
         s.add(state)
-        # REQUESTED timeout mutation is owned by the server-side deadline worker.
-        if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
-            case.status = "PROPOSAL_EXPIRED"
-            _consultation_event(s, case.id, "PROPOSAL_EXPIRED")
-            payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
-            if payment:
-                _payment_cancel_or_refund(payment, now)
-                s.add(payment)
-            notification_events = _resolve_notifications(
-                s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL",
-                related_type="consultation_case", related_id=case.id,
-            )
-            _, expiry_event, _ = _notify_user(
-                s, user_id=case.requester_user_id, actor_user_id=None,
-                notice_type="CONSULTATION_PROPOSAL_EXPIRED", title="Başlangıç önerisinin süresi doldu",
-                message="Başlangıç önerisi karar süresi içinde yanıtlanmadığı için kapatıldı.",
-                related_type="consultation_case", related_id=case.id,
-                dedup_key=f"consultation:{case.id}:proposal-expired", target_url=f"/expert-support/cases/{case.id}",
-            )
-            if expiry_event:
-                notification_events.append(expiry_event)
-            _, expert_expiry_event, _ = _notify_user(
-                s, user_id=case.expert_user_id, actor_user_id=None,
-                notice_type="CONSULTATION_PROPOSAL_EXPIRED", title="Başlangıç önerisinin süresi doldu",
-                message="Talep sahibi başlangıç önerisine karar süresi içinde yanıt vermedi.",
-                related_type="consultation_case", related_id=case.id,
-                dedup_key=f"consultation:{case.id}:proposal-expired", target_url=f"/expert-support/cases/{case.id}",
-            )
-            if expert_expiry_event:
-                notification_events.append(expert_expiry_event)
-            s.add(case)
-            notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=None))
-            case_events = _record_case_status_realtime_events(s, case)
-            s.commit()
-            for case_event in case_events:
-                await _publish_realtime_event(case_event)
-            for notification_event in notification_events:
-                await _publish_realtime_event(notification_event)
+        # Deadline mutations are owned exclusively by the durable deadline worker.
         # Opening the room is the authoritative read action. Persist it before
         # rendering so unread reconciliation cannot race the WebSocket read.
         s.commit()
@@ -5419,6 +5349,8 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
+        if case.status == "PROPOSED" and case.requester_decision_deadline:
+            _enqueue_deadline_pair(s, case.id, "PROPOSAL", case.requester_decision_deadline)
         s.commit()
         status = case.status
     if status == "PROPOSED":
@@ -5466,6 +5398,8 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
+        if not rejected and case.consultation_start_deadline:
+            _enqueue_deadline_pair(s, case.id, "START", case.consultation_start_deadline)
         s.commit(); status=case.status; patient_id=case.patient_id
     if not rejected:
         _wake_consultation_deadline_worker()
@@ -6327,6 +6261,8 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
                 ))
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         realtime_events = _record_case_status_realtime_events(s, case)
+        if case.status == "EXPERT_COMPLETED" and case.completion_confirmation_deadline:
+            _enqueue_deadline_pair(s, case.id, "COMPLETION", case.completion_confirmation_deadline)
         s.commit()
         status = case.status
     if status == "EXPERT_COMPLETED":
