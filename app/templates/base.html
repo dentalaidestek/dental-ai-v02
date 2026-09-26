@@ -202,7 +202,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(restoreCachedCaseRoom(url,{pushHistory})){
             const clearedUnread=markSnapshotCaseRead(url);
             if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\\/expert-support\\/cases\\/(\\d+)/)?.[1]||0),count:clearedUnread}}));
-            document.dispatchEvent(new CustomEvent("dai:unread-changed"));return;
+            return;
         }
         partialNavigationBusy=true;
         partialNavigationController?.abort(); partialNavigationController=new AbortController();
@@ -219,7 +219,8 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             document.title=doc.title||document.title;
             const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=true;
             scrollTo(0,0); runPartialScripts(scripts);
-            document.dispatchEvent(new CustomEvent("dai:unread-changed"));
+            // Local unread state was already updated synchronously above. The room
+            // GET persisted last_read_at, so do not race it with another count fetch.
         } catch(error) {
             if(error.name!=="AbortError") location.assign(url);
         } finally { partialNavigationBusy=false; }
