@@ -7711,22 +7711,29 @@ def admin_center_broadcast(request: Request, title: str = Form(...), message: st
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
-async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...)):
+async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    reply=reply.strip()[:4000]
+    if status=="CLOSED" and not reply:return HTMLResponse("Talebi kapatırken kullanıcıya sonuç açıklaması yazmalısınız.",status_code=400)
     notice_event=None
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
         changed=ticket.status!=status
+        if reply:
+            if not ticket.user_id:return HTMLResponse("Misafir destek talebinde hesap içi yanıtlaşma kullanılamaz.",status_code=409)
+            s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=admin.id,sender_role="ADMIN",message=reply))
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
-        if changed and ticket.user_id:
+        if (changed or reply) and ticket.user_id:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
-            message=f"Destek talebiniz #{ticket.id} artık {labels[status].lower()} durumunda."
+            message=f"Destek talebiniz #{ticket.id} {labels[status].lower()} durumunda."
+            if reply:message+=" Destek ekibi yeni bir yanıt yazdı."
             s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
             notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status})
-        s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_"+status,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
+        action="SUPPORT_REPLY" if reply and not changed else "SUPPORT_"+status
+        s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     if notice_event: await _publish_realtime_event(notice_event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
