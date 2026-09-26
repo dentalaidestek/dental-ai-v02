@@ -3942,13 +3942,12 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     day_end_local = datetime.combine(local_now.date(), time.max)
     day_start_utc = day_start_local.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
     day_end_utc = day_end_local.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
-    expert_cases = session.exec(select(ConsultationCase).where(
+    missed_today = int(session.exec(select(func.count(ConsultationCase.id)).where(
         ConsultationCase.expert_user_id == case.expert_user_id,
         ConsultationCase.status == "EXPERT_TIMEOUT",
         ConsultationCase.requested_at >= day_start_utc,
         ConsultationCase.requested_at <= day_end_utc,
-    )).all()
-    missed_today = len(expert_cases)
+    )).one() or 0)
     _consultation_event(session, case.id, "MISSED_REQUEST_COUNTED", case.expert_user_id, {"missed_today": missed_today})
     if missed_today == 3:
         state = _expert_policy_state(session, case.expert_user_id)
@@ -4849,7 +4848,7 @@ async def expert_support_request_create(
         policy_state = _expert_policy_state(s, expert_user_id)
         if _expert_is_blocked(policy_state):
             return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.", status_code=409)
-        profile = s.exec(select(ExpertProfile).where(
+        profile_stmt = select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
             ExpertProfile.verification_status == "VERIFIED",
@@ -4857,7 +4856,11 @@ async def expert_support_request_create(
             ExpertProfile.credential_document_path != None,
             ExpertProfile.phone != None,
             ExpertProfile.availability == "AVAILABLE",
-        )).first()
+        )
+        if engine.dialect.name == "postgresql":
+            # Serialize capacity slot allocation for concurrent requests to the same expert.
+            profile_stmt = profile_stmt.with_for_update()
+        profile = s.exec(profile_stmt).first()
         if not profile:
             return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
         active_count = _expert_open_case_count(s, expert_user_id)
