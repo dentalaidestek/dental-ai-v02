@@ -5323,7 +5323,12 @@ async def account_push_subscribe(request: Request):
     with Session(engine, expire_on_commit=False) as session:
         subscription = session.exec(select(WebPushSubscription).where(WebPushSubscription.endpoint == endpoint)).first()
         if subscription and subscription.user_id != user.id:
-            return JSONResponse({"ok": False, "error": "Bu cihaz aboneliği başka bir hesaba bağlı."}, status_code=409)
+            # A browser can retain its PushSubscription after the previous account
+            # logs out. Reuse it only when that old account/device binding is already
+            # disabled; an active binding must never be silently stolen.
+            if subscription.disabled_at is None:
+                return JSONResponse({"ok": False, "error": "Bu cihaz aboneliği başka bir hesaba bağlı."}, status_code=409)
+            subscription.user_id = user.id
         now = _utcnow_naive()
         if not subscription:
             subscription = WebPushSubscription(user_id=user.id, endpoint=endpoint, p256dh=p256dh, auth=auth)
