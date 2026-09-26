@@ -6208,13 +6208,13 @@ def patient_detail(request: Request, patient_id: int):
             )
         ).first()
 
-        analysis_assets = {}
-        for analysis in analyses:
-            analysis_assets[analysis.id] = s.exec(
-                select(ImageAsset).where(
-                    ImageAsset.analysis_id == analysis.id
-                )
-            ).all()
+        analysis_assets = {analysis.id: [] for analysis in analyses}
+        analysis_ids = [analysis.id for analysis in analyses if analysis.id is not None]
+        if analysis_ids:
+            for asset in s.exec(
+                select(ImageAsset).where(ImageAsset.analysis_id.in_(analysis_ids))
+            ).all():
+                analysis_assets.setdefault(asset.analysis_id, []).append(asset)
 
         media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
         patient_media = s.exec(
