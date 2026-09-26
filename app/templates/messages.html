@@ -57,6 +57,7 @@ function applyIncomingMessage(data){
   const search=(row.dataset.search||"")+" "+(data.preview||"");row.dataset.search=search.toLocaleLowerCase("tr");
   sortMessageRows();applyMessageFilters();
 }
+window.addEventListener("dai:messages-view-restored",()=>{document.querySelectorAll(".message-row[data-case-id]").forEach(row=>{const id=Number(row.dataset.caseId||0);if(id)refreshConversationCard(id,true);});});
 window.addEventListener("dai:sync-event",e=>{
   const evt=e.detail||{},data=evt.payload||{};
   if(evt.event_type==="MESSAGE_CREATED")applyIncomingMessage(data);
