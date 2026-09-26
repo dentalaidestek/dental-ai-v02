@@ -5917,7 +5917,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
                 notice_type="CONSULTATION_COMPLETION_CONFIRMATION", title="Danışmanlık tamamlanmak üzere",
                 message="Uzman danışmanlığı tamamlandı olarak işaretledi. Onayınız veya devam talebiniz bekleniyor.",
                 related_type="consultation_case", related_id=case.id,
-                dedup_key=f"consultation:{case.id}:completion-confirmation", target_url=f"/expert-support/cases/{case.id}",
+                dedup_key=f"consultation:{case.id}:completion-confirmation:{case.expert_completed_at.isoformat() if case.expert_completed_at else ''}", target_url=f"/expert-support/cases/{case.id}",
             )
             if notice_event:
                 notification_events.append(notice_event)
