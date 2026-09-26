@@ -4850,10 +4850,17 @@ def expert_support_case_room(request: Request, case_id: int):
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
         case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
         shared_media = []
-        for link in case_media_links:
-            media = s.get(PatientMedia, link.patient_media_id)
-            if media:
-                shared_media.append({"link": link, "media": media})
+        if case_media_links:
+            media_ids = [link.patient_media_id for link in case_media_links]
+            media_by_id = {
+                media.id: media
+                for media in s.exec(select(PatientMedia).where(PatientMedia.id.in_(media_ids))).all()
+            }
+            shared_media = [
+                {"link": link, "media": media_by_id[link.patient_media_id]}
+                for link in case_media_links
+                if link.patient_media_id in media_by_id
+            ]
         patient = s.get(Patient, case.patient_id) if case.patient_id else None
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
