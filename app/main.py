@@ -1534,12 +1534,18 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
     if not user:return RedirectResponse("/login",status_code=303)
     message=message.strip()[:4000]
     if not message:return HTMLResponse("Mesaj boş olamaz.",status_code=400)
+    admin_events=[]
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket or ticket.user_id!=user.id:return HTMLResponse("Talep bulunamadı.",status_code=404)
         if ticket.status=="CLOSED":return HTMLResponse("Sonuçlandırılmış destek talebine yeni mesaj gönderilemez.",status_code=409)
         s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message))
-        ticket.status="OPEN";ticket.updated_at=_utcnow_naive();s.add(ticket);s.commit()
+        ticket.status="OPEN";ticket.updated_at=_utcnow_naive();s.add(ticket)
+        admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
+        for admin in admins:
+            admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
+        s.commit()
+    for event in admin_events:await _publish_realtime_event(event)
     return RedirectResponse("/support-request",status_code=303)
 
 
