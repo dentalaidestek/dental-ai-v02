@@ -9,9 +9,11 @@ self.addEventListener("push", event => {
     const body = String(data.body || "Dental AI'da yeni bir bildiriminiz var.");
     const targetUrl = (typeof data.target_url === "string" && data.target_url.startsWith("/") && !data.target_url.startsWith("//")) ? data.target_url : "/";
     const noticeId = String(data.notice_id || "");
+    const messageEventId = String(data.message_event_id || "");
+    const notificationTag = noticeId ? "dentalai-notice-" + noticeId : (messageEventId ? "dentalai-message-" + messageEventId : "dentalai-notification");
     await self.registration.showNotification(title, {
       body,
-      tag: noticeId ? "dentalai-notice-" + noticeId : "dentalai-notice",
+      tag: notificationTag,
       renotify: false,
       data: { target_url: targetUrl, notice_id: noticeId }
     });
