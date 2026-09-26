@@ -7572,7 +7572,12 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
-        ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None} for t in tickets]
+        ticket_ids=[t.id for t in tickets if t.id is not None]
+        admin_support_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
+        admin_support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
+        for support_message in admin_support_messages:
+            admin_support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
+        ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None,"messages":admin_support_messages_by_ticket.get(t.id,[])} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
         disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
         report_rows=[{
