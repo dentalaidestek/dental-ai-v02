@@ -182,6 +182,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             document.title=doc.title||document.title;
             const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=true;
             scrollTo(0,0); runPartialScripts(scripts);
+            document.dispatchEvent(new CustomEvent("dai:unread-changed"));
         } catch(error) {
             if(error.name!=="AbortError") location.assign(url);
         } finally { partialNavigationBusy=false; }
@@ -351,6 +352,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
     catchUpEvents().finally(()=>{refreshUnreadCount();connectSync();});
+    document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
     document.addEventListener("click",function enableDentalNotifications(){
         if("Notification" in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
