@@ -253,7 +253,8 @@ if (!window.__daiMessagesPartialNavigationStarted) {
 }
 if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectionStarted) {
     window.__daiSyncConnectionStarted = true;
-    let lastEventId = Number(sessionStorage.getItem("daiLastEventId") || 0);
+    const syncCursorKey="daiLastEventId:{{ user.id if user else 0 }}";
+    let lastEventId = Number(sessionStorage.getItem(syncCursorKey) || 0);
     let syncSocket = null, reconnectTimer = null, pingTimer = null;
 
     function paintMessageBadge(count) {
@@ -354,10 +355,11 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     function applySyncEvent(evt,{notify=true}={}) {
         if(!evt||evt.type!=="event")return;
         const id=Number(evt.event_id||0); if(id&&id<=lastEventId)return;
-        if(id){lastEventId=id;sessionStorage.setItem("daiLastEventId",String(id));}
+        if(id){lastEventId=id;sessionStorage.setItem(syncCursorKey,String(id));}
         const data=evt.payload||{};
         if(evt.event_type==="MESSAGE_CREATED"&&!data.is_outgoing){if(notify){bumpMessageBadge();showLiveMessage(data);}}
         else if(evt.event_type==="CASE_CREATED"){
+            if(notify){bumpMessageBadge();showLiveMessage({case_id:data.case_id,sender:"Yeni danışmanlık talebi",preview:"Yeni bir danışmanlık talebiniz var."});}
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
