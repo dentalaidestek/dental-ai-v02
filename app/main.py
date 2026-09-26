@@ -5203,10 +5203,7 @@ async def expert_support_case_room(request: Request, case_id: int):
         state.deleted_at = None
         state.recover_until = None
         s.add(state)
-        # Zaman aşımını sayfa açılışında idempotent olarak uygula.
-        if case.status == "REQUESTED" and now > case.expert_response_deadline:
-            _apply_expert_timeout(s, case, now)
-            s.commit()
+        # REQUESTED timeout mutation is owned by the server-side deadline worker.
         if case.status == "PROPOSED" and case.requester_decision_deadline and now > case.requester_decision_deadline:
             case.status = "PROPOSAL_EXPIRED"
             _consultation_event(s, case.id, "PROPOSAL_EXPIRED")
