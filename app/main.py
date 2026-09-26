@@ -4968,7 +4968,7 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
         if not storage_exists(media.file_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
         path = storage_ensure_local(media.file_path)
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
@@ -5099,7 +5099,7 @@ def expert_support_message_media(request: Request, case_id: int, message_id: int
         if not storage_exists(msg.media_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
         path = storage_ensure_local(msg.media_path)
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/annotate/{message_id}")
