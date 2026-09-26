@@ -299,9 +299,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         if(badge){badge.hidden=count<1;badge.textContent=count>99?"99+":String(count);}
         if(label)label.textContent=count?count+" yeni":"";
     }
+    let notificationUnreadCount=0;
     function renderNotificationCenter(data) {
         const list=document.getElementById("notificationList"); if(!list)return;
-        const rows=data.notifications||[]; paintNotificationBadge(data.unread_count);
+        const rows=data.notifications||[]; notificationUnreadCount=Math.max(0,Number(data.unread_count||0));paintNotificationBadge(notificationUnreadCount);
         if(!rows.length){list.innerHTML='<div class="notification-empty">Şu anda güncel bildiriminiz yok.</div>';return;}
         list.replaceChildren(...rows.map(n=>{
             const item=document.createElement(n.target_url?"a":"button");
@@ -315,7 +316,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
                 if(!n.is_read){
                     n.is_read=true;item.classList.remove("unread");
                     fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});
-                    paintNotificationBadge(Math.max(0,Number(data.unread_count||0)-1));
+                    notificationUnreadCount=Math.max(0,notificationUnreadCount-1);paintNotificationBadge(notificationUnreadCount);
                 }
             });
             return item;
@@ -418,8 +419,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
-        } else if(evt.event_type==="NOTICE_CREATED"){refreshNotificationCenter();if(notify)showAdminNotice(data);}
-        else if(evt.event_type==="NOTICE_RESOLVED"){refreshNotificationCenter();}
+        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();showAdminNotice(data);}}
+        else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
         else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
