@@ -5610,26 +5610,47 @@ def _sync_expert_capacity(
     *,
     actor_user_id: Optional[int] = None,
 ) -> list[RealtimeEvent]:
-    """Auto-close intake when capacity is full; never auto-reopen availability."""
+    """Keep intake availability aligned with capacity in both directions."""
     profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)).first()
-    if not profile or profile.availability != "AVAILABLE":
+    if not profile:
         return []
     limit = max(1, min(int(profile.max_active_cases or 5), 5))
-    if _expert_open_case_count(session, expert_user_id) < limit:
+    open_count = _expert_open_case_count(session, expert_user_id)
+    now = _utcnow_naive()
+
+    if open_count >= limit and profile.availability == "AVAILABLE":
+        profile.availability = "BUSY"
+        profile.updated_at = now
+        s_notice_type = "EXPERT_CAPACITY_FULL"
+        title = "Müsaitlik durumunuz güncellendi"
+        message = "Açık vaka sınırınıza ulaştığınız için müsaitlik durumunuz otomatik olarak Meşgul olarak değiştirildi. Yeni vaka kabul edebilmek için açık vaka sayınızın azalması gerekir."
+        cycle = "full"
+    elif open_count < limit and profile.availability == "BUSY":
+        policy_state = _expert_policy_state(session, expert_user_id)
+        if not _is_verified_expert(session, expert_user_id) or _expert_is_blocked(policy_state, now):
+            return []
+        if policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
+            return []
+        profile.availability = "AVAILABLE"
+        profile.updated_at = now
+        s_notice_type = "EXPERT_CAPACITY_AVAILABLE"
+        title = "Yeni vaka kabulüne yeniden açıldınız"
+        message = "Açık vaka sayınız sınırın altına düştüğü için müsaitlik durumunuz otomatik olarak Müsait olarak değiştirildi. Yeni danışmanlık talepleri alabilirsiniz."
+        cycle = "available"
+    else:
         return []
-    profile.availability = "BUSY"
-    profile.updated_at = _utcnow_naive()
+
     session.add(profile)
     _, event, _ = _notify_user(
         session,
         user_id=expert_user_id,
         actor_user_id=None,
-        notice_type="EXPERT_CAPACITY_FULL",
-        title="Müsaitlik durumunuz güncellendi",
-        message="Açık vaka sınırınıza ulaştığınız için müsaitlik durumunuz otomatik olarak Meşgul olarak değiştirildi. Yeni vaka kabul edebilmek için açık vaka sayınızın azalması gerekir.",
+        notice_type=s_notice_type,
+        title=title,
+        message=message,
         related_type="expert_profile",
         related_id=profile.id,
-        dedup_key=f"expert-capacity:{expert_user_id}:full:{_utcnow_naive().isoformat()}",
+        dedup_key=f"expert-capacity:{expert_user_id}:{cycle}:{now.isoformat()}",
         target_url="/expert-support/profile",
     )
     return [event] if event else []
@@ -5977,6 +5998,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             )
             if notice_event:
                 notification_events.append(notice_event)
+        notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         realtime_events = _record_case_status_realtime_events(s, case)
         s.commit()
         status = case.status
