@@ -310,14 +310,18 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             item.className="notification-item"+(n.is_read?"":" unread");
             if(n.target_url)item.href=n.target_url;else item.type="button";
             item.dataset.noticeId=String(n.id);
-            const copy=document.createElement("span"),title=document.createElement("b"),message=document.createElement("small");
-            title.textContent=n.title||"Dental AI";message.textContent=n.message||"";
-            copy.append(title,message);item.append(copy);
+            const kind=String(n.notice_type||"").toUpperCase();
+            const icon=document.createElement("span");icon.className="notification-item-icon";
+            icon.textContent=kind.includes("DEADLINE")||kind.includes("EXPIRED")?"◷":kind.includes("AVAILABLE")?"✓":kind.includes("REJECT")||kind.includes("DISPUTE")?"!":kind.includes("CONSULTATION")?"↔":"•";
+            const copy=document.createElement("span"),head=document.createElement("span"),title=document.createElement("b"),time=document.createElement("time"),message=document.createElement("small");
+            head.className="notification-item-head";title.textContent=n.title||"Dental AI";
+            if(n.created_at){const d=new Date(n.created_at+"Z");time.dateTime=n.created_at;time.textContent=Number.isNaN(d.getTime())?"":d.toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}
+            message.textContent=n.message||"";head.append(title,time);copy.append(head,message);item.append(icon,copy);
             item.addEventListener("click",()=>{
                 if(!n.is_read){
-                    n.is_read=true;item.classList.remove("unread");
-                    fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});
-                    notificationUnreadCount=Math.max(0,notificationUnreadCount-1);paintNotificationBadge(notificationUnreadCount);
+                    fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"})
+                      .then(r=>{if(!r.ok)throw new Error("read failed");n.is_read=true;item.classList.remove("unread");notificationUnreadCount=Math.max(0,notificationUnreadCount-1);paintNotificationBadge(notificationUnreadCount);})
+                      .catch(()=>refreshNotificationCenter());
                 }
             });
             return item;
