@@ -4864,8 +4864,9 @@ async def expert_support_request_create(
         if not profile:
             return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
         active_count = _expert_open_case_count(s, expert_user_id)
-        if active_count >= max(1, min(int(profile.max_active_cases or 5), 5)):
-            return HTMLResponse("Uzmanın 5 aktif vaka slotu dolu.", status_code=409)
+        capacity_limit = max(1, min(int(profile.max_active_cases or 5), 5))
+        if active_count >= capacity_limit:
+            return HTMLResponse(f"Uzmanın {capacity_limit} aktif vaka slotu dolu.", status_code=409)
         if patient_id:
             patient = s.get(Patient, patient_id)
             if not patient or patient.owner_user_id != user.id:
