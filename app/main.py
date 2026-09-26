@@ -4056,9 +4056,6 @@ def _backfill_legacy_deadline_jobs_if_needed() -> None:
         # bridge on PostgreSQL so two processes cannot race the unique job keys.
         if engine.dialect.name == "postgresql":
             s.exec(text("SELECT pg_advisory_xact_lock(824260926)"))
-        if s.exec(select(ConsultationDeadlineJob.id).limit(1)).first() is not None:
-            s.commit()
-            return
         specs = (
             ("REQUESTED", "EXPERT_RESPONSE", ConsultationCase.expert_response_deadline),
             ("PROPOSED", "PROPOSAL", ConsultationCase.requester_decision_deadline),
@@ -4118,7 +4115,10 @@ def _deadline_job_is_current(case: ConsultationCase, job: ConsultationDeadlineJo
 def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: datetime) -> tuple[list[RealtimeEvent], list[RealtimeEvent]]:
     notices: list[RealtimeEvent] = []
     case_events: list[RealtimeEvent] = []
-    case = session.get(ConsultationCase, job.case_id)
+    case_stmt = select(ConsultationCase).where(ConsultationCase.id == job.case_id)
+    if engine.dialect.name == "postgresql":
+        case_stmt = case_stmt.with_for_update()
+    case = session.exec(case_stmt).first()
     if not case or not _deadline_job_is_current(case, job):
         return notices, case_events
     jt = job.job_type
@@ -5431,7 +5431,10 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
     if not user: return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql":
+            case_stmt = case_stmt.with_for_update()
+        case = s.exec(case_stmt).first()
         if not case or case.expert_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status != "REQUESTED" or now > case.expert_response_deadline: return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
         if decision == "REJECT":
@@ -5501,7 +5504,10 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
     if not user: return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql":
+            case_stmt = case_stmt.with_for_update()
+        case = s.exec(case_stmt).first()
         if not case or case.requester_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
         rejected = decision != "ACCEPT"
@@ -6364,7 +6370,10 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql":
+            case_stmt = case_stmt.with_for_update()
+        case = s.exec(case_stmt).first()
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
