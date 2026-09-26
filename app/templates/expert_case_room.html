@@ -151,13 +151,17 @@ function resetEditor(){
  editorFile=null;editorReplyId="";
 }
 function setupEditorCanvas(){
- canvas.width=img.naturalWidth||Math.max(1,img.clientWidth);canvas.height=img.naturalHeight||Math.max(1,img.clientHeight);redrawStrokes();
+ canvas.width=img.naturalWidth||Math.max(1,img.clientWidth);canvas.height=img.naturalHeight||Math.max(1,img.clientHeight);
+ canvas.style.width=img.clientWidth+"px";canvas.style.height=img.clientHeight+"px";canvas.style.left=img.offsetLeft+"px";canvas.style.top=img.offsetTop+"px";canvas.style.right="auto";canvas.style.bottom="auto";redrawStrokes();
+}
+function showEditorWhenReady(){
+ if(!modal.open)modal.showModal();requestAnimationFrame(()=>requestAnimationFrame(setupEditorCanvas));
 }
 function openImageEditor({file=null,src="",messageId=""}={}){
  resetEditor();editorFile=file;editorReplyId=messageId||"";
+ img.onload=showEditorWhenReady;
  if(file){editorObjectUrl=URL.createObjectURL(file);img.src=editorObjectUrl}else img.src=src;
- img.onload=()=>{setupEditorCanvas();modal.showModal()};
- if(img.complete&&img.naturalWidth){setupEditorCanvas();modal.showModal()}
+ if(img.complete&&img.naturalWidth)showEditorWhenReady();
 }
 function bindAnnotation(root=document){root.querySelectorAll?.(".annotation-launch").forEach(b=>{b.onclick=()=>openImageEditor({src:b.dataset.src,messageId:b.dataset.message})})}
 bindAnnotation();
