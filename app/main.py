@@ -78,6 +78,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlalchemy import func, or_ as sa_or
 from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
@@ -4494,6 +4495,84 @@ def _consultation_display_status(case: ConsultationCase, user_id: int, now: date
     return "HISTORY", case.status.replace("_", " ").title()
 
 
+def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], user_id: int, now: datetime) -> list[dict]:
+    """Build inbox rows with bounded bulk queries while preserving existing display semantics."""
+    if not cases:
+        return []
+
+    case_ids = [case.id for case in cases if case.id is not None]
+    states = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.user_id == user_id,
+        ConsultationInboxState.case_id.in_(case_ids),
+    )).all()
+    state_by_case = {state.case_id: state for state in states}
+
+    missing_case_ids = [case_id for case_id in case_ids if case_id not in state_by_case]
+    for case_id in missing_case_ids:
+        state = ConsultationInboxState(case_id=case_id, user_id=user_id)
+        session.add(state)
+        state_by_case[case_id] = state
+    if missing_case_ids:
+        session.flush()
+
+    visible_cases = [case for case in cases if not state_by_case[case.id].deleted_at]
+    if not visible_cases:
+        return []
+
+    visible_ids = [case.id for case in visible_cases]
+    last_message_id_rows = session.exec(
+        select(ConsultationMessage.case_id, func.max(ConsultationMessage.id))
+        .where(ConsultationMessage.case_id.in_(visible_ids))
+        .group_by(ConsultationMessage.case_id)
+    ).all()
+    last_message_ids = [message_id for _, message_id in last_message_id_rows if message_id is not None]
+    last_messages = session.exec(
+        select(ConsultationMessage).where(ConsultationMessage.id.in_(last_message_ids))
+    ).all() if last_message_ids else []
+    last_message_by_case = {message.case_id: message for message in last_messages}
+
+    unread_by_case = {}
+    unread_conditions = []
+    for case in visible_cases:
+        state = state_by_case[case.id]
+        condition = (
+            (ConsultationMessage.case_id == case.id)
+            & (ConsultationMessage.sender_user_id != user_id)
+        )
+        if state.last_read_at:
+            condition = condition & (ConsultationMessage.created_at > state.last_read_at)
+        unread_conditions.append(condition)
+    if unread_conditions:
+        unread_rows = session.exec(
+            select(ConsultationMessage.case_id, func.count(ConsultationMessage.id))
+            .where(sa_or(*unread_conditions))
+            .group_by(ConsultationMessage.case_id)
+        ).all()
+        unread_by_case = {case_id: int(count or 0) for case_id, count in unread_rows}
+
+    other_ids = {
+        case.expert_user_id if user_id == case.requester_user_id else case.requester_user_id
+        for case in visible_cases
+    }
+    others = session.exec(select(User).where(User.id.in_(list(other_ids)))).all() if other_ids else []
+    other_by_id = {other.id: other for other in others}
+
+    rows = []
+    for case in visible_cases:
+        status_key, status_label = _consultation_display_status(case, user_id, now)
+        other_id = case.expert_user_id if user_id == case.requester_user_id else case.requester_user_id
+        rows.append({
+            "case": case,
+            "state": state_by_case[case.id],
+            "last_message": last_message_by_case.get(case.id),
+            "unread": unread_by_case.get(case.id, 0),
+            "status_key": status_key,
+            "status_label": status_label,
+            "other": other_by_id.get(other_id),
+        })
+    return rows
+
+
 @app.get("/messages", response_class=HTMLResponse)
 def consultation_messages_inbox(request: Request, filter: str = "all"):
     user = get_current_user(request)
@@ -4504,17 +4583,10 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
         cases = s.exec(select(ConsultationCase).where(
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc())).all()
-        rows = []
-        for case in cases:
-            state = _consultation_inbox_state(s, case.id, user.id)
-            if state.deleted_at:
-                continue
-            messages = s.exec(select(ConsultationMessage).where(
-                ConsultationMessage.case_id == case.id
-            ).order_by(ConsultationMessage.created_at.desc())).all()
-            last_message = messages[0] if messages else None
-            unread = sum(1 for m in messages if m.sender_user_id != user.id and (not state.last_read_at or m.created_at > state.last_read_at))
-            status_key, status_label = _consultation_display_status(case, user.id, now)
+        rows = _consultation_inbox_rows(s, cases, user.id, now)
+        for row in rows:
+            case = row["case"]
+            status_key = row["status_key"]
             if status_key == "MISSED":
                 existing_missed = s.exec(select(ConsultationEvent).where(
                     ConsultationEvent.case_id == case.id,
@@ -4531,19 +4603,14 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
                     _consultation_event(s, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {
                         "deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None
                     })
-            other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
-            other = s.get(User, other_id)
-            row = {"case": case, "state": state, "last_message": last_message, "unread": unread,
-                   "status_key": status_key, "status_label": status_label, "other": other}
-            if filter == "unread" and unread == 0:
-                continue
-            if filter == "waiting" and status_key not in {"WAITING", "ACTION_REQUIRED", "NEW_REQUEST"}:
-                continue
-            if filter == "missed" and status_key not in {"MISSED", "DELAYED"}:
-                continue
-            if filter == "history" and status_key not in {"HISTORY", "CLOSED", "DISPUTE"}:
-                continue
-            rows.append(row)
+        if filter == "unread":
+            rows = [row for row in rows if row["unread"] > 0]
+        elif filter == "waiting":
+            rows = [row for row in rows if row["status_key"] in {"WAITING", "ACTION_REQUIRED", "NEW_REQUEST"}]
+        elif filter == "missed":
+            rows = [row for row in rows if row["status_key"] in {"MISSED", "DELAYED"}]
+        elif filter == "history":
+            rows = [row for row in rows if row["status_key"] in {"HISTORY", "CLOSED", "DISPUTE"}]
         rows.sort(key=lambda row: (
             row["status_key"] != "NEW_REQUEST",
             -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
@@ -4552,7 +4619,6 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
     return templates.TemplateResponse(request=request, name="messages.html", context={
         "user": user, "rows": rows, "selected_filter": filter, "now": now,
     })
-
 
 @app.get("/messages/{case_id}/row", response_class=HTMLResponse)
 def consultation_message_row(request: Request, case_id: int):
