@@ -44,11 +44,17 @@ class WebPushContractTests(unittest.TestCase):
         self.assertIn("Notification.requestPermission()", listener)
         self.assertNotIn("Notification.requestPermission()", BASE)
 
-    def test_foreground_uses_existing_sync_socket_instead_of_general_push(self):
+    def test_foreground_suppression_is_process_safe_in_service_worker(self):
         self.assertIn('type:"visibility",visible:!document.hidden', BASE)
         self.assertIn('kind=="visibility"', MAIN)
         deliver = MAIN.split("async def _deliver_web_push_for_notice", 1)[1].split("async def _publish_realtime_event", 1)[0]
-        self.assertIn("has_visible_session", deliver)
+        self.assertNotIn("has_visible_session", deliver)
+        self.assertIn('client.visibilityState === "visible"', SW)
+        self.assertIn('if (visibleClients.some', SW)
+
+    def test_notification_click_navigates_existing_window_to_exact_target(self):
+        self.assertIn("client.navigate(target.href)", SW)
+        self.assertIn("target.origin !== self.location.origin", SW)
 
     def test_subscription_endpoint_is_not_an_arbitrary_outbound_url(self):
         validator = MAIN.split("def _valid_web_push_endpoint", 1)[1].split('@app.get("/push-sw.js")', 1)[0]
