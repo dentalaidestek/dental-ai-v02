@@ -7486,7 +7486,11 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
             "reported": s.get(User, r.reported_user_id),
         } for r in reports]
         visible_users=users[:100]
-        storage_by_user={u.id:_admin_user_storage_summary(s,u.id) for u in visible_users}
+        # Storage is intentionally calculated only on user-management views.
+        # Other admin sections must not fan out into per-user filesystem/database work.
+        storage_by_user={}
+        if section in {"users","search","bans","notice"}:
+            storage_by_user={u.id:_admin_user_storage_summary(s,u.id) for u in visible_users}
         admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
         completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
