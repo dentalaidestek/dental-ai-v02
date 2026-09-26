@@ -448,15 +448,15 @@ class ConsultationCase(SQLModel, table=True):
     proposed_start_minutes: Optional[int] = None
     proposed_start_label: Optional[str] = None
     proposed_at: Optional[datetime] = None
-    requester_decision_deadline: Optional[datetime] = None
+    requester_decision_deadline: Optional[datetime] = Field(default=None, index=True)
     requester_accepted_at: Optional[datetime] = None
-    consultation_start_deadline: Optional[datetime] = None
+    consultation_start_deadline: Optional[datetime] = Field(default=None, index=True)
     expert_started_at: Optional[datetime] = None
     expert_completed_at: Optional[datetime] = None
     requester_completed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     dispute_opened_at: Optional[datetime] = None
-    completion_confirmation_deadline: Optional[datetime] = None
+    completion_confirmation_deadline: Optional[datetime] = Field(default=None, index=True)
     urgency: str = "NORMAL"
     expert_proposal_note: Optional[str] = None
 
@@ -3956,21 +3956,63 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
             "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
 
 
-async def _consultation_deadline_worker() -> None:
-    """Process consultation deadlines server-side without browser polling.
+_consultation_deadline_wakeup = asyncio.Event()
+CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
 
-    Every durable notification uses a deadline-derived dedup key, so overlapping
-    web workers can safely observe the same deadline without intentionally
-    producing multiple user-visible notices.
-    """
+
+def _wake_consultation_deadline_worker() -> None:
+    """Wake the local worker only when a transaction creates a new deadline."""
+    _consultation_deadline_wakeup.set()
+
+
+def _next_consultation_deadline() -> Optional[datetime]:
+    """Read only the nearest relevant deadline using indexed ORDER BY/LIMIT queries."""
+    candidates: list[datetime] = []
+    with Session(engine) as s:
+        specs = (
+            ("REQUESTED", ConsultationCase.expert_response_deadline),
+            ("PROPOSED", ConsultationCase.requester_decision_deadline),
+            ("WAITING_START", ConsultationCase.consultation_start_deadline),
+            ("EXPERT_COMPLETED", ConsultationCase.completion_confirmation_deadline),
+        )
+        for status, column in specs:
+            value = s.exec(
+                select(column).where(
+                    ConsultationCase.status == status,
+                    column != None,
+                ).order_by(column.asc()).limit(1)
+            ).first()
+            if value:
+                candidates.append(value)
+    return min(candidates) if candidates else None
+
+
+async def _consultation_deadline_worker() -> None:
+    """Sleep until the next deadline warning instead of polling the case table."""
     while True:
         try:
+            next_deadline = _next_consultation_deadline()
+            if next_deadline is None:
+                wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS
+            else:
+                warning_at = next_deadline - timedelta(minutes=2)
+                wait_seconds = max(0.0, min(
+                    (warning_at - _utcnow_naive()).total_seconds(),
+                    CONSULTATION_DEADLINE_RECOVERY_SECONDS,
+                ))
+            _consultation_deadline_wakeup.clear()
+            if wait_seconds > 0:
+                try:
+                    await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
+                    continue
+                except asyncio.TimeoutError:
+                    pass
             await _process_consultation_deadlines()
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Consultation deadline worker iteration failed")
-        await asyncio.sleep(30)
+            await asyncio.sleep(5)
 
 
 async def _process_consultation_deadlines() -> None:
