@@ -4847,6 +4847,9 @@ def expert_support_case_room(request: Request, case_id: int):
                 s.add(payment)
             s.add(case)
             s.commit()
+        # Opening the room is the authoritative read action. Persist it before
+        # rendering so unread reconciliation cannot race the WebSocket read.
+        s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
         case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
         shared_media = []
