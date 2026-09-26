@@ -3811,20 +3811,21 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
 
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
-def admin_expert_verifications(request: Request):
+def admin_expert_verifications_legacy(request: Request):
+    """Eski doğrulama ekranı devre dışı; tek kaynak Yönetim Merkezi."""
     user = get_current_user(request)
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    return RedirectResponse(ADMIN_CENTER_PATH + "?section=approvals", status_code=303)
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=approvals", status_code=303)
 
 
 @app.post("/admin/expert-verifications/{profile_id}")
-def admin_expert_verification_update(request: Request, profile_id: int, decision: str = Form(...)):
+def admin_expert_verification_update_legacy(request: Request, profile_id: int):
+    """Eski çift onay endpointinden durum değiştirilmesini engelle."""
     user = get_current_user(request)
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    # Eski doğrulama formu artık durum değiştirmez; tek kaynak Yönetim Merkezi'dir.
-    return RedirectResponse(ADMIN_CENTER_PATH + "?section=approvals", status_code=303)
+    return HTMLResponse("Bu doğrulama ekranı artık kullanılmıyor. Yönetim Merkezi > Onay Bekleyenler bölümünü kullanın.", status_code=410)
 
 
 @app.get("/admin/expert-verifications/{profile_id}/document")
@@ -7596,6 +7597,29 @@ def admin_center_support_update(request: Request, ticket_id: int, status: str = 
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket);s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_"+status,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
+
+@app.post(ADMIN_CENTER_PATH + "/reports/{report_id}")
+def admin_center_report_update(request: Request, report_id: int, status: str = Form(...)):
+    admin = _admin_only(request)
+    if not admin:
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    if status not in {"OPEN", "REVIEWED", "CLOSED"}:
+        return HTMLResponse("Geçersiz şikayet durumu.", status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        report = s.get(UserReport, report_id)
+        if not report:
+            return HTMLResponse("Şikayet bulunamadı.", status_code=404)
+        report.status = status
+        s.add(report)
+        s.add(AdminAuditLog(
+            admin_user_id=admin.id,
+            action="REPORT_" + status,
+            target_user_id=report.reported_user_id,
+            detail=f"Şikayet #{report.id}",
+        ))
+        s.commit()
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=complaints", status_code=303)
+
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/status")
 def admin_center_user_status(request: Request, user_id: int, action: str = Form(...)):
