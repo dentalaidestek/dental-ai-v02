@@ -5239,6 +5239,24 @@ def _push_request_same_origin(request: Request) -> bool:
         return False
 
 
+def _valid_web_push_endpoint(endpoint: str) -> bool:
+    """Reject arbitrary outbound targets; browser push capability URLs are provider-owned."""
+    try:
+        parsed = urlparse(endpoint)
+        host = (parsed.hostname or "").lower().rstrip(".")
+    except Exception:
+        return False
+    if parsed.scheme != "https" or not host or parsed.username or parsed.password or len(endpoint) > 4000:
+        return False
+    return (
+        host == "fcm.googleapis.com"
+        or host == "push.services.mozilla.com"
+        or host.endswith(".push.services.mozilla.com")
+        or host == "push.apple.com"
+        or host.endswith(".push.apple.com")
+    )
+
+
 @app.get("/push-sw.js")
 def web_push_service_worker():
     return FileResponse(
@@ -5278,8 +5296,7 @@ async def account_push_subscribe(request: Request):
         auth = str(keys.get("auth") or "").strip()
     except Exception:
         return JSONResponse({"ok": False, "error": "Geçersiz abonelik verisi."}, status_code=400)
-    parsed = urlparse(endpoint)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or len(endpoint) > 4000 or not p256dh or not auth:
+    if not _valid_web_push_endpoint(endpoint) or not p256dh or not auth:
         return JSONResponse({"ok": False, "error": "Geçersiz abonelik verisi."}, status_code=400)
     with Session(engine, expire_on_commit=False) as session:
         subscription = session.exec(select(WebPushSubscription).where(WebPushSubscription.endpoint == endpoint)).first()
