@@ -4239,11 +4239,8 @@ async def expert_support_availability_update(request: Request):
                 return JSONResponse({"ok": False, "detail": "Önce güncel vaka kabul kurallarını onaylayın.", "rules_url": "/expert-support/rules?next=/expert-support/profile"}, status_code=409)
             if _expert_is_blocked(policy_state):
                 return JSONResponse({"ok": False, "detail": "Hesabınız şu anda yeni vaka kabul edemiyor."}, status_code=409)
-            active_count = len(s.exec(select(ConsultationCase).where(
-                ConsultationCase.expert_user_id == user.id,
-                ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
-            )).all())
-            if active_count >= profile.max_active_cases:
+            active_count = _expert_open_case_count(s, user.id)
+            if active_count >= max(1, min(int(profile.max_active_cases or 5), 5)):
                 return JSONResponse({"ok": False, "detail": "Açık vaka sınırına ulaştığınız için şu anda müsait duruma geçemezsiniz."}, status_code=409)
         became_available = availability == "AVAILABLE" and profile.availability != "AVAILABLE"
         profile.availability = availability
@@ -4510,11 +4507,8 @@ async def expert_support_request_create(
         )).first()
         if not profile:
             return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
-        active_count = len(s.exec(select(ConsultationCase).where(
-            ConsultationCase.expert_user_id == expert_user_id,
-            ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
-        )).all())
-        if active_count >= min(profile.max_active_cases, 5):
+        active_count = _expert_open_case_count(s, expert_user_id)
+        if active_count >= max(1, min(int(profile.max_active_cases or 5), 5)):
             return HTMLResponse("Uzmanın 5 aktif vaka slotu dolu.", status_code=409)
         if patient_id:
             patient = s.get(Patient, patient_id)
@@ -5145,6 +5139,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             )
         if notice_event:
             notification_events.append(notice_event)
+        notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
         s.commit()
         status = case.status
@@ -5189,6 +5184,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         )
         if notice_event:
             notification_events.append(notice_event)
+        notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
         s.commit(); status=case.status; patient_id=case.patient_id
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
@@ -5596,6 +5592,47 @@ def _resolve_notifications(
             {"notice_id": notice.id, "notice_type": notice.notice_type},
         ))
     return events
+
+
+CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED")
+
+
+def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
+    return len(session.exec(select(ConsultationCase).where(
+        ConsultationCase.expert_user_id == expert_user_id,
+        ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
+    )).all())
+
+
+def _sync_expert_capacity(
+    session: Session,
+    expert_user_id: int,
+    *,
+    actor_user_id: Optional[int] = None,
+) -> list[RealtimeEvent]:
+    """Auto-close intake when capacity is full; never auto-reopen availability."""
+    profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)).first()
+    if not profile or profile.availability != "AVAILABLE":
+        return []
+    limit = max(1, min(int(profile.max_active_cases or 5), 5))
+    if _expert_open_case_count(session, expert_user_id) < limit:
+        return []
+    profile.availability = "BUSY"
+    profile.updated_at = _utcnow_naive()
+    session.add(profile)
+    _, event, _ = _notify_user(
+        session,
+        user_id=expert_user_id,
+        actor_user_id=None,
+        notice_type="EXPERT_CAPACITY_FULL",
+        title="Müsaitlik durumunuz güncellendi",
+        message="Açık vaka sınırınıza ulaştığınız için müsaitlik durumunuz otomatik olarak Meşgul olarak değiştirildi. Yeni vaka kabul edebilmek için açık vaka sayınızın azalması gerekir.",
+        related_type="expert_profile",
+        related_id=profile.id,
+        dedup_key=f"expert-capacity:{expert_user_id}:full:{_utcnow_naive().isoformat()}",
+        target_url="/expert-support/profile",
+    )
+    return [event] if event else []
 
 
 def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User],
