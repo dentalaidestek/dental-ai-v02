@@ -4969,7 +4969,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
 
 
 @app.post("/expert-support/cases/{case_id}/media-message")
-async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...)):
+async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None)):
     wants_json = request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", "")
     def upload_error(message: str, status_code: int = 400):
         return JSONResponse({"ok": False, "error": message}, status_code=status_code) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus(message)}", status_code=303)
@@ -5001,7 +5001,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         except OSError:
             return upload_error("Dosya yüklenemedi. Lütfen tekrar deneyin.")
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
-        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path))
+        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
         s.add(message)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
         s.commit(); s.refresh(message)
