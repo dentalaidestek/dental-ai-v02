@@ -1221,6 +1221,9 @@ def init_db():
                 conn.exec_driver_sql(statement)
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key) WHERE dedup_key IS NOT NULL')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_requester_decision_deadline ON "consultationcase" (requester_decision_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_consultation_start_deadline ON "consultationcase" (consultation_start_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_completion_confirmation_deadline ON "consultationcase" (completion_confirmation_deadline)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -1250,6 +1253,9 @@ def init_db():
                     conn.exec_driver_sql(f'ALTER TABLE "adminnotice" ADD COLUMN {column} {sql_type}')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key) WHERE dedup_key IS NOT NULL')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_requester_decision_deadline ON "consultationcase" (requester_decision_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_consultation_start_deadline ON "consultationcase" (consultation_start_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_completion_confirmation_deadline ON "consultationcase" (completion_confirmation_deadline)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
