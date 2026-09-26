@@ -4182,12 +4182,12 @@ async def _consultation_deadline_worker() -> None:
                 _consultation_deadline_last_cleanup = now
             while await _process_consultation_deadline_jobs():
                 await asyncio.sleep(0)
+            _consultation_deadline_wakeup.clear()
+            # Re-read after clear: if enqueue raced with clear, DB truth still
+            # shortens the sleep even when the in-process wake signal was lost.
             next_at = _next_consultation_job_at()
             wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS if next_at is None else max(0.05, min((next_at - _utcnow_naive()).total_seconds(), CONSULTATION_DEADLINE_RECOVERY_SECONDS))
-            _consultation_deadline_wakeup.clear()
-            # Re-check after clear to close the enqueue-vs-clear lost-wakeup race.
-            refreshed = _next_consultation_job_at()
-            if refreshed and refreshed <= _utcnow_naive():
+            if next_at and next_at <= _utcnow_naive():
                 continue
             try: await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
             except asyncio.TimeoutError: pass
