@@ -159,9 +159,11 @@ function showEditorWhenReady(){
 }
 function openImageEditor({file=null,src="",messageId=""}={}){
  resetEditor();editorFile=file;editorReplyId=messageId||"";
- img.onload=showEditorWhenReady;
+ let readyHandled=false;
+ const ready=()=>{if(readyHandled)return;readyHandled=true;img.onload=null;showEditorWhenReady()};
+ img.onload=ready;
  if(file){editorObjectUrl=URL.createObjectURL(file);img.src=editorObjectUrl}else img.src=src;
- if(img.complete&&img.naturalWidth)showEditorWhenReady();
+ if(img.complete&&img.naturalWidth)ready();
 }
 function bindAnnotation(root=document){root.querySelectorAll?.(".annotation-launch").forEach(b=>{b.onclick=()=>openImageEditor({src:b.dataset.src,messageId:b.dataset.message})})}
 bindAnnotation();
@@ -188,6 +190,6 @@ document.getElementById("annotationSend").onclick=async()=>{
  }catch(e){showComposerError(e.message||"Görsel hazırlanamadı.");}
  finally{send.disabled=false;send.textContent="Gönder"}
 };
-return ()=>{if(destroyed)return;destroyed=true;roomAbort.abort();clearInterval(countdownTimer);clearTimeout(reconnectTimer);clearTimeout(caseRefreshTimer);if(attachmentObjectUrl)URL.revokeObjectURL(attachmentObjectUrl);if(socket){const active=socket;socket=null;active.onclose=null;try{active.close()}catch(_){}}};
+return ()=>{if(destroyed)return;destroyed=true;roomAbort.abort();clearInterval(countdownTimer);clearTimeout(reconnectTimer);clearTimeout(caseRefreshTimer);if(attachmentObjectUrl)URL.revokeObjectURL(attachmentObjectUrl);if(editorObjectUrl)URL.revokeObjectURL(editorObjectUrl);editorObjectUrl=null;img.onload=null;if(socket){const active=socket;socket=null;active.onclose=null;try{active.close()}catch(_){}}};
 })();
 </script></div>{% endblock %}
