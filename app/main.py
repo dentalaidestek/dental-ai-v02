@@ -239,6 +239,18 @@ class WebPushDelivery(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class WebPushMessageDelivery(SQLModel, table=True):
+    """Durable per-message-event/per-device dedup; separate from AdminNotice."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    realtime_event_id: int = Field(index=True)
+    subscription_id: int = Field(index=True)
+    delivery_key: str = Field(index=True, unique=True)
+    status: str = Field(default="PENDING", index=True)
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class AdminAuditLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     admin_user_id: int = Field(index=True)
@@ -6107,6 +6119,80 @@ def _send_web_push_sync(notice_id: int) -> None:
             session.commit()
 
 
+def _send_web_push_message_sync(event_id: int) -> None:
+    """Best-effort message push. Message unread/inbox state remains independent."""
+    if not _web_push_configured():
+        return
+    with Session(engine, expire_on_commit=False) as session:
+        event = session.get(RealtimeEvent, event_id)
+        if not event or event.event_type != "MESSAGE_CREATED":
+            return
+        try:
+            data = json.loads(event.payload_json) if event.payload_json else {}
+        except Exception:
+            data = {}
+        if bool(data.get("is_outgoing")):
+            return
+        case_id = int(data.get("case_id") or 0)
+        if not case_id:
+            return
+        subscriptions = session.exec(select(WebPushSubscription).where(
+            WebPushSubscription.user_id == event.user_id,
+            WebPushSubscription.disabled_at == None,
+        )).all()
+        payload = json.dumps({
+            "message_event_id": event.id,
+            "body": "Yeni bir mesajınız var.",
+            "target_url": f"/expert-support/cases/{case_id}",
+        }, ensure_ascii=False)
+        for subscription in subscriptions:
+            delivery_key = f"message-event:{event.id}:subscription:{subscription.id}"
+            delivery = WebPushMessageDelivery(
+                realtime_event_id=event.id, subscription_id=subscription.id,
+                delivery_key=delivery_key, status="PENDING",
+            )
+            try:
+                with session.begin_nested():
+                    session.add(delivery); session.flush()
+            except IntegrityError:
+                continue
+            session.commit()
+            try:
+                webpush(
+                    subscription_info={"endpoint": subscription.endpoint, "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
+                    data=payload,
+                    vapid_private_key=WEB_PUSH_VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": WEB_PUSH_VAPID_SUBJECT},
+                    ttl=3600,
+                )
+                delivery.status = "SENT"; delivery.last_error = None
+            except Exception as exc:
+                code = _web_push_status_code(exc)
+                delivery.status = "EXPIRED" if code in {404, 410} else "FAILED"
+                delivery.last_error = (f"HTTP {code}" if code else type(exc).__name__)[:200]
+                if code in {404, 410}:
+                    subscription.disabled_at = _utcnow_naive()
+                    subscription.updated_at = subscription.disabled_at
+                    session.add(subscription)
+            delivery.updated_at = _utcnow_naive()
+            session.add(delivery); session.commit()
+
+
+async def _deliver_web_push_for_message(event: RealtimeEvent) -> None:
+    if event.event_type != "MESSAGE_CREATED" or not event.id or not _web_push_configured():
+        return
+    try:
+        data = json.loads(event.payload_json) if event.payload_json else {}
+    except Exception:
+        data = {}
+    if bool(data.get("is_outgoing")):
+        return
+    try:
+        await asyncio.to_thread(_send_web_push_message_sync, int(event.id))
+    except Exception:
+        logger.exception("Web Push message delivery failed for event %s", event.id)
+
+
 async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
     if event.event_type != "NOTICE_CREATED" or not event.entity_id or not _web_push_configured():
         return
@@ -6123,6 +6209,8 @@ async def _publish_realtime_event(event: RealtimeEvent) -> None:
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
     if event.event_type == "NOTICE_CREATED":
         await _deliver_web_push_for_notice(event)
+    elif event.event_type == "MESSAGE_CREATED":
+        await _deliver_web_push_for_message(event)
 
 
 def _notify_user(
