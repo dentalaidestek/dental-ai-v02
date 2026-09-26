@@ -4114,16 +4114,13 @@ async def _process_consultation_deadlines() -> None:
 
 
 def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
-    now = _utcnow_naive()
-    query = select(ConsultationCase).where(
-        ConsultationCase.status == "REQUESTED",
-        ConsultationCase.expert_response_deadline < now,
-    )
-    if expert_user_id is not None:
-        query = query.where(ConsultationCase.expert_user_id == expert_user_id)
-    for pending in session.exec(query).all():
-        _apply_expert_timeout(session, pending, now)
-    session.commit()
+    """Legacy route hook retained for compatibility.
+
+    Deadline mutation now belongs to the server-side deadline worker so a
+    request-render path cannot consume a timeout and strand its realtime event
+    before the worker can publish it.
+    """
+    return None
 
 
 @app.get("/expert-support/rules", response_class=HTMLResponse)
