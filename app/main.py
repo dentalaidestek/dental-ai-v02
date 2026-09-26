@@ -5001,6 +5001,10 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         except OSError:
             return upload_error("Dosya yüklenemedi. Lütfen tekrar deneyin.")
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+        if reply_to_message_id:
+            replied = s.get(ConsultationMessage, reply_to_message_id)
+            if not replied or replied.case_id != case.id:
+                reply_to_message_id = None
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
         s.add(message)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
