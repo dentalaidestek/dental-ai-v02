@@ -4830,6 +4830,52 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
     return RedirectResponse("/messages", status_code=303)
 
 
+@app.get("/account/notifications")
+def account_notifications(request: Request):
+    """Compact notification-center payload; messages intentionally stay separate."""
+    user = get_current_user(request)
+    if not user:
+        return {"notifications": [], "unread_count": 0}
+    with Session(engine, expire_on_commit=False) as s:
+        active = s.exec(
+            select(AdminNotice).where(
+                AdminNotice.user_id == user.id,
+                AdminNotice.status == "ACTIVE",
+            ).order_by(AdminNotice.created_at.desc())
+        ).all()
+        unread_count = sum(1 for n in active if not n.is_read)
+        rows = active[:20]
+        return {
+            "unread_count": unread_count,
+            "notifications": [{
+                "id": n.id,
+                "title": n.title,
+                "message": n.message,
+                "notice_type": n.notice_type,
+                "target_url": n.target_url,
+                "is_read": bool(n.is_read),
+                "created_at": n.created_at.isoformat(),
+            } for n in rows],
+        }
+
+
+@app.post("/account/notifications/{notice_id}/read")
+def account_notification_read(request: Request, notice_id: int):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        notice = s.get(AdminNotice, notice_id)
+        if not notice or notice.user_id != user.id or notice.status != "ACTIVE":
+            return JSONResponse({"ok": False}, status_code=404)
+        notice.is_read = True
+        if not notice.read_at:
+            notice.read_at = _utcnow_naive()
+        s.add(notice)
+        s.commit()
+    return {"ok": True}
+
+
 @app.get("/account/admin-notices")
 def account_admin_notices(request: Request):
     user=get_current_user(request)
