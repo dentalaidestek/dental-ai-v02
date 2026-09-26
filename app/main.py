@@ -4154,10 +4154,14 @@ async def _process_consultation_deadline_jobs() -> bool:
         jobs = s.exec(stmt).all()
         for job in jobs:
             try:
-                notices, events = _process_deadline_job(s, job, now)
+                with s.begin_nested():
+                    notices, events = _process_deadline_job(s, job, now)
+                    job.status = "DONE"; job.completed_at = now; job.last_error = None; s.add(job)
+                    s.flush()
                 publish_events.extend(notices); case_events.extend(events)
-                job.status = "DONE"; job.completed_at = now; job.last_error = None; s.add(job)
             except Exception as exc:
+                # begin_nested() rolled back every partial domain/notice/event
+                # mutation for this job; only retry metadata is committed here.
                 job.attempts += 1; job.last_error = str(exc)[:1000]
                 if job.attempts >= 5:
                     job.status = "FAILED"; job.completed_at = now
@@ -5036,6 +5040,8 @@ def consultation_message_row(request: Request, case_id: int):
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
+        notification_events: list[RealtimeEvent] = []
+        status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Sohbet bulunamadı.", status_code=404)
         state = _consultation_inbox_state(s, case.id, user.id)
@@ -5479,10 +5485,14 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
             return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
+        notification_events: list[RealtimeEvent] = []
+        status_events: list[RealtimeEvent] = []
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
             return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
         if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
+            notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+            status_events.extend(_record_case_status_realtime_events(s, case))
         raw = await file.read()
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
             return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
@@ -5505,6 +5515,13 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
                 reply_to_message_id = None
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
         s.add(message)
+        if user.id == case.expert_user_id and case.expert_started_at is None:
+            case.expert_started_at = now
+            if case.status == "WAITING_START":
+                case.status = "ACTIVE"
+                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                status_events.extend(_record_case_status_realtime_events(s, case))
+            _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id); s.add(case)
         _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
         s.commit(); s.refresh(message)
         sender=s.get(User,user.id)
@@ -5512,8 +5529,10 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         s.commit()
         payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
-    for realtime_event in realtime_events:
+    for realtime_event in status_events + realtime_events:
         await _publish_realtime_event(realtime_event)
+    for notification_event in notification_events:
+        await _publish_realtime_event(notification_event)
     return JSONResponse({"ok": True, "message": payload["message"]}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -5653,6 +5672,8 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
             case.status = "ACTIVE"
             _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id)
             s.add(case)
+            notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+            status_events.extend(_record_case_status_realtime_events(s, case))
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
             if wants_json: return JSONResponse({"ok": False, "error": "Bu kullanıcıyla mesajlaşma engellenmiş."}, status_code=403)
@@ -5672,6 +5693,8 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
             case.expert_started_at = now
             if case.status == "WAITING_START":
                 case.status = "ACTIVE"
+                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                status_events.extend(_record_case_status_realtime_events(s, case))
             _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
@@ -5682,8 +5705,10 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         s.commit()
         payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id, {"type": "message", "message": payload["message"]})
-    for realtime_event in realtime_events:
+    for realtime_event in status_events + realtime_events:
         await _publish_realtime_event(realtime_event)
+    for notification_event in notification_events:
+        await _publish_realtime_event(notification_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -6175,6 +6200,8 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
             now = _utcnow_naive()
             with Session(engine, expire_on_commit=False) as s:
                 case = s.get(ConsultationCase, case_id)
+                notification_events: list[RealtimeEvent] = []
+                status_events: list[RealtimeEvent] = []
                 if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
                     await websocket.send_json({"type":"error","error":"Yetkisiz işlem."}); continue
                 if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED"}:
@@ -6183,6 +6210,8 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     await websocket.send_json({"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}); continue
                 if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
                     case.status = "ACTIVE"; _consultation_event(s,case.id,"REQUESTER_STARTED_AFTER_DEADLINE",user.id); s.add(case)
+                    notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                    status_events.extend(_record_case_status_realtime_events(s, case))
                 other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
                 if _users_blocked(s,user.id,other_id):
                     await websocket.send_json({"type":"error","error":"Bu kullanıcıyla mesajlaşma engellenmiş."}); continue
@@ -6199,7 +6228,10 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                 s.add(message)
                 if user.id == case.expert_user_id and case.expert_started_at is None:
                     case.expert_started_at=now
-                    if case.status=="WAITING_START": case.status="ACTIVE"
+                    if case.status=="WAITING_START":
+                        case.status="ACTIVE"
+                        notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                        status_events.extend(_record_case_status_realtime_events(s, case))
                     _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
                 _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
                 sender=s.get(User,user.id)
@@ -6207,8 +6239,10 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                 s.commit()
                 payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
             await consultation_socket_hub.broadcast(case_id,payload)
-            for realtime_event in realtime_events:
+            for realtime_event in status_events + realtime_events:
                 await _publish_realtime_event(realtime_event)
+            for notification_event in notification_events:
+                await _publish_realtime_event(notification_event)
     except WebSocketDisconnect:
         consultation_socket_hub.disconnect(case_id,websocket)
     except Exception:
