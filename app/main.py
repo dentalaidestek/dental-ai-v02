@@ -4520,21 +4520,24 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     visible_ids = [case.id for case in visible_cases]
-    last_created_rows = session.exec(
-        select(ConsultationMessage.case_id, func.max(ConsultationMessage.created_at))
+    last_created_subquery = (
+        select(
+            ConsultationMessage.case_id.label("case_id"),
+            func.max(ConsultationMessage.created_at).label("max_created_at"),
+        )
         .where(ConsultationMessage.case_id.in_(visible_ids))
         .group_by(ConsultationMessage.case_id)
-    ).all()
-    last_created_by_case = {case_id: created_at for case_id, created_at in last_created_rows}
+        .subquery()
+    )
     last_message_candidates = session.exec(
-        select(ConsultationMessage).where(
-            ConsultationMessage.case_id.in_(visible_ids),
-            sa_or(*[
-                (ConsultationMessage.case_id == case_id) & (ConsultationMessage.created_at == created_at)
-                for case_id, created_at in last_created_by_case.items()
-            ]),
+        select(ConsultationMessage)
+        .join(
+            last_created_subquery,
+            (ConsultationMessage.case_id == last_created_subquery.c.case_id)
+            & (ConsultationMessage.created_at == last_created_subquery.c.max_created_at),
         )
-    ).all() if last_created_by_case else []
+        .where(ConsultationMessage.case_id.in_(visible_ids))
+    ).all()
     last_message_by_case = {}
     for message in last_message_candidates:
         current = last_message_by_case.get(message.case_id)
