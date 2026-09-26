@@ -466,8 +466,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
-    refreshNotificationCenter();
-    catchUpEvents().finally(()=>{refreshUnreadCount();refreshNotificationCenter();connectSync();});
+    // catchUpEvents already reconciles the Messages unread count. Fetch the
+    // notification center once after catch-up instead of duplicating both
+    // header queries on every page load.
+    catchUpEvents().finally(()=>{refreshNotificationCenter();connectSync();});
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(syncSocket?.readyState===WebSocket.OPEN)syncSocket.send(JSON.stringify({type:"visibility",visible:!document.hidden}));if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
