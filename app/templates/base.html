@@ -233,7 +233,9 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(back&&messagesSnapshot){event.preventDefault();history.back();return;}
         const link=event.target.closest?.(".messages-list .message-row-main");
         if(!link||!document.querySelector("main .messages-chat-list")||link.target==="_blank"||link.origin!==location.origin||!casePathPattern.test(link.pathname))return;
-        event.preventDefault();openCaseWithoutReload(link.href);
+        event.preventDefault();
+        const row=link.closest(".message-row");row?.classList.add("opening");
+        openCaseWithoutReload(link.href).finally(()=>row?.classList.remove("opening"));
     });
     window.addEventListener("popstate",()=>{
         if(location.pathname==="/messages"&&messagesSnapshot){restoreMessagesView();return;}
