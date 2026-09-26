@@ -5450,7 +5450,11 @@ def _notify_user(
     if normalized_dedup:
         # Dedup keys are scoped to the recipient.  This lets the same domain
         # event notify multiple affected users without cross-user collisions.
-        normalized_dedup = f"u{user_id}:{normalized_dedup}"[:240]
+        raw_dedup = f"u{user_id}:{normalized_dedup}"
+        normalized_dedup = (
+            raw_dedup if len(raw_dedup) <= 240
+            else raw_dedup[:191] + ":" + hashlib.sha256(raw_dedup.encode("utf-8")).hexdigest()[:48]
+        )
         existing = session.exec(
             select(AdminNotice).where(
                 AdminNotice.user_id == user_id,
