@@ -4922,11 +4922,8 @@ def expert_support_case_room(request: Request, case_id: int):
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
-        other_state = s.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case.id,
-            ConsultationInboxState.user_id == other_id,
-        )).first()
-        other_read_at = other_state.last_read_at if other_state else None
+        other_state = _consultation_inbox_state(s, case.id, other_id)
+        other_read_at = other_state.last_read_at
         payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
         review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
