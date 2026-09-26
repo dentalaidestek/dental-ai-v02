@@ -3812,21 +3812,10 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
 def admin_expert_verifications(request: Request):
-    user = get_current_user(request)
-    if not user or user.role != "ADMIN":
+    user = _admin_only(request)
+    if not user:
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    with Session(engine, expire_on_commit=False) as s:
-        profiles = s.exec(select(ExpertProfile).where(
-            (ExpertProfile.application_status != "APPROVED") |
-            (ExpertProfile.verification_status != "VERIFIED") |
-            (ExpertProfile.specialty_verified == False)
-        ).order_by(ExpertProfile.updated_at.desc())).all()
-        rows = []
-        for profile in profiles:
-            expert_user = s.get(User, profile.user_id)
-            doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == profile.user_id)).first()
-            rows.append({"profile": profile, "expert": expert_user, "doctor": doctor})
-    return templates.TemplateResponse(request=request, name="admin_expert_verifications.html", context={"user": user, "rows": rows})
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=approvals", status_code=303)
 
 
 @app.post("/admin/expert-verifications/{profile_id}")
@@ -3874,6 +3863,7 @@ def admin_expert_verification_update(
     return RedirectResponse("/admin/expert-verifications", status_code=303)
 
 
+@app.get(ADMIN_CENTER_PATH + "/expert-verifications/{profile_id}/document")
 @app.get("/admin/expert-verifications/{profile_id}/document")
 def admin_expert_credential_document(request: Request, profile_id: int):
     user = get_current_user(request)
@@ -7423,7 +7413,7 @@ def legacy_admin_hidden(request: Request):
     return HTMLResponse("Sayfa bulunamadı.", status_code=404)
 
 
-ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","inbox":"Gelen Mesajlar","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
+ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","complaints":"Şikayet / Sorun Bildirimleri","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
 
 def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
     row=session.exec(select(SiteSetting).where(SiteSetting.key==key)).first()
@@ -7519,6 +7509,13 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+        report_rows=[{
+            "report": r,
+            "reporter": s.get(User, r.reporter_user_id),
+            "reported": s.get(User, r.reported_user_id),
+        } for r in reports]
+        visible_users=users[:100]
+        storage_by_user={u.id:_admin_user_storage_summary(s,u.id) for u in visible_users}
         admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
         completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
@@ -7529,7 +7526,8 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
-        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
+        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"storage_by_user":storage_by_user,
+        "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
     })
 
 
