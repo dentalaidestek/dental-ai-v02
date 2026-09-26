@@ -10,5 +10,4 @@
 </div>
 <div class="message-side">{% if row.last_message %}<time datetime="{{ row.last_message.created_at.isoformat() }}">{{ row.last_message.created_at.strftime('%H:%M') }}</time>{% else %}<time datetime="{{ row.case.requested_at.isoformat() }}">{{ row.case.requested_at.strftime('%H:%M') }}</time>{% endif %}{% if row.unread %}<b class="message-unread">{{ row.unread }}</b>{% endif %}</div>
 </a>
-<details class="message-more"><summary aria-label="Sohbet işlemleri">⋮</summary><form method="post" action="/messages/{{ row.case.id }}/delete" onsubmit="return confirm('Bu sohbet Mesajlar listenizden kaldırılsın mı? 7 gün içinde geri yükleyebilirsiniz.');"><button type="submit">Sohbeti kaldır</button></form></details>
 </article>
