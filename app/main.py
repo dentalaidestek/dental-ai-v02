@@ -5658,6 +5658,8 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
+        notification_events: list[RealtimeEvent] = []
+        status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
