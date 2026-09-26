@@ -1225,16 +1225,20 @@ def init_db():
         # Consultation inbox state is logically one row per (case, user).
         # Older releases did not enforce that invariant. Consolidate duplicates
         # before adding the unique index so already-read messages cannot reappear.
+        # Lifecycle fields come from the newest state row; a stale deleted row
+        # must never hide a conversation that a newer row restored.
         if dialect == "postgresql":
             conn.exec_driver_sql(
                 'UPDATE "consultationinboxstate" AS keep SET '
-                'last_read_at = merged.last_read_at, deleted_at = merged.deleted_at, recover_until = merged.recover_until '
-                'FROM (SELECT case_id, user_id, MAX(last_read_at) AS last_read_at, '
-                'MAX(deleted_at) AS deleted_at, MAX(recover_until) AS recover_until '
-                'FROM "consultationinboxstate" GROUP BY case_id, user_id) AS merged '
+                'last_read_at = merged.last_read_at, deleted_at = newest.deleted_at, recover_until = newest.recover_until '
+                'FROM (SELECT case_id, user_id, MAX(last_read_at) AS last_read_at '
+                'FROM "consultationinboxstate" GROUP BY case_id, user_id) AS merged, '
+                '"consultationinboxstate" AS newest '
                 'WHERE keep.case_id = merged.case_id AND keep.user_id = merged.user_id '
                 'AND keep.id = (SELECT MIN(x.id) FROM "consultationinboxstate" x '
-                'WHERE x.case_id = keep.case_id AND x.user_id = keep.user_id)'
+                'WHERE x.case_id = keep.case_id AND x.user_id = keep.user_id) '
+                'AND newest.id = (SELECT MAX(y.id) FROM "consultationinboxstate" y '
+                'WHERE y.case_id = keep.case_id AND y.user_id = keep.user_id)'
             )
             conn.exec_driver_sql(
                 'DELETE FROM "consultationinboxstate" d USING "consultationinboxstate" k '
@@ -1249,10 +1253,12 @@ def init_db():
                 'UPDATE "consultationinboxstate" SET '
                 'last_read_at = (SELECT MAX(x.last_read_at) FROM "consultationinboxstate" x '
                 'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id), '
-                'deleted_at = (SELECT MAX(x.deleted_at) FROM "consultationinboxstate" x '
-                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id), '
-                'recover_until = (SELECT MAX(x.recover_until) FROM "consultationinboxstate" x '
-                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id) '
+                'deleted_at = (SELECT x.deleted_at FROM "consultationinboxstate" x '
+                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id '
+                'ORDER BY x.id DESC LIMIT 1), '
+                'recover_until = (SELECT x.recover_until FROM "consultationinboxstate" x '
+                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id '
+                'ORDER BY x.id DESC LIMIT 1) '
                 'WHERE id IN (SELECT MIN(id) FROM "consultationinboxstate" GROUP BY case_id, user_id)'
             )
             conn.exec_driver_sql(
@@ -4517,15 +4523,9 @@ def _consultation_inbox_state(session: Session, case_id: int, user_id: int) -> C
     if len(states) > 1:
         read_values = [row.last_read_at for row in states if row.last_read_at]
         state.last_read_at = max(read_values) if read_values else None
-        deleted_rows = [row for row in states if row.deleted_at]
-        if deleted_rows:
-            newest_deleted = max(deleted_rows, key=lambda row: row.deleted_at)
-            state.deleted_at = newest_deleted.deleted_at
-            recover_values = [row.recover_until for row in deleted_rows if row.recover_until]
-            state.recover_until = max(recover_values) if recover_values else None
-        else:
-            state.deleted_at = None
-            state.recover_until = None
+        newest_state = states[-1]
+        state.deleted_at = newest_state.deleted_at
+        state.recover_until = newest_state.recover_until
         session.add(state)
         for duplicate in states[1:]:
             session.delete(duplicate)
@@ -4776,10 +4776,7 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
         return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        state = s.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case_id,
-            ConsultationInboxState.user_id == user.id,
-        )).first()
+        state = _consultation_inbox_state(s, case_id, user.id)
         if not state or not state.deleted_at or not state.recover_until or state.recover_until < now:
             return HTMLResponse("Bu sohbet artık geri yüklenemez.", status_code=410)
         state.deleted_at = None
