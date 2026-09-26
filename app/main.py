@@ -1222,6 +1222,53 @@ def init_db():
             for column, sql_type in additions.items():
                 if column not in expert_cols:
                     conn.exec_driver_sql(f'ALTER TABLE "expertprofile" ADD COLUMN {column} {sql_type}')
+        # Consultation inbox state is logically one row per (case, user).
+        # Older releases did not enforce that invariant. Consolidate duplicates
+        # before adding the unique index so already-read messages cannot reappear.
+        # Lifecycle fields come from the newest state row; a stale deleted row
+        # must never hide a conversation that a newer row restored.
+        if dialect == "postgresql":
+            conn.exec_driver_sql(
+                'UPDATE "consultationinboxstate" AS keep SET '
+                'last_read_at = merged.last_read_at, deleted_at = newest.deleted_at, recover_until = newest.recover_until '
+                'FROM (SELECT case_id, user_id, MAX(last_read_at) AS last_read_at '
+                'FROM "consultationinboxstate" GROUP BY case_id, user_id) AS merged, '
+                '"consultationinboxstate" AS newest '
+                'WHERE keep.case_id = merged.case_id AND keep.user_id = merged.user_id '
+                'AND keep.id = (SELECT MIN(x.id) FROM "consultationinboxstate" x '
+                'WHERE x.case_id = keep.case_id AND x.user_id = keep.user_id) '
+                'AND newest.id = (SELECT MAX(y.id) FROM "consultationinboxstate" y '
+                'WHERE y.case_id = keep.case_id AND y.user_id = keep.user_id)'
+            )
+            conn.exec_driver_sql(
+                'DELETE FROM "consultationinboxstate" d USING "consultationinboxstate" k '
+                'WHERE d.case_id = k.case_id AND d.user_id = k.user_id AND d.id > k.id'
+            )
+            conn.exec_driver_sql(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_consultation_inbox_case_user '
+                'ON "consultationinboxstate" (case_id, user_id)'
+            )
+        elif dialect == "sqlite":
+            conn.exec_driver_sql(
+                'UPDATE "consultationinboxstate" SET '
+                'last_read_at = (SELECT MAX(x.last_read_at) FROM "consultationinboxstate" x '
+                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id), '
+                'deleted_at = (SELECT x.deleted_at FROM "consultationinboxstate" x '
+                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id '
+                'ORDER BY x.id DESC LIMIT 1), '
+                'recover_until = (SELECT x.recover_until FROM "consultationinboxstate" x '
+                'WHERE x.case_id = "consultationinboxstate".case_id AND x.user_id = "consultationinboxstate".user_id '
+                'ORDER BY x.id DESC LIMIT 1) '
+                'WHERE id IN (SELECT MIN(id) FROM "consultationinboxstate" GROUP BY case_id, user_id)'
+            )
+            conn.exec_driver_sql(
+                'DELETE FROM "consultationinboxstate" WHERE id NOT IN '
+                '(SELECT MIN(id) FROM "consultationinboxstate" GROUP BY case_id, user_id)'
+            )
+            conn.exec_driver_sql(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_consultation_inbox_case_user '
+                'ON "consultationinboxstate" (case_id, user_id)'
+            )
         # Eski sürüm başvuru onayını yanlışlıkla kimlik/branş doğrulaması olarak
         # kaydediyordu. Yeni alanlar ilk kez eklenirken eski VERIFIED kayıtlarını
         # güvenli duruma çek: başvuru onaylı, belge doğrulaması bekliyor.
@@ -4456,13 +4503,32 @@ async def expert_support_request_create(
 
 
 def _consultation_inbox_state(session: Session, case_id: int, user_id: int) -> ConsultationInboxState:
-    state = session.exec(select(ConsultationInboxState).where(
+    """Return the canonical per-user case state.
+
+    Historical deployments could create duplicate rows because the pair was not
+    unique. Prefer the furthest read cursor and merge duplicate lifecycle state
+    deterministically until the startup migration has consolidated old rows.
+    """
+    states = session.exec(select(ConsultationInboxState).where(
         ConsultationInboxState.case_id == case_id,
         ConsultationInboxState.user_id == user_id,
-    )).first()
-    if not state:
+    ).order_by(ConsultationInboxState.id.asc())).all()
+    if not states:
         state = ConsultationInboxState(case_id=case_id, user_id=user_id)
         session.add(state)
+        session.flush()
+        return state
+
+    state = states[0]
+    if len(states) > 1:
+        read_values = [row.last_read_at for row in states if row.last_read_at]
+        state.last_read_at = max(read_values) if read_values else None
+        newest_state = states[-1]
+        state.deleted_at = newest_state.deleted_at
+        state.recover_until = newest_state.recover_until
+        session.add(state)
+        for duplicate in states[1:]:
+            session.delete(duplicate)
         session.flush()
     return state
 
@@ -4501,19 +4567,10 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     case_ids = [case.id for case in cases if case.id is not None]
-    states = session.exec(select(ConsultationInboxState).where(
-        ConsultationInboxState.user_id == user_id,
-        ConsultationInboxState.case_id.in_(case_ids),
-    )).all()
-    state_by_case = {state.case_id: state for state in states}
-
-    missing_case_ids = [case_id for case_id in case_ids if case_id not in state_by_case]
-    for case_id in missing_case_ids:
-        state = ConsultationInboxState(case_id=case_id, user_id=user_id)
-        session.add(state)
-        state_by_case[case_id] = state
-    if missing_case_ids:
-        session.flush()
+    state_by_case = {
+        case_id: _consultation_inbox_state(session, case_id, user_id)
+        for case_id in case_ids
+    }
 
     visible_cases = [case for case in cases if not state_by_case[case.id].deleted_at]
     if not visible_cases:
@@ -4719,10 +4776,7 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
         return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        state = s.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case_id,
-            ConsultationInboxState.user_id == user.id,
-        )).first()
+        state = _consultation_inbox_state(s, case_id, user.id)
         if not state or not state.deleted_at or not state.recover_until or state.recover_until < now:
             return HTMLResponse("Bu sohbet artık geri yüklenemez.", status_code=410)
         state.deleted_at = None
@@ -4868,11 +4922,8 @@ def expert_support_case_room(request: Request, case_id: int):
         requester = s.get(User, case.requester_user_id)
         expert = s.get(User, case.expert_user_id)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
-        other_state = s.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case.id,
-            ConsultationInboxState.user_id == other_id,
-        )).first()
-        other_read_at = other_state.last_read_at if other_state else None
+        other_state = _consultation_inbox_state(s, case.id, other_id)
+        other_read_at = other_state.last_read_at
         payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
         review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
@@ -4911,7 +4962,7 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
         if not storage_exists(media.file_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
         path = storage_ensure_local(media.file_path)
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
@@ -5042,7 +5093,7 @@ def expert_support_message_media(request: Request, case_id: int, message_id: int
         if not storage_exists(msg.media_path):
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
         path = storage_ensure_local(msg.media_path)
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/annotate/{message_id}")
