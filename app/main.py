@@ -8701,7 +8701,7 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
             if _expert_is_blocked(policy_state):
                 return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.",status_code=409)
             active_count=_expert_open_case_count(s,user_id)
-            if active_count>=min(profile.max_active_cases,5):
+            if active_count>=max(1,min(int(profile.max_active_cases or 5),5)):
                 return HTMLResponse("Uzmanın aktif vaka kapasitesi dolu.",status_code=409)
             profile.availability="AVAILABLE"; profile.capacity_auto_busy=False
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
@@ -8752,7 +8752,7 @@ async def admin_center_verify(request: Request, profile_id: int, decision: str =
             profile.specialty_verified=True
             profile.academic_title_verified=bool(profile.academic_title)
             profile.verified_at=_utcnow_naive()
-            profile.availability="PASSIVE"
+            profile.availability="PASSIVE"; profile.capacity_auto_busy=False
         elif decision=="REJECT":
             profile.application_status="REJECTED";profile.verification_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.verified_at=None;profile.availability="PASSIVE";profile.capacity_auto_busy=False
         else:
