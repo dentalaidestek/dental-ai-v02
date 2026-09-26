@@ -797,23 +797,51 @@ def _find_duplicate_patient(
     age: Optional[int],
     phone: Optional[str],
 ):
-    """Yalnızca aynı hekimin kendi hastaları içinde olası mükerrer kaydı bulur.
-
-    Otomatik birleştirme veya engelleme yapmaz. En güçlü eşleşme kullanıcıya
-    gösterilir ve hekim isterse yine de yeni kayıt oluşturabilir.
-    """
-    candidates = session.exec(
-        select(Patient)
-        .where(Patient.owner_user_id == owner_user_id)
-        .order_by(Patient.id.desc())
-    ).all()
-
+    """Find the strongest duplicate candidate without loading the owner's full patient table."""
     wanted_first = _normalize_patient_name(first_name)
     wanted_last = _normalize_patient_name(last_name)
     wanted_phone = _normalize_patient_phone(phone)
-    matches = []
 
-    for patient in candidates:
+    # Exact stored values are the fast path. A bounded recent-candidate fallback preserves
+    # the existing normalization behavior for older records with formatting differences.
+    filters = []
+    if phone:
+        filters.append(Patient.phone == phone)
+    if birth_date:
+        filters.append(
+            (Patient.first_name == first_name)
+            & (Patient.last_name == last_name)
+            & (Patient.birth_date == birth_date)
+        )
+    if age is not None:
+        filters.append(
+            (Patient.first_name == first_name)
+            & (Patient.last_name == last_name)
+            & (Patient.age == age)
+        )
+
+    candidates_by_id = {}
+    if filters:
+        candidate_query = select(Patient).where(
+            Patient.owner_user_id == owner_user_id,
+            filters[0] if len(filters) == 1 else or_(*filters),
+        ).order_by(Patient.id.desc())
+        for patient in session.exec(candidate_query).all():
+            candidates_by_id[patient.id] = patient
+
+    # Preserve normalized-name/phone matching for legacy formatting without an unbounded scan.
+    if len(candidates_by_id) < 20:
+        recent = session.exec(
+            select(Patient)
+            .where(Patient.owner_user_id == owner_user_id)
+            .order_by(Patient.id.desc())
+            .limit(200)
+        ).all()
+        for patient in recent:
+            candidates_by_id.setdefault(patient.id, patient)
+
+    matches = []
+    for patient in candidates_by_id.values():
         score = 0
         reason = None
         existing_phone = _normalize_patient_phone(patient.phone)
@@ -821,28 +849,23 @@ def _find_duplicate_patient(
             _normalize_patient_name(patient.first_name) == wanted_first
             and _normalize_patient_name(patient.last_name) == wanted_last
         )
-
         if wanted_phone and existing_phone and wanted_phone == existing_phone:
             score = 100
             reason = "Telefon numarası eşleşiyor."
-
         if same_name and birth_date and patient.birth_date == birth_date and score < 98:
             score = 98
             reason = "Ad, soyad ve doğum tarihi eşleşiyor."
         elif same_name and age is not None and patient.age is not None and patient.age == age and score < 85:
             score = 85
             reason = "Ad, soyad ve yaş eşleşiyor."
-
         if score:
             matches.append((score, patient.id or 0, patient, reason))
 
     if not matches:
         return None, None
-
     matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
     _, _, patient, reason = matches[0]
     return patient, reason
-
 
 def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: datetime):
     """Bir program kaydının belirtilen yerel tarih aralığındaki görünümlerini üretir."""
