@@ -3,7 +3,7 @@
 <header class="messages-head messages-chat-head"><div><span class="workspace-section-kicker">Uzman desteği</span><h1>Mesajlar</h1><p>Vaka görüşmeleriniz yalnızca siz ve karşı tarafça görülebilir.</p></div><a class="messages-new-case" href="/expert-support" aria-label="Yeni danışmanlık"><span>＋</span><b>Uzman bul</b></a></header>
 <div class="messages-search-wrap"><span>⌕</span><input id="messageSearch" type="search" placeholder="Sohbetlerde ara" autocomplete="off"></div>
 <nav class="messages-filters messages-filters-compact" aria-label="Mesaj filtreleri">
-<a href="/messages" data-message-filter="all" class="active">Tümü</a>
+<a href="/messages" data-message-filter="all">Tümü</a>
 <a href="/messages?filter=unread" data-message-filter="unread">Okunmamış</a>
 <a href="/messages?filter=waiting" data-message-filter="waiting">Bekleyen</a>
 <details class="messages-filter-more"><summary aria-label="Diğer filtreler">Filtrele</summary><div><a href="/messages?filter=missed" data-message-filter="missed">Kaçırılan</a><a href="/messages?filter=history" data-message-filter="history">Geçmiş</a></div></details>
@@ -16,17 +16,26 @@
 <a class="messages-deleted-link" href="/messages/deleted">Son 7 günde kaldırılan sohbetler</a>
 </div>
 <script>
-function tickExpertCountdowns(){document.querySelectorAll(".message-countdown").forEach(el=>{const end=new Date(el.dataset.deadline+"Z").getTime(),left=Math.max(0,end-Date.now()),sec=Math.floor(left/1000),m=Math.floor(sec/60),s=sec%60,b=el.querySelector("b");if(b)b.textContent=left>0?String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):"Süre doldu";el.classList.toggle("expired",left<=0);});} tickExpertCountdowns();setInterval(tickExpertCountdowns,1000);
-const messageSearch=document.getElementById("messageSearch"),filterLinks=[...document.querySelectorAll("[data-message-filter]")];let activeMessageFilter="all";
+let messageCountdownTimer=null;
+function tickExpertCountdowns(){document.querySelectorAll(".message-countdown").forEach(el=>{const end=new Date(el.dataset.deadline+"Z").getTime(),left=Math.max(0,end-Date.now()),sec=Math.floor(left/1000),m=Math.floor(sec/60),s=sec%60,b=el.querySelector("b"),wasExpired=el.classList.contains("expired");if(b)b.textContent=left>0?String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):"Süre doldu";el.classList.toggle("expired",left<=0);if(left<=0&&!wasExpired){const row=el.closest(".message-row"),id=Number(row?.dataset.caseId||0);if(id)queueMicrotask(()=>refreshConversationCard(id,true));}});}
+function ensureMessageCountdown(){if(messageCountdownTimer===null)messageCountdownTimer=setInterval(()=>{if(!document.querySelector(".messages-chat-list")){clearInterval(messageCountdownTimer);messageCountdownTimer=null;return;}tickExpertCountdowns();},1000);tickExpertCountdowns();}
+ensureMessageCountdown();
+const messageSearch=document.getElementById("messageSearch"),filterLinks=[...document.querySelectorAll("[data-message-filter]")];let activeMessageFilter={{ selected_filter|tojson }};
 function applyMessageFilters(){const q=(messageSearch?.value||"").trim().toLocaleLowerCase("tr");document.querySelectorAll(".message-row").forEach(row=>{const status=row.dataset.status||"",matchesFilter=activeMessageFilter==="all"||(activeMessageFilter==="unread"&&Number(row.dataset.unread||0)>0)||(activeMessageFilter==="waiting"&&["WAITING","ACTION_REQUIRED","NEW_REQUEST"].includes(status))||(activeMessageFilter==="missed"&&["MISSED","DELAYED"].includes(status))||(activeMessageFilter==="history"&&["HISTORY","CLOSED","DISPUTE"].includes(status));row.hidden=!matchesFilter||!!(q&&!row.dataset.search.includes(q));});}
-filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();}));
+filterLinks.forEach(link=>link.classList.toggle("active",link.dataset.messageFilter===activeMessageFilter));applyMessageFilters();
+filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();sortMessageRows();}));
 if(messageSearch)messageSearch.addEventListener("input",applyMessageFilters);
 const appliedMessageIds=new Set();
 function sortMessageRows(){
   const list=document.querySelector(".messages-list");if(!list)return;
   [...list.querySelectorAll(".message-row")].sort((a,b)=>{
-    const ap=a.dataset.status==="NEW_REQUEST"?1:0,bp=b.dataset.status==="NEW_REQUEST"?1:0;
-    if(ap!==bp)return bp-ap;
+    const priority=(row)=>{
+      const status=row.dataset.status||"";
+      if(activeMessageFilter==="waiting")return status==="NEW_REQUEST"?3:status==="ACTION_REQUIRED"?2:1;
+      if(activeMessageFilter==="unread")return Number(row.dataset.unread||0)>0?1:0;
+      return status==="NEW_REQUEST"?2:status==="ACTION_REQUIRED"?1:0;
+    };
+    const diff=priority(b)-priority(a);if(diff)return diff;
     return Date.parse(b.dataset.sortAt||0)-Date.parse(a.dataset.sortAt||0);
   }).forEach(row=>list.appendChild(row));
 }
@@ -34,11 +43,12 @@ async function refreshConversationCard(caseId,replaceExisting=false){
   try{
     const res=await fetch("/messages/"+encodeURIComponent(caseId)+"/row",{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"fetch"}});
     if(!res.ok)return;const holder=document.createElement("div");holder.innerHTML=await res.text();const row=holder.querySelector(".message-row"),list=document.querySelector(".messages-list");
-    if(row&&list){const current=list.querySelector('.message-row[data-case-id="'+caseId+'"]');if(current&&replaceExisting)current.replaceWith(row);else if(!current){list.querySelector(".messages-empty")?.remove();list.appendChild(row);}tickExpertCountdowns();sortMessageRows();applyMessageFilters();}
+    if(row&&list){const current=list.querySelector('.message-row[data-case-id="'+caseId+'"]');if(current&&replaceExisting)current.replaceWith(row);else if(!current){list.querySelector(".messages-empty")?.remove();list.appendChild(row);}ensureMessageCountdown();sortMessageRows();applyMessageFilters();}
   }catch(_){}
 }
 function applyIncomingMessage(data){
   const caseId=Number(data.case_id||0),messageId=Number(data.message_id||0);if(!caseId||!messageId||appliedMessageIds.has(messageId))return;
+  const openCase=location.pathname.match(/^\/expert-support\/cases\/(\d+)\/?$/),caseIsOpen=Number(openCase?.[1]||0)===caseId;
   const row=document.querySelector('.message-row[data-case-id="'+caseId+'"]');
   if(!row){refreshConversationCard(caseId);return;}
   if(Number(row.dataset.lastMessageId||0)===messageId){appliedMessageIds.add(messageId);return;}
@@ -46,11 +56,13 @@ function applyIncomingMessage(data){
   const preview=row.querySelector(".message-preview"),time=row.querySelector(".message-side time");
   const incomingAt=Date.parse((data.created_at||"")+"Z"),currentAt=Date.parse(row.dataset.sortAt||0),isNewest=!Number.isFinite(currentAt)||incomingAt>=currentAt;
   if(isNewest){if(preview)preview.textContent=data.preview||"Yeni mesaj";if(time&&data.created_at){const d=new Date(data.created_at+"Z");time.dateTime=data.created_at;time.textContent=d.toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});}row.dataset.lastMessageId=String(messageId);row.dataset.sortAt=data.created_at||row.dataset.sortAt;}
-  if(!data.is_outgoing){const current=Number(row.dataset.unread||0)+1;row.dataset.unread=String(current);row.classList.add("unread");let badge=row.querySelector(".message-unread");if(!badge){badge=document.createElement("b");badge.className="message-unread";row.querySelector(".message-side")?.appendChild(badge);}badge.textContent=String(current);}
+  if(!data.is_outgoing&&!caseIsOpen){const current=Number(row.dataset.unread||0)+1;row.dataset.unread=String(current);row.classList.add("unread");let badge=row.querySelector(".message-unread");if(!badge){badge=document.createElement("b");badge.className="message-unread";row.querySelector(".message-side")?.appendChild(badge);}badge.textContent=String(current);}
   if(data.status_key){row.dataset.status=data.status_key;const status=row.querySelector(".message-status");if(status){status.className="message-status status-"+data.status_key.toLowerCase();status.textContent=data.status_label||data.status_key;}if(data.case_status==="ACTIVE")row.querySelector(".message-countdown")?.remove();}
   const search=(row.dataset.search||"")+" "+(data.preview||"");row.dataset.search=search.toLocaleLowerCase("tr");
   sortMessageRows();applyMessageFilters();
 }
+window.addEventListener("dai:case-read",e=>{const id=Number(e.detail?.case_id||0),row=document.querySelector('.message-row[data-case-id="'+id+'"]');if(!row)return;row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();applyMessageFilters();sortMessageRows();});
+window.addEventListener("dai:messages-view-restored",()=>{ensureMessageCountdown();document.querySelectorAll(".message-row[data-case-id]").forEach(row=>{const id=Number(row.dataset.caseId||0);if(id)refreshConversationCard(id,true);});});
 window.addEventListener("dai:sync-event",e=>{
   const evt=e.detail||{},data=evt.payload||{};
   if(evt.event_type==="MESSAGE_CREATED")applyIncomingMessage(data);

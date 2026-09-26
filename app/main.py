@@ -4562,6 +4562,12 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
             .group_by(ConsultationMessage.case_id)
         ).all()
         unread_by_case = {case_id: int(count or 0) for case_id, count in unread_rows}
+    # A fresh expert request is itself an unread inbox item even before the
+    # first chat message exists. Opening that case sets last_read_at.
+    for case in visible_cases:
+        state = state_by_case[case.id]
+        if case.status == "REQUESTED" and user_id == case.expert_user_id and not state.last_read_at:
+            unread_by_case[case.id] = max(1, unread_by_case.get(case.id, 0))
 
     other_ids = {
         case.expert_user_id if user_id == case.requester_user_id else case.requester_user_id
@@ -4654,6 +4660,8 @@ def consultation_message_row(request: Request, case_id: int):
         unread = sum(1 for message in messages if message.sender_user_id != user.id and (
             not state.last_read_at or message.created_at > state.last_read_at
         ))
+        if case.status == "REQUESTED" and user.id == case.expert_user_id and not state.last_read_at:
+            unread = max(1, unread)
         status_key, status_label = _consultation_display_status(case, user.id, now)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         row = {"case": case, "state": state, "last_message": last_message, "unread": unread,
@@ -4793,16 +4801,8 @@ def consultation_unread_count(request: Request):
         cases = s.exec(select(ConsultationCase).where(
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         )).all()
-        total = 0
-        for case in cases:
-            state = _consultation_inbox_state(s, case.id, user.id)
-            if state.deleted_at:
-                continue
-            messages = s.exec(select(ConsultationMessage).where(
-                ConsultationMessage.case_id == case.id,
-                ConsultationMessage.sender_user_id != user.id,
-            )).all()
-            total += sum(1 for m in messages if not state.last_read_at or m.created_at > state.last_read_at)
+        rows = _consultation_inbox_rows(s, cases, user.id, _utcnow_naive())
+        total = sum(int(row["unread"] or 0) for row in rows)
         s.commit()
     return {"count": total}
 
