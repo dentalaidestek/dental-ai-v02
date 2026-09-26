@@ -1243,7 +1243,6 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -1280,6 +1279,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_requester_decision_deadline ON "consultationcase" (status, requester_decision_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
@@ -3901,7 +3901,7 @@ def _expert_is_blocked(state: ExpertPolicyState, now: Optional[datetime] = None)
     return bool(state.new_case_blocked_until and state.new_case_blocked_until > now)
 
 
-def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optional[datetime] = None) -> bool:
+def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optional[datetime] = None, notification_events: Optional[list[RealtimeEvent]] = None) -> bool:
     """10 dk yanıtsız talebi bir kez işler; aynı yerel günde 3. kaçırmada 24 saat yeni vaka engeli verir."""
     now = now or _utcnow_naive()
     if case.status != "REQUESTED" or now <= case.expert_response_deadline:
@@ -3947,24 +3947,30 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     if payment:
         _payment_cancel_or_refund(payment, now)
         session.add(payment)
-    _resolve_notifications(
+    resolved_events = _resolve_notifications(
         session, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST",
         related_type="consultation_case", related_id=case.id,
     )
-    _notify_user(
+    if notification_events is not None:
+        notification_events.extend(resolved_events)
+    _, expert_timeout_notice, _ = _notify_user(
         session, user_id=case.expert_user_id, actor_user_id=None,
         notice_type="CONSULTATION_REQUEST_EXPIRED", title="Danışmanlık talebinin süresi doldu",
         message="Yanıt süresi dolduğu için danışmanlık talebi kapatıldı.",
         related_type="consultation_case", related_id=case.id,
         dedup_key=f"consultation:{case.id}:expert-timeout", target_url=f"/expert-support/cases/{case.id}",
     )
-    _notify_user(
+    if notification_events is not None and expert_timeout_notice:
+        notification_events.append(expert_timeout_notice)
+    _, requester_timeout_notice, _ = _notify_user(
         session, user_id=case.requester_user_id, actor_user_id=None,
         notice_type="CONSULTATION_REQUEST_EXPIRED", title="Danışmanlık talebinin süresi doldu",
         message="Uzman yanıt süresi içinde işlem yapmadığı için danışmanlık talebi kapatıldı.",
         related_type="consultation_case", related_id=case.id,
         dedup_key=f"consultation:{case.id}:expert-timeout", target_url=f"/expert-support/cases/{case.id}",
     )
+    if notification_events is not None and requester_timeout_notice:
+        notification_events.append(requester_timeout_notice)
     return True
 
 
@@ -4074,7 +4080,7 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
         return notices, case_events
     notices.extend(_resolve_deadline_warning(session, case))
     if jt == "EXPERT_RESPONSE_DUE":
-        if _apply_expert_timeout(session, case, now):
+        if _apply_expert_timeout(session, case, now, notices):
             case_events.extend(_record_case_status_realtime_events(session, case))
     elif jt == "PROPOSAL_DUE":
         case.status = "PROPOSAL_EXPIRED"; session.add(case)
@@ -5321,6 +5327,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         else: return HTMLResponse("Geçersiz karar.", status_code=400)
         s.add(case)
         notification_events = _resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST", related_type="consultation_case", related_id=case.id)
+        notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
         if case.status == "REJECTED":
             _, notice_event, _ = _notify_user(
                 s, user_id=case.requester_user_id, actor_user_id=user.id,
@@ -5384,6 +5391,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
             if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
         s.add(case)
         notification_events = _resolve_notifications(s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL", related_type="consultation_case", related_id=case.id)
+        notification_events.extend(_resolve_notifications(s, user_id=case.requester_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
         if rejected:
             notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_REJECTED", "Başlangıç önerisi reddedildi", "Talep sahibi önerdiğiniz başlangıç süresini kabul etmedi."
         else:
@@ -6235,6 +6243,10 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             if notice_event:
                 notification_events.append(notice_event)
         elif user.id == case.requester_user_id:
+            notification_events.extend(_resolve_notifications(
+                s, user_id=case.requester_user_id, notice_type="CONSULTATION_DEADLINE_WARNING",
+                related_type="consultation_case", related_id=case.id,
+            ))
             notification_events.extend(_resolve_notifications(
                 s, user_id=case.requester_user_id, notice_type="CONSULTATION_COMPLETION_CONFIRMATION",
                 related_type="consultation_case", related_id=case.id,
