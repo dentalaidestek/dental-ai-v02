@@ -64,6 +64,16 @@ class WebPushContractTests(unittest.TestCase):
         subscribe = MAIN.split("async def account_push_subscribe", 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
         self.assertIn("_valid_web_push_endpoint(endpoint)", subscribe)
 
+    def test_logout_disables_only_this_browser_subscription(self):
+        logout = MAIN.split('@app.get("/logout")', 1)[1].split('app.mount("/static"', 1)[0]
+        self.assertIn('request.cookies.get("dai_push_subscription_id")', logout)
+        self.assertIn("subscription.user_id == user.id", logout)
+        self.assertIn('response.delete_cookie("dai_push_subscription_id")', logout)
+        subscribe = MAIN.split('async def account_push_subscribe', 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
+        self.assertIn('response.set_cookie("dai_push_subscription_id"', subscribe)
+        self.assertIn("httponly=True", subscribe)
+        self.assertIn("secure=True", subscribe)
+
     def test_service_worker_payload_is_privacy_minimized_and_internal_only(self):
         self.assertIn('const title = "Dental AI"', SW)
         self.assertIn("target_url", SW)
