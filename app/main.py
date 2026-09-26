@@ -7834,10 +7834,11 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
     with Session(engine, expire_on_commit=False) as s:
         if section=="complaints":
             reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
             user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
             users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
             rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id)} for r in reports]
-            return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"admin_path":ADMIN_CENTER_PATH})
+            return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH})
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ids=[t.id for t in tickets if t.id is not None]
         messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ids)).order_by(SupportTicketMessage.created_at)).all() if ids else []
