@@ -81,3 +81,23 @@ def test_waiting_start_message_paths_resolve_warning_and_publish_status():
         assert "_record_case_status_realtime_events" in path
     assert "notification_events: list[RealtimeEvent] = []" in http
     assert "status_events: list[RealtimeEvent] = []" in http
+
+
+def test_postgres_cross_process_wakeup_contract():
+    assert 'PG_DEADLINE_CHANNEL = "dentalai_deadline_jobs"' in MAIN
+    assert 'PG_REALTIME_CHANNEL = "dentalai_realtime_events"' in MAIN
+    assert "pg_notify(:channel, :payload)" in MAIN
+    assert "async def _postgres_event_listener" in MAIN
+    assert 'DEADLINE_EXECUTION_MODE = os.getenv("DENTALAI_DEADLINE_EXECUTION", "embedded")' in MAIN
+
+
+def test_deadline_enqueue_duplicate_isolated_from_domain_transaction():
+    enqueue = MAIN.split("def _enqueue_deadline_job", 1)[1].split("def _enqueue_deadline_pair", 1)[0]
+    assert "with session.begin_nested():" in enqueue
+    assert "except IntegrityError:" in enqueue
+
+
+def test_capacity_slot_allocation_is_serialized_on_postgres():
+    endpoint = MAIN.split("async def expert_support_request_create", 1)[1].split("@app.", 1)[0]
+    assert "profile_stmt.with_for_update()" in endpoint
+    assert "_expert_open_case_count(s, expert_user_id)" in endpoint
