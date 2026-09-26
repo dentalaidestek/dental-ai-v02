@@ -1215,7 +1215,7 @@ def init_db():
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP',
             ):
                 conn.exec_driver_sql(statement)
-            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key) WHERE dedup_key IS NOT NULL')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
@@ -1243,7 +1243,7 @@ def init_db():
             for column, sql_type in adminnotice_additions.items():
                 if column not in adminnotice_cols:
                     conn.exec_driver_sql(f'ALTER TABLE "adminnotice" ADD COLUMN {column} {sql_type}')
-            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key) WHERE dedup_key IS NOT NULL')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
@@ -5397,8 +5397,14 @@ def _notify_user(
 
     normalized_dedup = (dedup_key or "").strip() or None
     if normalized_dedup:
+        # Dedup keys are scoped to the recipient.  This lets the same domain
+        # event notify multiple affected users without cross-user collisions.
+        normalized_dedup = f"u{user_id}:{normalized_dedup}"[:240]
         existing = session.exec(
-            select(AdminNotice).where(AdminNotice.dedup_key == normalized_dedup)
+            select(AdminNotice).where(
+                AdminNotice.user_id == user_id,
+                AdminNotice.dedup_key == normalized_dedup,
+            )
         ).first()
         if existing:
             return existing, None, False
@@ -5410,7 +5416,7 @@ def _notify_user(
         notice_type=(notice_type or "SYSTEM").strip().upper()[:80],
         related_type=(related_type or "").strip()[:80] or None,
         related_id=str(related_id)[:120] if related_id is not None else None,
-        dedup_key=normalized_dedup[:240] if normalized_dedup else None,
+        dedup_key=normalized_dedup,
         target_url=(target_url or "").strip()[:1000] or None,
         status="ACTIVE",
     )
