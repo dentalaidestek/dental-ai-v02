@@ -11,6 +11,7 @@ import binascii
 import io
 import urllib.request
 import urllib.error
+import select as select_module
 from urllib.parse import quote_plus
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -42,6 +43,7 @@ logger = _study_trace_logging.getLogger(__name__)
 # === TEMP_XRAY_TRACE_MAIN_IMPORT_BEGIN ===
 import time as _xray_trace_time
 import asyncio
+import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
     end_xray_trace,
@@ -2702,17 +2704,24 @@ async def startup():
     init_db()
     _backfill_legacy_deadline_jobs_if_needed()
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker())
+    app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener())
 
 
 @app.on_event("shutdown")
 async def shutdown_consultation_deadline_worker():
-    task = getattr(app.state, "consultation_deadline_task", None)
-    if task:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    tasks = [
+        getattr(app.state, "consultation_deadline_task", None),
+        getattr(app.state, "postgres_event_listener_task", None),
+    ]
+    for task in tasks:
+        if task:
+            task.cancel()
+    for task in tasks:
+        if task:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 @app.get("/notes", response_class=HTMLResponse)
@@ -4000,6 +4009,8 @@ CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
 CONSULTATION_DEADLINE_BATCH_SIZE = 100
 CONSULTATION_DEADLINE_RETENTION_DAYS = 30
 _consultation_deadline_last_cleanup: Optional[datetime] = None
+PG_DEADLINE_CHANNEL = "dentalai_deadline_jobs"
+PG_REALTIME_CHANNEL = "dentalai_realtime_events"
 
 
 def _wake_consultation_deadline_worker() -> None:
@@ -4013,6 +4024,9 @@ def _enqueue_deadline_job(session: Session, case_id: int, job_type: str, run_at:
     if session.exec(select(ConsultationDeadlineJob.id).where(ConsultationDeadlineJob.dedup_key == key)).first():
         return
     session.add(ConsultationDeadlineJob(case_id=case_id, job_type=job_type, run_at=run_at, dedup_key=key))
+    if engine.dialect.name == "postgresql":
+        # Transactional NOTIFY is delivered only after this domain transaction commits.
+        session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(channel=PG_DEADLINE_CHANNEL, payload=str(case_id)))
 
 
 def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: datetime) -> None:
@@ -4201,6 +4215,45 @@ async def _consultation_deadline_worker() -> None:
             logger.exception("Consultation deadline worker iteration failed")
             await asyncio.sleep(5)
 
+
+
+async def _postgres_event_listener() -> None:
+    """Wake local deadline workers and fan durable realtime events across processes."""
+    if engine.dialect.name != "postgresql" or not DATABASE_URL:
+        return
+    while True:
+        conn = None
+        try:
+            conn = await asyncio.to_thread(psycopg2.connect, DATABASE_URL)
+            conn.set_session(autocommit=True)
+            cur = conn.cursor()
+            cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
+            cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
+            while True:
+                ready = await asyncio.to_thread(select_module.select, [conn], [], [], 60.0)
+                if not ready[0]:
+                    continue
+                conn.poll()
+                while conn.notifies:
+                    notice = conn.notifies.pop(0)
+                    if notice.channel == PG_DEADLINE_CHANNEL:
+                        _wake_consultation_deadline_worker()
+                    elif notice.channel == PG_REALTIME_CHANNEL:
+                        try: event_id = int(notice.payload)
+                        except (TypeError, ValueError): continue
+                        with Session(engine, expire_on_commit=False) as s:
+                            event = s.get(RealtimeEvent, event_id)
+                        if event:
+                            await _publish_realtime_event(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("PostgreSQL event listener disconnected; retrying")
+            await asyncio.sleep(2)
+        finally:
+            if conn is not None:
+                try: conn.close()
+                except Exception: pass
 
 def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
     """Legacy route hook retained for compatibility.
@@ -5775,6 +5828,9 @@ def _record_realtime_event(session: Session, user_id: int, event_type: str,
                           payload_json=json.dumps(payload or {},ensure_ascii=False,default=str))
     session.add(event)
     session.flush()
+    if engine.dialect.name == "postgresql":
+        # Cross-process signal only; RealtimeEvent remains the durable source of truth.
+        session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(channel=PG_REALTIME_CHANNEL, payload=str(event.id)))
     return event
 
 
