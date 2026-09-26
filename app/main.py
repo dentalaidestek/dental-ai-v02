@@ -829,16 +829,15 @@ def _find_duplicate_patient(
         for patient in session.exec(candidate_query).all():
             candidates_by_id[patient.id] = patient
 
-    # Preserve normalized-name/phone matching for legacy formatting without an unbounded scan.
-    if len(candidates_by_id) < 20:
-        recent = session.exec(
+    # If the exact fast path found nothing, preserve legacy normalization by falling
+    # back to the original full owner-scoped scan. This keeps duplicate decisions identical.
+    if not candidates_by_id:
+        for patient in session.exec(
             select(Patient)
             .where(Patient.owner_user_id == owner_user_id)
             .order_by(Patient.id.desc())
-            .limit(200)
-        ).all()
-        for patient in recent:
-            candidates_by_id.setdefault(patient.id, patient)
+        ).all():
+            candidates_by_id[patient.id] = patient
 
     matches = []
     for patient in candidates_by_id.values():
