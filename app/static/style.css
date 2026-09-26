@@ -4967,3 +4967,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 }
 
 .case-proposal-note{display:block;margin-top:8px;padding:9px 10px;border-left:3px solid #3b82f6;border-radius:8px;background:#eff6ff;color:#334155}.case-proposal-note strong{color:#1d4ed8}
+
+/* Instant feedback while a consultation room is being fetched. */
+.message-row.opening .message-side::after{content:"";display:inline-block;width:16px;height:16px;margin-left:7px;vertical-align:middle;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:dai-message-opening .65s linear infinite}
+.message-row.opening .message-row-main{opacity:.78;pointer-events:none}
+@keyframes dai-message-opening{to{transform:rotate(360deg)}}
