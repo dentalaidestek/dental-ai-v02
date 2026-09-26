@@ -4589,7 +4589,7 @@ async def expert_support_availability_update(request: Request):
                 return JSONResponse({"ok": False, "detail": "Hesabınız şu anda yeni vaka kabul edemiyor."}, status_code=409)
             active_count = _expert_open_case_count(s, user.id)
             if active_count >= max(1, min(int(profile.max_active_cases or 5), 5)):
-                return JSONResponse({"ok": False, "detail": "Açık vaka sınırına ulaştığınız için şu anda müsait duruma geçemezsiniz."}, status_code=409)
+                return JSONResponse({"ok": False, "detail": "Devam eden danışmanlık sayınız sınıra ulaştığı için şu anda yeni danışmanlık kabul edemezsiniz."}, status_code=409)
         became_available = availability == "AVAILABLE" and profile.availability != "AVAILABLE"
         profile.availability = availability
         # This endpoint is an explicit user choice. Never let a later capacity reopen
@@ -4866,7 +4866,7 @@ async def expert_support_request_create(
         active_count = _expert_open_case_count(s, expert_user_id)
         capacity_limit = max(1, min(int(profile.max_active_cases or 5), 5))
         if active_count >= capacity_limit:
-            return HTMLResponse(f"Uzmanın {capacity_limit} aktif vaka slotu dolu.", status_code=409)
+            return HTMLResponse("Uzman şu anda eş zamanlı danışmanlık sınırına ulaştığı için yeni danışmanlık talebi kabul edemiyor. Lütfen daha sonra tekrar deneyin.", status_code=409)
         if patient_id:
             patient = s.get(Patient, patient_id)
             if not patient or patient.owner_user_id != user.id:
@@ -5665,7 +5665,7 @@ def consultation_block_user(request: Request, case_id: int):
     if not user:return RedirectResponse("/login",status_code=303)
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
-        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
+        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu görüşme henüz bildirim yapılabilecek bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id,UserBlock.blocked_user_id==other)).first()
         if not existing:s.add(UserBlock(blocker_user_id=user.id,blocked_user_id=other))
@@ -5695,7 +5695,7 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
-        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
+        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu görüşme henüz bildirim yapılabilecek bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
         if existing:
@@ -5736,7 +5736,7 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
-            if wants_json: return JSONResponse({"ok": False, "error": "Bu vaka mesajlaşmaya açık değil."}, status_code=409)
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
@@ -6187,7 +6187,7 @@ def _patient_realtime_snapshot(
 def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
     user = get_current_user(request)
     if not user:
-        return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+        return JSONResponse({"ok":False,"error":"Oturum gerekli."},status_code=401)
     after_id=max(0,int(after_id or 0)); limit=min(max(int(limit or 200),1),500)
     with Session(engine,expire_on_commit=False) as s:
         events=s.exec(select(RealtimeEvent).where(RealtimeEvent.user_id==user.id,RealtimeEvent.id>after_id)
