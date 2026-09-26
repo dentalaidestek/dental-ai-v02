@@ -8262,8 +8262,18 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
             labels={"IN_PROGRESS":"inceleniyor","ANSWERED":"sonuçlandı","CLOSED":"kapatıldı"}
             message=f"Destek talebiniz #{ticket.id} {labels[status]}."
             if reply:message+=" Destek ekibi yeni bir açıklama yazdı."
-            s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
-            notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status,"requires_fragment":bool(reply),"has_reply":bool(reply)})
+            _, notice_event, _ = _notify_user(
+                s,
+                user_id=ticket.user_id,
+                actor_user_id=admin.id,
+                notice_type="SUPPORT_TICKET_UPDATE",
+                title="Destek talebi güncellendi",
+                message=message,
+                related_type="support_ticket",
+                related_id=ticket.id,
+                dedup_key=f"support-ticket:{ticket.id}:{status}:{ticket.updated_at.isoformat()}",
+                target_url="/support-request",
+            )
         action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status,"requires_fragment":bool(reply),"has_reply":bool(reply)}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
@@ -8287,8 +8297,18 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
         if changed:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
             message=f"Bildiriminiz #{report.id} artık {labels[status].lower()} durumunda."
-            s.add(AdminNotice(user_id=report.reporter_user_id,title="Bildiriminiz güncellendi",message=message))
-            notice_event=_record_realtime_event(s,report.reporter_user_id,"NOTICE_CREATED","user_report",report.id,{"title":"Bildiriminiz güncellendi","message":message,"report_id":report.id,"status":status,"requires_fragment":False})
+            _, notice_event, _ = _notify_user(
+                s,
+                user_id=report.reporter_user_id,
+                actor_user_id=admin.id,
+                notice_type="REPORT_UPDATE",
+                title="Bildiriminiz güncellendi",
+                message=message,
+                related_type="user_report",
+                related_id=report.id,
+                dedup_key=f"user-report:{report.id}:{status}",
+                target_url="/support-request",
+            )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
     if notice_event: await _publish_realtime_event(notice_event)
@@ -8469,7 +8489,7 @@ async def admin_center_notice(request: Request, user_id: int, title: str = Form(
 
 
 @app.post(ADMIN_CENTER_PATH + "/expert-verifications/{profile_id}")
-def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
+async def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
     admin=_admin_only(request)
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if decision not in {"APPROVE","REJECT","SUBMITTED"}: return HTMLResponse("Geçersiz karar.",status_code=400)
@@ -8493,7 +8513,27 @@ def admin_center_verify(request: Request, profile_id: int, decision: str = Form(
             profile.application_status="REJECTED";profile.verification_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.verified_at=None;profile.availability="PASSIVE"
         else:
             profile.application_status="SUBMITTED";profile.verification_status="PENDING";profile.specialty_verified=False;profile.application_reviewed_at=None;profile.verified_at=None;profile.availability="PASSIVE"
+        labels = {
+            "APPROVE": ("Uzmanlık başvurunuz onaylandı", "Uzmanlık başvurunuz onaylandı. Uzman profiliniz artık doğrulanmış durumda."),
+            "REJECT": ("Uzmanlık başvurunuz sonuçlandı", "Uzmanlık başvurunuz reddedildi. Başvuru bilgilerinizi Uzman Profilim ekranından inceleyebilirsiniz."),
+            "SUBMITTED": ("Uzmanlık başvurunuz incelemede", "Uzmanlık başvurunuz yeniden inceleme durumuna alındı."),
+        }
+        notice_title, notice_message = labels[decision]
+        _, notice_event, _ = _notify_user(
+            s,
+            user_id=profile.user_id,
+            actor_user_id=admin.id,
+            notice_type=f"EXPERT_APPLICATION_{decision}",
+            title=notice_title,
+            message=notice_message,
+            related_type="expert_profile",
+            related_id=profile.id,
+            dedup_key=f"expert-application:{profile.id}:{decision}:{profile.updated_at.isoformat()}",
+            target_url="/expert-support/profile",
+        )
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+decision,target_user_id=profile.user_id));s.commit()
+    if notice_event:
+        await _publish_realtime_event(notice_event)
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
