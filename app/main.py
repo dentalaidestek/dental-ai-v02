@@ -5458,6 +5458,8 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
         s.commit(); status=case.status; patient_id=case.patient_id
+    if not rejected:
+        _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
     await _publish_realtime_event(evt)
     for notification_event in notification_events:
