@@ -5654,10 +5654,13 @@ CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED")
 
 
 def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
-    return len(session.exec(select(ConsultationCase).where(
-        ConsultationCase.expert_user_id == expert_user_id,
-        ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
-    )).all())
+    """Count capacity-consuming cases in SQL; never load every open case just to count."""
+    return int(session.exec(
+        select(func.count(ConsultationCase.id)).where(
+            ConsultationCase.expert_user_id == expert_user_id,
+            ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
+        )
+    ).one() or 0)
 
 
 def _sync_expert_capacity(
