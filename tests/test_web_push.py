@@ -104,6 +104,15 @@ class WebPushContractTests(unittest.TestCase):
         publish = MAIN.split("async def _publish_realtime_event", 1)[1].split("def _notify_user", 1)[0]
         self.assertNotIn('event.event_type == "CASE_CREATED"', publish)
 
+    def test_header_startup_does_not_duplicate_unread_or_notification_fetches(self):
+        startup = BASE.split("async function catchUpEvents()", 1)[1].split("</script>", 1)[0]
+        self.assertIn("await refreshUnreadCount();", startup)
+        self.assertIn("catchUpEvents().finally(()=>{refreshNotificationCenter();connectSync();});", startup)
+        self.assertNotIn("catchUpEvents().finally(()=>{refreshUnreadCount();", startup)
+        tail = startup.split("function connectSync()", 1)[1]
+        before_startup = tail.split("catchUpEvents().finally", 1)[0]
+        self.assertNotIn("refreshNotificationCenter();\n    catchUpEvents()", before_startup)
+
     def test_messages_and_bell_contract_remains_separate(self):
         self.assertIn('evt.event_type==="MESSAGE_CREATED"', BASE)
         self.assertIn('evt.event_type==="CASE_CREATED"', BASE)
