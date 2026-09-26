@@ -101,3 +101,22 @@ def test_capacity_slot_allocation_is_serialized_on_postgres():
     endpoint = MAIN.split("async def expert_support_request_create", 1)[1].split("@app.", 1)[0]
     assert "profile_stmt.with_for_update()" in endpoint
     assert "_expert_open_case_count(s, expert_user_id)" in endpoint
+
+
+def test_startup_reconciles_missing_jobs_even_when_queue_already_has_rows():
+    bridge = MAIN.split("def _backfill_legacy_deadline_jobs_if_needed", 1)[1].split("def _cleanup_consultation_deadline_jobs", 1)[0]
+    assert "ConsultationDeadlineJob.id).limit(1)" not in bridge
+    assert '("REQUESTED", "EXPERT_RESPONSE"' in bridge
+    assert "_enqueue_deadline_pair" in bridge
+
+
+def test_deadline_and_user_state_transitions_lock_case_row_on_postgres():
+    processor = MAIN.split("def _process_deadline_job", 1)[1].split("async def _process_consultation_deadline_jobs", 1)[0]
+    assert "case_stmt.with_for_update()" in processor
+    for endpoint_name in (
+        "async def expert_support_expert_response",
+        "async def expert_support_proposal_decision",
+        "async def expert_support_complete",
+    ):
+        endpoint = MAIN.split(endpoint_name, 1)[1].split("@app.", 1)[0]
+        assert "case_stmt.with_for_update()" in endpoint
