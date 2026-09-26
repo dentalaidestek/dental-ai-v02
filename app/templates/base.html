@@ -131,7 +131,7 @@ document.addEventListener("keydown", function(event) {
 fetch("/account/admin-notices",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{notices:[]}).then(data=>{const n=(data.notices||[])[0];if(!n)return;const box=document.createElement("div");box.className="dai-admin-notice";box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";box.querySelector("b").textContent=n.title;box.querySelector("span").textContent=n.message;box.querySelector("button").onclick=()=>{fetch("/account/admin-notices/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});box.remove();};document.body.appendChild(box);}).catch(()=>{});
 if (!window.__daiMessagesPartialNavigationStarted) {
     window.__daiMessagesPartialNavigationStarted = true;
-    let messagesSnapshot = null, partialNavigationController = null, partialNavigationBusy = false;
+    let messagesSnapshot = null, caseRoomSnapshot = null, partialNavigationController = null, partialNavigationBusy = false;
     const casePathPattern = /^\/expert-support\/cases\/\d+\/?$/;
 
     function rememberMessagesView() {
@@ -160,6 +160,30 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();
         return cleared;
     }
+    function discardCaseRoomSnapshot() {
+        if(!caseRoomSnapshot)return;
+        caseRoomSnapshot.host?.remove();caseRoomSnapshot=null;
+    }
+    function stashCurrentCaseRoom() {
+        const main=document.querySelector("main"),room=main?.querySelector(".expert-room");
+        if(!main||!room)return false;
+        discardCaseRoomSnapshot();
+        const host=document.createElement("div");host.hidden=true;host.inert=true;
+        while(main.firstChild)host.appendChild(main.firstChild);
+        document.body.appendChild(host);
+        caseRoomSnapshot={host,url:location.pathname+location.search+location.hash,scrollX:scrollX,scrollY:scrollY,caseId:Number(room.querySelector("#expertChat")?.dataset.caseId||0)};
+        return true;
+    }
+    function restoreCachedCaseRoom(url,{pushHistory=true}={}) {
+        if(!caseRoomSnapshot||new URL(url,location.origin).pathname!==new URL(caseRoomSnapshot.url,location.origin).pathname)return false;
+        const snapshot=caseRoomSnapshot;caseRoomSnapshot=null;
+        if(pushHistory)history.pushState({daiPartialCase:true},"",url);else history.replaceState({daiPartialCase:true},"",url);
+        document.querySelector("main").replaceChildren(...snapshot.host.childNodes);snapshot.host.remove();
+        const bottomNav=document.querySelector(".mobile-bottom-nav");if(bottomNav)bottomNav.hidden=true;
+        requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(snapshot.scrollX,snapshot.scrollY)));
+        document.dispatchEvent(new CustomEvent("dai:case-room-resumed",{detail:{case_id:snapshot.caseId}}));
+        return true;
+    }
     function runPartialScripts(scripts) {
         scripts.forEach(source=>{
             const script=document.createElement("script");
@@ -170,6 +194,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
     }
     async function openCaseWithoutReload(url,{pushHistory=true}={}) {
         if(partialNavigationBusy||!rememberMessagesView()) return;
+        if(restoreCachedCaseRoom(url,{pushHistory})){markSnapshotCaseRead(url);document.dispatchEvent(new CustomEvent("dai:unread-changed"));return;}
         partialNavigationBusy=true;
         partialNavigationController?.abort(); partialNavigationController=new AbortController();
         try{
@@ -192,8 +217,9 @@ if (!window.__daiMessagesPartialNavigationStarted) {
     }
     function restoreMessagesView() {
         if(!messagesSnapshot) return false;
-        partialNavigationController?.abort(); window.__daiCaseRoomCleanup?.();
+        partialNavigationController?.abort();
         const snapshot=messagesSnapshot; messagesSnapshot=null;
+        stashCurrentCaseRoom();
         if(!snapshot.host)return false;
         document.querySelector("main").replaceChildren(...snapshot.host.childNodes); snapshot.host.remove();
         document.title=snapshot.title;
