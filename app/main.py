@@ -171,6 +171,15 @@ class SupportTicket(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
+class SupportTicketMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(index=True)
+    sender_user_id: int = Field(index=True)
+    sender_role: str = Field(index=True)
+    message: str
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class AdminNotice(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
@@ -1477,6 +1486,11 @@ def support_request_page(request: Request):
     if user:
         with Session(engine, expire_on_commit=False) as s:
             tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
+            ticket_ids=[ticket.id for ticket in tickets if ticket.id is not None]
+            ticket_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
+            support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
+            for support_message in ticket_messages:
+                support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
             reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
             cases=s.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user.id) | (ConsultationCase.expert_user_id==user.id)).order_by(ConsultationCase.requested_at.desc())).all()
             case_ids=[case.id for case in cases if case.id is not None]
@@ -1490,7 +1504,7 @@ def support_request_page(request: Request):
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
                 conversation_options.append({"case":case,"other":other})
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options})
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {}})
 
 @app.post("/support-request")
 def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: Optional[int] = Form(None)):
@@ -1507,6 +1521,21 @@ def contact_submit(request: Request, subject: str = Form(...), message: str = Fo
             linked_case_id=case.id
         s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message,case_id=linked_case_id));s.commit()
     return RedirectResponse("/support-request?sent=1",status_code=303)
+
+
+@app.post("/support-request/{ticket_id}/reply")
+async def support_ticket_user_reply(request: Request, ticket_id: int, message: str = Form(...)):
+    user=get_current_user(request)
+    if not user:return RedirectResponse("/login",status_code=303)
+    message=message.strip()[:4000]
+    if not message:return HTMLResponse("Mesaj boş olamaz.",status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket or ticket.user_id!=user.id:return HTMLResponse("Talep bulunamadı.",status_code=404)
+        if ticket.status=="CLOSED":return HTMLResponse("Sonuçlandırılmış destek talebine yeni mesaj gönderilemez.",status_code=409)
+        s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message))
+        ticket.status="OPEN";ticket.updated_at=_utcnow_naive();s.add(ticket);s.commit()
+    return RedirectResponse("/support-request",status_code=303)
 
 
 @app.get("/legal/{document}", response_class=HTMLResponse)
