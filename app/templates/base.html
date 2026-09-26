@@ -235,6 +235,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         document.title=snapshot.title;
         const bottomNav=document.querySelector(".mobile-bottom-nav"); if(bottomNav)bottomNav.hidden=snapshot.bottomNavHidden;
         requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(snapshot.scrollX,snapshot.scrollY)));
+        document.dispatchEvent(new CustomEvent("dai:messages-view-restored"));
         return true;
     }
     document.addEventListener("click",event=>{
