@@ -6095,9 +6095,8 @@ def _send_web_push_sync(notice_id: int) -> None:
 async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
     if event.event_type != "NOTICE_CREATED" or not event.entity_id or not _web_push_configured():
         return
-    # Foreground realtime UX wins; background/closed clients use Web Push.
-    if user_realtime_socket_hub.has_visible_session(event.user_id):
-        return
+    # Delivery is process-independent. The service worker suppresses display when
+    # this origin already has a visible window, avoiding cross-process presence guesses.
     try:
         await asyncio.to_thread(_send_web_push_sync, int(event.entity_id))
     except Exception:
