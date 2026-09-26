@@ -64,6 +64,13 @@ class WebPushContractTests(unittest.TestCase):
         subscribe = MAIN.split("async def account_push_subscribe", 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
         self.assertIn("_valid_web_push_endpoint(endpoint)", subscribe)
 
+    def test_disabled_browser_subscription_can_follow_account_switch_but_active_one_cannot(self):
+        subscribe = MAIN.split('async def account_push_subscribe', 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
+        self.assertIn("subscription.user_id != user.id", subscribe)
+        self.assertIn("if subscription.disabled_at is None", subscribe)
+        self.assertIn("status_code=409", subscribe)
+        self.assertIn("subscription.user_id = user.id", subscribe)
+
     def test_logout_disables_only_this_browser_subscription(self):
         logout = MAIN.split('@app.get("/logout")', 1)[1].split('app.mount("/static"', 1)[0]
         self.assertIn('request.cookies.get("dai_push_subscription_id")', logout)
