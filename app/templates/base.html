@@ -296,6 +296,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(isOpenDetail)location.assign("/patients?deleted=1");
             return;
         }
+        if(data.payload_version===1&&data.patient&&Number(data.patient.id)===patientId){
+            applyPatientRecord(data.patient);
+            return;
+        }
         const key=patientId+":"+(eventId||data.version||"");if(patientFetches.has(key))return;
         const request=fetch("/patients/"+patientId+"/realtime",{credentials:"same-origin",cache:"no-store"})
             .then(r=>r.ok?r.json():null).then(result=>{if(result?.patient)applyPatientRecord(result.patient);})
