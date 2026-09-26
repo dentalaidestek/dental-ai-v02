@@ -88,6 +88,12 @@ class WebPushContractTests(unittest.TestCase):
         self.assertNotIn("clinical", SW.lower())
         self.assertIn("clients.openWindow", SW)
 
+    def test_message_os_delivery_has_no_legacy_notification_duplicate(self):
+        live = BASE.split("function showLiveMessage(data)", 1)[1].split("function paintNotificationBadge", 1)[0]
+        self.assertNotIn("new Notification(", live)
+        self.assertNotIn("Notification.permission", live)
+        self.assertIn("Web Push", live)
+
     def test_incoming_messages_get_push_without_becoming_admin_notices(self):
         publish = MAIN.split("async def _publish_realtime_event", 1)[1].split("def _notify_user", 1)[0]
         self.assertIn('event.event_type == "MESSAGE_CREATED"', publish)
