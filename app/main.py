@@ -4734,12 +4734,18 @@ def expert_support_case_room(request: Request, case_id: int):
         review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
+        visible_report = s.exec(select(UserReport).where(
+            UserReport.case_id==case.id,
+            UserReport.reporter_user_id==other_id,
+            UserReport.reported_user_id==user.id,
+            UserReport.status!="CLOSED",
+        ).order_by(UserReport.created_at.desc())).first()
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert, "patient": patient,
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
-        "review": review,
+        "review": review, "visible_report": visible_report,
         "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
