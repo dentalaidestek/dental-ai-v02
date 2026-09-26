@@ -7559,12 +7559,15 @@ def _admin_user_storage_summary(session: Session, user_id: int):
     analysis_assets = [a for a in session.exec(select(ImageAsset)).all() if a.analysis_id in analysis_ids]
     guest_ids = [g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id == user_id)).all()]
     guest_assets = [a for a in session.exec(select(GuestImageAsset)).all() if a.guest_analysis_id in guest_ids]
+    expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == user_id)).first()
+    credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
     categories = [
         ("Hasta dosyaları", sum(size(x.file_path) for x in patient_media)),
         ("Analiz görüntüleri", sum(size(x.file_path) for x in analysis_assets)),
         ("Sohbet ekleri", sum(size(x.media_path) + size(x.original_media_path) for x in chat_media)),
         ("Akademik dosyalar", sum(size(x.file_path) for x in study_materials)),
         ("Misafir analizleri", sum(size(x.file_path) for x in guest_assets)),
+        ("Uzmanlık belgesi", credential_bytes),
     ]
     total = sum(v for _, v in categories)
     return {
