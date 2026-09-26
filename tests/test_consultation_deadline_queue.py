@@ -64,3 +64,20 @@ def test_render_paths_do_not_mutate_deadline_state():
     inbox = MAIN.split("def consultation_messages_inbox", 1)[1].split("@app.get", 1)[0]
     assert 'case.status = "PROPOSAL_EXPIRED"' not in room
     assert '"START_DEADLINE_MISSED"' not in inbox
+
+
+def test_failed_job_processing_isolated_by_savepoint():
+    processor = MAIN.split("async def _process_consultation_deadline_jobs", 1)[1].split("async def _consultation_deadline_worker", 1)[0]
+    assert "with s.begin_nested():" in processor
+    assert "rolled back every partial domain/notice/event" in processor
+
+
+def test_waiting_start_message_paths_resolve_warning_and_publish_status():
+    http = MAIN.split("async def expert_support_message(", 1)[1].split("@app.get", 1)[0]
+    ws = MAIN.split("async def expert_support_case_socket", 1)[1].split("@app.post", 1)[0]
+    media = MAIN.split("async def expert_support_media_message", 1)[1].split("@app.get", 1)[0]
+    for path in (http, ws, media):
+        assert "CONSULTATION_DEADLINE_WARNING" in path
+        assert "_record_case_status_realtime_events" in path
+    assert "notification_events: list[RealtimeEvent] = []" in http
+    assert "status_events: list[RealtimeEvent] = []" in http
