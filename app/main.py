@@ -4797,6 +4797,7 @@ async def expert_support_request_create(
             dedup_key=f"consultation:{case.id}:request", target_url=f"/expert-support/cases/{case.id}",
         )
         s.commit()
+    _wake_consultation_deadline_worker()
     await _publish_realtime_event(expert_event)
     if notice_event:
         await _publish_realtime_event(notice_event)
@@ -5411,6 +5412,8 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
         s.commit()
         status = case.status
+    if status == "PROPOSED":
+        _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
     await _publish_realtime_event(evt)
     for notification_event in notification_events:
@@ -6315,6 +6318,8 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         realtime_events = _record_case_status_realtime_events(s, case)
         s.commit()
         status = case.status
+    if status == "EXPERT_COMPLETED":
+        _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
