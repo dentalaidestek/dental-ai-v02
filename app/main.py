@@ -4837,14 +4837,19 @@ def account_notifications(request: Request):
     if not user:
         return {"notifications": [], "unread_count": 0}
     with Session(engine, expire_on_commit=False) as s:
-        active = s.exec(
+        unread_count = s.exec(
+            select(func.count(AdminNotice.id)).where(
+                AdminNotice.user_id == user.id,
+                AdminNotice.status == "ACTIVE",
+                AdminNotice.is_read == False,
+            )
+        ).one()
+        rows = s.exec(
             select(AdminNotice).where(
                 AdminNotice.user_id == user.id,
                 AdminNotice.status == "ACTIVE",
-            ).order_by(AdminNotice.created_at.desc())
+            ).order_by(AdminNotice.created_at.desc()).limit(20)
         ).all()
-        unread_count = sum(1 for n in active if not n.is_read)
-        rows = active[:20]
         return {
             "unread_count": unread_count,
             "notifications": [{
