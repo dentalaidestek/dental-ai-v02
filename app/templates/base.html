@@ -36,6 +36,16 @@
         <span>{{ expert_nav.label }}</span>
     </a>
     {% endif %}
+    <div class="notification-center" id="notificationCenter">
+        <button class="notification-bell" id="notificationBell" type="button" aria-label="Bildirimler" aria-controls="notificationPanel" aria-expanded="false">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+            <b id="notificationBadge" class="notification-badge" hidden></b>
+        </button>
+        <div class="notification-panel" id="notificationPanel" hidden>
+            <div class="notification-panel-head"><strong>Bildirimler</strong><span id="notificationPanelCount"></span></div>
+            <div class="notification-list" id="notificationList"><div class="notification-empty">Bildirimler yükleniyor…</div></div>
+        </div>
+    </div>
     <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Tüm menüyü aç" aria-controls="mainMenu" aria-expanded="false">
         <svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
@@ -128,7 +138,6 @@ document.addEventListener("keydown", function(event) {
         toggleQuickAdd(false);
     }
 });
-fetch("/account/admin-notices",{credentials:"same-origin",cache:"no-store"}).then(r=>r.ok?r.json():{notices:[]}).then(data=>{const n=(data.notices||[])[0];if(!n)return;const box=document.createElement("div");box.className="dai-admin-notice";box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";box.querySelector("b").textContent=n.title;box.querySelector("span").textContent=n.message;box.querySelector("button").onclick=()=>{fetch("/account/admin-notices/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});box.remove();};document.body.appendChild(box);}).catch(()=>{});
 if (!window.__daiMessagesPartialNavigationStarted) {
     window.__daiMessagesPartialNavigationStarted = true;
     let messagesSnapshot = null, caseRoomSnapshot = null, partialNavigationController = null, partialNavigationBusy = false;
@@ -283,6 +292,50 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         if(document.hidden&&"Notification" in window&&Notification.permission==="granted")
             new Notification("Dental AI · Yeni mesaj",{body:(data.sender||"")+": "+(data.preview||""),tag:"case-"+data.case_id});
     }
+    function paintNotificationBadge(count) {
+        const badge=document.getElementById("notificationBadge");
+        const label=document.getElementById("notificationPanelCount");
+        count=Math.max(0,Number(count||0));
+        if(badge){badge.hidden=count<1;badge.textContent=count>99?"99+":String(count);}
+        if(label)label.textContent=count?count+" yeni":"";
+    }
+    function renderNotificationCenter(data) {
+        const list=document.getElementById("notificationList"); if(!list)return;
+        const rows=data.notifications||[]; paintNotificationBadge(data.unread_count);
+        if(!rows.length){list.innerHTML='<div class="notification-empty">Şu anda güncel bildiriminiz yok.</div>';return;}
+        list.replaceChildren(...rows.map(n=>{
+            const item=document.createElement(n.target_url?"a":"button");
+            item.className="notification-item"+(n.is_read?"":" unread");
+            if(n.target_url)item.href=n.target_url;else item.type="button";
+            item.dataset.noticeId=String(n.id);
+            const copy=document.createElement("span"),title=document.createElement("b"),message=document.createElement("small");
+            title.textContent=n.title||"Dental AI";message.textContent=n.message||"";
+            copy.append(title,message);item.append(copy);
+            item.addEventListener("click",()=>{
+                if(!n.is_read){
+                    n.is_read=true;item.classList.remove("unread");
+                    fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"}).catch(()=>{});
+                    paintNotificationBadge(Math.max(0,Number(data.unread_count||0)-1));
+                }
+            });
+            return item;
+        }));
+    }
+    async function refreshNotificationCenter() {
+        try{
+            const r=await fetch("/account/notifications",{credentials:"same-origin",cache:"no-store"});
+            if(r.ok)renderNotificationCenter(await r.json());
+        }catch(_){}
+    }
+    function toggleNotificationCenter(force) {
+        const panel=document.getElementById("notificationPanel"),button=document.getElementById("notificationBell");
+        if(!panel||!button)return;
+        const open=typeof force==="boolean"?force:panel.hidden;
+        panel.hidden=!open;button.setAttribute("aria-expanded",open?"true":"false");
+        if(open)refreshNotificationCenter();
+    }
+    document.getElementById("notificationBell")?.addEventListener("click",e=>{e.stopPropagation();toggleNotificationCenter();});
+    document.addEventListener("click",e=>{if(!e.target.closest?.("#notificationCenter"))toggleNotificationCenter(false);});
     function showAdminNotice(data) {
         const box=document.createElement("div");box.className="dai-admin-notice";
         box.innerHTML="<div><b></b><span></span></div><button type='button'>Tamam</button>";
@@ -365,7 +418,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
-        } else if(evt.event_type==="NOTICE_CREATED"){showAdminNotice(data);}
+        } else if(evt.event_type==="NOTICE_CREATED"){refreshNotificationCenter();if(notify)showAdminNotice(data);}
+        else if(evt.event_type==="NOTICE_RESOLVED"){refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
         else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
@@ -400,7 +454,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
-    catchUpEvents().finally(()=>{refreshUnreadCount();connectSync();});
+    refreshNotificationCenter();
+    catchUpEvents().finally(()=>{refreshUnreadCount();refreshNotificationCenter();connectSync();});
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
