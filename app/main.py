@@ -79,7 +79,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import delete, func, or_ as sa_or
+from sqlalchemy import delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
@@ -4025,7 +4025,12 @@ def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: 
 def _backfill_legacy_deadline_jobs_if_needed() -> None:
     """One-time bridge for active cases created before the durable queue existed."""
     with Session(engine) as s:
+        # Multiple ASGI workers may start together. Serialize the one-time legacy
+        # bridge on PostgreSQL so two processes cannot race the unique job keys.
+        if engine.dialect.name == "postgresql":
+            s.exec(text("SELECT pg_advisory_xact_lock(824260926)"))
         if s.exec(select(ConsultationDeadlineJob.id).limit(1)).first() is not None:
+            s.commit()
             return
         specs = (
             ("REQUESTED", "EXPERT_RESPONSE", ConsultationCase.expert_response_deadline),
