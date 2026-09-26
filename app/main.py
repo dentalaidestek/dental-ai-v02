@@ -79,7 +79,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import func, or_ as sa_or
+from sqlalchemy import delete, func, or_ as sa_or
 from sqlalchemy.exc import IntegrityError
 from starlette.templating import Jinja2Templates
 
@@ -454,7 +454,7 @@ class ConsultationCase(SQLModel, table=True):
     expert_started_at: Optional[datetime] = None
     expert_completed_at: Optional[datetime] = None
     requester_completed_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = Field(default=None, index=True)
     dispute_opened_at: Optional[datetime] = None
     completion_confirmation_deadline: Optional[datetime] = Field(default=None, index=True)
     urgency: str = "NORMAL"
@@ -1243,6 +1243,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -1280,6 +1281,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
@@ -2698,6 +2700,7 @@ templates = Jinja2Templates(
 async def startup():
     storage_check_connection()
     init_db()
+    _backfill_legacy_deadline_jobs_if_needed()
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker())
 
 
@@ -3995,6 +3998,8 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
 _consultation_deadline_wakeup = asyncio.Event()
 CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
 CONSULTATION_DEADLINE_BATCH_SIZE = 100
+CONSULTATION_DEADLINE_RETENTION_DAYS = 30
+_consultation_deadline_last_cleanup: Optional[datetime] = None
 
 
 def _wake_consultation_deadline_worker() -> None:
@@ -4015,6 +4020,38 @@ def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: 
     warning_at = max(_utcnow_naive(), deadline - timedelta(minutes=2))
     _enqueue_deadline_job(session, case_id, f"{kind}_WARNING", warning_at, cycle)
     _enqueue_deadline_job(session, case_id, f"{kind}_DUE", deadline, cycle)
+
+
+def _backfill_legacy_deadline_jobs_if_needed() -> None:
+    """One-time bridge for active cases created before the durable queue existed."""
+    with Session(engine) as s:
+        if s.exec(select(ConsultationDeadlineJob.id).limit(1)).first() is not None:
+            return
+        specs = (
+            ("REQUESTED", "EXPERT_RESPONSE", ConsultationCase.expert_response_deadline),
+            ("PROPOSED", "PROPOSAL", ConsultationCase.requester_decision_deadline),
+            ("WAITING_START", "START", ConsultationCase.consultation_start_deadline),
+            ("EXPERT_COMPLETED", "COMPLETION", ConsultationCase.completion_confirmation_deadline),
+        )
+        for status, kind, column in specs:
+            cases = s.exec(select(ConsultationCase).where(ConsultationCase.status == status, column != None)).all()
+            for case in cases:
+                deadline = getattr(case, column.key)
+                if deadline:
+                    _enqueue_deadline_pair(s, case.id, kind, deadline)
+        s.commit()
+
+
+def _cleanup_consultation_deadline_jobs(now: datetime) -> None:
+    """Keep queue storage bounded; only terminal jobs older than retention are removed."""
+    cutoff = now - timedelta(days=CONSULTATION_DEADLINE_RETENTION_DAYS)
+    with Session(engine) as s:
+        s.exec(delete(ConsultationDeadlineJob).where(
+            ConsultationDeadlineJob.status.in_({"DONE", "FAILED"}),
+            ConsultationDeadlineJob.completed_at != None,
+            ConsultationDeadlineJob.completed_at < cutoff,
+        ))
+        s.commit()
 
 
 def _next_consultation_job_at() -> Optional[datetime]:
@@ -4118,7 +4155,7 @@ async def _process_consultation_deadline_jobs() -> bool:
             except Exception as exc:
                 job.attempts += 1; job.last_error = str(exc)[:1000]
                 if job.attempts >= 5:
-                    job.status = "FAILED"
+                    job.status = "FAILED"; job.completed_at = now
                 else:
                     job.run_at = now + timedelta(seconds=min(300, 5 * (2 ** (job.attempts - 1))))
                 s.add(job)
@@ -4131,8 +4168,13 @@ async def _process_consultation_deadline_jobs() -> bool:
 
 async def _consultation_deadline_worker() -> None:
     """Hybrid scheduler: local wake-up for speed, durable DB queue for correctness."""
+    global _consultation_deadline_last_cleanup
     while True:
         try:
+            now = _utcnow_naive()
+            if _consultation_deadline_last_cleanup is None or now - _consultation_deadline_last_cleanup >= timedelta(hours=24):
+                _cleanup_consultation_deadline_jobs(now)
+                _consultation_deadline_last_cleanup = now
             while await _process_consultation_deadline_jobs():
                 await asyncio.sleep(0)
             next_at = _next_consultation_job_at()
