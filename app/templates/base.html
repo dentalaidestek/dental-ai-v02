@@ -266,6 +266,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     window.__daiSyncConnectionStarted = true;
     const syncCursorKey="daiLastEventId:{{ user.id if user else 0 }}";
     let lastEventId = Number(sessionStorage.getItem(syncCursorKey) || 0);
+    const seenEventIds=new Set(),seenEventOrder=[];const syncOverlap=100;
     let syncSocket = null, reconnectTimer = null, pingTimer = null;
 
     function paintMessageBadge(count) {
@@ -410,8 +411,13 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     }
     function applySyncEvent(evt,{notify=true}={}) {
         if(!evt||evt.type!=="event")return;
-        const id=Number(evt.event_id||0); if(id&&id<=lastEventId)return;
-        if(id){lastEventId=id;sessionStorage.setItem(syncCursorKey,String(id));}
+        const id=Number(evt.event_id||0);
+        if(id&&seenEventIds.has(id))return;
+        if(id){
+            seenEventIds.add(id);seenEventOrder.push(id);
+            if(seenEventOrder.length>500){const stale=seenEventOrder.shift();seenEventIds.delete(stale);}
+            if(id>lastEventId){lastEventId=id;sessionStorage.setItem(syncCursorKey,String(id));}
+        }
         const data=evt.payload||{};
         if(evt.event_type==="MESSAGE_CREATED"&&!data.is_outgoing){if(notify){bumpMessageBadge();showLiveMessage(data);}}
         else if(evt.event_type==="CASE_CREATED"){
@@ -437,7 +443,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         }catch(_){}
     }
     async function catchUpEvents() {
-        let after=lastEventId, more=true;
+        let after=Math.max(0,lastEventId-syncOverlap), more=true;
         while(more){
             const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
             if(!r.ok)return;
@@ -451,7 +457,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         clearTimeout(reconnectTimer); clearInterval(pingTimer);
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
-        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"resume",after_id:lastEventId}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
+        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
         connection.onmessage=e=>{if(syncSocket!==connection)return;try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
