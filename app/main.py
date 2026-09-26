@@ -5070,7 +5070,11 @@ async def expert_support_case_room(request: Request, case_id: int):
             if expert_expiry_event:
                 notification_events.append(expert_expiry_event)
             s.add(case)
+            notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=None))
+            case_events = _record_case_status_realtime_events(s, case)
             s.commit()
+            for case_event in case_events:
+                await _publish_realtime_event(case_event)
             for notification_event in notification_events:
                 await _publish_realtime_event(notification_event)
         # Opening the room is the authoritative read action. Persist it before
