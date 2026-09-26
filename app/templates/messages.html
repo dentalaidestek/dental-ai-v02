@@ -20,14 +20,19 @@ function tickExpertCountdowns(){document.querySelectorAll(".message-countdown").
 const messageSearch=document.getElementById("messageSearch"),filterLinks=[...document.querySelectorAll("[data-message-filter]")];let activeMessageFilter={{ selected_filter|tojson }};
 function applyMessageFilters(){const q=(messageSearch?.value||"").trim().toLocaleLowerCase("tr");document.querySelectorAll(".message-row").forEach(row=>{const status=row.dataset.status||"",matchesFilter=activeMessageFilter==="all"||(activeMessageFilter==="unread"&&Number(row.dataset.unread||0)>0)||(activeMessageFilter==="waiting"&&["WAITING","ACTION_REQUIRED","NEW_REQUEST"].includes(status))||(activeMessageFilter==="missed"&&["MISSED","DELAYED"].includes(status))||(activeMessageFilter==="history"&&["HISTORY","CLOSED","DISPUTE"].includes(status));row.hidden=!matchesFilter||!!(q&&!row.dataset.search.includes(q));});}
 filterLinks.forEach(link=>link.classList.toggle("active",link.dataset.messageFilter===activeMessageFilter));applyMessageFilters();
-filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();}));
+filterLinks.forEach(link=>link.addEventListener("click",e=>{e.preventDefault();activeMessageFilter=link.dataset.messageFilter||"all";filterLinks.forEach(item=>item.classList.toggle("active",item===link));const more=link.closest(".messages-filter-more");if(more)more.open=false;history.replaceState(null,"",activeMessageFilter==="all"?"/messages":"/messages?filter="+encodeURIComponent(activeMessageFilter));applyMessageFilters();sortMessageRows();}));
 if(messageSearch)messageSearch.addEventListener("input",applyMessageFilters);
 const appliedMessageIds=new Set();
 function sortMessageRows(){
   const list=document.querySelector(".messages-list");if(!list)return;
   [...list.querySelectorAll(".message-row")].sort((a,b)=>{
-    const ap=a.dataset.status==="NEW_REQUEST"?1:0,bp=b.dataset.status==="NEW_REQUEST"?1:0;
-    if(ap!==bp)return bp-ap;
+    const priority=(row)=>{
+      const status=row.dataset.status||"";
+      if(activeMessageFilter==="waiting")return status==="NEW_REQUEST"?3:status==="ACTION_REQUIRED"?2:1;
+      if(activeMessageFilter==="unread")return Number(row.dataset.unread||0)>0?1:0;
+      return status==="NEW_REQUEST"?2:status==="ACTION_REQUIRED"?1:0;
+    };
+    const diff=priority(b)-priority(a);if(diff)return diff;
     return Date.parse(b.dataset.sortAt||0)-Date.parse(a.dataset.sortAt||0);
   }).forEach(row=>list.appendChild(row));
 }
