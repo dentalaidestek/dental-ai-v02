@@ -98,14 +98,92 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)catchUp()}
 window.addEventListener("dai:sync-event",e=>{const evt=e.detail||{},data=evt.payload||{};if(Number(data.case_id)!==Number("{{ case.id }}"))return;if(evt.event_type==="MESSAGE_CREATED")catchUp();else if(evt.event_type==="CASE_STATUS_UPDATED")scheduleCaseRoomRefresh(data.status);else if(evt.event_type==="CASE_REPORT_CREATED")refreshCaseRoom();},{signal:roomSignal});
 function showComposerError(message){const composerError=currentComposerError();if(!composerError)return;composerError.hidden=false;composerError.querySelector("span").textContent=message}
 function clearAttachment(){selectedAttachment=null;const fileInput=currentConsultationFile();if(fileInput)fileInput.value="";if(attachmentObjectUrl)URL.revokeObjectURL(attachmentObjectUrl);attachmentObjectUrl=null;const preview=currentAttachmentPreview(),thumb=currentAttachmentThumb();if(preview)preview.hidden=true;if(thumb)thumb.innerHTML=""}
-document.addEventListener("change",e=>{if(e.target.id!=="consultationFile")return;const file=e.target.files&&e.target.files[0],preview=currentAttachmentPreview(),thumb=currentAttachmentThumb(),name=currentAttachmentName();if(!file||!preview||!thumb||!name)return;if(file.size>{{ upload_max_mb }}*1024*1024){clearAttachment();showComposerError("Dosya {{ upload_max_mb }} MB sınırını aşıyor.");return}selectedAttachment=file;const composerError=currentComposerError();if(composerError)composerError.hidden=true;name.textContent=file.name;thumb.innerHTML="";if(file.type.startsWith("image/")){attachmentObjectUrl=URL.createObjectURL(file);const im=document.createElement("img");im.src=attachmentObjectUrl;thumb.appendChild(im)}else thumb.textContent=file.type==="application/pdf"?"PDF":file.type.startsWith("audio/")?"SES":"DOSYA";preview.hidden=false;},{signal:roomSignal});
+document.addEventListener("change",e=>{
+ if(e.target.id!=="consultationFile")return;
+ const file=e.target.files&&e.target.files[0];
+ if(!file)return;
+ if(file.size>{{ upload_max_mb }}*1024*1024){clearAttachment();showComposerError("Dosya {{ upload_max_mb }} MB sınırını aşıyor.");return}
+ const composerError=currentComposerError();if(composerError)composerError.hidden=true;
+ if(file.type.startsWith("image/")){openImageEditor({file});e.target.value="";return}
+ const preview=currentAttachmentPreview(),thumb=currentAttachmentThumb(),name=currentAttachmentName();
+ if(!preview||!thumb||!name)return;
+ selectedAttachment=file;name.textContent=file.name;thumb.innerHTML="";thumb.textContent=file.type==="application/pdf"?"PDF":file.type.startsWith("audio/")?"SES":"DOSYA";preview.hidden=false;
+},{signal:roomSignal});
 document.addEventListener("click",e=>{if(e.target.closest?.("#attachmentCancel"))clearAttachment();},{signal:roomSignal});
-async function sendAttachment(){if(!selectedAttachment||uploadInFlight)return false;const btn=currentTextForm()?.querySelector("button[type=submit]");if(!btn)return false;uploadInFlight=true;btn.disabled=true;btn.setAttribute("aria-busy","true");const fd=new FormData();fd.append("file",selectedAttachment);try{const r=await fetch("/expert-support/cases/{{ case.id }}/media-message",{method:"POST",body:fd,credentials:"same-origin",headers:{"X-Requested-With":"fetch","Accept":"application/json"}});const data=await r.json().catch(()=>({}));if(!r.ok||!data.ok)throw new Error(data.error||"upload");clearAttachment();const composerError=currentComposerError();if(composerError)composerError.hidden=true;scrollChatToBottom();return true}catch(e){showComposerError(e.message&&e.message!=="upload"?e.message:"Dosya gönderilemedi. Tekrar deneyin.");return false}finally{uploadInFlight=false;btn.disabled=false;btn.removeAttribute("aria-busy")}}
-function bindAnnotation(root=document){root.querySelectorAll?.(".annotation-launch").forEach(b=>{b.onclick=()=>{img.src=b.dataset.src;document.getElementById("annotationForm").action="/expert-support/cases/{{ case.id }}/annotate/"+b.dataset.message;modal.showModal();setTimeout(()=>{canvas.width=img.clientWidth;canvas.height=img.clientHeight},80)}})}
-const modal=document.getElementById("annotationModal"), img=document.getElementById("annotationImage"), canvas=document.getElementById("annotationCanvas"), ctx=canvas.getContext("2d");let drawing=false,points=[];
+
+function optimisticImage(src){
+ const key="pending-media-"+Date.now(),d=document.createElement("div");
+ d.className="expert-bubble mine pending media-pending";d.id=key;
+ d.innerHTML='<div class="chat-image-wrap"><img class="chat-clinical-image" src="'+src+'" alt="Gönderilen görüntü"></div><small>Şimdi <span class="message-receipt">◷ Yükleniyor…</span></small>';
+ chat?.appendChild(d);scrollChatToBottom(true);return d;
+}
+async function sendAttachment(file=selectedAttachment,{replyId="",previewUrl=""}={}){
+ if(!file||uploadInFlight)return false;
+ const btn=currentTextForm()?.querySelector("button[type=submit]");
+ uploadInFlight=true;if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
+ let ownPreview=false;
+ if(!previewUrl&&file.type.startsWith("image/")){previewUrl=URL.createObjectURL(file);ownPreview=true}
+ const pending=previewUrl?optimisticImage(previewUrl):null;
+ const fd=new FormData();fd.append("file",file);if(replyId)fd.append("reply_to_message_id",replyId);
+ try{
+  const r=await fetch("/expert-support/cases/{{ case.id }}/media-message",{method:"POST",body:fd,credentials:"same-origin",headers:{"X-Requested-With":"fetch","Accept":"application/json"}});
+  const data=await r.json().catch(()=>({}));if(!r.ok||!data.ok)throw new Error(data.error||"upload");
+  pending?.remove();clearAttachment();addMessage(data.message);
+  const composerError=currentComposerError();if(composerError)composerError.hidden=true;scrollChatToBottom(true);return true;
+ }catch(e){
+  if(pending){pending.classList.remove("pending");pending.classList.add("send-failed");const receipt=pending.querySelector(".message-receipt");if(receipt)receipt.textContent="Gönderilemedi";}
+  showComposerError(e.message&&e.message!=="upload"?e.message:"Dosya gönderilemedi. Tekrar deneyin.");return false;
+ }finally{
+  if(ownPreview&&previewUrl)URL.revokeObjectURL(previewUrl);uploadInFlight=false;if(btn){btn.disabled=false;btn.removeAttribute("aria-busy")}
+ }
+}
+
+const modal=document.getElementById("annotationModal"),img=document.getElementById("annotationImage"),canvas=document.getElementById("annotationCanvas"),ctx=canvas.getContext("2d");
+const colorInput=document.getElementById("annotationColor"),widthInput=document.getElementById("annotationWidth");
+let drawing=false,currentStroke=null,strokes=[],editorFile=null,editorReplyId="",editorObjectUrl=null;
+function redrawStrokes(){
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ for(const stroke of strokes){if(stroke.points.length<1)continue;ctx.beginPath();ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle=stroke.color;ctx.lineWidth=stroke.width;ctx.moveTo(stroke.points[0][0],stroke.points[0][1]);for(const p of stroke.points.slice(1))ctx.lineTo(p[0],p[1]);ctx.stroke()}
+}
+function resetEditor(){
+ drawing=false;currentStroke=null;strokes=[];ctx.clearRect(0,0,canvas.width,canvas.height);
+ if(editorObjectUrl){URL.revokeObjectURL(editorObjectUrl);editorObjectUrl=null}
+ editorFile=null;editorReplyId="";
+}
+function setupEditorCanvas(){
+ canvas.width=img.naturalWidth||Math.max(1,img.clientWidth);canvas.height=img.naturalHeight||Math.max(1,img.clientHeight);redrawStrokes();
+}
+function openImageEditor({file=null,src="",messageId=""}={}){
+ resetEditor();editorFile=file;editorReplyId=messageId||"";
+ if(file){editorObjectUrl=URL.createObjectURL(file);img.src=editorObjectUrl}else img.src=src;
+ img.onload=()=>{setupEditorCanvas();modal.showModal()};
+ if(img.complete&&img.naturalWidth){setupEditorCanvas();modal.showModal()}
+}
+function bindAnnotation(root=document){root.querySelectorAll?.(".annotation-launch").forEach(b=>{b.onclick=()=>openImageEditor({src:b.dataset.src,messageId:b.dataset.message})})}
 bindAnnotation();
-canvas.onpointerdown=e=>{drawing=true;points.push(["start",e.offsetX,e.offsetY]);ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY)};canvas.onpointermove=e=>{if(!drawing)return;ctx.lineWidth=3;ctx.lineCap="round";ctx.strokeStyle="#ef4444";ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();points.push(["p",e.offsetX,e.offsetY])};canvas.onpointerup=()=>drawing=false;
-document.getElementById("annotationClear").onclick=()=>{ctx.clearRect(0,0,canvas.width,canvas.height);points=[]};document.getElementById("annotationForm").onsubmit=()=>{document.getElementById("annotationJson").value=JSON.stringify({version:1,tool:"pen",points:points,width:canvas.width,height:canvas.height})};
+function canvasPoint(e){const r=canvas.getBoundingClientRect();return[(e.clientX-r.left)*(canvas.width/r.width),(e.clientY-r.top)*(canvas.height/r.height)]}
+canvas.onpointerdown=e=>{drawing=true;canvas.setPointerCapture?.(e.pointerId);currentStroke={color:colorInput.value,width:Number(widthInput.value)||4,points:[canvasPoint(e)]};strokes.push(currentStroke);redrawStrokes()};
+canvas.onpointermove=e=>{if(!drawing||!currentStroke)return;currentStroke.points.push(canvasPoint(e));redrawStrokes()};
+canvas.onpointerup=canvas.onpointercancel=()=>{drawing=false;currentStroke=null};
+document.getElementById("annotationUndo").onclick=()=>{strokes.pop();redrawStrokes()};
+document.getElementById("annotationClear").onclick=()=>{strokes=[];redrawStrokes()};
+document.getElementById("annotationClose").onclick=()=>{modal.close();resetEditor()};
+modal.addEventListener("cancel",()=>resetEditor(),{signal:roomSignal});
+async function buildEditedFile(){
+ if(!strokes.length&&editorFile)return editorFile;
+ const out=document.createElement("canvas");out.width=img.naturalWidth;out.height=img.naturalHeight;const ox=out.getContext("2d");ox.drawImage(img,0,0,out.width,out.height);ox.drawImage(canvas,0,0,out.width,out.height);
+ const blob=await new Promise(resolve=>out.toBlob(resolve,"image/jpeg",.9));if(!blob)throw new Error("Görsel hazırlanamadı.");
+ return new File([blob],"isaretlenmis-gorsel.jpg",{type:"image/jpeg"});
+}
+document.getElementById("annotationSend").onclick=async()=>{
+ if(uploadInFlight)return;
+ const send=document.getElementById("annotationSend");send.disabled=true;send.textContent="Gönderiliyor…";
+ try{
+  const file=await buildEditedFile(),preview=URL.createObjectURL(file),replyId=editorReplyId;
+  modal.close();resetEditor();await sendAttachment(file,{replyId,previewUrl:preview});URL.revokeObjectURL(preview);
+ }catch(e){showComposerError(e.message||"Görsel hazırlanamadı.");}
+ finally{send.disabled=false;send.textContent="Gönder"}
+};
 return ()=>{if(destroyed)return;destroyed=true;roomAbort.abort();clearInterval(countdownTimer);clearTimeout(reconnectTimer);clearTimeout(caseRefreshTimer);if(attachmentObjectUrl)URL.revokeObjectURL(attachmentObjectUrl);if(socket){const active=socket;socket=null;active.onclose=null;try{active.close()}catch(_){}}};
 })();
 </script></div>{% endblock %}
