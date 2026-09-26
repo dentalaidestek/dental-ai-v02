@@ -211,3 +211,10 @@ def test_inbox_server_order_keeps_new_requests_first_then_latest_message(monkeyp
     html = response.text
     positions = [html.index(f'data-case-id="{case_id}"') for case_id in (new_request.id, newer.id, older.id)]
     assert positions == sorted(positions)
+
+
+def test_realtime_cursor_tolerates_cross_process_commit_reordering():
+    assert "seenEventIds.has(id)" in BASE
+    assert "if(id>lastEventId)" in BASE
+    assert "id&&id<=lastEventId" not in BASE
+    assert "lastEventId-syncOverlap" in BASE
