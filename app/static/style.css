@@ -4918,7 +4918,7 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .case-payment-compact div{display:flex!important;align-items:center!important;gap:7px!important;min-width:0}.case-payment-compact strong{font-size:11px!important}.case-payment-compact span{font-size:10px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.case-payment-compact>b{font-size:12px!important;white-space:nowrap}
 .expert-send-circle[aria-busy="true"]{opacity:.55;pointer-events:none}
 @media(max-width:700px){
- body:has(.expert-room) .mobile-bottom-nav{display:none!important}
+ body:has(main .expert-room) .mobile-bottom-nav{display:none!important}
  body:has(.expert-room) main{height:calc(100dvh - 64px)!important;padding-bottom:0!important;overflow:hidden!important}
  .expert-room{height:100%!important;min-height:0!important}
  .expert-room .expert-compose-stack{bottom:max(8px,env(safe-area-inset-bottom))!important}
