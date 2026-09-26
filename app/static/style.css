@@ -4931,3 +4931,30 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .case-question-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.case-detail-toggle{margin:0!important}.case-detail-toggle>summary{list-style:none;cursor:pointer;font-size:10px;font-weight:800;color:#111827;white-space:nowrap}.case-detail-toggle>summary::-webkit-details-marker{display:none}.case-detail-toggle>summary span{display:inline-block;font-size:8px;transition:transform .15s}.case-detail-toggle[open]>summary span{transform:rotate(180deg)}.case-detail-content{margin-top:5px}
 @media(max-width:700px){body:has(.expert-room) main{width:100%!important;max-width:none!important;margin:0!important;padding:0!important}.expert-room{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;border-radius:0!important}.expert-room-head{width:100%!important;margin:0!important;border-radius:0!important}.expert-room>.expert-patient-pin,.expert-room>.case-payment-status,.expert-room>.expert-case-summary,.expert-room>.case-live-status{margin-left:5px!important;margin-right:5px!important}.expert-room .expert-chat{margin-left:0!important;margin-right:0!important;padding-left:7px!important;padding-right:7px!important}.expert-room .expert-compose-stack{left:5px!important;right:5px!important}.case-detail-toggle{position:relative}.case-detail-content{position:absolute;right:0;top:18px;z-index:30;width:min(82vw,380px);padding:8px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12)}}
 .case-completion-card>p strong{font-size:15px;color:#0f172a}.case-completion-card>p{line-height:1.5}.case-form-error{flex-basis:100%;margin:4px 0 0!important;color:#b91c1c;font-size:12px;font-weight:700}.case-form-error[hidden]{display:none}.case-completed-status{background:#ecfdf5;border-color:#a7f3d0}.expert-review-success{display:grid;gap:4px;margin:12px 0;padding:14px 16px;border:1px solid #a7f3d0;border-radius:16px;background:#ecfdf5;color:#065f46}.expert-review-success strong{font-size:15px}.expert-review-success span{font-size:13px}.expert-review-success small{color:#047857;white-space:pre-wrap}
+
+
+/* Consultation image editor — preview-first, compact WhatsApp-like controls */
+.chat-image-wrap{position:relative;display:inline-block;max-width:100%}
+.chat-image-wrap .chat-clinical-image{margin-bottom:0}
+.chat-image-wrap .annotation-launch{position:absolute;right:7px;bottom:7px;width:32px;height:32px;padding:0!important;display:grid;place-items:center;border:1px solid rgba(255,255,255,.8)!important;border-radius:10px;background:rgba(15,23,42,.78)!important;color:#fff!important;font-size:18px!important;line-height:1;box-shadow:0 2px 8px rgba(15,23,42,.24);backdrop-filter:blur(5px)}
+.media-pending{opacity:.82}.media-pending .chat-clinical-image{filter:saturate(.9)}
+.consultation-image-editor{width:min(96vw,760px);max-height:96dvh;padding:0;border-radius:18px;background:#070b12;color:#fff;overflow:hidden}
+.consultation-image-editor .image-editor-head{height:56px;display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:8px;padding:0 10px;background:#070b12}
+.consultation-image-editor .image-editor-head strong{text-align:left;font-size:14px}
+.consultation-image-editor .annotation-close{float:none;background:transparent;color:#fff;width:40px;height:40px;font-size:27px}
+.image-editor-send{border:0;border-radius:12px;background:#2563eb;color:#fff;font-weight:800;padding:10px 15px}
+.image-editor-send:disabled{opacity:.55}
+.consultation-image-editor .annotation-stage{margin:0;border-radius:0;display:grid;place-items:center;min-height:260px;max-height:calc(96dvh - 142px);background:#03060a}
+.consultation-image-editor .annotation-stage img{grid-area:1/1;max-height:calc(96dvh - 142px);max-width:100%;object-fit:contain}
+.consultation-image-editor .annotation-stage canvas{grid-area:1/1;position:absolute;inset:0;width:100%;height:100%}
+.image-editor-tools{display:grid!important;grid-template-columns:repeat(5,minmax(52px,1fr));gap:4px!important;padding:8px!important;background:#0b111b;overflow:visible!important}
+.image-editor-tools button,.image-editor-tools label{min-width:0;border:0!important;background:transparent!important;color:#fff!important;border-radius:10px!important;padding:5px 3px!important;font-size:18px!important;font-weight:700;display:grid;place-items:center;gap:2px;cursor:pointer}
+.image-editor-tools span{font-size:9px;font-weight:700;color:#cbd5e1}
+.image-editor-tools .editor-tool.active{background:#172554!important;color:#93c5fd!important}
+.editor-color input{width:28px;height:28px;padding:0;border:2px solid #fff;border-radius:50%;background:transparent;overflow:hidden}
+.editor-width input{width:48px;accent-color:#3b82f6}
+@media(max-width:700px){
+ .consultation-image-editor{width:100vw!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;border-radius:0!important}
+ .consultation-image-editor .annotation-stage{min-height:0;height:calc(100dvh - 142px);max-height:none}
+ .consultation-image-editor .annotation-stage img{max-height:calc(100dvh - 142px)}
+}
