@@ -2578,17 +2578,27 @@ def reset_password(
 
 @app.get("/logout")
 def logout_user(request: Request):
+    # A Web Push subscription belongs to this browser/device. Disable only this
+    # device on logout so shared devices do not receive the account's later pushes.
+    user = get_current_user(request)
+    push_subscription_id = request.cookies.get("dai_push_subscription_id")
+    if user and push_subscription_id:
+        try:
+            subscription_id = int(push_subscription_id)
+        except (TypeError, ValueError):
+            subscription_id = 0
+        if subscription_id:
+            with Session(engine) as s:
+                subscription = s.get(WebPushSubscription, subscription_id)
+                if subscription and subscription.user_id == user.id and subscription.disabled_at is None:
+                    subscription.disabled_at = _utcnow_naive()
+                    subscription.updated_at = subscription.disabled_at
+                    s.add(subscription); s.commit()
     delete_user_session(request)
 
-    response = RedirectResponse(
-        url="/login",
-        status_code=303,
-    )
-
-    response.delete_cookie(
-        SESSION_COOKIE,
-    )
-
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie("dai_push_subscription_id")
     return response
 
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
@@ -5310,8 +5320,11 @@ async def account_push_subscribe(request: Request):
         subscription.user_agent = (request.headers.get("user-agent") or "")[:500] or None
         subscription.disabled_at = None
         subscription.updated_at = now
-        session.add(subscription); session.commit()
-    return {"ok": True}
+        session.add(subscription); session.commit(); session.refresh(subscription)
+        subscription_id = subscription.id
+    response = JSONResponse({"ok": True})
+    response.set_cookie("dai_push_subscription_id", str(subscription_id), httponly=True, secure=True, samesite="lax", max_age=31536000)
+    return response
 
 
 @app.post("/account/push/unsubscribe")
@@ -5335,7 +5348,9 @@ async def account_push_unsubscribe(request: Request):
         if subscription:
             subscription.disabled_at = _utcnow_naive(); subscription.updated_at = subscription.disabled_at
             session.add(subscription); session.commit()
-    return {"ok": True}
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("dai_push_subscription_id")
+    return response
 
 
 @app.get("/account/notifications")
