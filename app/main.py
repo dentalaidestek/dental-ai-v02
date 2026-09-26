@@ -5766,8 +5766,25 @@ def _notify_user(
         target_url=safe_target_url[:1000] or None,
         status="ACTIVE",
     )
-    session.add(notice)
-    session.flush()
+    # The SELECT above is the cheap common path; the unique index is the final
+    # authority under concurrent web workers. Isolate a duplicate INSERT in a
+    # savepoint so it cannot roll back unrelated domain changes in the caller.
+    try:
+        with session.begin_nested():
+            session.add(notice)
+            session.flush()
+    except IntegrityError:
+        if not normalized_dedup:
+            raise
+        existing = session.exec(
+            select(AdminNotice).where(
+                AdminNotice.user_id == user_id,
+                AdminNotice.dedup_key == normalized_dedup,
+            )
+        ).first()
+        if existing:
+            return existing, None, False
+        raise
     event = _record_realtime_event(
         session,
         user_id,
