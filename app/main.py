@@ -12,7 +12,7 @@ import io
 import urllib.request
 import urllib.error
 import select as select_module
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -83,6 +83,12 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from sqlalchemy import delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
+
+try:
+    from pywebpush import webpush, WebPushException
+except ImportError:  # Push stays optional until the deployment installs requirements.
+    webpush = None
+    WebPushException = Exception
 from starlette.templating import Jinja2Templates
 
 from app.auth import (
@@ -205,6 +211,32 @@ class AdminNotice(SQLModel, table=True):
     read_at: Optional[datetime] = Field(default=None, index=True)
     resolved_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class WebPushSubscription(SQLModel, table=True):
+    """One browser/device Web Push subscription; a user may own many."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    endpoint: str = Field(index=True, unique=True)
+    p256dh: str
+    auth: str
+    user_agent: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    disabled_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class WebPushDelivery(SQLModel, table=True):
+    """Durable per-notice/per-device dedup record for the delivery channel."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    notice_id: int = Field(index=True)
+    subscription_id: int = Field(index=True)
+    delivery_key: str = Field(index=True, unique=True)
+    status: str = Field(default="PENDING", index=True)
+    attempt_count: int = 0
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
 class AdminAuditLog(SQLModel, table=True):
@@ -5197,6 +5229,98 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
     return RedirectResponse("/messages", status_code=303)
 
 
+def _push_request_same_origin(request: Request) -> bool:
+    origin = (request.headers.get("origin") or "").strip()
+    if not origin:
+        return True
+    try:
+        return urlparse(origin).netloc.lower() == (request.headers.get("host") or "").lower()
+    except Exception:
+        return False
+
+
+@app.get("/push-sw.js")
+def web_push_service_worker():
+    return FileResponse(
+        BASE / "static" / "push-sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/account/push/config")
+def account_push_config(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    with Session(engine) as session:
+        active_count = int(session.exec(select(func.count(WebPushSubscription.id)).where(
+            WebPushSubscription.user_id == user.id,
+            WebPushSubscription.disabled_at == None,
+        )).one() or 0)
+    return {"ok": True, "configured": _web_push_configured(), "public_key": WEB_PUSH_VAPID_PUBLIC_KEY if _web_push_configured() else "", "active_count": active_count}
+
+
+@app.post("/account/push/subscribe")
+async def account_push_subscribe(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    if not _push_request_same_origin(request):
+        return JSONResponse({"ok": False, "error": "Geçersiz istek kaynağı."}, status_code=403)
+    if not _web_push_configured():
+        return JSONResponse({"ok": False, "error": "Cihaz bildirimleri henüz yapılandırılmamış."}, status_code=503)
+    try:
+        body = await request.json()
+        endpoint = str(body.get("endpoint") or "").strip()
+        keys = body.get("keys") or {}
+        p256dh = str(keys.get("p256dh") or "").strip()
+        auth = str(keys.get("auth") or "").strip()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Geçersiz abonelik verisi."}, status_code=400)
+    parsed = urlparse(endpoint)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or len(endpoint) > 4000 or not p256dh or not auth:
+        return JSONResponse({"ok": False, "error": "Geçersiz abonelik verisi."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as session:
+        subscription = session.exec(select(WebPushSubscription).where(WebPushSubscription.endpoint == endpoint)).first()
+        if subscription and subscription.user_id != user.id:
+            return JSONResponse({"ok": False, "error": "Bu cihaz aboneliği başka bir hesaba bağlı."}, status_code=409)
+        now = _utcnow_naive()
+        if not subscription:
+            subscription = WebPushSubscription(user_id=user.id, endpoint=endpoint, p256dh=p256dh, auth=auth)
+        subscription.p256dh = p256dh
+        subscription.auth = auth
+        subscription.user_agent = (request.headers.get("user-agent") or "")[:500] or None
+        subscription.disabled_at = None
+        subscription.updated_at = now
+        session.add(subscription); session.commit()
+    return {"ok": True}
+
+
+@app.post("/account/push/unsubscribe")
+async def account_push_unsubscribe(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    if not _push_request_same_origin(request):
+        return JSONResponse({"ok": False}, status_code=403)
+    try:
+        body = await request.json(); endpoint = str(body.get("endpoint") or "").strip()
+    except Exception:
+        endpoint = ""
+    if not endpoint:
+        return JSONResponse({"ok": False}, status_code=400)
+    with Session(engine) as session:
+        subscription = session.exec(select(WebPushSubscription).where(
+            WebPushSubscription.endpoint == endpoint,
+            WebPushSubscription.user_id == user.id,
+        )).first()
+        if subscription:
+            subscription.disabled_at = _utcnow_naive(); subscription.updated_at = subscription.disabled_at
+            session.add(subscription); session.commit()
+    return {"ok": True}
+
+
 @app.get("/account/notifications")
 def account_notifications(request: Request):
     """Compact notification-center payload; messages intentionally stay separate."""
@@ -5809,6 +5933,7 @@ class UserRealtimeSocketHub:
     """Authenticated per-user realtime channel backed by a durable event log."""
     def __init__(self):
         self.users: dict[int, set[WebSocket]] = {}
+        self.visible_sockets: set[WebSocket] = set()
 
     async def connect(self, user_id: int, websocket: WebSocket):
         await websocket.accept()
@@ -5819,8 +5944,18 @@ class UserRealtimeSocketHub:
         if not sockets:
             return
         sockets.discard(websocket)
+        self.visible_sockets.discard(websocket)
         if not sockets:
             self.users.pop(user_id, None)
+
+    def set_visibility(self, websocket: WebSocket, visible: bool) -> None:
+        if visible:
+            self.visible_sockets.add(websocket)
+        else:
+            self.visible_sockets.discard(websocket)
+
+    def has_visible_session(self, user_id: int) -> bool:
+        return any(socket in self.visible_sockets for socket in self.users.get(user_id, set()))
 
     async def send(self, user_id: int, payload: dict):
         stale = []
@@ -5860,9 +5995,103 @@ def _record_realtime_event(session: Session, user_id: int, event_type: str,
     return event
 
 
+WEB_PUSH_VAPID_PUBLIC_KEY = (os.getenv("WEB_PUSH_VAPID_PUBLIC_KEY") or "").strip()
+WEB_PUSH_VAPID_PRIVATE_KEY = (os.getenv("WEB_PUSH_VAPID_PRIVATE_KEY") or "").strip()
+WEB_PUSH_VAPID_SUBJECT = (os.getenv("WEB_PUSH_VAPID_SUBJECT") or "mailto:admin@dentalai.tr").strip()
+
+
+def _web_push_configured() -> bool:
+    return bool(webpush and WEB_PUSH_VAPID_PUBLIC_KEY and WEB_PUSH_VAPID_PRIVATE_KEY)
+
+
+def _web_push_copy(notice_type: str) -> str:
+    kind = (notice_type or "").upper()
+    if kind == "CONSULTATION_REQUEST": return "Yeni danışmanlık talebiniz var."
+    if kind == "CONSULTATION_PROPOSAL": return "Başlangıç öneriniz için onay bekleniyor."
+    if "DEADLINE" in kind or "EXPIRED" in kind: return "Danışmanlık işleminiz için süreyle ilgili yeni bir bildiriminiz var."
+    if kind == "EXPERT_CAPACITY_FULL": return "Yeni danışmanlık kabul durumunuz güncellendi."
+    if kind == "EXPERT_CAPACITY_AVAILABLE": return "Yeni danışmanlık kabul durumunuz yeniden müsait."
+    if "COMPLET" in kind: return "Danışmanlık tamamlanma süreciyle ilgili yeni bir bildiriminiz var."
+    return "Dental AI'da yeni bir bildiriminiz var."
+
+
+def _web_push_status_code(exc: Exception) -> Optional[int]:
+    response = getattr(exc, "response", None)
+    try:
+        return int(getattr(response, "status_code", 0) or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _send_web_push_sync(notice_id: int) -> None:
+    """Best-effort delivery after the domain transaction committed."""
+    if not _web_push_configured():
+        return
+    with Session(engine, expire_on_commit=False) as session:
+        notice = session.get(AdminNotice, notice_id)
+        if not notice:
+            return
+        subscriptions = session.exec(select(WebPushSubscription).where(
+            WebPushSubscription.user_id == notice.user_id,
+            WebPushSubscription.disabled_at == None,
+        )).all()
+        payload = json.dumps({
+            "notice_id": notice.id,
+            "body": _web_push_copy(notice.notice_type),
+            "target_url": notice.target_url if notice.target_url and notice.target_url.startswith("/") and not notice.target_url.startswith("//") else "/",
+        }, ensure_ascii=False)
+        for subscription in subscriptions:
+            delivery_key = f"notice:{notice.id}:subscription:{subscription.id}"
+            delivery = WebPushDelivery(
+                notice_id=notice.id, subscription_id=subscription.id,
+                delivery_key=delivery_key, status="PENDING", attempt_count=1,
+            )
+            try:
+                with session.begin_nested():
+                    session.add(delivery); session.flush()
+            except IntegrityError:
+                continue
+            session.commit()  # Claim delivery independently before external I/O.
+            try:
+                webpush(
+                    subscription_info={"endpoint": subscription.endpoint, "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}},
+                    data=payload,
+                    vapid_private_key=WEB_PUSH_VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": WEB_PUSH_VAPID_SUBJECT},
+                    ttl=3600,
+                )
+                delivery.status = "SENT"
+                delivery.last_error = None
+            except Exception as exc:
+                code = _web_push_status_code(exc)
+                delivery.status = "EXPIRED" if code in {404, 410} else "FAILED"
+                delivery.last_error = (f"HTTP {code}" if code else type(exc).__name__)[:200]
+                if code in {404, 410}:
+                    subscription.disabled_at = _utcnow_naive()
+                    subscription.updated_at = subscription.disabled_at
+                    session.add(subscription)
+            delivery.updated_at = _utcnow_naive()
+            session.add(delivery)
+            session.commit()
+
+
+async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
+    if event.event_type != "NOTICE_CREATED" or not event.entity_id or not _web_push_configured():
+        return
+    # Foreground realtime UX wins; background/closed clients use Web Push.
+    if user_realtime_socket_hub.has_visible_session(event.user_id):
+        return
+    try:
+        await asyncio.to_thread(_send_web_push_sync, int(event.entity_id))
+    except Exception:
+        logger.exception("Web Push delivery failed for notice %s", event.entity_id)
+
+
 async def _publish_realtime_event(event: RealtimeEvent) -> None:
-    """Push an already committed durable event to every active session of its user."""
+    """Publish committed realtime state, then best-effort optional Web Push."""
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
+    if event.event_type == "NOTICE_CREATED":
+        await _deliver_web_push_for_notice(event)
 
 
 def _notify_user(
@@ -6214,6 +6443,8 @@ async def realtime_sync_socket(websocket: WebSocket):
             data=await websocket.receive_json(); kind=str(data.get("type") or "")
             if kind=="ping":
                 await websocket.send_json({"type":"pong"})
+            elif kind=="visibility":
+                user_realtime_socket_hub.set_visibility(websocket, bool(data.get("visible")))
             elif kind=="resume":
                 try: after_id=max(0,int(data.get("after_id") or 0))
                 except (TypeError,ValueError): after_id=0
