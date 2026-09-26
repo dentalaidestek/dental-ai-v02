@@ -50,6 +50,14 @@ class WebPushContractTests(unittest.TestCase):
         deliver = MAIN.split("async def _deliver_web_push_for_notice", 1)[1].split("async def _publish_realtime_event", 1)[0]
         self.assertIn("has_visible_session", deliver)
 
+    def test_subscription_endpoint_is_not_an_arbitrary_outbound_url(self):
+        validator = MAIN.split("def _valid_web_push_endpoint", 1)[1].split('@app.get("/push-sw.js")', 1)[0]
+        self.assertIn("fcm.googleapis.com", validator)
+        self.assertIn(".push.services.mozilla.com", validator)
+        self.assertIn(".push.apple.com", validator)
+        subscribe = MAIN.split("async def account_push_subscribe", 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
+        self.assertIn("_valid_web_push_endpoint(endpoint)", subscribe)
+
     def test_service_worker_payload_is_privacy_minimized_and_internal_only(self):
         self.assertIn('const title = "Dental AI"', SW)
         self.assertIn("target_url", SW)
