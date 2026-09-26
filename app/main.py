@@ -3994,26 +3994,26 @@ def _next_consultation_deadline() -> Optional[datetime]:
 
 
 async def _consultation_deadline_worker() -> None:
-    """Sleep until the next deadline warning instead of polling the case table."""
+    """DB-authoritative scheduler: process due work, then sleep until the next warning."""
     while True:
         try:
+            # Startup/restart recovery happens immediately. This also makes the
+            # local asyncio.Event an optimization only; correctness lives in DB.
+            await _process_consultation_deadlines()
             next_deadline = _next_consultation_deadline()
             if next_deadline is None:
                 wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS
             else:
                 warning_at = next_deadline - timedelta(minutes=2)
-                wait_seconds = max(0.0, min(
+                wait_seconds = max(1.0, min(
                     (warning_at - _utcnow_naive()).total_seconds(),
                     CONSULTATION_DEADLINE_RECOVERY_SECONDS,
                 ))
             _consultation_deadline_wakeup.clear()
-            if wait_seconds > 0:
-                try:
-                    await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
-                    continue
-                except asyncio.TimeoutError:
-                    pass
-            await _process_consultation_deadlines()
+            try:
+                await asyncio.wait_for(_consultation_deadline_wakeup.wait(), timeout=wait_seconds)
+            except asyncio.TimeoutError:
+                pass
         except asyncio.CancelledError:
             raise
         except Exception:
