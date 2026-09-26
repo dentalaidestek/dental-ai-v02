@@ -1507,15 +1507,20 @@ def support_request_page(request: Request):
     return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {}})
 
 @app.post("/support-request")
-def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: Optional[int] = Form(None)):
+def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
     user=get_current_user(request)
     subject=subject.strip()[:160];message=message.strip()[:4000]
     if not subject or not message:return HTMLResponse("Konu ve mesaj gerekli.",status_code=400)
     linked_case_id=None
+    raw_case_id=(case_id or "").strip()
+    requested_case_id=None
+    if raw_case_id:
+        try:requested_case_id=int(raw_case_id)
+        except ValueError:return HTMLResponse("Geçersiz konuşma seçimi.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        if case_id is not None:
+        if requested_case_id is not None:
             if not user:return HTMLResponse("Bir konuşmayı destek talebine bağlamak için giriş yapmalısınız.",status_code=403)
-            case=s.get(ConsultationCase,case_id)
+            case=s.get(ConsultationCase,requested_case_id)
             if not case or not _support_case_is_selectable(s,case,user.id):
                 return HTMLResponse("Bu konuşmayı destek talebine bağlama yetkiniz yok.",status_code=403)
             linked_case_id=case.id
