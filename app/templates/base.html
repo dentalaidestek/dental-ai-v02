@@ -201,7 +201,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(partialNavigationBusy||!rememberMessagesView()) return;
         if(restoreCachedCaseRoom(url,{pushHistory})){
             const clearedUnread=markSnapshotCaseRead(url);
-            if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\\/expert-support\\/cases\\/(\\d+)/)?.[1]||0),count:clearedUnread}}));
+            if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\/expert-support\/cases\/(\d+)/)?.[1]||0),count:clearedUnread}}));
             return;
         }
         partialNavigationBusy=true;
@@ -213,7 +213,7 @@ if (!window.__daiMessagesPartialNavigationStarted) {
             if(!incomingMain?.querySelector(".expert-room")) throw new Error("case-room-missing");
             const scripts=[...incomingMain.querySelectorAll("script")]; scripts.forEach(script=>script.remove());
             const clearedUnread=markSnapshotCaseRead(url);stashMessagesView();
-            if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\\/expert-support\\/cases\\/(\\d+)/)?.[1]||0),count:clearedUnread}}));
+            if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\/expert-support\/cases\/(\d+)/)?.[1]||0),count:clearedUnread}}));
             if(pushHistory) history.pushState({daiPartialCase:true},"",url); else history.replaceState({daiPartialCase:true},"",url);
             const main=document.querySelector("main"); main.replaceChildren(...Array.from(incomingMain.childNodes,x=>document.importNode(x,true)));
             document.title=doc.title||document.title;
