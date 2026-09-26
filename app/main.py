@@ -3863,7 +3863,6 @@ def admin_expert_verification_update(
     return RedirectResponse("/admin/expert-verifications", status_code=303)
 
 
-@app.get(ADMIN_CENTER_PATH + "/expert-verifications/{profile_id}/document")
 @app.get("/admin/expert-verifications/{profile_id}/document")
 def admin_expert_credential_document(request: Request, profile_id: int):
     user = get_current_user(request)
