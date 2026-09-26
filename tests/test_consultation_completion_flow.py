@@ -65,6 +65,7 @@ def post_action(client, case_id, token, action):
     "initial,actor,action,expected",
     [
         ("ACTIVE", "expert", "COMPLETE", "EXPERT_COMPLETED"),
+        ("ACTIVE", "requester", "COMPLETE", "COMPLETED"),
         ("EXPERT_COMPLETED", "requester", "COMPLETE", "COMPLETED"),
         ("EXPERT_COMPLETED", "requester", "CONTINUE", "ACTIVE"),
         ("EXPERT_COMPLETED", "requester", "DISPUTE", "DISPUTE"),
@@ -97,22 +98,14 @@ def test_completion_transitions_and_realtime_events(consultation_app, monkeypatc
         )).all()
         assert case.status == expected
         assert {event.user_id for event in events} == {ids["requester"], ids["expert"]}
-        if initial == "ACTIVE":
+        if initial == "ACTIVE" and actor == "expert":
             assert case.expert_completed_at is not None
             assert case.completion_confirmation_deadline is not None
+        if initial == "ACTIVE" and actor == "requester":
+            assert case.requester_completed_at is not None
+            assert case.completed_at is not None
     assert set(published) == {ids["requester"], ids["expert"]}
     assert room_events == [(case_id, {"type": "case_status", "case_id": case_id, "status": expected})]
-
-
-@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
-def test_requester_cannot_complete_active_case(consultation_app):
-    engine, ids, tokens = consultation_app
-    case_id = create_case(engine, ids, "ACTIVE")
-    with TestClient(main.app) as client:
-        response = post_action(client, case_id, tokens[ids["requester"]], "COMPLETE")
-    assert response.status_code == 409
-    with Session(engine) as session:
-        assert session.get(main.ConsultationCase, case_id).status == "ACTIVE"
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
@@ -149,10 +142,11 @@ def test_review_form_is_replaced_by_persisted_success_state(consultation_app):
 
 def test_completed_ui_has_no_finish_action_and_realtime_refresh_is_debounced():
     menu = ROOM.split('<div class="case-room-menu-panel">', 1)[1].split("</div></details>", 1)[0]
-    assert 'case.status=="ACTIVE" and user.id==case.expert_user_id' in menu
+    assert 'case.status=="ACTIVE"' in menu
+    assert "Danışmayı bitir" in menu and "Danışmanlığı bitir" in menu
     assert 'case.status in ["ACTIVE","EXPERT_COMPLETED"]' not in menu
     assert "Uzman danışmanlığı sonlandırdı" in ROOM
     assert 'evt.event_type==="CASE_STATUS_UPDATED"' in ROOM
     assert "scheduleCaseRoomRefresh(data.status)" in ROOM
     assert "caseRefreshPromise" in ROOM and "caseRefreshTimer" in ROOM
-    assert 'e.target.closest?.(".case-state-form,.case-review-form")' in ROOM
+    assert 'e.target.closest?.(".case-state-form,.case-review-form,.case-report-form")' in ROOM
