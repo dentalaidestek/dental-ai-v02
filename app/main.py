@@ -1456,7 +1456,13 @@ def contact_page(request: Request):
 
 @app.get("/support-request", response_class=HTMLResponse)
 def support_request_page(request: Request):
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur"})
+    user=get_current_user(request)
+    tickets=[]; reports=[]
+    if user:
+        with Session(engine, expire_on_commit=False) as s:
+            tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
+            reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports})
 
 @app.post("/support-request")
 def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...)):
@@ -3819,48 +3825,13 @@ def admin_expert_verifications(request: Request):
 
 
 @app.post("/admin/expert-verifications/{profile_id}")
-def admin_expert_verification_update(
-    request: Request,
-    profile_id: int,
-    decision: str = Form(...),
-):
-    user = get_current_user(request)
-    if not user or user.role != "ADMIN":
+def admin_expert_verification_update(request: Request, profile_id: int, decision: str = Form(...)):
+    user = _admin_only(request)
+    if not user:
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    if decision not in {"APPROVE", "REJECT", "PENDING"}:
-        return HTMLResponse("Geçersiz doğrulama kararı.", status_code=400)
-    with Session(engine, expire_on_commit=False) as s:
-        profile = s.get(ExpertProfile, profile_id)
-        if not profile:
-            return HTMLResponse("Profil bulunamadı.", status_code=404)
-        expert = s.get(User, profile.user_id)
-        if decision == "APPROVE":
-            if not storage_exists(profile.credential_document_path):
-                return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.", status_code=409)
-            if not expert or not storage_exists(expert.profile_photo_path):
-                return HTMLResponse("Onay için profil fotoğrafı gereklidir.", status_code=409)
-            if not profile.phone:
-                return HTMLResponse("Onay için telefon numarası gereklidir.", status_code=409)
-            profile.application_status = "APPROVED"
-            profile.verification_status = "VERIFIED"
-            profile.specialty_verified = True
-            profile.academic_title_verified = bool(profile.academic_title)
-            profile.application_reviewed_at = _utcnow_naive()
-            profile.verified_at = _utcnow_naive()
-        elif decision == "REJECT":
-            profile.application_status = "REJECTED"
-            profile.verification_status = "REJECTED"
-            profile.availability = "PASSIVE"
-            profile.verified_at = None
-        else:
-            profile.application_status = "SUBMITTED"
-            profile.verification_status = "PENDING"
-            profile.availability = "PASSIVE"
-            profile.verified_at = None
-        profile.updated_at = _utcnow_naive()
-        s.add(profile)
-        s.commit()
-    return RedirectResponse("/admin/expert-verifications", status_code=303)
+    # Legacy mutation endpoint is intentionally retired. All decisions are made
+    # by the single management-center verification endpoint.
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=approvals", status_code=303)
 
 
 @app.get("/admin/expert-verifications/{profile_id}/document")
@@ -7508,6 +7479,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+        disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
         report_rows=[{
             "report": r,
             "reporter": s.get(User, r.reporter_user_id),
@@ -7525,7 +7497,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
-        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"storage_by_user":storage_by_user,
+        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
     })
 
@@ -7560,6 +7532,15 @@ def _admin_user_storage_summary(session: Session, user_id: int):
     guest_assets = [a for a in session.exec(select(GuestImageAsset)).all() if a.guest_analysis_id in guest_ids]
     expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == user_id)).first()
     credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
+    account_user = session.get(User, user_id)
+    profile_photo_bytes = size(account_user.profile_photo_path) if account_user and account_user.profile_photo_path else 0
+    def human_bytes(value: int) -> str:
+        amount=float(value)
+        for unit in ("B","KB","MB","GB","TB"):
+            if amount < 1024 or unit == "TB":
+                return f"{int(amount)} {unit}" if unit == "B" else f"{amount:.1f} {unit}"
+            amount /= 1024
+        return f"{value} B"
     categories = [
         ("Hasta dosyaları", sum(size(x.file_path) for x in patient_media)),
         ("Analiz görüntüleri", sum(size(x.file_path) for x in analysis_assets)),
@@ -7567,13 +7548,15 @@ def _admin_user_storage_summary(session: Session, user_id: int):
         ("Akademik dosyalar", sum(size(x.file_path) for x in study_materials)),
         ("Misafir analizleri", sum(size(x.file_path) for x in guest_assets)),
         ("Uzmanlık belgesi", credential_bytes),
+        ("Profil fotoğrafı", profile_photo_bytes),
     ]
     total = sum(v for _, v in categories)
     return {
         "total_bytes": total,
+        "display": human_bytes(total),
         "total_gb": round(total / (1024 ** 3), 3),
         "total_mb": round(total / (1024 ** 2), 1),
-        "categories": [{"name": name, "bytes": value, "gb": round(value/(1024**3),3), "mb": round(value/(1024**2),1)} for name, value in categories],
+        "categories": [{"name": name, "bytes": value, "display": human_bytes(value), "gb": round(value/(1024**3),3), "mb": round(value/(1024**2),1)} for name, value in categories],
     }
 
 
@@ -7629,15 +7612,44 @@ def admin_center_broadcast(request: Request, title: str = Form(...), message: st
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
-def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...)):
+async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...)):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    notice_event=None
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
-        ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket);s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_"+status,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
+        changed=ticket.status!=status
+        ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
+        if changed and ticket.user_id:
+            labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
+            message=f"Destek talebiniz #{ticket.id} artık {labels[status].lower()} durumunda."
+            s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
+            notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status})
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_"+status,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
+    if notice_event: await _publish_realtime_event(notice_event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
+
+@app.post(ADMIN_CENTER_PATH + "/reports/{report_id}")
+async def admin_center_report_update(request: Request, report_id: int, status: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    notice_event=None
+    with Session(engine, expire_on_commit=False) as s:
+        report=s.get(UserReport,report_id)
+        if not report:return HTMLResponse("Bildirim bulunamadı.",status_code=404)
+        changed=report.status!=status
+        report.status=status;s.add(report)
+        if changed:
+            labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
+            message=f"Bildiriminiz #{report.id} artık {labels[status].lower()} durumunda."
+            s.add(AdminNotice(user_id=report.reporter_user_id,title="Bildiriminiz güncellendi",message=message))
+            notice_event=_record_realtime_event(s,report.reporter_user_id,"NOTICE_CREATED","user_report",report.id,{"title":"Bildiriminiz güncellendi","message":message,"report_id":report.id,"status":status})
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
+    if notice_event: await _publish_realtime_event(notice_event)
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=complaints",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/status")
 def admin_center_user_status(request: Request, user_id: int, action: str = Form(...)):
