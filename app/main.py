@@ -3898,6 +3898,24 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     if payment:
         _payment_cancel_or_refund(payment, now)
         session.add(payment)
+    _resolve_notifications(
+        session, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST",
+        related_type="consultation_case", related_id=case.id,
+    )
+    _notify_user(
+        session, user_id=case.expert_user_id, actor_user_id=None,
+        notice_type="CONSULTATION_REQUEST_EXPIRED", title="Danışmanlık talebinin süresi doldu",
+        message="Yanıt süresi dolduğu için danışmanlık talebi kapatıldı.",
+        related_type="consultation_case", related_id=case.id,
+        dedup_key=f"consultation:{case.id}:expert-timeout", target_url=f"/expert-support/cases/{case.id}",
+    )
+    _notify_user(
+        session, user_id=case.requester_user_id, actor_user_id=None,
+        notice_type="CONSULTATION_REQUEST_EXPIRED", title="Danışmanlık talebinin süresi doldu",
+        message="Uzman yanıt süresi içinde işlem yapmadığı için danışmanlık talebi kapatıldı.",
+        related_type="consultation_case", related_id=case.id,
+        dedup_key=f"consultation:{case.id}:expert-timeout", target_url=f"/expert-support/cases/{case.id}",
+    )
     return True
 
 
@@ -5641,6 +5659,13 @@ def _sync_expert_capacity(
         return []
 
     session.add(profile)
+    events = _resolve_notifications(
+        session,
+        user_id=expert_user_id,
+        notice_type="EXPERT_CAPACITY_AVAILABLE" if cycle == "full" else "EXPERT_CAPACITY_FULL",
+        related_type="expert_profile",
+        related_id=profile.id,
+    )
     _, event, _ = _notify_user(
         session,
         user_id=expert_user_id,
@@ -5653,7 +5678,9 @@ def _sync_expert_capacity(
         dedup_key=f"expert-capacity:{expert_user_id}:{cycle}:{now.isoformat()}",
         target_url="/expert-support/profile",
     )
-    return [event] if event else []
+    if event:
+        events.append(event)
+    return events
 
 
 def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User],
