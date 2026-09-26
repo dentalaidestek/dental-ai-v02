@@ -4023,10 +4023,19 @@ def _enqueue_deadline_job(session: Session, case_id: int, job_type: str, run_at:
     key = f"consultation-deadline:{case_id}:{job_type}:{cycle}"
     if session.exec(select(ConsultationDeadlineJob.id).where(ConsultationDeadlineJob.dedup_key == key)).first():
         return
-    session.add(ConsultationDeadlineJob(case_id=case_id, job_type=job_type, run_at=run_at, dedup_key=key))
-    if engine.dialect.name == "postgresql":
-        # Transactional NOTIFY is delivered only after this domain transaction commits.
-        session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(channel=PG_DEADLINE_CHANNEL, payload=str(case_id)))
+    try:
+        with session.begin_nested():
+            session.add(ConsultationDeadlineJob(case_id=case_id, job_type=job_type, run_at=run_at, dedup_key=key))
+            session.flush()
+            if engine.dialect.name == "postgresql":
+                # Transactional NOTIFY is delivered only after the outer domain transaction commits.
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(channel=PG_DEADLINE_CHANNEL, payload=str(case_id)))
+    except IntegrityError:
+        # Another process enqueued the same cycle first. The savepoint keeps the
+        # caller's case/payment transaction intact.
+        if session.exec(select(ConsultationDeadlineJob.id).where(ConsultationDeadlineJob.dedup_key == key)).first():
+            return
+        raise
 
 
 def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: datetime) -> None:
