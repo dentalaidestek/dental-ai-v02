@@ -5037,8 +5037,32 @@ def expert_support_case_room(request: Request, case_id: int):
             if payment:
                 _payment_cancel_or_refund(payment, now)
                 s.add(payment)
+            notification_events = _resolve_notifications(
+                s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL",
+                related_type="consultation_case", related_id=case.id,
+            )
+            _, expiry_event, _ = _notify_user(
+                s, user_id=case.requester_user_id, actor_user_id=None,
+                notice_type="CONSULTATION_PROPOSAL_EXPIRED", title="Başlangıç önerisinin süresi doldu",
+                message="Başlangıç önerisi karar süresi içinde yanıtlanmadığı için kapatıldı.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:proposal-expired", target_url=f"/expert-support/cases/{case.id}",
+            )
+            if expiry_event:
+                notification_events.append(expiry_event)
+            _, expert_expiry_event, _ = _notify_user(
+                s, user_id=case.expert_user_id, actor_user_id=None,
+                notice_type="CONSULTATION_PROPOSAL_EXPIRED", title="Başlangıç önerisinin süresi doldu",
+                message="Talep sahibi başlangıç önerisine karar süresi içinde yanıt vermedi.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:proposal-expired", target_url=f"/expert-support/cases/{case.id}",
+            )
+            if expert_expiry_event:
+                notification_events.append(expert_expiry_event)
             s.add(case)
             s.commit()
+            for notification_event in notification_events:
+                await _publish_realtime_event(notification_event)
         # Opening the room is the authoritative read action. Persist it before
         # rendering so unread reconciliation cannot race the WebSocket read.
         s.commit()
