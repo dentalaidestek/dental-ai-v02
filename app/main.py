@@ -1538,15 +1538,17 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket or ticket.user_id!=user.id:return HTMLResponse("Talep bulunamadı.",status_code=404)
-        if ticket.status=="CLOSED":return HTMLResponse("Sonuçlandırılmış destek talebine yeni mesaj gönderilemez.",status_code=409)
+        # Kullanıcı yalnız yönetim yanıtından sonra bir kez cevap verebilir.
+        if ticket.status=="CLOSED":return HTMLResponse("Bu destek talebi kapatılmış. Yeni bir destek talebi oluşturabilirsiniz.",status_code=409)
+        if ticket.status!="ANSWERED":return HTMLResponse("Destek ekibinin yanıtını beklerken yeni mesaj gönderemezsiniz.",status_code=409)
         s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message))
-        ticket.status="OPEN";ticket.updated_at=_utcnow_naive();s.add(ticket)
+        ticket.status="USER_REPLIED";ticket.updated_at=_utcnow_naive();s.add(ticket)
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
         for admin in admins:
             admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
         s.commit()
     for event in admin_events:await _publish_realtime_event(event)
-    return RedirectResponse("/support-request",status_code=303)
+    return RedirectResponse("/support-request?reply_sent=1",status_code=303)
 
 
 @app.get("/legal/{document}", response_class=HTMLResponse)
@@ -7798,27 +7800,27 @@ def admin_center_broadcast(request: Request, title: str = Form(...), message: st
 async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
-    if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    if status not in {"IN_PROGRESS","ANSWERED","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
     reply=reply.strip()[:4000]
-    if status=="CLOSED" and not reply:return HTMLResponse("Talebi kapatırken kullanıcıya sonuç açıklaması yazmalısınız.",status_code=400)
+    if status in {"ANSWERED","CLOSED"} and not reply:return HTMLResponse("Yanıt verirken veya talebi kapatırken açıklama yazmalısınız.",status_code=400)
     notice_event=None
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
+        if ticket.status=="CLOSED":return HTMLResponse("Kapatılmış destek talebi yeniden açılamaz.",status_code=409)
         changed=ticket.status!=status
         if reply:
-            if not ticket.user_id:return HTMLResponse("Misafir destek talebinde hesap içi yanıtlaşma kullanılamaz.",status_code=409)
             s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=admin.id,sender_role="ADMIN",message=reply))
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
         if (changed or reply) and ticket.user_id:
-            labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
-            message=f"Destek talebiniz #{ticket.id} {labels[status].lower()} durumunda."
-            if reply:message+=" Destek ekibi yeni bir yanıt yazdı."
+            labels={"IN_PROGRESS":"inceleniyor","ANSWERED":"sonuçlandı","CLOSED":"kapatıldı"}
+            message=f"Destek talebiniz #{ticket.id} {labels[status]}."
+            if reply:message+=" Destek ekibi yeni bir açıklama yazdı."
             s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
             notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status})
-        action="SUPPORT_REPLY" if reply and not changed else "SUPPORT_"+status
+        action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
-    if notice_event: await _publish_realtime_event(notice_event)
+    if notice_event:await _publish_realtime_event(notice_event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/reports/{report_id}")
