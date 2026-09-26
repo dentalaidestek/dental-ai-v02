@@ -419,7 +419,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
-        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();showAdminNotice(data);}}
+        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
@@ -460,10 +460,6 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
-    document.addEventListener("click",function enableDentalNotifications(){
-        if("Notification" in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
-        document.removeEventListener("click",enableDentalNotifications);
-    },{once:true});
 }
 </script>
 <script>
