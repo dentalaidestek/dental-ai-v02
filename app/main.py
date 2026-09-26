@@ -2703,8 +2703,12 @@ async def startup():
     storage_check_connection()
     init_db()
     _backfill_legacy_deadline_jobs_if_needed()
-    app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker())
-    app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener())
+    run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
+    app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
+    app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener(
+        listen_deadline=run_embedded_deadline_worker,
+        listen_realtime=True,
+    ))
 
 
 @app.on_event("shutdown")
@@ -4011,6 +4015,7 @@ CONSULTATION_DEADLINE_RETENTION_DAYS = 30
 _consultation_deadline_last_cleanup: Optional[datetime] = None
 PG_DEADLINE_CHANNEL = "dentalai_deadline_jobs"
 PG_REALTIME_CHANNEL = "dentalai_realtime_events"
+DEADLINE_EXECUTION_MODE = os.getenv("DENTALAI_DEADLINE_EXECUTION", "embedded").strip().lower()
 
 
 def _wake_consultation_deadline_worker() -> None:
@@ -4226,8 +4231,8 @@ async def _consultation_deadline_worker() -> None:
 
 
 
-async def _postgres_event_listener() -> None:
-    """Wake local deadline workers and fan durable realtime events across processes."""
+async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True) -> None:
+    """Transactional PostgreSQL fanout; callers subscribe only to channels they need."""
     if engine.dialect.name != "postgresql" or not DATABASE_URL:
         return
     while True:
@@ -4236,8 +4241,10 @@ async def _postgres_event_listener() -> None:
             conn = await asyncio.to_thread(psycopg2.connect, DATABASE_URL)
             conn.set_session(autocommit=True)
             cur = conn.cursor()
-            cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
-            cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
+            if listen_deadline:
+                cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
+            if listen_realtime:
+                cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
             while True:
                 ready = await asyncio.to_thread(select_module.select, [conn], [], [], 60.0)
                 if not ready[0]:
