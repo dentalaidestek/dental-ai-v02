@@ -5543,7 +5543,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "COMPLETE":
+        if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
