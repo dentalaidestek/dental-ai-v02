@@ -194,7 +194,11 @@ if (!window.__daiMessagesPartialNavigationStarted) {
     }
     async function openCaseWithoutReload(url,{pushHistory=true}={}) {
         if(partialNavigationBusy||!rememberMessagesView()) return;
-        if(restoreCachedCaseRoom(url,{pushHistory})){markSnapshotCaseRead(url);document.dispatchEvent(new CustomEvent("dai:unread-changed"));return;}
+        if(restoreCachedCaseRoom(url,{pushHistory})){
+            const clearedUnread=markSnapshotCaseRead(url);
+            if(clearedUnread>0)document.dispatchEvent(new CustomEvent("dai:case-read",{detail:{case_id:Number(new URL(url,location.origin).pathname.match(/^\\/expert-support\\/cases\\/(\\d+)/)?.[1]||0),count:clearedUnread}}));
+            document.dispatchEvent(new CustomEvent("dai:unread-changed"));return;
+        }
         partialNavigationBusy=true;
         partialNavigationController?.abort(); partialNavigationController=new AbortController();
         try{
