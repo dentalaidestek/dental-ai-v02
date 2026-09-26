@@ -41,6 +41,7 @@ logger = _study_trace_logging.getLogger(__name__)
 
 # === TEMP_XRAY_TRACE_MAIN_IMPORT_BEGIN ===
 import time as _xray_trace_time
+import asyncio
 from app.xray_trace import (
     begin_xray_trace,
     end_xray_trace,
@@ -2664,9 +2665,21 @@ templates = Jinja2Templates(
 )
 
 @app.on_event("startup")
-def startup():
+async def startup():
     storage_check_connection()
     init_db()
+    app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker())
+
+
+@app.on_event("shutdown")
+async def shutdown_consultation_deadline_worker():
+    task = getattr(app.state, "consultation_deadline_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 @app.get("/notes", response_class=HTMLResponse)
@@ -3941,6 +3954,163 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
     missed_30 = len([x for x in cases if x.status == "EXPERT_TIMEOUT" and x.requested_at >= missed_30_since])
     return {"rating_avg": rating_avg, "review_count": len(reviews), "completed_count": len(completed),
             "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
+
+
+async def _consultation_deadline_worker() -> None:
+    """Process consultation deadlines server-side without browser polling.
+
+    Every durable notification uses a deadline-derived dedup key, so overlapping
+    web workers can safely observe the same deadline without intentionally
+    producing multiple user-visible notices.
+    """
+    while True:
+        try:
+            await _process_consultation_deadlines()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Consultation deadline worker iteration failed")
+        await asyncio.sleep(30)
+
+
+async def _process_consultation_deadlines() -> None:
+    now = _utcnow_naive()
+    warning_cutoff = now + timedelta(minutes=2)
+    publish_events: list[RealtimeEvent] = []
+    case_events: list[RealtimeEvent] = []
+
+    with Session(engine, expire_on_commit=False) as s:
+        # 10-minute expert response deadline: warn the expert, then apply the
+        # existing timeout/policy path when the deadline actually passes.
+        requested = s.exec(select(ConsultationCase).where(
+            ConsultationCase.status == "REQUESTED",
+            ConsultationCase.expert_response_deadline <= warning_cutoff,
+        )).all()
+        for case in requested:
+            if case.expert_response_deadline > now:
+                _, event, _ = _notify_user(
+                    s, user_id=case.expert_user_id, actor_user_id=None,
+                    notice_type="CONSULTATION_DEADLINE_WARNING",
+                    title="Danışmanlık talebi için süre azalıyor",
+                    message="Yeni danışmanlık talebini yanıtlamak için yaklaşık 2 dakikanız kaldı.",
+                    related_type="consultation_case", related_id=case.id,
+                    dedup_key=f"deadline-warning:expert-response:{case.id}:{case.expert_response_deadline.isoformat()}",
+                    target_url=f"/expert-support/cases/{case.id}",
+                )
+                if event:
+                    publish_events.append(event)
+            elif _apply_expert_timeout(s, case, now):
+                case_events.extend(_record_case_status_realtime_events(s, case))
+
+        # Three-minute requester proposal decision deadline.
+        proposed = s.exec(select(ConsultationCase).where(
+            ConsultationCase.status == "PROPOSED",
+            ConsultationCase.requester_decision_deadline != None,
+            ConsultationCase.requester_decision_deadline <= warning_cutoff,
+        )).all()
+        for case in proposed:
+            deadline = case.requester_decision_deadline
+            if deadline and deadline > now:
+                _, event, _ = _notify_user(
+                    s, user_id=case.requester_user_id, actor_user_id=None,
+                    notice_type="CONSULTATION_DEADLINE_WARNING",
+                    title="Başlangıç önerisi için süre azalıyor",
+                    message="Uzmanın başlangıç önerisini yanıtlamak için yaklaşık 2 dakikanız kaldı.",
+                    related_type="consultation_case", related_id=case.id,
+                    dedup_key=f"deadline-warning:proposal:{case.id}:{deadline.isoformat()}",
+                    target_url=f"/expert-support/cases/{case.id}",
+                )
+                if event:
+                    publish_events.append(event)
+            elif deadline:
+                case.status = "PROPOSAL_EXPIRED"
+                _consultation_event(s, case.id, "PROPOSAL_EXPIRED")
+                payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+                if payment:
+                    _payment_cancel_or_refund(payment, now)
+                    s.add(payment)
+                publish_events.extend(_resolve_notifications(
+                    s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL",
+                    related_type="consultation_case", related_id=case.id,
+                ))
+                for recipient_id, message in (
+                    (case.requester_user_id, "Başlangıç önerisi karar süresi içinde yanıtlanmadığı için kapatıldı."),
+                    (case.expert_user_id, "Talep sahibi başlangıç önerisine karar süresi içinde yanıt vermedi."),
+                ):
+                    _, event, _ = _notify_user(
+                        s, user_id=recipient_id, actor_user_id=None,
+                        notice_type="CONSULTATION_PROPOSAL_EXPIRED",
+                        title="Başlangıç önerisinin süresi doldu", message=message,
+                        related_type="consultation_case", related_id=case.id,
+                        dedup_key=f"consultation:{case.id}:proposal-expired",
+                        target_url=f"/expert-support/cases/{case.id}",
+                    )
+                    if event:
+                        publish_events.append(event)
+                s.add(case)
+                publish_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=None))
+                case_events.extend(_record_case_status_realtime_events(s, case))
+
+        # Accepted delayed starts remain WAITING_START after the deadline; the
+        # deadline is a performance miss, not an automatic case cancellation.
+        waiting = s.exec(select(ConsultationCase).where(
+            ConsultationCase.status == "WAITING_START",
+            ConsultationCase.consultation_start_deadline != None,
+            ConsultationCase.consultation_start_deadline <= warning_cutoff,
+        )).all()
+        for case in waiting:
+            deadline = case.consultation_start_deadline
+            if not deadline:
+                continue
+            if deadline > now:
+                _, event, _ = _notify_user(
+                    s, user_id=case.expert_user_id, actor_user_id=None,
+                    notice_type="CONSULTATION_DEADLINE_WARNING",
+                    title="Danışmanlık başlangıç süresi yaklaşıyor",
+                    message="Kabul edilen danışmanlığı başlatmak için yaklaşık 2 dakikanız kaldı.",
+                    related_type="consultation_case", related_id=case.id,
+                    dedup_key=f"deadline-warning:start:{case.id}:{deadline.isoformat()}",
+                    target_url=f"/expert-support/cases/{case.id}",
+                )
+                if event:
+                    publish_events.append(event)
+            elif not case.expert_started_at:
+                existing = s.exec(select(ConsultationEvent).where(
+                    ConsultationEvent.case_id == case.id,
+                    ConsultationEvent.event_type == "START_DEADLINE_MISSED",
+                )).first()
+                if not existing:
+                    _consultation_event(s, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {"deadline": deadline.isoformat()})
+
+        # Completion confirmation is intentionally only warned here. The
+        # existing product state machine does not define an automatic action at
+        # 24h, so Phase 5 must not silently invent auto-completion/dispute.
+        completing = s.exec(select(ConsultationCase).where(
+            ConsultationCase.status == "EXPERT_COMPLETED",
+            ConsultationCase.completion_confirmation_deadline != None,
+            ConsultationCase.completion_confirmation_deadline <= warning_cutoff,
+        )).all()
+        for case in completing:
+            deadline = case.completion_confirmation_deadline
+            if deadline and deadline > now:
+                _, event, _ = _notify_user(
+                    s, user_id=case.requester_user_id, actor_user_id=None,
+                    notice_type="CONSULTATION_DEADLINE_WARNING",
+                    title="Tamamlama onayı için süre azalıyor",
+                    message="Danışmanlık tamamlama kararınızı vermek için yaklaşık 2 dakikanız kaldı.",
+                    related_type="consultation_case", related_id=case.id,
+                    dedup_key=f"deadline-warning:completion:{case.id}:{deadline.isoformat()}",
+                    target_url=f"/expert-support/cases/{case.id}",
+                )
+                if event:
+                    publish_events.append(event)
+
+        s.commit()
+
+    for event in case_events:
+        await _publish_realtime_event(event)
+    for event in publish_events:
+        await _publish_realtime_event(event)
 
 
 def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
