@@ -1544,7 +1544,7 @@ async def contact_submit(request: Request, subject: str = Form(...), message: st
         if user:
             admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
             for admin in admins:
-                admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_CREATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
+                admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_CREATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject,"status":"OPEN","requires_fragment":True}))
         s.commit()
     for event in admin_events: await _publish_realtime_event(event)
     if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"OPEN"})
@@ -1568,7 +1568,7 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
         ticket.status="USER_REPLIED";ticket.updated_at=_utcnow_naive();s.add(ticket)
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
         for admin in admins:
-            admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
+            admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject,"status":"USER_REPLIED","requires_fragment":True}))
         s.commit()
     for event in admin_events:await _publish_realtime_event(event)
     if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"USER_REPLIED"})
@@ -5013,7 +5013,7 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
         # reason/detail stays admin-only. Menu support tickets never create this event.
         realtime_event=_record_realtime_event(s,other,"CASE_REPORT_CREATED","consultation_case",case.id,{"case_id":case.id,"report_id":report.id,"message":"Karşı taraf bu görüşmeyle ilgili bir sorun bildirdi."})
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
-        for admin in admins:admin_events.append(_record_realtime_event(s,admin.id,"USER_REPORT_CREATED","user_report",report.id,{"report_id":report.id,"case_id":case.id,"reporter_user_id":user.id}))
+        for admin in admins:admin_events.append(_record_realtime_event(s,admin.id,"USER_REPORT_CREATED","user_report",report.id,{"report_id":report.id,"case_id":case.id,"reporter_user_id":user.id,"status":"OPEN","requires_fragment":True}))
         s.commit()
     if realtime_event:await _publish_realtime_event(realtime_event)
     for event in admin_events:await _publish_realtime_event(event)
@@ -7871,9 +7871,9 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
             message=f"Destek talebiniz #{ticket.id} {labels[status]}."
             if reply:message+=" Destek ekibi yeni bir açıklama yazdı."
             s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
-            notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status})
+            notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status,"requires_fragment":bool(reply),"has_reply":bool(reply)})
         action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
-        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status}))
+        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status,"requires_fragment":bool(reply),"has_reply":bool(reply)}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     if notice_event:await _publish_realtime_event(notice_event)
     for event in admin_events:await _publish_realtime_event(event)
@@ -7896,8 +7896,8 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
             message=f"Bildiriminiz #{report.id} artık {labels[status].lower()} durumunda."
             s.add(AdminNotice(user_id=report.reporter_user_id,title="Bildiriminiz güncellendi",message=message))
-            notice_event=_record_realtime_event(s,report.reporter_user_id,"NOTICE_CREATED","user_report",report.id,{"title":"Bildiriminiz güncellendi","message":message,"report_id":report.id,"status":status})
-        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id}))
+            notice_event=_record_realtime_event(s,report.reporter_user_id,"NOTICE_CREATED","user_report",report.id,{"title":"Bildiriminiz güncellendi","message":message,"report_id":report.id,"status":status,"requires_fragment":False})
+        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
     if notice_event: await _publish_realtime_event(notice_event)
     for event in admin_events:await _publish_realtime_event(event)
