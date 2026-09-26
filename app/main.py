@@ -3815,63 +3815,16 @@ def admin_expert_verifications(request: Request):
     user = get_current_user(request)
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    with Session(engine, expire_on_commit=False) as s:
-        profiles = s.exec(select(ExpertProfile).where(
-            (ExpertProfile.application_status != "APPROVED") |
-            (ExpertProfile.verification_status != "VERIFIED") |
-            (ExpertProfile.specialty_verified == False)
-        ).order_by(ExpertProfile.updated_at.desc())).all()
-        rows = []
-        for profile in profiles:
-            expert_user = s.get(User, profile.user_id)
-            doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == profile.user_id)).first()
-            rows.append({"profile": profile, "expert": expert_user, "doctor": doctor})
-    return templates.TemplateResponse(request=request, name="admin_expert_verifications.html", context={"user": user, "rows": rows})
+    return RedirectResponse(ADMIN_CENTER_PATH + "?section=approvals", status_code=303)
 
 
 @app.post("/admin/expert-verifications/{profile_id}")
-def admin_expert_verification_update(
-    request: Request,
-    profile_id: int,
-    decision: str = Form(...),
-):
+def admin_expert_verification_update(request: Request, profile_id: int, decision: str = Form(...)):
     user = get_current_user(request)
     if not user or user.role != "ADMIN":
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
-    if decision not in {"APPROVE", "REJECT", "PENDING"}:
-        return HTMLResponse("Geçersiz doğrulama kararı.", status_code=400)
-    with Session(engine, expire_on_commit=False) as s:
-        profile = s.get(ExpertProfile, profile_id)
-        if not profile:
-            return HTMLResponse("Profil bulunamadı.", status_code=404)
-        expert = s.get(User, profile.user_id)
-        if decision == "APPROVE":
-            if not storage_exists(profile.credential_document_path):
-                return HTMLResponse("Onay için e-Devlet mesleki belgesi gereklidir.", status_code=409)
-            if not expert or not storage_exists(expert.profile_photo_path):
-                return HTMLResponse("Onay için profil fotoğrafı gereklidir.", status_code=409)
-            if not profile.phone:
-                return HTMLResponse("Onay için telefon numarası gereklidir.", status_code=409)
-            profile.application_status = "APPROVED"
-            profile.verification_status = "VERIFIED"
-            profile.specialty_verified = True
-            profile.academic_title_verified = bool(profile.academic_title)
-            profile.application_reviewed_at = _utcnow_naive()
-            profile.verified_at = _utcnow_naive()
-        elif decision == "REJECT":
-            profile.application_status = "REJECTED"
-            profile.verification_status = "REJECTED"
-            profile.availability = "PASSIVE"
-            profile.verified_at = None
-        else:
-            profile.application_status = "SUBMITTED"
-            profile.verification_status = "PENDING"
-            profile.availability = "PASSIVE"
-            profile.verified_at = None
-        profile.updated_at = _utcnow_naive()
-        s.add(profile)
-        s.commit()
-    return RedirectResponse("/admin/expert-verifications", status_code=303)
+    # Eski doğrulama formu artık durum değiştirmez; tek kaynak Yönetim Merkezi'dir.
+    return RedirectResponse(ADMIN_CENTER_PATH + "?section=approvals", status_code=303)
 
 
 @app.get("/admin/expert-verifications/{profile_id}/document")
@@ -7423,7 +7376,7 @@ def legacy_admin_hidden(request: Request):
     return HTMLResponse("Sayfa bulunamadı.", status_code=404)
 
 
-ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","inbox":"Gelen Mesajlar","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
+ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","complaints":"Şikayetler","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
 
 def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
     row=session.exec(select(SiteSetting).where(SiteSetting.key==key)).first()
@@ -7494,6 +7447,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
     user = _admin_only(request)
     if not user:
         return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error": None})
+    section = section if section in ADMIN_SECTIONS else "home"
     with Session(engine, expire_on_commit=False) as s:
         query = select(User).order_by(User.created_at.desc())
         users = s.exec(query).all()
@@ -7519,17 +7473,18 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+        report_rows=[{"report":r,"reporter":s.get(User,r.reporter_user_id),"reported":s.get(User,r.reported_user_id),"case":s.get(ConsultationCase,r.case_id) if r.case_id else None} for r in reports]
+        user_storage={u.id:_admin_user_storage_summary(s,u.id) for u in users[:100]} if section=="users" else {}
         admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
         completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
         gross_revenue=sum(p.amount for p in completed_payments)
         platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed_payments)
-    section=section if section in ADMIN_SECTIONS else "home"
     return templates.TemplateResponse(request=request, name="admin_center.html", context={
         "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
-        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
+        "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"user_storage":user_storage,"admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
     })
 
 
@@ -7561,12 +7516,15 @@ def _admin_user_storage_summary(session: Session, user_id: int):
     analysis_assets = [a for a in session.exec(select(ImageAsset)).all() if a.analysis_id in analysis_ids]
     guest_ids = [g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id == user_id)).all()]
     guest_assets = [a for a in session.exec(select(GuestImageAsset)).all() if a.guest_analysis_id in guest_ids]
+    expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == user_id)).first()
+    credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
     categories = [
         ("Hasta dosyaları", sum(size(x.file_path) for x in patient_media)),
         ("Analiz görüntüleri", sum(size(x.file_path) for x in analysis_assets)),
         ("Sohbet ekleri", sum(size(x.media_path) + size(x.original_media_path) for x in chat_media)),
         ("Akademik dosyalar", sum(size(x.file_path) for x in study_materials)),
         ("Misafir analizleri", sum(size(x.file_path) for x in guest_assets)),
+        ("Uzmanlık belgesi", credential_bytes),
     ]
     total = sum(v for _, v in categories)
     return {
