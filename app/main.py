@@ -3972,6 +3972,7 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
 
 _consultation_deadline_wakeup = asyncio.Event()
 CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
+CONSULTATION_DEADLINE_BATCH_SIZE = 200
 
 
 def _wake_consultation_deadline_worker() -> None:
@@ -4041,7 +4042,7 @@ async def _process_consultation_deadlines() -> None:
         requested = s.exec(select(ConsultationCase).where(
             ConsultationCase.status == "REQUESTED",
             ConsultationCase.expert_response_deadline <= warning_cutoff,
-        )).all()
+        ).order_by(ConsultationCase.expert_response_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
         for case in requested:
             if case.expert_response_deadline > now:
                 _, event, _ = _notify_user(
@@ -4063,7 +4064,7 @@ async def _process_consultation_deadlines() -> None:
             ConsultationCase.status == "PROPOSED",
             ConsultationCase.requester_decision_deadline != None,
             ConsultationCase.requester_decision_deadline <= warning_cutoff,
-        )).all()
+        ).order_by(ConsultationCase.requester_decision_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
         for case in proposed:
             deadline = case.requester_decision_deadline
             if deadline and deadline > now:
@@ -4113,7 +4114,7 @@ async def _process_consultation_deadlines() -> None:
             ConsultationCase.status == "WAITING_START",
             ConsultationCase.consultation_start_deadline != None,
             ConsultationCase.consultation_start_deadline <= warning_cutoff,
-        )).all()
+        ).order_by(ConsultationCase.consultation_start_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
         for case in waiting:
             deadline = case.consultation_start_deadline
             if not deadline:
@@ -4145,7 +4146,7 @@ async def _process_consultation_deadlines() -> None:
             ConsultationCase.status == "EXPERT_COMPLETED",
             ConsultationCase.completion_confirmation_deadline != None,
             ConsultationCase.completion_confirmation_deadline <= warning_cutoff,
-        )).all()
+        ).order_by(ConsultationCase.completion_confirmation_deadline.asc()).limit(CONSULTATION_DEADLINE_BATCH_SIZE)).all()
         for case in completing:
             deadline = case.completion_confirmation_deadline
             if deadline and deadline > now:
