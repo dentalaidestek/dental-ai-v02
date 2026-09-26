@@ -1507,7 +1507,8 @@ def support_request_page(request: Request):
     return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {}})
 
 @app.post("/support-request")
-def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
+async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
+    wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     user=get_current_user(request)
     subject=subject.strip()[:160];message=message.strip()[:4000]
     if not subject or not message:return HTMLResponse("Konu ve mesaj gerekli.",status_code=400)
@@ -1532,7 +1533,8 @@ def contact_submit(request: Request, subject: str = Form(...), message: str = Fo
             for admin in admins:
                 admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_CREATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
         s.commit()
-    # POST route is sync; durable events are enough for reconnect/sync and avoid a second polling system.
+    for event in admin_events: await _publish_realtime_event(event)
+    if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"OPEN"})
     return RedirectResponse("/support-request?sent=1",status_code=303)
 
 
@@ -1556,6 +1558,7 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
             admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
         s.commit()
     for event in admin_events:await _publish_realtime_event(event)
+    if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"USER_REPLIED"})
     return RedirectResponse("/support-request?reply_sent=1",status_code=303)
 
 
@@ -4980,7 +4983,8 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
     if not user:return RedirectResponse("/login",status_code=303)
     allowed={"HARASSMENT","PROFANITY","SPAM","INAPPROPRIATE","OTHER"}
     if reason not in allowed:return HTMLResponse("Geçersiz bildirim nedeni.",status_code=400)
-    realtime_event=None
+    realtime_event=None;admin_events=[]
+    wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
@@ -4993,8 +4997,12 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
         # In-chat reports are visible to the other participant, but the private
         # reason/detail stays admin-only. Menu support tickets never create this event.
         realtime_event=_record_realtime_event(s,other,"CASE_REPORT_CREATED","consultation_case",case.id,{"case_id":case.id,"report_id":report.id,"message":"Karşı taraf bu görüşmeyle ilgili bir sorun bildirdi."})
+        admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
+        for admin in admins:admin_events.append(_record_realtime_event(s,admin.id,"USER_REPORT_CREATED","user_report",report.id,{"report_id":report.id,"case_id":case.id,"reporter_user_id":user.id}))
         s.commit()
     if realtime_event:await _publish_realtime_event(realtime_event)
+    for event in admin_events:await _publish_realtime_event(event)
+    if wants_json:return JSONResponse({"ok":True,"report_id":report.id,"case_id":case.id})
     return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/message")
@@ -7811,7 +7819,8 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
     if status not in {"IN_PROGRESS","ANSWERED","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
     reply=reply.strip()[:4000]
     if status in {"ANSWERED","CLOSED"} and not reply:return HTMLResponse("Yanıt verirken veya talebi kapatırken açıklama yazmalısınız.",status_code=400)
-    notice_event=None
+    notice_event=None;admin_events=[]
+    wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
@@ -7827,8 +7836,11 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
             s.add(AdminNotice(user_id=ticket.user_id,title="Destek talebi güncellendi",message=message))
             notice_event=_record_realtime_event(s,ticket.user_id,"NOTICE_CREATED","support_ticket",ticket.id,{"title":"Destek talebi güncellendi","message":message,"ticket_id":ticket.id,"status":status})
         action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
+        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     if notice_event:await _publish_realtime_event(notice_event)
+    for event in admin_events:await _publish_realtime_event(event)
+    if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/reports/{report_id}")
@@ -7836,7 +7848,8 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
-    notice_event=None
+    notice_event=None;admin_events=[]
+    wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
         report=s.get(UserReport,report_id)
         if not report:return HTMLResponse("Bildirim bulunamadı.",status_code=404)
@@ -7847,8 +7860,11 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
             message=f"Bildiriminiz #{report.id} artık {labels[status].lower()} durumunda."
             s.add(AdminNotice(user_id=report.reporter_user_id,title="Bildiriminiz güncellendi",message=message))
             notice_event=_record_realtime_event(s,report.reporter_user_id,"NOTICE_CREATED","user_report",report.id,{"title":"Bildiriminiz güncellendi","message":message,"report_id":report.id,"status":status})
+        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
     if notice_event: await _publish_realtime_event(notice_event)
+    for event in admin_events:await _publish_realtime_event(event)
+    if wants_json:return JSONResponse({"ok":True,"report_id":report.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=complaints",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/status")
