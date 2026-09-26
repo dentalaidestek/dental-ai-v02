@@ -4933,7 +4933,7 @@ def account_admin_notices(request: Request):
             AdminNotice.user_id==user.id,
             AdminNotice.status=="ACTIVE",
             AdminNotice.is_read==False,
-        ).order_by(AdminNotice.created_at.desc())).all()[:5]
+        ).order_by(AdminNotice.created_at.desc()).limit(5)).all()
         return {"notices":[{
             "id":n.id,"title":n.title,"message":n.message,
             "notice_type":n.notice_type,"target_url":n.target_url,
@@ -5577,6 +5577,10 @@ def _notify_user(
         if existing:
             return existing, None, False
 
+    safe_target_url = (target_url or "").strip()
+    if safe_target_url and (not safe_target_url.startswith("/") or safe_target_url.startswith("//")):
+        safe_target_url = ""
+
     notice = AdminNotice(
         user_id=user_id,
         title=(title or "").strip()[:120],
@@ -5585,7 +5589,7 @@ def _notify_user(
         related_type=(related_type or "").strip()[:80] or None,
         related_id=str(related_id)[:120] if related_id is not None else None,
         dedup_key=normalized_dedup,
-        target_url=(target_url or "").strip()[:1000] or None,
+        target_url=safe_target_url[:1000] or None,
         status="ACTIVE",
     )
     session.add(notice)
