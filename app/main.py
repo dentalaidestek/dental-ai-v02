@@ -4921,7 +4921,7 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
     if reason not in allowed:return HTMLResponse("Geçersiz bildirim nedeni.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
-        if not case or user.id not in {case.requester_user_id,case.expert_user_id}:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+        if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         s.add(UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None))
         _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason});s.commit()
