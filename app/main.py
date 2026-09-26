@@ -1468,7 +1468,22 @@ def support_request_page(request: Request):
             tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
             reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
             cases=s.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user.id) | (ConsultationCase.expert_user_id==user.id)).order_by(ConsultationCase.requested_at.desc())).all()
+            case_ids=[case.id for case in cases if case.id is not None]
+            messages=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id.in_(case_ids))).all() if case_ids else []
+            messaged_case_ids={m.case_id for m in messages}
+            now=_utcnow_naive()
             for case in cases:
+                # A real interaction makes the case selectable for either party.
+                # If nobody has messaged, only the requester may select a case where
+                # the expert's response window expired without any expert message.
+                has_message=case.id in messaged_case_ids
+                expert_timed_out_without_message=(
+                    user.id==case.requester_user_id
+                    and not has_message
+                    and now>case.expert_response_deadline
+                )
+                if not has_message and not expert_timed_out_without_message:
+                    continue
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
                 conversation_options.append({"case":case,"other":other})
