@@ -5207,15 +5207,27 @@ def _patient_realtime_version(patient: Patient) -> str:
 
 
 def _record_patient_realtime_events(
-    session: Session, patient: Patient, event_type: str
+    session: Session, patient: Patient, event_type: str, profile: Optional[PatientProfile] = None
 ) -> list[RealtimeEvent]:
-    payload = {"patient_id": patient.id, "version": _patient_realtime_version(patient)}
-    return [
-        _record_realtime_event(
-            session, recipient_id, event_type, "patient", patient.id, payload
+    """Persist privacy-scoped patient snapshots so normal realtime updates need no follow-up GET."""
+    events = []
+    for recipient_id in _patient_realtime_recipient_ids(session, patient):
+        include_private = recipient_id == patient.owner_user_id
+        payload = {
+            "patient_id": patient.id,
+            "version": _patient_realtime_version(patient),
+            "payload_version": 1,
+        }
+        if event_type != "PATIENT_DELETED":
+            payload["patient"] = _patient_realtime_snapshot(
+                patient, profile, include_private=include_private
+            )
+        events.append(
+            _record_realtime_event(
+                session, recipient_id, event_type, "patient", patient.id, payload
+            )
         )
-        for recipient_id in _patient_realtime_recipient_ids(session, patient)
-    ]
+    return events
 
 
 def _patient_realtime_access(session: Session, user: User, patient: Patient) -> tuple[bool, bool]:
@@ -5574,7 +5586,7 @@ async def create_patient(
             address=address.strip() if address else None,
         )
         s.add(patient_profile)
-        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_CREATED")
+        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_CREATED", patient_profile)
         s.commit()
 
         for patient_event in patient_events:
@@ -6132,7 +6144,7 @@ async def edit_patient(
         profile.address = address.strip() if address else None
         s.add(patient)
         s.add(profile)
-        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_UPDATED")
+        patient_events = _record_patient_realtime_events(s, patient, "PATIENT_UPDATED", profile)
         s.commit()
     for patient_event in patient_events:
         await _publish_realtime_event(patient_event)
