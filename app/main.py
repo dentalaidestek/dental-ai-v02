@@ -7058,7 +7058,7 @@ def tooth_chart(request: Request, patient_id: int):
 def patient_realtime_snapshot(request: Request, patient_id: int):
     user = get_current_user(request)
     if not user:
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+        return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401)
     with Session(engine, expire_on_commit=False) as s:
         patient = s.get(Patient, patient_id)
         if not patient:
