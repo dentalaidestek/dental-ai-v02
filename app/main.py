@@ -5910,12 +5910,44 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         else:
             return JSONResponse({"ok": False, "error": "Bu işlem mevcut danışmanlık durumunda uygulanamaz."}, status_code=409) if wants_json else HTMLResponse("Geçersiz işlem.", status_code=400)
         s.add(case)
+        notification_events: list[RealtimeEvent] = []
+        if case.status == "EXPERT_COMPLETED":
+            _, notice_event, _ = _notify_user(
+                s, user_id=case.requester_user_id, actor_user_id=user.id,
+                notice_type="CONSULTATION_COMPLETION_CONFIRMATION", title="Danışmanlık tamamlanmak üzere",
+                message="Uzman danışmanlığı tamamlandı olarak işaretledi. Onayınız veya devam talebiniz bekleniyor.",
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:completion-confirmation", target_url=f"/expert-support/cases/{case.id}",
+            )
+            if notice_event:
+                notification_events.append(notice_event)
+        elif user.id == case.requester_user_id:
+            notification_events.extend(_resolve_notifications(
+                s, user_id=case.requester_user_id, notice_type="CONSULTATION_COMPLETION_CONFIRMATION",
+                related_type="consultation_case", related_id=case.id,
+            ))
+            if case.status == "COMPLETED":
+                title, message, notice_type = "Danışmanlık tamamlandı", "Talep sahibi danışmanlığın tamamlandığını onayladı.", "CONSULTATION_COMPLETED"
+            elif case.status == "ACTIVE":
+                title, message, notice_type = "Danışmanlığa devam edilecek", "Talep sahibi danışmanlığa devam etmek istedi.", "CONSULTATION_CONTINUE"
+            else:
+                title, message, notice_type = "Danışmanlık için inceleme açıldı", "Talep sahibi danışmanlıkla ilgili inceleme başlattı.", "CONSULTATION_DISPUTE"
+            _, notice_event, _ = _notify_user(
+                s, user_id=case.expert_user_id, actor_user_id=user.id,
+                notice_type=notice_type, title=title, message=message,
+                related_type="consultation_case", related_id=case.id,
+                dedup_key=f"consultation:{case.id}:{case.status}:{now.isoformat()}", target_url=f"/expert-support/cases/{case.id}",
+            )
+            if notice_event:
+                notification_events.append(notice_event)
         realtime_events = _record_case_status_realtime_events(s, case)
         s.commit()
         status = case.status
     await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
+    for notification_event in notification_events:
+        await _publish_realtime_event(notification_event)
     if wants_json:
         return JSONResponse({"ok": True, "status": status})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
