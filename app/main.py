@@ -1524,7 +1524,15 @@ def contact_submit(request: Request, subject: str = Form(...), message: str = Fo
             if not case or not _support_case_is_selectable(s,case,user.id):
                 return HTMLResponse("Bu konuşmayı destek talebine bağlama yetkiniz yok.",status_code=403)
             linked_case_id=case.id
-        s.add(SupportTicket(user_id=user.id if user else None,subject=subject,message=message,case_id=linked_case_id));s.commit()
+        ticket=SupportTicket(user_id=user.id if user else None,subject=subject,message=message,case_id=linked_case_id)
+        s.add(ticket);s.flush()
+        admin_events=[]
+        if user:
+            admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
+            for admin in admins:
+                admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_CREATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject}))
+        s.commit()
+    # POST route is sync; durable events are enough for reconnect/sync and avoid a second polling system.
     return RedirectResponse("/support-request?sent=1",status_code=303)
 
 
