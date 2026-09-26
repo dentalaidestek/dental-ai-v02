@@ -182,11 +182,25 @@ class SupportTicketMessage(SQLModel, table=True):
 
 
 class AdminNotice(SQLModel, table=True):
+    """Durable non-message notification.
+
+    Messages keep their own unread/inbox lifecycle.  This table is for
+    actionable/system notifications that may be delivered through realtime
+    now and Web Push later.
+    """
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
     title: str
     message: str
-    is_read: bool = False
+    is_read: bool = False  # legacy compatibility; read_at is authoritative for new notices
+    notice_type: str = Field(default="ADMIN", index=True)
+    related_type: Optional[str] = Field(default=None, index=True)
+    related_id: Optional[str] = Field(default=None, index=True)
+    dedup_key: Optional[str] = Field(default=None, index=True)
+    target_url: Optional[str] = None
+    status: str = Field(default="ACTIVE", index=True)
+    read_at: Optional[datetime] = Field(default=None, index=True)
+    resolved_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -1190,6 +1204,19 @@ def init_db():
                 if "vision_snapshot_json" not in cols:
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
         if dialect == "postgresql":
+            for statement in (
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS notice_type VARCHAR NOT NULL DEFAULT \'ADMIN\'',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS related_type VARCHAR',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS related_id VARCHAR',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS dedup_key VARCHAR',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS target_url VARCHAR',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT \'ACTIVE\'',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS read_at TIMESTAMP',
+                'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP',
+            ):
+                conn.exec_driver_sql(statement)
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -1202,6 +1229,22 @@ def init_db():
             ):
                 conn.exec_driver_sql(statement)
         elif dialect == "sqlite":
+            adminnotice_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("adminnotice")').fetchall()}
+            adminnotice_additions = {
+                "notice_type": "VARCHAR NOT NULL DEFAULT 'ADMIN'",
+                "related_type": "VARCHAR",
+                "related_id": "VARCHAR",
+                "dedup_key": "VARCHAR",
+                "target_url": "VARCHAR",
+                "status": "VARCHAR NOT NULL DEFAULT 'ACTIVE'",
+                "read_at": "TIMESTAMP",
+                "resolved_at": "TIMESTAMP",
+            }
+            for column, sql_type in adminnotice_additions.items():
+                if column not in adminnotice_cols:
+                    conn.exec_driver_sql(f'ALTER TABLE "adminnotice" ADD COLUMN {column} {sql_type}')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_adminnotice_dedup_key ON "adminnotice" (dedup_key)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminnotice_user_active_created ON "adminnotice" (user_id, status, created_at)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
@@ -4792,8 +4835,16 @@ def account_admin_notices(request: Request):
     user=get_current_user(request)
     if not user: return {"notices":[]}
     with Session(engine, expire_on_commit=False) as s:
-        rows=s.exec(select(AdminNotice).where(AdminNotice.user_id==user.id,AdminNotice.is_read==False).order_by(AdminNotice.created_at.desc())).all()[:5]
-        return {"notices":[{"id":n.id,"title":n.title,"message":n.message,"created_at":n.created_at.isoformat()} for n in rows]}
+        rows=s.exec(select(AdminNotice).where(
+            AdminNotice.user_id==user.id,
+            AdminNotice.status=="ACTIVE",
+            AdminNotice.is_read==False,
+        ).order_by(AdminNotice.created_at.desc())).all()[:5]
+        return {"notices":[{
+            "id":n.id,"title":n.title,"message":n.message,
+            "notice_type":n.notice_type,"target_url":n.target_url,
+            "created_at":n.created_at.isoformat(),
+        } for n in rows]}
 
 
 @app.post("/account/admin-notices/{notice_id}/read")
@@ -4803,7 +4854,10 @@ def account_admin_notice_read(request: Request, notice_id: int):
     with Session(engine, expire_on_commit=False) as s:
         n=s.get(AdminNotice,notice_id)
         if not n or n.user_id!=user.id: return JSONResponse({"ok":False},status_code=404)
-        n.is_read=True;s.add(n);s.commit()
+        n.is_read=True
+        if not n.read_at:
+            n.read_at=_utcnow_naive()
+        s.add(n);s.commit()
     return {"ok":True}
 
 
@@ -5317,6 +5371,105 @@ def _record_realtime_event(session: Session, user_id: int, event_type: str,
 async def _publish_realtime_event(event: RealtimeEvent) -> None:
     """Push an already committed durable event to every active session of its user."""
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
+
+
+def _notify_user(
+    session: Session,
+    *,
+    user_id: int,
+    notice_type: str,
+    title: str,
+    message: str,
+    actor_user_id: Optional[int] = None,
+    related_type: Optional[str] = None,
+    related_id: Optional[object] = None,
+    dedup_key: Optional[str] = None,
+    target_url: Optional[str] = None,
+) -> tuple[Optional[AdminNotice], Optional[RealtimeEvent], bool]:
+    """Create one durable non-message notification and its realtime event.
+
+    Business endpoints decide *when* a notification is warranted.  This helper
+    centralizes storage, actor/self suppression and idempotency.  The caller
+    commits first and publishes the returned realtime event afterwards.
+    """
+    if actor_user_id is not None and actor_user_id == user_id:
+        return None, None, False
+
+    normalized_dedup = (dedup_key or "").strip() or None
+    if normalized_dedup:
+        existing = session.exec(
+            select(AdminNotice).where(AdminNotice.dedup_key == normalized_dedup)
+        ).first()
+        if existing:
+            return existing, None, False
+
+    notice = AdminNotice(
+        user_id=user_id,
+        title=(title or "").strip()[:120],
+        message=(message or "").strip()[:2000],
+        notice_type=(notice_type or "SYSTEM").strip().upper()[:80],
+        related_type=(related_type or "").strip()[:80] or None,
+        related_id=str(related_id)[:120] if related_id is not None else None,
+        dedup_key=normalized_dedup[:240] if normalized_dedup else None,
+        target_url=(target_url or "").strip()[:1000] or None,
+        status="ACTIVE",
+    )
+    session.add(notice)
+    session.flush()
+    event = _record_realtime_event(
+        session,
+        user_id,
+        "NOTICE_CREATED",
+        "notification",
+        notice.id,
+        {
+            "notice_id": notice.id,
+            "notice_type": notice.notice_type,
+            "title": notice.title,
+            "message": notice.message,
+            "target_url": notice.target_url,
+            "related_type": notice.related_type,
+            "related_id": notice.related_id,
+        },
+    )
+    return notice, event, True
+
+
+def _resolve_notifications(
+    session: Session,
+    *,
+    user_id: int,
+    notice_type: Optional[str] = None,
+    related_type: Optional[str] = None,
+    related_id: Optional[object] = None,
+) -> list[RealtimeEvent]:
+    """Resolve matching active notices; resolved notices disappear from active UI."""
+    query = select(AdminNotice).where(
+        AdminNotice.user_id == user_id,
+        AdminNotice.status == "ACTIVE",
+    )
+    if notice_type:
+        query = query.where(AdminNotice.notice_type == notice_type.strip().upper())
+    if related_type:
+        query = query.where(AdminNotice.related_type == related_type)
+    if related_id is not None:
+        query = query.where(AdminNotice.related_id == str(related_id))
+
+    now = _utcnow_naive()
+    events: list[RealtimeEvent] = []
+    for notice in session.exec(query).all():
+        notice.status = "RESOLVED"
+        notice.resolved_at = now
+        session.add(notice)
+        events.append(_record_realtime_event(
+            session,
+            user_id,
+            "NOTICE_RESOLVED",
+            "notification",
+            notice.id,
+            {"notice_id": notice.id, "notice_type": notice.notice_type},
+        ))
+    return events
 
 
 def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessage, sender: Optional[User],
@@ -8240,10 +8393,17 @@ async def admin_center_notice(request: Request, user_id: int, title: str = Form(
     with Session(engine, expire_on_commit=False) as s:
         target=s.get(User,user_id)
         if not target: return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
-        s.add(AdminNotice(user_id=user_id,title=title[:120],message=message[:2000]))
-        notice_event=_record_realtime_event(s,user_id,"NOTICE_CREATED","admin_notice",None,{"title":title[:120],"message":message[:2000]})
+        _, notice_event, _ = _notify_user(
+            s,
+            user_id=user_id,
+            actor_user_id=admin.id,
+            notice_type="ADMIN",
+            title=title,
+            message=message,
+        )
         s.add(AdminAuditLog(admin_user_id=admin.id,action="NOTICE_SENT",target_user_id=user_id,detail=title[:120]));s.commit()
-    await _publish_realtime_event(notice_event)
+    if notice_event:
+        await _publish_realtime_event(notice_event)
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
