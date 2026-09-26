@@ -5668,6 +5668,15 @@ def _sync_expert_capacity(
         message = "Açık vaka sınırınıza ulaştığınız için müsaitlik durumunuz otomatik olarak Meşgul olarak değiştirildi. Yeni vaka kabul edebilmek için açık vaka sayınızın azalması gerekir."
         cycle = "full"
     elif open_count < limit and profile.availability == "BUSY":
+        capacity_managed_busy = session.exec(select(AdminNotice).where(
+            AdminNotice.user_id == expert_user_id,
+            AdminNotice.notice_type == "EXPERT_CAPACITY_FULL",
+            AdminNotice.related_type == "expert_profile",
+            AdminNotice.related_id == str(profile.id),
+            AdminNotice.status == "ACTIVE",
+        )).first()
+        if not capacity_managed_busy:
+            return []
         policy_state = _expert_policy_state(session, expert_user_id)
         if not _is_verified_expert(session, expert_user_id) or _expert_is_blocked(policy_state, now):
             return []
@@ -6049,6 +6058,12 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             )
             if notice_event:
                 notification_events.append(notice_event)
+        if case.status in {"COMPLETED", "DISPUTE"}:
+            for stale_type in ("CONSULTATION_ACCEPTED", "CONSULTATION_PROPOSAL_ACCEPTED", "CONSULTATION_CONTINUE"):
+                notification_events.extend(_resolve_notifications(
+                    s, user_id=case.expert_user_id if stale_type != "CONSULTATION_ACCEPTED" else case.requester_user_id,
+                    notice_type=stale_type, related_type="consultation_case", related_id=case.id,
+                ))
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
         realtime_events = _record_case_status_realtime_events(s, case)
         s.commit()
