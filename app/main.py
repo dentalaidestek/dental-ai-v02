@@ -360,6 +360,9 @@ class ExpertProfile(SQLModel, table=True):
     publications_text: Optional[str] = None
     consultation_price: int = 0
     availability: str = Field(default="PASSIVE", index=True)
+    # True only while BUSY was set automatically because open-case capacity was full.
+    # Manual, timeout, policy and admin availability changes must clear this marker.
+    capacity_auto_busy: bool = Field(default=False, index=True)
     max_active_cases: int = 5
     phone: Optional[str] = Field(default=None, index=True)
     phone_verified: bool = False
@@ -1222,6 +1225,7 @@ def init_db():
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone VARCHAR',
+                'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS capacity_auto_busy BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE',
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS credential_document_path VARCHAR',
                 'ALTER TABLE "expertprofile" ADD COLUMN IF NOT EXISTS credential_document_name VARCHAR',
@@ -1257,6 +1261,7 @@ def init_db():
             expert_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("expertprofile")').fetchall()}
             additions = {
                 "phone": "VARCHAR",
+                "capacity_auto_busy": "BOOLEAN NOT NULL DEFAULT 0",
                 "phone_verified": "BOOLEAN NOT NULL DEFAULT 0",
                 "credential_document_path": "VARCHAR",
                 "credential_document_name": "VARCHAR",
@@ -3869,6 +3874,7 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
     expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == case.expert_user_id)).first()
     if expert_profile and expert_profile.availability == "AVAILABLE":
         expert_profile.availability = "BUSY"
+        expert_profile.capacity_auto_busy = False  # timeout/policy BUSY is never capacity-managed
         expert_profile.updated_at = now
         session.add(expert_profile)
     _consultation_event(session, case.id, "EXPERT_TIMEOUT", case.expert_user_id, {"deadline": case.expert_response_deadline.isoformat()})
@@ -4262,6 +4268,9 @@ async def expert_support_availability_update(request: Request):
                 return JSONResponse({"ok": False, "detail": "Açık vaka sınırına ulaştığınız için şu anda müsait duruma geçemezsiniz."}, status_code=409)
         became_available = availability == "AVAILABLE" and profile.availability != "AVAILABLE"
         profile.availability = availability
+        # This endpoint is an explicit user choice. Never let a later capacity reopen
+        # override a manual BUSY (or treat a manual AVAILABLE as an old auto-BUSY).
+        profile.capacity_auto_busy = False
         profile.updated_at = _utcnow_naive()
         s.add(profile)
         if became_available:
@@ -4423,6 +4432,7 @@ async def expert_support_profile_save(
             profile.application_reviewed_at = None
             profile.verified_at = None
             profile.availability = "PASSIVE"
+            profile.capacity_auto_busy = False
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
         if profile.verification_status != "VERIFIED":
             profile.verification_status = "PENDING"
@@ -5662,20 +5672,16 @@ def _sync_expert_capacity(
 
     if open_count >= limit and profile.availability == "AVAILABLE":
         profile.availability = "BUSY"
+        profile.capacity_auto_busy = True
         profile.updated_at = now
         s_notice_type = "EXPERT_CAPACITY_FULL"
         title = "Müsaitlik durumunuz güncellendi"
         message = "Açık vaka sınırınıza ulaştığınız için müsaitlik durumunuz otomatik olarak Meşgul olarak değiştirildi. Yeni vaka kabul edebilmek için açık vaka sayınızın azalması gerekir."
         cycle = "full"
     elif open_count < limit and profile.availability == "BUSY":
-        capacity_managed_busy = session.exec(select(AdminNotice).where(
-            AdminNotice.user_id == expert_user_id,
-            AdminNotice.notice_type == "EXPERT_CAPACITY_FULL",
-            AdminNotice.related_type == "expert_profile",
-            AdminNotice.related_id == str(profile.id),
-            AdminNotice.status == "ACTIVE",
-        )).first()
-        if not capacity_managed_busy:
+        # Reopen only the BUSY state that this helper itself created for capacity.
+        # Notification lifecycle is deliberately not used as state storage.
+        if not profile.capacity_auto_busy:
             return []
         policy_state = _expert_policy_state(session, expert_user_id)
         if not _is_verified_expert(session, expert_user_id) or _expert_is_blocked(policy_state, now):
@@ -5683,9 +5689,10 @@ def _sync_expert_capacity(
         if policy_state.rules_version != EXPERT_RULES_VERSION or not policy_state.rules_accepted_at:
             return []
         profile.availability = "AVAILABLE"
+        profile.capacity_auto_busy = False
         profile.updated_at = now
         s_notice_type = "EXPERT_CAPACITY_AVAILABLE"
-        title = "Yeni vaka kabulüne yeniden açıldınız"
+        title = "Müsaitlik durumunuz güncellendi"
         message = "Açık vaka sayınız sınırın altına düştüğü için müsaitlik durumunuz otomatik olarak Müsait olarak değiştirildi. Yeni danışmanlık talepleri alabilirsiniz."
         cycle = "available"
     else:
@@ -8685,7 +8692,7 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
     with Session(engine, expire_on_commit=False) as s:
         profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
         if not profile: return HTMLResponse("Uzman profili bulunamadı.",status_code=404)
-        if action == "PAUSE": profile.availability="PASSIVE"
+        if action == "PAUSE": profile.availability="PASSIVE"; profile.capacity_auto_busy=False
         elif action == "RESUME":
             if not _is_verified_expert(s, user_id): return HTMLResponse("Başvurusu ve belgeleri doğrulanmamış uzman aktifleştirilemez.",status_code=409)
             policy_state=_expert_policy_state(s,user_id)
@@ -8693,13 +8700,10 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
                 return HTMLResponse("Uzman güncel vaka kabul kurallarını onaylamadan aktifleştirilemez.",status_code=409)
             if _expert_is_blocked(policy_state):
                 return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.",status_code=409)
-            active_count=len(s.exec(select(ConsultationCase).where(
-                ConsultationCase.expert_user_id==user_id,
-                ConsultationCase.status.in_(["ACTIVE","WAITING_START","EXPERT_COMPLETED"]),
-            )).all())
+            active_count=_expert_open_case_count(s,user_id)
             if active_count>=min(profile.max_active_cases,5):
                 return HTMLResponse("Uzmanın aktif vaka kapasitesi dolu.",status_code=409)
-            profile.availability="AVAILABLE"
+            profile.availability="AVAILABLE"; profile.capacity_auto_busy=False
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+action,target_user_id=user_id));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
@@ -8750,9 +8754,9 @@ async def admin_center_verify(request: Request, profile_id: int, decision: str =
             profile.verified_at=_utcnow_naive()
             profile.availability="PASSIVE"
         elif decision=="REJECT":
-            profile.application_status="REJECTED";profile.verification_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.verified_at=None;profile.availability="PASSIVE"
+            profile.application_status="REJECTED";profile.verification_status="REJECTED";profile.application_reviewed_at=_utcnow_naive();profile.verified_at=None;profile.availability="PASSIVE";profile.capacity_auto_busy=False
         else:
-            profile.application_status="SUBMITTED";profile.verification_status="PENDING";profile.specialty_verified=False;profile.application_reviewed_at=None;profile.verified_at=None;profile.availability="PASSIVE"
+            profile.application_status="SUBMITTED";profile.verification_status="PENDING";profile.specialty_verified=False;profile.application_reviewed_at=None;profile.verified_at=None;profile.availability="PASSIVE";profile.capacity_auto_busy=False
         labels = {
             "APPROVE": ("Uzmanlık başvurunuz onaylandı", "Uzmanlık başvurunuz onaylandı. Uzman profiliniz artık doğrulanmış durumda."),
             "REJECT": ("Uzmanlık başvurunuz sonuçlandı", "Uzmanlık başvurunuz reddedildi. Başvuru bilgilerinizi Uzman Profilim ekranından inceleyebilirsiniz."),
