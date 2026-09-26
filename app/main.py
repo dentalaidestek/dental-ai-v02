@@ -4990,7 +4990,9 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
-        if existing:return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
+        if existing:
+            if wants_json:return JSONResponse({"ok":True,"report_id":existing.id,"case_id":case.id,"already_reported":True})
+            return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
         report=UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None)
         s.add(report);s.flush()
         _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason})
