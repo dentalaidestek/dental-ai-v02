@@ -4953,17 +4953,26 @@ def consultation_unblock_user(request: Request, case_id: int):
     return RedirectResponse(f"/expert-support/cases/{case_id}",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/report")
-def consultation_report_user(request: Request, case_id: int, reason: str = Form(...), detail: str = Form("")):
+async def consultation_report_user(request: Request, case_id: int, reason: str = Form(...), detail: str = Form("")):
     user=get_current_user(request)
     if not user:return RedirectResponse("/login",status_code=303)
     allowed={"HARASSMENT","PROFANITY","SPAM","INAPPROPRIATE","OTHER"}
     if reason not in allowed:return HTMLResponse("Geçersiz bildirim nedeni.",status_code=400)
+    realtime_event=None
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu vaka henüz bildirilebilir bir mesajlaşma içermiyor.",status_code=403)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
-        s.add(UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None))
-        _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason});s.commit()
+        existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
+        if existing:return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
+        report=UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None)
+        s.add(report);s.flush()
+        _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason})
+        # In-chat reports are visible to the other participant, but the private
+        # reason/detail stays admin-only. Menu support tickets never create this event.
+        realtime_event=_record_realtime_event(s,other,"CASE_REPORT_CREATED","consultation_case",case.id,{"case_id":case.id,"report_id":report.id,"message":"Karşı taraf bu görüşmeyle ilgili bir sorun bildirdi."})
+        s.commit()
+    if realtime_event:await _publish_realtime_event(realtime_event)
     return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/message")
