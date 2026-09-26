@@ -3856,7 +3856,10 @@ def admin_consultation_report_review(request: Request, case_id: int):
         s.add(DisputeAccessAudit(case_id=case.id,admin_user_id=user.id,action="REPORT_REVIEW"))
         _consultation_event(s,case.id,"REPORT_ADMIN_ACCESSED",user.id)
         s.commit()
-    return templates.TemplateResponse(request=request,name="admin_consultation_dispute.html",context={"user":user,"case":case,"messages":messages})
+    participant_ids={case.requester_user_id,case.expert_user_id}
+    with Session(engine, expire_on_commit=False) as s:
+        participants={u.id:u for u in s.exec(select(User).where(User.id.in_(participant_ids))).all()}
+    return templates.TemplateResponse(request=request,name="admin_consultation_dispute.html",context={"user":user,"case":case,"messages":messages,"participants":participants,"review_mode":"REPORT"})
 
 @app.get("/admin/consultation-review/{case_id}/message-media/{message_id}")
 def admin_consultation_report_media(request: Request, case_id: int, message_id: int):
@@ -3889,6 +3892,8 @@ def admin_consultation_dispute_review(request: Request, case_id: int):
         s.commit()
     return templates.TemplateResponse(request=request, name="admin_consultation_dispute.html", context={
         "user": user, "case": case, "messages": messages,
+        "participants": {u.id:u for u in s.exec(select(User).where(User.id.in_({case.requester_user_id,case.expert_user_id}))).all()},
+        "review_mode": "DISPUTE",
     })
 
 
