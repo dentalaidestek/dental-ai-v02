@@ -81,6 +81,22 @@ class WebPushContractTests(unittest.TestCase):
         self.assertNotIn("clinical", SW.lower())
         self.assertIn("clients.openWindow", SW)
 
+    def test_incoming_messages_get_push_without_becoming_admin_notices(self):
+        publish = MAIN.split("async def _publish_realtime_event", 1)[1].split("def _notify_user", 1)[0]
+        self.assertIn('event.event_type == "MESSAGE_CREATED"', publish)
+        self.assertIn("_deliver_web_push_for_message(event)", publish)
+        sender = MAIN.split("def _send_web_push_message_sync", 1)[1].split("async def _deliver_web_push_for_message", 1)[0]
+        self.assertIn('if bool(data.get("is_outgoing"))', sender)
+        self.assertIn('"body": "Yeni bir mesajınız var."', sender)
+        self.assertIn('f"/expert-support/cases/{case_id}"', sender)
+        self.assertNotIn("_notify_user(", sender)
+        self.assertIn("class WebPushMessageDelivery", MAIN)
+        self.assertIn('"dentalai-message-" + messageEventId', SW)
+
+    def test_case_created_does_not_add_a_second_push_path(self):
+        publish = MAIN.split("async def _publish_realtime_event", 1)[1].split("def _notify_user", 1)[0]
+        self.assertNotIn('event.event_type == "CASE_CREATED"', publish)
+
     def test_messages_and_bell_contract_remains_separate(self):
         self.assertIn('evt.event_type==="MESSAGE_CREATED"', BASE)
         self.assertIn('evt.event_type==="CASE_CREATED"', BASE)
