@@ -3908,12 +3908,12 @@ def admin_consultation_dispute_review(request: Request, case_id: int):
         if not case or case.status != "DISPUTE" or not case.dispute_opened_at:
             return HTMLResponse("Aktif bir sorun/itiraz incelemesi bulunamadı.", status_code=403)
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
+        participants={u.id:u for u in s.exec(select(User).where(User.id.in_({case.requester_user_id,case.expert_user_id}))).all()}
         s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="VIEW"))
         _consultation_event(s, case.id, "DISPUTE_ADMIN_ACCESSED", user.id)
         s.commit()
     return templates.TemplateResponse(request=request, name="admin_consultation_dispute.html", context={
-        "user": user, "case": case, "messages": messages,
-        "participants": {u.id:u for u in s.exec(select(User).where(User.id.in_({case.requester_user_id,case.expert_user_id}))).all()},
+        "user": user, "case": case, "messages": messages, "participants": participants,
         "review_mode": "DISPUTE",
     })
 
@@ -7618,14 +7618,14 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         admin_support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
         for support_message in admin_support_messages:
             admin_support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
-        ticket_rows=[{"ticket":t,"sender":s.get(User,t.user_id) if t.user_id else None,"messages":admin_support_messages_by_ticket.get(t.id,[])} for t in tickets]
+        ticket_rows=[{"ticket":t,"sender":None,"messages":admin_support_messages_by_ticket.get(t.id,[])} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
         disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
-        report_rows=[{
-            "report": r,
-            "reporter": s.get(User, r.reporter_user_id),
-            "reported": s.get(User, r.reported_user_id),
-        } for r in reports]
+        admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
+        admin_related_user_ids.update(t.user_id for t in tickets if t.user_id)
+        admin_related_users={u.id:u for u in s.exec(select(User).where(User.id.in_(admin_related_user_ids))).all()} if admin_related_user_ids else {}
+        report_rows=[{"report":r,"reporter":admin_related_users.get(r.reporter_user_id),"reported":admin_related_users.get(r.reported_user_id)} for r in reports]
+        for row in ticket_rows:row["sender"]=admin_related_users.get(row["ticket"].user_id) if row["ticket"].user_id else None
         visible_users=users[:100]
         # Storage is intentionally calculated only on user-management views.
         # Other admin sections must not fan out into per-user filesystem/database work.
