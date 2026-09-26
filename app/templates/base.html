@@ -415,7 +415,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         const data=evt.payload||{};
         if(evt.event_type==="MESSAGE_CREATED"&&!data.is_outgoing){if(notify){bumpMessageBadge();showLiveMessage(data);}}
         else if(evt.event_type==="CASE_CREATED"){
-            if(notify){bumpMessageBadge();showLiveMessage({case_id:data.case_id,sender:"Yeni danışmanlık talebi",preview:"Yeni bir danışmanlık talebiniz var."});}
+            // A consultation request is a workflow event, not an unread chat message.
+            // Keep the Messages view/card realtime without corrupting the message unread badge.
             if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
