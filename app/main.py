@@ -4127,6 +4127,10 @@ def program_create(
         s.add(event)
         s.flush()
         _sync_program_reminder(s, event)
+        _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
         s.commit()
     _wake_program_reminder_worker()
 
@@ -4355,6 +4359,10 @@ def program_complete(request: Request, event_id: int):
         event.updated_at = _utcnow_naive()
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
+        _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
         s.commit()
 
     return RedirectResponse("/program?completed=1", status_code=303)
@@ -4374,6 +4382,10 @@ def program_delete(request: Request, event_id: int):
         event.updated_at = _utcnow_naive()
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
+        _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
         s.commit()
 
     return RedirectResponse("/program?deleted=1", status_code=303)
