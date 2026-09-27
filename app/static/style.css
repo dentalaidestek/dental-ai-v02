@@ -4805,6 +4805,7 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .directory-head p,.mobile-choice-head p,.tooth-directory-hero p{margin:5px 0 0;color:#64748b;font-size:.9rem}
 .directory-kicker{display:block;margin-bottom:3px;color:#2563eb;font-size:.68rem;font-weight:850;text-transform:uppercase;letter-spacing:.08em}
 .directory-add{flex:none;padding:10px 14px;border-radius:12px;background:linear-gradient(135deg,#3383ff,#2457df);color:#fff;text-decoration:none;font-size:.82rem;font-weight:850;box-shadow:0 7px 18px rgba(37,99,235,.18)}
+.directory-add,.directory-add:link,.directory-add:visited{color:#fff!important}
 .directory-search{height:48px;display:flex;align-items:center;gap:9px;padding:0 13px;margin-bottom:13px;border:1px solid #dbe5f1;border-radius:14px;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.04)}
 .directory-search .ui-icon{width:19px;height:19px;color:#64748b;flex:none}
 .directory-search input{width:100%;min-width:0;height:100%;padding:0;border:0!important;outline:0;background:transparent;font:inherit;font-size:.84rem;box-shadow:none!important}
