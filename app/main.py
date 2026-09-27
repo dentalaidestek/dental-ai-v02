@@ -6118,6 +6118,25 @@ async def account_push_unsubscribe(request: Request):
     return response
 
 
+def _expire_seen_program_reminders(session: Session, user_id: int, now: Optional[datetime] = None) -> int:
+    """Hide seen Program reminders 24h later without touching other notice types."""
+    current = now or _utcnow_naive()
+    cutoff = current - timedelta(hours=24)
+    rows = session.exec(select(AdminNotice).where(
+        AdminNotice.user_id == user_id,
+        AdminNotice.status == "ACTIVE",
+        AdminNotice.notice_type == "PROGRAM_REMINDER",
+        AdminNotice.is_read == True,
+        AdminNotice.read_at != None,
+        AdminNotice.read_at <= cutoff,
+    )).all()
+    for notice in rows:
+        notice.status = "RESOLVED"
+        notice.resolved_at = current
+        session.add(notice)
+    return len(rows)
+
+
 @app.get("/account/notifications")
 def account_notifications(request: Request):
     """Compact notification-center payload; messages intentionally stay separate."""
@@ -6125,6 +6144,8 @@ def account_notifications(request: Request):
     if not user:
         return {"notifications": [], "unread_count": 0}
     with Session(engine, expire_on_commit=False) as s:
+        if _expire_seen_program_reminders(s, user.id):
+            s.commit()
         unread_count = s.exec(
             select(func.count(AdminNotice.id)).where(
                 AdminNotice.user_id == user.id,
@@ -6167,6 +6188,28 @@ def account_notification_read(request: Request, notice_id: int):
         s.add(notice)
         s.commit()
     return {"ok": True}
+
+
+@app.post("/account/notifications/read-all")
+def account_notifications_read_all(request: Request):
+    """Opening the notification center marks the currently active notices as seen."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        rows = s.exec(select(AdminNotice).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+        )).all()
+        for notice in rows:
+            notice.is_read = True
+            if not notice.read_at:
+                notice.read_at = now
+            s.add(notice)
+        s.commit()
+    return {"ok": True, "read_count": len(rows)}
 
 
 @app.get("/account/admin-notices")
@@ -7328,7 +7371,10 @@ async def realtime_sync_socket(websocket: WebSocket):
                 with Session(engine,expire_on_commit=False) as s:
                     events=s.exec(select(RealtimeEvent).where(RealtimeEvent.user_id==user.id,RealtimeEvent.id>after_id)
                                   .order_by(RealtimeEvent.id.asc()).limit(500)).all()
-                for event in events: await websocket.send_json(_realtime_event_payload(event))
+                for event in events:
+                    payload = _realtime_event_payload(event)
+                    payload["replay"] = True
+                    await websocket.send_json(payload)
                 await websocket.send_json({"type":"resume_complete","last_event_id":events[-1].id if events else after_id,
                                            "has_more":len(events)==500})
     except WebSocketDisconnect:
