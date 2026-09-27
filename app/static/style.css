@@ -1458,6 +1458,11 @@ h2 .ui-icon {
         border-radius: 11px;
         white-space: nowrap;
     }
+    .program-header > div { min-width: 0; }
+    .program-header p {
+        max-width: 230px;
+        color: #64748b;
+    }
 
     .program-toolbar {
         padding: 7px;
@@ -1529,13 +1534,9 @@ h2 .ui-icon {
     .program-field textarea { min-height: 88px; }
     .program-more-options { margin-top: 13px; }
     .program-form-actions {
-        position: sticky;
-        bottom: calc(66px + env(safe-area-inset-bottom));
-        z-index: 5;
         margin: 14px -6px -6px;
         padding: 8px 6px 6px;
-        background: rgba(255,255,255,.96);
-        backdrop-filter: blur(10px);
+        background: #fff;
     }
     .program-form-actions .btn {
         min-height: 46px;
