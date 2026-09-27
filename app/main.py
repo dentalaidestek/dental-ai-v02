@@ -10450,7 +10450,7 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
             linked_ticket.status="CLOSED" if status=="CLOSED" else ("IN_PROGRESS" if status=="IN_PROGRESS" else "OPEN")
             linked_ticket.updated_at=_utcnow_naive();s.add(linked_ticket)
             if changed:
-                report_support_event=_record_realtime_event(s,report.reporter_user_id,"SUPPORT_TICKET_UPDATED","support_ticket",linked_ticket.id,{"ticket_id":linked_ticket.id,"status":linked_ticket.status,"requires_fragment":True,"has_reply":False,"source_type":"REPORT","report_id":report.id})
+                report_support_event=_record_realtime_event(s,report.reporter_user_id,"SUPPORT_TICKET_UPDATED","support_ticket",linked_ticket.id,{"ticket_id":linked_ticket.id,"status":linked_ticket.status,"requires_fragment":False,"has_reply":False,"source_type":"REPORT","report_id":report.id})
         if changed:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
             message=f"Gönderdiğiniz bildirim artık {labels[status].lower()} durumunda."
