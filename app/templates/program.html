@@ -61,7 +61,7 @@
                             <button type="submit" class="link-button">Tamamla</button>
                         </form>
                         {% endif %}
-                        <form method="post" action="/program/{{ event.id }}/delete" onsubmit="return confirm('Bu program kaydı kaldırılsın mı?');">
+                        <form method="post" action="/program/{{ event.id }}/delete">
                             <button type="submit" class="link-button danger-link">Sil</button>
                         </form>
                     </div></details>
