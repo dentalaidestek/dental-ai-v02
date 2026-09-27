@@ -64,3 +64,14 @@ def test_partial_navigation_only_toggles_whole_nav_visibility():
     )
     for token in forbidden:
         assert token not in BASE
+
+
+def test_mobile_expert_header_cannot_claim_full_viewport_width():
+    mobile_start = STYLE.index("/* Mobile header: keep expert profile action alive")
+    mobile_end = STYLE.index("/* Program mobile planner", mobile_start)
+    mobile_css = re.sub(r"\s+", " ", STYLE[mobile_start:mobile_end])
+    assert "flex:1 0 100%" not in mobile_css
+    assert "flex:0 1 auto" in mobile_css
+    assert "width:auto!important" in mobile_css
+    assert "min-width:0!important" in mobile_css
+    assert "overflow:hidden" in mobile_css
