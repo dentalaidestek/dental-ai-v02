@@ -218,3 +218,25 @@ def test_realtime_cursor_tolerates_cross_process_commit_reordering():
     assert "if(id>lastEventId)" in BASE
     assert "id&&id<=lastEventId" not in BASE
     assert "lastEventId-syncOverlap" in BASE
+
+
+def test_ws_resume_history_is_marked_replay_and_silent_in_client():
+    assert 'payload["replay"] = True' in MAIN
+    assert 'notify:evt?.replay!==true' in BASE
+    assert 'if(notify){bumpMessageBadge();showLiveMessage(data);}' in BASE
+
+
+def test_notification_center_open_marks_active_notices_seen():
+    assert '@app.post("/account/notifications/read-all")' in MAIN
+    assert 'if(open)markNotificationsSeen();' in BASE
+    assert 'fetch("/account/notifications/read-all",{method:"POST"' in BASE
+    assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
+
+
+def test_seen_program_reminders_expire_without_touching_other_notices():
+    helper = MAIN.split("def _expire_seen_program_reminders", 1)[1].split('@app.get("/account/notifications")', 1)[0]
+    assert 'AdminNotice.notice_type == "PROGRAM_REMINDER"' in helper
+    assert "AdminNotice.is_read == True" in helper
+    assert "AdminNotice.read_at <= cutoff" in helper
+    assert 'notice.status = "RESOLVED"' in helper
+    assert "timedelta(hours=24)" in helper
