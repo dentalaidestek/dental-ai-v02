@@ -39,7 +39,7 @@
     </a>
 </section>
 
-  <section class="visual-program">
+  <section class="visual-program" id="dashboardProgram">
     <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program">Tümünü Gör →</a></div>
     {% if dashboard_event %}
     <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
@@ -71,5 +71,35 @@
 
   <div class="visual-notice">ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
-<script>document.body.classList.add('dashboard-home');(()=>{const list=document.getElementById('dashboardPatientList'),empty=document.getElementById('dashboardPatientEmpty');if(!list)return;const sync=()=>{while(list.children.length>3)list.lastElementChild.remove();if(empty)empty.hidden=Boolean(list.children.length)};window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='visual-patient-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.innerHTML='<span class="visual-avatar" data-patient-field="initials"></span><span><strong data-patient-field="display_name"></strong><small data-patient-field="age_label"></small></span><b>›</b>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}else list.prepend(row);sync();});window.addEventListener('dai:patient-deleted',sync);sync();})();</script>
+<script>document.body.classList.add('dashboard-home');(()=>{const list=document.getElementById('dashboardPatientList'),empty=document.getElementById('dashboardPatientEmpty');if(!list)return;const sync=()=>{while(list.children.length>3)list.lastElementChild.remove();if(empty)empty.hidden=Boolean(list.children.length)};window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='visual-patient-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.innerHTML='<span class="visual-avatar" data-patient-field="initials"></span><span><strong data-patient-field="display_name"></strong><small data-patient-field="age_label"></small></span><b>›</b>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}else list.prepend(row);sync();});window.addEventListener('dai:patient-deleted',sync);sync();})();  function escapeHtml(value){
+    return String(value ?? "").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+  function applyProgramSnapshot(data){
+    if(!data||data.payload_version!==1)return;
+    const root=document.getElementById("dashboardProgram");if(!root)return;
+    const event=data.dashboard_event;
+    const today=data.dashboard_event_label==="Bugün";
+    const head=root.querySelector(".visual-section-head h2");
+    if(head)head.textContent=today?"Bugünkü Program":"Yaklaşan Program";
+    root.querySelectorAll(":scope > .visual-row, :scope > .visual-empty").forEach(el=>el.remove());
+    if(event){
+      const row=document.createElement("a");row.className="visual-row";row.href="/program/"+encodeURIComponent(event.id)+"/edit";
+      const when=new Date(event.start_local);
+      const time=Number.isNaN(when.getTime())?"":String(when.getHours()).padStart(2,"0")+":"+String(when.getMinutes()).padStart(2,"0");
+      const detail=[event.patient_name,event.type_label].filter(Boolean).map(escapeHtml).join(" · ");
+      row.innerHTML='<span class="visual-time">'+escapeHtml(time)+'</span><span><strong>'+escapeHtml(event.title)+'</strong><small>'+detail+'</small></span><b>›</b>';
+      root.appendChild(row);
+    }else{
+      const empty=document.createElement("div");empty.className="visual-empty";
+      empty.innerHTML='<span class="empty-icon">▦</span><span>'+(today?"Bugün için program bulunmuyor.":"Yaklaşan program bulunmuyor.")+'</span><a href="/program/new">Programa Ekle</a>';
+      root.appendChild(empty);
+    }
+  }
+  window.addEventListener("dai:sync-event",event=>{
+    const sync=event.detail;
+    if(sync&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(sync.event_type)){
+      applyProgramSnapshot(sync.payload);
+    }
+  });
+</script>
 {% endblock %}
