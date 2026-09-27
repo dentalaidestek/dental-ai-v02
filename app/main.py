@@ -7076,6 +7076,9 @@ def _web_push_configured() -> bool:
 def _web_push_copy(notice_type: str) -> str:
     kind = (notice_type or "").upper()
     if kind == "PROGRAM_REMINDER": return "Programınızdaki yaklaşan kayıt için hatırlatmanız var."
+    if kind == "SUPPORT_MESSAGE": return "Destek talebinizde yeni bir mesaj var."
+    if kind == "SUPPORT_TICKET_UPDATE": return "Destek talebinizin durumu güncellendi."
+    if kind == "REPORT_STATUS": return "Gönderdiğiniz bildirimin durumu güncellendi."
     if kind == "CONSULTATION_REQUEST": return "Yeni danışmanlık talebiniz var."
     if kind == "CONSULTATION_PROPOSAL": return "Başlangıç öneriniz için onay bekleniyor."
     if "DEADLINE" in kind or "EXPIRED" in kind: return "Danışmanlık işleminiz için süreyle ilgili yeni bir bildiriminiz var."
@@ -10386,7 +10389,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
 async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
-    if status not in {"IN_PROGRESS","ANSWERED","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
+    if status not in {"IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
     reply=reply.strip()[:4000]
     if reply:return HTMLResponse("Destek mesajı ayrı konuşma alanından gönderilmelidir.",status_code=400)
     notice_event=None;user_status_event=None;admin_events=[]
@@ -10399,7 +10402,7 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
         changed=ticket.status!=status
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
         if changed and ticket.user_id:
-            labels={"IN_PROGRESS":"inceleniyor","ANSWERED":"sonuçlandı","CLOSED":"kapatıldı"}
+            labels={"IN_PROGRESS":"inceleniyor","CLOSED":"kapatıldı"}
             message=f"Destek talebiniz {labels[status]}."
             _, notice_event, _ = _notify_user(
                 s,
@@ -10417,7 +10420,7 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
                 s,ticket.user_id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,
                 {"ticket_id":ticket.id,"status":status,"requires_fragment":False,"has_reply":False},
             )
-        action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
+        action="SUPPORT_CLOSED" if status=="CLOSED" else "SUPPORT_IN_PROGRESS"
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status,"requires_fragment":False,"has_reply":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     if notice_event:await _publish_realtime_event(notice_event)
@@ -10436,6 +10439,7 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
     with Session(engine, expire_on_commit=False) as s:
         report=s.get(UserReport,report_id)
         if not report:return HTMLResponse("Bildirim bulunamadı.",status_code=404)
+        if report.status=="CLOSED" and status!="CLOSED":return HTMLResponse("Sonuçlandırılmış bildirim yeniden açılamaz.",status_code=409)
         changed=report.status!=status
         report.status=status;s.add(report)
         linked_ticket=s.exec(select(SupportTicket).where(SupportTicket.source_type=="REPORT",SupportTicket.source_id==report.id)).first()
