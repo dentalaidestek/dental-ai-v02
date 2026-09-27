@@ -1331,6 +1331,49 @@ def _dashboard_next_schedule_occurrence(
     return next_event
 
 
+def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
+    """Small owner-scoped snapshot used to patch the dashboard without a follow-up GET."""
+    local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    next_event = _dashboard_next_schedule_occurrence(
+        session, user_id, local_now, local_now + timedelta(days=90)
+    )
+    snapshot = None
+    if next_event:
+        patient = next_event.get("patient")
+        snapshot = {
+            "id": next_event["id"],
+            "title": next_event["title"],
+            "start_local": next_event["start_local"].isoformat(),
+            "type_label": next_event["type_label"],
+            "patient_name": (
+                f"{patient.first_name or ''} {patient.last_name or ''}".strip()
+                if patient else ""
+            ),
+        }
+    return {
+        "payload_version": 1,
+        "dashboard_event": snapshot,
+        "dashboard_event_label": (
+            "Bugün"
+            if next_event and next_event["start_local"].date() == local_now.date()
+            else "Yaklaşan"
+        ),
+    }
+
+
+def _record_program_realtime_event(
+    session: Session, user_id: int, event_type: str, event_id: Optional[int] = None
+) -> RealtimeEvent:
+    return _record_realtime_event(
+        session,
+        user_id,
+        event_type,
+        "schedule_event",
+        event_id,
+        _program_dashboard_realtime_payload(session, user_id),
+    )
+
+
 def _program_range(view: str, focus_date: date):
     view = view if view in {"today", "week", "month"} else "week"
     if view == "today":
