@@ -10296,21 +10296,25 @@ async def admin_center_broadcast(request: Request, title: str = Form(...), messa
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.get(ADMIN_CENTER_PATH + "/support-fragment", response_class=HTMLResponse)
-def admin_center_support_fragment(request: Request, section: str = "support"):
+def admin_center_support_fragment(request: Request, section: str = "support", cursor: Optional[int] = None):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("",status_code=403)
     with Session(engine, expire_on_commit=False) as s:
         if section=="complaints":
-            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+            rq=select(UserReport)
+            if cursor is not None:rq=rq.where(UserReport.id < cursor)
+            reports=s.exec(rq.order_by(UserReport.id.desc()).limit(25)).all()
             report_ticket_by_report=_ensure_report_support_tickets(s,reports)
-            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
+            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.id.desc()).limit(25)).all()
             user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
             users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
             report_ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
             report_unread=_support_unread_map(s,report_ticket_ids,"ADMIN")
             rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id),"unread_count":report_unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
             return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH,"report_ticket_by_report":report_ticket_by_report})
-        tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
+        tq=select(SupportTicket).where(SupportTicket.source_type=="SUPPORT")
+        if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
+        tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(25)).all()
         ids=[t.id for t in tickets if t.id is not None]
         by_ticket={ticket_id:[] for ticket_id in ids}
         user_ids={t.user_id for t in tickets if t.user_id}
