@@ -75,7 +75,7 @@
 <aside class="admin-pro-menu">
 <a class="{{ 'active' if section=='home' else '' }}" href="{{admin_path}}?section=home">⌂ Ana Sayfa</a>
 <strong>KULLANICILAR</strong>
-<a href="{{admin_path}}?section=users">Kullanıcılar</a><a href="{{admin_path}}?section=experts">Uzmanlar</a><a href="{{admin_path}}?section=approvals">Onay Bekleyenler {% if pending_rows %}<i>{{pending_rows|length}}</i>{% endif %}</a><a href="{{admin_path}}?section=bans">Ban İşlemleri</a><a href="{{admin_path}}?section=search">Kullanıcı Ara</a>
+<a href="{{admin_path}}?section=users">Kullanıcılar</a><a href="{{admin_path}}?section=experts">Uzmanlar</a><a href="{{admin_path}}?section=approvals">Onay Bekleyenler {% if pending_rows %}<i>{{pending_count}}</i>{% endif %}</a><a href="{{admin_path}}?section=bans">Ban İşlemleri</a><a href="{{admin_path}}?section=search">Kullanıcı Ara</a>
 <strong>İLETİŞİM</strong>
 <a href="{{admin_path}}?section=complaints">Şikayet / Sorun Bildirimleri {% if open_report_count %}<i>{{open_report_count}}</i>{% endif %}</a><a href="{{admin_path}}?section=support">Destek Talepleri</a><a href="{{admin_path}}?section=broadcast">Toplu Bildirim Gönder</a><a href="{{admin_path}}?section=notice">Kullanıcıya Özel Bildirim</a>
 <strong>SİTE YÖNETİMİ</strong>
@@ -88,7 +88,7 @@
 <main class="admin-pro-main">
 {% if section=='home' %}
 <div class="admin-welcome"><div><small>Hoş geldin,</small><h1>{{user.display_name}}</h1><p>Dental AI Yönetim Merkezi</p></div><b>YÖNETİCİ</b></div>
-<div class="admin-pro-metrics"><a href="{{admin_path}}?section=users"><small>Toplam Kullanıcı</small><b>{{users_count}}</b></a><a href="{{admin_path}}?section=experts"><small>Uzmanlar</small><b>{{experts_count}}</b></a><a href="{{admin_path}}?section=approvals"><small>Onay Bekleyen</small><b>{{pending_rows|length}}</b></a><a href="{{admin_path}}?section=support"><small>Açık Destek</small><b>{{open_support_count}}</b></a></div>
+<div class="admin-pro-metrics"><a href="{{admin_path}}?section=users"><small>Toplam Kullanıcı</small><b>{{users_count}}</b></a><a href="{{admin_path}}?section=experts"><small>Uzmanlar</small><b>{{experts_count}}</b></a><a href="{{admin_path}}?section=approvals"><small>Onay Bekleyen</small><b>{{pending_count}}</b></a><a href="{{admin_path}}?section=support"><small>Açık Destek</small><b>{{open_support_count}}</b></a></div>
 <section class="admin-pro-card"><div class="admin-card-head"><h2>Son Yönetici İşlemleri</h2><a href="{{admin_path}}?section=logs">Tümünü Gör</a></div>{% for a in audits[:6] %}<div class="admin-line"><span><b>{{a.action}}</b><small>{{a.detail or ('Kullanıcı #' ~ (a.target_user_id or '-'))}}</small></span><time>{{a.created_at.strftime('%d.%m %H:%M')}}</time></div>{% else %}<p class="admin-empty">Henüz işlem yok.</p>{% endfor %}</section>
 <div class="admin-quick"><a href="{{admin_path}}?section=approvals">Uzman Onayla</a><a href="{{admin_path}}?section=search">Kullanıcı Ara</a><a href="{{admin_path}}?section=broadcast">Toplu Bildirim</a><a href="{{admin_path}}?section=maintenance">Bakım Modu</a></div>
 {% elif section in ['users','search','bans','notice'] %}
