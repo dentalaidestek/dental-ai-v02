@@ -468,7 +468,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         else if(evt.event_type==="CASE_CREATED"){
             // A fresh consultation request is also an unread Messages inbox item for the expert.
             if(notify){bumpMessageBadge();showLiveMessage({case_id:data.case_id,sender:"Yeni danışmanlık talebi",preview:"Yeni bir danışmanlık talebiniz var."});}
-            if(location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
+            if(notify&&location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
@@ -479,7 +479,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
             const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
         }
-        window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        // Catch-up replays durable history only to reconcile cursors/state.
+        // Do not let page-level live handlers interpret historical MESSAGE/CASE
+        // events as newly-arrived activity (which can resurrect unread badges).
+        if(notify)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         try{
