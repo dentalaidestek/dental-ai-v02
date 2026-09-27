@@ -10324,16 +10324,9 @@ def admin_center_support_fragment(request: Request, section: str = "support", cu
         if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
         tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(25)).all()
         ids=[t.id for t in tickets if t.id is not None]
-        by_ticket={ticket_id:[] for ticket_id in ids}
         user_ids={t.user_id for t in tickets if t.user_id}
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
-        states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ids),SupportTicketReadState.reader_role=="ADMIN")).all() if ids else []
-        cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in states}
-        unread_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ids),SupportTicketMessage.sender_role!="ADMIN").group_by(SupportTicketMessage.ticket_id)).all() if ids else []
-        total_user_messages={ticket_id:int(count or 0) for ticket_id,count in unread_rows}
-        read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ids),SupportTicketMessage.sender_role!="ADMIN",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="ADMIN")).group_by(SupportTicketMessage.ticket_id)).all() if ids else []
-        read_user_messages={ticket_id:int(count or 0) for ticket_id,count in read_rows}
-        unread_by_ticket={ticket_id:max(0,total_user_messages.get(ticket_id,0)-read_user_messages.get(ticket_id,0))+(1 if cursors.get(ticket_id,-1)<0 else 0) for ticket_id in ids}
+        unread_by_ticket=_support_unread_map(s,ids,"ADMIN") if ids else {}
         rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread_by_ticket.get(t.id,0)} for t in tickets]
         return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
 
