@@ -2346,9 +2346,9 @@ def support_request_fragment(request: Request):
         support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
         support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0)) for ticket_id in ticket_ids}
         latest_id_rows=s.exec(select(SupportTicketMessage.ticket_id,func.max(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
-            latest_ids=[message_id for _,message_id in latest_id_rows if message_id is not None]
-            latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
-            latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
+        latest_ids=[message_id for _,message_id in latest_id_rows if message_id is not None]
+        latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
+        latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
         support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
 
