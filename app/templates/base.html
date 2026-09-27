@@ -488,7 +488,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
-        else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}\n        else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
+        else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}
+        else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
         else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
