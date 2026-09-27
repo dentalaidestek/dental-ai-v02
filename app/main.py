@@ -81,7 +81,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import String, delete, func, or_ as sa_or, text
+from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -10090,7 +10090,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
                     | func.lower(func.coalesce(SupportTicket.message,"")).like(needle)
                     | func.lower(func.coalesce(User.display_name,"")).like(needle)
                     | func.lower(func.coalesce(User.username,"")).like(needle)
-                    | func.cast(SupportTicket.id,String).like(f"%{q.strip()}%")
+                    | cast(SupportTicket.id,String).like(f"%{q.strip()}%")
                 )
             if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
             tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(page_size+1)).all()
@@ -10351,7 +10351,7 @@ def admin_center_support_fragment(request: Request, section: str = "support", cu
                 | func.lower(func.coalesce(SupportTicket.message,"")).like(needle)
                 | func.lower(func.coalesce(User.display_name,"")).like(needle)
                 | func.lower(func.coalesce(User.username,"")).like(needle)
-                | func.cast(SupportTicket.id,String).like(f"%{q.strip()}%")
+                | cast(SupportTicket.id,String).like(f"%{q.strip()}%")
             )
         if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
         tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(26)).all()
