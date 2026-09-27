@@ -2055,9 +2055,17 @@ def profile_photo(request: Request, user_id: int):
     with Session(engine, expire_on_commit=False) as s:
         target = s.get(User, user_id)
         reference = target.profile_photo_path if target else None
-    if not storage_exists(reference):
+    if not reference:
         return HTMLResponse("Profil fotoğrafı bulunamadı.", status_code=404)
-    path = storage_ensure_local(reference)
+    # Avoid a remote HEAD followed by a remote GET on a cold instance. The
+    # materialization call already proves existence and fills the local cache.
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Profil fotoğrafı bulunamadı.", status_code=404)
+    except Exception:
+        logger.exception("Profile photo could not be materialized: user_id=%s", user_id)
+        return HTMLResponse("Profil fotoğrafı geçici olarak yüklenemedi.", status_code=503)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
