@@ -7,7 +7,7 @@
     <title>{{ title or "DENTAL-AI" }}</title>
     <link rel="stylesheet" href="/static/style.css?v=20260927-notifications-v3">
     <link rel="stylesheet" href="/static/design-system.css?v=20260927-notification-controls-v1">
-    <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260914-v1">
+    <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260927-home-perf1">
 </head>
 <body class="dai-app-shell">
 <nav class="topbar">
@@ -510,24 +510,31 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
-    // catchUpEvents already reconciles the Messages unread count. Fetch the
-    // notification center once after catch-up instead of duplicating both
-    // header queries on every page load.
-    catchUpEvents().finally(()=>{refreshNotificationCenter();connectSync();});
+    // Establish the durable realtime socket immediately. Its resume message
+    // already replays recent events, so do not block that connection behind the
+    // HTTP catch-up request. Reconcile badges/history just after first paint.
+    connectSync();
+    const startDeferredSync=()=>catchUpEvents().finally(refreshNotificationCenter);
+    if("requestIdleCallback" in window)requestIdleCallback(startDeferredSync,{timeout:1200});
+    else setTimeout(startDeferredSync,0);
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(syncSocket?.readyState===WebSocket.OPEN)syncSocket.send(JSON.stringify({type:"visibility",visible:!document.hidden}));if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
 }
 </script>
 <script>
-fetch("/site/runtime-config",{credentials:"same-origin"}).then(r=>r.ok?r.json():{}).then(cfg=>{
- if(typeof applySiteConfig==="function")applySiteConfig(cfg);
- else {
-   if(cfg.site_name)document.querySelectorAll(".brand-title,.app-brand-title").forEach(el=>el.textContent=cfg.site_name);
-   if(cfg.home_title){const el=document.querySelector(".visual-welcome h1");if(el)el.textContent=cfg.home_title;}
-   if(cfg.home_subtitle){const el=document.querySelector(".visual-welcome p");if(el)el.textContent=cfg.home_subtitle;}
- }
-}).catch(()=>{});
+(()=>{
+ const loadRuntimeConfig=()=>fetch("/site/runtime-config",{credentials:"same-origin"}).then(r=>r.ok?r.json():{}).then(cfg=>{
+  if(typeof applySiteConfig==="function")applySiteConfig(cfg);
+  else {
+    if(cfg.site_name)document.querySelectorAll(".brand-title,.app-brand-title").forEach(el=>el.textContent=cfg.site_name);
+    if(cfg.home_title){const el=document.querySelector(".visual-welcome h1");if(el)el.textContent=cfg.home_title;}
+    if(cfg.home_subtitle){const el=document.querySelector(".visual-welcome p");if(el)el.textContent=cfg.home_subtitle;}
+  }
+ }).catch(()=>{});
+ if("requestIdleCallback" in window)requestIdleCallback(loadRuntimeConfig,{timeout:1500});
+ else setTimeout(loadRuntimeConfig,0);
+})();
 </script>
 </body>
 </html>
