@@ -1810,6 +1810,7 @@ def init_db():
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS source_id INTEGER')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
+            conn.exec_driver_sql('DELETE FROM "supportticket" a USING "supportticket" b WHERE a.source_type = \'REPORT\' AND a.source_id IS NOT NULL AND a.source_type=b.source_type AND a.source_id=b.source_id AND a.id>b.id AND NOT EXISTS (SELECT 1 FROM "supportticketmessage" m WHERE m.ticket_id=a.id)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_supportticket_source ON "supportticket" (source_type, source_id) WHERE source_id IS NOT NULL')
             for statement in (
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS notice_type VARCHAR NOT NULL DEFAULT \'ADMIN\'',
@@ -1855,6 +1856,7 @@ def init_db():
                 conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN source_id INTEGER')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
+            conn.exec_driver_sql('DELETE FROM "supportticket" WHERE source_type=\'REPORT\' AND source_id IS NOT NULL AND id NOT IN (SELECT MIN(id) FROM "supportticket" WHERE source_type=\'REPORT\' AND source_id IS NOT NULL GROUP BY source_type,source_id) AND id NOT IN (SELECT DISTINCT ticket_id FROM "supportticketmessage")')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_supportticket_source ON "supportticket" (source_type, source_id) WHERE source_id IS NOT NULL')
             adminnotice_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("adminnotice")').fetchall()}
             adminnotice_additions = {
