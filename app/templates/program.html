@@ -73,14 +73,14 @@
                     </div>
                     <details class="program-event-menu"><summary aria-label="Etkinlik seçenekleri">⋮</summary><div class="program-event-actions">
                         <a href="/program/{{ event.id }}/edit">✎&nbsp; Düzenle</a>
-                        {% if not event.is_recurring %}<button type="button" class="link-button program-copy-open" data-event-id="{{ event.id }}" data-event-title="{{ event.title|e }}" data-event-time="{{ event.start_local.strftime('%H:%M') }}">▣&nbsp; Diğer güne kopyala</button>{% endif %}
                         {% if event.status != 'COMPLETED' and not event.is_recurring %}
                         <form method="post" action="/program/{{ event.id }}/complete">
-                            <button type="submit" class="link-button">Tamamla</button>
+                            <button type="submit" class="link-button">✓&nbsp; Tamamla</button>
                         </form>
                         {% endif %}
+                        {% if not event.is_recurring %}<button type="button" class="link-button program-copy-open" data-event-id="{{ event.id }}" data-event-title="{{ event.title|e }}" data-event-time="{{ event.start_local.strftime('%H:%M') }}{% if event.end_local %} – {{ event.end_local.strftime('%H:%M') }}{% endif %}">▣&nbsp; Diğer güne kopyala</button>{% endif %}
                         <form method="post" action="/program/{{ event.id }}/delete">
-                            <button type="submit" class="link-button danger-link">Sil</button>
+                            <button type="submit" class="link-button danger-link">♲&nbsp; Sil</button>
                         </form>
                     </div></details>
                 </article>
