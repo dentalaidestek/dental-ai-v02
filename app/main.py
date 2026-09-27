@@ -10035,71 +10035,70 @@ def admin_first_setup(request: Request, token: str = Form(...), password: str = 
 
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
 def admin_center(request: Request, q: str = "", section: str = "home"):
-    user = _admin_only(request)
-    if not user:
-        return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error": None})
-    with Session(engine, expire_on_commit=False) as s:
-        query = select(User).order_by(User.created_at.desc())
-        users = s.exec(query).all()
-        deleted_user_ids = {
-            row.deleted_user_id for row in s.exec(select(DeletedAccountEmail)).all()
-        }
-        users = [u for u in users if u.id not in deleted_user_ids]
-        if q.strip():
-            needle=q.strip().casefold()
-            users=[u for u in users if needle in (u.username or "").casefold() or needle in (u.display_name or "").casefold() or needle in (u.email or "").casefold()]
-        pending = s.exec(select(ExpertProfile).where(ExpertProfile.application_status == "SUBMITTED").order_by(ExpertProfile.updated_at.desc())).all()
-        pending_rows=[{"profile":p,"expert":s.get(User,p.user_id)} for p in pending]
-        notices=s.exec(select(AdminNotice).order_by(AdminNotice.created_at.desc())).all()[:20]
-        audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())).all()[:30]
-        patients_count=len(s.exec(select(Patient)).all())
-        analyses_count=len(s.exec(select(Analysis)).all())
-        expert_profiles=[
-            p for p in s.exec(select(ExpertProfile).order_by(ExpertProfile.updated_at.desc())).all()
-            if p.user_id not in deleted_user_ids
-        ]
-        cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
-        payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
-        tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
-        ticket_ids=[t.id for t in tickets if t.id is not None]
-        admin_support_unread_by_ticket={}
-        if section=="support" and ticket_ids:
-            support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="ADMIN")).all()
-            support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
-            support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="ADMIN").group_by(SupportTicketMessage.ticket_id)).all()
-            support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
-            support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="ADMIN",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="ADMIN")).group_by(SupportTicketMessage.ticket_id)).all()
-            support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
-            admin_support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0))+(1 if support_cursors.get(ticket_id,-1)<0 else 0) for ticket_id in ticket_ids}
-        ticket_rows=[{"ticket":t,"sender":None,"messages":[],"unread_count":admin_support_unread_by_ticket.get(t.id,0)} for t in tickets]
-        reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
-        report_ticket_by_report=_ensure_report_support_tickets(s,reports)
-        disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
-        admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
-        admin_related_user_ids.update(t.user_id for t in tickets if t.user_id)
-        admin_related_users={u.id:u for u in s.exec(select(User).where(User.id.in_(admin_related_user_ids))).all()} if admin_related_user_ids else {}
-        report_ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
-        report_unread=_support_unread_map(s,report_ticket_ids,"ADMIN") if section=="complaints" else {}
-        report_rows=[{"report":r,"reporter":admin_related_users.get(r.reporter_user_id),"reported":admin_related_users.get(r.reported_user_id),"unread_count":report_unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
-        for row in ticket_rows:row["sender"]=admin_related_users.get(row["ticket"].user_id) if row["ticket"].user_id else None
-        visible_users=users[:100]
-        # Storage is intentionally calculated only on user-management views.
-        # Other admin sections must not fan out into per-user filesystem/database work.
-        storage_by_user={}
-        if section in {"users","search","bans","notice"}:
-            storage_by_user=_admin_user_storage_summaries(s,visible_users)
-        admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
-        settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
-        completed_payments=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
-        gross_revenue=sum(p.amount for p in completed_payments)
-        platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed_payments)
+    user=_admin_only(request)
+    if not user:return templates.TemplateResponse(request=request,name="admin_gate.html",context={"error":None})
     section=section if section in ADMIN_SECTIONS else "home"
-    return templates.TemplateResponse(request=request, name="admin_center.html", context={
-        "user":user,"users":users[:100],"pending_rows":pending_rows,"notices":notices,"audits":audits,
+    # Admin is section-scoped: opening one screen must not hydrate every other screen.
+    users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
+    patients_count=0;analyses_count=0;gross_revenue=0;platform_revenue=0
+    with Session(engine,expire_on_commit=False) as s:
+        # Small navigation/home counters use COUNT, never full-table materialization.
+        pending_count=int(s.exec(select(func.count(ExpertProfile.id)).where(ExpertProfile.application_status=="SUBMITTED")).one() or 0)
+        open_report_count=int(s.exec(select(func.count(UserReport.id)).where(UserReport.status!="CLOSED")).one() or 0)
+        if section=="home":
+            users_count=int(s.exec(select(func.count(User.id))).one() or 0)
+            experts_count=int(s.exec(select(func.count(ExpertProfile.id))).one() or 0)
+            open_support_count=int(s.exec(select(func.count(SupportTicket.id)).where(SupportTicket.source_type=="SUPPORT",SupportTicket.status!="CLOSED")).one() or 0)
+            patients_count=int(s.exec(select(func.count(Patient.id))).one() or 0)
+            analyses_count=int(s.exec(select(func.count(Analysis.id))).one() or 0)
+            audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(6)).all()
+        else:
+            users_count=experts_count=open_support_count=0
+        if section in {"users","search","bans","notice"}:
+            query=select(User)
+            deleted_ids=select(DeletedAccountEmail.deleted_user_id)
+            query=query.where(~User.id.in_(deleted_ids))
+            if section=="bans":query=query.where(User.is_active==False)
+            if q.strip():
+                needle=f"%{q.strip().lower()}%"
+                query=query.where(func.lower(func.coalesce(User.username,"")).like(needle)|func.lower(func.coalesce(User.display_name,"")).like(needle)|func.lower(func.coalesce(User.email,"")).like(needle))
+            users=s.exec(query.order_by(User.created_at.desc()).limit(100)).all()
+            storage_by_user=_admin_user_storage_summaries(s,users)
+        if section in {"experts","approvals"}:
+            eq=select(ExpertProfile)
+            if section=="approvals":eq=eq.where(ExpertProfile.application_status=="SUBMITTED")
+            expert_profiles=s.exec(eq.order_by(ExpertProfile.updated_at.desc()).limit(100)).all()
+        if section=="support":
+            tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc()).limit(100)).all()
+            ids=[t.id for t in tickets if t.id is not None]
+            user_ids={t.user_id for t in tickets if t.user_id}
+            related={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
+            unread=_support_unread_map(s,ids,"ADMIN") if ids else {}
+            ticket_rows=[{"ticket":t,"sender":related.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread.get(t.id,0)} for t in tickets]
+        if section=="complaints":
+            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc()).limit(100)).all()
+            report_ticket_by_report=_ensure_report_support_tickets(s,reports)
+            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc()).limit(100)).all()
+            ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
+            related={u.id:u for u in s.exec(select(User).where(User.id.in_(ids))).all()} if ids else {}
+            ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
+            unread=_support_unread_map(s,ticket_ids,"ADMIN") if ticket_ids else {}
+            report_rows=[{"report":r,"reporter":related.get(r.reporter_user_id),"reported":related.get(r.reported_user_id),"unread_count":unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
+        if section=="revenue":
+            payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc()).limit(200)).all()
+            completed=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
+            gross_revenue=sum(p.amount for p in completed);platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed)
+        if section=="logs":audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(100)).all()
+        if section=="admins":admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc()).all()
+        if section in {"settings","homepage","texts","announcements","faq","legal","maintenance","email","security","backup"}:
+            settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
+    return templates.TemplateResponse(request=request,name="admin_center.html",context={
+        "user":user,"users":users,"pending_rows":[None]*pending_count,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
+        "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,
     })
 
 
