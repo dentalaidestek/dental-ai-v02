@@ -1146,7 +1146,20 @@ def _group_program_occurrences(occurrences):
 
 
 def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
-    """Return only a patient that belongs to the current user's private workspace."""
+    if not patient_id:
+        return None
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        return None
+    if user.role != "ADMIN" and patient.owner_user_id != user.id:
+        return None
+    if user.role == "ADMIN" and patient.owner_user_id not in {None, user.id}:
+        return None
+    return patient
+
+
+def _owned_program_patient(session: Session, user: User, patient_id: Optional[int]):
+    """Program records may only reference a patient in the user's private workspace."""
     if not patient_id:
         return None
     patient = session.get(Patient, patient_id)
@@ -1204,7 +1217,7 @@ def _validate_schedule_input(
             parsed_patient_id = int(patient_id)
         except ValueError:
             return None, "Hasta seçimini kontrol edin."
-        patient = _owned_patient(session, user, parsed_patient_id)
+        patient = _owned_program_patient(session, user, parsed_patient_id)
         if not patient:
             return None, "Bu hastayı program kaydına bağlama yetkiniz yok."
 
