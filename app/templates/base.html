@@ -500,7 +500,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         // lifecycle events still reconcile open Program/dashboard state after a
         // disconnect. Other stateful event types already have dedicated handlers.
         const replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(evt.event_type);
-        if(notify||replayProgramState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        const replaySupportState=evt.replay===true&&["SUPPORT_TICKET_CREATED","SUPPORT_TICKET_UPDATED","SUPPORT_MESSAGE_CREATED","USER_REPORT_CREATED","USER_REPORT_UPDATED"].includes(evt.event_type);
+        if(notify||replayProgramState||replaySupportState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         try{
