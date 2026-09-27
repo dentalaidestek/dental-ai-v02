@@ -2306,6 +2306,17 @@ def _support_message_payload(ticket: SupportTicket, message: SupportTicketMessag
     }
 
 
+def _support_unread_map(session: Session, ticket_ids: list[int], reader_role: str) -> dict[int, int]:
+    if not ticket_ids:return {}
+    states=session.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role==reader_role)).all()
+    cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in states}
+    totals_rows=session.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!=reader_role).group_by(SupportTicketMessage.ticket_id)).all()
+    totals={ticket_id:int(count or 0) for ticket_id,count in totals_rows}
+    read_rows=session.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!=reader_role,SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role==reader_role)).group_by(SupportTicketMessage.ticket_id)).all()
+    reads={ticket_id:int(count or 0) for ticket_id,count in read_rows}
+    return {ticket_id:max(0,totals.get(ticket_id,0)-reads.get(ticket_id,0))+(1 if reader_role=="ADMIN" and cursors.get(ticket_id,-1)<0 else 0) for ticket_id in ticket_ids}
+
+
 def _ensure_report_support_tickets(session: Session, reports: list[UserReport]) -> dict[int, SupportTicket]:
     """Give moderation reports the same private support-conversation primitive as support requests."""
     report_ids=[r.id for r in reports if r.id is not None]
@@ -9992,7 +10003,9 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
         admin_related_user_ids.update(t.user_id for t in tickets if t.user_id)
         admin_related_users={u.id:u for u in s.exec(select(User).where(User.id.in_(admin_related_user_ids))).all()} if admin_related_user_ids else {}
-        report_rows=[{"report":r,"reporter":admin_related_users.get(r.reporter_user_id),"reported":admin_related_users.get(r.reported_user_id)} for r in reports]
+        report_ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
+        report_unread=_support_unread_map(s,report_ticket_ids,"ADMIN") if section=="complaints" else {}
+        report_rows=[{"report":r,"reporter":admin_related_users.get(r.reporter_user_id),"reported":admin_related_users.get(r.reported_user_id),"unread_count":report_unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
         for row in ticket_rows:row["sender"]=admin_related_users.get(row["ticket"].user_id) if row["ticket"].user_id else None
         visible_users=users[:100]
         # Storage is intentionally calculated only on user-management views.
@@ -10201,7 +10214,9 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
             disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
             user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
             users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
-            rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id)} for r in reports]
+            report_ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
+            report_unread=_support_unread_map(s,report_ticket_ids,"ADMIN")
+            rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id),"unread_count":report_unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
             return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH,"report_ticket_by_report":report_ticket_by_report})
         tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
         ids=[t.id for t in tickets if t.id is not None]
@@ -10269,7 +10284,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
             _, notice_event, _ = _notify_user(
                 s,user_id=ticket.user_id,actor_user_id=admin.id,
                 notice_type="SUPPORT_MESSAGE",title="Destek Ekibinden yeni mesaj",
-                message="Destek talebinizde yeni bir mesaj var.",
+                message="Uzman bildiriminiz hakkında yeni bir mesaj var." if ticket.source_type=="REPORT" else "Destek talebinizde yeni bir mesaj var.",
                 related_type="support_ticket",related_id=ticket.id,
                 dedup_key=f"support-message:{support_message.id}",target_url="/support-request",
             )
