@@ -10034,10 +10034,12 @@ def admin_first_setup(request: Request, token: str = Form(...), password: str = 
 
 
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
-def admin_center(request: Request, q: str = "", section: str = "home"):
+def admin_center(request: Request, q: str = "", section: str = "home", page: int = 1):
     user=_admin_only(request)
     if not user:return templates.TemplateResponse(request=request,name="admin_gate.html",context={"error":None})
     section=section if section in ADMIN_SECTIONS else "home"
+    page=max(1,int(page or 1));page_size=25;offset=(page-1)*page_size
+    has_more=False
     # Admin is section-scoped: opening one screen must not hydrate every other screen.
     users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
     patients_count=0;analyses_count=0;gross_revenue=0;platform_revenue=0
@@ -10062,21 +10064,25 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
             if q.strip():
                 needle=f"%{q.strip().lower()}%"
                 query=query.where(func.lower(func.coalesce(User.username,"")).like(needle)|func.lower(func.coalesce(User.display_name,"")).like(needle)|func.lower(func.coalesce(User.email,"")).like(needle))
-            users=s.exec(query.order_by(User.created_at.desc()).limit(25)).all()
+            users=s.exec(query.order_by(User.created_at.desc()).offset(offset).limit(page_size+1)).all()
+            has_more=len(users)>page_size;users=users[:page_size]
             storage_by_user=_admin_user_storage_summaries(s,users)
         if section in {"experts","approvals"}:
             eq=select(ExpertProfile)
             if section=="approvals":eq=eq.where(ExpertProfile.application_status=="SUBMITTED")
-            expert_profiles=s.exec(eq.order_by(ExpertProfile.updated_at.desc()).limit(25)).all()
+            expert_profiles=s.exec(eq.order_by(ExpertProfile.updated_at.desc()).offset(offset).limit(page_size+1)).all()
+            has_more=len(expert_profiles)>page_size;expert_profiles=expert_profiles[:page_size]
         if section=="support":
-            tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc()).limit(25)).all()
+            tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc()).offset(offset).limit(page_size+1)).all()
+            has_more=len(tickets)>page_size;tickets=tickets[:page_size]
             ids=[t.id for t in tickets if t.id is not None]
             user_ids={t.user_id for t in tickets if t.user_id}
             related={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
             unread=_support_unread_map(s,ids,"ADMIN") if ids else {}
             ticket_rows=[{"ticket":t,"sender":related.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread.get(t.id,0)} for t in tickets]
         if section=="complaints":
-            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc()).limit(25)).all()
+            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc()).offset(offset).limit(page_size+1)).all()
+            has_more=len(reports)>page_size;reports=reports[:page_size]
             report_ticket_by_report=_ensure_report_support_tickets(s,reports)
             disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc()).limit(25)).all()
             ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
@@ -10085,10 +10091,12 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
             unread=_support_unread_map(s,ticket_ids,"ADMIN") if ticket_ids else {}
             report_rows=[{"report":r,"reporter":related.get(r.reporter_user_id),"reported":related.get(r.reported_user_id),"unread_count":unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
         if section=="revenue":
-            payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc()).limit(50)).all()
+            payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc()).offset(offset).limit(page_size+1)).all()
+            has_more=len(payments)>page_size;payments=payments[:page_size]
             completed=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
             gross_revenue=sum(p.amount for p in completed);platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed)
-        if section=="logs":audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(50)).all()
+        if section=="logs":
+            audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).offset(offset).limit(page_size+1)).all();has_more=len(audits)>page_size;audits=audits[:page_size]
         if section=="admins":admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc()).all()
         if section in {"settings","homepage","texts","announcements","faq","legal","maintenance","email","security","backup"}:
             settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
@@ -10099,6 +10107,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
         "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,
+        "page":page,"page_size":page_size,"has_more":has_more,
     })
 
 
