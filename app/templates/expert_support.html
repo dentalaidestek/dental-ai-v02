@@ -65,4 +65,19 @@
   {% endfor %}
   </div>
 </div>
+<script>
+(()=>{
+  let refreshPromise=null;
+  async function refreshExpertDirectory(){
+    if(refreshPromise)return refreshPromise;
+    refreshPromise=fetch(location.href,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"XMLHttpRequest"}})
+      .then(r=>{if(!r.ok)throw new Error("directory refresh failed");return r.text();})
+      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-grid"),current=document.querySelector(".expert-grid");if(next&&current)current.replaceWith(next);})
+      .catch(()=>{})
+      .finally(()=>{refreshPromise=null;});
+    return refreshPromise;
+  }
+  window.addEventListener("dai:profile-updated",e=>{const id=Number(e.detail?.user_id||0);if(id&&document.querySelector('img[data-profile-user-id="'+id+'"],a[href^="/expert-support/expert/'+id+'"]'))refreshExpertDirectory();});
+})();
+</script>
 {% endblock %}
