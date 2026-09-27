@@ -4969,7 +4969,7 @@ async def expert_support_request_create(
         _, notice_event, _ = _notify_user(
             s, user_id=expert_user_id, actor_user_id=user.id,
             notice_type="CONSULTATION_REQUEST", title="Yeni danışmanlık talebi",
-            message="Yeni bir danışmanlık talebiniz var. Yanıt süresi dolmadan talebi inceleyin.",
+            message=f"{user.display_name} size yeni bir danışmanlık talebi gönderdi. Yanıt süresi dolmadan talebi inceleyin.",
             related_type="consultation_case", related_id=case.id,
             dedup_key=f"consultation:{case.id}:request", target_url=f"/expert-support/cases/{case.id}",
         )
@@ -5642,7 +5642,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             _, notice_event, _ = _notify_user(
                 s, user_id=case.requester_user_id, actor_user_id=user.id,
                 notice_type="CONSULTATION_REJECTED", title="Danışmanlık talebi yanıtlandı",
-                message="Uzman danışmanlık talebinizi kabul etmedi.",
+                message=f"{user.display_name} danışmanlık talebinizi kabul etmedi.",
                 related_type="consultation_case", related_id=case.id,
                 dedup_key=f"consultation:{case.id}:rejected", target_url=f"/expert-support/cases/{case.id}",
             )
@@ -5650,7 +5650,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             _, notice_event, _ = _notify_user(
                 s, user_id=case.requester_user_id, actor_user_id=user.id,
                 notice_type="CONSULTATION_ACCEPTED", title="Danışmanlık talebiniz kabul edildi",
-                message="Uzman talebinizi kabul etti ve danışmanlık başlatıldı.",
+                message=f"{user.display_name} danışmanlık talebinizi kabul etti. Görüşme başlatıldı.",
                 related_type="consultation_case", related_id=case.id,
                 dedup_key=f"consultation:{case.id}:accepted-now", target_url=f"/expert-support/cases/{case.id}",
             )
@@ -5658,7 +5658,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             _, notice_event, _ = _notify_user(
                 s, user_id=case.requester_user_id, actor_user_id=user.id,
                 notice_type="CONSULTATION_PROPOSAL", title="Uzman başlangıç süresi önerdi",
-                message=f"Uzman danışmanlık için {case.proposed_start_label or 'bir başlangıç süresi'} önerdi. Onayınız bekleniyor.",
+                message=f"{user.display_name} danışmanlık için {case.proposed_start_label or 'bir başlangıç süresi'} önerdi. Onayınız bekleniyor.",
                 related_type="consultation_case", related_id=case.id,
                 dedup_key=f"consultation:{case.id}:proposal:{case.proposed_at.isoformat() if case.proposed_at else ''}", target_url=f"/expert-support/cases/{case.id}",
             )
@@ -5706,9 +5706,9 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         notification_events = _resolve_notifications(s, user_id=case.requester_user_id, notice_type="CONSULTATION_PROPOSAL", related_type="consultation_case", related_id=case.id)
         notification_events.extend(_resolve_notifications(s, user_id=case.requester_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
         if rejected:
-            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_REJECTED", "Başlangıç önerisi reddedildi", "Talep sahibi önerdiğiniz başlangıç süresini kabul etmedi."
+            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_REJECTED", "Başlangıç önerisi reddedildi", f"{user.display_name} önerdiğiniz başlangıç süresini kabul etmedi."
         else:
-            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_ACCEPTED", "Başlangıç önerisi kabul edildi", "Talep sahibi önerdiğiniz başlangıç süresini kabul etti."
+            notice_type, notice_title, notice_message = "CONSULTATION_PROPOSAL_ACCEPTED", "Başlangıç önerisi kabul edildi", f"{user.display_name} önerdiğiniz başlangıç süresini kabul etti."
         _, notice_event, _ = _notify_user(
             s, user_id=case.expert_user_id, actor_user_id=user.id,
             notice_type=notice_type, title=notice_title, message=notice_message,
