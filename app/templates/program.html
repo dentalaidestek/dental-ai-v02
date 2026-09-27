@@ -81,14 +81,30 @@
 </div>
 <script>
 (function () {
-  const page = document.querySelector('.program-page');
-  if (!page) return;
+  if (window.__dentalProgramBound) return;
+  window.__dentalProgramBound = true;
 
+  function programPage() { return document.querySelector('.program-page'); }
   function closeMenus() {
-    page.querySelectorAll('.program-event-menu[open]').forEach((menu) => menu.removeAttribute('open'));
+    programPage()?.querySelectorAll('.program-event-menu[open]').forEach((menu) => menu.removeAttribute('open'));
+  }
+  async function swapProgram(url, pushHistory = false) {
+    const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+    if (!response.ok) throw new Error('Program güncellenemedi');
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const next = doc.querySelector('.program-page');
+    const current = programPage();
+    if (!next || !current) throw new Error('Program görünümü bulunamadı');
+    current.replaceWith(next);
+    if (pushHistory) history.pushState({}, '', response.url);
+    else history.replaceState({}, '', response.url);
+    window.dispatchEvent(new Event('program:updated'));
   }
 
-  page.addEventListener('click', (event) => {
+  document.addEventListener('click', async (event) => {
+    const page = programPage();
+    if (!page || !page.contains(event.target)) return;
     const summary = event.target.closest('.program-event-menu summary');
     if (summary) {
       page.querySelectorAll('.program-event-menu[open]').forEach((menu) => {
@@ -97,32 +113,31 @@
       return;
     }
     if (!event.target.closest('.program-event-menu')) closeMenus();
+
+    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a');
+    if (!nav) return;
+    event.preventDefault();
+    try { await swapProgram(nav.href, true); }
+    catch (_) { location.href = nav.href; }
   });
 
-  async function refreshProgram(url) {
-    const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-    if (!response.ok) throw new Error('Program güncellenemedi');
-    const html = await response.text();
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const next = doc.querySelector('.program-page');
-    if (!next) throw new Error('Program görünümü bulunamadı');
-    page.replaceWith(next);
-    history.replaceState({}, '', response.url);
-    window.dispatchEvent(new Event('program:updated'));
-  }
-
-  page.addEventListener('submit', async (event) => {
+  document.addEventListener('submit', async (event) => {
+    const page = programPage();
     const form = event.target.closest('.program-event-actions form');
-    if (!form) return;
+    if (!page || !form || !page.contains(form)) return;
     event.preventDefault();
     if (form.action.endsWith('/delete') && !confirm('Bu program kaydı kaldırılsın mı?')) return;
     try {
       const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}});
       if (!response.ok) throw new Error('İşlem tamamlanamadı');
-      await refreshProgram(response.url || location.href);
+      await swapProgram(response.url || location.href);
     } catch (_) {
-      form.submit();
+      HTMLFormElement.prototype.submit.call(form);
     }
+  });
+
+  window.addEventListener('popstate', () => {
+    if (programPage()) swapProgram(location.href).catch(() => location.reload());
   });
 })();
 </script>
