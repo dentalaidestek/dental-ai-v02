@@ -10034,14 +10034,14 @@ def admin_first_setup(request: Request, token: str = Form(...), password: str = 
 
 
 @app.get(ADMIN_CENTER_PATH, response_class=HTMLResponse)
-def admin_center(request: Request, q: str = "", section: str = "home", cursor: Optional[int] = None):
+def admin_center(request: Request, q: str = "", section: str = "home", cursor: Optional[int] = None, support_status: str = "ALL"):
     user=_admin_only(request)
     if not user:return templates.TemplateResponse(request=request,name="admin_gate.html",context={"error":None})
     section=section if section in ADMIN_SECTIONS else "home"
     page_size=25;has_more=False;next_cursor=None
     # Admin is section-scoped: opening one screen must not hydrate every other screen.
     users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
-    patients_count=0;analyses_count=0;cases_count=0;gross_revenue=0;platform_revenue=0
+    patients_count=0;analyses_count=0;cases_count=0;gross_revenue=0;platform_revenue=0;support_counts={};support_status="ALL" if support_status not in {"ALL","OPEN","WAITING","IN_PROGRESS","ANSWERED","CLOSED"} else support_status
     with Session(engine,expire_on_commit=False) as s:
         # Small navigation/home counters use COUNT, never full-table materialization.
         pending_count=int(s.exec(select(func.count(ExpertProfile.id)).where(ExpertProfile.application_status=="SUBMITTED")).one() or 0)
@@ -10075,7 +10075,23 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             expert_profiles=s.exec(eq.order_by(ExpertProfile.id.desc()).limit(page_size+1)).all()
             has_more=len(expert_profiles)>page_size;expert_profiles=expert_profiles[:page_size];next_cursor=expert_profiles[-1].id if has_more and expert_profiles else None
         if section=="support":
-            tq=select(SupportTicket).where(SupportTicket.source_type=="SUPPORT")
+            support_status=support_status if support_status in {"ALL","OPEN","WAITING","IN_PROGRESS","ANSWERED","CLOSED"} else "ALL"
+            base_support=SupportTicket.source_type=="SUPPORT"
+            count_rows=s.exec(select(SupportTicket.status,func.count(SupportTicket.id)).where(base_support).group_by(SupportTicket.status)).all()
+            support_counts={str(status):int(count or 0) for status,count in count_rows}
+            support_counts["ALL"]=sum(support_counts.values())
+            tq=select(SupportTicket).where(base_support)
+            if support_status=="WAITING":tq=tq.where(SupportTicket.status=="USER_REPLIED")
+            elif support_status!="ALL":tq=tq.where(SupportTicket.status==support_status)
+            if q.strip():
+                needle=f"%{q.strip().lower()}%"
+                tq=tq.outerjoin(User,SupportTicket.user_id==User.id).where(
+                    func.lower(func.coalesce(SupportTicket.subject,"")).like(needle)
+                    | func.lower(func.coalesce(SupportTicket.message,"")).like(needle)
+                    | func.lower(func.coalesce(User.display_name,"")).like(needle)
+                    | func.lower(func.coalesce(User.username,"")).like(needle)
+                    | func.cast(SupportTicket.id,String).like(f"%{q.strip()}%")
+                )
             if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
             tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(page_size+1)).all()
             has_more=len(tickets)>page_size;tickets=tickets[:page_size];next_cursor=tickets[-1].id if has_more and tickets else None
@@ -10124,7 +10140,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
         "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,
-        "page_size":page_size,"has_more":has_more,"next_cursor":next_cursor,
+        "page_size":page_size,"has_more":has_more,"next_cursor":next_cursor,"support_counts":support_counts,"support_status":support_status,
     })
 
 
@@ -10304,7 +10320,7 @@ async def admin_center_broadcast(request: Request, title: str = Form(...), messa
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.get(ADMIN_CENTER_PATH + "/support-fragment", response_class=HTMLResponse)
-def admin_center_support_fragment(request: Request, section: str = "support", cursor: Optional[int] = None):
+def admin_center_support_fragment(request: Request, section: str = "support", cursor: Optional[int] = None, q: str = "", support_status: str = "ALL"):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("",status_code=403)
     with Session(engine, expire_on_commit=False) as s:
@@ -10320,7 +10336,23 @@ def admin_center_support_fragment(request: Request, section: str = "support", cu
             report_unread=_support_unread_map(s,report_ticket_ids,"ADMIN")
             rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id),"unread_count":report_unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
             return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH,"report_ticket_by_report":report_ticket_by_report})
-        tq=select(SupportTicket).where(SupportTicket.source_type=="SUPPORT")
+        support_status=support_status if support_status in {"ALL","OPEN","WAITING","IN_PROGRESS","ANSWERED","CLOSED"} else "ALL"
+        base_support=SupportTicket.source_type=="SUPPORT"
+        count_rows=s.exec(select(SupportTicket.status,func.count(SupportTicket.id)).where(base_support).group_by(SupportTicket.status)).all()
+        support_counts={str(status):int(count or 0) for status,count in count_rows}
+        support_counts["ALL"]=sum(support_counts.values())
+        tq=select(SupportTicket).where(base_support)
+        if support_status=="WAITING":tq=tq.where(SupportTicket.status=="USER_REPLIED")
+        elif support_status!="ALL":tq=tq.where(SupportTicket.status==support_status)
+        if q.strip():
+            needle=f"%{q.strip().lower()}%"
+            tq=tq.outerjoin(User,SupportTicket.user_id==User.id).where(
+                func.lower(func.coalesce(SupportTicket.subject,"")).like(needle)
+                | func.lower(func.coalesce(SupportTicket.message,"")).like(needle)
+                | func.lower(func.coalesce(User.display_name,"")).like(needle)
+                | func.lower(func.coalesce(User.username,"")).like(needle)
+                | func.cast(SupportTicket.id,String).like(f"%{q.strip()}%")
+            )
         if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
         tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(25)).all()
         ids=[t.id for t in tickets if t.id is not None]
@@ -10328,7 +10360,7 @@ def admin_center_support_fragment(request: Request, section: str = "support", cu
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
         unread_by_ticket=_support_unread_map(s,ids,"ADMIN") if ids else {}
         rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread_by_ticket.get(t.id,0)} for t in tickets]
-        return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
+        return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH,"support_counts":support_counts,"support_status":support_status,"q":q})
 
 @app.get(ADMIN_CENTER_PATH + "/support/{ticket_id}/conversation", response_class=JSONResponse)
 def admin_center_support_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
