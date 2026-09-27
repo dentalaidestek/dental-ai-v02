@@ -151,7 +151,7 @@
 {% elif section=='backup' %}
 <section class="admin-pro-card"><h1>Yedekleme</h1><p>Veritabanı yedekleri hosting/veritabanı sağlayıcısı katmanında yönetilmelidir. Bu panel veri silme veya sahte “yedek alındı” işlemi yapmaz.</p></section>
 {% endif %}
-{% if section in ['users','search','bans','notice','experts','approvals','support','complaints','revenue','logs'] and has_more and next_cursor %}<nav class="admin-pager" aria-label="Kayıt devamı"><a href="{{admin_path}}?section={{section}}&cursor={{next_cursor}}{% if q %}&q={{q|urlencode}}{% endif %}">Daha eski 25 kayıt →</a></nav>{% endif %}
+{% if section in ['users','search','bans','notice','experts','approvals','support','complaints','revenue','logs'] and has_more and next_cursor %}<nav class="admin-pager" aria-label="Kayıt devamı"><a href="{{admin_path}}?section={{section}}&cursor={{next_cursor}}{% if q %}&q={{q|urlencode}}{% endif %}{% if section=='support' and support_status and support_status!='ALL' %}&support_status={{support_status|urlencode}}{% endif %}">Daha eski 25 kayıt →</a></nav>{% endif %}
 </main></div></div>
 <script>
 document.querySelectorAll('.admin-pro-menu a').forEach(a=>a.addEventListener('click',()=>document.getElementById('adminPro').classList.remove('menu-open')));
