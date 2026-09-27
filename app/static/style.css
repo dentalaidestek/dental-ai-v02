@@ -5254,3 +5254,11 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .program-event.tone-exam,.program-event.tone-assignment,.program-event.tone-thesis{background:#f7efff!important}.program-event.tone-exam:before,.program-event.tone-assignment:before,.program-event.tone-thesis:before{background:#a855f7!important}
 .program-event.tone-appointment{background:#eef3ff!important}.program-event.tone-appointment:before{background:#6366f1!important}
 .program-event.tone-meeting,.program-event.tone-task,.program-event.tone-personal{background:#f4f7fa!important}.program-event.tone-meeting:before,.program-event.tone-task:before,.program-event.tone-personal:before{background:#64748b!important}
+
+
+/* Program final mobile safety: native datetime controls need full row width on narrow screens. */
+@media(max-width:520px){
+ .program-form-grid{grid-template-columns:minmax(0,1fr)!important}
+ .program-field,.program-field-wide{grid-column:1/-1!important;min-width:0}
+ .program-field input,.program-field select,.program-field textarea{width:100%;max-width:100%;box-sizing:border-box}
+}
