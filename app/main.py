@@ -1030,6 +1030,60 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
     return sorted(occurrences, key=lambda item: item["start_local"])
 
 
+def _dashboard_next_schedule_occurrence(
+    session: Session,
+    user_id: int,
+    range_start: datetime,
+    range_end: datetime,
+):
+    """Return only the next active dashboard occurrence without loading program history."""
+    range_start_utc = _local_to_utc(range_start.strftime("%Y-%m-%dT%H:%M"))
+    range_end_utc = _local_to_utc(range_end.strftime("%Y-%m-%dT%H:%M"))
+
+    # One-off events can be bounded fully in SQL.
+    direct_events = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.owner_user_id == user_id)
+        .where(ScheduleEvent.status == "ACTIVE")
+        .where(ScheduleEvent.recurrence_rule == "NONE")
+        .where(ScheduleEvent.start_at >= range_start_utc)
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .order_by(ScheduleEvent.start_at)
+        .limit(1)
+    ).all()
+
+    # Weekly records may have an old anchor but a future occurrence, so only
+    # recurring anchors that can still produce an occurrence need expansion.
+    recurring_events = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.owner_user_id == user_id)
+        .where(ScheduleEvent.status == "ACTIVE")
+        .where(ScheduleEvent.recurrence_rule == "WEEKLY")
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .order_by(ScheduleEvent.start_at)
+    ).all()
+
+    candidates = []
+    for event in [*direct_events, *recurring_events]:
+        candidates.extend(_event_occurrences(event, range_start, range_end))
+
+    if not candidates:
+        return None
+
+    next_event = min(candidates, key=lambda item: item["start_local"])
+    patient_id = next_event.get("patient_id")
+    next_event["patient"] = (
+        session.exec(
+            select(Patient)
+            .where(Patient.id == patient_id)
+            .where(Patient.owner_user_id == user_id)
+        ).first()
+        if patient_id
+        else None
+    )
+    return next_event
+
+
 def _program_range(view: str, focus_date: date):
     view = view if view in {"today", "week", "month"} else "week"
     if view == "today":
@@ -3801,10 +3855,10 @@ def home(request: Request):
             select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
         ).first()
 
-        # Dashboard needs only the first active occurrence in the next 90 days.
-        # Build the occurrence list once; whether it belongs to today is derived
-        # from that same result so the schedule table/patient map are not queried twice.
-        dashboard_events = _user_schedule_occurrences(
+        # Dashboard needs only one active occurrence. Keep this path separate
+        # from the full Program page so opening the home screen does not load
+        # the user's complete schedule history and patient map.
+        dashboard_event = _dashboard_next_schedule_occurrence(
             s, user.id, local_now, upcoming_end
         )
 
@@ -3812,10 +3866,6 @@ def home(request: Request):
         account_meta.professional_title
         if account_meta and account_meta.professional_title
         else "Diş Hekimi"
-    )
-    dashboard_event = next(
-        (item for item in dashboard_events if item["status"] == "ACTIVE"),
-        None,
     )
     dashboard_event_label = (
         "Bugün"
