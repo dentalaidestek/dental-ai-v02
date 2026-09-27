@@ -4224,7 +4224,7 @@ def program_copy_to_days(
             ).first()
             if duplicate:
                 continue
-            s.add(ScheduleEvent(
+            copied_event = ScheduleEvent(
                 owner_user_id=user.id,
                 event_type=source.event_type,
                 title=source.title,
@@ -4238,8 +4238,12 @@ def program_copy_to_days(
                 recurrence_rule="NONE",
                 recurrence_until=None,
                 timezone_name=source.timezone_name or "Europe/Istanbul",
-            ))
+            )
+            s.add(copied_event)
+            s.flush()
+            _sync_program_reminder(s, copied_event)
         s.commit()
+    _wake_program_reminder_worker()
 
     return RedirectResponse("/program?view=week&day=" + target_dates[0].isoformat(), status_code=303)
 
