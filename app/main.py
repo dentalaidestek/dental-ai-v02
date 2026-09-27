@@ -843,6 +843,13 @@ def _backfill_program_reminder_jobs() -> None:
                 ProgramReminderJob.schedule_event_id == event.id,
                 ProgramReminderJob.status == "PENDING",
             )).all()
+            owner = session.get(User, event.owner_user_id)
+            if not owner or not owner.is_active:
+                for pending in pending_jobs:
+                    pending.status = "CANCELLED"
+                    pending.completed_at = now
+                    session.add(pending)
+                continue
             has_current_pending = False
             for pending in pending_jobs:
                 if _program_reminder_is_current(event, pending):
