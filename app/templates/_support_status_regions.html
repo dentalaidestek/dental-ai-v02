@@ -4,6 +4,7 @@
   {% set history=support_messages_by_ticket.get(x.id,[]) %}
   {% set unread=support_unread_by_ticket.get(x.id,0) %}
   {% set can_reply=support_can_reply_by_ticket.get(x.id,False) %}
+  {% set waiting_for_team=support_waiting_by_ticket.get(x.id,False) %}
   <section class="support-ticket-card" data-support-ticket-id="{{x.id}}" data-support-status="{{x.status}}">
     <div class="support-ticket-head">
       <button type="button" class="support-ticket-open" data-support-toggle="{{x.id}}" aria-expanded="false">
@@ -26,7 +27,7 @@
       {% elif can_reply %}
         <div class="support-turn-note">Destek ekibi size yanıt verdi. Aşağıdaki <b>Yanıtla</b> düğmesini kullanarak bir mesaj gönderebilirsiniz.</div>
         <details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>
-      {% elif x.status!='OPEN' %}
+      {% elif waiting_for_team %}
         <div class="support-turn-note done">Yanıtınız iletildi. Destek ekibi size tekrar yanıt verene kadar yeni mesaj gönderemezsiniz.</div>
       {% else %}
         <div class="support-turn-note">Talebiniz Destek Ekibi tarafından inceleniyor.</div>
