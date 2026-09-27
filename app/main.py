@@ -6681,6 +6681,10 @@ def _send_web_push_sync(notice_id: int) -> None:
         notice = session.get(AdminNotice, notice_id)
         if not notice:
             return
+        if notice.notice_type == "PROGRAM_REMINDER":
+            owner = session.get(User, notice.user_id)
+            if not owner or not owner.is_active:
+                return
         subscriptions = session.exec(select(WebPushSubscription).where(
             WebPushSubscription.user_id == notice.user_id,
             WebPushSubscription.disabled_at == None,
