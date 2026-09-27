@@ -10191,11 +10191,11 @@ def _admin_user_storage_summary(session: Session, user_id: int):
     chat_media = session.exec(select(ConsultationMessage).where(ConsultationMessage.sender_user_id == user_id)).all()
     study_materials = session.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id == user_id)).all()
     patient_ids = [p.id for p in session.exec(select(Patient).where(Patient.owner_user_id == user_id)).all()]
-    analyses = session.exec(select(Analysis)).all()
-    analysis_ids = [a.id for a in analyses if a.patient_id in patient_ids]
-    analysis_assets = [a for a in session.exec(select(ImageAsset)).all() if a.analysis_id in analysis_ids]
+    analyses = session.exec(select(Analysis).where(Analysis.patient_id.in_(patient_ids))).all() if patient_ids else []
+    analysis_ids = [a.id for a in analyses if a.id is not None]
+    analysis_assets = session.exec(select(ImageAsset).where(ImageAsset.analysis_id.in_(analysis_ids))).all() if analysis_ids else []
     guest_ids = [g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id == user_id)).all()]
-    guest_assets = [a for a in session.exec(select(GuestImageAsset)).all() if a.guest_analysis_id in guest_ids]
+    guest_assets = session.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id.in_(guest_ids))).all() if guest_ids else []
     expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == user_id)).first()
     credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
     account_user = session.get(User, user_id)
@@ -10235,11 +10235,11 @@ def admin_center_user_detail(request: Request, user_id: int):
         if not target:return HTMLResponse("Kullanıcı bulunamadı.",status_code=404)
         meta=s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id==user_id)).first()
         profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
-        requested=s.exec(select(ConsultationCase).where(ConsultationCase.requester_user_id==user_id).order_by(ConsultationCase.requested_at.desc())).all()
-        received=s.exec(select(ConsultationCase).where(ConsultationCase.expert_user_id==user_id).order_by(ConsultationCase.requested_at.desc())).all()
-        events=s.exec(select(ConsultationEvent).where(ConsultationEvent.actor_user_id==user_id).order_by(ConsultationEvent.created_at.desc())).all()[:50]
-        notices=s.exec(select(AdminNotice).where(AdminNotice.user_id==user_id).order_by(AdminNotice.created_at.desc())).all()[:30]
-        audits=s.exec(select(AdminAuditLog).where(AdminAuditLog.target_user_id==user_id).order_by(AdminAuditLog.created_at.desc())).all()[:30]
+        requested=s.exec(select(ConsultationCase).where(ConsultationCase.requester_user_id==user_id).order_by(ConsultationCase.id.desc()).limit(25)).all()
+        received=s.exec(select(ConsultationCase).where(ConsultationCase.expert_user_id==user_id).order_by(ConsultationCase.id.desc()).limit(25)).all()
+        events=s.exec(select(ConsultationEvent).where(ConsultationEvent.actor_user_id==user_id).order_by(ConsultationEvent.id.desc()).limit(50)).all()
+        notices=s.exec(select(AdminNotice).where(AdminNotice.user_id==user_id).order_by(AdminNotice.id.desc()).limit(30)).all()
+        audits=s.exec(select(AdminAuditLog).where(AdminAuditLog.target_user_id==user_id).order_by(AdminAuditLog.id.desc()).limit(30)).all()
         performance=_expert_performance(s,user_id) if profile else None
         policy=_expert_policy_state(s,user_id) if profile else None
         storage=_admin_user_storage_summary(s,user_id)
