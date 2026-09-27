@@ -3768,23 +3768,17 @@ def home(request: Request):
         patient_query = select(Patient).order_by(Patient.id.desc())
         if user.role != "ADMIN":
             patient_query = patient_query.where(Patient.owner_user_id == user.id)
-        patients = s.exec(patient_query).all()
+        # Dashboard renders only the three most recent patients. Keep the
+        # initial query bounded instead of loading the user's full patient list.
+        patients = s.exec(patient_query.limit(3)).all()
 
-        analysis_query = (
-            select(Analysis)
-            .join(Patient, Analysis.patient_id == Patient.id)
-            .order_by(Analysis.id.desc())
-        )
-        if user.role != "ADMIN":
-            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
-        analyses = s.exec(analysis_query).all()
-        records = s.exec(select(ClinicalRecord)).all()
-
+        # Dashboard only renders the three most recent guest analyses. Normal
+        # Analysis/ClinicalRecord collections are not consumed by dashboard.html.
         guest_analyses = s.exec(
             select(GuestAnalysis)
             .where(GuestAnalysis.owner_user_id == user.id)
             .order_by(GuestAnalysis.id.desc())
-            .limit(5)
+            .limit(3)
         ).all()
 
         account_meta = s.exec(
@@ -3822,8 +3816,6 @@ def home(request: Request):
         name="dashboard.html",
         context={
             "patients": patients,
-            "analyses": analyses,
-            "records": records,
             "guest_analyses": guest_analyses,
             "professional_title": professional_title,
             "professional_group": _professional_group(professional_title),
