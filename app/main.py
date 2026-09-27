@@ -873,6 +873,18 @@ def _sync_program_reminder(session: Session, event: ScheduleEvent) -> None:
     _cancel_pending_program_reminders(session, event.id)
     _enqueue_next_program_reminder(session, event)
 
+
+def _cancel_user_program_reminders(session: Session, user_id: int) -> None:
+    """Cancel queued Program reminders when an account can no longer receive them."""
+    now = _utcnow_naive()
+    for job in session.exec(select(ProgramReminderJob).where(
+        ProgramReminderJob.owner_user_id == user_id,
+        ProgramReminderJob.status == "PENDING",
+    )).all():
+        job.status = "CANCELLED"
+        job.completed_at = now
+        session.add(job)
+
 try:
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
 except Exception:
@@ -1351,6 +1363,9 @@ def _process_program_reminder_job(session: Session, job: ProgramReminderJob, now
         stmt = stmt.with_for_update()
     event = session.exec(stmt).first()
     if not event or not _program_reminder_is_current(event, job):
+        return None
+    owner = session.get(User, event.owner_user_id)
+    if not owner or not owner.is_active:
         return None
 
     title, message = _program_reminder_copy(event, job.occurrence_start_at)
@@ -9850,6 +9865,7 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
             target.is_active=False
             sessions=s.exec(select(SessionToken).where(SessionToken.user_id==target.id)).all()
             for token in sessions: s.delete(token)
+            _cancel_user_program_reminders(s, target.id)
         elif action == "UNBAN":
             target.is_active=True
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
@@ -9941,6 +9957,7 @@ def admin_center_delete_user(
         target.password_hash = None
         target.profile_photo_path = None
         target.is_active = False
+        _cancel_user_program_reminders(s, target.id)
         s.add(target)
         s.add(AdminAuditLog(
             admin_user_id=admin.id,
