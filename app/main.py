@@ -3765,20 +3765,12 @@ def home(request: Request):
     upcoming_end = local_now + timedelta(days=90)
 
     with Session(engine, expire_on_commit=False) as s:
-        patient_query = select(Patient).order_by(Patient.id.desc())
+        # Dashboard renders only the three most recent patients. Do not load
+        # every patient/analysis/clinical record on each home navigation.
+        patient_query = select(Patient).order_by(Patient.id.desc()).limit(3)
         if user.role != "ADMIN":
             patient_query = patient_query.where(Patient.owner_user_id == user.id)
         patients = s.exec(patient_query).all()
-
-        analysis_query = (
-            select(Analysis)
-            .join(Patient, Analysis.patient_id == Patient.id)
-            .order_by(Analysis.id.desc())
-        )
-        if user.role != "ADMIN":
-            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
-        analyses = s.exec(analysis_query).all()
-        records = s.exec(select(ClinicalRecord)).all()
 
         guest_analyses = s.exec(
             select(GuestAnalysis)
@@ -3822,8 +3814,6 @@ def home(request: Request):
         name="dashboard.html",
         context={
             "patients": patients,
-            "analyses": analyses,
-            "records": records,
             "guest_analyses": guest_analyses,
             "professional_title": professional_title,
             "professional_group": _professional_group(professional_title),
