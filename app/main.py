@@ -177,6 +177,8 @@ class SupportTicket(SQLModel, table=True):
     subject: str
     message: str
     case_id: Optional[int] = Field(default=None, index=True)
+    source_type: str = Field(default="SUPPORT", index=True)
+    source_id: Optional[int] = Field(default=None, index=True)
     status: str = Field(default="OPEN", index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
@@ -1804,6 +1806,10 @@ def init_db():
                 if "vision_snapshot_json" not in cols:
                     conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN vision_snapshot_json TEXT')
         if dialect == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS source_type VARCHAR NOT NULL DEFAULT \'SUPPORT\'')
+            conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS source_id INTEGER')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
             for statement in (
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS notice_type VARCHAR NOT NULL DEFAULT \'ADMIN\'',
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS related_type VARCHAR',
@@ -1841,6 +1847,13 @@ def init_db():
             ):
                 conn.exec_driver_sql(statement)
         elif dialect == "sqlite":
+            supportticket_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("supportticket")').fetchall()}
+            if "source_type" not in supportticket_cols:
+                conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN source_type VARCHAR NOT NULL DEFAULT \'SUPPORT\'')
+            if "source_id" not in supportticket_cols:
+                conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN source_id INTEGER')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
             adminnotice_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("adminnotice")').fetchall()}
             adminnotice_additions = {
                 "notice_type": "VARCHAR NOT NULL DEFAULT 'ADMIN'",
@@ -2293,16 +2306,43 @@ def _support_message_payload(ticket: SupportTicket, message: SupportTicketMessag
     }
 
 
+def _ensure_report_support_tickets(session: Session, reports: list[UserReport]) -> dict[int, SupportTicket]:
+    """Give moderation reports the same private support-conversation primitive as support requests."""
+    report_ids=[r.id for r in reports if r.id is not None]
+    if not report_ids:return {}
+    linked=session.exec(select(SupportTicket).where(SupportTicket.source_type=="REPORT",SupportTicket.source_id.in_(report_ids))).all()
+    by_report={t.source_id:t for t in linked if t.source_id is not None}
+    created=False
+    for report in reports:
+        if report.id is None or report.id in by_report:continue
+        ticket=SupportTicket(
+            user_id=report.reporter_user_id,
+            subject=f"Uzman bildiriminiz · Vaka #{report.case_id}" if report.case_id else "Uzman bildiriminiz",
+            message=report.detail or "Ek açıklama yok.",
+            case_id=report.case_id,
+            source_type="REPORT",
+            source_id=report.id,
+            status="CLOSED" if report.status=="CLOSED" else ("IN_PROGRESS" if report.status=="IN_PROGRESS" else "OPEN"),
+            created_at=report.created_at,
+            updated_at=report.created_at,
+        )
+        session.add(ticket);session.flush();by_report[report.id]=ticket;created=True
+    if created:session.commit()
+    return by_report
+
+
 @app.get("/support-request", response_class=HTMLResponse)
 def support_request_page(request: Request):
     user=get_current_user(request)
     tickets=[]; reports=[]; conversation_options=[]
     if user:
         with Session(engine, expire_on_commit=False) as s:
-            tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
-            ticket_ids=[ticket.id for ticket in tickets if ticket.id is not None]
-            support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
+            tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id,SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
             reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
+            report_ticket_by_report=_ensure_report_support_tickets(s,reports)
+            all_visible_tickets=tickets+list(report_ticket_by_report.values())
+            ticket_ids=[ticket.id for ticket in all_visible_tickets if ticket.id is not None]
+            support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
             cases=s.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user.id) | (ConsultationCase.expert_user_id==user.id)).order_by(ConsultationCase.requested_at.desc())).all()
             case_ids=[case.id for case in cases if case.id is not None]
             messages=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id.in_(case_ids))).all() if case_ids else []
@@ -2326,18 +2366,20 @@ def support_request_page(request: Request):
             latest_ids=[message_id for _,message_id in latest_id_rows if message_id is not None]
             latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
             latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
-            support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
-            support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in tickets if t.id is not None}
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {},"support_waiting_by_ticket":support_waiting_by_ticket if user else {}})
+            support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in all_visible_tickets if t.id is not None}
+            support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in all_visible_tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {},"support_waiting_by_ticket":support_waiting_by_ticket if user else {},"report_ticket_by_report":report_ticket_by_report if user else {}})
 
 @app.get("/support-request/fragment", response_class=HTMLResponse)
 def support_request_fragment(request: Request):
     user=get_current_user(request)
     if not user:return HTMLResponse("",status_code=401)
     with Session(engine, expire_on_commit=False) as s:
-        tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
+        tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id,SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
         reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
-        ticket_ids=[t.id for t in tickets if t.id is not None]
+        report_ticket_by_report=_ensure_report_support_tickets(s,reports)
+        all_visible_tickets=tickets+list(report_ticket_by_report.values())
+        ticket_ids=[t.id for t in all_visible_tickets if t.id is not None]
         by_ticket={ticket_id:[] for ticket_id in ticket_ids}
         support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="USER")).all() if ticket_ids else []
         support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
@@ -2350,9 +2392,9 @@ def support_request_fragment(request: Request):
         latest_ids=[message_id for _,message_id in latest_id_rows if message_id is not None]
         latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
         latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
-        support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
-        support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in tickets if t.id is not None}
-    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket,"support_waiting_by_ticket":support_waiting_by_ticket})
+        support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in all_visible_tickets if t.id is not None}
+        support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in all_visible_tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket,"support_waiting_by_ticket":support_waiting_by_ticket,"report_ticket_by_report":report_ticket_by_report})
 
 @app.post("/support-request")
 async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
@@ -6821,6 +6863,8 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
             return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
         report=UserReport(reporter_user_id=user.id,reported_user_id=other,case_id=case.id,reason=reason,detail=detail.strip()[:1000] or None)
         s.add(report);s.flush()
+        report_ticket=SupportTicket(user_id=user.id,subject=f"Uzman bildiriminiz · Vaka #{case.id}",message=report.detail or "Ek açıklama yok.",case_id=case.id,source_type="REPORT",source_id=report.id,status="OPEN",created_at=report.created_at,updated_at=report.created_at)
+        s.add(report_ticket);s.flush()
         _consultation_event(s,case.id,"USER_REPORTED",user.id,{"reported_user_id":other,"reason":reason})
         # In-chat reports are visible to the other participant, but the private
         # reason/detail stays admin-only. Menu support tickets never create this event.
@@ -9930,7 +9974,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         ]
         cases=s.exec(select(ConsultationCase).order_by(ConsultationCase.requested_at.desc())).all()
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
-        tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+        tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
         ticket_ids=[t.id for t in tickets if t.id is not None]
         admin_support_unread_by_ticket={}
         if section=="support" and ticket_ids:
@@ -9943,6 +9987,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
             admin_support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0))+(1 if support_cursors.get(ticket_id,-1)<0 else 0) for ticket_id in ticket_ids}
         ticket_rows=[{"ticket":t,"sender":None,"messages":[],"unread_count":admin_support_unread_by_ticket.get(t.id,0)} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+        report_ticket_by_report=_ensure_report_support_tickets(s,reports)
         disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
         admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
         admin_related_user_ids.update(t.user_id for t in tickets if t.user_id)
@@ -9966,7 +10011,7 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
-        "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,
+        "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
     })
 
 
@@ -10152,12 +10197,13 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
     with Session(engine, expire_on_commit=False) as s:
         if section=="complaints":
             reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
+            report_ticket_by_report=_ensure_report_support_tickets(s,reports)
             disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
             user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
             users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
             rows=[{"report":r,"reporter":users.get(r.reporter_user_id),"reported":users.get(r.reported_user_id)} for r in reports]
-            return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH})
-        tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
+            return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH,"report_ticket_by_report":report_ticket_by_report})
+        tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc())).all()
         ids=[t.id for t in tickets if t.id is not None]
         by_ticket={ticket_id:[] for ticket_id in ids}
         user_ids={t.user_id for t in tickets if t.user_id}
@@ -10295,6 +10341,10 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
         if not report:return HTMLResponse("Bildirim bulunamadı.",status_code=404)
         changed=report.status!=status
         report.status=status;s.add(report)
+        linked_ticket=s.exec(select(SupportTicket).where(SupportTicket.source_type=="REPORT",SupportTicket.source_id==report.id)).first()
+        if linked_ticket:
+            linked_ticket.status="CLOSED" if status=="CLOSED" else ("IN_PROGRESS" if status=="IN_PROGRESS" else "OPEN")
+            linked_ticket.updated_at=_utcnow_naive();s.add(linked_ticket)
         if changed:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
             message=f"Gönderdiğiniz bildirim artık {labels[status].lower()} durumunda."
