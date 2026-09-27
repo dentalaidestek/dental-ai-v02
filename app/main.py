@@ -2325,10 +2325,7 @@ def support_request_page(request: Request):
         with Session(engine, expire_on_commit=False) as s:
             tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
             ticket_ids=[ticket.id for ticket in tickets if ticket.id is not None]
-            ticket_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
             support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
-            for support_message in ticket_messages:
-                support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
             reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
             cases=s.exec(select(ConsultationCase).where((ConsultationCase.requester_user_id==user.id) | (ConsultationCase.expert_user_id==user.id)).order_by(ConsultationCase.requested_at.desc())).all()
             case_ids=[case.id for case in cases if case.id is not None]
@@ -2342,8 +2339,8 @@ def support_request_page(request: Request):
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
                 conversation_options.append({"case":case,"other":other})
-            support_unread_by_ticket=_support_unread_counts_for_messages(s,ticket_ids,"USER",support_messages_by_ticket)
-            support_can_reply_by_ticket={t.id:_support_can_reply_from_messages(t,support_messages_by_ticket.get(t.id,[])) for t in tickets if t.id is not None}
+            support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
+            support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {}})
 
 @app.get("/support-request/fragment", response_class=HTMLResponse)
@@ -2354,11 +2351,9 @@ def support_request_fragment(request: Request):
         tickets=s.exec(select(SupportTicket).where(SupportTicket.user_id==user.id).order_by(SupportTicket.created_at.desc())).all()
         reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
         ticket_ids=[t.id for t in tickets if t.id is not None]
-        messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
         by_ticket={ticket_id:[] for ticket_id in ticket_ids}
-        for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
-        support_unread_by_ticket=_support_unread_counts_for_messages(s,ticket_ids,"USER",by_ticket)
-        support_can_reply_by_ticket={t.id:_support_can_reply_from_messages(t,by_ticket.get(t.id,[])) for t in tickets if t.id is not None}
+        support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
+        support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
 
 @app.post("/support-request")
@@ -2391,6 +2386,22 @@ async def contact_submit(request: Request, subject: str = Form(...), message: st
     for event in admin_events: await _publish_realtime_event(event)
     if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"OPEN"})
     return RedirectResponse("/support-request?sent=1",status_code=303)
+
+
+@app.get("/support-request/{ticket_id}/conversation", response_class=JSONResponse)
+def support_ticket_user_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    limit=40
+    with Session(engine,expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket or ticket.user_id!=user.id:return JSONResponse({"ok":False},status_code=404)
+        q=select(SupportTicketMessage).where(SupportTicketMessage.ticket_id==ticket.id)
+        if before_id is not None:q=q.where(SupportTicketMessage.id < before_id)
+        rows=s.exec(q.order_by(SupportTicketMessage.id.desc()).limit(limit+1)).all()
+        has_more=len(rows)>limit
+        rows=list(reversed(rows[:limit]))
+        return JSONResponse({"ok":True,"ticket":{"id":ticket.id,"subject":ticket.subject,"status":ticket.status,"created_at":ticket.created_at.isoformat(),"initial_message":ticket.message},"messages":[{"id":m.id,"sender_role":m.sender_role,"message":m.message,"created_at":m.created_at.isoformat()} for m in rows],"has_more":has_more,"next_before_id":rows[0].id if has_more and rows else None,"read_through":rows[-1].id if rows else 0,"unread_count":_support_unread_count(s,ticket.id,"USER"),"can_reply":_support_user_can_reply(s,ticket)})
 
 
 @app.post("/support-request/{ticket_id}/reply")
@@ -10147,14 +10158,29 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
             return templates.TemplateResponse(request=request,name="_admin_complaints_region.html",context={"report_rows":rows,"disputes":disputes,"admin_path":ADMIN_CENTER_PATH})
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ids=[t.id for t in tickets if t.id is not None]
-        messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ids)).order_by(SupportTicketMessage.created_at)).all() if ids else []
         by_ticket={ticket_id:[] for ticket_id in ids}
-        for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
         user_ids={t.user_id for t in tickets if t.user_id}
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
-        unread_by_ticket=_support_unread_counts_for_messages(s,ids,"ADMIN",by_ticket)
-        rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":by_ticket.get(t.id,[]),"unread_count":unread_by_ticket.get(t.id,0)} for t in tickets]
+        unread_by_ticket={t.id:_support_unread_count(s,t.id,"ADMIN") for t in tickets if t.id is not None}
+        rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread_by_ticket.get(t.id,0)} for t in tickets]
         return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
+
+@app.get(ADMIN_CENTER_PATH + "/support/{ticket_id}/conversation", response_class=JSONResponse)
+def admin_center_support_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
+    admin=_admin_only(request)
+    if not admin:return JSONResponse({"ok":False},status_code=403)
+    limit=40
+    with Session(engine,expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket:return JSONResponse({"ok":False},status_code=404)
+        q=select(SupportTicketMessage).where(SupportTicketMessage.ticket_id==ticket.id)
+        if before_id is not None:q=q.where(SupportTicketMessage.id < before_id)
+        rows=s.exec(q.order_by(SupportTicketMessage.id.desc()).limit(limit+1)).all()
+        has_more=len(rows)>limit
+        rows=list(reversed(rows[:limit]))
+        sender=s.get(User,ticket.user_id) if ticket.user_id else None
+        return JSONResponse({"ok":True,"ticket":{"id":ticket.id,"subject":ticket.subject,"status":ticket.status,"created_at":ticket.created_at.isoformat(),"initial_message":ticket.message,"user_name":sender.display_name if sender else "Misafir kullanıcı"},"messages":[{"id":m.id,"sender_role":m.sender_role,"message":m.message,"created_at":m.created_at.isoformat()} for m in rows],"has_more":has_more,"next_before_id":rows[0].id if has_more and rows else None,"read_through":rows[-1].id if rows else 0,"unread_count":_support_unread_count(s,ticket.id,"ADMIN")})
+
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/read")
 async def admin_center_support_read(request: Request, ticket_id: int, through_message_id: Optional[int] = Form(None)):
