@@ -196,7 +196,7 @@ class SupportTicketReadState(SQLModel, table=True):
     reader_key: str = Field(index=True, unique=True)
     ticket_id: int = Field(index=True)
     reader_role: str = Field(index=True)
-    last_read_message_id: int = Field(default=0, index=True)
+    last_read_message_id: int = Field(default=-1, index=True)
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -2243,12 +2243,16 @@ def _support_unread_count(session: Session, ticket_id: int, reader_role: str) ->
     state = session.exec(select(SupportTicketReadState).where(
         SupportTicketReadState.reader_key == f"{ticket_id}:{role}"
     )).first()
-    cursor = int(state.last_read_message_id or 0) if state else 0
-    return int(session.exec(select(func.count(SupportTicketMessage.id)).where(
+    cursor = int(state.last_read_message_id) if state and state.last_read_message_id is not None else -1
+    message_cursor=max(cursor,0)
+    count=int(session.exec(select(func.count(SupportTicketMessage.id)).where(
         SupportTicketMessage.ticket_id == ticket_id,
-        SupportTicketMessage.id > cursor,
+        SupportTicketMessage.id > message_cursor,
         SupportTicketMessage.sender_role != role,
     )).one() or 0)
+    if role=="ADMIN" and cursor < 0:
+        count += 1
+    return count
 
 
 def _mark_support_read(session: Session, ticket_id: int, reader_role: str, through_message_id: Optional[int] = None) -> int:
@@ -2259,10 +2263,13 @@ def _mark_support_read(session: Session, ticket_id: int, reader_role: str, throu
         SupportTicketMessage.sender_role != role,
         *([SupportTicketMessage.id <= through_message_id] if through_message_id is not None else []),
     )).one()
-    if latest_other and int(latest_other) > int(state.last_read_message_id or 0):
+    if latest_other and int(latest_other) > int(state.last_read_message_id if state.last_read_message_id is not None else -1):
         state.last_read_message_id = int(latest_other)
-        state.updated_at = _utcnow_naive()
-        session.add(state)
+    elif role=="ADMIN" and int(state.last_read_message_id if state.last_read_message_id is not None else -1) < 0:
+        state.last_read_message_id = 0
+    state.updated_at = _utcnow_naive()
+    session.add(state)
+    session.flush()
     return _support_unread_count(session, ticket_id, role)
 
 
@@ -2274,11 +2281,16 @@ def _support_unread_counts_for_messages(session: Session, ticket_ids: list[int],
         SupportTicketReadState.ticket_id.in_(ticket_ids),
         SupportTicketReadState.reader_role==role,
     )).all()
-    cursors={state.ticket_id:int(state.last_read_message_id or 0) for state in states}
-    return {
-        ticket_id:sum(1 for item in by_ticket.get(ticket_id,[]) if item.id and item.id>cursors.get(ticket_id,0) and item.sender_role!=role)
-        for ticket_id in ticket_ids
-    }
+    cursors={state.ticket_id:int(state.last_read_message_id) if state.last_read_message_id is not None else -1 for state in states}
+    result={}
+    for ticket_id in ticket_ids:
+        cursor=cursors.get(ticket_id,-1)
+        message_cursor=max(cursor,0)
+        count=sum(1 for item in by_ticket.get(ticket_id,[]) if item.id and item.id>message_cursor and item.sender_role!=role)
+        if role=="ADMIN" and cursor < 0:
+            count += 1
+        result[ticket_id]=count
+    return result
 
 
 def _support_can_reply_from_messages(ticket: SupportTicket, messages: list[SupportTicketMessage]) -> bool:
@@ -2419,9 +2431,9 @@ async def support_ticket_user_read(request: Request, ticket_id: int, through_mes
     with Session(engine,expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket or ticket.user_id!=user.id:return JSONResponse({"ok":False},status_code=404)
-        _mark_support_read(s,ticket.id,"USER",through_message_id)
+        remaining=_mark_support_read(s,ticket.id,"USER",through_message_id)
         s.commit()
-    return {"ok":True,"ticket_id":ticket_id,"unread_count":0}
+    return {"ok":True,"ticket_id":ticket_id,"unread_count":remaining}
 
 
 @app.get("/legal/{document}", response_class=HTMLResponse)
@@ -10152,9 +10164,9 @@ async def admin_center_support_read(request: Request, ticket_id: int, through_me
     with Session(engine,expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return JSONResponse({"ok":False},status_code=404)
-        _mark_support_read(s,ticket.id,"ADMIN",through_message_id)
+        remaining=_mark_support_read(s,ticket.id,"ADMIN",through_message_id)
         s.commit()
-    return {"ok":True,"ticket_id":ticket_id,"unread_count":0}
+    return {"ok":True,"ticket_id":ticket_id,"unread_count":remaining}
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/message")
