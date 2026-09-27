@@ -1,68 +1,40 @@
-<div class="info-card" id="supportTicketsRegion">
+<div class="info-card support-list-card" id="supportTicketsRegion">
   <div class="support-list-head"><div><h2>Destek Taleplerim</h2><p class="small-note">Oluşturduğunuz talepleri inceleyebilir, gerektiğinde destek ekibiyle mesajlaşabilirsiniz.</p></div></div>
+  {% set ns=namespace(open=0, waiting=0, progress=0, closed=0) %}{% for x in tickets %}{% if x.status=='OPEN' %}{% set ns.open=ns.open+1 %}{% elif x.status in ['ANSWERED','USER_REPLIED'] %}{% set ns.waiting=ns.waiting+1 %}{% elif x.status=='IN_PROGRESS' %}{% set ns.progress=ns.progress+1 %}{% elif x.status=='CLOSED' %}{% set ns.closed=ns.closed+1 %}{% endif %}{% endfor %}
+  <div class="support-filter-row" aria-label="Talep filtreleri"><button type="button" class="active" data-support-filter="ALL">Tümü <b>{{tickets|length}}</b></button><button type="button" data-support-filter="OPEN">Açık <b>{{ns.open}}</b></button><button type="button" data-support-filter="WAITING">Yanıt bekliyor <b>{{ns.waiting}}</b></button><button type="button" data-support-filter="IN_PROGRESS">İşlemde <b>{{ns.progress}}</b></button><button type="button" data-support-filter="CLOSED">Tamamlandı <b>{{ns.closed}}</b></button></div>
+  <div class="support-card-list">
   {% for x in tickets %}
-  {% set history=support_messages_by_ticket.get(x.id,[]) %}
-  {% set unread=support_unread_by_ticket.get(x.id,0) %}
-  {% set can_reply=support_can_reply_by_ticket.get(x.id,False) %}
-  {% set waiting_for_team=support_waiting_by_ticket.get(x.id,False) %}
+  {% set history=support_messages_by_ticket.get(x.id,[]) %}{% set unread=support_unread_by_ticket.get(x.id,0) %}{% set can_reply=support_can_reply_by_ticket.get(x.id,False) %}{% set waiting_for_team=support_waiting_by_ticket.get(x.id,False) %}
   <section class="support-ticket-card" data-support-ticket-id="{{x.id}}" data-support-status="{{x.status}}">
     <div class="support-ticket-head">
       <button type="button" class="support-ticket-open" data-support-toggle="{{x.id}}" aria-expanded="false">
-        <span class="support-ticket-meta"><b>#{{x.id}}</b><time>{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time></span>
-        <strong>{{x.subject}}</strong>
-        <small>{{x.message}}</small>
+        <span class="support-ticket-top"><span class="support-ticket-meta"><b>#{{x.id}}</b><time>{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time></span><span class="support-status {{'answered' if x.status=='ANSWERED' else ('closed' if x.status=='CLOSED' else 'waiting')}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıt bekliyor{% elif x.status=='ANSWERED' %}Yanıt bekliyor{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span></span>
+        <span class="support-ticket-main"><span><strong>{{x.subject}}</strong><small>{{x.message}}</small></span><i aria-hidden="true">›</i></span>
+        <span class="support-ticket-footer"><span></span><span class="support-message-count {{'has-unread' if unread else ''}}">▢ {% if unread %}<b>{{unread}}</b>{% else %}0{% endif %}</span></span>
       </button>
-      <div class="support-ticket-side">
-        <span class="support-status {{'answered' if x.status=='ANSWERED' else ('closed' if x.status=='CLOSED' else 'waiting')}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıtınız gönderildi{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
-        <button type="button" class="support-message-count {{'has-unread' if unread else ''}}" data-support-toggle="{{x.id}}">Mesajlar{% if unread %} <b>{{unread}}</b>{% endif %}</button>
-      </div>
     </div>
     <div class="support-conversation" data-support-conversation="{{x.id}}" data-support-read-through="{{history[-1].id if history else 0}}" hidden>
       <div class="support-conversation-top"><b>#{{x.id}} · {{x.subject}}</b><button type="button" data-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button></div>
       <div class="support-thread" data-support-thread="{{x.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div>
       <div class="support-thread-more" data-support-more-wrap="{{x.id}}" hidden><button type="button" data-support-more="{{x.id}}">Daha eski mesajlar</button></div>
-      <div data-support-turn="{{x.id}}">
-      {% if x.status=='CLOSED' %}
-        <div class="support-turn-note done">Bu talep tamamlandı. Gerekirse yeni bir destek talebi oluşturabilirsiniz.</div>
-      {% elif can_reply %}
-        <div class="support-turn-note">Destek ekibi size yanıt verdi. Aşağıdaki <b>Yanıtla</b> düğmesini kullanarak bir mesaj gönderebilirsiniz.</div>
-        <details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>
-      {% elif waiting_for_team %}
-        <div class="support-turn-note done">Yanıtınız iletildi. Destek ekibi size tekrar yanıt verene kadar yeni mesaj gönderemezsiniz.</div>
-      {% else %}
-        <div class="support-turn-note">Talebiniz Destek Ekibi tarafından inceleniyor.</div>
-      {% endif %}
-      </div>
+      <div data-support-turn="{{x.id}}">{% if x.status=='CLOSED' %}<div class="support-turn-note done">Bu talep tamamlandı. Gerekirse yeni bir destek talebi oluşturabilirsiniz.</div>{% elif can_reply %}<div class="support-turn-note">Destek ekibi size yanıt verdi. Aşağıdaki <b>Yanıtla</b> düğmesini kullanarak bir mesaj gönderebilirsiniz.</div><details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>{% elif waiting_for_team %}<div class="support-turn-note done">Yanıtınız iletildi. Destek ekibi size tekrar yanıt verene kadar yeni mesaj gönderemezsiniz.</div>{% else %}<div class="support-turn-note">Talebiniz Destek Ekibi tarafından inceleniyor.</div>{% endif %}</div>
     </div>
   </section>
   {% else %}<p class="small-note">Henüz destek talebiniz yok.</p>{% endfor %}
+  </div>
 </div>
-<div class="info-card" id="supportReportsRegion">
+<div class="info-card support-list-card" id="supportReportsRegion">
   <div class="support-list-head"><div><h2>Bildirimlerim</h2><p class="small-note">Uzman veya görüşme hakkında gönderdiğiniz bildirimleri buradan takip edebilirsiniz.</p></div></div>
+  <div class="support-card-list">
   {% for r in reports %}{% set t=report_ticket_by_report.get(r.id) %}{% set unread=support_unread_by_ticket.get(t.id,0) if t else 0 %}{% set can_reply=support_can_reply_by_ticket.get(t.id,False) if t else False %}{% set waiting_for_team=support_waiting_by_ticket.get(t.id,False) if t else False %}
   <section class="support-ticket-card" data-support-report-id="{{r.id}}" data-report-status="{{r.status}}" {% if t %}data-support-ticket-id="{{t.id}}"{% endif %}>
-    <div class="support-ticket-head">
-      <button type="button" class="support-ticket-open" {% if t %}data-support-toggle="{{t.id}}" aria-expanded="false"{% endif %}>
-        <span class="support-ticket-meta"><b>Bildirim #{{r.id}}</b><time>{{r.created_at.strftime('%d.%m.%Y %H:%M')}}</time></span>
-        <strong>Uzman bildiriminiz{% if r.case_id %} · Vaka #{{r.case_id}}{% endif %}</strong>
-        <small>{{r.detail or 'Ek açıklama yok.'}}</small>
-      </button>
-      <div class="support-ticket-side">
-        <span class="support-status {{'closed' if r.status=='CLOSED' else ('answered' if r.status=='IN_PROGRESS' else 'waiting')}}">{% if r.status=='OPEN' %}Açık{% elif r.status=='IN_PROGRESS' %}İnceleniyor{% elif r.status=='CLOSED' %}Sonuçlandı{% else %}{{r.status}}{% endif %}</span>
-        {% if t %}<button type="button" class="support-message-count {{'has-unread' if unread else ''}}" data-support-toggle="{{t.id}}">Mesajlar{% if unread %} <b>{{unread}}</b>{% endif %}</button>{% endif %}
-      </div>
-    </div>
-    {% if t %}<div class="support-conversation" data-support-conversation="{{t.id}}" data-support-read-through="0" hidden>
-      <div class="support-conversation-top"><b>Uzman bildiriminiz{% if r.case_id %} · Vaka #{{r.case_id}}{% endif %}</b><button type="button" data-support-close="{{t.id}}" aria-label="Konuşmayı kapat">×</button></div>
-      <div class="support-thread" data-support-thread="{{t.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div>
-      <div class="support-thread-more" data-support-more-wrap="{{t.id}}" hidden><button type="button" data-support-more="{{t.id}}">Daha eski mesajlar</button></div>
-      <div data-support-turn="{{t.id}}">
-      {% if r.status=='CLOSED' %}<div class="support-turn-note done">Uzman bildiriminiz sonuçlandırıldı.</div>
-      {% elif can_reply %}<div class="support-turn-note">Destek ekibi uzman bildiriminiz hakkında size mesaj gönderdi.</div><details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{t.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>
-      {% elif waiting_for_team %}<div class="support-turn-note done">Yanıtınız iletildi. Destek ekibinin yanıtı bekleniyor.</div>
-      {% else %}<div class="support-turn-note">Uzman bildiriminiz Destek Ekibi tarafından inceleniyor.</div>{% endif %}
-      </div>
-    </div>{% endif %}
+    <div class="support-ticket-head"><button type="button" class="support-ticket-open" {% if t %}data-support-toggle="{{t.id}}" aria-expanded="false"{% endif %}>
+      <span class="support-ticket-top"><span class="support-ticket-meta"><b>Bildirim #{{r.id}}</b><time>{{r.created_at.strftime('%d.%m.%Y %H:%M')}}</time></span><span class="support-status {{'closed' if r.status=='CLOSED' else ('answered' if r.status=='IN_PROGRESS' else 'waiting')}}">{% if r.status=='OPEN' %}Açık{% elif r.status=='IN_PROGRESS' %}İnceleniyor{% elif r.status=='CLOSED' %}Sonuçlandı{% else %}{{r.status}}{% endif %}</span></span>
+      <span class="support-ticket-main"><span><strong>Uzman bildiriminiz{% if r.case_id %} · Vaka #{{r.case_id}}{% endif %}</strong><small>{{r.detail or 'Ek açıklama yok.'}}</small></span><i aria-hidden="true">›</i></span>
+      {% if t %}<span class="support-ticket-footer"><span></span><span class="support-message-count {{'has-unread' if unread else ''}}">▢ {% if unread %}<b>{{unread}}</b>{% else %}0{% endif %}</span></span>{% endif %}
+    </button></div>
+    {% if t %}<div class="support-conversation" data-support-conversation="{{t.id}}" data-support-read-through="0" hidden><div class="support-conversation-top"><b>Uzman bildiriminiz{% if r.case_id %} · Vaka #{{r.case_id}}{% endif %}</b><button type="button" data-support-close="{{t.id}}" aria-label="Konuşmayı kapat">×</button></div><div class="support-thread" data-support-thread="{{t.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div><div class="support-thread-more" data-support-more-wrap="{{t.id}}" hidden><button type="button" data-support-more="{{t.id}}">Daha eski mesajlar</button></div><div data-support-turn="{{t.id}}">{% if r.status=='CLOSED' %}<div class="support-turn-note done">Uzman bildiriminiz sonuçlandırıldı.</div>{% elif can_reply %}<div class="support-turn-note">Destek ekibi uzman bildiriminiz hakkında size mesaj gönderdi.</div><details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{t.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>{% elif waiting_for_team %}<div class="support-turn-note done">Yanıtınız iletildi. Destek ekibinin yanıtı bekleniyor.</div>{% else %}<div class="support-turn-note">Uzman bildiriminiz Destek Ekibi tarafından inceleniyor.</div>{% endif %}</div></div>{% endif %}
   </section>
   {% else %}<p class="small-note">Henüz gönderilmiş bildiriminiz yok.</p>{% endfor %}
+  </div>
 </div>
