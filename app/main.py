@@ -1339,6 +1339,14 @@ def _program_range(view: str, focus_date: date):
     )
 
 
+PROGRAM_MONTH_NAMES = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+
+
+def _program_date_label(value: date, *, include_year: bool = False) -> str:
+    label = f"{value.day} {PROGRAM_MONTH_NAMES[value.month - 1]}"
+    return f"{label} {value.year}" if include_year else label
+
+
 def _group_program_occurrences(occurrences):
     groups = []
     current = None
@@ -1348,7 +1356,7 @@ def _group_program_occurrences(occurrences):
         if current is None or current["date"] != item_date:
             current = {
                 "date": item_date,
-                "label": f"{day_names[item_date.weekday()]}, {item_date.day:02d}.{item_date.month:02d}",
+                "label": f"{day_names[item_date.weekday()]}, {_program_date_label(item_date)}",
                 "events": [],
             }
             groups.append(current)
@@ -3993,7 +4001,8 @@ def program_page(
             "groups": _group_program_occurrences(occurrences),
             "week_days": _program_week_days(focus_date),
             "month_days": month_days,
-            "month_title": focus_date.strftime("%m.%Y"),
+            "month_title": f"{PROGRAM_MONTH_NAMES[focus_date.month - 1]} {focus_date.year}",
+            "selected_date_title": _program_date_label(focus_date, include_year=True),
             "event_type_labels": PROGRAM_EVENT_TYPES,
             "saved": request.query_params.get("saved") == "1",
             "deleted": request.query_params.get("deleted") == "1",
@@ -4046,6 +4055,13 @@ def program_new_page(
             "initial_patient_id": patient_id,
             "initial_start": suggested.strftime("%Y-%m-%dT%H:%M"),
             "initial_end": (suggested + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M"),
+            "initial_title": "",
+            "initial_location": "",
+            "initial_notes": "",
+            "initial_reminder": "30",
+            "initial_notification": True,
+            "initial_recurrence": "NONE",
+            "initial_recurrence_until": "",
             "error": None,
         },
     )
@@ -4276,6 +4292,10 @@ def program_copy_to_days(
         source_end = _utc_to_local(source.end_at)
         if not source_start:
             return HTMLResponse("Program saati okunamadı.", status_code=400)
+        source_date = source_start.date()
+        target_dates = [target_date for target_date in target_dates if target_date != source_date]
+        if not target_dates:
+            return HTMLResponse("Kaydın bulunduğu günden farklı en az bir gün seçin.", status_code=400)
         duration = source_end - source_start if source_end else None
 
         for target_date in target_dates:
