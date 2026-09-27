@@ -6173,23 +6173,6 @@ def account_notifications(request: Request):
         }
 
 
-@app.post("/account/notifications/{notice_id}/read")
-def account_notification_read(request: Request, notice_id: int):
-    user = get_current_user(request)
-    if not user:
-        return JSONResponse({"ok": False}, status_code=401)
-    with Session(engine, expire_on_commit=False) as s:
-        notice = s.get(AdminNotice, notice_id)
-        if not notice or notice.user_id != user.id or notice.status != "ACTIVE":
-            return JSONResponse({"ok": False}, status_code=404)
-        notice.is_read = True
-        if not notice.read_at:
-            notice.read_at = _utcnow_naive()
-        s.add(notice)
-        s.commit()
-    return {"ok": True}
-
-
 @app.post("/account/notifications/read-all")
 async def account_notifications_read_all(request: Request):
     """Opening the notification center marks the currently active notices as seen."""
@@ -6218,6 +6201,23 @@ async def account_notifications_read_all(request: Request):
     if realtime_event:
         await _publish_realtime_event(realtime_event)
     return {"ok": True, "read_count": len(rows)}
+
+
+@app.post("/account/notifications/{notice_id}/read")
+def account_notification_read(request: Request, notice_id: int):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        notice = s.get(AdminNotice, notice_id)
+        if not notice or notice.user_id != user.id or notice.status != "ACTIVE":
+            return JSONResponse({"ok": False}, status_code=404)
+        notice.is_read = True
+        if not notice.read_at:
+            notice.read_at = _utcnow_naive()
+        s.add(notice)
+        s.commit()
+    return {"ok": True}
 
 
 @app.get("/account/admin-notices")
