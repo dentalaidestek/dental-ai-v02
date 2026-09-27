@@ -100,12 +100,17 @@ function toggleRecurrenceEnd() {
     const field = document.getElementById('recurrenceUntilField');
     field.style.display = value === 'WEEKLY' ? '' : 'none';
 }
-function syncProgramPatientField() {
+function syncProgramPatientField(clearWhenHidden = false) {
     const type = document.getElementById('programEventType').value;
     const field = document.getElementById('programPatientField');
-    field.style.display = ['APPOINTMENT', 'CLINIC'].includes(type) ? '' : 'none';
+    const select = field.querySelector('select[name="patient_id"]');
+    const supportsPatient = ['APPOINTMENT', 'CLINIC'].includes(type);
+    field.style.display = supportsPatient ? '' : 'none';
+    if (!supportsPatient && clearWhenHidden && select) {
+        select.value = '';
+    }
 }
-document.getElementById('programEventType').addEventListener('change', syncProgramPatientField);
+document.getElementById('programEventType').addEventListener('change', () => syncProgramPatientField(true));
 toggleRecurrenceEnd();
 syncProgramPatientField();
 </script>
