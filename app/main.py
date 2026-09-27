@@ -190,6 +190,16 @@ class SupportTicketMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class SupportTicketReadState(SQLModel, table=True):
+    """Durable read cursor for the support conversation; independent from normal Messages."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reader_key: str = Field(index=True, unique=True)
+    ticket_id: int = Field(index=True)
+    reader_role: str = Field(index=True)
+    last_read_message_id: int = Field(default=0, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class AdminNotice(SQLModel, table=True):
     """Durable non-message notification.
 
@@ -6116,14 +6126,13 @@ async def account_push_unsubscribe(request: Request):
     return response
 
 
-def _expire_seen_program_reminders(session: Session, user_id: int, now: Optional[datetime] = None) -> int:
-    """Hide seen Program reminders 24h later without touching other notice types."""
+def _expire_seen_notifications(session: Session, user_id: int, now: Optional[datetime] = None) -> int:
+    """Remove seen notification-center items from the active UI 24h after they were read."""
     current = now or _utcnow_naive()
     cutoff = current - timedelta(hours=24)
     rows = session.exec(select(AdminNotice).where(
         AdminNotice.user_id == user_id,
         AdminNotice.status == "ACTIVE",
-        AdminNotice.notice_type == "PROGRAM_REMINDER",
         AdminNotice.is_read == True,
         AdminNotice.read_at != None,
         AdminNotice.read_at <= cutoff,
@@ -6142,7 +6151,7 @@ def account_notifications(request: Request):
     if not user:
         return {"notifications": [], "unread_count": 0}
     with Session(engine, expire_on_commit=False) as s:
-        if _expire_seen_program_reminders(s, user.id):
+        if _expire_seen_notifications(s, user.id):
             s.commit()
         unread_count = s.exec(
             select(func.count(AdminNotice.id)).where(
