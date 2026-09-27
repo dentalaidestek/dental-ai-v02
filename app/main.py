@@ -6590,6 +6590,7 @@ def _web_push_configured() -> bool:
 
 def _web_push_copy(notice_type: str) -> str:
     kind = (notice_type or "").upper()
+    if kind == "PROGRAM_REMINDER": return "Programınızdaki yaklaşan kayıt için hatırlatmanız var."
     if kind == "CONSULTATION_REQUEST": return "Yeni danışmanlık talebiniz var."
     if kind == "CONSULTATION_PROPOSAL": return "Başlangıç öneriniz için onay bekleniyor."
     if "DEADLINE" in kind or "EXPIRED" in kind: return "Danışmanlık işleminiz için süreyle ilgili yeni bir bildiriminiz var."
