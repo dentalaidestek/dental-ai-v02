@@ -1037,8 +1037,18 @@ def _dashboard_next_schedule_occurrence(
     range_end: datetime,
 ):
     """Return only the next active dashboard occurrence without loading program history."""
-    range_start_utc = _local_to_utc(range_start.strftime("%Y-%m-%dT%H:%M"))
-    range_end_utc = _local_to_utc(range_end.strftime("%Y-%m-%dT%H:%M"))
+    # Preserve seconds/microseconds from the dashboard clock. Formatting through
+    # datetime-local would truncate them and could hide the real next event.
+    range_start_utc = (
+        range_start.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    range_end_utc = (
+        range_end.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
 
     # One-off events can be bounded fully in SQL.
     direct_events = session.exec(
@@ -1046,8 +1056,13 @@ def _dashboard_next_schedule_occurrence(
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status == "ACTIVE")
         .where(ScheduleEvent.recurrence_rule == "NONE")
-        .where(ScheduleEvent.start_at >= range_start_utc)
         .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.start_at >= range_start_utc,
+                ScheduleEvent.end_at >= range_start_utc,
+            )
+        )
         .order_by(ScheduleEvent.start_at)
         .limit(1)
     ).all()
