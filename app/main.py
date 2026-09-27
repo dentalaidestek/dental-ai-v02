@@ -10315,6 +10315,7 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
+        if ticket.source_type=="REPORT":return HTMLResponse("Bildirim durumu yalnız bildirim yönetimi üzerinden değiştirilebilir.",status_code=409)
         if ticket.status=="CLOSED":return HTMLResponse("Kapatılmış destek talebi yeniden açılamaz.",status_code=409)
         changed=ticket.status!=status
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
