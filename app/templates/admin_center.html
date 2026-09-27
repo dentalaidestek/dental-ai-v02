@@ -56,6 +56,28 @@
  .admin-support-region .support-bubble{max-width:88%!important;color:#172033!important}.admin-support-region .admin-support-message-form{grid-template-columns:minmax(0,1fr) auto!important;padding-top:10px!important}.admin-support-region .admin-support-message-form textarea{min-height:58px!important}
 }
 
+/* Support workspace stabilization: isolate the three-pane layout from legacy admin support rules. */
+#adminSupportRegion.admin-support-region{padding:0!important;overflow:hidden}
+#adminSupportRegion .admin-support-workspace-head{min-height:0}
+#adminSupportRegion .admin-support-search{box-sizing:border-box;min-width:240px;overflow:hidden}
+#adminSupportRegion .admin-support-search>span{flex:0 0 auto;line-height:1;color:#667085}
+#adminSupportRegion .admin-support-search input{display:block!important;flex:1 1 auto!important;min-width:0!important;height:36px!important;line-height:normal!important;margin:0!important;text-indent:0!important}
+#adminSupportRegion .admin-support-search input::placeholder{color:#8a94a6!important;opacity:1!important}
+#adminSupportRegion .admin-support-table{min-height:0!important}
+#adminSupportRegion .admin-support-conversation{height:min(620px,70dvh)!important;min-height:420px!important}
+#adminSupportRegion .support-bubble,#adminComplaintsRegion .support-bubble{color:#172033!important}
+#adminSupportRegion .support-bubble.user,#adminComplaintsRegion .support-bubble.user{background:#f3f5f7!important;border-color:#e8ebef!important}
+#adminSupportRegion .support-bubble.admin,#adminComplaintsRegion .support-bubble.admin{background:#e8f3ff!important;border-color:#d8eaff!important}
+#adminSupportRegion .support-bubble p,#adminComplaintsRegion .support-bubble p{color:#172033!important}
+@media(max-width:720px){
+ #adminSupportRegion{overflow:visible}
+ #adminSupportRegion .admin-support-search{min-width:0;width:100%!important}
+ #adminSupportRegion .admin-support-table{min-height:0!important}
+ #adminSupportRegion .admin-support-conversation{height:auto!important;min-height:0!important}
+ #adminSupportRegion .admin-support-summary .admin-review-status,#adminSupportRegion .admin-support-count{justify-self:end!important}
+ #adminSupportRegion .admin-support-thread{min-height:220px;height:min(42dvh,360px)}
+}
+
 /* Complaint/report conversations share the same readable chat language without changing their separate list semantics. */
 #adminComplaintsRegion .admin-support-conversation{background:#fff!important}
 #adminComplaintsRegion .admin-support-thread{display:flex;flex-direction:column;gap:12px;overflow-y:auto;overscroll-behavior:contain}
