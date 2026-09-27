@@ -14,7 +14,8 @@
     <div class="admin-support-grid">
       <aside><small>Kullanıcı</small><b>{{sender.display_name if sender else 'Misafir kullanıcı'}}</b><small>Tarih</small><span>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</span>{% if x.case_id %}<a class="admin-review-conversation-link" href="/admin/consultation-review/{{x.case_id}}">İlgili konuşmayı aç</a><small class="admin-review-readonly-note">Bağlı vaka konuşması yalnız inceleme içindir.</small>{% endif %}</aside>
       <div class="admin-support-thread-wrap">
-        <div class="admin-support-thread"><div class="support-bubble user"><div class="support-bubble-head"><b>{{sender.display_name if sender else 'Kullanıcı'}}</b><time>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{x.message}}</p></div>{% for m in row.messages %}<div class="support-bubble {{'admin' if m.sender_role=='ADMIN' else 'user'}}"><div class="support-bubble-head"><b>{{'Yönetim Ekibi' if m.sender_role=='ADMIN' else (sender.display_name if sender else 'Kullanıcı')}}</b><time>{{m.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{m.message}}</p></div>{% endfor %}</div>
+        <div class="admin-support-thread" data-admin-support-thread="{{x.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div>
+        <div class="support-thread-more" data-admin-support-more-wrap="{{x.id}}" hidden><button type="button" data-admin-support-more="{{x.id}}">Daha eski mesajlar</button></div>
         {% if x.status!='CLOSED' %}<form class="admin-support-message-form" method="post" action="{{admin_path}}/support/{{x.id}}/message"><textarea name="message" rows="2" maxlength="4000" placeholder="Kullanıcıya mesaj yazın..." required></textarea><button type="submit">Gönder</button></form>{% else %}<div class="admin-review-readonly-note">Bu destek talebi tamamlandı.</div>{% endif %}
       </div>
     </div>
