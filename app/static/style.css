@@ -5172,17 +5172,12 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 
 /* Mobile header: keep expert profile action alive without crowding the brand/bell/menu row. */
 @media(max-width:760px){
- .topbar{column-gap:7px}
- .expert-header-entry{order:0;flex:0 1 auto;margin:0!important;width:auto!important;min-width:0!important;min-height:32px;padding:5px 8px;font-size:10.5px;border-radius:9px;justify-content:center;box-sizing:border-box;overflow:hidden}
+ .topbar{column-gap:7px;flex-wrap:nowrap;min-width:0}
+ .topbar .brand,.notification-center,.menu-toggle{flex:0 0 auto}
+ .expert-header-entry{order:0;flex:0 1 auto;margin-left:auto!important;margin-right:0!important;width:auto!important;min-width:0!important;min-height:32px;padding:5px 8px;font-size:10.5px;border-radius:9px;justify-content:center;box-sizing:border-box;overflow:hidden}
  .expert-header-entry span{min-width:0;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;text-align:center!important}
- .notification-center{margin-left:auto}
+ .notification-center{margin-left:0}
  .menu-toggle{margin-left:0!important}
-}
-@media(max-width:520px){
- .expert-header-entry{max-width:126px!important}
-}
-@media(max-width:380px){
- .expert-header-entry{max-width:108px!important}
 }
 
 
