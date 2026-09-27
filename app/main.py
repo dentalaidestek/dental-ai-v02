@@ -699,6 +699,23 @@ class ScheduleEvent(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class ProgramReminderJob(SQLModel, table=True):
+    """Durable occurrence-specific queue for Program reminders."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    schedule_event_id: int = Field(index=True)
+    owner_user_id: int = Field(index=True)
+    occurrence_start_at: datetime = Field(index=True)
+    run_at: datetime = Field(index=True)
+    reminder_minutes: int
+    event_updated_at: datetime
+    dedup_key: str = Field(index=True, unique=True)
+    status: str = Field(default="PENDING", index=True)
+    attempts: int = 0
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    completed_at: Optional[datetime] = None
+
+
 PROFESSIONAL_TITLES = {
     "Öğrenci",
     "Diş Hekimi",
