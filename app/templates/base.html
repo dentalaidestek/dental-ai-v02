@@ -358,9 +358,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         }catch(_){}
     }
     async function markNotificationsSeen() {
+        const seenBefore=new Date().toISOString();
         setNotificationUnreadCount(0);
         try{
-            const r=await fetch("/account/notifications/read-all",{method:"POST",credentials:"same-origin"});
+            const r=await fetch("/account/notifications/read-all",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({seen_before:seenBefore})});
             if(!r.ok)throw new Error("read-all failed");
         }catch(_){}
         await refreshNotificationCenter();
