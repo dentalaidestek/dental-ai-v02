@@ -1610,7 +1610,10 @@ def _validate_schedule_input(
     if recurrence_rule not in RECURRENCE_OPTIONS:
         return None, "Tekrarlama seçeneği geçersiz."
 
-    if recurrence_until:
+    if recurrence_rule == "NONE":
+        # A hidden/stale end date must not survive after weekly recurrence is disabled.
+        recurrence_until = ""
+    elif recurrence_until:
         try:
             until = datetime.strptime(recurrence_until, "%Y-%m-%d").date()
         except ValueError:
@@ -1618,8 +1621,6 @@ def _validate_schedule_input(
         local_start = _utc_to_local(start_utc)
         if local_start and until < local_start.date():
             return None, "Tekrar bitiş tarihi başlangıç tarihinden önce olamaz."
-    elif recurrence_rule == "NONE":
-        recurrence_until = ""
 
     return {
         "event_type": event_type,
