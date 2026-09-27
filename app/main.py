@@ -3613,6 +3613,7 @@ def program_new_page(
     request: Request,
     type: str = "",
     patient_id: str = "",
+    day: str = "",
 ):
     user = get_current_user(request)
     if not user:
@@ -3623,6 +3624,12 @@ def program_new_page(
     suggested = local_now.replace(minute=rounded_minute)
     if suggested < local_now:
         suggested += timedelta(minutes=30)
+    if day:
+        try:
+            selected_date = date.fromisoformat(day)
+            suggested = datetime.combine(selected_date, suggested.time())
+        except ValueError:
+            pass
 
     with Session(engine, expire_on_commit=False) as s:
         patient_query = (
