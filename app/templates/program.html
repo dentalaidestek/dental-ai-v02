@@ -6,7 +6,7 @@
             <h1>Programım</h1>
             <p>Gününüzü ve yaklaşan kayıtlarınızı takip edin.</p>
         </div>
-        <a class="program-add-circle" href="/program/new" aria-label="Yeni program kaydı">+</a>
+        <a class="program-add-circle" href="/program/new{% if view == 'week' %}?day={{ focus_date.isoformat() }}{% endif %}" aria-label="Yeni program kaydı">+</a>
     </div>
 
     {% if saved %}<div class="workspace-flash success">Program kaydı kaydedildi.</div>{% endif %}
