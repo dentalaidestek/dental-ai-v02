@@ -45,4 +45,5 @@
     </section>
   {% else %}<p class="admin-empty">Henüz site destek talebi bulunmuyor.</p>{% endfor %}
   </div>
+{% if has_more and next_cursor %}<nav class="admin-pager admin-support-pager" aria-label="Destek talepleri devamı"><a href="{{admin_path}}?section=support&cursor={{next_cursor}}{% if q %}&q={{q|urlencode}}{% endif %}{% if support_status and support_status!='ALL' %}&support_status={{support_status|urlencode}}{% endif %}">Daha eski 25 kayıt →</a></nav>{% endif %}
 </section>
