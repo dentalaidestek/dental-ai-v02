@@ -3138,9 +3138,11 @@ async def startup():
     _backfill_legacy_deadline_jobs_if_needed()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
+    app.state.program_reminder_task = asyncio.create_task(_program_reminder_worker()) if run_embedded_deadline_worker else None
     app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener(
         listen_deadline=run_embedded_deadline_worker,
         listen_realtime=True,
+        listen_program=run_embedded_deadline_worker,
     ))
 
 
@@ -3148,6 +3150,7 @@ async def startup():
 async def shutdown_consultation_deadline_worker():
     tasks = [
         getattr(app.state, "consultation_deadline_task", None),
+        getattr(app.state, "program_reminder_task", None),
         getattr(app.state, "postgres_event_listener_task", None),
     ]
     for task in tasks:
@@ -4783,7 +4786,7 @@ async def _consultation_deadline_worker() -> None:
 
 
 
-async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True) -> None:
+async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True, listen_program: bool = True) -> None:
     """Transactional PostgreSQL fanout; callers subscribe only to channels they need."""
     if engine.dialect.name != "postgresql" or not DATABASE_URL:
         return
@@ -4797,6 +4800,8 @@ async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realt
                 cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
             if listen_realtime:
                 cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
+            if listen_program:
+                cur.execute(f'LISTEN "{PG_PROGRAM_REMINDER_CHANNEL}"')
             while True:
                 ready = await asyncio.to_thread(select_module.select, [conn], [], [], 60.0)
                 if not ready[0]:
@@ -4806,6 +4811,8 @@ async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realt
                     notice = conn.notifies.pop(0)
                     if notice.channel == PG_DEADLINE_CHANNEL:
                         _wake_consultation_deadline_worker()
+                    elif notice.channel == PG_PROGRAM_REMINDER_CHANNEL:
+                        _wake_program_reminder_worker()
                     elif notice.channel == PG_REALTIME_CHANNEL:
                         try: event_id = int(notice.payload)
                         except (TypeError, ValueError): continue
