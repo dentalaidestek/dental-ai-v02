@@ -9242,7 +9242,7 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
         if (changed or reply) and ticket.user_id:
             labels={"IN_PROGRESS":"inceleniyor","ANSWERED":"sonuçlandı","CLOSED":"kapatıldı"}
-            message=f"Destek talebiniz #{ticket.id} {labels[status]}."
+            message=f"Destek talebiniz {labels[status]}."
             if reply:message+=" Destek ekibi yeni bir açıklama yazdı."
             _, notice_event, _ = _notify_user(
                 s,
@@ -9278,7 +9278,7 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
         report.status=status;s.add(report)
         if changed:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
-            message=f"Bildiriminiz #{report.id} artık {labels[status].lower()} durumunda."
+            message=f"Gönderdiğiniz bildirim artık {labels[status].lower()} durumunda."
             _, notice_event, _ = _notify_user(
                 s,
                 user_id=report.reporter_user_id,
