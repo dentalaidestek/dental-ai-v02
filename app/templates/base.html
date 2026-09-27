@@ -491,7 +491,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(notify&&location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
-        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
+        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){setNotificationUnreadCount(notificationUnreadCount+1);let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
         else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
