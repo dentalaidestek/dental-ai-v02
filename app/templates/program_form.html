@@ -20,7 +20,7 @@
             </label>
 
             <label class="program-field program-field-wide">
-                <span>{% if initial_type == 'CLASS' %}Ders adı{% else %}Başlık{% endif %}</span>
+                <span id="programTitleLabel">{% if initial_type == 'CLASS' %}Ders adı{% else %}Başlık{% endif %}</span>
                 <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required placeholder="Örn. Kontrol randevusu">
             </label>
 
@@ -105,6 +105,8 @@ function syncProgramPatientField(clearWhenHidden = false) {
     const select = field.querySelector('select[name="patient_id"]');
     const supportsPatient = ['APPOINTMENT', 'CLINIC'].includes(type);
     field.style.display = supportsPatient ? '' : 'none';
+    const titleLabel = document.getElementById('programTitleLabel');
+    if (titleLabel) titleLabel.textContent = type === 'CLASS' ? 'Ders adı' : 'Başlık';
     if (!supportsPatient && clearWhenHidden && select) {
         select.value = '';
     }
