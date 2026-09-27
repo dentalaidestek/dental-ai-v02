@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import pytest
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from sqlalchemy.pool import StaticPool
 try:
     from fastapi.testclient import TestClient
@@ -18,6 +18,12 @@ BASE = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
 MESSAGES = (ROOT / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
 ROOM = (ROOT / "app" / "templates" / "expert_case_room.html").read_text(encoding="utf-8")
 ROW = (ROOT / "app" / "templates" / "_message_row.html").read_text(encoding="utf-8")
+
+
+def _engine():
+    return create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
 
 
 def test_message_event_is_durable_for_both_participants():
