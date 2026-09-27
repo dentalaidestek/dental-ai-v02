@@ -753,6 +753,94 @@ PROGRAM_TYPE_ICONS = {
 REMINDER_OPTIONS = {0, 15, 30, 60, 120, 1440}
 RECURRENCE_OPTIONS = {"NONE", "WEEKLY"}
 
+_program_reminder_wakeup = asyncio.Event()
+PROGRAM_REMINDER_RECOVERY_SECONDS = 300
+PROGRAM_REMINDER_BATCH_SIZE = 100
+PROGRAM_REMINDER_RETENTION_DAYS = 30
+_program_reminder_last_cleanup: Optional[datetime] = None
+PG_PROGRAM_REMINDER_CHANNEL = "dentalai_program_reminders"
+
+
+def _wake_program_reminder_worker() -> None:
+    _program_reminder_wakeup.set()
+
+
+def _program_occurrence_key(event_id: int, occurrence_start_at: datetime, reminder_minutes: int) -> str:
+    return f"program-reminder:{event_id}:{occurrence_start_at.isoformat()}:{reminder_minutes}"
+
+
+def _next_program_occurrence_utc(event: ScheduleEvent, after_utc: Optional[datetime] = None) -> Optional[datetime]:
+    if event.status != "ACTIVE" or not event.notification_enabled or event.reminder_minutes is None:
+        return None
+    anchor = event.start_at
+    after = after_utc or _utcnow_naive()
+    if event.recurrence_rule != "WEEKLY":
+        return anchor if anchor - timedelta(minutes=event.reminder_minutes) >= after else None
+
+    current = anchor
+    if current < after:
+        delta = after - current
+        weeks = max(0, delta.days // 7)
+        current += timedelta(weeks=weeks)
+        while current - timedelta(minutes=event.reminder_minutes) < after:
+            current += timedelta(weeks=1)
+    if event.recurrence_until:
+        try:
+            until_local = date.fromisoformat(event.recurrence_until)
+            current_local = _utc_to_local(current)
+            if not current_local or current_local.date() > until_local:
+                return None
+        except ValueError:
+            return None
+    return current
+
+
+def _enqueue_next_program_reminder(session: Session, event: ScheduleEvent, after_utc: Optional[datetime] = None) -> None:
+    occurrence = _next_program_occurrence_utc(event, after_utc)
+    if occurrence is None or event.reminder_minutes is None:
+        return
+    run_at = occurrence - timedelta(minutes=event.reminder_minutes)
+    key = _program_occurrence_key(event.id, occurrence, event.reminder_minutes)
+    if session.exec(select(ProgramReminderJob.id).where(ProgramReminderJob.dedup_key == key)).first():
+        return
+    job = ProgramReminderJob(
+        schedule_event_id=event.id,
+        owner_user_id=event.owner_user_id,
+        occurrence_start_at=occurrence,
+        run_at=run_at,
+        reminder_minutes=event.reminder_minutes,
+        event_updated_at=event.updated_at,
+        dedup_key=key,
+    )
+    try:
+        with session.begin_nested():
+            session.add(job)
+            session.flush()
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
+    except IntegrityError:
+        if session.exec(select(ProgramReminderJob.id).where(ProgramReminderJob.dedup_key == key)).first():
+            return
+        raise
+
+
+def _cancel_pending_program_reminders(session: Session, event_id: int) -> None:
+    now = _utcnow_naive()
+    for job in session.exec(select(ProgramReminderJob).where(
+        ProgramReminderJob.schedule_event_id == event_id,
+        ProgramReminderJob.status == "PENDING",
+    )).all():
+        job.status = "CANCELLED"
+        job.completed_at = now
+        session.add(job)
+
+
+def _sync_program_reminder(session: Session, event: ScheduleEvent) -> None:
+    _cancel_pending_program_reminders(session, event.id)
+    _enqueue_next_program_reminder(session, event)
+
 try:
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
 except Exception:
