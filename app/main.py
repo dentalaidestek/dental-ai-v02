@@ -2474,6 +2474,8 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
             return HTMLResponse("Destek Ekibinin yeni mesajını beklerken tekrar yanıt gönderemezsiniz.",status_code=409)
         support_message=SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message)
         s.add(support_message);s.flush()
+        # Conversation turn is authoritative for the waiting direction.
+        ticket.status="USER_REPLIED"
         ticket.updated_at=_utcnow_naive();s.add(ticket)
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
         for admin in admins:
@@ -10337,6 +10339,9 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
         if ticket.status=="CLOSED":return JSONResponse({"ok":False,"error":"Kapatılmış destek talebine mesaj gönderilemez."},status_code=409)
         support_message=SupportTicketMessage(ticket_id=ticket.id,sender_user_id=admin.id,sender_role="ADMIN",message=message)
         s.add(support_message);s.flush()
+        # An admin message opens exactly one user reply turn and makes the
+        # waiting direction explicit for filters/realtime clients.
+        ticket.status="ANSWERED"
         ticket.updated_at=_utcnow_naive();s.add(ticket)
         if ticket.user_id:
             user_event=_record_realtime_event(
