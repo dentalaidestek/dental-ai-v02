@@ -1281,6 +1281,149 @@ def _program_week_days(focus_date: date):
     ]
 
 
+def _program_reminder_is_current(event: ScheduleEvent, job: ProgramReminderJob) -> bool:
+    if event.owner_user_id != job.owner_user_id or event.status != "ACTIVE":
+        return False
+    if not event.notification_enabled or event.reminder_minutes is None:
+        return False
+    if event.reminder_minutes != job.reminder_minutes or event.updated_at != job.event_updated_at:
+        return False
+    if event.recurrence_rule == "NONE":
+        return event.start_at == job.occurrence_start_at
+    if event.recurrence_rule != "WEEKLY":
+        return False
+    delta = job.occurrence_start_at - event.start_at
+    if delta.total_seconds() < 0 or delta.total_seconds() % timedelta(weeks=1).total_seconds() != 0:
+        return False
+    if event.recurrence_until:
+        try:
+            occurrence_local = _utc_to_local(job.occurrence_start_at)
+            if not occurrence_local or occurrence_local.date() > date.fromisoformat(event.recurrence_until):
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+def _program_reminder_copy(event: ScheduleEvent, occurrence_start_at: datetime) -> tuple[str, str]:
+    local_start = _utc_to_local(occurrence_start_at)
+    when = local_start.strftime("%H:%M") if local_start else ""
+    type_label = PROGRAM_EVENT_TYPES.get(event.event_type, "Program")
+    title = event.title.strip() or type_label
+    return title[:120], f"{when} · {type_label}" if when else type_label
+
+
+def _process_program_reminder_job(session: Session, job: ProgramReminderJob, now: datetime) -> Optional[RealtimeEvent]:
+    stmt = select(ScheduleEvent).where(ScheduleEvent.id == job.schedule_event_id)
+    if engine.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    event = session.exec(stmt).first()
+    if not event or not _program_reminder_is_current(event, job):
+        return None
+
+    title, message = _program_reminder_copy(event, job.occurrence_start_at)
+    _, realtime_event, _ = _notify_user(
+        session,
+        user_id=event.owner_user_id,
+        notice_type="PROGRAM_REMINDER",
+        title=title,
+        message=message,
+        related_type="schedule_event",
+        related_id=event.id,
+        dedup_key=job.dedup_key,
+        target_url="/program",
+    )
+    if event.recurrence_rule == "WEEKLY":
+        _enqueue_next_program_reminder(
+            session, event, job.occurrence_start_at + timedelta(seconds=1)
+        )
+    return realtime_event
+
+
+def _cleanup_program_reminder_jobs(now: datetime) -> None:
+    cutoff = now - timedelta(days=PROGRAM_REMINDER_RETENTION_DAYS)
+    with Session(engine) as s:
+        s.exec(delete(ProgramReminderJob).where(
+            ProgramReminderJob.status.in_({"DONE", "FAILED", "CANCELLED"}),
+            ProgramReminderJob.completed_at != None,
+            ProgramReminderJob.completed_at < cutoff,
+        ))
+        s.commit()
+
+
+def _next_program_reminder_at() -> Optional[datetime]:
+    with Session(engine) as s:
+        return s.exec(select(ProgramReminderJob.run_at).where(
+            ProgramReminderJob.status == "PENDING"
+        ).order_by(ProgramReminderJob.run_at.asc()).limit(1)).first()
+
+
+async def _process_program_reminder_jobs() -> bool:
+    now = _utcnow_naive()
+    publish_events: list[RealtimeEvent] = []
+    with Session(engine, expire_on_commit=False) as s:
+        stmt = select(ProgramReminderJob).where(
+            ProgramReminderJob.status == "PENDING",
+            ProgramReminderJob.run_at <= now,
+        ).order_by(ProgramReminderJob.run_at.asc()).limit(PROGRAM_REMINDER_BATCH_SIZE)
+        if engine.dialect.name == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
+        jobs = s.exec(stmt).all()
+        for job in jobs:
+            try:
+                with s.begin_nested():
+                    realtime_event = _process_program_reminder_job(s, job, now)
+                    job.status = "DONE"
+                    job.completed_at = now
+                    job.last_error = None
+                    s.add(job)
+                    s.flush()
+                if realtime_event:
+                    publish_events.append(realtime_event)
+            except Exception as exc:
+                job.attempts += 1
+                job.last_error = str(exc)[:1000]
+                if job.attempts >= 5:
+                    job.status = "FAILED"
+                    job.completed_at = now
+                else:
+                    job.run_at = now + timedelta(seconds=min(300, 5 * (2 ** (job.attempts - 1))))
+                s.add(job)
+                logger.exception("Program reminder job failed: %s", job.id)
+        s.commit()
+    for event in publish_events:
+        await _publish_realtime_event(event)
+    return len(jobs) >= PROGRAM_REMINDER_BATCH_SIZE
+
+
+async def _program_reminder_worker() -> None:
+    global _program_reminder_last_cleanup
+    while True:
+        try:
+            now = _utcnow_naive()
+            if _program_reminder_last_cleanup is None or now - _program_reminder_last_cleanup >= timedelta(hours=24):
+                _cleanup_program_reminder_jobs(now)
+                _program_reminder_last_cleanup = now
+            while await _process_program_reminder_jobs():
+                await asyncio.sleep(0)
+            _program_reminder_wakeup.clear()
+            next_at = _next_program_reminder_at()
+            wait_seconds = PROGRAM_REMINDER_RECOVERY_SECONDS if next_at is None else max(
+                0.05, min((next_at - _utcnow_naive()).total_seconds(), PROGRAM_REMINDER_RECOVERY_SECONDS)
+            )
+            if next_at and next_at <= _utcnow_naive():
+                continue
+            try:
+                await asyncio.wait_for(_program_reminder_wakeup.wait(), timeout=wait_seconds)
+            except asyncio.TimeoutError:
+                pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Program reminder worker iteration failed")
+            await asyncio.sleep(5)
+
+
 def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
     if not patient_id:
         return None
