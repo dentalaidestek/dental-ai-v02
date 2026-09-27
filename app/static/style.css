@@ -5173,8 +5173,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 /* Mobile header: keep expert profile action alive without crowding the brand/bell/menu row. */
 @media(max-width:760px){
  .topbar{column-gap:7px}
- .expert-header-entry{order:20;flex:1 0 100%;margin:2px 0 0!important;max-width:none!important;min-height:32px;padding:5px 9px;font-size:10.5px;border-radius:9px;justify-content:center}
- .expert-header-entry span{white-space:nowrap!important;text-align:center!important}
+ .expert-header-entry{order:0;flex:0 1 auto;margin:0!important;width:auto!important;max-width:150px!important;min-width:0!important;min-height:32px;padding:5px 8px;font-size:10.5px;border-radius:9px;justify-content:center;box-sizing:border-box;overflow:hidden}
+ .expert-header-entry span{min-width:0;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;text-align:center!important}
  .notification-center{margin-left:auto}
  .menu-toggle{margin-left:0!important}
 }
