@@ -3869,7 +3869,10 @@ def program_create(
 
         event = ScheduleEvent(owner_user_id=user.id, **payload)
         s.add(event)
+        s.flush()
+        _sync_program_reminder(s, event)
         s.commit()
+    _wake_program_reminder_worker()
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -3986,7 +3989,10 @@ def program_edit(
             setattr(event, key, value)
         event.updated_at = _utcnow_naive()
         s.add(event)
+        s.flush()
+        _sync_program_reminder(s, event)
         s.commit()
+    _wake_program_reminder_worker()
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -4084,6 +4090,7 @@ def program_complete(request: Request, event_id: int):
         event.status = "COMPLETED"
         event.updated_at = _utcnow_naive()
         s.add(event)
+        _cancel_pending_program_reminders(s, event.id)
         s.commit()
 
     return RedirectResponse("/program?completed=1", status_code=303)
@@ -4102,6 +4109,7 @@ def program_delete(request: Request, event_id: int):
         event.status = "DELETED"
         event.updated_at = _utcnow_naive()
         s.add(event)
+        _cancel_pending_program_reminders(s, event.id)
         s.commit()
 
     return RedirectResponse("/program?deleted=1", status_code=303)
