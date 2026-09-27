@@ -301,10 +301,17 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         if(badge){badge.hidden=count<1;badge.textContent=count>99?"99+":String(count);}
         if(label)label.textContent=count?count+" yeni":"";
     }
-    let notificationUnreadCount=0;
+    const notificationUnreadKey="daiNotificationUnread:{{ user.id if user else 0 }}";
+    let notificationUnreadCount=Math.max(0,Number(sessionStorage.getItem(notificationUnreadKey)||0));
+    function setNotificationUnreadCount(count) {
+        notificationUnreadCount=Math.max(0,Number(count||0));
+        sessionStorage.setItem(notificationUnreadKey,String(notificationUnreadCount));
+        paintNotificationBadge(notificationUnreadCount);
+    }
+    paintNotificationBadge(notificationUnreadCount);
     function renderNotificationCenter(data) {
         const list=document.getElementById("notificationList"); if(!list)return;
-        const rows=data.notifications||[]; notificationUnreadCount=Math.max(0,Number(data.unread_count||0));paintNotificationBadge(notificationUnreadCount);
+        const rows=data.notifications||[]; setNotificationUnreadCount(data.unread_count);
         if(!rows.length){list.innerHTML='<div class="notification-empty">Şu anda güncel bildiriminiz yok.</div>';return;}
         list.replaceChildren(...rows.map(n=>{
             const item=document.createElement(n.target_url?"a":"button");
@@ -337,7 +344,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             item.addEventListener("click",()=>{
                 if(!n.is_read){
                     fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"})
-                      .then(r=>{if(!r.ok)throw new Error("read failed");n.is_read=true;item.classList.remove("unread");notificationUnreadCount=Math.max(0,notificationUnreadCount-1);paintNotificationBadge(notificationUnreadCount);})
+                      .then(r=>{if(!r.ok)throw new Error("read failed");n.is_read=true;item.classList.remove("unread");setNotificationUnreadCount(notificationUnreadCount-1);})
                       .catch(()=>refreshNotificationCenter());
                 }
             });
@@ -350,12 +357,21 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(r.ok)renderNotificationCenter(await r.json());
         }catch(_){}
     }
+    async function markNotificationsSeen() {
+        const seenBefore=new Date().toISOString();
+        setNotificationUnreadCount(0);
+        try{
+            const r=await fetch("/account/notifications/read-all",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({seen_before:seenBefore})});
+            if(!r.ok)throw new Error("read-all failed");
+        }catch(_){}
+        await refreshNotificationCenter();
+    }
     function toggleNotificationCenter(force) {
         const panel=document.getElementById("notificationPanel"),button=document.getElementById("notificationBell");
         if(!panel||!button)return;
         const open=typeof force==="boolean"?force:panel.hidden;
         panel.hidden=!open;button.setAttribute("aria-expanded",open?"true":"false");
-        if(open)refreshNotificationCenter();
+        if(open)markNotificationsSeen();
     }
     document.getElementById("notificationBell")?.addEventListener("click",e=>{e.stopPropagation();toggleNotificationCenter();});
     document.addEventListener("click",e=>{if(!e.target.closest?.("#notificationCenter"))toggleNotificationCenter(false);});
@@ -473,16 +489,18 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){if(notify){refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
+        else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
         else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
             const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
         }
-        // Catch-up replays durable history only to reconcile cursors/state.
-        // Do not let page-level live handlers interpret historical MESSAGE/CASE
-        // events as newly-arrived activity (which can resurrect unread badges).
-        if(notify)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        // Historical resume stays silent for message/case activity, but Program
+        // lifecycle events still reconcile open Program/dashboard state after a
+        // disconnect. Other stateful event types already have dedicated handlers.
+        const replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(evt.event_type);
+        if(notify||replayProgramState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         try{
@@ -506,7 +524,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
         connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
-        connection.onmessage=e=>{if(syncSocket!==connection)return;try{applySyncEvent(JSON.parse(e.data));}catch(_){}};
+        connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }

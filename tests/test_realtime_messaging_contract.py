@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import pytest
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from sqlalchemy.pool import StaticPool
 try:
     from fastapi.testclient import TestClient
@@ -18,6 +18,14 @@ BASE = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
 MESSAGES = (ROOT / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
 ROOM = (ROOT / "app" / "templates" / "expert_case_room.html").read_text(encoding="utf-8")
 ROW = (ROOT / "app" / "templates" / "_message_row.html").read_text(encoding="utf-8")
+
+
+def _engine():
+    test_engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(test_engine)
+    return test_engine
 
 
 def test_message_event_is_durable_for_both_participants():
@@ -218,3 +226,73 @@ def test_realtime_cursor_tolerates_cross_process_commit_reordering():
     assert "if(id>lastEventId)" in BASE
     assert "id&&id<=lastEventId" not in BASE
     assert "lastEventId-syncOverlap" in BASE
+
+
+def test_ws_resume_history_is_marked_replay_and_silent_in_client():
+    assert 'payload["replay"] = True' in MAIN
+    assert 'notify:evt?.replay!==true' in BASE
+    assert 'if(notify){bumpMessageBadge();showLiveMessage(data);}' in BASE
+    assert 'replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"]' in BASE
+
+
+def test_notification_center_open_marks_active_notices_seen():
+    assert '@app.post("/account/notifications/read-all")' in MAIN
+    assert MAIN.index('@app.post("/account/notifications/read-all")') < MAIN.index('@app.post("/account/notifications/{notice_id}/read")')
+    assert 'if(open)markNotificationsSeen();' in BASE
+    assert 'fetch("/account/notifications/read-all",{method:"POST"' in BASE
+    assert "seen_before:seenBefore" in BASE
+    assert "AdminNotice.created_at <= seen_before" in MAIN
+    assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
+    assert '"NOTIFICATIONS_READ"' in MAIN
+    assert 'evt.event_type==="NOTIFICATIONS_READ"' in BASE
+    read_all = MAIN.split("async def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
+    assert "_record_realtime_event" in read_all
+    assert "await _publish_realtime_event(realtime_event)" in read_all
+
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
+def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active(monkeypatch):
+    engine = _engine()
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username="notice-owner", role="DOCTOR", display_name="Notice Owner")
+        session.add(user)
+        session.commit()
+        notice = main.AdminNotice(
+            user_id=user.id, title="Hatırlatma", message="Program kaydı",
+            notice_type="PROGRAM_REMINDER", status="ACTIVE",
+        )
+        session.add(notice)
+        token = "notice-owner-token"
+        session.add(main.SessionToken(
+            token_hash=main.hash_session_token(token), user_id=user.id,
+            expires_at=now + main.timedelta(days=1),
+        ))
+        session.commit()
+        notice_id = notice.id
+        user_id = user.id
+    monkeypatch.setattr(main, "engine", engine)
+    with TestClient(main.app) as client:
+        response = client.post("/account/notifications/read-all", cookies={main.SESSION_COOKIE: token})
+    assert response.status_code == 200
+    assert response.json()["read_count"] == 1
+    with Session(engine) as session:
+        notice = session.get(main.AdminNotice, notice_id)
+        assert notice.user_id == user_id
+        assert notice.status == "ACTIVE"
+        assert notice.is_read is True
+        assert notice.read_at is not None
+        events = session.exec(select(main.RealtimeEvent).where(
+            main.RealtimeEvent.user_id == user_id,
+            main.RealtimeEvent.event_type == "NOTIFICATIONS_READ",
+        )).all()
+        assert len(events) == 1
+
+def test_seen_program_reminders_expire_without_touching_other_notices():
+    helper = MAIN.split("def _expire_seen_program_reminders", 1)[1].split('@app.get("/account/notifications")', 1)[0]
+    assert 'AdminNotice.notice_type == "PROGRAM_REMINDER"' in helper
+    assert "AdminNotice.is_read == True" in helper
+    assert "AdminNotice.read_at <= cutoff" in helper
+    assert 'notice.status = "RESOLVED"' in helper
+    assert "timedelta(hours=24)" in helper
