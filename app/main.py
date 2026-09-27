@@ -3589,6 +3589,31 @@ def program_page(
             s, user.id, range_start, range_end
         )
 
+    all_occurrences = occurrences
+    if view == "week":
+        occurrences = [
+            item for item in occurrences
+            if item["start_local"].date() == focus_date
+        ]
+
+    month_days = []
+    if view == "month":
+        by_date = {}
+        for item in all_occurrences:
+            by_date.setdefault(item["start_local"].date(), []).append(item)
+        month_start = focus_date.replace(day=1)
+        grid_start = month_start - timedelta(days=month_start.weekday())
+        for offset in range(42):
+            grid_date = grid_start + timedelta(days=offset)
+            day_events = by_date.get(grid_date, [])
+            month_days.append({
+                "date": grid_date,
+                "in_month": grid_date.month == month_start.month,
+                "events": day_events[:3],
+                "has_more": len(day_events) > 3,
+            })
+        occurrences = by_date.get(focus_date, [])
+
     return templates.TemplateResponse(
         request=request,
         name="program.html",
@@ -3600,6 +3625,8 @@ def program_page(
             "next_day": following.isoformat(),
             "groups": _group_program_occurrences(occurrences),
             "week_days": _program_week_days(focus_date),
+            "month_days": month_days,
+            "month_title": focus_date.strftime("%m.%Y"),
             "event_type_labels": PROGRAM_EVENT_TYPES,
             "saved": request.query_params.get("saved") == "1",
             "deleted": request.query_params.get("deleted") == "1",
