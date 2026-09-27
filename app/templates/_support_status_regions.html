@@ -1,5 +1,39 @@
-<div class="info-card" id="supportTicketsRegion"><h2>Taleplerim</h2>{% for x in tickets %}{% set history=support_messages_by_ticket.get(x.id,[]) %}{% set admin_messages=history|selectattr('sender_role','equalto','ADMIN')|list %}{% set user_messages=history|selectattr('sender_role','equalto','USER')|list %}<section class="support-ticket-card" data-support-ticket-id="{{x.id}}" data-support-status="{{x.status}}"><div class="support-ticket-head"><span class="support-ticket-title"><b>#{{x.id}} · {{x.subject}}</b><small>{{x.message}}</small></span><span class="support-status {{'answered' if x.status=='ANSWERED' else ('closed' if x.status=='CLOSED' else 'waiting')}}">{% if x.status=='OPEN' %}Bildirildi{% elif x.status=='IN_PROGRESS' %}İnceleniyor{% elif x.status=='USER_REPLIED' %}Yanıtınız gönderildi{% elif x.status=='ANSWERED' %}Sonuçlandı{% elif x.status=='CLOSED' %}Kapatıldı{% else %}{{x.status}}{% endif %}</span></div>
-{% if admin_messages %}{% set last_admin=admin_messages[-1] %}<div class="support-result"><b>{{'Talep kapatıldı' if x.status=='CLOSED' else 'Destek ekibinin yanıtı'}}</b><div>{{last_admin.message}}</div><small>{{last_admin.created_at.strftime('%d.%m.%Y %H:%M')}}</small></div>{% endif %}
-{% if x.status=='USER_REPLIED' and user_messages %}{% set last_user=user_messages[-1] %}<div class="support-user-reply"><b>Son yanıtınız</b><div>{{last_user.message}}</div></div>{% endif %}
-{% if x.status=='ANSWERED' %}<details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><label>Yanıtınız<textarea name="message" rows="3" maxlength="4000" required></textarea></label><button type="submit">Gönder</button></form></details>{% elif x.status=='CLOSED' %}<div class="support-closed-note">Bu talep yönetim tarafından kapatıldı. Gerekirse yeni bir destek talebi oluşturabilirsiniz.</div>{% endif %}</section>{% else %}<p class="small-note">Henüz destek talebiniz yok.</p>{% endfor %}</div>
+<div class="info-card" id="supportTicketsRegion">
+  <div class="support-list-head"><div><h2>Destek Taleplerim</h2><p class="small-note">Oluşturduğunuz talepleri inceleyebilir, gerektiğinde destek ekibiyle mesajlaşabilirsiniz.</p></div></div>
+  {% for x in tickets %}
+  {% set history=support_messages_by_ticket.get(x.id,[]) %}
+  {% set unread=support_unread_by_ticket.get(x.id,0) %}
+  {% set can_reply=support_can_reply_by_ticket.get(x.id,False) %}
+  <section class="support-ticket-card" data-support-ticket-id="{{x.id}}" data-support-status="{{x.status}}">
+    <div class="support-ticket-head">
+      <button type="button" class="support-ticket-open" data-support-toggle="{{x.id}}" aria-expanded="false">
+        <span class="support-ticket-meta"><b>#{{x.id}}</b><time>{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time></span>
+        <strong>{{x.subject}}</strong>
+        <small>{{x.message}}</small>
+      </button>
+      <div class="support-ticket-side">
+        <span class="support-status {{'answered' if x.status=='ANSWERED' else ('closed' if x.status=='CLOSED' else 'waiting')}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıtınız gönderildi{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
+        <button type="button" class="support-message-count {{'has-unread' if unread else ''}}" data-support-toggle="{{x.id}}">Mesajlar{% if unread %} <b>{{unread}}</b>{% endif %}</button>
+      </div>
+    </div>
+    <div class="support-conversation" data-support-conversation="{{x.id}}" hidden>
+      <div class="support-conversation-top"><b>#{{x.id}} · {{x.subject}}</b><button type="button" data-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button></div>
+      <div class="support-thread">
+        <div class="support-bubble user"><div class="support-bubble-head"><b>Siz</b><time>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{x.message}}</p></div>
+        {% for m in history %}<div class="support-bubble {{'admin' if m.sender_role=='ADMIN' else 'user'}}"><div class="support-bubble-head"><b>{{'Yönetim Ekibi' if m.sender_role=='ADMIN' else 'Siz'}}</b><time>{{m.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{m.message}}</p></div>{% endfor %}
+      </div>
+      {% if x.status=='CLOSED' %}
+        <div class="support-turn-note done">Bu talep tamamlandı. Gerekirse yeni bir destek talebi oluşturabilirsiniz.</div>
+      {% elif can_reply %}
+        <div class="support-turn-note">Yönetim ekibi size yanıt verdi. Aşağıdaki <b>Yanıtla</b> düğmesini kullanarak bir mesaj gönderebilirsiniz.</div>
+        <details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>
+      {% elif history and history[-1].sender_role=='USER' %}
+        <div class="support-turn-note done">Yanıtınız iletildi. Yönetim ekibi size tekrar yanıt verene kadar yeni mesaj gönderemezsiniz.</div>
+      {% else %}
+        <div class="support-turn-note">Talebiniz yönetim ekibi tarafından inceleniyor.</div>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}<p class="small-note">Henüz destek talebiniz yok.</p>{% endfor %}
+</div>
 <div class="info-card" id="supportReportsRegion"><h2>Bildirimlerim</h2>{% for r in reports %}<div class="admin-line" data-support-report-id="{{r.id}}" data-report-status="{{r.status}}"><span><b>#{{r.id}} · {{r.reason}}</b><small>{% if r.case_id %}Vaka #{{r.case_id}} · {% endif %}{{r.detail or 'Ek açıklama yok.'}}</small></span><strong>{% if r.status=='OPEN' %}Açık{% elif r.status=='IN_PROGRESS' %}İnceleniyor{% elif r.status=='CLOSED' %}Sonuçlandı{% else %}{{r.status}}{% endif %}</strong></div>{% else %}<p class="small-note">Henüz kullanıcı bildiriminiz yok.</p>{% endfor %}</div>
