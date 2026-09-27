@@ -699,6 +699,23 @@ class ScheduleEvent(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class ProgramReminderJob(SQLModel, table=True):
+    """Durable occurrence-specific queue for Program reminders."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    schedule_event_id: int = Field(index=True)
+    owner_user_id: int = Field(index=True)
+    occurrence_start_at: datetime = Field(index=True)
+    run_at: datetime = Field(index=True)
+    reminder_minutes: int
+    event_updated_at: datetime
+    dedup_key: str = Field(index=True, unique=True)
+    status: str = Field(default="PENDING", index=True)
+    attempts: int = 0
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+    completed_at: Optional[datetime] = None
+
+
 PROFESSIONAL_TITLES = {
     "Öğrenci",
     "Diş Hekimi",
@@ -735,6 +752,200 @@ PROGRAM_TYPE_ICONS = {
 
 REMINDER_OPTIONS = {0, 15, 30, 60, 120, 1440}
 RECURRENCE_OPTIONS = {"NONE", "WEEKLY"}
+
+_program_reminder_wakeup = asyncio.Event()
+PROGRAM_REMINDER_RECOVERY_SECONDS = 300
+PROGRAM_REMINDER_BATCH_SIZE = 100
+PROGRAM_REMINDER_RETENTION_DAYS = 30
+_program_reminder_last_cleanup: Optional[datetime] = None
+PG_PROGRAM_REMINDER_CHANNEL = "dentalai_program_reminders"
+
+
+def _wake_program_reminder_worker() -> None:
+    _program_reminder_wakeup.set()
+
+
+def _program_occurrence_key(event_id: int, occurrence_start_at: datetime, reminder_minutes: int) -> str:
+    return f"program-reminder:{event_id}:{occurrence_start_at.isoformat()}:{reminder_minutes}"
+
+
+def _next_program_occurrence_utc(event: ScheduleEvent, after_utc: Optional[datetime] = None) -> Optional[datetime]:
+    if event.status != "ACTIVE" or not event.notification_enabled or event.reminder_minutes is None:
+        return None
+    anchor = event.start_at
+    after = after_utc or _utcnow_naive()
+    if event.recurrence_rule != "WEEKLY":
+        return anchor if anchor - timedelta(minutes=event.reminder_minutes) >= after else None
+
+    current = anchor
+    grace_after = after
+    if current < grace_after:
+        delta = grace_after - current
+        weeks = max(0, delta.days // 7)
+        current += timedelta(weeks=weeks)
+        while current - timedelta(minutes=event.reminder_minutes) < grace_after:
+            current += timedelta(weeks=1)
+    if event.recurrence_until:
+        try:
+            until_local = date.fromisoformat(event.recurrence_until)
+            current_local = _utc_to_local(current)
+            if not current_local or current_local.date() > until_local:
+                return None
+        except ValueError:
+            return None
+    return current
+
+
+def _enqueue_next_program_reminder(session: Session, event: ScheduleEvent, after_utc: Optional[datetime] = None) -> None:
+    occurrence = _next_program_occurrence_utc(event, after_utc)
+    if occurrence is None or event.reminder_minutes is None:
+        return
+    run_at = occurrence - timedelta(minutes=event.reminder_minutes)
+    key = _program_occurrence_key(event.id, occurrence, event.reminder_minutes)
+    existing = session.exec(
+        select(ProgramReminderJob).where(ProgramReminderJob.dedup_key == key)
+    ).first()
+    if existing:
+        # Editing title/location/notes can keep the same occurrence/reminder key.
+        # _sync_program_reminder cancels the old pending snapshot first; revive
+        # only that cancelled job with the current event snapshot. Never revive
+        # DONE jobs, otherwise an already-delivered reminder could be sent twice.
+        if existing.status == "CANCELLED":
+            existing.owner_user_id = event.owner_user_id
+            existing.occurrence_start_at = occurrence
+            existing.run_at = run_at
+            existing.reminder_minutes = event.reminder_minutes
+            existing.event_updated_at = event.updated_at
+            existing.status = "PENDING"
+            existing.attempts = 0
+            existing.last_error = None
+            existing.completed_at = None
+            session.add(existing)
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
+        return
+    job = ProgramReminderJob(
+        schedule_event_id=event.id,
+        owner_user_id=event.owner_user_id,
+        occurrence_start_at=occurrence,
+        run_at=run_at,
+        reminder_minutes=event.reminder_minutes,
+        event_updated_at=event.updated_at,
+        dedup_key=key,
+    )
+    try:
+        with session.begin_nested():
+            session.add(job)
+            session.flush()
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
+    except IntegrityError:
+        if session.exec(select(ProgramReminderJob.id).where(ProgramReminderJob.dedup_key == key)).first():
+            return
+        raise
+
+
+def _backfill_program_reminder_jobs() -> None:
+    """Ensure active pre-queue Program records have their next durable reminder."""
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        if engine.dialect.name == "postgresql":
+            session.exec(text("SELECT pg_advisory_xact_lock(824260927)"))
+        events = session.exec(select(ScheduleEvent).where(
+            ScheduleEvent.status == "ACTIVE",
+            ScheduleEvent.notification_enabled == True,
+            ScheduleEvent.reminder_minutes != None,
+        )).all()
+        for event in events:
+            pending_jobs = session.exec(select(ProgramReminderJob).where(
+                ProgramReminderJob.schedule_event_id == event.id,
+                ProgramReminderJob.status == "PENDING",
+            )).all()
+            owner = session.get(User, event.owner_user_id)
+            if not owner or not owner.is_active:
+                for pending in pending_jobs:
+                    pending.status = "CANCELLED"
+                    pending.completed_at = now
+                    session.add(pending)
+                continue
+            has_current_pending = False
+            for pending in pending_jobs:
+                if _program_reminder_is_current(event, pending):
+                    # Keep overdue durable work pending: the worker must recover
+                    # it after a restart instead of startup silently discarding it.
+                    has_current_pending = True
+                else:
+                    pending.status = "CANCELLED"
+                    pending.completed_at = now
+                    session.add(pending)
+            if not has_current_pending:
+                _enqueue_next_program_reminder(session, event, now)
+        session.commit()
+
+
+def _cancel_pending_program_reminders(session: Session, event_id: int) -> None:
+    now = _utcnow_naive()
+    for job in session.exec(select(ProgramReminderJob).where(
+        ProgramReminderJob.schedule_event_id == event_id,
+        ProgramReminderJob.status == "PENDING",
+    )).all():
+        job.status = "CANCELLED"
+        job.completed_at = now
+        session.add(job)
+
+
+def _sync_program_reminder(session: Session, event: ScheduleEvent) -> None:
+    _cancel_pending_program_reminders(session, event.id)
+    _enqueue_next_program_reminder(session, event)
+
+
+def _cancel_user_program_reminders(session: Session, user_id: int) -> None:
+    """Cancel queued Program reminders when an account can no longer receive them."""
+    now = _utcnow_naive()
+    for job in session.exec(select(ProgramReminderJob).where(
+        ProgramReminderJob.owner_user_id == user_id,
+        ProgramReminderJob.status == "PENDING",
+    )).all():
+        job.status = "CANCELLED"
+        job.completed_at = now
+        session.add(job)
+
+
+def _restore_user_program_reminders(session: Session, user_id: int) -> None:
+    """Rebuild the next valid reminder after an account is re-enabled."""
+    events = session.exec(select(ScheduleEvent).where(
+        ScheduleEvent.owner_user_id == user_id,
+        ScheduleEvent.status == "ACTIVE",
+        ScheduleEvent.notification_enabled == True,
+        ScheduleEvent.reminder_minutes != None,
+    )).all()
+    now = _utcnow_naive()
+    for event in events:
+        occurrence = _next_program_occurrence_utc(event, now)
+        if occurrence is None or event.reminder_minutes is None:
+            continue
+        key = _program_occurrence_key(event.id, occurrence, event.reminder_minutes)
+        cancelled = session.exec(select(ProgramReminderJob).where(
+            ProgramReminderJob.dedup_key == key,
+            ProgramReminderJob.status == "CANCELLED",
+        )).first()
+        if cancelled and _program_reminder_is_current(event, cancelled):
+            cancelled.status = "PENDING"
+            cancelled.attempts = 0
+            cancelled.last_error = None
+            cancelled.completed_at = None
+            cancelled.run_at = occurrence - timedelta(minutes=event.reminder_minutes)
+            session.add(cancelled)
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
+        else:
+            _enqueue_next_program_reminder(session, event, now)
 
 try:
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
@@ -1003,10 +1214,24 @@ def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: d
 
 
 def _user_schedule_occurrences(session: Session, user_id: int, range_start: datetime, range_end: datetime):
+    range_end_utc = (
+        range_end.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
     events = session.exec(
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.recurrence_rule != "WEEKLY",
+                ScheduleEvent.recurrence_until.is_(None),
+                ScheduleEvent.recurrence_until == "",
+                ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
+            )
+        )
         .order_by(ScheduleEvent.start_at)
     ).all()
 
@@ -1028,6 +1253,125 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
         patient = patient_map.get(item.get("patient_id"))
         item["patient"] = patient
     return sorted(occurrences, key=lambda item: item["start_local"])
+
+
+def _dashboard_next_schedule_occurrence(
+    session: Session,
+    user_id: int,
+    range_start: datetime,
+    range_end: datetime,
+):
+    """Return only the next active dashboard occurrence without loading program history."""
+    # Preserve seconds/microseconds from the dashboard clock. Formatting through
+    # datetime-local would truncate them and could hide the real next event.
+    range_start_utc = (
+        range_start.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    range_end_utc = (
+        range_end.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+
+    # One-off events can be bounded fully in SQL.
+    direct_events = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.owner_user_id == user_id)
+        .where(ScheduleEvent.status == "ACTIVE")
+        .where(ScheduleEvent.recurrence_rule == "NONE")
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.start_at >= range_start_utc,
+                ScheduleEvent.end_at >= range_start_utc,
+            )
+        )
+        .order_by(ScheduleEvent.start_at)
+        .limit(1)
+    ).all()
+
+    # Weekly records may have an old anchor but a future occurrence, so only
+    # recurring anchors that can still produce an occurrence need expansion.
+    recurring_events = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.owner_user_id == user_id)
+        .where(ScheduleEvent.status == "ACTIVE")
+        .where(ScheduleEvent.recurrence_rule == "WEEKLY")
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.recurrence_until.is_(None),
+                ScheduleEvent.recurrence_until == "",
+                ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
+            )
+        )
+        .order_by(ScheduleEvent.start_at)
+    ).all()
+
+    candidates = []
+    for event in [*direct_events, *recurring_events]:
+        candidates.extend(_event_occurrences(event, range_start, range_end))
+
+    if not candidates:
+        return None
+
+    next_event = min(candidates, key=lambda item: item["start_local"])
+    patient_id = next_event.get("patient_id")
+    next_event["patient"] = (
+        session.exec(
+            select(Patient)
+            .where(Patient.id == patient_id)
+            .where(Patient.owner_user_id == user_id)
+        ).first()
+        if patient_id
+        else None
+    )
+    return next_event
+
+
+def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
+    """Small owner-scoped snapshot used to patch the dashboard without a follow-up GET."""
+    local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    next_event = _dashboard_next_schedule_occurrence(
+        session, user_id, local_now, local_now + timedelta(days=90)
+    )
+    snapshot = None
+    if next_event:
+        patient = next_event.get("patient")
+        snapshot = {
+            "id": next_event["id"],
+            "title": next_event["title"],
+            "start_time": next_event["start_local"].strftime("%H:%M"),
+            "type_label": next_event["type_label"],
+            "patient_name": (
+                f"{patient.first_name or ''} {patient.last_name or ''}".strip()
+                if patient else ""
+            ),
+        }
+    return {
+        "payload_version": 1,
+        "dashboard_event": snapshot,
+        "dashboard_event_label": (
+            "Bugün"
+            if next_event and next_event["start_local"].date() == local_now.date()
+            else "Yaklaşan"
+        ),
+    }
+
+
+def _record_program_realtime_event(
+    session: Session, user_id: int, event_type: str, event_id: Optional[int] = None
+) -> RealtimeEvent:
+    return _record_realtime_event(
+        session,
+        user_id,
+        event_type,
+        "schedule_event",
+        event_id,
+        _program_dashboard_realtime_payload(session, user_id),
+    )
 
 
 def _program_range(view: str, focus_date: date):
@@ -1060,20 +1404,184 @@ def _program_range(view: str, focus_date: date):
     )
 
 
+PROGRAM_MONTH_NAMES = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+
+
+def _program_date_label(value: date, *, include_year: bool = False) -> str:
+    label = f"{value.day} {PROGRAM_MONTH_NAMES[value.month - 1]}"
+    return f"{label} {value.year}" if include_year else label
+
+
 def _group_program_occurrences(occurrences):
     groups = []
     current = None
+    day_names = ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")
     for item in occurrences:
         item_date = item["start_local"].date()
         if current is None or current["date"] != item_date:
             current = {
                 "date": item_date,
-                "label": item_date.strftime("%d.%m.%Y"),
+                "label": f"{day_names[item_date.weekday()]}, {_program_date_label(item_date)}",
                 "events": [],
             }
             groups.append(current)
         current["events"].append(item)
     return groups
+
+
+def _program_week_days(focus_date: date):
+    week_start = focus_date - timedelta(days=focus_date.weekday())
+    short_names = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+    return [
+        {"date": week_start + timedelta(days=index), "label": short_names[index]}
+        for index in range(7)
+    ]
+
+
+def _program_reminder_is_current(event: ScheduleEvent, job: ProgramReminderJob) -> bool:
+    if event.owner_user_id != job.owner_user_id or event.status != "ACTIVE":
+        return False
+    if not event.notification_enabled or event.reminder_minutes is None:
+        return False
+    if event.reminder_minutes != job.reminder_minutes or event.updated_at != job.event_updated_at:
+        return False
+    if event.recurrence_rule == "NONE":
+        return event.start_at == job.occurrence_start_at
+    if event.recurrence_rule != "WEEKLY":
+        return False
+    delta = job.occurrence_start_at - event.start_at
+    if delta.total_seconds() < 0 or delta.total_seconds() % timedelta(weeks=1).total_seconds() != 0:
+        return False
+    if event.recurrence_until:
+        try:
+            occurrence_local = _utc_to_local(job.occurrence_start_at)
+            if not occurrence_local or occurrence_local.date() > date.fromisoformat(event.recurrence_until):
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+def _program_reminder_copy(event: ScheduleEvent, occurrence_start_at: datetime) -> tuple[str, str]:
+    local_start = _utc_to_local(occurrence_start_at)
+    when = local_start.strftime("%H:%M") if local_start else ""
+    type_label = PROGRAM_EVENT_TYPES.get(event.event_type, "Program")
+    title = event.title.strip() or type_label
+    return title[:120], f"{when} · {type_label}" if when else type_label
+
+
+def _process_program_reminder_job(session: Session, job: ProgramReminderJob, now: datetime) -> Optional[RealtimeEvent]:
+    stmt = select(ScheduleEvent).where(ScheduleEvent.id == job.schedule_event_id)
+    if engine.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    event = session.exec(stmt).first()
+    if not event or not _program_reminder_is_current(event, job):
+        return None
+    owner = session.get(User, event.owner_user_id)
+    if not owner or not owner.is_active:
+        return None
+
+    title, message = _program_reminder_copy(event, job.occurrence_start_at)
+    _, realtime_event, _ = _notify_user(
+        session,
+        user_id=event.owner_user_id,
+        notice_type="PROGRAM_REMINDER",
+        title=title,
+        message=message,
+        related_type="schedule_event",
+        related_id=event.id,
+        dedup_key=job.dedup_key,
+        target_url="/program",
+    )
+    if event.recurrence_rule == "WEEKLY":
+        _enqueue_next_program_reminder(
+            session, event, job.occurrence_start_at + timedelta(seconds=1)
+        )
+    return realtime_event
+
+
+def _cleanup_program_reminder_jobs(now: datetime) -> None:
+    cutoff = now - timedelta(days=PROGRAM_REMINDER_RETENTION_DAYS)
+    with Session(engine) as s:
+        s.exec(delete(ProgramReminderJob).where(
+            ProgramReminderJob.status.in_({"DONE", "FAILED", "CANCELLED"}),
+            ProgramReminderJob.completed_at != None,
+            ProgramReminderJob.completed_at < cutoff,
+        ))
+        s.commit()
+
+
+def _next_program_reminder_at() -> Optional[datetime]:
+    with Session(engine) as s:
+        return s.exec(select(ProgramReminderJob.run_at).where(
+            ProgramReminderJob.status == "PENDING"
+        ).order_by(ProgramReminderJob.run_at.asc()).limit(1)).first()
+
+
+async def _process_program_reminder_jobs() -> bool:
+    now = _utcnow_naive()
+    publish_events: list[RealtimeEvent] = []
+    with Session(engine, expire_on_commit=False) as s:
+        stmt = select(ProgramReminderJob).where(
+            ProgramReminderJob.status == "PENDING",
+            ProgramReminderJob.run_at <= now,
+        ).order_by(ProgramReminderJob.run_at.asc()).limit(PROGRAM_REMINDER_BATCH_SIZE)
+        if engine.dialect.name == "postgresql":
+            stmt = stmt.with_for_update(skip_locked=True)
+        jobs = s.exec(stmt).all()
+        for job in jobs:
+            try:
+                with s.begin_nested():
+                    realtime_event = _process_program_reminder_job(s, job, now)
+                    job.status = "DONE"
+                    job.completed_at = now
+                    job.last_error = None
+                    s.add(job)
+                    s.flush()
+                if realtime_event:
+                    publish_events.append(realtime_event)
+            except Exception as exc:
+                job.attempts += 1
+                job.last_error = str(exc)[:1000]
+                if job.attempts >= 5:
+                    job.status = "FAILED"
+                    job.completed_at = now
+                else:
+                    job.run_at = now + timedelta(seconds=min(300, 5 * (2 ** (job.attempts - 1))))
+                s.add(job)
+                logger.exception("Program reminder job failed: %s", job.id)
+        s.commit()
+    for event in publish_events:
+        await _publish_realtime_event(event)
+    return len(jobs) >= PROGRAM_REMINDER_BATCH_SIZE
+
+
+async def _program_reminder_worker() -> None:
+    global _program_reminder_last_cleanup
+    while True:
+        try:
+            now = _utcnow_naive()
+            if _program_reminder_last_cleanup is None or now - _program_reminder_last_cleanup >= timedelta(hours=24):
+                _cleanup_program_reminder_jobs(now)
+                _program_reminder_last_cleanup = now
+            while await _process_program_reminder_jobs():
+                await asyncio.sleep(0)
+            _program_reminder_wakeup.clear()
+            next_at = _next_program_reminder_at()
+            wait_seconds = PROGRAM_REMINDER_RECOVERY_SECONDS if next_at is None else max(
+                0.05, min((next_at - _utcnow_naive()).total_seconds(), PROGRAM_REMINDER_RECOVERY_SECONDS)
+            )
+            if next_at and next_at <= _utcnow_naive():
+                continue
+            try:
+                await asyncio.wait_for(_program_reminder_wakeup.wait(), timeout=wait_seconds)
+            except asyncio.TimeoutError:
+                pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Program reminder worker iteration failed")
+            await asyncio.sleep(5)
 
 
 def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
@@ -1085,6 +1593,16 @@ def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
     if user.role != "ADMIN" and patient.owner_user_id != user.id:
         return None
     if user.role == "ADMIN" and patient.owner_user_id not in {None, user.id}:
+        return None
+    return patient
+
+
+def _owned_program_patient(session: Session, user: User, patient_id: Optional[int]):
+    """Program records may only reference a patient in the user's private workspace."""
+    if not patient_id:
+        return None
+    patient = session.get(Patient, patient_id)
+    if not patient or patient.owner_user_id != user.id:
         return None
     return patient
 
@@ -1131,26 +1649,36 @@ def _validate_schedule_input(
             return None, "Bitiş saati başlangıç saatinden önce olamaz."
 
     parsed_patient_id = None
-    if patient_id.strip():
+    # Patient linkage only belongs to appointment/clinical records. A stale
+    # hidden form value must not attach a patient to classes, exams or tasks.
+    if event_type in {"APPOINTMENT", "CLINIC"} and patient_id.strip():
         try:
             parsed_patient_id = int(patient_id)
         except ValueError:
             return None, "Hasta seçimini kontrol edin."
-        patient = _owned_patient(session, user, parsed_patient_id)
+        patient = _owned_program_patient(session, user, parsed_patient_id)
         if not patient:
             return None, "Bu hastayı program kaydına bağlama yetkiniz yok."
 
-    try:
-        reminder_value = int(reminder_minutes)
-    except (TypeError, ValueError):
-        reminder_value = 30
-    if reminder_value not in REMINDER_OPTIONS:
-        return None, "Hatırlatma süresi geçersiz."
+    reminder_raw = (reminder_minutes or "").strip().upper()
+    reminder_disabled = reminder_raw == "NONE"
+    if reminder_disabled:
+        reminder_value = None
+    else:
+        try:
+            reminder_value = int(reminder_raw)
+        except (TypeError, ValueError):
+            return None, "Hatırlatma süresini kontrol edin."
+        if reminder_value not in REMINDER_OPTIONS:
+            return None, "Hatırlatma süresi geçersiz."
 
     if recurrence_rule not in RECURRENCE_OPTIONS:
         return None, "Tekrarlama seçeneği geçersiz."
 
-    if recurrence_until:
+    if recurrence_rule == "NONE":
+        # A hidden/stale end date must not survive after weekly recurrence is disabled.
+        recurrence_until = ""
+    elif recurrence_until:
         try:
             until = datetime.strptime(recurrence_until, "%Y-%m-%d").date()
         except ValueError:
@@ -1158,8 +1686,6 @@ def _validate_schedule_input(
         local_start = _utc_to_local(start_utc)
         if local_start and until < local_start.date():
             return None, "Tekrar bitiş tarihi başlangıç tarihinden önce olamaz."
-    elif recurrence_rule == "NONE":
-        recurrence_until = ""
 
     return {
         "event_type": event_type,
@@ -1170,7 +1696,9 @@ def _validate_schedule_input(
         "location": location or None,
         "notes": notes or None,
         "reminder_minutes": reminder_value,
-        "notification_enabled": bool(notification_enabled),
+        # The reminder selection is the single source of truth. Do not depend on
+        # a second checkbox/hidden field that can drift out of sync.
+        "notification_enabled": not reminder_disabled,
         "recurrence_rule": recurrence_rule,
         "recurrence_until": recurrence_until or None,
         "timezone_name": "Europe/Istanbul",
@@ -1288,6 +1816,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_requester_decision_deadline ON "consultationcase" (status, requester_decision_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_consultation_start_deadline ON "consultationcase" (status, consultation_start_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
@@ -1328,6 +1858,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
@@ -1452,9 +1984,19 @@ SESSION_DAYS = 7
 
 
 def get_current_user(request: Request) -> Optional[User]:
+    # Route handlers and the Jinja context processor often ask for the same
+    # authenticated user during one HTTP request. Reuse that already-validated
+    # result only inside this request; never cache authentication across requests.
+    state = getattr(request, "state", None)
+    if state is not None and getattr(state, "_dai_current_user_checked", False):
+        return getattr(state, "_dai_current_user", None)
+
     token = request.cookies.get(SESSION_COOKIE)
 
     if not token:
+        if state is not None:
+            state._dai_current_user_checked = True
+            state._dai_current_user = None
         return None
 
     token_hash = hash_session_token(token)
@@ -1467,19 +2009,20 @@ def get_current_user(request: Request) -> Optional[User]:
         ).first()
 
         if not session_token:
-            return None
-
-        if session_token.expires_at <= _utcnow_naive():
+            user = None
+        elif session_token.expires_at <= _utcnow_naive():
             s.delete(session_token)
             s.commit()
-            return None
+            user = None
+        else:
+            user = s.get(User, session_token.user_id)
+            if not user or not user.is_active:
+                user = None
 
-        user = s.get(User, session_token.user_id)
-
-        if not user or not user.is_active:
-            return None
-
-        return user
+    if state is not None:
+        state._dai_current_user_checked = True
+        state._dai_current_user = user
+    return user
 
 
 def create_user_session(response: RedirectResponse, user_id: int) -> None:
@@ -2727,10 +3270,20 @@ def template_user_context(request: Request):
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
     if user:
+        meta_checked = getattr(request.state, "_dai_account_meta_checked", False)
+        meta = getattr(request.state, "_dai_account_meta", None) if meta_checked else None
         with Session(engine, expire_on_commit=False) as s:
-            meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+            if not meta_checked:
+                meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
-            profile_verified = _is_verified_expert(s, user.id)
+            profile_verified = bool(
+                profile
+                and profile.application_status == "APPROVED"
+                and profile.verification_status == "VERIFIED"
+                and profile.specialty_verified
+                and bool(profile.credential_document_path)
+                and bool(profile.phone)
+            )
         title = (meta.professional_title if meta else "") or ""
         eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
         if title in eligible_titles:
@@ -2765,11 +3318,16 @@ async def startup():
     storage_check_connection()
     init_db()
     _backfill_legacy_deadline_jobs_if_needed()
+    _backfill_program_reminder_jobs()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
+    # Program reminders have no separate external executor. Keep their durable
+    # worker embedded even when consultation deadlines are delegated externally.
+    app.state.program_reminder_task = asyncio.create_task(_program_reminder_worker())
     app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener(
         listen_deadline=run_embedded_deadline_worker,
         listen_realtime=True,
+        listen_program=True,
     ))
 
 
@@ -2777,6 +3335,7 @@ async def startup():
 async def shutdown_consultation_deadline_worker():
     tasks = [
         getattr(app.state, "consultation_deadline_task", None),
+        getattr(app.state, "program_reminder_task", None),
         getattr(app.state, "postgres_event_listener_task", None),
     ]
     for task in tasks:
@@ -3479,10 +4038,43 @@ def program_page(
 
     view, range_start, range_end, previous, following = _program_range(view, focus_date)
 
+    occurrence_range_start = range_start
+    occurrence_range_end = range_end
+    if view == "month":
+        month_start = focus_date.replace(day=1)
+        grid_start_date = month_start - timedelta(days=month_start.weekday())
+        occurrence_range_start = _date_to_local_start(grid_start_date)
+        occurrence_range_end = _date_to_local_end(grid_start_date + timedelta(days=41))
+
     with Session(engine, expire_on_commit=False) as s:
         occurrences = _user_schedule_occurrences(
-            s, user.id, range_start, range_end
+            s, user.id, occurrence_range_start, occurrence_range_end
         )
+
+    all_occurrences = occurrences
+    if view == "week":
+        occurrences = [
+            item for item in occurrences
+            if item["start_local"].date() == focus_date
+        ]
+
+    month_days = []
+    if view == "month":
+        by_date = {}
+        for item in all_occurrences:
+            by_date.setdefault(item["start_local"].date(), []).append(item)
+        month_start = focus_date.replace(day=1)
+        grid_start = month_start - timedelta(days=month_start.weekday())
+        for offset in range(42):
+            grid_date = grid_start + timedelta(days=offset)
+            day_events = by_date.get(grid_date, [])
+            month_days.append({
+                "date": grid_date,
+                "in_month": grid_date.month == month_start.month,
+                "events": day_events[:3],
+                "has_more": len(day_events) > 3,
+            })
+        occurrences = by_date.get(focus_date, [])
 
     return templates.TemplateResponse(
         request=request,
@@ -3494,6 +4086,10 @@ def program_page(
             "previous_day": previous.isoformat(),
             "next_day": following.isoformat(),
             "groups": _group_program_occurrences(occurrences),
+            "week_days": _program_week_days(focus_date),
+            "month_days": month_days,
+            "month_title": f"{PROGRAM_MONTH_NAMES[focus_date.month - 1]} {focus_date.year}",
+            "selected_date_title": _program_date_label(focus_date, include_year=True),
             "event_type_labels": PROGRAM_EVENT_TYPES,
             "saved": request.query_params.get("saved") == "1",
             "deleted": request.query_params.get("deleted") == "1",
@@ -3507,6 +4103,7 @@ def program_new_page(
     request: Request,
     type: str = "",
     patient_id: str = "",
+    day: str = "",
 ):
     user = get_current_user(request)
     if not user:
@@ -3517,11 +4114,19 @@ def program_new_page(
     suggested = local_now.replace(minute=rounded_minute)
     if suggested < local_now:
         suggested += timedelta(minutes=30)
+    if day:
+        try:
+            selected_date = date.fromisoformat(day)
+            suggested = datetime.combine(selected_date, suggested.time())
+        except ValueError:
+            pass
 
     with Session(engine, expire_on_commit=False) as s:
-        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patient_query = (
+            select(Patient)
+            .where(Patient.owner_user_id == user.id)
+            .order_by(Patient.first_name, Patient.last_name)
+        )
         patients = s.exec(patient_query).all()
 
     initial_type = type.upper() if type.upper() in PROGRAM_EVENT_TYPES else "APPOINTMENT"
@@ -3537,13 +4142,20 @@ def program_new_page(
             "initial_patient_id": patient_id,
             "initial_start": suggested.strftime("%Y-%m-%dT%H:%M"),
             "initial_end": (suggested + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M"),
+            "initial_title": "",
+            "initial_location": "",
+            "initial_notes": "",
+            "initial_reminder": "30",
+            "initial_notification": True,
+            "initial_recurrence": "NONE",
+            "initial_recurrence_until": "",
             "error": None,
         },
     )
 
 
 @app.post("/program/new")
-def program_create(
+async def program_create(
     request: Request,
     event_type: str = Form(...),
     title: str = Form(...),
@@ -3568,9 +4180,11 @@ def program_create(
             recurrence_rule, recurrence_until,
         )
         if error:
-            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-            if user.role != "ADMIN":
-                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patient_query = (
+                select(Patient)
+                .where(Patient.owner_user_id == user.id)
+                .order_by(Patient.first_name, Patient.last_name)
+            )
             patients = s.exec(patient_query).all()
             return templates.TemplateResponse(
                 request=request,
@@ -3588,7 +4202,7 @@ def program_create(
                     "initial_location": location,
                     "initial_notes": notes,
                     "initial_reminder": reminder_minutes,
-                    "initial_notification": bool(notification_enabled),
+                    "initial_notification": (reminder_minutes or "").strip().upper() != "NONE",
                     "initial_recurrence": recurrence_rule,
                     "initial_recurrence_until": recurrence_until,
                     "error": error,
@@ -3598,7 +4212,17 @@ def program_create(
 
         event = ScheduleEvent(owner_user_id=user.id, **payload)
         s.add(event)
+        s.flush()
+        _sync_program_reminder(s, event)
+        realtime_events = _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_CREATED", event.id))
         s.commit()
+    _wake_program_reminder_worker()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -3613,9 +4237,11 @@ def program_edit_page(request: Request, event_id: int):
         event = s.get(ScheduleEvent, event_id)
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
-        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patient_query = (
+            select(Patient)
+            .where(Patient.owner_user_id == user.id)
+            .order_by(Patient.first_name, Patient.last_name)
+        )
         patients = s.exec(patient_query).all()
         start_local = _utc_to_local(event.start_at)
         end_local = _utc_to_local(event.end_at)
@@ -3635,7 +4261,11 @@ def program_edit_page(request: Request, event_id: int):
             "initial_title": event.title,
             "initial_location": event.location or "",
             "initial_notes": event.notes or "",
-            "initial_reminder": str(event.reminder_minutes if event.reminder_minutes is not None else 30),
+            "initial_reminder": (
+                str(event.reminder_minutes)
+                if event.notification_enabled and event.reminder_minutes is not None
+                else "NONE"
+            ),
             "initial_notification": event.notification_enabled,
             "initial_recurrence": event.recurrence_rule,
             "initial_recurrence_until": event.recurrence_until or "",
@@ -3645,7 +4275,7 @@ def program_edit_page(request: Request, event_id: int):
 
 
 @app.post("/program/{event_id}/edit")
-def program_edit(
+async def program_edit(
     request: Request,
     event_id: int,
     event_type: str = Form(...),
@@ -3675,9 +4305,11 @@ def program_edit(
             recurrence_rule, recurrence_until,
         )
         if error:
-            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-            if user.role != "ADMIN":
-                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patient_query = (
+                select(Patient)
+                .where(Patient.owner_user_id == user.id)
+                .order_by(Patient.first_name, Patient.last_name)
+            )
             patients = s.exec(patient_query).all()
             return templates.TemplateResponse(
                 request=request,
@@ -3695,7 +4327,7 @@ def program_edit(
                     "initial_location": location,
                     "initial_notes": notes,
                     "initial_reminder": reminder_minutes,
-                    "initial_notification": bool(notification_enabled),
+                    "initial_notification": (reminder_minutes or "").strip().upper() != "NONE",
                     "initial_recurrence": recurrence_rule,
                     "initial_recurrence_until": recurrence_until,
                     "error": error,
@@ -3707,13 +4339,118 @@ def program_edit(
             setattr(event, key, value)
         event.updated_at = _utcnow_naive()
         s.add(event)
+        s.flush()
+        _sync_program_reminder(s, event)
+        realtime_events = _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_UPDATED", event.id))
         s.commit()
+    _wake_program_reminder_worker()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
 
+
+
+@app.post("/program/{event_id}/copy")
+async def program_copy_to_days(
+    request: Request,
+    event_id: int,
+    target_days: str = Form(...),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    raw_days = [value.strip() for value in target_days.split(",") if value.strip()]
+    if not raw_days or len(raw_days) > 7:
+        return HTMLResponse("Kopyalanacak günleri kontrol edin.", status_code=400)
+
+    target_dates = []
+    for raw in raw_days:
+        try:
+            parsed = date.fromisoformat(raw)
+        except ValueError:
+            return HTMLResponse("Kopyalanacak günleri kontrol edin.", status_code=400)
+        if parsed not in target_dates:
+            target_dates.append(parsed)
+
+    with Session(engine, expire_on_commit=False) as s:
+        source = s.get(ScheduleEvent, event_id)
+        if not source or source.owner_user_id != user.id or source.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+        if source.recurrence_rule != "NONE":
+            return HTMLResponse(
+                "Haftalık kayıt zaten sonraki haftalara uygulanıyor; yalnız tek kayıtlar başka günlere kopyalanabilir.",
+                status_code=400,
+            )
+
+        source_start = _utc_to_local(source.start_at)
+        source_end = _utc_to_local(source.end_at)
+        if not source_start:
+            return HTMLResponse("Program saati okunamadı.", status_code=400)
+        source_date = source_start.date()
+        target_dates = [target_date for target_date in target_dates if target_date != source_date]
+        if not target_dates:
+            return HTMLResponse("Kaydın bulunduğu günden farklı en az bir gün seçin.", status_code=400)
+        duration = source_end - source_start if source_end else None
+        copied_patient_id = None
+        if source.event_type in {"APPOINTMENT", "CLINIC"} and source.patient_id:
+            owned_patient = _owned_program_patient(s, user, source.patient_id)
+            copied_patient_id = owned_patient.id if owned_patient else None
+
+        copied_event_ids = []
+        for target_date in target_dates:
+            local_start = datetime.combine(target_date, source_start.time())
+            local_end = local_start + duration if duration else None
+            start_utc = local_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+            end_utc = local_end.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None) if local_end else None
+            duplicate = s.exec(
+                select(ScheduleEvent)
+                .where(ScheduleEvent.owner_user_id == user.id)
+                .where(ScheduleEvent.status != "DELETED")
+                .where(ScheduleEvent.title == source.title)
+                .where(ScheduleEvent.start_at == start_utc)
+            ).first()
+            if duplicate:
+                continue
+            copied_event = ScheduleEvent(
+                owner_user_id=user.id,
+                event_type=source.event_type,
+                title=source.title,
+                start_at=start_utc,
+                end_at=end_utc,
+                patient_id=copied_patient_id,
+                location=source.location,
+                notes=source.notes,
+                reminder_minutes=source.reminder_minutes,
+                notification_enabled=source.notification_enabled,
+                recurrence_rule="NONE",
+                recurrence_until=None,
+                timezone_name=source.timezone_name or "Europe/Istanbul",
+            )
+            s.add(copied_event)
+            s.flush()
+            _sync_program_reminder(s, copied_event)
+            copied_event_ids.append(copied_event.id)
+        program_realtime_event = (
+            _record_program_realtime_event(s, user.id, "PROGRAM_CREATED", copied_event_ids[0])
+            if copied_event_ids else None
+        )
+        s.commit()
+    _wake_program_reminder_worker()
+    if program_realtime_event:
+        await _publish_realtime_event(program_realtime_event)
+
+    return RedirectResponse("/program?view=week&day=" + target_dates[0].isoformat(), status_code=303)
+
+
 @app.post("/program/{event_id}/complete")
-def program_complete(request: Request, event_id: int):
+async def program_complete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3730,13 +4467,21 @@ def program_complete(request: Request, event_id: int):
         event.status = "COMPLETED"
         event.updated_at = _utcnow_naive()
         s.add(event)
+        _cancel_pending_program_reminders(s, event.id)
+        realtime_events = _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_COMPLETED", event.id))
         s.commit()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?completed=1", status_code=303)
 
 
 @app.post("/program/{event_id}/delete")
-def program_delete(request: Request, event_id: int):
+async def program_delete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3748,7 +4493,15 @@ def program_delete(request: Request, event_id: int):
         event.status = "DELETED"
         event.updated_at = _utcnow_naive()
         s.add(event)
+        _cancel_pending_program_reminders(s, event.id)
+        realtime_events = _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_DELETED", event.id))
         s.commit()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?deleted=1", status_code=303)
 
@@ -3760,44 +4513,33 @@ def home(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    today_start = _date_to_local_start(local_now.date())
-    today_end = _date_to_local_end(local_now.date())
     upcoming_end = local_now + timedelta(days=90)
 
     with Session(engine, expire_on_commit=False) as s:
         patient_query = select(Patient).order_by(Patient.id.desc())
         if user.role != "ADMIN":
             patient_query = patient_query.where(Patient.owner_user_id == user.id)
-        patients = s.exec(patient_query).all()
+        # Dashboard renders only the three most recent patients. Keep the
+        # initial query bounded instead of loading the user's full patient list.
+        patients = s.exec(patient_query.limit(3)).all()
 
-        analysis_query = (
-            select(Analysis)
-            .join(Patient, Analysis.patient_id == Patient.id)
-            .order_by(Analysis.id.desc())
-        )
-        if user.role != "ADMIN":
-            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
-        analyses = s.exec(analysis_query).all()
-        records = s.exec(select(ClinicalRecord)).all()
-
+        # Dashboard only renders the three most recent guest analyses. Normal
+        # Analysis/ClinicalRecord collections are not consumed by dashboard.html.
         guest_analyses = s.exec(
             select(GuestAnalysis)
             .where(GuestAnalysis.owner_user_id == user.id)
             .order_by(GuestAnalysis.id.desc())
-            .limit(5)
+            .limit(3)
         ).all()
 
         account_meta = s.exec(
             select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
         ).first()
 
-        # Ana ekran, bütün günü listelemek yerine yalnızca sıradaki işi gösterir.
-        # Önce bugün için henüz bitmemiş/başlamamış kayıt aranır. Bugün yoksa
-        # önümüzdeki 90 gün içindeki en yakın aktif kayıt kullanılır.
-        today_upcoming_events = _user_schedule_occurrences(
-            s, user.id, local_now, today_end
-        )
-        upcoming_events = _user_schedule_occurrences(
+        # Dashboard needs only one active occurrence. Keep this path separate
+        # from the full Program page so opening the home screen does not load
+        # the user's complete schedule history and patient map.
+        dashboard_event = _dashboard_next_schedule_occurrence(
             s, user.id, local_now, upcoming_end
         )
 
@@ -3806,30 +4548,24 @@ def home(request: Request):
         if account_meta and account_meta.professional_title
         else "Diş Hekimi"
     )
-    today_next_event = next(
-        (item for item in today_upcoming_events if item["status"] == "ACTIVE"),
-        None,
+    # Reuse the account metadata already loaded for the dashboard when the
+    # shared template context builds the expert navigation.
+    request.state._dai_account_meta = account_meta
+    request.state._dai_account_meta_checked = True
+    dashboard_event_label = (
+        "Bugün"
+        if dashboard_event and dashboard_event["start_local"].date() == local_now.date()
+        else "Yaklaşan"
     )
-    next_event = next(
-        (item for item in upcoming_events if item["status"] == "ACTIVE"),
-        None,
-    )
-    dashboard_event = today_next_event or next_event
-    dashboard_event_label = "Bugün" if today_next_event else "Yaklaşan"
 
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "patients": patients,
-            "analyses": analyses,
-            "records": records,
             "guest_analyses": guest_analyses,
             "professional_title": professional_title,
-            "professional_group": _professional_group(professional_title),
-            "dashboard_copy": _dashboard_copy(professional_title),
             "dashboard_greeting": _dashboard_greeting(local_now),
-            "quick_actions": _dashboard_actions(professional_title),
             "dashboard_event": dashboard_event,
             "dashboard_event_label": dashboard_event_label,
             "local_now": local_now,
@@ -4292,7 +5028,7 @@ async def _consultation_deadline_worker() -> None:
 
 
 
-async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True) -> None:
+async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True, listen_program: bool = True) -> None:
     """Transactional PostgreSQL fanout; callers subscribe only to channels they need."""
     if engine.dialect.name != "postgresql" or not DATABASE_URL:
         return
@@ -4306,6 +5042,8 @@ async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realt
                 cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
             if listen_realtime:
                 cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
+            if listen_program:
+                cur.execute(f'LISTEN "{PG_PROGRAM_REMINDER_CHANNEL}"')
             while True:
                 ready = await asyncio.to_thread(select_module.select, [conn], [], [], 60.0)
                 if not ready[0]:
@@ -4315,6 +5053,8 @@ async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realt
                     notice = conn.notifies.pop(0)
                     if notice.channel == PG_DEADLINE_CHANNEL:
                         _wake_consultation_deadline_worker()
+                    elif notice.channel == PG_PROGRAM_REMINDER_CHANNEL:
+                        _wake_program_reminder_worker()
                     elif notice.channel == PG_REALTIME_CHANNEL:
                         try: event_id = int(notice.payload)
                         except (TypeError, ValueError): continue
@@ -6063,6 +6803,7 @@ def _web_push_configured() -> bool:
 
 def _web_push_copy(notice_type: str) -> str:
     kind = (notice_type or "").upper()
+    if kind == "PROGRAM_REMINDER": return "Programınızdaki yaklaşan kayıt için hatırlatmanız var."
     if kind == "CONSULTATION_REQUEST": return "Yeni danışmanlık talebiniz var."
     if kind == "CONSULTATION_PROPOSAL": return "Başlangıç öneriniz için onay bekleniyor."
     if "DEADLINE" in kind or "EXPIRED" in kind: return "Danışmanlık işleminiz için süreyle ilgili yeni bir bildiriminiz var."
@@ -6088,6 +6829,10 @@ def _send_web_push_sync(notice_id: int) -> None:
         notice = session.get(AdminNotice, notice_id)
         if not notice:
             return
+        if notice.notice_type == "PROGRAM_REMINDER":
+            owner = session.get(User, notice.user_id)
+            if not owner or not owner.is_active:
+                return
         subscriptions = session.exec(select(WebPushSubscription).where(
             WebPushSubscription.user_id == notice.user_id,
             WebPushSubscription.disabled_at == None,
@@ -9312,8 +10057,11 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
             target.is_active=False
             sessions=s.exec(select(SessionToken).where(SessionToken.user_id==target.id)).all()
             for token in sessions: s.delete(token)
+            _cancel_user_program_reminders(s, target.id)
+            _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         elif action == "UNBAN":
             target.is_active=True
+            _restore_user_program_reminders(s, target.id)
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         s.add(target);s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=target.id,detail=target.username));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
@@ -9403,6 +10151,8 @@ def admin_center_delete_user(
         target.password_hash = None
         target.profile_photo_path = None
         target.is_active = False
+        _cancel_user_program_reminders(s, target.id)
+        _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         s.add(target)
         s.add(AdminAuditLog(
             admin_user_id=admin.id,

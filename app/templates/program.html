@@ -3,11 +3,9 @@
 <div class="program-page">
     <div class="program-header">
         <div>
-            <div class="workspace-section-kicker">Günlük çalışma merkezi</div>
-            <h1>Programım</h1>
-            <p>Ders, randevu, klinik, sınav, tez ve görevlerinizi tek yerde takip edin.</p>
+            <h1><svg class="ui-icon program-title-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg> Program</h1>
         </div>
-        <a class="btn" href="/program/new">+ Yeni Kayıt</a>
+        <a class="program-add-circle" href="/program/new{% if view == 'week' %}?day={{ focus_date.isoformat() }}{% endif %}" aria-label="Yeni program kaydı">+</a>
     </div>
 
     {% if saved %}<div class="workspace-flash success">Program kaydı kaydedildi.</div>{% endif %}
@@ -20,34 +18,52 @@
             <a class="{% if view == 'week' %}active{% endif %}" href="/program?view=week&day={{ focus_date.isoformat() }}">Hafta</a>
             <a class="{% if view == 'month' %}active{% endif %}" href="/program?view=month&day={{ focus_date.isoformat() }}">Ay</a>
         </div>
-        <div class="program-period-nav">
-            <a href="/program?view={{ view }}&day={{ previous_day }}" aria-label="Önceki dönem">‹</a>
-            <a class="program-today-link" href="/program?view={{ view }}">Bugüne Git</a>
-            <a href="/program?view={{ view }}&day={{ next_day }}" aria-label="Sonraki dönem">›</a>
+        {% if view == 'month' %}
+        <div class="program-month-nav">
+            <a href="/program?view=month&day={{ previous_day }}" aria-label="Önceki ay">‹</a>
+            <strong>{{ month_title }}</strong>
+            <a href="/program?view=month&day={{ next_day }}" aria-label="Sonraki ay">›</a>
         </div>
+        {% endif %}
     </div>
 
+    {% if view == 'week' %}
+    <div class="program-week-strip" aria-label="Haftanın günleri">
+        {% for item in week_days %}
+        <a href="/program?view=week&day={{ item.date.isoformat() }}" class="{% if item.date == focus_date %}active{% endif %}{% if item.date == today_date %} is-today{% endif %}">
+            <small>{{ item.label }}</small><strong>{{ item.date.day }}</strong>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if view == 'month' %}
+    <div class="program-month-calendar">
+        <div class="program-month-weekdays">{% for label in ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'] %}<span>{{ label }}</span>{% endfor %}</div>
+        <div class="program-month-grid">
+            {% for item in month_days %}
+            <a href="/program?view=month&day={{ item.date.isoformat() }}" class="{% if not item.in_month %}outside{% endif %}{% if item.date == focus_date %} active{% endif %}">
+                <strong>{{ item.date.day }}</strong>
+                <span class="program-month-dots">{% for event in item.events %}<i class="tone-{{ event.event_type|lower }}"></i>{% endfor %}{% if item.has_more %}<i></i>{% endif %}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if groups %}
-    <div class="program-groups">
+    <div class="program-groups" id="programDynamicRegion">
         {% for group in groups %}
         <section class="program-day {% if group.date == today_date %}program-day-today{% endif %}">
             <div class="program-day-heading">
-                <h2>{{ group.label }}</h2>
+                <h2>{% if view == 'month' %}{{ selected_date_title }}{% else %}{{ group.label }}{% endif %}</h2>
                 {% if group.date == today_date %}<span>Bugün</span>{% endif %}
             </div>
             <div class="program-event-list">
                 {% for event in group.events %}
-                <article class="program-event {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
-                    <div class="program-event-time">
-                        <strong>{{ event.start_local.strftime('%H:%M') }}</strong>
-                        {% if event.end_local %}<small>{{ event.end_local.strftime('%H:%M') }}</small>{% endif %}
-                    </div>
+                <article class="program-event tone-{{ event.event_type|lower }} {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
                     <div class="program-event-main">
-                        <div class="program-event-meta">
-                            <span class="program-type">{{ event.type_label }}</span>
-                            {% if event.is_recurring %}<span class="program-recurring">Haftalık</span>{% endif %}
-                            {% if event.notification_enabled %}<span class="program-reminder">🔔 {{ event.reminder_minutes }} dk</span>{% endif %}
-                        </div>
+                        <div class="program-event-top"><span class="program-event-clock">{{ event.start_local.strftime('%H:%M') }}{% if event.end_local %} – {{ event.end_local.strftime('%H:%M') }}{% endif %}</span><span class="program-type">{{ event.type_label }}</span></div>
                         <h3>{{ event.title }}</h3>
                         <p>
                             {% if event.patient %}<a href="/patients/{{ event.patient.id }}">{{ event.patient.first_name or '' }} {{ event.patient.last_name or '' }}</a>{% endif %}
@@ -55,30 +71,163 @@
                         </p>
                         {% if event.notes %}<div class="program-notes">{{ event.notes }}</div>{% endif %}
                     </div>
-                    <div class="program-event-actions">
-                        <a href="/program/{{ event.id }}/edit">Düzenle</a>
+                    <details class="program-event-menu"><summary aria-label="Etkinlik seçenekleri">⋮</summary><div class="program-event-actions">
+                        <a href="/program/{{ event.id }}/edit">✎&nbsp; Düzenle</a>
                         {% if event.status != 'COMPLETED' and not event.is_recurring %}
                         <form method="post" action="/program/{{ event.id }}/complete">
-                            <button type="submit" class="link-button">Tamamla</button>
+                            <button type="submit" class="link-button">✓&nbsp; Tamamla</button>
                         </form>
                         {% endif %}
-                        <form method="post" action="/program/{{ event.id }}/delete" onsubmit="return confirm('Bu program kaydı kaldırılsın mı?');">
-                            <button type="submit" class="link-button danger-link">Sil</button>
+                        {% if not event.is_recurring %}<button type="button" class="link-button program-copy-open" data-event-id="{{ event.id }}" data-event-date="{{ event.start_local.date().isoformat() }}" data-event-title="{{ event.title|e }}" data-event-time="{{ event.start_local.strftime('%H:%M') }}{% if event.end_local %} – {{ event.end_local.strftime('%H:%M') }}{% endif %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>&nbsp; Diğer güne kopyala</button>{% endif %}
+                        <form method="post" action="/program/{{ event.id }}/delete">
+                            <button type="submit" class="link-button danger-link"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>&nbsp; Sil</button>
                         </form>
-                    </div>
+                    </div></details>
                 </article>
                 {% endfor %}
             </div>
+            {% if view in ['today','week'] %}<a class="program-inline-add" href="/program/new?day={{ group.date.isoformat() }}{% if view == 'week' %}&type=CLASS{% endif %}">＋ <span>{% if view == 'week' %}Ders ekle{% else %}Program ekle{% endif %}</span></a>{% endif %}
         </section>
         {% endfor %}
     </div>
     {% else %}
     <div class="program-empty">
-        <div class="program-empty-icon">＋</div>
-        <h2>Bu dönemde program kaydı yok</h2>
-        <p>Ders, hasta randevusu, sınav, tez veya görev ekleyebilirsiniz.</p>
-        <a class="btn" href="/program/new">İlk Kaydı Ekle</a>
+        <div class="program-empty-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></div>
+        <h2>{% if view in ['today','week','month'] %}Bu günde kayıt yok{% else %}Kayıt yok{% endif %}</h2>
+        <p>Yeni bir program kaydı ekleyebilirsiniz.</p>
+        <a class="btn" href="/program/new?day={{ focus_date.isoformat() }}{% if view == 'week' %}&type=CLASS{% endif %}">＋ {% if view == 'week' %}Ders ekle{% else %}Program ekle{% endif %}</a>
     </div>
     {% endif %}
+
+    <div class="program-copy-backdrop" id="programCopyBackdrop" hidden></div>
+    <section class="program-copy-sheet" id="programCopySheet" hidden aria-modal="true" role="dialog" aria-labelledby="programCopyTitle">
+        <div class="program-sheet-grabber"></div>
+        <div class="program-sheet-head"><div><strong id="programCopyTitle">Diğer güne kopyala</strong><small id="programCopySummary"></small></div><button type="button" id="programCopyClose" aria-label="Kapat">×</button></div>
+        <form id="programCopyForm" method="post">
+            <div class="program-copy-preview"><strong id="programCopyPreviewTitle"></strong><span id="programCopyPreviewTime"></span></div>
+            <div class="program-copy-days">
+                {% set full_day_names = ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'] %}
+                {% for item in week_days %}
+                <label data-copy-date="{{ item.date.isoformat() }}"><input type="checkbox" name="copy_day" value="{{ item.date.isoformat() }}"><span class="program-copy-check">✓</span><strong>{{ full_day_names[loop.index0] }}</strong></label>
+                {% endfor %}
+            </div>
+            <input type="hidden" name="target_days" id="programCopyDaysValue">
+            <button class="btn program-copy-submit" type="submit">Seçilen günlere kopyala</button>
+        </form>
+    </section>
 </div>
+<script>
+(function () {
+  if (window.__dentalProgramBound) return;
+  window.__dentalProgramBound = true;
+
+  function programPage() { return document.querySelector('.program-page'); }
+  function closeMenus() {
+    programPage()?.querySelectorAll('.program-event-menu[open]').forEach((menu) => menu.removeAttribute('open'));
+  }
+  async function swapProgram(url, pushHistory = false) {
+    const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+    if (!response.ok) throw new Error('Program güncellenemedi');
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const next = doc.querySelector('.program-page');
+    const current = programPage();
+    if (!next || !current) throw new Error('Program görünümü bulunamadı');
+    current.replaceWith(next);
+    if (pushHistory) history.pushState({}, '', response.url);
+    else history.replaceState({}, '', response.url);
+    window.dispatchEvent(new Event('program:updated'));
+  }
+
+  document.addEventListener('click', async (event) => {
+    const page = programPage();
+    if (!page || !page.contains(event.target)) return;
+    const summary = event.target.closest('.program-event-menu summary');
+    if (summary) {
+      page.querySelectorAll('.program-event-menu[open]').forEach((menu) => {
+        if (menu !== summary.parentElement) menu.removeAttribute('open');
+      });
+      return;
+    }
+    if (!event.target.closest('.program-event-menu')) closeMenus();
+
+    const copyOpen = event.target.closest('.program-copy-open');
+    if (copyOpen) {
+      closeMenus();
+      const sheet = document.getElementById('programCopySheet');
+      const backdrop = document.getElementById('programCopyBackdrop');
+      const form = document.getElementById('programCopyForm');
+      if (sheet && backdrop && form) {
+        form.action = '/program/' + copyOpen.dataset.eventId + '/copy';
+        document.getElementById('programCopySummary').textContent = 'Aynı kaydı istediğiniz günlere ekleyin.';
+        document.getElementById('programCopyPreviewTitle').textContent = copyOpen.dataset.eventTitle;
+        document.getElementById('programCopyPreviewTime').textContent = copyOpen.dataset.eventTime;
+        form.querySelectorAll('label[data-copy-date]').forEach((label) => {
+          const isSourceDay = label.dataset.copyDate === copyOpen.dataset.eventDate;
+          label.hidden = isSourceDay;
+          const input = label.querySelector('input[name="copy_day"]');
+          if (input) input.checked = false;
+        });
+        sheet.hidden = false; backdrop.hidden = false;
+      }
+      return;
+    }
+    if (event.target.closest('#programCopyClose, #programCopyBackdrop')) {
+      const sheet = document.getElementById('programCopySheet');
+      const backdrop = document.getElementById('programCopyBackdrop');
+      if (sheet) sheet.hidden = true;
+      if (backdrop) backdrop.hidden = true;
+      return;
+    }
+
+    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a, .program-week-strip a, .program-month-nav a, .program-month-grid a');
+    if (!nav) return;
+    event.preventDefault();
+    try { await swapProgram(nav.href, true); }
+    catch (_) { location.href = nav.href; }
+  });
+
+  document.addEventListener('submit', async (event) => {
+    const page = programPage();
+    const copyForm = event.target.closest('#programCopyForm');
+    if (page && copyForm && page.contains(copyForm)) {
+      event.preventDefault();
+      const selected = Array.from(copyForm.querySelectorAll('input[name="copy_day"]:checked')).map((input) => input.value);
+      if (!selected.length) return;
+      document.getElementById('programCopyDaysValue').value = selected.join(',');
+      try {
+        const response = await fetch(copyForm.action, {method: 'POST', body: new FormData(copyForm), headers: {'X-Requested-With': 'XMLHttpRequest'}});
+        if (!response.ok) throw new Error('Kopyalama tamamlanamadı');
+        await swapProgram(response.url || location.href);
+      } catch (_) { HTMLFormElement.prototype.submit.call(copyForm); }
+      return;
+    }
+    const form = event.target.closest('.program-event-actions form');
+    if (!page || !form || !page.contains(form)) return;
+    event.preventDefault();
+    if (form.action.endsWith('/delete') && !confirm('Bu program kaydı kaldırılsın mı?')) return;
+    try {
+      const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}});
+      if (!response.ok) throw new Error('İşlem tamamlanamadı');
+      await swapProgram(response.url || location.href);
+    } catch (_) {
+      HTMLFormElement.prototype.submit.call(form);
+    }
+  });
+
+  let programRealtimeRefresh = null;
+  window.addEventListener('dai:sync-event', (event) => {
+    const sync = event.detail;
+    if (!programPage() || !sync || !['PROGRAM_CREATED','PROGRAM_UPDATED','PROGRAM_COMPLETED','PROGRAM_DELETED'].includes(sync.event_type)) return;
+    clearTimeout(programRealtimeRefresh);
+    programRealtimeRefresh = setTimeout(() => {
+      swapProgram(location.href).catch(() => {});
+    }, 80);
+  });
+
+  window.addEventListener('popstate', () => {
+    if (programPage()) swapProgram(location.href).catch(() => location.reload());
+  });
+})();
+</script>
 {% endblock %}

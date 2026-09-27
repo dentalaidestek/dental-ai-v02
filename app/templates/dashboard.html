@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>@import url('/static/dashboard-v2.css?v=20260923-mobile-compact2'); .visual-dashboard .visual-empty[hidden]{display:none!important}</style>
+<style>.visual-dashboard .visual-empty[hidden]{display:none!important}</style>
 <div class="visual-dashboard">
   <section class="visual-welcome">
     <div class="visual-welcome-copy">
@@ -9,7 +9,7 @@
       <h1>{{ professional_name(professional_title, user.display_name or user.username) }}</h1>
       <p>“Her gülüş, daha sağlıklı bir gelecek demektir.”</p>
     </div>
-    <img class="visual-welcome-tooth" src="/static/dashboard/mobile/welcome_tooth.webp" alt="" aria-hidden="true">
+    <img class="visual-welcome-tooth" src="/static/dashboard/mobile/welcome_tooth.webp" alt="" aria-hidden="true" decoding="async" fetchpriority="high">
   </section>
 
   <section class="visual-search-card">
@@ -22,15 +22,15 @@
 
   <section class="visual-card-grid" aria-label="Ana işlemler">
     <a class="visual-feature-card visual-patients" href="/patients">
-      <div class="visual-art"><img src="/static/dashboard/mobile/patients_clinic.webp" alt=""></div>
+      <div class="visual-art"><img src="/static/dashboard/mobile/patients_clinic.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Hastalar</strong><small>Hasta kayıtlarını yönetin, yeni hasta ekleyin.</small></div><span class="visual-arrow">›</span>
     </a>
     <a class="visual-feature-card visual-ai" href="/analysis/new">
-      <div class="visual-art"><img src="/static/dashboard/mobile/ai_xray.webp" alt=""></div>
+      <div class="visual-art"><img src="/static/dashboard/mobile/ai_xray.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Dental AI ile Analiz</strong><small>Röntgen ve klinik görüntüleri yapay zeka ile analiz edin.</small></div><span class="visual-arrow">›</span>
     </a>
     <a class="visual-feature-card visual-chart" href="/tooth-charts">
-      <div class="visual-art"><img src="/static/dashboard/mobile/tooth_chart.webp" alt=""></div>
+      <div class="visual-art"><img src="/static/dashboard/mobile/tooth_chart.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Diş Şeması</strong><small>Etkileşimli diş şeması ile kayıt ve planlama yapın.</small></div><span class="visual-arrow">›</span>
     </a>
       <a class="visual-feature-card visual-expert visual-expert-premium" href="/expert-support">
@@ -39,7 +39,7 @@
     </a>
 </section>
 
-  <section class="visual-program">
+  <section class="visual-program" id="dashboardProgram">
     <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program">Tümünü Gör →</a></div>
     {% if dashboard_event %}
     <a class="visual-row" href="/program/{{ dashboard_event.id }}/edit"><span class="visual-time">{{ dashboard_event.start_local.strftime('%H:%M') }}</span><span><strong>{{ dashboard_event.title }}</strong><small>{% if dashboard_event.patient %}{{ dashboard_event.patient.first_name or '' }} {{ dashboard_event.patient.last_name or '' }} · {% endif %}{{ dashboard_event.type_label }}</small></span><b>›</b></a>
@@ -71,5 +71,34 @@
 
   <div class="visual-notice">ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</div>
 </div>
-<script>document.body.classList.add('dashboard-home');(()=>{const list=document.getElementById('dashboardPatientList'),empty=document.getElementById('dashboardPatientEmpty');if(!list)return;const sync=()=>{while(list.children.length>3)list.lastElementChild.remove();if(empty)empty.hidden=Boolean(list.children.length)};window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='visual-patient-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.innerHTML='<span class="visual-avatar" data-patient-field="initials"></span><span><strong data-patient-field="display_name"></strong><small data-patient-field="age_label"></small></span><b>›</b>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}else list.prepend(row);sync();});window.addEventListener('dai:patient-deleted',sync);sync();})();</script>
+<script>document.body.classList.add('dashboard-home');(()=>{const list=document.getElementById('dashboardPatientList'),empty=document.getElementById('dashboardPatientEmpty');if(!list)return;const sync=()=>{while(list.children.length>3)list.lastElementChild.remove();if(empty)empty.hidden=Boolean(list.children.length)};window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='visual-patient-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.innerHTML='<span class="visual-avatar" data-patient-field="initials"></span><span><strong data-patient-field="display_name"></strong><small data-patient-field="age_label"></small></span><b>›</b>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}else list.prepend(row);sync();});window.addEventListener('dai:patient-deleted',sync);sync();})();  function escapeHtml(value){
+    return String(value ?? "").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+  function applyProgramSnapshot(data){
+    if(!data||data.payload_version!==1)return;
+    const root=document.getElementById("dashboardProgram");if(!root)return;
+    const event=data.dashboard_event;
+    const today=data.dashboard_event_label==="Bugün";
+    const head=root.querySelector(".visual-section-head h2");
+    if(head)head.textContent=today?"Bugünkü Program":"Yaklaşan Program";
+    root.querySelectorAll(":scope > .visual-row, :scope > .visual-empty").forEach(el=>el.remove());
+    if(event){
+      const row=document.createElement("a");row.className="visual-row";row.href="/program/"+encodeURIComponent(event.id)+"/edit";
+      const time=event.start_time||"";
+      const detail=[event.patient_name,event.type_label].filter(Boolean).map(escapeHtml).join(" · ");
+      row.innerHTML='<span class="visual-time">'+escapeHtml(time)+'</span><span><strong>'+escapeHtml(event.title)+'</strong><small>'+detail+'</small></span><b>›</b>';
+      root.appendChild(row);
+    }else{
+      const empty=document.createElement("div");empty.className="visual-empty";
+      empty.innerHTML='<span class="empty-icon">▦</span><span>'+(today?"Bugün için program bulunmuyor.":"Yaklaşan program bulunmuyor.")+'</span><a href="/program/new">Programa Ekle</a>';
+      root.appendChild(empty);
+    }
+  }
+  window.addEventListener("dai:sync-event",event=>{
+    const sync=event.detail;
+    if(sync&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(sync.event_type)){
+      applyProgramSnapshot(sync.payload);
+    }
+  });
+</script>
 {% endblock %}
