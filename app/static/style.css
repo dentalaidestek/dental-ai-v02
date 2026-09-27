@@ -4976,8 +4976,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 
 /* NOTIFICATION CENTER — compact, realtime, separate from Messages */
 .notification-center{position:relative;flex:0 0 auto}
-.notification-bell{position:relative;width:42px;height:42px;padding:0!important;display:grid!important;place-items:center;border:1px solid rgba(255,255,255,.12)!important;border-radius:12px!important;background:rgba(255,255,255,.08)!important;color:#fff!important;box-shadow:none!important}
-.notification-bell .ui-icon{width:21px;height:21px}
+.notification-bell{position:relative;width:36px;height:40px;padding:0!important;display:grid!important;place-items:center;border:0!important;border-radius:0!important;background:transparent!important;color:#fff!important;box-shadow:none!important}
+.notification-bell .ui-icon{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .notification-badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 4px;border:2px solid #fff;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;line-height:15px;text-align:center}
 .notification-panel{position:absolute;z-index:1200;top:calc(100% + 10px);right:0;width:min(390px,calc(100vw - 24px));max-height:min(570px,72vh);overflow:hidden;background:#fff;color:#172033;border:1px solid #dbe3ed;border-radius:18px;box-shadow:0 20px 55px rgba(15,23,42,.24)}
 .notification-panel[hidden]{display:none!important}
@@ -4986,10 +4986,15 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .notification-list{display:grid;gap:9px;padding:11px;max-height:min(510px,65vh);overflow-y:auto;overscroll-behavior:contain;background:#fff}
 .notification-list .notification-item,.notification-list button.notification-item,.notification-list a.notification-item{appearance:none!important;-webkit-appearance:none!important;box-sizing:border-box!important;width:100%!important;min-height:74px!important;margin:0!important;display:flex!important;align-items:center!important;gap:11px!important;text-align:left!important;text-decoration:none!important;padding:12px!important;border:1px solid #e7edf5!important;border-radius:15px!important;background:#f8fafc!important;color:#172033!important;box-shadow:none!important;cursor:pointer;transform:none!important;transition:background .16s ease,border-color .16s ease!important}
 .notification-list .notification-item:hover{background:#f5f8fc!important;border-color:#dbe5f0!important}
-.notification-list .notification-item.unread{background:#f3f7ff!important;border-color:#dbe7ff!important}
-.notification-item-icon{flex:0 0 40px!important;width:40px!important;height:40px!important;display:grid!important;place-items:center!important;border-radius:13px!important;background:#e8f0ff!important;color:#2563eb!important}
+.notification-list .notification-item.unread{background:#fff!important;border-color:#dfe7f0!important}
+.notification-item-icon{flex:0 0 40px!important;width:40px!important;height:40px!important;display:grid!important;place-items:center!important;border-radius:13px!important;background:#f1f5f9!important;color:#64748b!important}
 .notification-item-icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.notification-item.unread .notification-item-icon{background:#2563eb!important;color:#fff!important}
+.notification-item[data-tone="consultation"] .notification-item-icon{background:#f3e8ff!important;color:#7c3aed!important}
+.notification-item[data-tone="warning"] .notification-item-icon{background:#fff4d6!important;color:#d97706!important}
+.notification-item[data-tone="success"] .notification-item-icon{background:#dcfce7!important;color:#16a34a!important}
+.notification-item[data-tone="message"] .notification-item-icon{background:#dbeafe!important;color:#2563eb!important}
+.notification-item[data-tone="danger"] .notification-item-icon{background:#fee2e2!important;color:#dc2626!important}
+.notification-item[data-tone="system"] .notification-item-icon{background:#f1f5f9!important;color:#64748b!important}
 .notification-item>span:not(.notification-item-icon):not(.notification-item-arrow){display:grid!important;gap:4px!important;min-width:0!important;flex:1!important}
 .notification-item-head{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:8px!important}
 .notification-list .notification-item b{font-size:13px!important;line-height:1.3!important;color:#0f172a!important;font-weight:750!important}
@@ -5001,7 +5006,7 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .notification-empty{padding:28px 14px;text-align:center;color:#64748b;font-size:12px}
 .expert-header-entry{color:#fff!important}
 @media(max-width:760px){
- .notification-bell{width:42px;height:42px}
+ .notification-bell{width:34px;height:40px}
  .notification-panel{position:fixed;top:calc(68px + env(safe-area-inset-top,0px));right:10px;left:10px;width:auto;max-height:calc(100dvh - 150px);border-radius:18px}
  .notification-panel-head{padding:14px 15px 11px}
  .notification-panel-head strong{font-size:15px}
@@ -5014,3 +5019,12 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
  .notification-list .notification-item time{font-size:8.5px!important}
 }
 
+
+/* Mobile header: keep expert profile action alive without crowding the brand/bell/menu row. */
+@media(max-width:760px){
+ .topbar{column-gap:7px}
+ .expert-header-entry{order:20;flex:1 0 100%;margin:2px 0 0!important;max-width:none!important;min-height:32px;padding:5px 9px;font-size:10.5px;border-radius:9px;justify-content:center}
+ .expert-header-entry span{white-space:nowrap!important;text-align:center!important}
+ .notification-center{margin-left:auto}
+ .menu-toggle{margin-left:0!important}
+}
