@@ -2413,7 +2413,7 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
         if ticket.status=="CLOSED":return HTMLResponse("Bu destek talebi kapatılmış. Yeni bir destek talebi oluşturabilirsiniz.",status_code=409)
         # Reply entitlement belongs to the support-message turn, never to ticket lifecycle status.
         if not _support_user_can_reply(s,ticket):
-            return HTMLResponse("Destek ekibinin yeni mesajını beklerken tekrar yanıt gönderemezsiniz.",status_code=409)
+            return HTMLResponse("Destek Ekibinin yeni mesajını beklerken tekrar yanıt gönderemezsiniz.",status_code=409)
         support_message=SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message)
         s.add(support_message);s.flush()
         ticket.updated_at=_utcnow_naive();s.add(ticket)
@@ -10220,7 +10220,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
             )
             _, notice_event, _ = _notify_user(
                 s,user_id=ticket.user_id,actor_user_id=admin.id,
-                notice_type="SUPPORT_MESSAGE",title="Destek ekibinden yeni mesaj",
+                notice_type="SUPPORT_MESSAGE",title="Destek Ekibinden yeni mesaj",
                 message="Destek talebinizde yeni bir mesaj var.",
                 related_type="support_ticket",related_id=ticket.id,
                 dedup_key=f"support-message:{support_message.id}",target_url="/support-request",
