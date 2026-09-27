@@ -10041,13 +10041,14 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
     page_size=25;has_more=False;next_cursor=None
     # Admin is section-scoped: opening one screen must not hydrate every other screen.
     users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
-    patients_count=0;analyses_count=0;gross_revenue=0;platform_revenue=0
+    patients_count=0;analyses_count=0;cases_count=0;gross_revenue=0;platform_revenue=0
     with Session(engine,expire_on_commit=False) as s:
         # Small navigation/home counters use COUNT, never full-table materialization.
         pending_count=int(s.exec(select(func.count(ExpertProfile.id)).where(ExpertProfile.application_status=="SUBMITTED")).one() or 0)
         open_report_count=int(s.exec(select(func.count(UserReport.id)).where(UserReport.status!="CLOSED")).one() or 0)
         if section=="home":
-            users_count=int(s.exec(select(func.count(User.id))).one() or 0)
+            deleted_ids=select(DeletedAccountEmail.deleted_user_id)
+            users_count=int(s.exec(select(func.count(User.id)).where(~User.id.in_(deleted_ids))).one() or 0)
             experts_count=int(s.exec(select(func.count(ExpertProfile.id))).one() or 0)
             open_support_count=int(s.exec(select(func.count(SupportTicket.id)).where(SupportTicket.source_type=="SUPPORT",SupportTicket.status!="CLOSED")).one() or 0)
             patients_count=int(s.exec(select(func.count(Patient.id))).one() or 0)
@@ -10095,6 +10096,11 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
             unread=_support_unread_map(s,ticket_ids,"ADMIN") if ticket_ids else {}
             report_rows=[{"report":r,"reporter":related.get(r.reporter_user_id),"reported":related.get(r.reported_user_id),"unread_count":unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
+        if section in {"stats","reports"}:
+            users_count=int(s.exec(select(func.count(User.id))).one() or 0)
+            patients_count=int(s.exec(select(func.count(Patient.id))).one() or 0)
+            analyses_count=int(s.exec(select(func.count(Analysis.id))).one() or 0)
+            cases_count=int(s.exec(select(func.count(ConsultationCase.id))).one() or 0)
         if section=="revenue":
             pq=select(ConsultationPayment)
             if cursor is not None:pq=pq.where(ConsultationPayment.id < cursor)
@@ -10112,7 +10118,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
     return templates.TemplateResponse(request=request,name="admin_center.html",context={
         "user":user,"users":users,"pending_rows":[],"pending_count":pending_count,"notices":notices,"audits":audits,
-        "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
+        "patients_count":patients_count,"analyses_count":analyses_count,"cases_count":cases_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
