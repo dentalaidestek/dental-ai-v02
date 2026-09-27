@@ -1075,6 +1075,13 @@ def _dashboard_next_schedule_occurrence(
         .where(ScheduleEvent.status == "ACTIVE")
         .where(ScheduleEvent.recurrence_rule == "WEEKLY")
         .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.recurrence_until.is_(None),
+                ScheduleEvent.recurrence_until == "",
+                ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
+            )
+        )
         .order_by(ScheduleEvent.start_at)
     ).all()
 
