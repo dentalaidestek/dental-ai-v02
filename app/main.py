@@ -4155,7 +4155,7 @@ def program_new_page(
 
 
 @app.post("/program/new")
-def program_create(
+async def program_create(
     request: Request,
     event_type: str = Form(...),
     title: str = Form(...),
@@ -4214,12 +4214,15 @@ def program_create(
         s.add(event)
         s.flush()
         _sync_program_reminder(s, event)
-        _resolve_notifications(
+        realtime_events = _resolve_notifications(
             s, user_id=user.id, notice_type="PROGRAM_REMINDER",
             related_type="schedule_event", related_id=event.id,
         )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_CREATED", event.id))
         s.commit()
     _wake_program_reminder_worker()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -4272,7 +4275,7 @@ def program_edit_page(request: Request, event_id: int):
 
 
 @app.post("/program/{event_id}/edit")
-def program_edit(
+async def program_edit(
     request: Request,
     event_id: int,
     event_type: str = Form(...),
@@ -4338,12 +4341,15 @@ def program_edit(
         s.add(event)
         s.flush()
         _sync_program_reminder(s, event)
-        _resolve_notifications(
+        realtime_events = _resolve_notifications(
             s, user_id=user.id, notice_type="PROGRAM_REMINDER",
             related_type="schedule_event", related_id=event.id,
         )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_UPDATED", event.id))
         s.commit()
     _wake_program_reminder_worker()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -4351,7 +4357,7 @@ def program_edit(
 
 
 @app.post("/program/{event_id}/copy")
-def program_copy_to_days(
+async def program_copy_to_days(
     request: Request,
     event_id: int,
     target_days: str = Form(...),
@@ -4397,6 +4403,7 @@ def program_copy_to_days(
             owned_patient = _owned_program_patient(s, user, source.patient_id)
             copied_patient_id = owned_patient.id if owned_patient else None
 
+        copied_event_ids = []
         for target_date in target_dates:
             local_start = datetime.combine(target_date, source_start.time())
             local_end = local_start + duration if duration else None
@@ -4429,14 +4436,21 @@ def program_copy_to_days(
             s.add(copied_event)
             s.flush()
             _sync_program_reminder(s, copied_event)
+            copied_event_ids.append(copied_event.id)
+        program_realtime_event = (
+            _record_program_realtime_event(s, user.id, "PROGRAM_CREATED", copied_event_ids[0])
+            if copied_event_ids else None
+        )
         s.commit()
     _wake_program_reminder_worker()
+    if program_realtime_event:
+        await _publish_realtime_event(program_realtime_event)
 
     return RedirectResponse("/program?view=week&day=" + target_dates[0].isoformat(), status_code=303)
 
 
 @app.post("/program/{event_id}/complete")
-def program_complete(request: Request, event_id: int):
+async def program_complete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4454,17 +4468,20 @@ def program_complete(request: Request, event_id: int):
         event.updated_at = _utcnow_naive()
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
-        _resolve_notifications(
+        realtime_events = _resolve_notifications(
             s, user_id=user.id, notice_type="PROGRAM_REMINDER",
             related_type="schedule_event", related_id=event.id,
         )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_COMPLETED", event.id))
         s.commit()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?completed=1", status_code=303)
 
 
 @app.post("/program/{event_id}/delete")
-def program_delete(request: Request, event_id: int):
+async def program_delete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4477,11 +4494,14 @@ def program_delete(request: Request, event_id: int):
         event.updated_at = _utcnow_naive()
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
-        _resolve_notifications(
+        realtime_events = _resolve_notifications(
             s, user_id=user.id, notice_type="PROGRAM_REMINDER",
             related_type="schedule_event", related_id=event.id,
         )
+        realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_DELETED", event.id))
         s.commit()
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
 
     return RedirectResponse("/program?deleted=1", status_code=303)
 
