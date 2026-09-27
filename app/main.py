@@ -3765,12 +3765,20 @@ def home(request: Request):
     upcoming_end = local_now + timedelta(days=90)
 
     with Session(engine, expire_on_commit=False) as s:
-        # Dashboard renders only the three most recent patients. Do not load
-        # every patient/analysis/clinical record on each home navigation.
-        patient_query = select(Patient).order_by(Patient.id.desc()).limit(3)
+        patient_query = select(Patient).order_by(Patient.id.desc())
         if user.role != "ADMIN":
             patient_query = patient_query.where(Patient.owner_user_id == user.id)
         patients = s.exec(patient_query).all()
+
+        analysis_query = (
+            select(Analysis)
+            .join(Patient, Analysis.patient_id == Patient.id)
+            .order_by(Analysis.id.desc())
+        )
+        if user.role != "ADMIN":
+            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
+        analyses = s.exec(analysis_query).all()
+        records = s.exec(select(ClinicalRecord)).all()
 
         guest_analyses = s.exec(
             select(GuestAnalysis)
@@ -3814,6 +3822,8 @@ def home(request: Request):
         name="dashboard.html",
         context={
             "patients": patients,
+            "analyses": analyses,
+            "records": records,
             "guest_analyses": guest_analyses,
             "professional_title": professional_title,
             "professional_group": _professional_group(professional_title),
@@ -5036,34 +5046,10 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     case_ids = [case.id for case in cases if case.id is not None]
-    # Load inbox state in one query. The old implementation called
-    # _consultation_inbox_state once per case (N+1 DB round trips).
-    existing_states = session.exec(select(ConsultationInboxState).where(
-        ConsultationInboxState.user_id == user_id,
-        ConsultationInboxState.case_id.in_(case_ids),
-    ).order_by(ConsultationInboxState.id.asc())).all()
-    states_by_case: dict[int, list[ConsultationInboxState]] = {}
-    for state in existing_states:
-        states_by_case.setdefault(state.case_id, []).append(state)
-    state_by_case = {}
-    for case_id in case_ids:
-        states = states_by_case.get(case_id, [])
-        if not states:
-            state = ConsultationInboxState(case_id=case_id, user_id=user_id)
-            session.add(state)
-            session.flush()
-        else:
-            state = states[0]
-            if len(states) > 1:
-                read_values = [row.last_read_at for row in states if row.last_read_at]
-                state.last_read_at = max(read_values) if read_values else None
-                newest = states[-1]
-                state.deleted_at = newest.deleted_at
-                state.recover_until = newest.recover_until
-                session.add(state)
-                for duplicate in states[1:]:
-                    session.delete(duplicate)
-        state_by_case[case_id] = state
+    state_by_case = {
+        case_id: _consultation_inbox_state(session, case_id, user_id)
+        for case_id in case_ids
+    }
 
     visible_cases = [case for case in cases if not state_by_case[case.id].deleted_at]
     if not visible_cases:
