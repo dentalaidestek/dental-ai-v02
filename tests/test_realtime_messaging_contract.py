@@ -21,9 +21,11 @@ ROW = (ROOT / "app" / "templates" / "_message_row.html").read_text(encoding="utf
 
 
 def _engine():
-    return create_engine(
+    test_engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    SQLModel.metadata.create_all(test_engine)
+    return test_engine
 
 
 def test_message_event_is_durable_for_both_participants():
