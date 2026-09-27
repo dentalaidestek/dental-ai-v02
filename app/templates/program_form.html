@@ -2,9 +2,8 @@
 {% block content %}
 <div class="program-form-page">
     <div class="program-form-header">
-        <a class="workspace-back-link" href="/program">← Programım</a>
-        <h1>{% if mode == 'edit' %}Programı Düzenle{% else %}Programa Ekle{% endif %}</h1>
-        <p>Tarih, saat ve hatırlatmayı seçmeniz yeterli.</p>
+        <a class="program-form-close" href="/program" aria-label="Kapat">×</a>
+        <h1>{% if mode == 'edit' %}Programı Düzenle{% elif initial_type == 'CLASS' %}Ders Ekle{% else %}Programa Ekle{% endif %}</h1>
     </div>
 
     {% if error %}<div class="workspace-flash error">{{ error }}</div>{% endif %}
@@ -21,7 +20,7 @@
             </label>
 
             <label class="program-field program-field-wide">
-                <span>Başlık</span>
+                <span>{% if initial_type == 'CLASS' %}Ders adı{% else %}Başlık{% endif %}</span>
                 <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required placeholder="Örn. Kontrol randevusu">
             </label>
 
@@ -31,7 +30,7 @@
             </label>
 
             <label class="program-field">
-                <span>Bitiş <small>(isteğe bağlı)</small></span>
+                <span>Bitiş</span>
                 <input type="datetime-local" name="end_at" value="{{ initial_end or '' }}">
             </label>
 
@@ -61,7 +60,7 @@
         </div>
 
         <details class="program-more-options" {% if initial_location or initial_notes or initial_recurrence == 'WEEKLY' or initial_recurrence_until %}open{% endif %}>
-            <summary>Diğer seçenekler</summary>
+            <summary><span>▣</span> İleri seçenekler</summary>
             <div class="program-form-grid">
                 <label class="program-field">
                     <span>Konum</span>
