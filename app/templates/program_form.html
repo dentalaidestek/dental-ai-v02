@@ -21,7 +21,7 @@
 
             <label class="program-field program-field-wide">
                 <span id="programTitleLabel">{% if initial_type == 'CLASS' %}Ders adı{% else %}Başlık{% endif %}</span>
-                <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required placeholder="Örn. Kontrol randevusu">
+                <input type="text" id="programTitleInput" name="title" value="{{ initial_title or '' }}" maxlength="160" required placeholder="{% if initial_type == 'CLASS' %}Örn. Ortodonti{% else %}Örn. Kontrol randevusu{% endif %}">
             </label>
 
             <label class="program-field">
@@ -106,7 +106,9 @@ function syncProgramPatientField(clearWhenHidden = false) {
     const supportsPatient = ['APPOINTMENT', 'CLINIC'].includes(type);
     field.style.display = supportsPatient ? '' : 'none';
     const titleLabel = document.getElementById('programTitleLabel');
+    const titleInput = document.getElementById('programTitleInput');
     if (titleLabel) titleLabel.textContent = type === 'CLASS' ? 'Ders adı' : 'Başlık';
+    if (titleInput) titleInput.placeholder = type === 'CLASS' ? 'Örn. Ortodonti' : 'Örn. Kontrol randevusu';
     if (!supportsPatient && clearWhenHidden && select) {
         select.value = '';
     }
