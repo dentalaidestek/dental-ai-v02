@@ -1,12 +1,12 @@
 <section class="admin-pro-card" id="adminSupportRegion">
 <div class="admin-card-head"><div><h1>Destek Talepleri</h1><p>Talebi açarak destek konuşmasını yönetin. İlgili konuşma düğmesi varsa, o düğme yalnız bağlı vaka konuşmasını incelemek içindir.</p></div></div>
-<div class="admin-review-list">{% for row in ticket_rows %}{% set x=row.ticket %}{% set sender=row.sender %}{% set unread=row.unread_count or 0 %}
+<div class="admin-support-table-head"><span># / Konu</span><span>Kullanıcı</span><span>Durum</span><span>Son Aktivite</span><span>Mesajlar</span></div><div class="admin-review-list admin-support-table">{% for row in ticket_rows %}{% set x=row.ticket %}{% set sender=row.sender %}{% set unread=row.unread_count or 0 %}
 <section class="admin-review-card" data-admin-ticket-id="{{x.id}}" data-support-status="{{x.status}}">
   <div class="admin-support-summary">
-    <button type="button" class="admin-support-open" data-admin-support-toggle="{{x.id}}">
-      <span><b>#{{x.id}} · {{x.subject}}</b><small>{{sender.display_name if sender else 'Misafir kullanıcı'}}{% if x.case_id %} · Vaka #{{x.case_id}}{% endif %} · Son aktivite {{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</small></span>
-    </button>
+    <button type="button" class="admin-support-open" data-admin-support-toggle="{{x.id}}"><span><b>#{{x.id}} · {{x.subject}}</b><small>{% if x.case_id %}Vaka #{{x.case_id}}{% else %}Destek talebi{% endif %}</small></span></button>
+    <span class="admin-support-user">{{sender.display_name if sender else 'Misafir kullanıcı'}}</span>
     <span class="admin-review-status {{'open' if x.status=='OPEN' else ('progress' if x.status in ['IN_PROGRESS','USER_REPLIED'] else ('answered' if x.status=='ANSWERED' else 'closed'))}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Kullanıcı yanıtladı{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
+    <time class="admin-support-activity">{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time>
     <button type="button" class="admin-support-count {{'has-unread' if unread else ''}}" data-admin-support-toggle="{{x.id}}">Konuşma{% if unread %} <b>{{unread}}</b>{% endif %}</button>
   </div>
   <div class="admin-support-conversation" data-admin-support-conversation="{{x.id}}" data-support-read-through="{{row.messages[-1].id if row.messages else 0}}" hidden>
