@@ -56,11 +56,10 @@
                     <option value="120" {% if initial_reminder == '120' and initial_notification %}selected{% endif %}>2 saat önce</option>
                     <option value="1440" {% if initial_reminder == '1440' and initial_notification %}selected{% endif %}>1 gün önce</option>
                 </select>
-                <input type="hidden" name="notification_enabled" id="programNotificationEnabled" value="1">
             </label>
         </div>
 
-        <details class="program-more-options">
+        <details class="program-more-options" {% if initial_location or initial_notes or initial_recurrence == 'WEEKLY' or initial_recurrence_until %}open{% endif %}>
             <summary>Diğer seçenekler</summary>
             <div class="program-form-grid">
                 <label class="program-field">
@@ -100,20 +99,13 @@ function toggleRecurrenceEnd() {
     const field = document.getElementById('recurrenceUntilField');
     field.style.display = value === 'WEEKLY' ? '' : 'none';
 }
-function syncProgramReminder() {
-    const reminder = document.getElementById('programReminder');
-    const enabled = document.getElementById('programNotificationEnabled');
-    enabled.value = reminder.value === 'NONE' ? '' : '1';
-}
 function syncProgramPatientField() {
     const type = document.getElementById('programEventType').value;
     const field = document.getElementById('programPatientField');
     field.style.display = ['APPOINTMENT', 'CLINIC'].includes(type) ? '' : 'none';
 }
-document.getElementById('programReminder').addEventListener('change', syncProgramReminder);
 document.getElementById('programEventType').addEventListener('change', syncProgramPatientField);
 toggleRecurrenceEnd();
-syncProgramReminder();
 syncProgramPatientField();
 </script>
 {% endblock %}
