@@ -75,6 +75,7 @@ def test_mobile_expert_header_cannot_claim_full_viewport_width():
     assert "width:auto!important" in mobile_css
     assert "min-width:0!important" in mobile_css
     assert "overflow:hidden" in mobile_css
-    assert "@media(max-width:520px){ .expert-header-entry{max-width:126px!important}" in mobile_css
-    assert "@media(max-width:380px){ .expert-header-entry{max-width:108px!important}" in mobile_css
-    assert "flex-wrap" not in mobile_css
+    assert "flex-wrap:nowrap" in mobile_css
+    assert ".topbar .brand,.notification-center,.menu-toggle{flex:0 0 auto}" in mobile_css
+    assert "max-width:126px!important" not in mobile_css
+    assert "max-width:108px!important" not in mobile_css
