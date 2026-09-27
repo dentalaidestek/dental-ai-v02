@@ -81,7 +81,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import delete, func, or_ as sa_or, text
+from sqlalchemy import String, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
