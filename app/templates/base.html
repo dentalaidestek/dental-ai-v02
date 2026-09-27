@@ -494,11 +494,11 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
             const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
         }
-        // Durable replay must still reconcile page state (for example an open
-        // Program view) while user-facing activity such as message badges/toasts
-        // stays silent. Consumers can inspect detail.replay when they need to
-        // distinguish historical reconciliation from a genuinely live event.
-        if(notify||evt.replay===true)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        // Historical resume stays silent for message/case activity, but Program
+        // lifecycle events still reconcile open Program/dashboard state after a
+        // disconnect. Other stateful event types already have dedicated handlers.
+        const replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(evt.event_type);
+        if(notify||replayProgramState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         try{
