@@ -9,7 +9,7 @@
     <span class="admin-review-status {{'open' if x.status=='OPEN' else ('progress' if x.status in ['IN_PROGRESS','USER_REPLIED'] else ('answered' if x.status=='ANSWERED' else 'closed'))}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Kullanıcı yanıtladı{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
     <button type="button" class="admin-support-count {{'has-unread' if unread else ''}}" data-admin-support-toggle="{{x.id}}">Konuşma{% if unread %} <b>{{unread}}</b>{% endif %}</button>
   </div>
-  <div class="admin-support-conversation" data-admin-support-conversation="{{x.id}}" hidden>
+  <div class="admin-support-conversation" data-admin-support-conversation="{{x.id}}" data-support-read-through="{{row.messages[-1].id if row.messages else 0}}" hidden>
     <div class="admin-support-conversation-top"><b>#{{x.id}} · {{x.subject}}</b><button type="button" data-admin-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button></div>
     <div class="admin-support-grid">
       <aside><small>Kullanıcı</small><b>{{sender.display_name if sender else 'Misafir kullanıcı'}}</b><small>Tarih</small><span>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</span>{% if x.case_id %}<a class="admin-review-conversation-link" href="/admin/consultation-review/{{x.case_id}}">İlgili konuşmayı aç</a><small class="admin-review-readonly-note">Bağlı vaka konuşması yalnız inceleme içindir.</small>{% endif %}</aside>
