@@ -885,6 +885,19 @@ def _cancel_user_program_reminders(session: Session, user_id: int) -> None:
         job.completed_at = now
         session.add(job)
 
+
+def _restore_user_program_reminders(session: Session, user_id: int) -> None:
+    """Rebuild the next valid reminder after an account is re-enabled."""
+    events = session.exec(select(ScheduleEvent).where(
+        ScheduleEvent.owner_user_id == user_id,
+        ScheduleEvent.status == "ACTIVE",
+        ScheduleEvent.notification_enabled == True,
+        ScheduleEvent.reminder_minutes != None,
+    )).all()
+    now = _utcnow_naive()
+    for event in events:
+        _enqueue_next_program_reminder(session, event, now)
+
 try:
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
 except Exception:
@@ -9868,6 +9881,7 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
             _cancel_user_program_reminders(s, target.id)
         elif action == "UNBAN":
             target.is_active=True
+            _restore_user_program_reminders(s, target.id)
         else: return HTMLResponse("Geçersiz işlem.",status_code=400)
         s.add(target);s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=target.id,detail=target.username));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
