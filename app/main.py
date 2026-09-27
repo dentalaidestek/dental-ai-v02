@@ -1281,13 +1281,8 @@ def _dashboard_next_schedule_occurrence(
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status == "ACTIVE")
         .where(ScheduleEvent.recurrence_rule == "NONE")
+        .where(ScheduleEvent.start_at >= range_start_utc)
         .where(ScheduleEvent.start_at <= range_end_utc)
-        .where(
-            sa_or(
-                ScheduleEvent.start_at >= range_start_utc,
-                ScheduleEvent.end_at >= range_start_utc,
-            )
-        )
         .order_by(ScheduleEvent.start_at)
         .limit(1)
     ).all()
@@ -1391,8 +1386,9 @@ def _program_range(view: str, focus_date: date):
         previous = (start_date - timedelta(days=1)).replace(day=1)
         following = next_month
     else:
-        start_date = focus_date - timedelta(days=focus_date.weekday())
-        end_date = start_date + timedelta(days=6)
+        # Week view is a rolling seven-day window anchored on the selected day.
+        start_date = focus_date
+        end_date = focus_date + timedelta(days=6)
         previous = focus_date - timedelta(days=7)
         following = focus_date + timedelta(days=7)
     return (
@@ -1430,10 +1426,12 @@ def _group_program_occurrences(occurrences):
 
 
 def _program_week_days(focus_date: date):
-    week_start = focus_date - timedelta(days=focus_date.weekday())
     short_names = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
     return [
-        {"date": week_start + timedelta(days=index), "label": short_names[index]}
+        {
+            "date": focus_date + timedelta(days=index),
+            "label": short_names[(focus_date + timedelta(days=index)).weekday()],
+        }
         for index in range(7)
     ]
 
