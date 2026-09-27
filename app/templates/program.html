@@ -6,7 +6,7 @@
             <h1>Programım</h1>
             <p>Gününüzü ve yaklaşan kayıtlarınızı takip edin.</p>
         </div>
-        <a class="btn" href="/program/new">+ Yeni Kayıt</a>
+        <a class="program-add-circle" href="/program/new" aria-label="Yeni program kaydı">+</a>
     </div>
 
     {% if saved %}<div class="workspace-flash success">Program kaydı kaydedildi.</div>{% endif %}
@@ -27,7 +27,7 @@
     </div>
 
     {% if groups %}
-    <div class="program-groups">
+    <div class="program-groups" id="programDynamicRegion">
         {% for group in groups %}
         <section class="program-day {% if group.date == today_date %}program-day-today{% endif %}">
             <div class="program-day-heading">
@@ -54,7 +54,7 @@
                         </p>
                         {% if event.notes %}<div class="program-notes">{{ event.notes }}</div>{% endif %}
                     </div>
-                    <div class="program-event-actions">
+                    <details class="program-event-menu"><summary aria-label="Etkinlik seçenekleri">⋮</summary><div class="program-event-actions">
                         <a href="/program/{{ event.id }}/edit">Düzenle</a>
                         {% if event.status != 'COMPLETED' and not event.is_recurring %}
                         <form method="post" action="/program/{{ event.id }}/complete">
@@ -64,7 +64,7 @@
                         <form method="post" action="/program/{{ event.id }}/delete" onsubmit="return confirm('Bu program kaydı kaldırılsın mı?');">
                             <button type="submit" class="link-button danger-link">Sil</button>
                         </form>
-                    </div>
+                    </div></details>
                 </article>
                 {% endfor %}
             </div>
@@ -79,4 +79,51 @@
     </div>
     {% endif %}
 </div>
+<script>
+(function () {
+  const page = document.querySelector('.program-page');
+  if (!page) return;
+
+  function closeMenus() {
+    page.querySelectorAll('.program-event-menu[open]').forEach((menu) => menu.removeAttribute('open'));
+  }
+
+  page.addEventListener('click', (event) => {
+    const summary = event.target.closest('.program-event-menu summary');
+    if (summary) {
+      page.querySelectorAll('.program-event-menu[open]').forEach((menu) => {
+        if (menu !== summary.parentElement) menu.removeAttribute('open');
+      });
+      return;
+    }
+    if (!event.target.closest('.program-event-menu')) closeMenus();
+  });
+
+  async function refreshProgram(url) {
+    const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+    if (!response.ok) throw new Error('Program güncellenemedi');
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const next = doc.querySelector('.program-page');
+    if (!next) throw new Error('Program görünümü bulunamadı');
+    page.replaceWith(next);
+    history.replaceState({}, '', response.url);
+    window.dispatchEvent(new Event('program:updated'));
+  }
+
+  page.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.program-event-actions form');
+    if (!form) return;
+    event.preventDefault();
+    if (form.action.endsWith('/delete') && !confirm('Bu program kaydı kaldırılsın mı?')) return;
+    try {
+      const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}});
+      if (!response.ok) throw new Error('İşlem tamamlanamadı');
+      await refreshProgram(response.url || location.href);
+    } catch (_) {
+      form.submit();
+    }
+  });
+})();
+</script>
 {% endblock %}
