@@ -2339,7 +2339,14 @@ def _ensure_report_support_tickets(session: Session, reports: list[UserReport]) 
             created_at=report.created_at,
             updated_at=report.created_at,
         )
-        session.add(ticket);session.flush();by_report[report.id]=ticket;created=True
+        session.add(ticket)
+        try:
+            session.flush()
+            by_report[report.id]=ticket;created=True
+        except IntegrityError:
+            session.rollback()
+            existing=session.exec(select(SupportTicket).where(SupportTicket.source_type=="REPORT",SupportTicket.source_id==report.id)).first()
+            if existing:by_report[report.id]=existing
     if created:session.commit()
     return by_report
 
