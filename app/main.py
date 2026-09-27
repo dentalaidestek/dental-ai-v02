@@ -826,6 +826,27 @@ def _enqueue_next_program_reminder(session: Session, event: ScheduleEvent, after
         raise
 
 
+def _backfill_program_reminder_jobs() -> None:
+    """Ensure active pre-queue Program records have their next durable reminder."""
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        if engine.dialect.name == "postgresql":
+            session.exec(text("SELECT pg_advisory_xact_lock(824260927)"))
+        events = session.exec(select(ScheduleEvent).where(
+            ScheduleEvent.status == "ACTIVE",
+            ScheduleEvent.notification_enabled == True,
+            ScheduleEvent.reminder_minutes != None,
+        )).all()
+        for event in events:
+            pending = session.exec(select(ProgramReminderJob.id).where(
+                ProgramReminderJob.schedule_event_id == event.id,
+                ProgramReminderJob.status == "PENDING",
+            )).first()
+            if not pending:
+                _enqueue_next_program_reminder(session, event, now)
+        session.commit()
+
+
 def _cancel_pending_program_reminders(session: Session, event_id: int) -> None:
     now = _utcnow_naive()
     for job in session.exec(select(ProgramReminderJob).where(
@@ -3136,6 +3157,7 @@ async def startup():
     storage_check_connection()
     init_db()
     _backfill_legacy_deadline_jobs_if_needed()
+    _backfill_program_reminder_jobs()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
     app.state.program_reminder_task = asyncio.create_task(_program_reminder_worker()) if run_embedded_deadline_worker else None
