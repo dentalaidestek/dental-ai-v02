@@ -5264,3 +5264,24 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
  .program-field,.program-field-wide{grid-column:1/-1!important;min-width:0}
  .program-field input,.program-field select,.program-field textarea{width:100%;max-width:100%;box-sizing:border-box}
 }
+
+
+/* Program final header safety: reserve equal side space so close never overlaps title. */
+.program-form-header{
+  grid-template-columns:38px minmax(0,1fr) 38px!important;
+  align-items:center!important;
+  place-items:initial!important;
+}
+.program-form-header h1{
+  grid-column:2;
+  min-width:0;
+  text-align:center;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.program-form-close{
+  position:static!important;
+  grid-column:1;
+  grid-row:1;
+}
