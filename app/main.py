@@ -802,7 +802,29 @@ def _enqueue_next_program_reminder(session: Session, event: ScheduleEvent, after
         return
     run_at = occurrence - timedelta(minutes=event.reminder_minutes)
     key = _program_occurrence_key(event.id, occurrence, event.reminder_minutes)
-    if session.exec(select(ProgramReminderJob.id).where(ProgramReminderJob.dedup_key == key)).first():
+    existing = session.exec(
+        select(ProgramReminderJob).where(ProgramReminderJob.dedup_key == key)
+    ).first()
+    if existing:
+        # Editing title/location/notes can keep the same occurrence/reminder key.
+        # _sync_program_reminder cancels the old pending snapshot first; revive
+        # only that cancelled job with the current event snapshot. Never revive
+        # DONE jobs, otherwise an already-delivered reminder could be sent twice.
+        if existing.status == "CANCELLED":
+            existing.owner_user_id = event.owner_user_id
+            existing.occurrence_start_at = occurrence
+            existing.run_at = run_at
+            existing.reminder_minutes = event.reminder_minutes
+            existing.event_updated_at = event.updated_at
+            existing.status = "PENDING"
+            existing.attempts = 0
+            existing.last_error = None
+            existing.completed_at = None
+            session.add(existing)
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
         return
     job = ProgramReminderJob(
         schedule_event_id=event.id,
