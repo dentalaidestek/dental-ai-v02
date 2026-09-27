@@ -2307,6 +2307,7 @@ def _support_message_payload(ticket: SupportTicket, message: SupportTicketMessag
         "is_outgoing": message.sender_role == viewer_role,
         "status": ticket.status,
         "created_at": message.created_at.isoformat(),
+        "message": message.message,
     }
 
 
