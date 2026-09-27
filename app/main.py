@@ -839,11 +839,19 @@ def _backfill_program_reminder_jobs() -> None:
             ScheduleEvent.reminder_minutes != None,
         )).all()
         for event in events:
-            pending = session.exec(select(ProgramReminderJob.id).where(
+            pending_jobs = session.exec(select(ProgramReminderJob).where(
                 ProgramReminderJob.schedule_event_id == event.id,
                 ProgramReminderJob.status == "PENDING",
-            )).first()
-            if not pending:
+            )).all()
+            has_current_pending = False
+            for pending in pending_jobs:
+                if _program_reminder_is_current(event, pending) and pending.run_at >= now:
+                    has_current_pending = True
+                else:
+                    pending.status = "CANCELLED"
+                    pending.completed_at = now
+                    session.add(pending)
+            if not has_current_pending:
                 _enqueue_next_program_reminder(session, event, now)
         session.commit()
 
