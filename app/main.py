@@ -2882,9 +2882,12 @@ async def change_professional_title(
 
         profile_event=_record_realtime_event(s,user.id,"PROFILE_UPDATED","user",user.id,
             {"user_id":user.id,"professional_title":professional_title})
+        expert_profile_events = _record_expert_profile_realtime_events(s, expert_profile) if current_title and current_title != professional_title and expert_profile else []
         s.commit()
 
     await _publish_realtime_event(profile_event)
+    for expert_profile_event in expert_profile_events:
+        await _publish_realtime_event(expert_profile_event)
     return RedirectResponse("/account?profile_updated=1", status_code=303)
 
 
@@ -4919,6 +4922,9 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
         expert_profile.capacity_auto_busy = False  # timeout/policy BUSY is never capacity-managed
         expert_profile.updated_at = now
         session.add(expert_profile)
+        session.flush()
+        if notification_events is not None:
+            notification_events.extend(_record_expert_profile_realtime_events(session, expert_profile))
     _consultation_event(session, case.id, "EXPERT_TIMEOUT", case.expert_user_id, {"deadline": case.expert_response_deadline.isoformat()})
     local_now = _utc_to_local(now) or now
     day_start_local = datetime.combine(local_now.date(), time.min)
