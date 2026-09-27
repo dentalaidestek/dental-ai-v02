@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     <title>{{ title or "DENTAL-AI" }}</title>
-    <link rel="stylesheet" href="/static/style.css?v=20260927-notifications-v2">
+    <link rel="stylesheet" href="/static/style.css?v=20260927-notifications-v3">
     <link rel="stylesheet" href="/static/design-system.css?v=20260907-v12">
     <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260914-v1">
 </head>
@@ -312,6 +312,12 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(n.target_url)item.href=n.target_url;else item.type="button";
             item.dataset.noticeId=String(n.id);
             const kind=String(n.notice_type||"").toUpperCase();
+            const tone=kind.includes("DEADLINE")||kind.includes("EXPIRED")||kind.includes("TIMEOUT")||kind.includes("WARNING")?"warning"
+              :kind.includes("AVAILABLE")||kind.includes("COMPLET")||kind.includes("APPROV")||kind.includes("ACCEPT")?"success"
+              :kind.includes("CONSULTATION")||kind.includes("CASE")||kind.includes("EXPERT")?"consultation"
+              :kind.includes("REJECT")||kind.includes("DISPUTE")||kind.includes("BLOCK")?"danger"
+              :kind.includes("MESSAGE")?"message":"system";
+            item.dataset.tone=tone;
             const icon=document.createElement("span");icon.className="notification-item-icon";
             const iconSvg=kind.includes("DEADLINE")||kind.includes("EXPIRED")
               ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>'
