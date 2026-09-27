@@ -5584,6 +5584,7 @@ async def expert_support_availability_update(request: Request):
         profile.capacity_auto_busy = False
         profile.updated_at = _utcnow_naive()
         s.add(profile)
+        profile_events = _record_expert_profile_realtime_events(s, profile)
         if became_available:
             watches = s.exec(select(ExpertAvailabilityWatch).where(
                 ExpertAvailabilityWatch.specialty == profile.specialty,
@@ -5608,6 +5609,8 @@ async def expert_support_availability_update(request: Request):
                     watch.is_active = False
                     s.add(watch)
         s.commit()
+    for event in profile_events:
+        await _publish_realtime_event(event)
     for event in notice_events:
         await _publish_realtime_event(event)
     return JSONResponse({"ok": True, "availability": availability})
@@ -5658,6 +5661,7 @@ async def expert_support_profile_save(
     if specialty not in EXPERT_SPECIALTIES or availability not in EXPERT_AVAILABILITY:
         return HTMLResponse("Geçersiz uzman profili bilgisi.", status_code=400)
     photo_event = None
+    profile_events: list[RealtimeEvent] = []
     previous_photo_path = None
     new_photo_path = None
     with Session(engine, expire_on_commit=False) as s:
@@ -5761,6 +5765,8 @@ async def expert_support_profile_save(
                 {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
             )
         s.add(profile)
+        s.flush()
+        profile_events = _record_expert_profile_realtime_events(s, profile)
         try:
             s.commit()
         except Exception:
@@ -5771,6 +5777,8 @@ async def expert_support_profile_save(
         _remove_replaced_profile_photo(previous_photo_path, new_photo_path)
     if photo_event:
         await _publish_realtime_event(photo_event)
+    for profile_event in profile_events:
+        await _publish_realtime_event(profile_event)
     return RedirectResponse("/expert-support/profile?saved=1", status_code=303)
 
 
@@ -6156,7 +6164,7 @@ def consultation_message_delete_for_user(request: Request, case_id: int):
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
-            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+            return JSONResponse({"ok": False, "error": "Bu danışmanlık için işlem yetkiniz yok."}, status_code=403) if wants_json else HTMLResponse("Yetkisiz işlem.", status_code=403)
         state = _consultation_inbox_state(s, case.id, user.id)
         state.deleted_at = now
         state.recover_until = now + timedelta(days=7)
@@ -7461,6 +7469,41 @@ def _record_case_status_realtime_events(session: Session, case: ConsultationCase
             session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, payload
         )
         for viewer_user_id in {case.requester_user_id, case.expert_user_id}
+    ]
+
+
+def _expert_profile_realtime_recipient_ids(session: Session, expert_user_id: int) -> set[int]:
+    """Users already related to the expert may have the public profile open in another tab."""
+    recipients = {int(expert_user_id)}
+    cases = session.exec(
+        select(ConsultationCase.requester_user_id).where(ConsultationCase.expert_user_id == expert_user_id).distinct()
+    ).all()
+    recipients.update(int(user_id) for user_id in cases if user_id)
+    return recipients
+
+
+def _record_expert_profile_realtime_events(session: Session, profile: ExpertProfile) -> list[RealtimeEvent]:
+    payload = {
+        "user_id": profile.user_id,
+        "expert_profile_id": profile.id,
+        "specialty": profile.specialty,
+        "institution": profile.institution,
+        "bio": profile.bio,
+        "orcid_url": profile.orcid_url,
+        "publications_text": profile.publications_text,
+        "consultation_price": profile.consultation_price,
+        "availability": profile.availability,
+        "application_status": profile.application_status,
+        "verification_status": profile.verification_status,
+        "specialty_verified": bool(profile.specialty_verified),
+        "academic_title": profile.academic_title,
+        "academic_title_verified": bool(profile.academic_title_verified),
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+        "requires_fragment": True,
+    }
+    return [
+        _record_realtime_event(session, recipient_id, "PROFILE_UPDATED", "expert_profile", profile.id, payload)
+        for recipient_id in _expert_profile_realtime_recipient_ids(session, profile.user_id)
     ]
 
 
