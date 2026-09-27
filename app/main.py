@@ -845,7 +845,9 @@ def _backfill_program_reminder_jobs() -> None:
             )).all()
             has_current_pending = False
             for pending in pending_jobs:
-                if _program_reminder_is_current(event, pending) and pending.run_at >= now:
+                if _program_reminder_is_current(event, pending):
+                    # Keep overdue durable work pending: the worker must recover
+                    # it after a restart instead of startup silently discarding it.
                     has_current_pending = True
                 else:
                     pending.status = "CANCELLED"
