@@ -10399,6 +10399,8 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
         if not ticket:return HTMLResponse("Talep bulunamadı.",status_code=404)
         if ticket.source_type=="REPORT":return HTMLResponse("Bildirim durumu yalnız bildirim yönetimi üzerinden değiştirilebilir.",status_code=409)
         if ticket.status=="CLOSED":return HTMLResponse("Kapatılmış destek talebi yeniden açılamaz.",status_code=409)
+        if status=="IN_PROGRESS" and ticket.status in {"ANSWERED","USER_REPLIED"}:
+            return HTMLResponse("Aktif konuşmanın yanıt sırası durum değişikliğiyle bozulamaz.",status_code=409)
         changed=ticket.status!=status
         ticket.status=status;ticket.updated_at=_utcnow_naive();s.add(ticket)
         if changed and ticket.user_id:
