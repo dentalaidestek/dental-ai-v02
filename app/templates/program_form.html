@@ -20,8 +20,8 @@
             </label>
 
             <label class="program-field program-field-wide">
-                <span id="programTitleLabel">{% if initial_type == 'CLASS' %}Ders adı{% else %}Başlık{% endif %}</span>
-                <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required id="programTitleInput" placeholder="{% if initial_type == 'CLASS' %}Örn. Ortodonti{% else %}Örn. Kontrol randevusu{% endif %}">
+                <span id="programTitleLabel">Başlık</span>
+                <input type="text" name="title" value="{{ initial_title or '' }}" maxlength="160" required id="programTitleInput" placeholder="">
             </label>
 
             <label class="program-field">
@@ -105,10 +105,22 @@ function syncProgramPatientField(clearWhenHidden = false) {
     const select = field.querySelector('select[name="patient_id"]');
     const supportsPatient = ['APPOINTMENT', 'CLINIC'].includes(type);
     field.style.display = supportsPatient ? '' : 'none';
+    const titleCopy = {
+        APPOINTMENT: ['Randevu başlığı', 'Örn. Kontrol randevusu'],
+        CLASS: ['Ders adı', 'Örn. Ortodonti'],
+        CLINIC: ['Klinik / pratik başlığı', 'Örn. Endodonti kliniği'],
+        EXAM: ['Sınav adı', 'Örn. Ortodonti sınavı'],
+        ASSIGNMENT: ['Ödev başlığı', 'Örn. Vaka sunumu'],
+        THESIS: ['Tez çalışması', 'Örn. Literatür taraması'],
+        MEETING: ['Toplantı başlığı', 'Örn. Bölüm toplantısı'],
+        TASK: ['Görev başlığı', 'Örn. Hasta dosyalarını tamamla'],
+        PERSONAL: ['Kişisel plan', 'Örn. Spor']
+    };
+    const copy = titleCopy[type] || ['Başlık', 'Program başlığı'];
     const titleLabel = document.getElementById('programTitleLabel');
-    if (titleLabel) titleLabel.textContent = type === 'CLASS' ? 'Ders adı' : 'Başlık';
+    if (titleLabel) titleLabel.textContent = copy[0];
     const titleInput = document.getElementById('programTitleInput');
-    if (titleInput) titleInput.placeholder = type === 'CLASS' ? 'Örn. Ortodonti' : 'Örn. Kontrol randevusu';
+    if (titleInput) titleInput.placeholder = copy[1];
     if (!supportsPatient && clearWhenHidden && select) {
         select.value = '';
     }
