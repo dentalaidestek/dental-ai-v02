@@ -775,13 +775,10 @@ def _next_program_occurrence_utc(event: ScheduleEvent, after_utc: Optional[datet
     anchor = event.start_at
     after = after_utc or _utcnow_naive()
     if event.recurrence_rule != "WEEKLY":
-        # A sleeping/restarting worker may recover shortly after the due time.
-        # Keep a bounded grace window instead of silently losing the reminder.
-        run_at = anchor - timedelta(minutes=event.reminder_minutes)
-        return anchor if run_at >= after - timedelta(minutes=PROGRAM_REMINDER_RECOVERY_SECONDS // 60) else None
+        return anchor if anchor - timedelta(minutes=event.reminder_minutes) >= after else None
 
     current = anchor
-    grace_after = after - timedelta(minutes=PROGRAM_REMINDER_RECOVERY_SECONDS // 60)
+    grace_after = after
     if current < grace_after:
         delta = grace_after - current
         weeks = max(0, delta.days // 7)
