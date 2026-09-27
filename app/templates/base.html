@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#0f172a">
     <title>{{ title or "DENTAL-AI" }}</title>
-    <link rel="stylesheet" href="/static/style.css?v=20260926-image-editor-v1">
+    <link rel="stylesheet" href="/static/style.css?v=20260927-notifications-v2">
     <link rel="stylesheet" href="/static/design-system.css?v=20260907-v12">
     <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260914-v1">
 </head>
@@ -313,11 +313,21 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             item.dataset.noticeId=String(n.id);
             const kind=String(n.notice_type||"").toUpperCase();
             const icon=document.createElement("span");icon.className="notification-item-icon";
-            icon.textContent=kind.includes("DEADLINE")||kind.includes("EXPIRED")?"◷":kind.includes("AVAILABLE")?"✓":kind.includes("REJECT")||kind.includes("DISPUTE")?"!":kind.includes("CONSULTATION")?"↔":"•";
-            const copy=document.createElement("span"),head=document.createElement("span"),title=document.createElement("b"),time=document.createElement("time"),message=document.createElement("small");
+            const iconSvg=kind.includes("DEADLINE")||kind.includes("EXPIRED")
+              ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>'
+              : kind.includes("AVAILABLE")||kind.includes("COMPLET")||kind.includes("APPROV")
+              ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9"/></svg>'
+              : kind.includes("REJECT")||kind.includes("DISPUTE")
+              ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v6M12 17h.01"/></svg>'
+              : kind.includes("CONSULTATION")
+              ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z"/><path d="M8 9h8M8 12h5"/></svg>'
+              : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg>';
+            icon.innerHTML=iconSvg;
+            const copy=document.createElement("span"),head=document.createElement("span"),title=document.createElement("b"),time=document.createElement("time"),message=document.createElement("small"),arrow=document.createElement("span");
+            arrow.className="notification-item-arrow";arrow.setAttribute("aria-hidden","true");arrow.textContent="›";
             head.className="notification-item-head";title.textContent=n.title||"Dental AI";
             if(n.created_at){const d=new Date(n.created_at+"Z");time.dateTime=n.created_at;time.textContent=Number.isNaN(d.getTime())?"":d.toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}
-            message.textContent=n.message||"";head.append(title,time);copy.append(head,message);item.append(icon,copy);
+            message.textContent=n.message||"";head.append(title,time);copy.append(head,message);item.append(icon,copy,arrow);
             item.addEventListener("click",()=>{
                 if(!n.is_read){
                     fetch("/account/notifications/"+n.id+"/read",{method:"POST",credentials:"same-origin"})
