@@ -215,6 +215,16 @@
     }
   });
 
+  let programRealtimeRefresh = null;
+  window.addEventListener('dai:sync-event', (event) => {
+    const sync = event.detail;
+    if (!programPage() || !sync || !['PROGRAM_CREATED','PROGRAM_UPDATED','PROGRAM_COMPLETED','PROGRAM_DELETED'].includes(sync.event_type)) return;
+    clearTimeout(programRealtimeRefresh);
+    programRealtimeRefresh = setTimeout(() => {
+      swapProgram(location.href).catch(() => {});
+    }, 80);
+  });
+
   window.addEventListener('popstate', () => {
     if (programPage()) swapProgram(location.href).catch(() => location.reload());
   });
