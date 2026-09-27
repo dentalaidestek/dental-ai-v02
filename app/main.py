@@ -1941,9 +1941,19 @@ SESSION_DAYS = 7
 
 
 def get_current_user(request: Request) -> Optional[User]:
+    # Route handlers and the Jinja context processor often ask for the same
+    # authenticated user during one HTTP request. Reuse that already-validated
+    # result only inside this request; never cache authentication across requests.
+    state = getattr(request, "state", None)
+    if state is not None and getattr(state, "_dai_current_user_checked", False):
+        return getattr(state, "_dai_current_user", None)
+
     token = request.cookies.get(SESSION_COOKIE)
 
     if not token:
+        if state is not None:
+            state._dai_current_user_checked = True
+            state._dai_current_user = None
         return None
 
     token_hash = hash_session_token(token)
@@ -1956,19 +1966,20 @@ def get_current_user(request: Request) -> Optional[User]:
         ).first()
 
         if not session_token:
-            return None
-
-        if session_token.expires_at <= _utcnow_naive():
+            user = None
+        elif session_token.expires_at <= _utcnow_naive():
             s.delete(session_token)
             s.commit()
-            return None
+            user = None
+        else:
+            user = s.get(User, session_token.user_id)
+            if not user or not user.is_active:
+                user = None
 
-        user = s.get(User, session_token.user_id)
-
-        if not user or not user.is_active:
-            return None
-
-        return user
+    if state is not None:
+        state._dai_current_user_checked = True
+        state._dai_current_user = user
+    return user
 
 
 def create_user_session(response: RedirectResponse, user_id: int) -> None:
@@ -4477,10 +4488,7 @@ def home(request: Request):
             "patients": patients,
             "guest_analyses": guest_analyses,
             "professional_title": professional_title,
-            "professional_group": _professional_group(professional_title),
-            "dashboard_copy": _dashboard_copy(professional_title),
             "dashboard_greeting": _dashboard_greeting(local_now),
-            "quick_actions": _dashboard_actions(professional_title),
             "dashboard_event": dashboard_event,
             "dashboard_event_label": dashboard_event_label,
             "local_now": local_now,
