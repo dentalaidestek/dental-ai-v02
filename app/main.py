@@ -10354,13 +10354,14 @@ def admin_center_support_fragment(request: Request, section: str = "support", cu
                 | func.cast(SupportTicket.id,String).like(f"%{q.strip()}%")
             )
         if cursor is not None:tq=tq.where(SupportTicket.id < cursor)
-        tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(25)).all()
+        tickets=s.exec(tq.order_by(SupportTicket.id.desc()).limit(26)).all()
+        has_more=len(tickets)>25;tickets=tickets[:25];next_cursor=tickets[-1].id if has_more and tickets else None
         ids=[t.id for t in tickets if t.id is not None]
         user_ids={t.user_id for t in tickets if t.user_id}
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
         unread_by_ticket=_support_unread_map(s,ids,"ADMIN") if ids else {}
         rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread_by_ticket.get(t.id,0)} for t in tickets]
-        return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH,"support_counts":support_counts,"support_status":support_status,"q":q})
+        return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH,"support_counts":support_counts,"support_status":support_status,"q":q,"has_more":has_more,"next_cursor":next_cursor})
 
 @app.get(ADMIN_CENTER_PATH + "/support/{ticket_id}/conversation", response_class=JSONResponse)
 def admin_center_support_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
