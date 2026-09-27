@@ -14,6 +14,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+import uuid
 
 
 class ObjectStorageError(RuntimeError):
@@ -182,12 +183,20 @@ def ensure_local(reference: str | Path) -> Path:
         raise FileNotFoundError(str(local))
     bucket, _, _, _ = _settings()
     local.parent.mkdir(parents=True, exist_ok=True)
-    temporary = local.with_name(f".{local.name}.downloading")
+    # Concurrent requests for the same object must never share a temporary
+    # filename. A fixed ".downloading" path lets two avatar requests race:
+    # one replaces/unlinks the file while the other is still using it.
+    temporary = local.with_name(f".{local.name}.{uuid.uuid4().hex}.downloading")
     try:
         _client().download_file(bucket, _object_key(reference), str(temporary))
+        # Another request may have populated the cache while this download ran.
+        # Replacing with the same immutable object is safe and atomic.
         temporary.replace(local)
     except Exception as exc:
         temporary.unlink(missing_ok=True)
+        # If a concurrent request successfully populated the local cache, use it.
+        if local.is_file():
+            return local
         raise FileNotFoundError(str(reference)) from exc
     return local
 
