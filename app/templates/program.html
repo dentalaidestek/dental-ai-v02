@@ -174,7 +174,7 @@
       return;
     }
 
-    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a, .program-week-strip a');
+    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a, .program-week-strip a, .program-month-nav a, .program-month-grid a');
     if (!nav) return;
     event.preventDefault();
     try { await swapProgram(nav.href, true); }
