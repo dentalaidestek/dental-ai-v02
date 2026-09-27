@@ -10412,7 +10412,10 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
     if user_event:await _publish_realtime_event(user_event)
     if notice_event:await _publish_realtime_event(notice_event)
     for event in peer_events:await _publish_realtime_event(event)
-    return {"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"ADMIN"}
+    wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
+    if wants_json:
+        return JSONResponse({"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"ADMIN"})
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
