@@ -224,6 +224,7 @@ def test_ws_resume_history_is_marked_replay_and_silent_in_client():
     assert 'payload["replay"] = True' in MAIN
     assert 'notify:evt?.replay!==true' in BASE
     assert 'if(notify){bumpMessageBadge();showLiveMessage(data);}' in BASE
+    assert 'replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"]' in BASE
 
 
 def test_notification_center_open_marks_active_notices_seen():
@@ -231,6 +232,11 @@ def test_notification_center_open_marks_active_notices_seen():
     assert 'if(open)markNotificationsSeen();' in BASE
     assert 'fetch("/account/notifications/read-all",{method:"POST"' in BASE
     assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
+    assert '"NOTIFICATIONS_READ"' in MAIN
+    assert 'evt.event_type==="NOTIFICATIONS_READ"' in BASE
+    read_all = MAIN.split("async def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
+    assert "_record_realtime_event" in read_all
+    assert "await _publish_realtime_event(realtime_event)" in read_all
 
 
 def test_seen_program_reminders_expire_without_touching_other_notices():
