@@ -232,6 +232,8 @@ def test_notification_center_open_marks_active_notices_seen():
     assert MAIN.index('@app.post("/account/notifications/read-all")') < MAIN.index('@app.post("/account/notifications/{notice_id}/read")')
     assert 'if(open)markNotificationsSeen();' in BASE
     assert 'fetch("/account/notifications/read-all",{method:"POST"' in BASE
+    assert "seen_before:seenBefore" in BASE
+    assert "AdminNotice.created_at <= seen_before" in MAIN
     assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
     assert '"NOTIFICATIONS_READ"' in MAIN
     assert 'evt.event_type==="NOTIFICATIONS_READ"' in BASE
