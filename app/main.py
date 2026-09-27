@@ -3785,13 +3785,10 @@ def home(request: Request):
             select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
         ).first()
 
-        # Ana ekran, bütün günü listelemek yerine yalnızca sıradaki işi gösterir.
-        # Önce bugün için henüz bitmemiş/başlamamış kayıt aranır. Bugün yoksa
-        # önümüzdeki 90 gün içindeki en yakın aktif kayıt kullanılır.
-        today_upcoming_events = _user_schedule_occurrences(
-            s, user.id, local_now, today_end
-        )
-        upcoming_events = _user_schedule_occurrences(
+        # Dashboard needs only the first active occurrence in the next 90 days.
+        # Build the occurrence list once; whether it belongs to today is derived
+        # from that same result so the schedule table/patient map are not queried twice.
+        dashboard_events = _user_schedule_occurrences(
             s, user.id, local_now, upcoming_end
         )
 
@@ -3800,16 +3797,15 @@ def home(request: Request):
         if account_meta and account_meta.professional_title
         else "Diş Hekimi"
     )
-    today_next_event = next(
-        (item for item in today_upcoming_events if item["status"] == "ACTIVE"),
+    dashboard_event = next(
+        (item for item in dashboard_events if item["status"] == "ACTIVE"),
         None,
     )
-    next_event = next(
-        (item for item in upcoming_events if item["status"] == "ACTIVE"),
-        None,
+    dashboard_event_label = (
+        "Bugün"
+        if dashboard_event and dashboard_event["start_local"].date() == local_now.date()
+        else "Yaklaşan"
     )
-    dashboard_event = today_next_event or next_event
-    dashboard_event_label = "Bugün" if today_next_event else "Yaklaşan"
 
     return templates.TemplateResponse(
         request=request,
