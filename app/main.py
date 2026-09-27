@@ -2494,7 +2494,7 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
         s.commit()
     for event in admin_events:await _publish_realtime_event(event)
     if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):
-        return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":ticket.status,"message_id":support_message.id,"can_reply":False})
+        return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":ticket.status,"message_id":support_message.id,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"USER","can_reply":False})
     return RedirectResponse("/support-request?reply_sent=1",status_code=303)
 
 
@@ -10383,7 +10383,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
     if user_event:await _publish_realtime_event(user_event)
     if notice_event:await _publish_realtime_event(notice_event)
     for event in peer_events:await _publish_realtime_event(event)
-    return {"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status}
+    return {"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"ADMIN"}
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
