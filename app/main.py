@@ -1810,6 +1810,7 @@ def init_db():
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS source_id INTEGER')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_supportticket_source ON "supportticket" (source_type, source_id) WHERE source_id IS NOT NULL')
             for statement in (
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS notice_type VARCHAR NOT NULL DEFAULT \'ADMIN\'',
                 'ALTER TABLE "adminnotice" ADD COLUMN IF NOT EXISTS related_type VARCHAR',
@@ -1854,6 +1855,7 @@ def init_db():
                 conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN source_id INTEGER')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_type ON "supportticket" (source_type)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_supportticket_source_id ON "supportticket" (source_id)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_supportticket_source ON "supportticket" (source_type, source_id) WHERE source_id IS NOT NULL')
             adminnotice_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("adminnotice")').fetchall()}
             adminnotice_additions = {
                 "notice_type": "VARCHAR NOT NULL DEFAULT 'ADMIN'",
@@ -10349,7 +10351,7 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
-    notice_event=None;admin_events=[]
+    notice_event=None;report_support_event=None;admin_events=[]
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
         report=s.get(UserReport,report_id)
@@ -10360,6 +10362,8 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
         if linked_ticket:
             linked_ticket.status="CLOSED" if status=="CLOSED" else ("IN_PROGRESS" if status=="IN_PROGRESS" else "OPEN")
             linked_ticket.updated_at=_utcnow_naive();s.add(linked_ticket)
+            if changed:
+                report_support_event=_record_realtime_event(s,report.reporter_user_id,"SUPPORT_TICKET_UPDATED","support_ticket",linked_ticket.id,{"ticket_id":linked_ticket.id,"status":linked_ticket.status,"requires_fragment":True,"has_reply":False,"source_type":"REPORT","report_id":report.id})
         if changed:
             labels={"OPEN":"Açık","IN_PROGRESS":"İnceleniyor","CLOSED":"Sonuçlandı"}
             message=f"Gönderdiğiniz bildirim artık {labels[status].lower()} durumunda."
@@ -10378,6 +10382,7 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
     if notice_event: await _publish_realtime_event(notice_event)
+    if report_support_event: await _publish_realtime_event(report_support_event)
     for event in admin_events:await _publish_realtime_event(event)
     if wants_json:return JSONResponse({"ok":True,"report_id":report.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=complaints",status_code=303)
