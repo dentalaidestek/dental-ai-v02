@@ -2339,17 +2339,17 @@ def support_request_fragment(request: Request):
         ticket_ids=[t.id for t in tickets if t.id is not None]
         by_ticket={ticket_id:[] for ticket_id in ticket_ids}
         support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="USER")).all() if ticket_ids else []
-            support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
-            support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER").group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
-            support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
-            support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="USER")).group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
-            support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
-            support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0)) for ticket_id in ticket_ids}
-            latest_rows=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.ticket_id,SupportTicketMessage.id.desc())).all() if ticket_ids else []
-            latest_by_ticket={}
-            for support_msg in latest_rows:
-                if support_msg.ticket_id not in latest_by_ticket:latest_by_ticket[support_msg.ticket_id]=support_msg
-            support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
+        support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
+        support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER").group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+        support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
+        support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="USER")).group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+        support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
+        support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0)) for ticket_id in ticket_ids}
+        latest_rows=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.ticket_id,SupportTicketMessage.id.desc())).all() if ticket_ids else []
+        latest_by_ticket={}
+        for support_msg in latest_rows:
+            if support_msg.ticket_id not in latest_by_ticket:latest_by_ticket[support_msg.ticket_id]=support_msg
+        support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
 
 @app.post("/support-request")
