@@ -146,7 +146,7 @@ body.dai-standalone textarea::placeholder {
 
 /* Primary actions. Tooth surface controls are intentionally excluded. */
 body.dai-app-shell .btn:not(.secondary):not(.danger),
-body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button),
+body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button):not(.notification-bell):not(.notification-item),
 body.dai-standalone a.button:not(.secondary):not(.danger),
 body.dai-standalone button:not(.surface-button) {
     background: var(--dai-blue-600) !important;
@@ -160,7 +160,7 @@ body.dai-standalone button:not(.surface-button) {
 }
 
 body.dai-app-shell .btn:not(.secondary):not(.danger):hover,
-body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button):hover,
+body.dai-app-shell button:not(.menu-toggle):not(.mobile-nav-plus):not(.link-button):not(.surface-button):not(.notification-bell):not(.notification-item):hover,
 body.dai-standalone a.button:not(.secondary):not(.danger):hover,
 body.dai-standalone button:not(.surface-button):hover {
     background: var(--dai-blue-700) !important;
