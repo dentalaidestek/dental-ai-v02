@@ -1003,10 +1003,24 @@ def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: d
 
 
 def _user_schedule_occurrences(session: Session, user_id: int, range_start: datetime, range_end: datetime):
+    range_end_utc = (
+        range_end.replace(tzinfo=APP_TIMEZONE)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
     events = session.exec(
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
+        .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(
+            sa_or(
+                ScheduleEvent.recurrence_rule != "WEEKLY",
+                ScheduleEvent.recurrence_until.is_(None),
+                ScheduleEvent.recurrence_until == "",
+                ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
+            )
+        )
         .order_by(ScheduleEvent.start_at)
     ).all()
 
@@ -3584,9 +3598,17 @@ def program_page(
 
     view, range_start, range_end, previous, following = _program_range(view, focus_date)
 
+    occurrence_range_start = range_start
+    occurrence_range_end = range_end
+    if view == "month":
+        month_start = focus_date.replace(day=1)
+        grid_start_date = month_start - timedelta(days=month_start.weekday())
+        occurrence_range_start = _date_to_local_start(grid_start_date)
+        occurrence_range_end = _date_to_local_end(grid_start_date + timedelta(days=41))
+
     with Session(engine, expire_on_commit=False) as s:
         occurrences = _user_schedule_occurrences(
-            s, user.id, range_start, range_end
+            s, user.id, occurrence_range_start, occurrence_range_end
         )
 
     all_occurrences = occurrences
