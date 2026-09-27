@@ -56,6 +56,17 @@
  #adminSupportRegion .support-bubble{max-width:88%!important;color:#172033!important}#adminSupportRegion .admin-support-message-form{grid-template-columns:minmax(0,1fr) auto!important;padding-top:10px!important}#adminSupportRegion .admin-support-message-form textarea{min-height:58px!important}
 }
 
+/* Complaint/report conversations share the same readable chat language without changing their separate list semantics. */
+#adminComplaintsRegion .admin-support-conversation{background:#fff!important}
+#adminComplaintsRegion .admin-support-thread{display:flex;flex-direction:column;gap:12px;overflow-y:auto;overscroll-behavior:contain}
+#adminComplaintsRegion .support-bubble{max-width:78%!important;padding:11px 13px!important;border-radius:12px!important;color:#172033!important;line-height:1.42}
+#adminComplaintsRegion .support-bubble *{color:inherit}#adminComplaintsRegion .support-bubble p{color:#172033!important}
+#adminComplaintsRegion .support-bubble.user{align-self:flex-start!important;background:#f3f5f7!important;border:1px solid #e8ebef!important}
+#adminComplaintsRegion .support-bubble.admin{align-self:flex-end!important;background:#e8f3ff!important;border:1px solid #d8eaff!important}
+#adminComplaintsRegion .support-bubble-head time{color:#667085!important}
+#adminComplaintsRegion .admin-support-message-form textarea{color:#172033!important;background:#fff!important}
+@media(max-width:720px){#adminComplaintsRegion .admin-support-conversation{max-height:none!important;height:auto!important;overflow:visible!important}#adminComplaintsRegion .admin-support-grid{display:block!important;overflow:visible!important}#adminComplaintsRegion .admin-support-thread-wrap{display:block!important;overflow:visible!important}#adminComplaintsRegion .admin-support-thread{height:min(42dvh,360px);min-height:240px;overflow-y:auto!important}#adminComplaintsRegion .support-bubble{max-width:88%!important}}
+
 
 </style><div class="admin-pro" id="adminPro">
 <header class="admin-pro-top"><button type="button" class="admin-menu-btn" onclick="document.getElementById('adminPro').classList.toggle('menu-open')">☰</button><div><b>DENTAL AI</b><small>Yönetim Merkezi</small></div><span>{{ user.display_name }}</span></header>
