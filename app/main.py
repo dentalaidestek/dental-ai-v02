@@ -10113,7 +10113,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             aq=select(AdminAuditLog)
             if cursor is not None:aq=aq.where(AdminAuditLog.id < cursor)
             audits=s.exec(aq.order_by(AdminAuditLog.id.desc()).limit(page_size+1)).all();has_more=len(audits)>page_size;audits=audits[:page_size];next_cursor=audits[-1].id if has_more and audits else None
-        if section=="admins":admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc()).all()
+        if section=="admins":admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc())).all()
         if section in {"settings","homepage","texts","announcements","faq","legal","maintenance","email","security","backup"}:
             settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
     return templates.TemplateResponse(request=request,name="admin_center.html",context={
