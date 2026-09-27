@@ -10227,10 +10227,15 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
                 dedup_key=f"support-ticket:{ticket.id}:{status}:{ticket.updated_at.isoformat()}",
                 target_url="/support-request",
             )
+            user_status_event=_record_realtime_event(
+                s,ticket.user_id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,
+                {"ticket_id":ticket.id,"status":status,"requires_fragment":False,"has_reply":False},
+            )
         action="SUPPORT_CLOSED" if status=="CLOSED" else ("SUPPORT_ANSWERED" if status=="ANSWERED" else "SUPPORT_IN_PROGRESS")
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status,"requires_fragment":False,"has_reply":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
     if notice_event:await _publish_realtime_event(notice_event)
+    if user_status_event:await _publish_realtime_event(user_status_event)
     for event in admin_events:await _publish_realtime_event(event)
     if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
