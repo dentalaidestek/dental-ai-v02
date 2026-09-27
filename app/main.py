@@ -10097,7 +10097,8 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             unread=_support_unread_map(s,ticket_ids,"ADMIN") if ticket_ids else {}
             report_rows=[{"report":r,"reporter":related.get(r.reporter_user_id),"reported":related.get(r.reported_user_id),"unread_count":unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
         if section in {"stats","reports"}:
-            users_count=int(s.exec(select(func.count(User.id))).one() or 0)
+            deleted_ids=select(DeletedAccountEmail.deleted_user_id)
+            users_count=int(s.exec(select(func.count(User.id)).where(~User.id.in_(deleted_ids))).one() or 0)
             patients_count=int(s.exec(select(func.count(Patient.id))).one() or 0)
             analyses_count=int(s.exec(select(func.count(Analysis.id))).one() or 0)
             cases_count=int(s.exec(select(func.count(ConsultationCase.id))).one() or 0)
