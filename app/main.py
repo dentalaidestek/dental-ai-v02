@@ -10100,8 +10100,9 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             if cursor is not None:pq=pq.where(ConsultationPayment.id < cursor)
             payments=s.exec(pq.order_by(ConsultationPayment.id.desc()).limit(page_size+1)).all()
             has_more=len(payments)>page_size;payments=payments[:page_size];next_cursor=payments[-1].id if has_more and payments else None
-            completed=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
-            gross_revenue=sum(p.amount for p in completed);platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed)
+            completed_statuses={"PAID","COMPLETED","CAPTURED"}
+            gross_revenue=int(s.exec(select(func.coalesce(func.sum(ConsultationPayment.amount),0)).where(ConsultationPayment.status.in_(completed_statuses))).one() or 0)
+            platform_revenue=int(s.exec(select(func.coalesce(func.sum(ConsultationPayment.amount * func.coalesce(ConsultationPayment.platform_fee_rate,20) / 100.0),0)).where(ConsultationPayment.status.in_(completed_statuses))).one() or 0)
         if section=="logs":
             aq=select(AdminAuditLog)
             if cursor is not None:aq=aq.where(AdminAuditLog.id < cursor)
@@ -10110,7 +10111,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
         if section in {"settings","homepage","texts","announcements","faq","legal","maintenance","email","security","backup"}:
             settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
     return templates.TemplateResponse(request=request,name="admin_center.html",context={
-        "user":user,"users":users,"pending_rows":[None]*pending_count,"notices":notices,"audits":audits,
+        "user":user,"users":users,"pending_rows":[],"pending_count":pending_count,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
