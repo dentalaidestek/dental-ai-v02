@@ -229,6 +229,7 @@ def test_ws_resume_history_is_marked_replay_and_silent_in_client():
 
 def test_notification_center_open_marks_active_notices_seen():
     assert '@app.post("/account/notifications/read-all")' in MAIN
+    assert MAIN.index('@app.post("/account/notifications/read-all")') < MAIN.index('@app.post("/account/notifications/{notice_id}/read")')
     assert 'if(open)markNotificationsSeen();' in BASE
     assert 'fetch("/account/notifications/read-all",{method:"POST"' in BASE
     assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
