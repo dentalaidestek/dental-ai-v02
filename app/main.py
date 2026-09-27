@@ -2227,6 +2227,64 @@ def _support_case_is_selectable(session: Session, case: ConsultationCase, user_i
     return user_id==case.requester_user_id and now>case.expert_response_deadline
 
 
+def _support_read_state(session: Session, ticket_id: int, reader_role: str) -> SupportTicketReadState:
+    role = reader_role.strip().upper()
+    key = f"{ticket_id}:{role}"
+    state = session.exec(select(SupportTicketReadState).where(SupportTicketReadState.reader_key == key)).first()
+    if not state:
+        state = SupportTicketReadState(reader_key=key, ticket_id=ticket_id, reader_role=role)
+        session.add(state)
+        session.flush()
+    return state
+
+
+def _support_unread_count(session: Session, ticket_id: int, reader_role: str) -> int:
+    role = reader_role.strip().upper()
+    state = session.exec(select(SupportTicketReadState).where(
+        SupportTicketReadState.reader_key == f"{ticket_id}:{role}"
+    )).first()
+    cursor = int(state.last_read_message_id or 0) if state else 0
+    return int(session.exec(select(func.count(SupportTicketMessage.id)).where(
+        SupportTicketMessage.ticket_id == ticket_id,
+        SupportTicketMessage.id > cursor,
+        SupportTicketMessage.sender_role != role,
+    )).one() or 0)
+
+
+def _mark_support_read(session: Session, ticket_id: int, reader_role: str) -> int:
+    role = reader_role.strip().upper()
+    state = _support_read_state(session, ticket_id, role)
+    latest_other = session.exec(select(func.max(SupportTicketMessage.id)).where(
+        SupportTicketMessage.ticket_id == ticket_id,
+        SupportTicketMessage.sender_role != role,
+    )).one()
+    if latest_other and int(latest_other) > int(state.last_read_message_id or 0):
+        state.last_read_message_id = int(latest_other)
+        state.updated_at = _utcnow_naive()
+        session.add(state)
+    return _support_unread_count(session, ticket_id, role)
+
+
+def _support_user_can_reply(session: Session, ticket: SupportTicket) -> bool:
+    if ticket.status == "CLOSED":
+        return False
+    latest = session.exec(select(SupportTicketMessage).where(
+        SupportTicketMessage.ticket_id == ticket.id
+    ).order_by(SupportTicketMessage.id.desc()).limit(1)).first()
+    return bool(latest and latest.sender_role == "ADMIN")
+
+
+def _support_message_payload(ticket: SupportTicket, message: SupportTicketMessage, *, viewer_role: str) -> dict:
+    return {
+        "ticket_id": ticket.id,
+        "message_id": message.id,
+        "sender_role": message.sender_role,
+        "is_outgoing": message.sender_role == viewer_role,
+        "status": ticket.status,
+        "created_at": message.created_at.isoformat(),
+    }
+
+
 @app.get("/support-request", response_class=HTMLResponse)
 def support_request_page(request: Request):
     user=get_current_user(request)
@@ -2309,18 +2367,36 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
     with Session(engine, expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket or ticket.user_id!=user.id:return HTMLResponse("Talep bulunamadı.",status_code=404)
-        # Kullanıcı yalnız yönetim yanıtından sonra bir kez cevap verebilir.
         if ticket.status=="CLOSED":return HTMLResponse("Bu destek talebi kapatılmış. Yeni bir destek talebi oluşturabilirsiniz.",status_code=409)
-        if ticket.status!="ANSWERED":return HTMLResponse("Destek ekibinin yanıtını beklerken yeni mesaj gönderemezsiniz.",status_code=409)
-        s.add(SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message))
-        ticket.status="USER_REPLIED";ticket.updated_at=_utcnow_naive();s.add(ticket)
+        # Reply entitlement belongs to the support-message turn, never to ticket lifecycle status.
+        if not _support_user_can_reply(s,ticket):
+            return HTMLResponse("Destek ekibinin yeni mesajını beklerken tekrar yanıt gönderemezsiniz.",status_code=409)
+        support_message=SupportTicketMessage(ticket_id=ticket.id,sender_user_id=user.id,sender_role="USER",message=message)
+        s.add(support_message);s.flush()
+        ticket.updated_at=_utcnow_naive();s.add(ticket)
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
         for admin in admins:
-            admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_REPLY","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject,"status":"USER_REPLIED","requires_fragment":True}))
+            admin_events.append(_record_realtime_event(
+                s,admin.id,"SUPPORT_MESSAGE_CREATED","support_ticket_message",support_message.id,
+                _support_message_payload(ticket,support_message,viewer_role="ADMIN"),
+            ))
         s.commit()
     for event in admin_events:await _publish_realtime_event(event)
-    if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"USER_REPLIED"})
+    if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):
+        return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":ticket.status,"message_id":support_message.id,"can_reply":False})
     return RedirectResponse("/support-request?reply_sent=1",status_code=303)
+
+
+@app.post("/support-request/{ticket_id}/read")
+async def support_ticket_user_read(request: Request, ticket_id: int):
+    user=get_current_user(request)
+    if not user:return JSONResponse({"ok":False},status_code=401)
+    with Session(engine,expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket or ticket.user_id!=user.id:return JSONResponse({"ok":False},status_code=404)
+        _mark_support_read(s,ticket.id,"USER")
+        s.commit()
+    return {"ok":True,"ticket_id":ticket_id,"unread_count":0}
 
 
 @app.get("/legal/{document}", response_class=HTMLResponse)
@@ -10040,6 +10116,56 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
         rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":by_ticket.get(t.id,[])} for t in tickets]
         return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
+
+@app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/read")
+async def admin_center_support_read(request: Request, ticket_id: int):
+    admin=_admin_only(request)
+    if not admin:return JSONResponse({"ok":False},status_code=403)
+    with Session(engine,expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket:return JSONResponse({"ok":False},status_code=404)
+        _mark_support_read(s,ticket.id,"ADMIN")
+        s.commit()
+    return {"ok":True,"ticket_id":ticket_id,"unread_count":0}
+
+
+@app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/message")
+async def admin_center_support_message(request: Request, ticket_id: int, message: str = Form(...)):
+    admin=_admin_only(request)
+    if not admin:return JSONResponse({"ok":False,"error":"Yetkisiz işlem."},status_code=403)
+    message=message.strip()[:4000]
+    if not message:return JSONResponse({"ok":False,"error":"Mesaj boş olamaz."},status_code=400)
+    user_event=None;peer_events=[]
+    with Session(engine,expire_on_commit=False) as s:
+        ticket=s.get(SupportTicket,ticket_id)
+        if not ticket:return JSONResponse({"ok":False,"error":"Talep bulunamadı."},status_code=404)
+        if ticket.status=="CLOSED":return JSONResponse({"ok":False,"error":"Kapatılmış destek talebine mesaj gönderilemez."},status_code=409)
+        support_message=SupportTicketMessage(ticket_id=ticket.id,sender_user_id=admin.id,sender_role="ADMIN",message=message)
+        s.add(support_message);s.flush()
+        ticket.updated_at=_utcnow_naive();s.add(ticket)
+        if ticket.user_id:
+            user_event=_record_realtime_event(
+                s,ticket.user_id,"SUPPORT_MESSAGE_CREATED","support_ticket_message",support_message.id,
+                _support_message_payload(ticket,support_message,viewer_role="USER"),
+            )
+            _notify_user(
+                s,user_id=ticket.user_id,actor_user_id=admin.id,
+                notice_type="SUPPORT_MESSAGE",title="Destek ekibinden yeni mesaj",
+                message="Destek talebinizde yeni bir mesaj var.",
+                related_type="support_ticket",related_id=ticket.id,
+                dedup_key=f"support-message:{support_message.id}",target_url="/support-request",
+            )
+        for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():
+            peer_events.append(_record_realtime_event(
+                s,peer.id,"SUPPORT_MESSAGE_CREATED","support_ticket_message",support_message.id,
+                _support_message_payload(ticket,support_message,viewer_role="ADMIN"),
+            ))
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_MESSAGE_SENT",target_user_id=ticket.user_id,detail=f"#{ticket.id}"))
+        s.commit()
+    if user_event:await _publish_realtime_event(user_event)
+    for event in peer_events:await _publish_realtime_event(event)
+    return {"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status}
+
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
 async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
