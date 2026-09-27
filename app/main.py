@@ -1777,8 +1777,6 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
@@ -1817,6 +1815,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationcase_status_completion_confirmation_deadline ON "consultationcase" (status, completion_confirmation_deadline)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
@@ -4138,7 +4138,7 @@ def program_create(
                     "initial_location": location,
                     "initial_notes": notes,
                     "initial_reminder": reminder_minutes,
-                    "initial_notification": bool(notification_enabled),
+                    "initial_notification": (reminder_minutes or "").strip().upper() != "NONE",
                     "initial_recurrence": recurrence_rule,
                     "initial_recurrence_until": recurrence_until,
                     "error": error,
@@ -4260,7 +4260,7 @@ def program_edit(
                     "initial_location": location,
                     "initial_notes": notes,
                     "initial_reminder": reminder_minutes,
-                    "initial_notification": bool(notification_enabled),
+                    "initial_notification": (reminder_minutes or "").strip().upper() != "NONE",
                     "initial_recurrence": recurrence_rule,
                     "initial_recurrence_until": recurrence_until,
                     "error": error,
@@ -4324,6 +4324,10 @@ def program_copy_to_days(
         if not target_dates:
             return HTMLResponse("Kaydın bulunduğu günden farklı en az bir gün seçin.", status_code=400)
         duration = source_end - source_start if source_end else None
+        copied_patient_id = None
+        if source.event_type in {"APPOINTMENT", "CLINIC"} and source.patient_id:
+            owned_patient = _owned_program_patient(s, user, source.patient_id)
+            copied_patient_id = owned_patient.id if owned_patient else None
 
         for target_date in target_dates:
             local_start = datetime.combine(target_date, source_start.time())
@@ -4345,7 +4349,7 @@ def program_copy_to_days(
                 title=source.title,
                 start_at=start_utc,
                 end_at=end_utc,
-                patient_id=source.patient_id,
+                patient_id=copied_patient_id,
                 location=source.location,
                 notes=source.notes,
                 reminder_minutes=source.reminder_minutes,
