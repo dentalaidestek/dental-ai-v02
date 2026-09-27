@@ -77,7 +77,7 @@
       .finally(()=>{refreshPromise=null;});
     return refreshPromise;
   }
-  window.addEventListener("dai:profile-updated",e=>{const id=Number(e.detail?.user_id||0);if(id&&document.querySelector('img[data-profile-user-id="'+id+'"],a[href^="/expert-support/expert/'+id+'"]'))refreshExpertDirectory();});
+  window.addEventListener("dai:profile-updated",e=>{if(Number(e.detail?.user_id||0))refreshExpertDirectory();});
 })();
 </script>
 {% endblock %}
