@@ -10062,33 +10062,33 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
             if q.strip():
                 needle=f"%{q.strip().lower()}%"
                 query=query.where(func.lower(func.coalesce(User.username,"")).like(needle)|func.lower(func.coalesce(User.display_name,"")).like(needle)|func.lower(func.coalesce(User.email,"")).like(needle))
-            users=s.exec(query.order_by(User.created_at.desc()).limit(100)).all()
+            users=s.exec(query.order_by(User.created_at.desc()).limit(25)).all()
             storage_by_user=_admin_user_storage_summaries(s,users)
         if section in {"experts","approvals"}:
             eq=select(ExpertProfile)
             if section=="approvals":eq=eq.where(ExpertProfile.application_status=="SUBMITTED")
-            expert_profiles=s.exec(eq.order_by(ExpertProfile.updated_at.desc()).limit(100)).all()
+            expert_profiles=s.exec(eq.order_by(ExpertProfile.updated_at.desc()).limit(25)).all()
         if section=="support":
-            tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc()).limit(100)).all()
+            tickets=s.exec(select(SupportTicket).where(SupportTicket.source_type=="SUPPORT").order_by(SupportTicket.created_at.desc()).limit(25)).all()
             ids=[t.id for t in tickets if t.id is not None]
             user_ids={t.user_id for t in tickets if t.user_id}
             related={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
             unread=_support_unread_map(s,ids,"ADMIN") if ids else {}
             ticket_rows=[{"ticket":t,"sender":related.get(t.user_id) if t.user_id else None,"messages":[],"unread_count":unread.get(t.id,0)} for t in tickets]
         if section=="complaints":
-            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc()).limit(100)).all()
+            reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc()).limit(25)).all()
             report_ticket_by_report=_ensure_report_support_tickets(s,reports)
-            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc()).limit(100)).all()
+            disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc()).limit(25)).all()
             ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
             related={u.id:u for u in s.exec(select(User).where(User.id.in_(ids))).all()} if ids else {}
             ticket_ids=[t.id for t in report_ticket_by_report.values() if t.id is not None]
             unread=_support_unread_map(s,ticket_ids,"ADMIN") if ticket_ids else {}
             report_rows=[{"report":r,"reporter":related.get(r.reporter_user_id),"reported":related.get(r.reported_user_id),"unread_count":unread.get(report_ticket_by_report[r.id].id,0) if r.id in report_ticket_by_report else 0} for r in reports]
         if section=="revenue":
-            payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc()).limit(200)).all()
+            payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc()).limit(50)).all()
             completed=[p for p in payments if p.status in {"PAID","COMPLETED","CAPTURED"}]
             gross_revenue=sum(p.amount for p in completed);platform_revenue=sum(round(p.amount*(p.platform_fee_rate or 20)/100) for p in completed)
-        if section=="logs":audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(100)).all()
+        if section=="logs":audits=s.exec(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(50)).all()
         if section=="admins":admins=s.exec(select(User).where(User.role=="ADMIN").order_by(User.created_at.desc()).all()
         if section in {"settings","homepage","texts","announcements","faq","legal","maintenance","email","security","backup"}:
             settings={row.key:(row.value or "") for row in s.exec(select(SiteSetting)).all()}
