@@ -6767,7 +6767,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             _, notice_event, _ = _notify_user(
                 s, user_id=case.requester_user_id, actor_user_id=user.id,
                 notice_type="CONSULTATION_COMPLETION_CONFIRMATION", title="Danışmanlık tamamlanmak üzere",
-                message="Uzman danışmanlığı tamamlandı olarak işaretledi. Onayınız veya devam talebiniz bekleniyor.",
+                message=f"{user.display_name} danışmanlığı tamamlandı olarak işaretledi. Onayınız veya devam talebiniz bekleniyor.",
                 related_type="consultation_case", related_id=case.id,
                 dedup_key=f"consultation:{case.id}:completion-confirmation:{case.expert_completed_at.isoformat() if case.expert_completed_at else ''}", target_url=f"/expert-support/cases/{case.id}",
             )
@@ -6783,11 +6783,11 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
                 related_type="consultation_case", related_id=case.id,
             ))
             if case.status == "COMPLETED":
-                title, message, notice_type = "Danışmanlık tamamlandı", "Talep sahibi danışmanlığın tamamlandığını onayladı.", "CONSULTATION_COMPLETED"
+                title, message, notice_type = "Danışmanlık tamamlandı", f"{user.display_name} danışmanlığın tamamlandığını onayladı.", "CONSULTATION_COMPLETED"
             elif case.status == "ACTIVE":
-                title, message, notice_type = "Danışmanlığa devam edilecek", "Talep sahibi danışmanlığa devam etmek istedi.", "CONSULTATION_CONTINUE"
+                title, message, notice_type = "Danışmanlığa devam edilecek", f"{user.display_name} danışmanlığa devam etmek istedi.", "CONSULTATION_CONTINUE"
             else:
-                title, message, notice_type = "Danışmanlık için inceleme açıldı", "Talep sahibi danışmanlıkla ilgili inceleme başlattı.", "CONSULTATION_DISPUTE"
+                title, message, notice_type = "Danışmanlık için inceleme açıldı", f"{user.display_name} danışmanlıkla ilgili inceleme başlattı.", "CONSULTATION_DISPUTE"
             _, notice_event, _ = _notify_user(
                 s, user_id=case.expert_user_id, actor_user_id=user.id,
                 notice_type=notice_type, title=title, message=message,
