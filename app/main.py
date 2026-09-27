@@ -1343,7 +1343,7 @@ def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
         snapshot = {
             "id": next_event["id"],
             "title": next_event["title"],
-            "start_local": next_event["start_local"].isoformat(),
+            "start_time": next_event["start_local"].strftime("%H:%M"),
             "type_label": next_event["type_label"],
             "patient_name": (
                 f"{patient.first_name or ''} {patient.last_name or ''}".strip()
