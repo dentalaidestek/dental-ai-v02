@@ -5334,7 +5334,7 @@ def admin_consultation_report_review(request: Request, case_id: int):
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
         report=s.exec(select(UserReport).where(UserReport.case_id==case_id)).first()
-        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id)).first()
+        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id,SupportTicket.source_type=="SUPPORT")).first()
         if not case or (not report and not ticket):return HTMLResponse("Bu konuşmaya bağlı bir bildirim veya destek talebi bulunamadı.",status_code=403)
         messages=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id).order_by(ConsultationMessage.created_at)).all()
         s.add(DisputeAccessAudit(case_id=case.id,admin_user_id=user.id,action="REPORT_REVIEW"))
@@ -5352,7 +5352,7 @@ def admin_consultation_report_media(request: Request, case_id: int, message_id: 
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id);message=s.get(ConsultationMessage,message_id)
         report=s.exec(select(UserReport).where(UserReport.case_id==case_id)).first()
-        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id)).first()
+        ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id,SupportTicket.source_type=="SUPPORT")).first()
         if not case or (not report and not ticket) or not message or message.case_id!=case.id or not message.media_path:
             return HTMLResponse("Bu inceleme kapsamında erişilebilir medya bulunamadı.",status_code=403)
         if not storage_exists(message.media_path):return HTMLResponse("Dosya bulunamadı.",status_code=404)
