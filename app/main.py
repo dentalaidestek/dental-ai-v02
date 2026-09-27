@@ -7802,7 +7802,15 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
                 s.add(payment)
             _consultation_event(s, case.id, "DISPUTE_OPENED", user.id)
         else:
-            return JSONResponse({"ok": False, "error": "Bu işlem mevcut danışmanlık durumunda uygulanamaz."}, status_code=409) if wants_json else HTMLResponse("Geçersiz işlem.", status_code=400)
+            if wants_json:
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Bu işlem mevcut danışmanlık durumunda uygulanamaz.",
+                    "status": case.status,
+                    "action": action,
+                    "role": "REQUESTER" if user.id == case.requester_user_id else "EXPERT",
+                }, status_code=409)
+            return HTMLResponse("Geçersiz işlem.", status_code=400)
         s.add(case)
         notification_events: list[RealtimeEvent] = []
         if case.status == "EXPERT_COMPLETED":
