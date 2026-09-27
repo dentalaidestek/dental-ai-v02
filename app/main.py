@@ -6175,17 +6175,29 @@ def account_notifications(request: Request):
 
 @app.post("/account/notifications/read-all")
 async def account_notifications_read_all(request: Request):
-    """Opening the notification center marks the currently active notices as seen."""
+    """Opening the notification center marks only notices already visible at open time as seen."""
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False}, status_code=401)
     now = _utcnow_naive()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        seen_before = datetime.fromisoformat(str(body.get("seen_before") or ""))
+        if seen_before.tzinfo is not None:
+            seen_before = seen_before.astimezone(timezone.utc).replace(tzinfo=None)
+        seen_before = min(seen_before, now)
+    except (TypeError, ValueError):
+        seen_before = now
     realtime_event = None
     with Session(engine, expire_on_commit=False) as s:
         rows = s.exec(select(AdminNotice).where(
             AdminNotice.user_id == user.id,
             AdminNotice.status == "ACTIVE",
             AdminNotice.is_read == False,
+            AdminNotice.created_at <= seen_before,
         )).all()
         for notice in rows:
             notice.is_read = True
