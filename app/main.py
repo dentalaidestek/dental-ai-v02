@@ -3161,11 +3161,13 @@ async def startup():
     _backfill_program_reminder_jobs()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
-    app.state.program_reminder_task = asyncio.create_task(_program_reminder_worker()) if run_embedded_deadline_worker else None
+    # Program reminders have no separate external executor. Keep their durable
+    # worker embedded even when consultation deadlines are delegated externally.
+    app.state.program_reminder_task = asyncio.create_task(_program_reminder_worker())
     app.state.postgres_event_listener_task = asyncio.create_task(_postgres_event_listener(
         listen_deadline=run_embedded_deadline_worker,
         listen_realtime=True,
-        listen_program=run_embedded_deadline_worker,
+        listen_program=True,
     ))
 
 
