@@ -3866,6 +3866,11 @@ def program_copy_to_days(
         source = s.get(ScheduleEvent, event_id)
         if not source or source.owner_user_id != user.id or source.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+        if source.recurrence_rule != "NONE":
+            return HTMLResponse(
+                "Haftalık kayıt zaten sonraki haftalara uygulanıyor; yalnız tek kayıtlar başka günlere kopyalanabilir.",
+                status_code=400,
+            )
 
         source_start = _utc_to_local(source.start_at)
         source_end = _utc_to_local(source.end_at)
@@ -3898,8 +3903,8 @@ def program_copy_to_days(
                 notes=source.notes,
                 reminder_minutes=source.reminder_minutes,
                 notification_enabled=source.notification_enabled,
-                recurrence_rule="WEEKLY" if source.recurrence_rule == "WEEKLY" else "NONE",
-                recurrence_until=source.recurrence_until if source.recurrence_rule == "WEEKLY" else None,
+                recurrence_rule="NONE",
+                recurrence_until=None,
                 timezone_name=source.timezone_name or "Europe/Istanbul",
             ))
         s.commit()
