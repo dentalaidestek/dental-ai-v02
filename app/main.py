@@ -896,7 +896,27 @@ def _restore_user_program_reminders(session: Session, user_id: int) -> None:
     )).all()
     now = _utcnow_naive()
     for event in events:
-        _enqueue_next_program_reminder(session, event, now)
+        occurrence = _next_program_occurrence_utc(event, now)
+        if occurrence is None or event.reminder_minutes is None:
+            continue
+        key = _program_occurrence_key(event.id, occurrence, event.reminder_minutes)
+        cancelled = session.exec(select(ProgramReminderJob).where(
+            ProgramReminderJob.dedup_key == key,
+            ProgramReminderJob.status == "CANCELLED",
+        )).first()
+        if cancelled and _program_reminder_is_current(event, cancelled):
+            cancelled.status = "PENDING"
+            cancelled.attempts = 0
+            cancelled.last_error = None
+            cancelled.completed_at = None
+            cancelled.run_at = occurrence - timedelta(minutes=event.reminder_minutes)
+            session.add(cancelled)
+            if engine.dialect.name == "postgresql":
+                session.exec(text("SELECT pg_notify(:channel, :payload)").bindparams(
+                    channel=PG_PROGRAM_REMINDER_CHANNEL, payload=str(event.id)
+                ))
+        else:
+            _enqueue_next_program_reminder(session, event, now)
 
 try:
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
