@@ -26,6 +26,16 @@
         </div>
     </div>
 
+    {% if view == 'week' %}
+    <div class="program-week-strip" aria-label="Haftanın günleri">
+        {% for item in week_days %}
+        <a href="/program?view=week&day={{ item.date.isoformat() }}" class="{% if item.date == focus_date %}active{% endif %}{% if item.date == today_date %} is-today{% endif %}">
+            <small>{{ item.label }}</small><strong>{{ item.date.day }}</strong>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if groups %}
     <div class="program-groups" id="programDynamicRegion">
         {% for group in groups %}
@@ -55,7 +65,8 @@
                         {% if event.notes %}<div class="program-notes">{{ event.notes }}</div>{% endif %}
                     </div>
                     <details class="program-event-menu"><summary aria-label="Etkinlik seçenekleri">⋮</summary><div class="program-event-actions">
-                        <a href="/program/{{ event.id }}/edit">Düzenle</a>
+                        <a href="/program/{{ event.id }}/edit">✎&nbsp; Düzenle</a>
+                        <button type="button" class="link-button program-copy-open" data-event-id="{{ event.id }}" data-event-title="{{ event.title|e }}" data-event-time="{{ event.start_local.strftime('%H:%M') }}">▣&nbsp; Diğer güne kopyala</button>
                         {% if event.status != 'COMPLETED' and not event.is_recurring %}
                         <form method="post" action="/program/{{ event.id }}/complete">
                             <button type="submit" class="link-button">Tamamla</button>
@@ -78,6 +89,21 @@
         <a class="btn" href="/program/new">İlk Kaydı Ekle</a>
     </div>
     {% endif %}
+
+    <div class="program-copy-backdrop" id="programCopyBackdrop" hidden></div>
+    <section class="program-copy-sheet" id="programCopySheet" hidden aria-modal="true" role="dialog" aria-labelledby="programCopyTitle">
+        <div class="program-sheet-grabber"></div>
+        <div class="program-sheet-head"><div><strong id="programCopyTitle">Diğer güne kopyala</strong><small id="programCopySummary"></small></div><button type="button" id="programCopyClose" aria-label="Kapat">×</button></div>
+        <form id="programCopyForm" method="post">
+            <div class="program-copy-days">
+                {% for item in week_days %}
+                <label><input type="checkbox" name="copy_day" value="{{ item.date.isoformat() }}"><span><small>{{ item.label }}</small><strong>{{ item.date.day }}</strong></span></label>
+                {% endfor %}
+            </div>
+            <input type="hidden" name="target_days" id="programCopyDaysValue">
+            <button class="btn program-copy-submit" type="submit">Seçilen günlere kopyala</button>
+        </form>
+    </section>
 </div>
 <script>
 (function () {
@@ -114,7 +140,29 @@
     }
     if (!event.target.closest('.program-event-menu')) closeMenus();
 
-    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a');
+    const copyOpen = event.target.closest('.program-copy-open');
+    if (copyOpen) {
+      closeMenus();
+      const sheet = document.getElementById('programCopySheet');
+      const backdrop = document.getElementById('programCopyBackdrop');
+      const form = document.getElementById('programCopyForm');
+      if (sheet && backdrop && form) {
+        form.action = '/program/' + copyOpen.dataset.eventId + '/copy';
+        document.getElementById('programCopySummary').textContent = copyOpen.dataset.eventTitle + ' · ' + copyOpen.dataset.eventTime;
+        form.querySelectorAll('input[name="copy_day"]').forEach((input) => { input.checked = false; });
+        sheet.hidden = false; backdrop.hidden = false;
+      }
+      return;
+    }
+    if (event.target.closest('#programCopyClose, #programCopyBackdrop')) {
+      const sheet = document.getElementById('programCopySheet');
+      const backdrop = document.getElementById('programCopyBackdrop');
+      if (sheet) sheet.hidden = true;
+      if (backdrop) backdrop.hidden = true;
+      return;
+    }
+
+    const nav = event.target.closest('.program-view-tabs a, .program-period-nav a, .program-week-strip a');
     if (!nav) return;
     event.preventDefault();
     try { await swapProgram(nav.href, true); }
@@ -123,6 +171,19 @@
 
   document.addEventListener('submit', async (event) => {
     const page = programPage();
+    const copyForm = event.target.closest('#programCopyForm');
+    if (page && copyForm && page.contains(copyForm)) {
+      event.preventDefault();
+      const selected = Array.from(copyForm.querySelectorAll('input[name="copy_day"]:checked')).map((input) => input.value);
+      if (!selected.length) return;
+      document.getElementById('programCopyDaysValue').value = selected.join(',');
+      try {
+        const response = await fetch(copyForm.action, {method: 'POST', body: new FormData(copyForm), headers: {'X-Requested-With': 'XMLHttpRequest'}});
+        if (!response.ok) throw new Error('Kopyalama tamamlanamadı');
+        await swapProgram(response.url || location.href);
+      } catch (_) { HTMLFormElement.prototype.submit.call(copyForm); }
+      return;
+    }
     const form = event.target.closest('.program-event-actions form');
     if (!page || !form || !page.contains(form)) return;
     event.preventDefault();
