@@ -11,4 +11,21 @@
   {% if profile.publications_text or profile.orcid_url %}<section class="expert-public-section"><h2>Akademik bilgiler</h2>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<a href="{{ profile.orcid_url }}" rel="noopener noreferrer" target="_blank">ORCID profilini görüntüle</a>{% endif %}</section>{% endif %}
   <section class="expert-public-trust"><b>Güvenli danışmanlık</b><span>Dosyalar yalnızca görüşmedeki iki kullanıcı tarafından görüntülenir. Ödeme özelliği etkinleştirildiğinde iyzico üzerinden alınacaktır.</span></section>
   {% if user.id==expert.id %}<div class="expert-disabled expert-profile-sticky">Bu sizin uzman profiliniz</div>{% elif profile.availability=="AVAILABLE" and active_count < 5 %}<div class="expert-profile-sticky"><span><small>Danışmanlık ücreti</small><b>{{ profile.consultation_price }} TL</b></span><a class="expert-primary" href="/expert-support/request/{{ expert.id }}{% if patient_id %}?patient_id={{ patient_id }}{% endif %}">Danışmanlık başlat</a></div>{% else %}<div class="expert-disabled expert-profile-sticky">Şu an yeni vaka kabul etmiyor</div>{% endif %}
-</div>{% endblock %}
+</div>
+<script>
+(()=>{
+  const expertUserId=Number("{{ expert.id }}");
+  let refreshPromise=null;
+  async function refreshExpertPublicProfile(){
+    if(refreshPromise)return refreshPromise;
+    refreshPromise=fetch(location.href,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"XMLHttpRequest"}})
+      .then(r=>{if(!r.ok)throw new Error("profile refresh failed");return r.text();})
+      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-public-page"),current=document.querySelector(".expert-public-page");if(next&&current)current.replaceWith(next);})
+      .catch(()=>{})
+      .finally(()=>{refreshPromise=null;});
+    return refreshPromise;
+  }
+  window.addEventListener("dai:profile-updated",e=>{if(Number(e.detail?.user_id)===expertUserId)refreshExpertPublicProfile();});
+})();
+</script>
+{% endblock %}
