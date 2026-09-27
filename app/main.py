@@ -5036,10 +5036,34 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     case_ids = [case.id for case in cases if case.id is not None]
-    state_by_case = {
-        case_id: _consultation_inbox_state(session, case_id, user_id)
-        for case_id in case_ids
-    }
+    # Load inbox state in one query. The old implementation called
+    # _consultation_inbox_state once per case (N+1 DB round trips).
+    existing_states = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.user_id == user_id,
+        ConsultationInboxState.case_id.in_(case_ids),
+    ).order_by(ConsultationInboxState.id.asc())).all()
+    states_by_case: dict[int, list[ConsultationInboxState]] = {}
+    for state in existing_states:
+        states_by_case.setdefault(state.case_id, []).append(state)
+    state_by_case = {}
+    for case_id in case_ids:
+        states = states_by_case.get(case_id, [])
+        if not states:
+            state = ConsultationInboxState(case_id=case_id, user_id=user_id)
+            session.add(state)
+            session.flush()
+        else:
+            state = states[0]
+            if len(states) > 1:
+                read_values = [row.last_read_at for row in states if row.last_read_at]
+                state.last_read_at = max(read_values) if read_values else None
+                newest = states[-1]
+                state.deleted_at = newest.deleted_at
+                state.recover_until = newest.recover_until
+                session.add(state)
+                for duplicate in states[1:]:
+                    session.delete(duplicate)
+        state_by_case[case_id] = state
 
     visible_cases = [case for case in cases if not state_by_case[case.id].deleted_at]
     if not visible_cases:
