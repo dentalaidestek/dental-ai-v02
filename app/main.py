@@ -1145,7 +1145,7 @@ def _validate_schedule_input(
         try:
             reminder_value = int(reminder_raw)
         except (TypeError, ValueError):
-            reminder_value = 30
+            return None, "Hatırlatma süresini kontrol edin."
         if reminder_value not in REMINDER_OPTIONS:
             return None, "Hatırlatma süresi geçersiz."
 
@@ -1172,7 +1172,9 @@ def _validate_schedule_input(
         "location": location or None,
         "notes": notes or None,
         "reminder_minutes": reminder_value,
-        "notification_enabled": False if reminder_disabled else bool(notification_enabled),
+        # The reminder selection is the single source of truth. Do not depend on
+        # a second checkbox/hidden field that can drift out of sync.
+        "notification_enabled": not reminder_disabled,
         "recurrence_rule": recurrence_rule,
         "recurrence_until": recurrence_until or None,
         "timezone_name": "Europe/Istanbul",
@@ -3572,9 +3574,11 @@ def program_create(
             recurrence_rule, recurrence_until,
         )
         if error:
-            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-            if user.role != "ADMIN":
-                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patient_query = (
+                select(Patient)
+                .where(Patient.owner_user_id == user.id)
+                .order_by(Patient.first_name, Patient.last_name)
+            )
             patients = s.exec(patient_query).all()
             return templates.TemplateResponse(
                 request=request,
@@ -3685,9 +3689,11 @@ def program_edit(
             recurrence_rule, recurrence_until,
         )
         if error:
-            patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-            if user.role != "ADMIN":
-                patient_query = patient_query.where(Patient.owner_user_id == user.id)
+            patient_query = (
+                select(Patient)
+                .where(Patient.owner_user_id == user.id)
+                .order_by(Patient.first_name, Patient.last_name)
+            )
             patients = s.exec(patient_query).all()
             return templates.TemplateResponse(
                 request=request,
