@@ -3227,8 +3227,11 @@ def template_user_context(request: Request):
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
     if user:
+        meta_checked = getattr(request.state, "_dai_account_meta_checked", False)
+        meta = getattr(request.state, "_dai_account_meta", None) if meta_checked else None
         with Session(engine, expire_on_commit=False) as s:
-            meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+            if not meta_checked:
+                meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
             profile_verified = bool(
                 profile
@@ -4482,6 +4485,10 @@ def home(request: Request):
         if account_meta and account_meta.professional_title
         else "Diş Hekimi"
     )
+    # Reuse the account metadata already loaded for the dashboard when the
+    # shared template context builds the expert navigation.
+    request.state._dai_account_meta = account_meta
+    request.state._dai_account_meta_checked = True
     dashboard_event_label = (
         "Bugün"
         if dashboard_event and dashboard_event["start_local"].date() == local_now.date()
