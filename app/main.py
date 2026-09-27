@@ -1140,12 +1140,17 @@ def _validate_schedule_input(
         if not patient:
             return None, "Bu hastayı program kaydına bağlama yetkiniz yok."
 
-    try:
-        reminder_value = int(reminder_minutes)
-    except (TypeError, ValueError):
-        reminder_value = 30
-    if reminder_value not in REMINDER_OPTIONS:
-        return None, "Hatırlatma süresi geçersiz."
+    reminder_raw = (reminder_minutes or "").strip().upper()
+    reminder_disabled = reminder_raw == "NONE"
+    if reminder_disabled:
+        reminder_value = None
+    else:
+        try:
+            reminder_value = int(reminder_raw)
+        except (TypeError, ValueError):
+            reminder_value = 30
+        if reminder_value not in REMINDER_OPTIONS:
+            return None, "Hatırlatma süresi geçersiz."
 
     if recurrence_rule not in RECURRENCE_OPTIONS:
         return None, "Tekrarlama seçeneği geçersiz."
@@ -1170,7 +1175,7 @@ def _validate_schedule_input(
         "location": location or None,
         "notes": notes or None,
         "reminder_minutes": reminder_value,
-        "notification_enabled": bool(notification_enabled),
+        "notification_enabled": False if reminder_disabled else bool(notification_enabled),
         "recurrence_rule": recurrence_rule,
         "recurrence_until": recurrence_until or None,
         "timezone_name": "Europe/Istanbul",
@@ -3635,7 +3640,11 @@ def program_edit_page(request: Request, event_id: int):
             "initial_title": event.title,
             "initial_location": event.location or "",
             "initial_notes": event.notes or "",
-            "initial_reminder": str(event.reminder_minutes if event.reminder_minutes is not None else 30),
+            "initial_reminder": (
+                str(event.reminder_minutes)
+                if event.notification_enabled and event.reminder_minutes is not None
+                else "NONE"
+            ),
             "initial_notification": event.notification_enabled,
             "initial_recurrence": event.recurrence_rule,
             "initial_recurrence_until": event.recurrence_until or "",
