@@ -2392,7 +2392,7 @@ async def contact_submit(request: Request, subject: str = Form(...), message: st
 def support_ticket_user_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
-    limit=40
+    limit=5
     with Session(engine,expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket or ticket.user_id!=user.id:return JSONResponse({"ok":False},status_code=404)
@@ -10175,7 +10175,7 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
 def admin_center_support_conversation(request: Request, ticket_id: int, before_id: Optional[int] = None):
     admin=_admin_only(request)
     if not admin:return JSONResponse({"ok":False},status_code=403)
-    limit=40
+    limit=5
     with Session(engine,expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return JSONResponse({"ok":False},status_code=404)
