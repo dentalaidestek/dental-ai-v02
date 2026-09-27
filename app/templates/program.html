@@ -3,9 +3,8 @@
 <div class="program-page">
     <div class="program-header">
         <div>
-            <div class="workspace-section-kicker">Günlük çalışma merkezi</div>
             <h1>Programım</h1>
-            <p>Ders, randevu, klinik, sınav, tez ve görevlerinizi tek yerde takip edin.</p>
+            <p>Gününüzü ve yaklaşan kayıtlarınızı takip edin.</p>
         </div>
         <a class="btn" href="/program/new">+ Yeni Kayıt</a>
     </div>
@@ -46,7 +45,7 @@
                         <div class="program-event-meta">
                             <span class="program-type">{{ event.type_label }}</span>
                             {% if event.is_recurring %}<span class="program-recurring">Haftalık</span>{% endif %}
-                            {% if event.notification_enabled %}<span class="program-reminder">🔔 {{ event.reminder_minutes }} dk</span>{% endif %}
+                            {% if event.notification_enabled %}<span class="program-reminder">{% if event.reminder_minutes == 0 %}Saatinde hatırlat{% elif event.reminder_minutes == 60 %}1 saat önce{% elif event.reminder_minutes == 120 %}2 saat önce{% elif event.reminder_minutes == 1440 %}1 gün önce{% else %}{{ event.reminder_minutes }} dk önce{% endif %}</span>{% endif %}
                         </div>
                         <h3>{{ event.title }}</h3>
                         <p>
@@ -74,9 +73,8 @@
     </div>
     {% else %}
     <div class="program-empty">
-        <div class="program-empty-icon">＋</div>
-        <h2>Bu dönemde program kaydı yok</h2>
-        <p>Ders, hasta randevusu, sınav, tez veya görev ekleyebilirsiniz.</p>
+        <h2>Bu dönemde kayıt yok</h2>
+        <p>Yeni bir program kaydı ekleyebilirsiniz.</p>
         <a class="btn" href="/program/new">İlk Kaydı Ekle</a>
     </div>
     {% endif %}
