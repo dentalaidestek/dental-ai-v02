@@ -3760,8 +3760,6 @@ def home(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    today_start = _date_to_local_start(local_now.date())
-    today_end = _date_to_local_end(local_now.date())
     upcoming_end = local_now + timedelta(days=90)
 
     with Session(engine, expire_on_commit=False) as s:
