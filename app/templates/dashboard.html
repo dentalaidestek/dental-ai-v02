@@ -84,8 +84,7 @@
     root.querySelectorAll(":scope > .visual-row, :scope > .visual-empty").forEach(el=>el.remove());
     if(event){
       const row=document.createElement("a");row.className="visual-row";row.href="/program/"+encodeURIComponent(event.id)+"/edit";
-      const when=new Date(event.start_local);
-      const time=Number.isNaN(when.getTime())?"":String(when.getHours()).padStart(2,"0")+":"+String(when.getMinutes()).padStart(2,"0");
+      const time=event.start_time||"";
       const detail=[event.patient_name,event.type_label].filter(Boolean).map(escapeHtml).join(" · ");
       row.innerHTML='<span class="visual-time">'+escapeHtml(time)+'</span><span><strong>'+escapeHtml(event.title)+'</strong><small>'+detail+'</small></span><b>›</b>';
       root.appendChild(row);
