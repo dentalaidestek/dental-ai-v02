@@ -7414,13 +7414,15 @@ def _sync_expert_capacity(
         return []
 
     session.add(profile)
-    events = _resolve_notifications(
+    session.flush()
+    events = _record_expert_profile_realtime_events(session, profile)
+    events.extend(_resolve_notifications(
         session,
         user_id=expert_user_id,
         notice_type="EXPERT_CAPACITY_AVAILABLE" if cycle == "full" else "EXPERT_CAPACITY_FULL",
         related_type="expert_profile",
         related_id=profile.id,
-    )
+    ))
     _, event, _ = _notify_user(
         session,
         user_id=expert_user_id,
