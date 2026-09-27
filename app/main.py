@@ -2310,7 +2310,9 @@ def support_request_page(request: Request):
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
                 conversation_options.append({"case":case,"other":other})
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {}})
+            support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
+            support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {}})
 
 @app.get("/support-request/fragment", response_class=HTMLResponse)
 def support_request_fragment(request: Request):
@@ -2323,7 +2325,9 @@ def support_request_fragment(request: Request):
         messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
         by_ticket={ticket_id:[] for ticket_id in ticket_ids}
         for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
-    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket})
+        support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
+        support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
 
 @app.post("/support-request")
 async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
@@ -9887,11 +9891,12 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ticket_ids=[t.id for t in tickets if t.id is not None]
-        admin_support_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all() if ticket_ids else []
         admin_support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
-        for support_message in admin_support_messages:
-            admin_support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
-        ticket_rows=[{"ticket":t,"sender":None,"messages":admin_support_messages_by_ticket.get(t.id,[])} for t in tickets]
+        if section=="support" and ticket_ids:
+            admin_support_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all()
+            for support_message in admin_support_messages:
+                admin_support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
+        ticket_rows=[{"ticket":t,"sender":None,"messages":admin_support_messages_by_ticket.get(t.id,[]),"unread_count":(_support_unread_count(s,t.id,"ADMIN") if section=="support" else 0)} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
         disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
         admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
@@ -10114,7 +10119,7 @@ def admin_center_support_fragment(request: Request, section: str = "support"):
         for item in messages:by_ticket.setdefault(item.ticket_id,[]).append(item)
         user_ids={t.user_id for t in tickets if t.user_id}
         users={u.id:u for u in s.exec(select(User).where(User.id.in_(user_ids))).all()} if user_ids else {}
-        rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":by_ticket.get(t.id,[])} for t in tickets]
+        rows=[{"ticket":t,"sender":users.get(t.user_id) if t.user_id else None,"messages":by_ticket.get(t.id,[]),"unread_count":_support_unread_count(s,t.id,"ADMIN")} for t in tickets]
         return templates.TemplateResponse(request=request,name="_admin_support_region.html",context={"ticket_rows":rows,"admin_path":ADMIN_CENTER_PATH})
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/read")
@@ -10135,7 +10140,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
     if not admin:return JSONResponse({"ok":False,"error":"Yetkisiz işlem."},status_code=403)
     message=message.strip()[:4000]
     if not message:return JSONResponse({"ok":False,"error":"Mesaj boş olamaz."},status_code=400)
-    user_event=None;peer_events=[]
+    user_event=None;notice_event=None;peer_events=[]
     with Session(engine,expire_on_commit=False) as s:
         ticket=s.get(SupportTicket,ticket_id)
         if not ticket:return JSONResponse({"ok":False,"error":"Talep bulunamadı."},status_code=404)
@@ -10148,7 +10153,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
                 s,ticket.user_id,"SUPPORT_MESSAGE_CREATED","support_ticket_message",support_message.id,
                 _support_message_payload(ticket,support_message,viewer_role="USER"),
             )
-            _notify_user(
+            _, notice_event, _ = _notify_user(
                 s,user_id=ticket.user_id,actor_user_id=admin.id,
                 notice_type="SUPPORT_MESSAGE",title="Destek ekibinden yeni mesaj",
                 message="Destek talebinizde yeni bir mesaj var.",
@@ -10163,6 +10168,7 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
         s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_MESSAGE_SENT",target_user_id=ticket.user_id,detail=f"#{ticket.id}"))
         s.commit()
     if user_event:await _publish_realtime_event(user_event)
+    if notice_event:await _publish_realtime_event(notice_event)
     for event in peer_events:await _publish_realtime_event(event)
     return {"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status}
 
