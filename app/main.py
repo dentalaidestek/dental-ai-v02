@@ -2273,30 +2273,6 @@ def _mark_support_read(session: Session, ticket_id: int, reader_role: str, throu
     return _support_unread_count(session, ticket_id, role)
 
 
-def _support_unread_counts_for_messages(session: Session, ticket_ids: list[int], reader_role: str, by_ticket: dict) -> dict[int, int]:
-    """Batch support unread calculation; avoids one unread query per ticket."""
-    role=reader_role.strip().upper()
-    if not ticket_ids:return {}
-    states=session.exec(select(SupportTicketReadState).where(
-        SupportTicketReadState.ticket_id.in_(ticket_ids),
-        SupportTicketReadState.reader_role==role,
-    )).all()
-    cursors={state.ticket_id:int(state.last_read_message_id) if state.last_read_message_id is not None else -1 for state in states}
-    result={}
-    for ticket_id in ticket_ids:
-        cursor=cursors.get(ticket_id,-1)
-        message_cursor=max(cursor,0)
-        count=sum(1 for item in by_ticket.get(ticket_id,[]) if item.id and item.id>message_cursor and item.sender_role!=role)
-        if role=="ADMIN" and cursor < 0:
-            count += 1
-        result[ticket_id]=count
-    return result
-
-
-def _support_can_reply_from_messages(ticket: SupportTicket, messages: list[SupportTicketMessage]) -> bool:
-    return bool(ticket.status!="CLOSED" and messages and messages[-1].sender_role=="ADMIN")
-
-
 def _support_user_can_reply(session: Session, ticket: SupportTicket) -> bool:
     if ticket.status == "CLOSED":
         return False
@@ -2339,8 +2315,18 @@ def support_request_page(request: Request):
                 other_id=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
                 other=s.get(User,other_id)
                 conversation_options.append({"case":case,"other":other})
-            support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
-            support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
+            support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="USER")).all() if ticket_ids else []
+            support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
+            support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER").group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+            support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
+            support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="USER")).group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+            support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
+            support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0)) for ticket_id in ticket_ids}
+            latest_rows=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.ticket_id,SupportTicketMessage.id.desc())).all() if ticket_ids else []
+            latest_by_ticket={}
+            for support_msg in latest_rows:
+                if support_msg.ticket_id not in latest_by_ticket:latest_by_ticket[support_msg.ticket_id]=support_msg
+            support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {}})
 
 @app.get("/support-request/fragment", response_class=HTMLResponse)
@@ -2352,8 +2338,18 @@ def support_request_fragment(request: Request):
         reports=s.exec(select(UserReport).where(UserReport.reporter_user_id==user.id).order_by(UserReport.created_at.desc())).all()
         ticket_ids=[t.id for t in tickets if t.id is not None]
         by_ticket={ticket_id:[] for ticket_id in ticket_ids}
-        support_unread_by_ticket={t.id:_support_unread_count(s,t.id,"USER") for t in tickets if t.id is not None}
-        support_can_reply_by_ticket={t.id:_support_user_can_reply(s,t) for t in tickets if t.id is not None}
+        support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="USER")).all() if ticket_ids else []
+            support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
+            support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER").group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+            support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
+            support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="USER",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="USER")).group_by(SupportTicketMessage.ticket_id)).all() if ticket_ids else []
+            support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
+            support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0)) for ticket_id in ticket_ids}
+            latest_rows=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.ticket_id,SupportTicketMessage.id.desc())).all() if ticket_ids else []
+            latest_by_ticket={}
+            for support_msg in latest_rows:
+                if support_msg.ticket_id not in latest_by_ticket:latest_by_ticket[support_msg.ticket_id]=support_msg
+            support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
     return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
 
 @app.post("/support-request")
@@ -9934,13 +9930,16 @@ def admin_center(request: Request, q: str = "", section: str = "home"):
         payments=s.exec(select(ConsultationPayment).order_by(ConsultationPayment.created_at.desc())).all()
         tickets=s.exec(select(SupportTicket).order_by(SupportTicket.created_at.desc())).all()
         ticket_ids=[t.id for t in tickets if t.id is not None]
-        admin_support_messages_by_ticket={ticket_id:[] for ticket_id in ticket_ids}
+        admin_support_unread_by_ticket={}
         if section=="support" and ticket_ids:
-            admin_support_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).order_by(SupportTicketMessage.created_at)).all()
-            for support_message in admin_support_messages:
-                admin_support_messages_by_ticket.setdefault(support_message.ticket_id,[]).append(support_message)
-        admin_support_unread_by_ticket=_support_unread_counts_for_messages(s,ticket_ids,"ADMIN",admin_support_messages_by_ticket) if section=="support" else {}
-        ticket_rows=[{"ticket":t,"sender":None,"messages":admin_support_messages_by_ticket.get(t.id,[]),"unread_count":admin_support_unread_by_ticket.get(t.id,0)} for t in tickets]
+            support_states=s.exec(select(SupportTicketReadState).where(SupportTicketReadState.ticket_id.in_(ticket_ids),SupportTicketReadState.reader_role=="ADMIN")).all()
+            support_cursors={st.ticket_id:int(st.last_read_message_id) if st.last_read_message_id is not None else -1 for st in support_states}
+            support_total_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="ADMIN").group_by(SupportTicketMessage.ticket_id)).all()
+            support_totals={ticket_id:int(count or 0) for ticket_id,count in support_total_rows}
+            support_read_rows=s.exec(select(SupportTicketMessage.ticket_id,func.count(SupportTicketMessage.id)).where(SupportTicketMessage.ticket_id.in_(ticket_ids),SupportTicketMessage.sender_role!="ADMIN",SupportTicketMessage.id <= func.coalesce(SupportTicketReadState.last_read_message_id,0)).join(SupportTicketReadState,(SupportTicketReadState.ticket_id==SupportTicketMessage.ticket_id)&(SupportTicketReadState.reader_role=="ADMIN")).group_by(SupportTicketMessage.ticket_id)).all()
+            support_reads={ticket_id:int(count or 0) for ticket_id,count in support_read_rows}
+            admin_support_unread_by_ticket={ticket_id:max(0,support_totals.get(ticket_id,0)-support_reads.get(ticket_id,0))+(1 if support_cursors.get(ticket_id,-1)<0 else 0) for ticket_id in ticket_ids}
+        ticket_rows=[{"ticket":t,"sender":None,"messages":[],"unread_count":admin_support_unread_by_ticket.get(t.id,0)} for t in tickets]
         reports=s.exec(select(UserReport).order_by(UserReport.created_at.desc())).all()
         disputes=s.exec(select(ConsultationCase).where(ConsultationCase.status=="DISPUTE").order_by(ConsultationCase.dispute_opened_at.desc())).all()
         admin_related_user_ids={uid for r in reports for uid in (r.reporter_user_id,r.reported_user_id)}
