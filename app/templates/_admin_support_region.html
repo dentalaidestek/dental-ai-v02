@@ -1,15 +1,15 @@
 <section class="admin-pro-card" id="adminSupportRegion">
   <div class="admin-support-workspace-head">
     <div><h1>Destek Talepleri</h1><p>Kullanıcının talep açıklaması konuşmanın ilk mesajıdır.</p></div>
-    <label class="admin-support-search"><span>⌕</span><input type="search" data-admin-support-search placeholder="Talep no, kullanıcı adı veya konu ile ara..." autocomplete="off"></label>
+    <label class="admin-support-search"><span>⌕</span><input type="search" data-admin-support-search placeholder="Talep no, kullanıcı adı veya konu ile ara..." autocomplete="off" value="{{q or '')}}"></label>
   </div>
   <div class="admin-support-toolbar">
     <div class="admin-support-filters" aria-label="Destek talebi filtreleri">
-      <button type="button" class="active" data-admin-support-filter="ALL">Tümü <i>{{ticket_rows|length}}</i></button>
-      <button type="button" data-admin-support-filter="OPEN">Açık <i>{{ticket_rows|selectattr('ticket.status','equalto','OPEN')|list|length}}</i></button>
-      <button type="button" data-admin-support-filter="WAITING">Yanıt bekliyor <i>{{ticket_rows|selectattr('ticket.status','equalto','USER_REPLIED')|list|length}}</i></button>
-      <button type="button" data-admin-support-filter="IN_PROGRESS">İşlemde <i>{{ticket_rows|selectattr('ticket.status','equalto','IN_PROGRESS')|list|length}}</i></button>
-      <button type="button" data-admin-support-filter="CLOSED">Tamamlandı <i>{{ticket_rows|selectattr('ticket.status','equalto','CLOSED')|list|length}}</i></button>
+      <button type="button" class="{{'active' if support_status=='ALL' else ''}}" data-admin-support-filter="ALL">Tümü <i>{{support_counts.get('ALL',0)}}</i></button>
+      <button type="button" class="{{'active' if support_status=='OPEN' else ''}}" data-admin-support-filter="OPEN">Açık <i>{{support_counts.get('OPEN',0)}}</i></button>
+      <button type="button" class="{{'active' if support_status=='WAITING' else ''}}" data-admin-support-filter="WAITING">Yanıt bekliyor <i>{{support_counts.get('USER_REPLIED',0)}}</i></button>
+      <button type="button" class="{{'active' if support_status=='IN_PROGRESS' else ''}}" data-admin-support-filter="IN_PROGRESS">İşlemde <i>{{support_counts.get('IN_PROGRESS',0)}}</i></button>
+      <button type="button" class="{{'active' if support_status=='CLOSED' else ''}}" data-admin-support-filter="CLOSED">Tamamlandı <i>{{support_counts.get('CLOSED',0)}}</i></button>
     </div>
   </div>
   <div class="admin-review-list admin-support-table">
