@@ -6191,12 +6191,13 @@ def account_notification_read(request: Request, notice_id: int):
 
 
 @app.post("/account/notifications/read-all")
-def account_notifications_read_all(request: Request):
+async def account_notifications_read_all(request: Request):
     """Opening the notification center marks the currently active notices as seen."""
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False}, status_code=401)
     now = _utcnow_naive()
+    realtime_event = None
     with Session(engine, expire_on_commit=False) as s:
         rows = s.exec(select(AdminNotice).where(
             AdminNotice.user_id == user.id,
@@ -6208,7 +6209,14 @@ def account_notifications_read_all(request: Request):
             if not notice.read_at:
                 notice.read_at = now
             s.add(notice)
+        if rows:
+            realtime_event = _record_realtime_event(
+                s, user.id, "NOTIFICATIONS_READ", "notification", None,
+                {"unread_count": 0},
+            )
         s.commit()
+    if realtime_event:
+        await _publish_realtime_event(realtime_event)
     return {"ok": True, "read_count": len(rows)}
 
 
