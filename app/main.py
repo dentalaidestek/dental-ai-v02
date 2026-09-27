@@ -4274,6 +4274,10 @@ def program_edit(
         s.add(event)
         s.flush()
         _sync_program_reminder(s, event)
+        _resolve_notifications(
+            s, user_id=user.id, notice_type="PROGRAM_REMINDER",
+            related_type="schedule_event", related_id=event.id,
+        )
         s.commit()
     _wake_program_reminder_worker()
 
@@ -9969,6 +9973,7 @@ def admin_center_user_status(request: Request, user_id: int, action: str = Form(
             sessions=s.exec(select(SessionToken).where(SessionToken.user_id==target.id)).all()
             for token in sessions: s.delete(token)
             _cancel_user_program_reminders(s, target.id)
+            _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         elif action == "UNBAN":
             target.is_active=True
             _restore_user_program_reminders(s, target.id)
@@ -10062,6 +10067,7 @@ def admin_center_delete_user(
         target.profile_photo_path = None
         target.is_active = False
         _cancel_user_program_reminders(s, target.id)
+        _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         s.add(target)
         s.add(AdminAuditLog(
             admin_user_id=admin.id,
