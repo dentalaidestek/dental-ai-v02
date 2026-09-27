@@ -2327,7 +2327,8 @@ def support_request_page(request: Request):
             latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
             latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
             support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
-    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {}})
+            support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="support_request.html",context={"title":"Destek Talebi Oluştur","user":user,"tickets":tickets,"reports":reports,"conversation_options":conversation_options,"support_messages_by_ticket":support_messages_by_ticket if user else {},"support_unread_by_ticket":support_unread_by_ticket if user else {},"support_can_reply_by_ticket":support_can_reply_by_ticket if user else {},"support_waiting_by_ticket":support_waiting_by_ticket if user else {}})
 
 @app.get("/support-request/fragment", response_class=HTMLResponse)
 def support_request_fragment(request: Request):
@@ -2350,7 +2351,8 @@ def support_request_fragment(request: Request):
         latest_messages=s.exec(select(SupportTicketMessage).where(SupportTicketMessage.id.in_(latest_ids))).all() if latest_ids else []
         latest_by_ticket={support_msg.ticket_id:support_msg for support_msg in latest_messages}
         support_can_reply_by_ticket={t.id:bool(t.status!="CLOSED" and latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="ADMIN") for t in tickets if t.id is not None}
-    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket})
+        support_waiting_by_ticket={t.id:bool(latest_by_ticket.get(t.id) and latest_by_ticket[t.id].sender_role=="USER") for t in tickets if t.id is not None}
+    return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket,"support_waiting_by_ticket":support_waiting_by_ticket})
 
 @app.post("/support-request")
 async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
