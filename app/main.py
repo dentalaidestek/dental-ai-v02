@@ -3230,7 +3230,14 @@ def template_user_context(request: Request):
         with Session(engine, expire_on_commit=False) as s:
             meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
-            profile_verified = _is_verified_expert(s, user.id)
+            profile_verified = bool(
+                profile
+                and profile.application_status == "APPROVED"
+                and profile.verification_status == "VERIFIED"
+                and profile.specialty_verified
+                and bool(profile.credential_document_path)
+                and bool(profile.phone)
+            )
         title = (meta.professional_title if meta else "") or ""
         eligible_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
         if title in eligible_titles:
