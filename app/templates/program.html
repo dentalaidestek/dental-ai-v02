@@ -61,7 +61,7 @@
             </div>
             <div class="program-event-list">
                 {% for event in group.events %}
-                <article class="program-event {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
+                <article class="program-event tone-{{ event.event_type|lower }} {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
                     <div class="program-event-main">
                         <div class="program-event-top"><span class="program-event-clock">{{ event.start_local.strftime('%H:%M') }}{% if event.end_local %} – {{ event.end_local.strftime('%H:%M') }}{% endif %}</span><span class="program-type">{{ event.type_label }}</span></div>
                         <h3>{{ event.title }}</h3>
