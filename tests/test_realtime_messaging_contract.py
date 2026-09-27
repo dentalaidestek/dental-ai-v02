@@ -240,6 +240,45 @@ def test_notification_center_open_marks_active_notices_seen():
     assert "await _publish_realtime_event(realtime_event)" in read_all
 
 
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
+def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active(monkeypatch):
+    engine = _engine()
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username="notice-owner", role="DOCTOR", display_name="Notice Owner")
+        session.add(user)
+        session.commit()
+        notice = main.AdminNotice(
+            user_id=user.id, title="Hatırlatma", message="Program kaydı",
+            notice_type="PROGRAM_REMINDER", status="ACTIVE",
+        )
+        session.add(notice)
+        token = "notice-owner-token"
+        session.add(main.SessionToken(
+            token_hash=main.hash_session_token(token), user_id=user.id,
+            expires_at=now + main.timedelta(days=1),
+        ))
+        session.commit()
+        notice_id = notice.id
+        user_id = user.id
+    monkeypatch.setattr(main, "engine", engine)
+    with TestClient(main.app) as client:
+        response = client.post("/account/notifications/read-all", cookies={main.SESSION_COOKIE: token})
+    assert response.status_code == 200
+    assert response.json()["read_count"] == 1
+    with Session(engine) as session:
+        notice = session.get(main.AdminNotice, notice_id)
+        assert notice.user_id == user_id
+        assert notice.status == "ACTIVE"
+        assert notice.is_read is True
+        assert notice.read_at is not None
+        events = session.exec(select(main.RealtimeEvent).where(
+            main.RealtimeEvent.user_id == user_id,
+            main.RealtimeEvent.event_type == "NOTIFICATIONS_READ",
+        )).all()
+        assert len(events) == 1
+
 def test_seen_program_reminders_expire_without_touching_other_notices():
     helper = MAIN.split("def _expire_seen_program_reminders", 1)[1].split('@app.get("/account/notifications")', 1)[0]
     assert 'AdminNotice.notice_type == "PROGRAM_REMINDER"' in helper
