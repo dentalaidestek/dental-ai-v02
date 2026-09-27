@@ -1,24 +1,48 @@
 <section class="admin-pro-card" id="adminSupportRegion">
-<div class="admin-card-head"><div><h1>Destek Talepleri</h1><p>Satıra dokunarak talebin ayrıntısını ve destek konuşmasını açın. Kullanıcının gönderdiği açıklama konuşmanın ilk mesajıdır.</p></div></div><div class="admin-support-filters" aria-label="Destek talebi filtreleri"><button type="button" class="active" data-admin-support-filter="ALL">Tümü</button><button type="button" data-admin-support-filter="OPEN">Açık</button><button type="button" data-admin-support-filter="WAITING">Yanıt bekliyor</button><button type="button" data-admin-support-filter="IN_PROGRESS">İşlemde</button><button type="button" data-admin-support-filter="CLOSED">Tamamlandı</button></div>
-<div class="admin-support-table-head"><span># / Konu</span><span>Kullanıcı</span><span>Durum</span><span>Son Aktivite</span><span>Mesajlar</span></div><div class="admin-review-list admin-support-table">{% for row in ticket_rows %}{% set x=row.ticket %}{% set sender=row.sender %}{% set unread=row.unread_count or 0 %}
-<section class="admin-review-card" data-admin-ticket-id="{{x.id}}" data-support-status="{{x.status}}">
-  <div class="admin-support-summary" role="button" tabindex="0" aria-expanded="false" data-admin-support-toggle="{{x.id}}">
-    <div class="admin-support-open"><span><b>#{{x.id}} · {{x.subject}}</b><small>{{x.message[:96]}}{{'…' if x.message|length > 96 else ''}}</small>{% if x.case_id %}<small>Vaka #{{x.case_id}}</small>{% endif %}</span></div>
-    <span class="admin-support-user">{{sender.display_name if sender else 'Misafir kullanıcı'}}</span>
-    <span class="admin-review-status {{'open' if x.status=='OPEN' else ('progress' if x.status in ['IN_PROGRESS','USER_REPLIED'] else ('answered' if x.status=='ANSWERED' else 'closed'))}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Kullanıcı yanıtladı{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
-    <time class="admin-support-activity">{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time>
-    <span class="admin-support-count {{'has-unread' if unread else ''}}" data-count="{{unread}}">Konuşma{% if unread %} <b>{{unread}}</b>{% else %} 0{% endif %}</span>
+  <div class="admin-support-workspace-head">
+    <div><h1>Destek Talepleri</h1><p>Kullanıcının talep açıklaması konuşmanın ilk mesajıdır.</p></div>
+    <label class="admin-support-search"><span>⌕</span><input type="search" data-admin-support-search placeholder="Talep no, kullanıcı adı veya konu ile ara..." autocomplete="off"></label>
   </div>
-  <div class="admin-support-conversation" data-admin-support-conversation="{{x.id}}" data-support-read-through="{{row.messages[-1].id if row.messages else 0}}" hidden>
-    <div class="admin-support-conversation-top"><b>#{{x.id}} · {{x.subject}}</b><button type="button" data-admin-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button></div>
-    <div class="admin-support-grid">
-      <aside><small>Kullanıcı</small><b>{{sender.display_name if sender else 'Misafir kullanıcı'}}</b><small>Tarih</small><span>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</span>{% if x.case_id %}<a class="admin-review-conversation-link" href="/admin/consultation-review/{{x.case_id}}">İlgili konuşmayı aç</a><small class="admin-review-readonly-note">Bağlı vaka konuşması yalnız inceleme içindir.</small>{% endif %}</aside>
-      <div class="admin-support-thread-wrap">
-        <div class="admin-support-thread" data-admin-support-thread="{{x.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div>
-        <div class="support-thread-more" data-admin-support-more-wrap="{{x.id}}" hidden><button type="button" data-admin-support-more="{{x.id}}">Daha eski mesajlar</button></div>
-        {% if x.status!='CLOSED' %}<form class="admin-support-message-form" method="post" action="{{admin_path}}/support/{{x.id}}/message"><textarea name="message" rows="2" maxlength="4000" placeholder="Kullanıcıya mesaj yazın..." required></textarea><button type="submit">Gönder</button></form>{% else %}<div class="admin-review-readonly-note">Bu destek talebi tamamlandı.</div>{% endif %}
-      </div>
+  <div class="admin-support-toolbar">
+    <div class="admin-support-filters" aria-label="Destek talebi filtreleri">
+      <button type="button" class="active" data-admin-support-filter="ALL">Tümü <i>{{ticket_rows|length}}</i></button>
+      <button type="button" data-admin-support-filter="OPEN">Açık <i>{{ticket_rows|selectattr('ticket.status','equalto','OPEN')|list|length}}</i></button>
+      <button type="button" data-admin-support-filter="WAITING">Yanıt bekliyor <i>{{ticket_rows|selectattr('ticket.status','equalto','USER_REPLIED')|list|length}}</i></button>
+      <button type="button" data-admin-support-filter="IN_PROGRESS">İşlemde <i>{{ticket_rows|selectattr('ticket.status','equalto','IN_PROGRESS')|list|length}}</i></button>
+      <button type="button" data-admin-support-filter="CLOSED">Tamamlandı <i>{{ticket_rows|selectattr('ticket.status','equalto','CLOSED')|list|length}}</i></button>
     </div>
-    {% if x.status!='CLOSED' %}<form class="admin-support-status-form" method="post" action="{{admin_path}}/support/{{x.id}}"><div class="admin-review-actions">{% if x.status=='OPEN' %}<button name="status" value="IN_PROGRESS">İşleme al</button>{% endif %}<button class="danger-soft" name="status" value="CLOSED">Tamamlandı</button></div></form>{% endif %}
   </div>
-</section>{% else %}<p class="admin-empty">Henüz site destek talebi bulunmuyor.</p>{% endfor %}</div></section>
+  <div class="admin-review-list admin-support-table">
+  {% for row in ticket_rows %}{% set x=row.ticket %}{% set sender=row.sender %}{% set unread=row.unread_count or 0 %}
+    <section class="admin-review-card" data-admin-ticket-id="{{x.id}}" data-support-status="{{x.status}}" data-support-search-text="#{{x.id}} {{x.subject}} {{sender.display_name if sender else 'Misafir kullanıcı'}} {{x.message}}">
+      <div class="admin-support-summary" role="button" tabindex="0" aria-expanded="false" data-admin-support-toggle="{{x.id}}">
+        <div class="admin-support-open"><span><b>#{{x.id}}</b><strong>{{x.subject}}</strong><small>{{x.message[:96]}}{{'…' if x.message|length > 96 else ''}}</small></span></div>
+        <span class="admin-review-status {{'open' if x.status=='OPEN' else ('progress' if x.status in ['IN_PROGRESS','USER_REPLIED'] else ('answered' if x.status=='ANSWERED' else 'closed'))}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıt bekliyor{% elif x.status=='ANSWERED' %}Yanıtlandı{% elif x.status=='CLOSED' %}Tamamlandı{% else %}{{x.status}}{% endif %}</span>
+        <span class="admin-support-user">{{sender.display_name if sender else 'Misafir kullanıcı'}}</span>
+        <time class="admin-support-activity">{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</time>
+        <span class="admin-support-count {{'has-unread' if unread else ''}}" data-count="{{unread}}">{% if unread %}<b>{{unread}}</b> yeni{% else %}Okundu{% endif %}</span>
+      </div>
+      <div class="admin-support-conversation" data-admin-support-conversation="{{x.id}}" data-support-read-through="{{row.messages[-1].id if row.messages else 0}}" hidden>
+        <div class="admin-support-conversation-top">
+          <div><b>#{{x.id}} · {{x.subject}}</b><small>{{sender.display_name if sender else 'Misafir kullanıcı'}}</small></div>
+          <span class="admin-review-status {{'open' if x.status=='OPEN' else ('progress' if x.status in ['IN_PROGRESS','USER_REPLIED'] else ('answered' if x.status=='ANSWERED' else 'closed'))}}">{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıt bekliyor{% elif x.status=='ANSWERED' %}Yanıtlandı{% else %}Tamamlandı{% endif %}</span>
+          <button type="button" data-admin-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button>
+        </div>
+        <div class="admin-support-grid">
+          <div class="admin-support-thread-wrap">
+            <div class="admin-support-thread" data-admin-support-thread="{{x.id}}"><div class="support-thread-loading">Konuşma yükleniyor…</div></div>
+            <div class="support-thread-more" data-admin-support-more-wrap="{{x.id}}" hidden><button type="button" data-admin-support-more="{{x.id}}">Daha eski mesajlar</button></div>
+            {% if x.status!='CLOSED' %}<form class="admin-support-message-form" method="post" action="{{admin_path}}/support/{{x.id}}/message"><textarea name="message" rows="2" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><button type="submit">Gönder</button></form>{% else %}<div class="admin-review-readonly-note">Bu destek talebi tamamlandı.</div>{% endif %}
+          </div>
+          <aside class="admin-support-detail">
+            <section><h3>Talep Bilgileri</h3><dl><dt>Talep No</dt><dd>#{{x.id}}</dd><dt>Konu</dt><dd>{{x.subject}}</dd><dt>Durum</dt><dd>{% if x.status=='OPEN' %}Açık{% elif x.status=='IN_PROGRESS' %}İşlemde{% elif x.status=='USER_REPLIED' %}Yanıt bekliyor{% elif x.status=='ANSWERED' %}Yanıtlandı{% else %}Tamamlandı{% endif %}</dd><dt>Oluşturulma</dt><dd>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</dd><dt>Son Güncelleme</dt><dd>{{x.updated_at.strftime('%d.%m.%Y %H:%M')}}</dd></dl></section>
+            <section><h3>Kullanıcı Bilgileri</h3><b>{{sender.display_name if sender else 'Misafir kullanıcı'}}</b>{% if sender %}<a class="admin-support-profile-link" href="{{admin_path}}/users/{{sender.id}}">Kullanıcı Profilini Gör</a>{% endif %}</section>
+            {% if x.case_id %}<section><h3>Bağlı Vaka</h3><a class="admin-review-conversation-link" href="/admin/consultation-review/{{x.case_id}}">İlgili konuşmayı aç</a><small class="admin-review-readonly-note">Bağlı vaka konuşması yalnız inceleme içindir.</small></section>{% endif %}
+            {% if x.status!='CLOSED' %}<section><h3>İşlemler</h3><form class="admin-support-status-form" method="post" action="{{admin_path}}/support/{{x.id}}"><div class="admin-support-detail-actions">{% if x.status=='OPEN' %}<button name="status" value="IN_PROGRESS">✓ İşleme Al</button>{% endif %}<button class="danger-soft" name="status" value="CLOSED">✓ Tamamlandı İşaretle</button></div></form></section>{% endif %}
+          </aside>
+        </div>
+      </div>
+    </section>
+  {% else %}<p class="admin-empty">Henüz site destek talebi bulunmuyor.</p>{% endfor %}
+  </div>
+</section>
