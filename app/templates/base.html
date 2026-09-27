@@ -494,10 +494,11 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         else if(evt.event_type==="SITE_CONFIG_UPDATED"){
             const cfg={};cfg[data.key]=data.value;applySiteConfig(cfg);
         }
-        // Catch-up replays durable history only to reconcile cursors/state.
-        // Do not let page-level live handlers interpret historical MESSAGE/CASE
-        // events as newly-arrived activity (which can resurrect unread badges).
-        if(notify)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        // Durable replay must still reconcile page state (for example an open
+        // Program view) while user-facing activity such as message badges/toasts
+        // stays silent. Consumers can inspect detail.replay when they need to
+        // distinguish historical reconciliation from a genuinely live event.
+        if(notify||evt.replay===true)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         try{
