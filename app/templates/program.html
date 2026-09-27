@@ -3,8 +3,7 @@
 <div class="program-page">
     <div class="program-header">
         <div>
-            <h1>Programım</h1>
-            <p>Gününüzü ve yaklaşan kayıtlarınızı takip edin.</p>
+            <h1><span class="program-title-icon" aria-hidden="true">▣</span> Program</h1>
         </div>
         <a class="program-add-circle" href="/program/new{% if view == 'week' %}?day={{ focus_date.isoformat() }}{% endif %}" aria-label="Yeni program kaydı">+</a>
     </div>
@@ -19,11 +18,13 @@
             <a class="{% if view == 'week' %}active{% endif %}" href="/program?view=week&day={{ focus_date.isoformat() }}">Hafta</a>
             <a class="{% if view == 'month' %}active{% endif %}" href="/program?view=month&day={{ focus_date.isoformat() }}">Ay</a>
         </div>
-        <div class="program-period-nav">
-            <a href="/program?view={{ view }}&day={{ previous_day }}" aria-label="Önceki dönem">‹</a>
-            <a class="program-today-link" href="/program?view={{ view }}">Bugüne Git</a>
-            <a href="/program?view={{ view }}&day={{ next_day }}" aria-label="Sonraki dönem">›</a>
+        {% if view == 'month' %}
+        <div class="program-month-nav">
+            <a href="/program?view=month&day={{ previous_day }}" aria-label="Önceki ay">‹</a>
+            <strong>{{ month_title }}</strong>
+            <a href="/program?view=month&day={{ next_day }}" aria-label="Sonraki ay">›</a>
         </div>
+        {% endif %}
     </div>
 
     {% if view == 'week' %}
@@ -33,6 +34,20 @@
             <small>{{ item.label }}</small><strong>{{ item.date.day }}</strong>
         </a>
         {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if view == 'month' %}
+    <div class="program-month-calendar">
+        <div class="program-month-weekdays">{% for label in ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'] %}<span>{{ label }}</span>{% endfor %}</div>
+        <div class="program-month-grid">
+            {% for item in month_days %}
+            <a href="/program?view=month&day={{ item.date.isoformat() }}" class="{% if not item.in_month %}outside{% endif %}{% if item.date == focus_date %} active{% endif %}">
+                <strong>{{ item.date.day }}</strong>
+                <span class="program-month-dots">{% for event in item.events %}<i class="tone-{{ event.event_type|lower }}"></i>{% endfor %}{% if item.has_more %}<i></i>{% endif %}</span>
+            </a>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
@@ -47,16 +62,8 @@
             <div class="program-event-list">
                 {% for event in group.events %}
                 <article class="program-event {% if event.status == 'COMPLETED' %}is-completed{% endif %}">
-                    <div class="program-event-time">
-                        <strong>{{ event.start_local.strftime('%H:%M') }}</strong>
-                        {% if event.end_local %}<small>{{ event.end_local.strftime('%H:%M') }}</small>{% endif %}
-                    </div>
                     <div class="program-event-main">
-                        <div class="program-event-meta">
-                            <span class="program-type">{{ event.type_label }}</span>
-                            {% if event.is_recurring %}<span class="program-recurring">Haftalık</span>{% endif %}
-                            {% if event.notification_enabled %}<span class="program-reminder">{% if event.reminder_minutes == 0 %}Saatinde hatırlat{% elif event.reminder_minutes == 60 %}1 saat önce{% elif event.reminder_minutes == 120 %}2 saat önce{% elif event.reminder_minutes == 1440 %}1 gün önce{% else %}{{ event.reminder_minutes }} dk önce{% endif %}</span>{% endif %}
-                        </div>
+                        <div class="program-event-top"><span class="program-event-clock">{{ event.start_local.strftime('%H:%M') }}{% if event.end_local %} – {{ event.end_local.strftime('%H:%M') }}{% endif %}</span><span class="program-type">{{ event.type_label }}</span></div>
                         <h3>{{ event.title }}</h3>
                         <p>
                             {% if event.patient %}<a href="/patients/{{ event.patient.id }}">{{ event.patient.first_name or '' }} {{ event.patient.last_name or '' }}</a>{% endif %}
@@ -79,14 +86,16 @@
                 </article>
                 {% endfor %}
             </div>
+            {% if view in ['today','week'] %}<a class="program-inline-add" href="/program/new?day={{ group.date.isoformat() }}{% if view == 'week' %}&type=CLASS{% endif %}">＋ <span>{% if view == 'week' %}Ders ekle{% else %}Program ekle{% endif %}</span></a>{% endif %}
         </section>
         {% endfor %}
     </div>
     {% else %}
     <div class="program-empty">
-        <h2>Bu dönemde kayıt yok</h2>
+        <div class="program-empty-icon">▣</div>
+        <h2>{% if view in ['today','week','month'] %}Bu günde kayıt yok{% else %}Kayıt yok{% endif %}</h2>
         <p>Yeni bir program kaydı ekleyebilirsiniz.</p>
-        <a class="btn" href="/program/new">İlk Kaydı Ekle</a>
+        <a class="btn" href="/program/new?day={{ focus_date.isoformat() }}{% if view == 'week' %}&type=CLASS{% endif %}">＋ {% if view == 'week' %}Ders ekle{% else %}Program ekle{% endif %}</a>
     </div>
     {% endif %}
 
@@ -95,9 +104,10 @@
         <div class="program-sheet-grabber"></div>
         <div class="program-sheet-head"><div><strong id="programCopyTitle">Diğer güne kopyala</strong><small id="programCopySummary"></small></div><button type="button" id="programCopyClose" aria-label="Kapat">×</button></div>
         <form id="programCopyForm" method="post">
+            <div class="program-copy-preview"><strong id="programCopyPreviewTitle"></strong><span id="programCopyPreviewTime"></span></div>
             <div class="program-copy-days">
                 {% for item in week_days %}
-                <label><input type="checkbox" name="copy_day" value="{{ item.date.isoformat() }}"><span><small>{{ item.label }}</small><strong>{{ item.date.day }}</strong></span></label>
+                <label><input type="checkbox" name="copy_day" value="{{ item.date.isoformat() }}"><span class="program-copy-check">✓</span><strong>{{ item.label }}</strong></label>
                 {% endfor %}
             </div>
             <input type="hidden" name="target_days" id="programCopyDaysValue">
@@ -148,7 +158,9 @@
       const form = document.getElementById('programCopyForm');
       if (sheet && backdrop && form) {
         form.action = '/program/' + copyOpen.dataset.eventId + '/copy';
-        document.getElementById('programCopySummary').textContent = copyOpen.dataset.eventTitle + ' · ' + copyOpen.dataset.eventTime;
+        document.getElementById('programCopySummary').textContent = 'Aynı kaydı istediğiniz günlere ekleyin.';
+        document.getElementById('programCopyPreviewTitle').textContent = copyOpen.dataset.eventTitle;
+        document.getElementById('programCopyPreviewTime').textContent = copyOpen.dataset.eventTime;
         form.querySelectorAll('input[name="copy_day"]').forEach((input) => { input.checked = false; });
         sheet.hidden = false; backdrop.hidden = false;
       }
