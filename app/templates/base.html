@@ -268,6 +268,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     let lastEventId = Number(sessionStorage.getItem(syncCursorKey) || 0);
     const seenEventIds=new Set(),seenEventOrder=[];const syncOverlap=100;
     let syncSocket = null, reconnectTimer = null, pingTimer = null;
+    const syncReconnectBaseMs=1000,syncReconnectMaxMs=30000;
+    let syncReconnectDelayMs=syncReconnectBaseMs;
+    function resetSyncReconnect(){syncReconnectDelayMs=syncReconnectBaseMs;clearTimeout(reconnectTimer);reconnectTimer=null;}
+    function scheduleSyncReconnect(){clearTimeout(reconnectTimer);const delay=syncReconnectDelayMs;syncReconnectDelayMs=Math.min(syncReconnectMaxMs,syncReconnectDelayMs*2);reconnectTimer=setTimeout(connectSync,delay);}
 
     function paintMessageBadge(count) {
         const badge=document.getElementById("mobileMessagesBadge");
@@ -524,9 +528,9 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         clearTimeout(reconnectTimer); clearInterval(pingTimer);
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
-        connection.onopen=()=>{if(syncSocket!==connection)return;connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
+        connection.onopen=()=>{if(syncSocket!==connection)return;resetSyncReconnect();connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
         connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
-        connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);reconnectTimer=setTimeout(connectSync,1500);};
+        connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);scheduleSyncReconnect();};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }
     // Establish the durable realtime socket immediately. Its resume message
@@ -539,6 +543,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     document.addEventListener("dai:case-read",e=>reduceMessageBadge(e.detail?.count));
     document.addEventListener("dai:unread-changed",refreshUnreadCount);
     document.addEventListener("visibilitychange",()=>{if(syncSocket?.readyState===WebSocket.OPEN)syncSocket.send(JSON.stringify({type:"visibility",visible:!document.hidden}));if(!document.hidden){catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();}});
+    window.addEventListener("online",()=>{resetSyncReconnect();catchUpEvents();if(!syncSocket||syncSocket.readyState>1)connectSync();});
 }
 </script>
 <script>
