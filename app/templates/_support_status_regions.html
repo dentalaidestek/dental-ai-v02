@@ -18,10 +18,9 @@
     </div>
     <div class="support-conversation" data-support-conversation="{{x.id}}" data-support-read-through="{{history[-1].id if history else 0}}" hidden>
       <div class="support-conversation-top"><b>#{{x.id}} · {{x.subject}}</b><button type="button" data-support-close="{{x.id}}" aria-label="Konuşmayı kapat">×</button></div>
-      <div class="support-thread">
-        <div class="support-bubble user"><div class="support-bubble-head"><b>Siz</b><time>{{x.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{x.message}}</p></div>
-        {% for m in history %}<div class="support-bubble {{'admin' if m.sender_role=='ADMIN' else 'user'}}"><div class="support-bubble-head"><b>{{'Yönetim Ekibi' if m.sender_role=='ADMIN' else 'Siz'}}</b><time>{{m.created_at.strftime('%d.%m.%Y %H:%M')}}</time></div><p>{{m.message}}</p></div>{% endfor %}
-      </div>
+      <div class="support-thread" data-support-thread="{{x.id}}"><div class="support-thread-loading">Konuşmayı açtığınızda mesajlar yüklenir.</div></div>
+      <div class="support-thread-more" data-support-more-wrap="{{x.id}}" hidden><button type="button" data-support-more="{{x.id}}">Daha eski mesajlar</button></div>
+      <div data-support-turn="{{x.id}}">
       {% if x.status=='CLOSED' %}
         <div class="support-turn-note done">Bu talep tamamlandı. Gerekirse yeni bir destek talebi oluşturabilirsiniz.</div>
       {% elif can_reply %}
@@ -32,6 +31,7 @@
       {% else %}
         <div class="support-turn-note">Talebiniz yönetim ekibi tarafından inceleniyor.</div>
       {% endif %}
+      </div>
     </div>
   </section>
   {% else %}<p class="small-note">Henüz destek talebiniz yok.</p>{% endfor %}
