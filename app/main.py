@@ -2460,7 +2460,7 @@ def support_ticket_user_conversation(request: Request, ticket_id: int, before_id
             report=s.get(UserReport,ticket.source_id)
             if report:
                 parts=[f"Bildirme nedeni: {report.reason}"]
-                if report.details: parts.append(report.details)
+                if report.detail: parts.append(report.detail)
                 initial_message="\n\n".join(parts)
         return JSONResponse({"ok":True,"ticket":{"id":ticket.id,"subject":ticket.subject,"status":ticket.status,"created_at":ticket.created_at.isoformat(),"initial_message":initial_message},"messages":[{"id":m.id,"sender_role":m.sender_role,"message":m.message,"created_at":m.created_at.isoformat()} for m in rows],"has_more":has_more,"next_before_id":rows[0].id if has_more and rows else None,"read_through":rows[-1].id if rows else 0,"unread_count":_support_unread_count(s,ticket.id,"USER"),"can_reply":_support_user_can_reply(s,ticket)})
 
@@ -10323,7 +10323,7 @@ def admin_center_support_conversation(request: Request, ticket_id: int, before_i
             report=s.get(UserReport,ticket.source_id)
             if report:
                 parts=[f"Bildirme nedeni: {report.reason}"]
-                if report.details: parts.append(report.details)
+                if report.detail: parts.append(report.detail)
                 initial_message="\n\n".join(parts)
         return JSONResponse({"ok":True,"ticket":{"id":ticket.id,"subject":ticket.subject,"status":ticket.status,"created_at":ticket.created_at.isoformat(),"initial_message":initial_message,"user_name":sender.display_name if sender else "Misafir kullanıcı"},"messages":[{"id":m.id,"sender_role":m.sender_role,"message":m.message,"created_at":m.created_at.isoformat()} for m in rows],"has_more":has_more,"next_before_id":rows[0].id if has_more and rows else None,"read_through":rows[-1].id if rows else 0,"unread_count":_support_unread_count(s,ticket.id,"ADMIN")})
 
