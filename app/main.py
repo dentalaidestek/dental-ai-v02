@@ -1077,14 +1077,11 @@ def _group_program_occurrences(occurrences):
 
 
 def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
+    """Return only a patient that belongs to the current user's private workspace."""
     if not patient_id:
         return None
     patient = session.get(Patient, patient_id)
-    if not patient:
-        return None
-    if user.role != "ADMIN" and patient.owner_user_id != user.id:
-        return None
-    if user.role == "ADMIN" and patient.owner_user_id not in {None, user.id}:
+    if not patient or patient.owner_user_id != user.id:
         return None
     return patient
 
@@ -3524,9 +3521,11 @@ def program_new_page(
         suggested += timedelta(minutes=30)
 
     with Session(engine, expire_on_commit=False) as s:
-        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patient_query = (
+            select(Patient)
+            .where(Patient.owner_user_id == user.id)
+            .order_by(Patient.first_name, Patient.last_name)
+        )
         patients = s.exec(patient_query).all()
 
     initial_type = type.upper() if type.upper() in PROGRAM_EVENT_TYPES else "APPOINTMENT"
@@ -3618,9 +3617,11 @@ def program_edit_page(request: Request, event_id: int):
         event = s.get(ScheduleEvent, event_id)
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
-        patient_query = select(Patient).order_by(Patient.first_name, Patient.last_name)
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
+        patient_query = (
+            select(Patient)
+            .where(Patient.owner_user_id == user.id)
+            .order_by(Patient.first_name, Patient.last_name)
+        )
         patients = s.exec(patient_query).all()
         start_local = _utc_to_local(event.start_at)
         end_local = _utc_to_local(event.end_at)
