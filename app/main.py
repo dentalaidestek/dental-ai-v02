@@ -1128,7 +1128,9 @@ def _validate_schedule_input(
             return None, "Bitiş saati başlangıç saatinden önce olamaz."
 
     parsed_patient_id = None
-    if patient_id.strip():
+    # Patient linkage only belongs to appointment/clinical records. A stale
+    # hidden form value must not attach a patient to classes, exams or tasks.
+    if event_type in {"APPOINTMENT", "CLINIC"} and patient_id.strip():
         try:
             parsed_patient_id = int(patient_id)
         except ValueError:
