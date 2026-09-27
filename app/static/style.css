@@ -1408,6 +1408,155 @@ h2 .ui-icon {
     margin-top: 18px;
 }
 
+/* Program mobile polish */
+.program-more-options {
+    margin-top: 16px;
+    border-top: 1px solid #edf1f6;
+    padding-top: 4px;
+}
+.program-more-options summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 750;
+    list-style: none;
+}
+.program-more-options summary::-webkit-details-marker { display: none; }
+.program-more-options summary::after {
+    content: "⌄";
+    margin-left: auto;
+    color: #94a3b8;
+    font-size: 17px;
+}
+.program-more-options[open] summary::after { transform: rotate(180deg); }
+.program-more-options .program-form-grid { padding-top: 12px; }
+.program-form-actions .btn { min-height: 44px; }
+.program-event-actions form { margin: 0; }
+
+@media (max-width: 760px) {
+    .program-page,
+    .program-form-page { width: 100%; }
+
+    .program-header,
+    .program-form-header {
+        margin-bottom: 14px;
+        gap: 10px;
+    }
+    .program-header h1,
+    .program-form-header h1 { font-size: 25px; }
+    .program-header p,
+    .program-form-header p {
+        font-size: 13px;
+        line-height: 1.45;
+    }
+    .program-header .btn {
+        min-height: 42px;
+        padding: 9px 12px;
+        border-radius: 11px;
+        white-space: nowrap;
+    }
+
+    .program-toolbar {
+        padding: 7px;
+        gap: 7px;
+        border-radius: 14px;
+        box-shadow: none;
+    }
+    .program-view-tabs { width: 100%; }
+    .program-view-tabs a {
+        flex: 1;
+        text-align: center;
+        padding: 9px 8px;
+    }
+    .program-view-tabs a.active {
+        background: #f1f5f9;
+        color: #172033;
+    }
+
+    .program-groups { gap: 10px; }
+    .program-day {
+        border-radius: 14px;
+        box-shadow: none;
+    }
+    .program-day-today { border-color: #d9e2ec; }
+    .program-day-heading { padding: 11px 13px; }
+    .program-day-heading span {
+        background: #f1f5f9;
+        color: #475569;
+    }
+    .program-event {
+        grid-template-columns: 50px minmax(0,1fr);
+        gap: 9px;
+        padding: 13px;
+    }
+    .program-event-time strong {
+        color: #172033;
+        font-size: 16px;
+    }
+    .program-type {
+        color: #475569;
+        background: #f1f5f9;
+    }
+    .program-event-main h3 { font-size: 15px; }
+    .program-event-actions {
+        gap: 2px;
+        margin-top: -2px;
+    }
+    .program-event-actions a,
+    .link-button {
+        min-height: 40px;
+        padding: 8px 7px;
+        color: #475569;
+    }
+
+    .program-form-card {
+        padding: 14px;
+        border-radius: 15px;
+        box-shadow: none;
+    }
+    .program-form-grid { gap: 13px; }
+    .program-field input,
+    .program-field select,
+    .program-field textarea {
+        min-height: 46px;
+        padding: 11px;
+        border-radius: 11px;
+        font-size: 16px;
+    }
+    .program-field textarea { min-height: 88px; }
+    .program-more-options { margin-top: 13px; }
+    .program-form-actions {
+        position: sticky;
+        bottom: calc(66px + env(safe-area-inset-bottom));
+        z-index: 5;
+        margin: 14px -6px -6px;
+        padding: 8px 6px 6px;
+        background: rgba(255,255,255,.96);
+        backdrop-filter: blur(10px);
+    }
+    .program-form-actions .btn {
+        min-height: 46px;
+        border-radius: 11px;
+    }
+    .program-form-actions .workspace-btn-secondary {
+        background: #f1f5f9 !important;
+        color: #475569 !important;
+        box-shadow: none;
+    }
+    .program-empty {
+        padding: 34px 18px;
+        border-radius: 14px;
+        box-shadow: none;
+    }
+    .program-empty-icon {
+        background: #f1f5f9;
+        color: #475569;
+    }
+}
+
 /* Tüm özellikler */
 .feature-group { padding: 20px; margin-bottom: 15px; }
 .feature-group h2 { margin: 0 0 12px; font-size: 18px; }
