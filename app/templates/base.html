@@ -376,16 +376,40 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             else if(n)n.remove();
         }
     }
+    function armProfileImage(img) {
+        if(!img||img.dataset.profileRetryArmed==="1")return;
+        img.dataset.profileRetryArmed="1";
+        img.addEventListener("error",()=>{
+            if(img.dataset.profileRetryDone==="1")return;
+            img.dataset.profileRetryDone="1";
+            const src=img.currentSrc||img.src;if(!src)return;
+            const url=new URL(src,location.origin);
+            // One bounded retry only. Keep the immutable profile version while
+            // bypassing a transient failed browser/network response.
+            url.searchParams.set("_retry",Date.now().toString(36));
+            setTimeout(()=>{img.src=url.pathname+url.search;},180);
+        });
+        img.addEventListener("load",()=>{delete img.dataset.profileRetryDone;});
+    }
+    function armProfileImages(root=document) {
+        root.querySelectorAll?.("img[data-profile-user-id]").forEach(armProfileImage);
+    }
+    armProfileImages();
+    new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{
+        if(node.nodeType!==1)return;
+        if(node.matches?.("img[data-profile-user-id]"))armProfileImage(node);
+        armProfileImages(node);
+    }))).observe(document.body,{childList:true,subtree:true});
     function refreshProfileImages(userId,photoUrl) {
         if(!userId||!photoUrl)return;
         document.querySelectorAll("img[data-profile-user-id]").forEach(img=>{
-            if(Number(img.dataset.profileUserId)===Number(userId))img.src=photoUrl;
+            if(Number(img.dataset.profileUserId)===Number(userId)){delete img.dataset.profileRetryDone;armProfileImage(img);img.src=photoUrl;}
         });
         document.querySelectorAll("[data-profile-avatar-user-id]").forEach(host=>{
             if(Number(host.dataset.profileAvatarUserId)!==Number(userId))return;
             let img=host.querySelector("img[data-profile-user-id]");
             if(!img){img=document.createElement("img");img.dataset.profileUserId=String(userId);img.alt="Profil fotoğrafı";host.replaceChildren(img);}
-            img.src=photoUrl;
+            delete img.dataset.profileRetryDone;armProfileImage(img);img.src=photoUrl;
         });
     }
     const patientFetches=new Map();
