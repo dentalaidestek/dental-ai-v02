@@ -1139,17 +1139,27 @@ def _program_range(view: str, focus_date: date):
 def _group_program_occurrences(occurrences):
     groups = []
     current = None
+    day_names = ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")
     for item in occurrences:
         item_date = item["start_local"].date()
         if current is None or current["date"] != item_date:
             current = {
                 "date": item_date,
-                "label": item_date.strftime("%d.%m.%Y"),
+                "label": f"{day_names[item_date.weekday()]}, {item_date.day:02d}.{item_date.month:02d}",
                 "events": [],
             }
             groups.append(current)
         current["events"].append(item)
     return groups
+
+
+def _program_week_days(focus_date: date):
+    week_start = focus_date - timedelta(days=focus_date.weekday())
+    short_names = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+    return [
+        {"date": week_start + timedelta(days=index), "label": short_names[index]}
+        for index in range(7)
+    ]
 
 
 def _owned_patient(session: Session, user: User, patient_id: Optional[int]):
@@ -3589,6 +3599,7 @@ def program_page(
             "previous_day": previous.isoformat(),
             "next_day": following.isoformat(),
             "groups": _group_program_occurrences(occurrences),
+            "week_days": _program_week_days(focus_date),
             "event_type_labels": PROGRAM_EVENT_TYPES,
             "saved": request.query_params.get("saved") == "1",
             "deleted": request.query_params.get("deleted") == "1",
@@ -3817,6 +3828,76 @@ def program_edit(
         s.commit()
 
     return RedirectResponse("/program?saved=1", status_code=303)
+
+
+
+
+@app.post("/program/{event_id}/copy")
+def program_copy_to_days(
+    request: Request,
+    event_id: int,
+    target_days: str = Form(...),
+):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    raw_days = [value.strip() for value in target_days.split(",") if value.strip()]
+    if not raw_days or len(raw_days) > 7:
+        return HTMLResponse("Kopyalanacak günleri kontrol edin.", status_code=400)
+
+    target_dates = []
+    for raw in raw_days:
+        try:
+            parsed = date.fromisoformat(raw)
+        except ValueError:
+            return HTMLResponse("Kopyalanacak günleri kontrol edin.", status_code=400)
+        if parsed not in target_dates:
+            target_dates.append(parsed)
+
+    with Session(engine, expire_on_commit=False) as s:
+        source = s.get(ScheduleEvent, event_id)
+        if not source or source.owner_user_id != user.id or source.status == "DELETED":
+            return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
+
+        source_start = _utc_to_local(source.start_at)
+        source_end = _utc_to_local(source.end_at)
+        if not source_start:
+            return HTMLResponse("Program saati okunamadı.", status_code=400)
+        duration = source_end - source_start if source_end else None
+
+        for target_date in target_dates:
+            local_start = datetime.combine(target_date, source_start.time())
+            local_end = local_start + duration if duration else None
+            start_utc = local_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+            end_utc = local_end.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None) if local_end else None
+            duplicate = s.exec(
+                select(ScheduleEvent)
+                .where(ScheduleEvent.owner_user_id == user.id)
+                .where(ScheduleEvent.status != "DELETED")
+                .where(ScheduleEvent.title == source.title)
+                .where(ScheduleEvent.start_at == start_utc)
+            ).first()
+            if duplicate:
+                continue
+            s.add(ScheduleEvent(
+                owner_user_id=user.id,
+                event_type=source.event_type,
+                title=source.title,
+                start_at=start_utc,
+                end_at=end_utc,
+                patient_id=source.patient_id,
+                location=source.location,
+                notes=source.notes,
+                reminder_minutes=source.reminder_minutes,
+                notification_enabled=source.notification_enabled,
+                recurrence_rule="WEEKLY" if source.recurrence_rule == "WEEKLY" else "NONE",
+                recurrence_until=source.recurrence_until if source.recurrence_rule == "WEEKLY" else None,
+                timezone_name=source.timezone_name or "Europe/Istanbul",
+            ))
+        s.commit()
+
+    return RedirectResponse("/program?view=week&day=" + target_dates[0].isoformat(), status_code=303)
 
 
 @app.post("/program/{event_id}/complete")
