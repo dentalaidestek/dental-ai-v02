@@ -68,6 +68,7 @@
 @media(max-width:720px){#adminComplaintsRegion .admin-support-conversation{max-height:none!important;height:auto!important;overflow:visible!important}#adminComplaintsRegion .admin-support-grid{display:block!important;overflow:visible!important}#adminComplaintsRegion .admin-support-thread-wrap{display:block!important;overflow:visible!important}#adminComplaintsRegion .admin-support-thread{height:min(42dvh,360px);min-height:240px;overflow-y:auto!important}#adminComplaintsRegion .support-bubble{max-width:88%!important}}
 
 
+.admin-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin:16px 0 6px}.admin-pager a,.admin-pager span{padding:8px 12px;border:1px solid #e3e9f0;border-radius:8px;background:#fff;color:#344054;text-decoration:none;font-size:.76rem}.admin-pager a{color:#0878f9;font-weight:750}
 </style><div class="admin-pro" id="adminPro">
 <header class="admin-pro-top"><button type="button" class="admin-menu-btn" onclick="document.getElementById('adminPro').classList.toggle('menu-open')">☰</button><div><b>DENTAL AI</b><small>Yönetim Merkezi</small></div><span>{{ user.display_name }}</span></header>
 <div class="admin-pro-layout">
@@ -128,6 +129,7 @@
 {% elif section=='backup' %}
 <section class="admin-pro-card"><h1>Yedekleme</h1><p>Veritabanı yedekleri hosting/veritabanı sağlayıcısı katmanında yönetilmelidir. Bu panel veri silme veya sahte “yedek alındı” işlemi yapmaz.</p></section>
 {% endif %}
+{% if section in ['users','search','bans','notice','experts','approvals','support','complaints','revenue','logs'] %}<nav class="admin-pager" aria-label="Kayıt sayfaları">{% if page>1 %}<a href="{{admin_path}}?section={{section}}&page={{page-1}}{% if q %}&q={{q|urlencode}}{% endif %}">← Önceki</a>{% endif %}<span>Sayfa {{page}}</span>{% if has_more %}<a href="{{admin_path}}?section={{section}}&page={{page+1}}{% if q %}&q={{q|urlencode}}{% endif %}">Sonraki →</a>{% endif %}</nav>{% endif %}
 </main></div></div>
 <script>
 document.querySelectorAll('.admin-pro-menu a').forEach(a=>a.addEventListener('click',()=>document.getElementById('adminPro').classList.remove('menu-open')));
