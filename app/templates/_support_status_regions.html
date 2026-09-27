@@ -26,10 +26,10 @@
       {% elif can_reply %}
         <div class="support-turn-note">Destek ekibi size yanıt verdi. Aşağıdaki <b>Yanıtla</b> düğmesini kullanarak bir mesaj gönderebilirsiniz.</div>
         <details class="support-reply-toggle"><summary>Yanıtla</summary><form method="post" action="/support-request/{{x.id}}/reply" class="form"><textarea name="message" rows="3" maxlength="4000" placeholder="Yanıtınızı yazın..." required></textarea><div class="support-reply-actions"><button type="submit">Gönder</button></div></form></details>
-      {% elif history and history[-1].sender_role=='USER' %}
+      {% elif x.status!='OPEN' %}
         <div class="support-turn-note done">Yanıtınız iletildi. Destek ekibi size tekrar yanıt verene kadar yeni mesaj gönderemezsiniz.</div>
       {% else %}
-        <div class="support-turn-note">Talebiniz yönetim ekibi tarafından inceleniyor.</div>
+        <div class="support-turn-note">Talebiniz Destek Ekibi tarafından inceleniyor.</div>
       {% endif %}
       </div>
     </div>
