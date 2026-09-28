@@ -43,6 +43,47 @@ class StudyIndexJob(SQLModel, table=True):
     completed_at: Optional[datetime] = None
 
 
+
+
+class StudyIndexPage(SQLModel, table=True):
+    """Durable extraction/OCR checkpoint for one source page and generation."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    course_id: int = Field(index=True)
+    material_id: int = Field(index=True)
+    index_version: str = Field(index=True)
+    page_number: int = Field(index=True)
+    status: str = Field(default="PENDING", index=True)  # PENDING/EXTRACTED/OCR_REQUIRED/OCR_DONE/FAILED
+    text_content: Optional[str] = None
+    extraction_method: Optional[str] = Field(default=None, index=True)
+    content_sha256: Optional[str] = Field(default=None, index=True)
+    error: Optional[str] = None
+    created_at: datetime = Field(default_factory=utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
+
+
+class StudyIndexChunk(SQLModel, table=True):
+    """V2 build artifact. BUILDING rows are never queried by live retrieval."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    course_id: int = Field(index=True)
+    material_id: int = Field(index=True)
+    index_version: str = Field(index=True)
+    chunk_index: int = Field(index=True)
+    page_start: int = Field(index=True)
+    page_end: int = Field(index=True)
+    section_title: Optional[str] = Field(default=None, index=True)
+    content_kind: str = Field(default="TEXT", index=True)
+    text_content: str
+    text_sha256: str = Field(index=True)
+    embedding_provider: Optional[str] = Field(default=None, index=True)
+    embedding_model: Optional[str] = Field(default=None, index=True)
+    embedding_dimensions: Optional[int] = None
+    embedding_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
+
+
 def new_index_version() -> str:
     # Opaque generation identity: never infer ordering from the value.
     return secrets.token_hex(16)
@@ -93,6 +134,123 @@ def enqueue_index_job(
         raise
     return job
 
+
+
+
+
+def upsert_page_checkpoint(
+    session: Session,
+    *,
+    owner_user_id: int,
+    course_id: int,
+    material_id: int,
+    index_version: str,
+    page_number: int,
+    status: str,
+    text_content: str | None,
+    extraction_method: str | None,
+    content_sha256: str | None,
+    error: str | None = None,
+) -> StudyIndexPage:
+    row = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == material_id)
+        .where(StudyIndexPage.index_version == index_version)
+        .where(StudyIndexPage.page_number == page_number)
+    ).first()
+    now = utcnow_naive()
+    if row is None:
+        row = StudyIndexPage(
+            owner_user_id=owner_user_id,
+            course_id=course_id,
+            material_id=material_id,
+            index_version=index_version,
+            page_number=page_number,
+        )
+    row.status = status
+    row.text_content = text_content
+    row.extraction_method = extraction_method
+    row.content_sha256 = content_sha256
+    row.error = error
+    row.updated_at = now
+    session.add(row)
+    session.flush()
+    return row
+
+
+def missing_page_numbers(
+    session: Session,
+    *,
+    material_id: int,
+    index_version: str,
+    page_count: int,
+    limit: int,
+) -> list[int]:
+    done = set(session.exec(
+        select(StudyIndexPage.page_number)
+        .where(StudyIndexPage.material_id == material_id)
+        .where(StudyIndexPage.index_version == index_version)
+        .where(StudyIndexPage.status.in_(["EXTRACTED", "OCR_DONE"]))
+    ).all())
+    result: list[int] = []
+    for page_number in range(1, page_count + 1):
+        if page_number not in done:
+            result.append(page_number)
+            if len(result) >= max(1, limit):
+                break
+    return result
+
+
+def pending_embedding_chunks(
+    session: Session,
+    *,
+    material_id: int,
+    index_version: str,
+    limit: int,
+) -> list[StudyIndexChunk]:
+    return list(session.exec(
+        select(StudyIndexChunk)
+        .where(StudyIndexChunk.material_id == material_id)
+        .where(StudyIndexChunk.index_version == index_version)
+        .where(StudyIndexChunk.embedding_json == None)
+        .order_by(StudyIndexChunk.chunk_index.asc())
+        .limit(max(1, limit))
+    ).all())
+
+
+def verify_build_complete(
+    session: Session,
+    *,
+    material_id: int,
+    index_version: str,
+    expected_page_count: int,
+) -> tuple[bool, str | None]:
+    """Fail closed: publication requires complete pages and embedded chunks."""
+    page_rows = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == material_id)
+        .where(StudyIndexPage.index_version == index_version)
+    ).all()
+    good_pages = {
+        row.page_number for row in page_rows
+        if row.status in {"EXTRACTED", "OCR_DONE"}
+    }
+    expected = set(range(1, expected_page_count + 1))
+    if good_pages != expected:
+        return False, "PAGE_COVERAGE_INCOMPLETE"
+
+    chunks = session.exec(
+        select(StudyIndexChunk)
+        .where(StudyIndexChunk.material_id == material_id)
+        .where(StudyIndexChunk.index_version == index_version)
+    ).all()
+    if not chunks:
+        return False, "NO_CHUNKS"
+    if any(not row.embedding_json for row in chunks):
+        return False, "EMBEDDINGS_INCOMPLETE"
+    if any(row.page_start < 1 or row.page_end < row.page_start or row.page_end > expected_page_count for row in chunks):
+        return False, "CHUNK_PAGE_RANGE_INVALID"
+    return True, None
 
 
 def begin_material_build(
