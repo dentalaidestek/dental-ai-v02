@@ -40,6 +40,7 @@ class StudyIndexJob(SQLModel, table=True):
     last_error: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
+    first_queued_at: datetime = Field(default_factory=utcnow_naive, index=True)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
@@ -119,6 +120,7 @@ def enqueue_index_job(
         index_version=index_version,
         priority=priority,
         resource_class=resource_class,
+        first_queued_at=utcnow_naive(),
     )
     session.add(job)
     try:
@@ -493,7 +495,7 @@ def claim_next_index_job(
                 ORDER BY
                          -- Aging prevents a steady stream of interactive boosts
                          -- from starving old background work forever.
-                         (priority + LEAST(100, FLOOR(EXTRACT(EPOCH FROM (:now - created_at)) / 300))) DESC,
+                         (priority + LEAST(100, FLOOR(EXTRACT(EPOCH FROM (:now - first_queued_at)) / 300))) DESC,
                          CASE WHEN next_retry_at IS NULL THEN created_at ELSE next_retry_at END ASC,
                          created_at ASC, id ASC
                 FOR UPDATE SKIP LOCKED
