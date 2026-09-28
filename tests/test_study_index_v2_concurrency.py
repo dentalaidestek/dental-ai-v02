@@ -246,3 +246,29 @@ def test_resource_classes_do_not_block_each_other():
         assert claimed_normal and claimed_normal.id == normal.id
         claimed_ocr = claim_next_index_job(s, worker_id="ocr-worker", resource_class="OCR_HEAVY")
         assert claimed_ocr and claimed_ocr.id == ocr.id
+
+
+def test_gapped_pages_cannot_publish_even_if_all_present_rows_are_ready():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        assert claimed and claimed.lease_token
+        for page in (1, 3):
+            s.add(StudyIndexPage(
+                owner_user_id=10, course_id=20, material_id=1,
+                index_version="v1", page_number=page, status="EXTRACTED",
+                text_content=f"page {page}",
+            ))
+        s.add(StudyIndexChunk(
+            owner_user_id=10, course_id=20, material_id=1,
+            index_version="v1", chunk_index=0, page_start=1, page_end=1,
+            text_content="abc", text_sha256="x", embedding_json="[0.1]",
+        ))
+        s.commit()
+        assert not publish_index_version(
+            s, material_id=1, owner_user_id=10, index_version="v1",
+            job_id=claimed.id, lease_token=claimed.lease_token,
+            worker_id="worker-a",
+        )
