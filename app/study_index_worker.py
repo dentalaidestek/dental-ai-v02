@@ -12,7 +12,6 @@ import logging
 import os
 import re
 import socket
-import time
 from datetime import datetime, timedelta
 
 from pypdf import PdfReader
