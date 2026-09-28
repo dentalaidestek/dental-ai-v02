@@ -16,7 +16,10 @@ from sqlmodel import Session
 
 # Import models before the loop. Schema creation/migration remains owned by the
 # web release/startup path; the worker must not mutate schema at boot.
-from app.study_index_jobs import StudyIndexChunk, StudyIndexJob, StudyIndexPage  # noqa: F401
+from app.study_index_jobs import (
+    StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
+    cleanup_retired_generations,
+)  # noqa: F401
 from app.study_index_worker import run_one_slice
 
 logger = logging.getLogger(__name__)
@@ -63,10 +66,15 @@ def main() -> None:
     error_sleep = _int_env("STUDY_V2_ERROR_SLEEP_SECONDS", 5, 1, 60)
 
     logger.info("Academic V2 index worker started resource_class=%s", resource_class)
+    gc_every = _int_env("STUDY_V2_GC_EVERY_LOOPS", 60, 10, 3600)
+    loops = 0
     while not _stop:
         try:
             with Session(engine, expire_on_commit=False) as session:
                 result = run_one_slice(session, resource_class=resource_class)
+                loops += 1
+                if resource_class == "NORMAL" and loops % gc_every == 0:
+                    cleanup_retired_generations(session, limit=10)
             if result == "IDLE":
                 time.sleep(idle_sleep)
         except Exception:
