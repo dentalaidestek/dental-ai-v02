@@ -663,6 +663,63 @@ def mark_index_job_failed(
     return bool(getattr(result, "rowcount", 0) == 1)
 
 
+
+
+def retire_previous_generation(
+    session: Session,
+    *,
+    material_id: int,
+    keep_index_version: str,
+    grace_seconds: int = 900,
+) -> None:
+    now = utcnow_naive()
+    session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET retire_after = :retire_after, updated_at = :now
+            WHERE material_id = :material_id
+              AND index_version <> :keep_index_version
+              AND status = 'DONE' AND retire_after IS NULL
+            """
+        ),
+        params={"retire_after": now + timedelta(seconds=max(60, grace_seconds)),
+                "now": now, "material_id": material_id,
+                "keep_index_version": keep_index_version},
+    )
+
+
+def cleanup_retired_generations(session: Session, *, limit: int = 10) -> int:
+    now = utcnow_naive()
+    jobs = list(session.exec(
+        select(StudyIndexJob)
+        .where(StudyIndexJob.status == "DONE")
+        .where(StudyIndexJob.retire_after != None)
+        .where(StudyIndexJob.retire_after <= now)
+        .order_by(StudyIndexJob.retire_after.asc())
+        .limit(max(1, limit))
+    ).all())
+    cleaned = 0
+    for job in jobs:
+        active = session.exec(
+            text("SELECT 1 FROM studymaterial WHERE id=:m AND deleted_at IS NULL AND active_index_version=:v"),
+            params={"m": job.material_id, "v": job.index_version},
+        ).first()
+        if active:
+            job.retire_after = None
+            session.add(job)
+            continue
+        session.exec(text("DELETE FROM studyindexchunk WHERE material_id=:m AND index_version=:v"),
+                     params={"m": job.material_id, "v": job.index_version})
+        session.exec(text("DELETE FROM studyindexpage WHERE material_id=:m AND index_version=:v"),
+                     params={"m": job.material_id, "v": job.index_version})
+        job.retire_after = None
+        session.add(job)
+        cleaned += 1
+    session.commit()
+    return cleaned
+
+
 def publish_index_version(
     session: Session,
     *,
@@ -801,6 +858,12 @@ def publish_index_version(
             """
         ),
         params={"now": now, "job_id": job_id},
+    )
+    retire_previous_generation(
+        session,
+        material_id=material_id,
+        keep_index_version=index_version,
+        grace_seconds=900,
     )
     session.commit()
     return True
