@@ -13,6 +13,7 @@ from app.study_index_jobs import (
     cleanup_retired_generations,
     publish_index_version,
     retire_previous_generation,
+    set_build_identity,
     tombstone_material,
     yield_index_job,
 )
@@ -295,3 +296,26 @@ def test_retired_generation_gc_never_deletes_active_generation():
         s.commit()
         assert cleanup_retired_generations(s, limit=10) == 0
         assert s.exec(text("SELECT COUNT(*) FROM studyindexchunk WHERE index_version='v1'")).one()[0] == 1
+
+
+def test_build_identity_is_immutable_across_resume():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        assert set_build_identity(
+            s, job_id=claimed.id, lease_token=claimed.lease_token,
+            worker_id="worker-a", expected_page_count=7,
+            source_sha256="source-a", index_fingerprint="profile-a",
+        )
+        try:
+            set_build_identity(
+                s, job_id=claimed.id, lease_token=claimed.lease_token,
+                worker_id="worker-a", expected_page_count=7,
+                source_sha256="source-b", index_fingerprint="profile-a",
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "BUILD_IDENTITY_MISMATCH"
+        else:
+            raise AssertionError("source drift must be rejected")
