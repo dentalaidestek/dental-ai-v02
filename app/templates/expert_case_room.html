@@ -203,7 +203,7 @@ async function sendAttachment(file=selectedAttachment,{replyId="",previewUrl=""}
   pending?.el?.remove();if(pending)pendingMediaSends.delete(pending.key);clearAttachment();addMessage(data.message);
   const composerError=currentComposerError();if(composerError)composerError.hidden=true;scrollChatToBottom(true);return true;
  }catch(e){
-  if(pending){pending.classList.remove("pending");pending.classList.add("send-failed");const receipt=pending.querySelector(".message-receipt");if(receipt)receipt.textContent="Gönderilemedi";}
+  if(pending?.el){pending.el.classList.remove("pending");pending.el.classList.add("send-failed");const receipt=pending.el.querySelector(".message-receipt");if(receipt)receipt.textContent="Gönderilemedi";}
   showComposerError(e.message&&e.message!=="upload"?e.message:"Dosya gönderilemedi. Tekrar deneyin.");return false;
  }finally{
   if(ownPreview&&previewUrl)URL.revokeObjectURL(previewUrl);uploadInFlight=false;if(btn){btn.disabled=false;btn.removeAttribute("aria-busy")}
