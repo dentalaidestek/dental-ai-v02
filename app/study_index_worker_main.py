@@ -21,6 +21,7 @@ from app.study_index_jobs import (
     cleanup_retired_generations,
 )  # noqa: F401
 from app.study_index_worker import run_one_slice
+from app.study_deletion_worker import run_deletion_slice
 
 logger = logging.getLogger(__name__)
 _stop = False
@@ -73,8 +74,12 @@ def main() -> None:
             with Session(engine, expire_on_commit=False) as session:
                 result = run_one_slice(session, resource_class=resource_class)
                 loops += 1
-                if resource_class == "NORMAL" and loops % gc_every == 0:
-                    cleanup_retired_generations(session, limit=10)
+                if resource_class == "NORMAL":
+                    # Privacy erasure is serviced continuously and is never
+                    # blocked behind normal indexing backlog.
+                    run_deletion_slice(session)
+                    if loops % gc_every == 0:
+                        cleanup_retired_generations(session, limit=10)
             if result == "IDLE":
                 time.sleep(idle_sleep)
         except Exception:
