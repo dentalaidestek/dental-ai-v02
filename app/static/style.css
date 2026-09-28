@@ -5305,6 +5305,7 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .expert-room .consult-state-row b{color:#1e293b;font-weight:800;text-align:right}
 .expert-room .consult-state-card .case-live-countdown{color:var(--state-accent);font-variant-numeric:tabular-nums}
 .expert-room .consult-state-notice{margin-top:2px;padding:9px 10px;border-radius:9px;background:color-mix(in srgb,var(--state-accent) 9%,white);color:color-mix(in srgb,var(--state-accent) 78%,#0f172a);font-size:11.5px;line-height:1.45}
+.expert-room .consult-state-card select,.expert-room .consult-state-card textarea{width:100%;box-sizing:border-box;margin-top:7px;border:1px solid color-mix(in srgb,var(--state-accent) 24%,#cbd5e1);border-radius:9px;background:rgba(255,255,255,.86);color:#1e293b;padding:9px 10px;font:inherit;font-size:12px;outline:none}.expert-room .consult-state-card textarea{resize:vertical;min-height:54px}.expert-room .consult-state-card select:focus,.expert-room .consult-state-card textarea:focus{border-color:var(--state-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--state-accent) 10%,transparent)}
 .expert-room .consult-state-actions{display:grid;gap:7px;margin-top:3px}
 .expert-room .consult-state-actions.two{grid-template-columns:1fr 1fr}
 .expert-room .consult-state-actions button,.expert-room .consult-state-actions a{min-height:39px;width:100%;display:flex;align-items:center;justify-content:center;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:850;text-decoration:none;cursor:pointer}
