@@ -7488,12 +7488,29 @@ def _record_message_realtime_events(session: Session, case: ConsultationCase,
     return events
 
 
+def _case_status_realtime_payload(case: ConsultationCase, viewer_user_id: int) -> dict:
+    """Small authoritative state payload for instant consultation UI updates."""
+    status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive())
+    return {
+        "case_id": case.id,
+        "status": case.status,
+        "status_key": status_key,
+        "status_label": status_label,
+        "viewer_role": "REQUESTER" if viewer_user_id == case.requester_user_id else "EXPERT",
+        "proposed_start_label": case.proposed_start_label,
+        "proposal_note": case.expert_proposal_note,
+        "requester_decision_deadline": case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None,
+        "consultation_start_deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,
+        "completion_confirmation_deadline": case.completion_confirmation_deadline.isoformat() if case.completion_confirmation_deadline else None,
+    }
+
+
 def _record_case_status_realtime_events(session: Session, case: ConsultationCase) -> list[RealtimeEvent]:
-    """Persist the same case transition for both participants and all their open tabs."""
-    payload = {"case_id": case.id, "status": case.status}
+    """Persist viewer-specific state for both participants and all their open tabs."""
     return [
         _record_realtime_event(
-            session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, payload
+            session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id,
+            _case_status_realtime_payload(case, viewer_user_id),
         )
         for viewer_user_id in {case.requester_user_id, case.expert_user_id}
     ]
