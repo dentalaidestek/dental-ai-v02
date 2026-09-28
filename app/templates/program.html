@@ -187,6 +187,20 @@
     catch (_) { location.href = nav.href; }
   });
 
+  function lockProgramSubmit(form, submitter) {
+    if (form.dataset.submitting === '1') return false;
+    form.dataset.submitting = '1';
+    form.querySelectorAll('button[type="submit"],button:not([type])').forEach((button) => {
+      button.disabled = true;
+      button.dataset.daiSubmitLocked = '1';
+    });
+    if (submitter) {
+      submitter.classList.add('dai-submit-loading');
+      submitter.setAttribute('aria-busy', 'true');
+    }
+    return true;
+  }
+
   document.addEventListener('submit', async (event) => {
     const page = programPage();
     const copyForm = event.target.closest('#programCopyForm');
@@ -195,6 +209,7 @@
       const selected = Array.from(copyForm.querySelectorAll('input[name="copy_day"]:checked')).map((input) => input.value);
       if (!selected.length) return;
       document.getElementById('programCopyDaysValue').value = selected.join(',');
+      if (!lockProgramSubmit(copyForm, event.submitter)) return;
       try {
         const response = await fetch(copyForm.action, {method: 'POST', body: new FormData(copyForm), headers: {'X-Requested-With': 'XMLHttpRequest'}});
         if (!response.ok) throw new Error('Kopyalama tamamlanamadı');
@@ -206,6 +221,7 @@
     if (!page || !form || !page.contains(form)) return;
     event.preventDefault();
     if (form.action.endsWith('/delete') && !confirm('Bu program kaydı kaldırılsın mı?')) return;
+    if (!lockProgramSubmit(form, event.submitter)) return;
     try {
       const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}});
       if (!response.ok) throw new Error('İşlem tamamlanamadı');
