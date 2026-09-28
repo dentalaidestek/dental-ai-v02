@@ -188,9 +188,11 @@
   });
 
   function lockProgramSubmit(form, submitter) {
-    if (form.dataset.submitting === '1') return false;
+    const group = form.closest('.program-event-actions') || form;
+    if (form.dataset.submitting === '1' || group.dataset.submitting === '1') return false;
     form.dataset.submitting = '1';
-    form.querySelectorAll('button[type="submit"],button:not([type])').forEach((button) => {
+    group.dataset.submitting = '1';
+    group.querySelectorAll('button[type="submit"],button:not([type])').forEach((button) => {
       button.disabled = true;
       button.dataset.daiSubmitLocked = '1';
     });
