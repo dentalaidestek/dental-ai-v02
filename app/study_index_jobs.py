@@ -586,8 +586,39 @@ def publish_index_version(
         session.rollback()
         return False
 
-    # Chunk completeness is verified by the worker before entering this small
-    # transaction. This transaction only performs the guarded visibility swap.
+    # Publication itself verifies the durable artifacts. A caller cannot make a
+    # partially extracted/embedded generation visible by skipping worker checks.
+    page_stats = session.exec(
+        text(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN status IN ('EXTRACTED', 'OCR_DONE') THEN 1 ELSE 0 END) AS ready
+            FROM studyindexpage
+            WHERE material_id = :material_id AND index_version = :index_version
+            """
+        ),
+        params={"material_id": material_id, "index_version": index_version},
+    ).first()
+    chunk_stats = session.exec(
+        text(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN embedding_json IS NOT NULL THEN 1 ELSE 0 END) AS embedded
+            FROM studyindexchunk
+            WHERE material_id = :material_id AND index_version = :index_version
+            """
+        ),
+        params={"material_id": material_id, "index_version": index_version},
+    ).first()
+    if (
+        not page_stats or int(page_stats[0] or 0) <= 0
+        or int(page_stats[0] or 0) != int(page_stats[1] or 0)
+        or not chunk_stats or int(chunk_stats[0] or 0) <= 0
+        or int(chunk_stats[0] or 0) != int(chunk_stats[1] or 0)
+    ):
+        session.rollback()
+        return False
+
     session.exec(
         text(
             """
