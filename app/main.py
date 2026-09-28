@@ -6682,6 +6682,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             _enqueue_deadline_pair(s, case.id, "PROPOSAL", case.requester_decision_deadline)
         s.commit()
         status = case.status
+        response_state = _case_status_realtime_payload(case, user.id)
     if status == "PROPOSED":
         _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
@@ -6690,7 +6691,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
-        return JSONResponse({"ok": True, "status": status})
+        return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -6737,7 +6738,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         realtime_events = _record_case_status_realtime_events(s, case)
         if not rejected and case.consultation_start_deadline:
             _enqueue_deadline_pair(s, case.id, "START", case.consultation_start_deadline)
-        s.commit(); status=case.status; patient_id=case.patient_id
+        s.commit(); status=case.status; patient_id=case.patient_id; response_state=_case_status_realtime_payload(case, user.id)
     if not rejected:
         _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
@@ -6746,7 +6747,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
-        return JSONResponse({"ok": True, "status": status, "redirect_url": (f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support") if rejected else None})
+        return JSONResponse({"ok": True, **response_state, "redirect_url": (f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support") if rejected else None})
     if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -7902,6 +7903,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             _enqueue_deadline_pair(s, case.id, "COMPLETION", case.completion_confirmation_deadline)
         s.commit()
         status = case.status
+        response_state = _case_status_realtime_payload(case, user.id)
     if status == "EXPERT_COMPLETED":
         _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
@@ -7910,7 +7912,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
-        return JSONResponse({"ok": True, "status": status})
+        return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
