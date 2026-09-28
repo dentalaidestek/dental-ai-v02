@@ -264,3 +264,23 @@ def test_consultation_room_avoids_idle_recovery_and_countdown_work():
     assert '.limit(1)).first()' in row_endpoint
     assert 'select(func.count(ConsultationMessage.id))' in row_endpoint
     assert 'order_by(ConsultationMessage.created_at.desc())).all()' not in row_endpoint
+
+
+def test_unread_count_uses_lightweight_aggregate_path():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    helper = source[source.index("def _consultation_unread_total"):source.index('@app.get("/messages/unread-count")')]
+    endpoint = source[source.index('@app.get("/messages/unread-count")'):source.index('@app.get("/expert-support/cases"', source.index('@app.get("/messages/unread-count")'))]
+    assert "ConsultationMessage.case_id" in helper
+    assert "func.count(ConsultationMessage.id)" in helper
+    assert "fresh_request_ids" in helper
+    assert "newest.deleted_at" in helper
+    assert "_consultation_inbox_rows" not in endpoint
+    assert "_consultation_unread_total" in endpoint
+
+
+def test_global_realtime_catchup_requests_are_coalesced():
+    base = (Path(__file__).resolve().parents[1] / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+    assert "catchUpEventsPromise" in base
+    assert "unreadCountPromise" in base
+    assert "if(catchUpEventsPromise)return catchUpEventsPromise" in base
+    assert "if(unreadCountPromise)return unreadCountPromise" in base
