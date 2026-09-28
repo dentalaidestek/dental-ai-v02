@@ -86,7 +86,7 @@ function caseStateMarkup(data){
  return null;
 }
 function caseStatusLabel(status,role){
- const labels={ACTIVE:"Aktif",WAITING_START:"Başlangıç bekleniyor",REJECTED:"Reddedildi",PROPOSAL_REJECTED:"Süre onaylanmadı",COMPLETED:"Tamamlandı",DISPUTE:"Sorun bildirildi"};
+ const labels={ACTIVE:"Aktif",WAITING_START:"Başlangıç bekleniyor",REJECTED:"Reddedildi",PROPOSAL_REJECTED:"Süre onaylanmadı",PROPOSAL_EXPIRED:"Süresi doldu",EXPERT_TIMEOUT:"Süresi doldu",COMPLETED:"Tamamlandı",DISPUTE:"Sorun bildirildi"};
  if(status==="REQUESTED")return role==="EXPERT"?"Yeni Talep":"Uzman Yanıtı Bekleniyor";
  if(status==="PROPOSED")return role==="REQUESTER"?"Süre Onayınız Bekleniyor":"Süre Onayı Bekleniyor";
  if(status==="EXPERT_COMPLETED")return role==="REQUESTER"?"Onayınız Bekleniyor":"Hekim Onayı Bekleniyor";
