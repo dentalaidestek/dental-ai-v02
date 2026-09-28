@@ -6023,7 +6023,7 @@ def _consultation_display_status(case: ConsultationCase, user_id: int, now: date
     if case.status == "EXPERT_COMPLETED":
         return ("ACTION_REQUIRED", "Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Hekim Onayı Bekleniyor")
     if case.status == "DISPUTE":
-        return "DISPUTE", "Sorun Bildirildi"
+        return "ACTIVE", "Sorun Bildirildi"
     if case.status == "COMPLETED":
         return "HISTORY", "Tamamlandı"
     return "HISTORY", case.status.replace("_", " ").title()
@@ -6145,7 +6145,7 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
         elif filter == "missed":
             rows = [row for row in rows if row["status_key"] in {"MISSED", "DELAYED"}]
         elif filter == "history":
-            rows = [row for row in rows if row["status_key"] in {"HISTORY", "CLOSED", "DISPUTE"}]
+            rows = [row for row in rows if row["status_key"] in {"HISTORY", "CLOSED"}]
         rows.sort(key=lambda row: (
             row["status_key"] != "NEW_REQUEST",
             -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
