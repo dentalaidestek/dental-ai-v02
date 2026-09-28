@@ -6619,16 +6619,17 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
 async def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
-    if not user: return RedirectResponse("/login", status_code=303)
+    if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
         if engine.dialect.name == "postgresql":
             case_stmt = case_stmt.with_for_update()
         case = s.exec(case_stmt).first()
-        if not case or case.expert_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "REQUESTED" or now > case.expert_response_deadline: return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
+        if not case or case.expert_user_id != user.id: return JSONResponse({"ok": False, "error": "Yetkisiz işlem."}, status_code=403) if wants_json else HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "REQUESTED" or now > case.expert_response_deadline: return JSONResponse({"ok": False, "error": "Talebin yanıt süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
         if decision == "REJECT":
             case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -6645,7 +6646,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
                 case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=3)
                 case.expert_proposal_note = proposal_note.strip()[:500] or None
                 _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes, "note": case.expert_proposal_note})
-        else: return HTMLResponse("Geçersiz karar.", status_code=400)
+        else: return JSONResponse({"ok": False, "error": "Geçersiz karar.", "status": case.status}, status_code=400) if wants_json else HTMLResponse("Geçersiz karar.", status_code=400)
         s.add(case)
         notification_events = _resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST", related_type="consultation_case", related_id=case.id)
         notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
@@ -6687,21 +6688,24 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
     await _publish_realtime_event(evt)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
+    if wants_json:
+        return JSONResponse({"ok": True, "status": status})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.post("/expert-support/cases/{case_id}/proposal")
 async def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
-    if not user: return RedirectResponse("/login", status_code=303)
+    if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
         if engine.dialect.name == "postgresql":
             case_stmt = case_stmt.with_for_update()
         case = s.exec(case_stmt).first()
-        if not case or case.requester_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
+        if not case or case.requester_user_id != user.id: return JSONResponse({"ok": False, "error": "Yetkisiz işlem."}, status_code=403) if wants_json else HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return JSONResponse({"ok": False, "error": "Süre önerisinin onay süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
         rejected = decision != "ACCEPT"
         if not rejected:
             case.status = "WAITING_START"; case.requester_accepted_at = now
@@ -6739,6 +6743,8 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
     await _publish_realtime_event(evt)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
+    if wants_json:
+        return JSONResponse({"ok": True, "status": status, "redirect_url": (f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support") if rejected else None})
     if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
