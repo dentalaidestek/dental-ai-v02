@@ -54,6 +54,7 @@ from app.xray_trace import (
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
+from app.study_index_jobs import StudyIndexJob
 from app.study_rag import (
     StudyRAGChunk,
     StudyRAGMemory,
@@ -672,6 +673,13 @@ class StudyMaterial(SQLModel, table=True):
     gemini_file_uri: Optional[str] = None
     gemini_file_expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    # Academic AI V2 visibility contract. V1 ignores these fields until the
+    # durable worker is enabled behind its feature flag.
+    index_status: str = Field(default="LEGACY", index=True)
+    active_index_version: Optional[str] = Field(default=None, index=True)
+    building_index_version: Optional[str] = Field(default=None, index=True)
+    index_error: Optional[str] = None
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
 
 
 class StudyChatMessage(SQLModel, table=True):
@@ -1906,6 +1914,44 @@ def init_db():
             for column, sql_type in additions.items():
                 if column not in expert_cols:
                     conn.exec_driver_sql(f'ALTER TABLE "expertprofile" ADD COLUMN {column} {sql_type}')
+        # Academic AI V2 additive schema. The live V1 indexer keeps working;
+        # these fields stay dormant until the durable worker feature is enabled.
+        if dialect == "postgresql":
+            for statement in (
+                'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS index_status VARCHAR NOT NULL DEFAULT \'LEGACY\'',
+                'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS active_index_version VARCHAR',
+                'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS building_index_version VARCHAR',
+                'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS index_error VARCHAR',
+                'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP',
+            ):
+                conn.exec_driver_sql(statement)
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_active_index_version ON "studymaterial" (active_index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_deleted_at ON "studymaterial" (deleted_at)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (status, next_retry_at, priority, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
+        elif dialect == "sqlite":
+            study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
+            additions = {
+                "index_status": "VARCHAR NOT NULL DEFAULT 'LEGACY'",
+                "active_index_version": "VARCHAR",
+                "building_index_version": "VARCHAR",
+                "index_error": "VARCHAR",
+                "deleted_at": "TIMESTAMP",
+            }
+            for column, sql_type in additions.items():
+                if column not in study_cols:
+                    conn.exec_driver_sql(f'ALTER TABLE "studymaterial" ADD COLUMN {column} {sql_type}')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_active_index_version ON "studymaterial" (active_index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_deleted_at ON "studymaterial" (deleted_at)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (status, next_retry_at, priority, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
+
         # Consultation inbox state is logically one row per (case, user).
         # Older releases did not enforce that invariant. Consolidate duplicates
         # before adding the unique index so already-read messages cannot reappear.
