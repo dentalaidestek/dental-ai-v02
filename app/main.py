@@ -6162,16 +6162,18 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc())).all()
         rows = _consultation_inbox_rows(s, cases, user.id, now)
-        for row in rows:
-            case = row["case"]
-            status_key = row["status_key"]
-            if status_key == "MISSED":
-                existing_missed = s.exec(select(ConsultationEvent).where(
-                    ConsultationEvent.case_id == case.id,
+        missed_case_ids = [row["case"].id for row in rows if row["status_key"] == "MISSED"]
+        recorded_missed_ids = set()
+        if missed_case_ids:
+            recorded_missed_ids = set(s.exec(
+                select(ConsultationEvent.case_id).where(
+                    ConsultationEvent.case_id.in_(missed_case_ids),
                     ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "PROPOSAL_EXPIRED", "INBOX_MISSED_RECORDED"]),
-                )).first()
-                if not existing_missed:
-                    _consultation_event(s, case.id, "INBOX_MISSED_RECORDED", None)
+                ).distinct()
+            ).all())
+        for case_id in missed_case_ids:
+            if case_id not in recorded_missed_ids:
+                _consultation_event(s, case_id, "INBOX_MISSED_RECORDED", None)
         if filter == "unread":
             rows = [row for row in rows if row["unread"] > 0]
         elif filter == "waiting":
