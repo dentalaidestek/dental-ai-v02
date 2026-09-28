@@ -4783,6 +4783,7 @@ EXPERT_START_OPTIONS = {
     "30M": (30, "30 dakika içinde"),
     "1H": (60, "1 saat içinde"),
     "3H": (180, "3 saat içinde"),
+    "TODAY": (0, "Bugün içinde"),
 }
 CONSULTATION_URGENCIES = {
     "ASAP": "Acil / en kısa sürede",
@@ -6636,6 +6637,9 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
             if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
         elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
             minutes, label = EXPERT_START_OPTIONS[start_option]
+            if start_option == "TODAY":
+                end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
+                minutes = max(1, int(((end_of_day - now).total_seconds() + 59) // 60))
             if start_option == "NOW":
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
