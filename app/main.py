@@ -4783,6 +4783,7 @@ EXPERT_START_OPTIONS = {
     "30M": (30, "30 dakika içinde"),
     "1H": (60, "1 saat içinde"),
     "3H": (180, "3 saat içinde"),
+    "TODAY": (0, "Bugün içinde"),
 }
 CONSULTATION_URGENCIES = {
     "ASAP": "Acil / en kısa sürede",
@@ -5164,8 +5165,48 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     elif jt == "START_DUE" and not case.expert_started_at:
         existing = session.exec(select(ConsultationEvent).where(ConsultationEvent.case_id == case.id, ConsultationEvent.event_type == "START_DEADLINE_MISSED")).first()
         if not existing: _consultation_event(session, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {"deadline": deadline.isoformat()})
-    # COMPLETION_DUE intentionally only resolves the warning. Product semantics
-    # do not define automatic completion/dispute after 24h.
+    elif jt == "COMPLETION_DUE":
+        # No requester decision within 24h: finalize exactly like requester confirmation.
+        case.status = "COMPLETED"
+        case.completed_at = now
+        case.completion_confirmation_deadline = None
+        session.add(case)
+        payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+        if payment and payment.status in PAYMENT_FUNDED_STATUSES:
+            payment.status = "PAYOUT_ELIGIBLE"
+            payment.updated_at = now
+            session.add(payment)
+        _consultation_event(session, case.id, "COMPLETION_AUTO_CONFIRMED", None, {"deadline": deadline.isoformat()})
+        notices.extend(_resolve_notifications(
+            session, user_id=case.requester_user_id, notice_type="CONSULTATION_COMPLETION_CONFIRMATION",
+            related_type="consultation_case", related_id=case.id,
+        ))
+        for stale_type in ("CONSULTATION_ACCEPTED", "CONSULTATION_PROPOSAL_ACCEPTED", "CONSULTATION_CONTINUE"):
+            notices.extend(_resolve_notifications(
+                session,
+                user_id=case.expert_user_id if stale_type != "CONSULTATION_ACCEPTED" else case.requester_user_id,
+                notice_type=stale_type, related_type="consultation_case", related_id=case.id,
+            ))
+        _, event, _ = _notify_user(
+            session, user_id=case.requester_user_id, actor_user_id=None,
+            notice_type="CONSULTATION_COMPLETED", title="Danışmanlık tamamlandı",
+            message="24 saatlik onay süresi dolduğu için danışmanlık otomatik olarak tamamlandı.",
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:completion-auto:{deadline.isoformat()}",
+            target_url=f"/expert-support/cases/{case.id}",
+        )
+        if event: notices.append(event)
+        _, event, _ = _notify_user(
+            session, user_id=case.expert_user_id, actor_user_id=None,
+            notice_type="CONSULTATION_COMPLETED", title="Danışmanlık tamamlandı",
+            message="Hekim 24 saat içinde farklı bir karar vermediği için danışmanlık otomatik olarak tamamlandı.",
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:completion-auto-expert:{deadline.isoformat()}",
+            target_url=f"/expert-support/cases/{case.id}",
+        )
+        if event: notices.append(event)
+        notices.extend(_sync_expert_capacity(session, case.expert_user_id, actor_user_id=None))
+        case_events.extend(_record_case_status_realtime_events(session, case))
     return notices, case_events
 
 
@@ -5477,7 +5518,7 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
             return HTMLResponse("Doğrulanmış uzman profili bulunamadı.", status_code=404)
         active_count = len(s.exec(select(ConsultationCase).where(
             ConsultationCase.expert_user_id == expert_user_id,
-            ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+            ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
         )).all())
         reviews = s.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id).order_by(ExpertReview.created_at.desc())).all()
         completed_count = len(s.exec(select(ConsultationCase).where(
@@ -5532,7 +5573,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
                     continue
             active_count = len(s.exec(select(ConsultationCase).where(
                 ConsultationCase.expert_user_id == p.user_id,
-                ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+                ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
             )).all())
             policy = _expert_policy_state(s, p.user_id)
             perf = _expert_performance(s, p.user_id)
@@ -5983,7 +6024,7 @@ def _consultation_display_status(case: ConsultationCase, user_id: int, now: date
     if case.status == "EXPERT_COMPLETED":
         return ("ACTION_REQUIRED", "Onayınız Bekleniyor") if user_id == case.requester_user_id else ("WAITING", "Hekim Onayı Bekleniyor")
     if case.status == "DISPUTE":
-        return "DISPUTE", "Sorun Bildirildi"
+        return "ACTIVE", "Sorun Bildirildi"
     if case.status == "COMPLETED":
         return "HISTORY", "Tamamlandı"
     return "HISTORY", case.status.replace("_", " ").title()
@@ -5995,10 +6036,43 @@ def _consultation_inbox_rows(session: Session, cases: list[ConsultationCase], us
         return []
 
     case_ids = [case.id for case in cases if case.id is not None]
-    state_by_case = {
-        case_id: _consultation_inbox_state(session, case_id, user_id)
-        for case_id in case_ids
-    }
+    # Load every per-case inbox state in one query. Historical duplicate rows are
+    # merged with the exact same semantics as _consultation_inbox_state(), but
+    # without one SELECT per conversation.
+    state_rows = session.exec(
+        select(ConsultationInboxState).where(
+            ConsultationInboxState.user_id == user_id,
+            ConsultationInboxState.case_id.in_(case_ids),
+        ).order_by(ConsultationInboxState.case_id.asc(), ConsultationInboxState.id.asc())
+    ).all()
+    states_by_case: dict[int, list[ConsultationInboxState]] = {}
+    for state in state_rows:
+        states_by_case.setdefault(state.case_id, []).append(state)
+
+    state_by_case: dict[int, ConsultationInboxState] = {}
+    state_changed = False
+    for case_id in case_ids:
+        states = states_by_case.get(case_id, [])
+        if not states:
+            state = ConsultationInboxState(case_id=case_id, user_id=user_id)
+            session.add(state)
+            state_by_case[case_id] = state
+            state_changed = True
+            continue
+        state = states[0]
+        if len(states) > 1:
+            read_values = [row.last_read_at for row in states if row.last_read_at]
+            state.last_read_at = max(read_values) if read_values else None
+            newest_state = states[-1]
+            state.deleted_at = newest_state.deleted_at
+            state.recover_until = newest_state.recover_until
+            session.add(state)
+            for duplicate in states[1:]:
+                session.delete(duplicate)
+            state_changed = True
+        state_by_case[case_id] = state
+    if state_changed:
+        session.flush()
 
     visible_cases = [case for case in cases if not state_by_case[case.id].deleted_at]
     if not visible_cases:
@@ -6088,16 +6162,18 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc())).all()
         rows = _consultation_inbox_rows(s, cases, user.id, now)
-        for row in rows:
-            case = row["case"]
-            status_key = row["status_key"]
-            if status_key == "MISSED":
-                existing_missed = s.exec(select(ConsultationEvent).where(
-                    ConsultationEvent.case_id == case.id,
+        missed_case_ids = [row["case"].id for row in rows if row["status_key"] == "MISSED"]
+        recorded_missed_ids = set()
+        if missed_case_ids:
+            recorded_missed_ids = set(s.exec(
+                select(ConsultationEvent.case_id).where(
+                    ConsultationEvent.case_id.in_(missed_case_ids),
                     ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "PROPOSAL_EXPIRED", "INBOX_MISSED_RECORDED"]),
-                )).first()
-                if not existing_missed:
-                    _consultation_event(s, case.id, "INBOX_MISSED_RECORDED", None)
+                ).distinct()
+            ).all())
+        for case_id in missed_case_ids:
+            if case_id not in recorded_missed_ids:
+                _consultation_event(s, case_id, "INBOX_MISSED_RECORDED", None)
         if filter == "unread":
             rows = [row for row in rows if row["unread"] > 0]
         elif filter == "waiting":
@@ -6105,7 +6181,7 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
         elif filter == "missed":
             rows = [row for row in rows if row["status_key"] in {"MISSED", "DELAYED"}]
         elif filter == "history":
-            rows = [row for row in rows if row["status_key"] in {"HISTORY", "CLOSED", "DISPUTE"}]
+            rows = [row for row in rows if row["status_key"] in {"HISTORY", "CLOSED"}]
         rows.sort(key=lambda row: (
             row["status_key"] != "NEW_REQUEST",
             -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
@@ -6131,13 +6207,16 @@ def consultation_message_row(request: Request, case_id: int):
         state = _consultation_inbox_state(s, case.id, user.id)
         if state.deleted_at:
             return HTMLResponse("Sohbet bulunamadı.", status_code=404)
-        messages = s.exec(select(ConsultationMessage).where(
+        last_message = s.exec(select(ConsultationMessage).where(
             ConsultationMessage.case_id == case.id
-        ).order_by(ConsultationMessage.created_at.desc())).all()
-        last_message = messages[0] if messages else None
-        unread = sum(1 for message in messages if message.sender_user_id != user.id and (
-            not state.last_read_at or message.created_at > state.last_read_at
-        ))
+        ).order_by(ConsultationMessage.created_at.desc(), ConsultationMessage.id.desc()).limit(1)).first()
+        unread_stmt = select(func.count(ConsultationMessage.id)).where(
+            ConsultationMessage.case_id == case.id,
+            ConsultationMessage.sender_user_id != user.id,
+        )
+        if state.last_read_at:
+            unread_stmt = unread_stmt.where(ConsultationMessage.created_at > state.last_read_at)
+        unread = int(s.exec(unread_stmt).one() or 0)
         if case.status == "REQUESTED" and user.id == case.expert_user_id and not state.last_read_at:
             unread = max(1, unread)
         status_key, status_label = _consultation_display_status(case, user.id, now)
@@ -6510,18 +6589,69 @@ def consultation_live_status(request: Request):
     return {"count": total, "latest": latest}
 
 
+def _consultation_unread_total(session: Session, user_id: int) -> int:
+    """Count inbox unread items without hydrating conversation rows, users or last messages."""
+    cases = session.exec(select(
+        ConsultationCase.id, ConsultationCase.status, ConsultationCase.expert_user_id
+    ).where(
+        (ConsultationCase.requester_user_id == user_id) | (ConsultationCase.expert_user_id == user_id)
+    )).all()
+    if not cases:
+        return 0
+    case_ids = [case_id for case_id, _, _ in cases]
+    state_rows = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.user_id == user_id,
+        ConsultationInboxState.case_id.in_(case_ids),
+    ).order_by(ConsultationInboxState.case_id.asc(), ConsultationInboxState.id.asc())).all()
+    states_by_case: dict[int, list[ConsultationInboxState]] = {}
+    for state in state_rows:
+        states_by_case.setdefault(state.case_id, []).append(state)
+
+    visible_ids: list[int] = []
+    last_read_by_case: dict[int, Optional[datetime]] = {}
+    fresh_request_ids: set[int] = set()
+    for case_id, status, expert_user_id in cases:
+        states = states_by_case.get(case_id, [])
+        newest = states[-1] if states else None
+        if newest and newest.deleted_at:
+            continue
+        visible_ids.append(case_id)
+        read_values = [row.last_read_at for row in states if row.last_read_at]
+        last_read = max(read_values) if read_values else None
+        last_read_by_case[case_id] = last_read
+        if status == "REQUESTED" and expert_user_id == user_id and last_read is None:
+            fresh_request_ids.add(case_id)
+    if not visible_ids:
+        return 0
+
+    unread_conditions = []
+    for case_id in visible_ids:
+        condition = (
+            (ConsultationMessage.case_id == case_id)
+            & (ConsultationMessage.sender_user_id != user_id)
+        )
+        last_read = last_read_by_case.get(case_id)
+        if last_read:
+            condition = condition & (ConsultationMessage.created_at > last_read)
+        unread_conditions.append(condition)
+    unread_by_case: dict[int, int] = {}
+    if unread_conditions:
+        unread_rows = session.exec(select(
+            ConsultationMessage.case_id, func.count(ConsultationMessage.id)
+        ).where(sa_or(*unread_conditions)).group_by(ConsultationMessage.case_id)).all()
+        unread_by_case = {case_id: int(count or 0) for case_id, count in unread_rows}
+    for case_id in fresh_request_ids:
+        unread_by_case[case_id] = max(1, unread_by_case.get(case_id, 0))
+    return sum(unread_by_case.values())
+
+
 @app.get("/messages/unread-count")
 def consultation_unread_count(request: Request):
     user = get_current_user(request)
     if not user:
         return {"count": 0}
     with Session(engine, expire_on_commit=False) as s:
-        cases = s.exec(select(ConsultationCase).where(
-            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
-        )).all()
-        rows = _consultation_inbox_rows(s, cases, user.id, _utcnow_naive())
-        total = sum(int(row["unread"] or 0) for row in rows)
-        s.commit()
+        total = _consultation_unread_total(s, user.id)
     return {"count": total}
 
 
@@ -6619,22 +6749,26 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
 async def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
-    if not user: return RedirectResponse("/login", status_code=303)
+    if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
         if engine.dialect.name == "postgresql":
             case_stmt = case_stmt.with_for_update()
         case = s.exec(case_stmt).first()
-        if not case or case.expert_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "REQUESTED" or now > case.expert_response_deadline: return HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
+        if not case or case.expert_user_id != user.id: return JSONResponse({"ok": False, "error": "Yetkisiz işlem."}, status_code=403) if wants_json else HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "REQUESTED" or now > case.expert_response_deadline: return JSONResponse({"ok": False, "error": "Talebin yanıt süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Talebin yanıt süresi dolmuş.", status_code=409)
         if decision == "REJECT":
             case.status = "REJECTED"; _consultation_event(s, case.id, "REJECTED", user.id)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment: _payment_cancel_or_refund(payment, now); s.add(payment)
         elif decision == "ACCEPT" and start_option in EXPERT_START_OPTIONS:
             minutes, label = EXPERT_START_OPTIONS[start_option]
+            if start_option == "TODAY":
+                end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
+                minutes = max(1, int(((end_of_day - now).total_seconds() + 59) // 60))
             if start_option == "NOW":
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -6645,7 +6779,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
                 case.proposed_at = now; case.requester_decision_deadline = now + timedelta(minutes=3)
                 case.expert_proposal_note = proposal_note.strip()[:500] or None
                 _consultation_event(s, case.id, "START_TIME_PROPOSED", user.id, {"minutes": minutes, "note": case.expert_proposal_note})
-        else: return HTMLResponse("Geçersiz karar.", status_code=400)
+        else: return JSONResponse({"ok": False, "error": "Geçersiz karar.", "status": case.status}, status_code=400) if wants_json else HTMLResponse("Geçersiz karar.", status_code=400)
         s.add(case)
         notification_events = _resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_REQUEST", related_type="consultation_case", related_id=case.id)
         notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
@@ -6676,32 +6810,38 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         if notice_event:
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
-        evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
+        realtime_events = _record_case_status_realtime_events(s, case)
         if case.status == "PROPOSED" and case.requester_decision_deadline:
             _enqueue_deadline_pair(s, case.id, "PROPOSAL", case.requester_decision_deadline)
         s.commit()
         status = case.status
+        response_state = _case_status_realtime_payload(case, user.id)
+        socket_state = _case_status_socket_payload(case)
     if status == "PROPOSED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
-    await _publish_realtime_event(evt)
+    await consultation_socket_hub.broadcast(case_id, socket_state)
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
+    if wants_json:
+        return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.post("/expert-support/cases/{case_id}/proposal")
 async def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
-    if not user: return RedirectResponse("/login", status_code=303)
+    if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case_stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
         if engine.dialect.name == "postgresql":
             case_stmt = case_stmt.with_for_update()
         case = s.exec(case_stmt).first()
-        if not case or case.requester_user_id != user.id: return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
+        if not case or case.requester_user_id != user.id: return JSONResponse({"ok": False, "error": "Yetkisiz işlem."}, status_code=403) if wants_json else HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return JSONResponse({"ok": False, "error": "Süre önerisinin onay süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
         rejected = decision != "ACCEPT"
         if not rejected:
             case.status = "WAITING_START"; case.requester_accepted_at = now
@@ -6729,16 +6869,19 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         if notice_event:
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
-        evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
+        realtime_events = _record_case_status_realtime_events(s, case)
         if not rejected and case.consultation_start_deadline:
             _enqueue_deadline_pair(s, case.id, "START", case.consultation_start_deadline)
-        s.commit(); status=case.status; patient_id=case.patient_id
+        s.commit(); status=case.status; patient_id=case.patient_id; response_state=_case_status_realtime_payload(case, user.id); socket_state=_case_status_socket_payload(case)
     if not rejected:
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
-    await _publish_realtime_event(evt)
+    await consultation_socket_hub.broadcast(case_id, {**socket_state, "rejected_by_requester": rejected})
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
+    if wants_json:
+        return JSONResponse({"ok": True, **response_state, "redirect_url": (f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support") if rejected else None})
     if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -6753,7 +6896,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
         notification_events: list[RealtimeEvent] = []
@@ -6835,6 +6978,8 @@ def expert_support_annotate_message(request: Request, case_id: int, message_id: 
         original = s.get(ConsultationMessage, message_id)
         if not case or not original or original.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or original.message_type != "IMAGE":
             return HTMLResponse("Bu görüntü işaretlenemez.", status_code=403)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            return HTMLResponse("Bu danışmanlık mesajlaşmaya kapalı.", status_code=409)
         s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type="ANNOTATION", content="Görüntü işaretlemesi", original_media_path=original.media_path, annotation_json=annotation_json, reply_to_message_id=original.id))
         _consultation_event(s, case.id, "IMAGE_ANNOTATED", user.id)
         s.commit()
@@ -6935,7 +7080,7 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -7377,7 +7522,7 @@ def _resolve_notifications(
     return events
 
 
-CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED")
+CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")
 
 
 def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
@@ -7482,12 +7627,40 @@ def _record_message_realtime_events(session: Session, case: ConsultationCase,
     return events
 
 
+def _case_status_socket_payload(case: ConsultationCase) -> dict:
+    """Role-neutral state sent immediately to both sockets."""
+    return {
+        "type": "case_status",
+        "case_id": case.id,
+        "patient_id": case.patient_id,
+        "status": case.status,
+        "proposed_start_label": case.proposed_start_label,
+        "proposal_note": case.expert_proposal_note,
+        "requester_decision_deadline": case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None,
+        "consultation_start_deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,
+        "completion_confirmation_deadline": case.completion_confirmation_deadline.isoformat() if case.completion_confirmation_deadline else None,
+    }
+
+
+def _case_status_realtime_payload(case: ConsultationCase, viewer_user_id: int) -> dict:
+    """Viewer-specific durable state for instant consultation UI updates."""
+    status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive())
+    payload = _case_status_socket_payload(case)
+    payload.pop("type", None)
+    payload.update({
+        "status_key": status_key,
+        "status_label": status_label,
+        "viewer_role": "REQUESTER" if viewer_user_id == case.requester_user_id else "EXPERT",
+    })
+    return payload
+
+
 def _record_case_status_realtime_events(session: Session, case: ConsultationCase) -> list[RealtimeEvent]:
-    """Persist the same case transition for both participants and all their open tabs."""
-    payload = {"case_id": case.id, "status": case.status}
+    """Persist viewer-specific state for both participants and all their open tabs."""
     return [
         _record_realtime_event(
-            session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, payload
+            session, viewer_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id,
+            _case_status_realtime_payload(case, viewer_user_id),
         )
         for viewer_user_id in {case.requester_user_id, case.expert_user_id}
     ]
@@ -7712,7 +7885,7 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                 status_events: list[RealtimeEvent] = []
                 if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
                     await websocket.send_json({"type":"error","error":"Yetkisiz işlem."}); continue
-                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED"}:
+                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
                     await websocket.send_json({"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}); continue
                 if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
                     await websocket.send_json({"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}); continue
@@ -7801,7 +7974,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
-            case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
+            case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
@@ -7810,9 +7983,10 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "CONTINUE":
-            case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
+            case.status = "ACTIVE"; case.completion_confirmation_deadline = None; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "DISPUTE":
             case.status = "DISPUTE"
+            case.completion_confirmation_deadline = None
             case.dispute_opened_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
@@ -7877,15 +8051,17 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             _enqueue_deadline_pair(s, case.id, "COMPLETION", case.completion_confirmation_deadline)
         s.commit()
         status = case.status
+        response_state = _case_status_realtime_payload(case, user.id)
+        socket_state = _case_status_socket_payload(case)
     if status == "EXPERT_COMPLETED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
+    await consultation_socket_hub.broadcast(case_id, socket_state)
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
-        return JSONResponse({"ok": True, "status": status})
+        return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
