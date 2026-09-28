@@ -38,7 +38,8 @@ def begin_account_erasure(
     from app.main import (
         AdminAuditLog, DeletedAccountEmail, ExpertDeviceChallenge,
         ExpertProfile, ExpertTrustedDevice, PasswordResetToken,
-        SessionToken, StudyMaterial, User, WebPushSubscription,
+        SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User,
+        WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent,
     )
 
     user = session.get(User, user_id)
@@ -72,10 +73,19 @@ def begin_account_erasure(
         for row in session.exec(select(model).where(model.user_id == user_id)).all():
             session.delete(row)
 
-    # Disable every browser push endpoint immediately; endpoint/auth material is
-    # no longer useful once the account is erased.
+    # Remove per-user realtime/push traces. Delivery rows reference subscriptions
+    # and notices; delete the per-device delivery records before subscriptions.
+    sub_ids = [row.id for row in session.exec(
+        select(WebPushSubscription).where(WebPushSubscription.user_id == user_id)
+    ).all()]
+    if sub_ids:
+        for model in (WebPushDelivery, WebPushMessageDelivery):
+            for row in session.exec(select(model).where(model.subscription_id.in_(sub_ids))).all():
+                session.delete(row)
     for sub in session.exec(select(WebPushSubscription).where(WebPushSubscription.user_id == user_id)).all():
         session.delete(sub)
+    for event in session.exec(select(RealtimeEvent).where(RealtimeEvent.user_id == user_id)).all():
+        session.delete(event)
 
     materials = session.exec(
         select(StudyMaterial).where(
@@ -97,6 +107,14 @@ def begin_account_erasure(
         material.gemini_file_uri = None
         material.gemini_file_expires_at = None
         session.add(material)
+
+    # Academic chat text is user-authored content and is not needed for retained
+    # payment/dispute references. Courses can be removed after material jobs hold
+    # the deletion references they need.
+    for msg in session.exec(select(StudyChatMessage).where(StudyChatMessage.owner_user_id == user_id)).all():
+        session.delete(msg)
+    for course in session.exec(select(StudyCourse).where(StudyCourse.owner_user_id == user_id)).all():
+        session.delete(course)
 
     if block_registration:
         if not admin_user_id or not deleted_email_fingerprint:
