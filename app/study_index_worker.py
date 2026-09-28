@@ -26,7 +26,10 @@ from app.study_index_jobs import (
     mark_index_job_failed,
     missing_page_numbers,
     pending_embedding_chunks,
+    provider_circuit_open,
     publish_index_version,
+    record_provider_failure,
+    record_provider_success,
     set_job_resource_class,
     upsert_page_checkpoint,
     verify_build_complete,
@@ -282,6 +285,9 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
         return "VERIFY"
     target = get_embedding_target()
     dimensions = get_embedding_dimensions()
+    provider_key = f"embedding:{target.provider}:{target.model}"
+    if provider_circuit_open(session, provider_key):
+        return "PROVIDER_PAUSED"
     provider = get_provider(target.provider)
     heartbeat_margin = _int_env("STUDY_V2_HEARTBEAT_MARGIN_SECONDS", 45, 10, 300)
     heartbeat_extend = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
@@ -305,11 +311,24 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
                 session.rollback()
                 return "LEASE_LOST"
             job.lease_until = datetime.utcnow() + timedelta(seconds=heartbeat_extend)
-        vector = provider.embed_text(
-            model=target.model,
-            text="Diş hekimliği ders materyalinde arama için bu bölümü temsil et:\n" + row.text_content,
-            dimensions=dimensions,
-        )
+        try:
+            vector = provider.embed_text(
+                model=target.model,
+                text="Diş hekimliği ders materyalinde arama için bu bölümü temsil et:\n" + row.text_content,
+                dimensions=dimensions,
+            )
+        except StudyProviderError as exc:
+            threshold = _int_env("STUDY_V2_CIRCUIT_FAILURES", 3, 1, 20)
+            open_seconds = _int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800)
+            record_provider_failure(
+                session,
+                provider_key,
+                error=str(exc),
+                threshold=threshold,
+                open_seconds=open_seconds,
+            )
+            raise
+        record_provider_success(session, provider_key)
         row.embedding_provider = target.provider
         row.embedding_model = target.model
         row.embedding_dimensions = len(vector)
@@ -409,6 +428,17 @@ def run_one_slice(
 
         if next_stage == "LEASE_LOST":
             return "LEASE_LOST"
+        if next_stage == "PROVIDER_PAUSED":
+            retry_at = datetime.utcnow() + timedelta(seconds=_int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800))
+            mark_index_job_failed(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                error="PROVIDER_CIRCUIT_OPEN",
+                retry_at=retry_at,
+            )
+            return "PROVIDER_PAUSED"
         if next_stage == "OCR_WAIT":
             # Release the lease and back off; no busy-loop while OCR support is
             # intentionally not active yet.
