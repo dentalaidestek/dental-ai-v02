@@ -204,6 +204,8 @@ def yield_index_job(
               AND status = 'RUNNING'
               AND lease_token = :lease_token
               AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
             """
         ),
         params=params,
@@ -302,6 +304,8 @@ def renew_index_lease(
               AND status = 'RUNNING'
               AND lease_token = :lease_token
               AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
             """
         ),
         params={
@@ -342,6 +346,8 @@ def mark_index_job_failed(
               AND status = 'RUNNING'
               AND lease_token = :lease_token
               AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
             """
         ),
         params={
