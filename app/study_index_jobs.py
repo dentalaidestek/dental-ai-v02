@@ -490,7 +490,10 @@ def claim_next_index_job(
                         AND lease_until <= :now
                     )
                   )
-                ORDER BY priority DESC,
+                ORDER BY
+                         -- Aging prevents a steady stream of interactive boosts
+                         -- from starving old background work forever.
+                         (priority + LEAST(100, FLOOR(EXTRACT(EPOCH FROM (:now - created_at)) / 300))) DESC,
                          CASE WHEN next_retry_at IS NULL THEN created_at ELSE next_retry_at END ASC,
                          created_at ASC, id ASC
                 FOR UPDATE SKIP LOCKED
