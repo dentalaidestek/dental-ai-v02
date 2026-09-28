@@ -5517,7 +5517,7 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
             return HTMLResponse("Doğrulanmış uzman profili bulunamadı.", status_code=404)
         active_count = len(s.exec(select(ConsultationCase).where(
             ConsultationCase.expert_user_id == expert_user_id,
-            ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+            ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
         )).all())
         reviews = s.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id).order_by(ExpertReview.created_at.desc())).all()
         completed_count = len(s.exec(select(ConsultationCase).where(
@@ -5572,7 +5572,7 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
                     continue
             active_count = len(s.exec(select(ConsultationCase).where(
                 ConsultationCase.expert_user_id == p.user_id,
-                ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"]),
+                ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
             )).all())
             policy = _expert_policy_state(s, p.user_id)
             perf = _expert_performance(s, p.user_id)
