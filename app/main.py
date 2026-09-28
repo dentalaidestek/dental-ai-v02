@@ -1941,7 +1941,7 @@ def init_db():
             job_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studyindexjob")').fetchall()}
             if "resource_class" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'')
-                        study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
+            study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
             additions = {
                 "index_status": "VARCHAR NOT NULL DEFAULT 'LEGACY'",
                 "active_index_version": "VARCHAR",
@@ -1957,7 +1957,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_deleted_at ON "studymaterial" (deleted_at)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (status, next_retry_at, priority, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, created_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
