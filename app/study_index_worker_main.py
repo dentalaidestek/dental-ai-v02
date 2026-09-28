@@ -1,6 +1,6 @@
 """Standalone Academic AI V2 worker process.
 
-Run this as a separate service/process, never inside the web request workers.
+Run this as a separate process, never inside the web request workers.
 It uses its own SQLAlchemy engine/pool so indexing cannot consume the web
 service's connection pool.
 """
@@ -68,7 +68,7 @@ def main() -> None:
             capabilities.fts, capabilities.embedding_array, capabilities.pgvector,
         )
     resource_class = (os.getenv("STUDY_V2_RESOURCE_CLASS") or "NORMAL").strip().upper()
-    if resource_class not in {"NORMAL", "OCR_HEAVY"}:
+    if resource_class not in {"NORMAL", "OCR_HEAVY", "MIXED"}:
         raise RuntimeError(f"Unsupported STUDY_V2_RESOURCE_CLASS: {resource_class}")
     idle_sleep = _int_env("STUDY_V2_IDLE_SLEEP_SECONDS", 2, 1, 30)
     error_sleep = _int_env("STUDY_V2_ERROR_SLEEP_SECONDS", 5, 1, 60)
@@ -79,9 +79,15 @@ def main() -> None:
     while not _stop:
         try:
             with Session(engine, expire_on_commit=False) as session:
-                result = run_one_slice(session, resource_class=resource_class)
+                active_class = "NORMAL" if resource_class == "MIXED" else resource_class
+                result = run_one_slice(session, resource_class=active_class)
+                if resource_class == "MIXED" and result == "IDLE":
+                    # One low-footprint process can service both queues on the
+                    # free instance. Normal text work gets first opportunity;
+                    # OCR work runs whenever that queue is idle.
+                    result = run_one_slice(session, resource_class="OCR_HEAVY")
                 loops += 1
-                if resource_class == "NORMAL":
+                if resource_class in {"NORMAL", "MIXED"}:
                     # Privacy erasure is serviced continuously and is never
                     # blocked behind normal indexing backlog.
                     run_deletion_slice(session)

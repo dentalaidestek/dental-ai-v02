@@ -61,10 +61,11 @@ from app.study_index_jobs import (
 )
 from app.study_retrieval_v2 import retrieve_course_context_v2
 from app.study_v2_service import (
-    course_v2_ready, enqueue_material_v2,
+    course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2,
     reads_enabled as study_v2_reads_enabled,
     streaming_enabled as study_v2_streaming_enabled,
 )
+from app.study_colocated_worker import start_colocated_worker_task
 from app.study_rag import (
     StudyRAGChunk,
     StudyRAGMemory,
@@ -3653,6 +3654,14 @@ templates = Jinja2Templates(
 async def startup():
     storage_check_connection()
     init_db()
+    with Session(engine, expire_on_commit=False) as study_session:
+        queued_v2 = enqueue_legacy_materials_v2(
+            study_session, material_model=StudyMaterial,
+        )
+        if queued_v2:
+            study_session.commit()
+            logger.info("Academic V2 queued %s legacy material(s)", queued_v2)
+    app.state.study_v2_worker_task = start_colocated_worker_task()
     _backfill_legacy_deadline_jobs_if_needed()
     _backfill_program_reminder_jobs()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
@@ -3673,6 +3682,7 @@ async def shutdown_consultation_deadline_worker():
         getattr(app.state, "consultation_deadline_task", None),
         getattr(app.state, "program_reminder_task", None),
         getattr(app.state, "postgres_event_listener_task", None),
+        getattr(app.state, "study_v2_worker_task", None),
     ]
     for task in tasks:
         if task:

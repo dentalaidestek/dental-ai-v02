@@ -50,6 +50,31 @@ def enqueue_material_v2(session: Session, material) -> str | None:
     return version
 
 
+def enqueue_legacy_materials_v2(
+    session: Session,
+    *,
+    material_model,
+    limit: int = 100,
+) -> int:
+    """Queue pre-V2 uploads once, without replacing active/building indexes."""
+    if not indexing_enabled():
+        return 0
+    materials = list(session.exec(
+        select(material_model)
+        .where(material_model.deleted_at == None)
+        .where(material_model.index_status == "LEGACY")
+        .where(material_model.active_index_version == None)
+        .where(material_model.building_index_version == None)
+        .order_by(material_model.id)
+        .limit(max(1, min(limit, 1000)))
+    ).all())
+    queued = 0
+    for material in materials:
+        if enqueue_material_v2(session, material):
+            queued += 1
+    return queued
+
+
 def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int) -> bool:
     rows = list(session.exec(
         select(material_model)
