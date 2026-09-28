@@ -43,6 +43,7 @@ class StudyIndexJob(SQLModel, table=True):
     first_queued_at: datetime = Field(default_factory=utcnow_naive, index=True)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    retire_after: Optional[datetime] = Field(default=None, index=True)
 
 
 
@@ -84,6 +85,52 @@ class StudyIndexChunk(SQLModel, table=True):
     embedding_json: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
+
+
+
+
+class StudyProviderCircuit(SQLModel, table=True):
+    """Shared provider outage state so many workers do not create retry storms."""
+    provider_key: str = Field(primary_key=True)
+    consecutive_failures: int = 0
+    open_until: Optional[datetime] = Field(default=None, index=True)
+    last_error: Optional[str] = None
+    updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
+
+
+def provider_circuit_open(session: Session, provider_key: str) -> bool:
+    row = session.get(StudyProviderCircuit, provider_key)
+    return bool(row and row.open_until and row.open_until > utcnow_naive())
+
+
+def record_provider_success(session: Session, provider_key: str) -> None:
+    row = session.get(StudyProviderCircuit, provider_key) or StudyProviderCircuit(provider_key=provider_key)
+    row.consecutive_failures = 0
+    row.open_until = None
+    row.last_error = None
+    row.updated_at = utcnow_naive()
+    session.add(row)
+    session.commit()
+
+
+def record_provider_failure(
+    session: Session,
+    provider_key: str,
+    *,
+    error: str,
+    threshold: int = 3,
+    open_seconds: int = 120,
+) -> datetime | None:
+    now = utcnow_naive()
+    row = session.get(StudyProviderCircuit, provider_key) or StudyProviderCircuit(provider_key=provider_key)
+    row.consecutive_failures += 1
+    row.last_error = (error or "")[:1000]
+    if row.consecutive_failures >= max(1, threshold):
+        row.open_until = now + timedelta(seconds=max(30, open_seconds))
+    row.updated_at = now
+    session.add(row)
+    session.commit()
+    return row.open_until
 
 
 def new_index_version() -> str:
