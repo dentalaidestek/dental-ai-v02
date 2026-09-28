@@ -6683,9 +6683,10 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         s.commit()
         status = case.status
         response_state = _case_status_realtime_payload(case, user.id)
+        socket_state = _case_status_socket_payload(case)
     if status == "PROPOSED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
+    await consultation_socket_hub.broadcast(case_id, socket_state)
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
@@ -6738,10 +6739,10 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         realtime_events = _record_case_status_realtime_events(s, case)
         if not rejected and case.consultation_start_deadline:
             _enqueue_deadline_pair(s, case.id, "START", case.consultation_start_deadline)
-        s.commit(); status=case.status; patient_id=case.patient_id; response_state=_case_status_realtime_payload(case, user.id)
+        s.commit(); status=case.status; patient_id=case.patient_id; response_state=_case_status_realtime_payload(case, user.id); socket_state=_case_status_socket_payload(case)
     if not rejected:
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
+    await consultation_socket_hub.broadcast(case_id, {**socket_state, "rejected_by_requester": rejected})
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
@@ -7491,22 +7492,32 @@ def _record_message_realtime_events(session: Session, case: ConsultationCase,
     return events
 
 
-def _case_status_realtime_payload(case: ConsultationCase, viewer_user_id: int) -> dict:
-    """Small authoritative state payload for instant consultation UI updates."""
-    status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive())
+def _case_status_socket_payload(case: ConsultationCase) -> dict:
+    """Role-neutral state sent immediately to both sockets."""
     return {
+        "type": "case_status",
         "case_id": case.id,
         "patient_id": case.patient_id,
         "status": case.status,
-        "status_key": status_key,
-        "status_label": status_label,
-        "viewer_role": "REQUESTER" if viewer_user_id == case.requester_user_id else "EXPERT",
         "proposed_start_label": case.proposed_start_label,
         "proposal_note": case.expert_proposal_note,
         "requester_decision_deadline": case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None,
         "consultation_start_deadline": case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,
         "completion_confirmation_deadline": case.completion_confirmation_deadline.isoformat() if case.completion_confirmation_deadline else None,
     }
+
+
+def _case_status_realtime_payload(case: ConsultationCase, viewer_user_id: int) -> dict:
+    """Viewer-specific durable state for instant consultation UI updates."""
+    status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive())
+    payload = _case_status_socket_payload(case)
+    payload.pop("type", None)
+    payload.update({
+        "status_key": status_key,
+        "status_label": status_label,
+        "viewer_role": "REQUESTER" if viewer_user_id == case.requester_user_id else "EXPERT",
+    })
+    return payload
 
 
 def _record_case_status_realtime_events(session: Session, case: ConsultationCase) -> list[RealtimeEvent]:
@@ -7905,9 +7916,10 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         s.commit()
         status = case.status
         response_state = _case_status_realtime_payload(case, user.id)
+        socket_state = _case_status_socket_payload(case)
     if status == "EXPERT_COMPLETED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {"type": "case_status", "case_id": case_id, "status": status})
+    await consultation_socket_hub.broadcast(case_id, socket_state)
     for realtime_event in realtime_events:
         await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
