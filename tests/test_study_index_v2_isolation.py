@@ -6,18 +6,27 @@ MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 JOBS = (ROOT / "app" / "study_index_jobs.py").read_text(encoding="utf-8")
 WORKER = (ROOT / "app" / "study_index_worker.py").read_text(encoding="utf-8")
 RAG = (ROOT / "app" / "study_rag.py").read_text(encoding="utf-8")
+NOTES_AI = (ROOT / "app" / "templates" / "notes_ai.html").read_text(encoding="utf-8")
 
 
 def test_v2_worker_is_not_wired_into_live_v1_yet():
-    # Phase 1 is additive. Importing the model classes lets create_all create
-    # tables, but live upload/retrieval must not call the new worker prematurely.
+    # Worker processes remain isolated from web workers. V2 reads are protected
+    # by a default-off flag and never run_one_slice inside a request.
     assert "from app.study_index_worker import" not in MAIN
     assert "run_one_slice(" not in MAIN
+    assert "study_v2_reads_enabled()" in MAIN
 
 
 def test_live_v1_rag_does_not_read_building_v2_chunks():
     assert "StudyIndexChunk" not in RAG
     assert "studyindexchunk" not in RAG.lower()
+
+
+def test_v2_streaming_is_feature_gated_end_to_end():
+    assert "study_v2_streaming_enabled()" in MAIN
+    assert "if not study_v2_streaming_enabled()" in MAIN
+    assert "const v2Streaming" in NOTES_AI
+    assert "if (!v2Streaming)" in NOTES_AI
 
 
 def test_publish_requires_current_generation_and_live_lease():

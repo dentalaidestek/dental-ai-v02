@@ -68,6 +68,7 @@
 
     const courseId = {{ course.id }};
     const materialCount = {{ material_count }};
+    const v2Streaming = {{ 'true' if v2_streaming else 'false' }};
     const form = document.getElementById('studyChatForm');
     const input = document.getElementById('studyChatInput');
     const send = document.getElementById('studySendButton');
@@ -166,11 +167,40 @@
         const data = new FormData();
         data.append('message', text);
         try {
-            const response = await fetch('/notes/courses/'+courseId+'/ai/ask', {method:'POST', body:data, credentials:'same-origin'});
-            const result = await response.json();
-            if (!response.ok || !result.ok) throw new Error(result.error || 'AI isteği tamamlanamadı.');
-            pending.classList.remove('pending');
-            pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(result.answer);
+            const endpoint = v2Streaming ? '/notes/courses/'+courseId+'/ai/ask-stream' : '/notes/courses/'+courseId+'/ai/ask';
+            const response = await fetch(endpoint, {method:'POST', body:data, credentials:'same-origin'});
+            if (!v2Streaming) {
+                const result = await response.json();
+                if (!response.ok || !result.ok) throw new Error(result.error || 'AI isteği tamamlanamadı.');
+                pending.classList.remove('pending');
+                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(result.answer);
+            } else {
+                if (!response.ok || !response.body) {
+                    const result = await response.json().catch(() => ({}));
+                    throw new Error(result.error || 'AI akışı başlatılamadı.');
+                }
+                const reader=response.body.getReader(),decoder=new TextDecoder();
+                let buffer='',answer='',finished=false;
+                while (true) {
+                    const part=await reader.read();
+                    buffer+=decoder.decode(part.value||new Uint8Array(),{stream:!part.done});
+                    const lines=buffer.split('\n');buffer=lines.pop()||'';
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        const event=JSON.parse(line);
+                        if (event.type==='error') throw new Error(event.error||'AI akışı kesildi.');
+                        if (event.type==='done') finished=true;
+                        if (event.type==='delta') {
+                            answer+=event.text||'';
+                            pending.classList.remove('pending');
+                            pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(answer);
+                            scrollChatBottom();
+                        }
+                    }
+                    if (part.done) break;
+                }
+                if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
+            }
             scrollChatBottom();
         } catch (err) {
             pending.remove();

@@ -10,7 +10,7 @@ All functions are provider-agnostic and pgvector-independent.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import text
@@ -19,7 +19,7 @@ from sqlmodel import Field, Session, SQLModel, select
 
 
 def utcnow_naive() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class StudyIndexJob(SQLModel, table=True):
@@ -33,6 +33,7 @@ class StudyIndexJob(SQLModel, table=True):
     priority: int = Field(default=0, index=True)
     resource_class: str = Field(default="NORMAL", index=True)  # NORMAL/OCR_HEAVY
     attempts: int = 0
+    failure_attempts: int = 0
     next_retry_at: Optional[datetime] = Field(default=None, index=True)
     lease_until: Optional[datetime] = Field(default=None, index=True)
     lease_token: Optional[str] = Field(default=None, index=True)
@@ -398,6 +399,17 @@ def verify_build_complete(
         return False, "NO_CHUNKS"
     if any(not row.embedding_json for row in chunks):
         return False, "EMBEDDINGS_INCOMPLETE"
+    if session.get_bind().dialect.name == "postgresql":
+        native_missing = session.exec(
+            text(
+                "SELECT COUNT(*) FROM studyindexchunk "
+                "WHERE material_id=:material_id AND index_version=:index_version "
+                "AND embedding_array IS NULL"
+            ),
+            params={"material_id": material_id, "index_version": index_version},
+        ).one()[0]
+        if int(native_missing or 0) > 0:
+            return False, "NATIVE_EMBEDDINGS_INCOMPLETE"
     if any(row.page_start < 1 or row.page_end < row.page_start or row.page_end > expected_page_count for row in chunks):
         return False, "CHUNK_PAGE_RANGE_INVALID"
     return True, None
@@ -548,6 +560,7 @@ def yield_index_job(
             UPDATE studyindexjob
             SET status = 'QUEUED',
                 stage = :stage,
+                failure_attempts = 0,
                 next_retry_at = NULL,
                 lease_until = NULL,
                 lease_token = NULL,
@@ -777,6 +790,7 @@ def mark_index_job_failed(
             """
             UPDATE studyindexjob
             SET status = :status,
+                failure_attempts = failure_attempts + 1,
                 next_retry_at = :retry_at,
                 last_error = :error,
                 lease_until = NULL,
@@ -939,11 +953,12 @@ def publish_index_version(
         ),
         params={"material_id": material_id, "index_version": index_version},
     ).first()
+    native_clause = " AND embedding_array IS NOT NULL" if dialect == "postgresql" else ""
     chunk_stats = session.exec(
         text(
             """
             SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN embedding_json IS NOT NULL THEN 1 ELSE 0 END) AS embedded
+                   SUM(CASE WHEN embedding_json IS NOT NULL""" + native_clause + """ THEN 1 ELSE 0 END) AS embedded
             FROM studyindexchunk
             WHERE material_id = :material_id AND index_version = :index_version
             """

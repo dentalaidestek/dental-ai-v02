@@ -54,7 +54,17 @@ from app.xray_trace import (
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
-from app.study_index_jobs import StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit
+from app.study_ai_v2 import ask_rag_v2 as ask_study_ai_v2, stream_rag_v2 as stream_study_ai_v2
+from app.study_index_jobs import (
+    StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
+    enqueue_material_deletion, tombstone_material,
+)
+from app.study_retrieval_v2 import retrieve_course_context_v2
+from app.study_v2_service import (
+    course_v2_ready, enqueue_material_v2,
+    reads_enabled as study_v2_reads_enabled,
+    streaming_enabled as study_v2_streaming_enabled,
+)
 from app.study_rag import (
     StudyRAGChunk,
     StudyRAGMemory,
@@ -79,7 +89,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
@@ -690,6 +700,7 @@ class StudyChatMessage(SQLModel, table=True):
     role: str = Field(index=True)
     content: str
     source_ids_json: Optional[str] = None
+    source_evidence_json: Optional[str] = None
     mode: str = "NOTES_PLUS"
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
@@ -1924,11 +1935,14 @@ def init_db():
                 'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS index_error VARCHAR',
                 'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS failure_attempts INTEGER NOT NULL DEFAULT 0',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS first_queued_at TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS retire_after TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS expected_page_count INTEGER',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS source_sha256 VARCHAR',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS index_fingerprint VARCHAR',
+                'ALTER TABLE "studyindexchunk" ADD COLUMN IF NOT EXISTS embedding_array DOUBLE PRECISION[]',
+                'ALTER TABLE "studychatmessage" ADD COLUMN IF NOT EXISTS source_evidence_json VARCHAR',
             ):
                 conn.exec_driver_sql(statement)
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
@@ -1944,10 +1958,55 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexchunk_material_version_chunk ON "studyindexchunk" (material_id, index_version, chunk_index)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexchunk_embed_pending ON "studyindexchunk" (material_id, index_version, chunk_index) WHERE embedding_json IS NULL')
+            # PostgreSQL FTS is always available. ``simple`` is intentional:
+            # managed PostgreSQL installations do not consistently ship a
+            # Turkish dictionary, while dental terminology must not be lost.
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_studyindexchunk_fts_simple ON studyindexchunk "
+                "USING GIN (to_tsvector('simple', coalesce(section_title, '') || ' ' || text_content))"
+            )
+            # pgvector is an optional accelerator. The durable double[] column
+            # remains the portable PostgreSQL source of truth, so a deployment
+            # without extension privileges still has DB-side semantic search.
+            conn.exec_driver_sql(
+                """
+                DO $academic_v2$
+                BEGIN
+                    IF to_regtype('vector') IS NOT NULL THEN
+                        EXECUTE 'ALTER TABLE studyindexchunk ADD COLUMN IF NOT EXISTS embedding_vector vector(768)';
+                        IF EXISTS (SELECT 1 FROM pg_am WHERE amname='hnsw') THEN
+                            EXECUTE 'CREATE INDEX IF NOT EXISTS ix_studyindexchunk_embedding_hnsw '
+                                    'ON studyindexchunk USING hnsw (embedding_vector vector_cosine_ops)';
+                        END IF;
+                    END IF;
+                END
+                $academic_v2$
+                """
+            )
+            conn.exec_driver_sql(
+                """
+                CREATE OR REPLACE FUNCTION study_v2_sync_pgvector(p_chunk_id BIGINT, p_vector_json TEXT)
+                RETURNS VOID LANGUAGE plpgsql AS $academic_v2$
+                BEGIN
+                    IF to_regtype('vector') IS NOT NULL
+                       AND jsonb_array_length(p_vector_json::jsonb) = 768
+                       AND EXISTS (
+                           SELECT 1 FROM information_schema.columns
+                           WHERE table_name='studyindexchunk' AND column_name='embedding_vector'
+                       ) THEN
+                        EXECUTE 'UPDATE studyindexchunk SET embedding_vector = $1::vector WHERE id = $2'
+                        USING p_vector_json, p_chunk_id;
+                    END IF;
+                END
+                $academic_v2$
+                """
+            )
         elif dialect == "sqlite":
             job_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studyindexjob")').fetchall()}
             if "resource_class" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'')
+            if "failure_attempts" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN failure_attempts INTEGER NOT NULL DEFAULT 0')
             if "first_queued_at" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN first_queued_at TIMESTAMP')
             if "retire_after" not in job_cols:
@@ -1970,6 +2029,9 @@ def init_db():
             for column, sql_type in additions.items():
                 if column not in study_cols:
                     conn.exec_driver_sql(f'ALTER TABLE "studymaterial" ADD COLUMN {column} {sql_type}')
+            chat_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studychatmessage")').fetchall()}
+            if "source_evidence_json" not in chat_cols:
+                conn.exec_driver_sql('ALTER TABLE "studychatmessage" ADD COLUMN source_evidence_json VARCHAR')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_active_index_version ON "studymaterial" (active_index_version)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
@@ -3759,6 +3821,16 @@ def delete_study_course(request: Request, course_id: int):
             stored_paths.append(material.file_path)
             if material.gemini_file_name:
                 gemini_names.append(material.gemini_file_name)
+            tombstone_material(
+                s, material_id=material.id, owner_user_id=user.id,
+            )
+            enqueue_material_deletion(
+                s,
+                owner_user_id=user.id,
+                material_id=material.id,
+                storage_reference=material.file_path,
+                provider_file_name=material.gemini_file_name,
+            )
             s.delete(material)
         for message in messages:
             s.delete(message)
@@ -3887,7 +3959,7 @@ async def upload_study_materials(
                 # === TEMP_STUDY_TRACE_UPLOAD_FILE_END ===
 
                 material_type = "PDF" if extension == ".pdf" else "IMAGE"
-                s.add(StudyMaterial(
+                material = StudyMaterial(
                     course_id=course_id,
                     owner_user_id=user.id,
                     original_filename=original_name,
@@ -3897,7 +3969,13 @@ async def upload_study_materials(
                     material_type=material_type,
                     mime_type=mime_type,
                     size_bytes=total,
-                ))
+                )
+                s.add(material)
+                s.flush()
+                # Default-off shadow build. It never changes the live V1 ask
+                # path; enabling it only prepares a V2 generation for later
+                # benchmark/canary comparison.
+                enqueue_material_v2(s, material)
                 added += 1
 
             if added == 0:
@@ -3980,6 +4058,16 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             return HTMLResponse("Not dosyası bulunamadı veya erişim yetkiniz yok.", status_code=404)
         local_path = material.file_path
         gemini_name = material.gemini_file_name
+        tombstone_material(
+            s, material_id=material.id, owner_user_id=user.id,
+        )
+        enqueue_material_deletion(
+            s,
+            owner_user_id=user.id,
+            material_id=material.id,
+            storage_reference=material.file_path,
+            provider_file_name=material.gemini_file_name,
+        )
         delete_material_rag_index(
             s,
             owner_user_id=user.id,
@@ -4028,6 +4116,7 @@ def study_ai_page(request: Request, course_id: int):
             "course": course,
             "material_count": len(materials),
             "messages": messages[-40:],
+            "v2_streaming": study_v2_streaming_enabled(),
         },
     )
 
@@ -4113,13 +4202,22 @@ def study_ai_ask(
                     "error": "Bu ders Dental AI Akademik'in diş hekimliği çalışma alanı dışında görünüyor.",
                 }, status_code=400)
 
+            use_v2 = study_v2_reads_enabled()
+
             # Upload normally prepares the index in background. Existing courses
             # get one lazy migration only when no usable index exists yet.
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_BEGIN ===
-            _trace_index_ready = course_index_ready(s, owner_user_id=user.id, course_id=course_id)
+            _trace_index_ready = (
+                course_v2_ready(
+                    s, material_model=StudyMaterial,
+                    owner_user_id=user.id, course_id=course_id,
+                )
+                if use_v2 else
+                course_index_ready(s, owner_user_id=user.id, course_id=course_id)
+            )
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_END ===
-            if not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
+            if not use_v2 and not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
                 # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_BEGIN ===
                 _lazy_started = _study_trace_time.perf_counter()
                 trace_event("ask.lazy_index.begin", course_id=course_id)
@@ -4150,14 +4248,29 @@ def study_ai_ask(
             trace_event("ask.rag.begin", course_id=course_id)
             # === TEMP_STUDY_TRACE_ASK_HISTORY_END ===
 
-            rag_result = retrieve_course_context(
-                s,
-                owner_user_id=user.id,
-                course_id=course_id,
-                query=clean_message,
-                materials=materials,
-                recent_history=history,
-            )
+            if use_v2 and not _trace_index_ready:
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
+                    "code": "ACADEMIC_V2_INDEX_NOT_READY",
+                }, status_code=409)
+            if use_v2:
+                rag_result = retrieve_course_context_v2(
+                    s,
+                    owner_user_id=user.id,
+                    course_id=course_id,
+                    query=clean_message,
+                    recent_history=history,
+                )
+            else:
+                rag_result = retrieve_course_context(
+                    s,
+                    owner_user_id=user.id,
+                    course_id=course_id,
+                    query=clean_message,
+                    materials=materials,
+                    recent_history=history,
+                )
 
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
@@ -4173,14 +4286,22 @@ def study_ai_ask(
             trace_event("ask.generation.begin", course_id=course_id)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_END ===
 
-            answer = ask_study_ai(
-                course.title,
-                clean_message,
-                history,
-                rag_result.note_context,
-                rag_result.memory_context,
-                rag_result.attachments,
-            )
+            if use_v2:
+                answer = ask_study_ai_v2(
+                    course.title,
+                    clean_message,
+                    history,
+                    rag_result,
+                )
+            else:
+                answer = ask_study_ai(
+                    course.title,
+                    clean_message,
+                    history,
+                    rag_result.note_context,
+                    rag_result.memory_context,
+                    rag_result.attachments,
+                )
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
                 "ask.generation.success",
@@ -4190,6 +4311,20 @@ def study_ai_ask(
             )
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_END ===
             source_json = json.dumps(rag_result.source_material_ids, ensure_ascii=False)
+            evidence_json = (
+                json.dumps([
+                    {
+                        "material_id": item.material_id,
+                        "display_name": item.display_name,
+                        "page_start": item.page_start,
+                        "page_end": item.page_end,
+                        "section_title": item.section_title,
+                        "content_kind": item.content_kind,
+                    }
+                    for item in rag_result.evidence
+                ], ensure_ascii=False)
+                if use_v2 else None
+            )
 
             s.add(StudyChatMessage(
                 course_id=course_id,
@@ -4197,7 +4332,8 @@ def study_ai_ask(
                 role="USER",
                 content=clean_message,
                 source_ids_json=source_json,
-                mode="RAG_NOTES_ONLY",
+                source_evidence_json=evidence_json,
+                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
             ))
             s.add(StudyChatMessage(
                 course_id=course_id,
@@ -4205,7 +4341,8 @@ def study_ai_ask(
                 role="ASSISTANT",
                 content=answer,
                 source_ids_json=source_json,
-                mode="RAG_NOTES_ONLY",
+                source_evidence_json=evidence_json,
+                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
             ))
             course.updated_at = _utcnow_naive()
             s.add(course)
@@ -4246,6 +4383,121 @@ def study_ai_ask(
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
 
     return JSONResponse({"ok": True, "answer": answer})
+
+
+@app.post("/notes/courses/{course_id}/ai/ask-stream")
+def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(...)):
+    """Default-off NDJSON stream for the fully prepared V2 course index."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
+    if not study_v2_streaming_enabled():
+        return JSONResponse({"ok": False, "error": "Akademik V2 akışı etkin değil."}, status_code=404)
+    clean_message = (message or "").strip()
+    if not clean_message or len(clean_message) > 8000:
+        return JSONResponse({"ok": False, "error": "Geçerli bir mesaj yazın."}, status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        course = _owned_study_course(s, user, course_id)
+        if not course:
+            return JSONResponse({"ok": False, "error": "Ders bulunamadı veya erişim yetkiniz yok."}, status_code=404)
+        materials = list(s.exec(
+            select(StudyMaterial)
+            .where(StudyMaterial.course_id == course_id)
+            .where(StudyMaterial.owner_user_id == user.id)
+        ).all())
+        if not materials:
+            return JSONResponse({"ok": False, "error": "Bu derste henüz not bulunmuyor."}, status_code=400)
+        if classify_course_scope(course.title, [item.original_filename for item in materials]) == "NON_DENTAL":
+            return JSONResponse({"ok": False, "error": "Bu ders diş hekimliği çalışma alanı dışında."}, status_code=400)
+        if not course_v2_ready(
+            s, material_model=StudyMaterial,
+            owner_user_id=user.id, course_id=course_id,
+        ):
+            return JSONResponse({
+                "ok": False,
+                "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
+                "code": "ACADEMIC_V2_INDEX_NOT_READY",
+            }, status_code=409)
+        history_rows = list(s.exec(
+            select(StudyChatMessage)
+            .where(StudyChatMessage.course_id == course_id)
+            .where(StudyChatMessage.owner_user_id == user.id)
+            .order_by(StudyChatMessage.id)
+        ).all())
+        history = [{"role": row.role, "content": row.content} for row in history_rows[-8:]]
+        try:
+            retrieval = retrieve_course_context_v2(
+                s, owner_user_id=user.id, course_id=course_id,
+                query=clean_message, recent_history=history,
+            )
+        except Exception as exc:
+            logger.exception("Academic V2 streaming retrieval failed")
+            return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
+        course_title = course.title
+        source_json = json.dumps(retrieval.source_material_ids, ensure_ascii=False)
+        evidence_json = json.dumps([
+            {
+                "material_id": item.material_id,
+                "display_name": item.display_name,
+                "page_start": item.page_start,
+                "page_end": item.page_end,
+                "section_title": item.section_title,
+                "content_kind": item.content_kind,
+            }
+            for item in retrieval.evidence
+        ], ensure_ascii=False)
+
+    owner_user_id = user.id
+
+    def generate_stream():
+        pieces: list[str] = []
+        try:
+            for piece in stream_study_ai_v2(
+                course_title, clean_message, history, retrieval,
+            ):
+                pieces.append(piece)
+                yield json.dumps({"type": "delta", "text": piece}, ensure_ascii=False) + "\n"
+            answer = "".join(pieces).strip()
+            if not answer:
+                raise StudyAIError("Akademik AI boş yanıt döndürdü.")
+            with Session(engine, expire_on_commit=False) as save_session:
+                live_course = save_session.exec(
+                    select(StudyCourse)
+                    .where(StudyCourse.id == course_id)
+                    .where(StudyCourse.owner_user_id == owner_user_id)
+                ).first()
+                if not live_course:
+                    raise StudyAIError("Ders akış sırasında silindi.")
+                save_session.add(StudyChatMessage(
+                    course_id=course_id, owner_user_id=owner_user_id,
+                    role="USER", content=clean_message,
+                    source_ids_json=source_json, mode="RAG_V2_HYBRID_STREAM",
+                    source_evidence_json=evidence_json,
+                ))
+                save_session.add(StudyChatMessage(
+                    course_id=course_id, owner_user_id=owner_user_id,
+                    role="ASSISTANT", content=answer,
+                    source_ids_json=source_json, mode="RAG_V2_HYBRID_STREAM",
+                    source_evidence_json=evidence_json,
+                ))
+                live_course.updated_at = _utcnow_naive()
+                save_session.add(live_course)
+                save_session.commit()
+            yield json.dumps({"type": "done"}) + "\n"
+        except GeneratorExit:
+            # Client disconnected: incomplete answers are never persisted.
+            return
+        except Exception as exc:
+            logger.exception("Academic V2 streaming generation failed")
+            safe_error = str(exc) if isinstance(exc, StudyAIError) else "Akademik AI akışı tamamlanamadı."
+            yield json.dumps({"type": "error", "error": safe_error}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 # === TEMP_STUDY_TRACE_ENDPOINT_BEGIN ===

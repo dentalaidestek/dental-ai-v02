@@ -22,6 +22,7 @@ from app.study_index_jobs import (
 )  # noqa: F401
 from app.study_index_worker import run_one_slice
 from app.study_deletion_worker import run_deletion_slice
+from app.study_v2_database import require_worker_capabilities
 
 logger = logging.getLogger(__name__)
 _stop = False
@@ -60,6 +61,12 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_stop)
 
     engine = build_worker_engine()
+    with Session(engine, expire_on_commit=False) as startup_session:
+        capabilities = require_worker_capabilities(startup_session)
+        logger.info(
+            "Academic V2 database ready fts=%s native_array=%s pgvector=%s",
+            capabilities.fts, capabilities.embedding_array, capabilities.pgvector,
+        )
     resource_class = (os.getenv("STUDY_V2_RESOURCE_CLASS") or "NORMAL").strip().upper()
     if resource_class not in {"NORMAL", "OCR_HEAVY"}:
         raise RuntimeError(f"Unsupported STUDY_V2_RESOURCE_CLASS: {resource_class}")

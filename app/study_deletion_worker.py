@@ -6,7 +6,7 @@ queryable again.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -16,8 +16,12 @@ from app.study_ai import delete_file as delete_provider_file
 from app.study_index_jobs import StudyDeletionJob, purge_material_index_artifacts
 
 
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def run_deletion_slice(session: Session) -> str:
-    now = datetime.utcnow()
+    now = _utcnow_naive()
     job = session.exec(
         select(StudyDeletionJob)
         .where(StudyDeletionJob.status.in_(["QUEUED", "FAILED"]))
@@ -28,16 +32,17 @@ def run_deletion_slice(session: Session) -> str:
     if not job:
         return "IDLE"
 
-    # A deletion job is valid only for a still-tombstoned material. Never erase
-    # a live material if an id were accidentally reused/restored.
-    tombstoned = session.exec(
-        text("SELECT 1 FROM studymaterial WHERE id=:m AND owner_user_id=:o AND deleted_at IS NOT NULL"),
+    # A missing source row is also a valid deletion state: normal per-material
+    # deletion removes the UI row in the same transaction that enqueues this
+    # durable cleanup. Only an explicitly live/restored row blocks erasure.
+    material_state = session.exec(
+        text("SELECT deleted_at FROM studymaterial WHERE id=:m AND owner_user_id=:o"),
         params={"m": job.material_id, "o": job.owner_user_id},
     ).first()
-    if not tombstoned:
+    if material_state is not None and material_state[0] is None:
         job.status = "DONE"
         job.completed_at = now
-        job.last_error = "SKIPPED_NOT_TOMBSTONED"
+        job.last_error = "SKIPPED_LIVE_MATERIAL"
         session.add(job)
         session.commit()
         return "SKIPPED"
@@ -65,7 +70,7 @@ def run_deletion_slice(session: Session) -> str:
         fresh.status = "FAILED"
         fresh.last_error = str(exc)[:1000]
         delay = min(3600, 30 * (2 ** min(fresh.attempts, 7)))
-        fresh.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
+        fresh.next_retry_at = _utcnow_naive() + timedelta(seconds=delay)
         session.add(fresh)
         session.commit()
         return "RETRY"
@@ -73,7 +78,7 @@ def run_deletion_slice(session: Session) -> str:
     fresh = session.get(StudyDeletionJob, job.id)
     fresh.status = "DONE"
     fresh.next_retry_at = None
-    fresh.completed_at = datetime.utcnow()
+    fresh.completed_at = _utcnow_naive()
     session.add(fresh)
     session.commit()
     return "DONE"

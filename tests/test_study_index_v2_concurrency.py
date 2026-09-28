@@ -5,6 +5,7 @@ from sqlmodel import Session, SQLModel
 
 from app.study_index_jobs import (
     StudyIndexChunk,
+    StudyDeletionJob,
     StudyIndexJob,
     StudyIndexPage,
     begin_material_build,
@@ -21,7 +22,10 @@ from app.study_index_jobs import (
 
 def _db():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(engine)
+    # Create only this test's V2 tables. Other test modules may import app.main
+    # first and register the real StudyMaterial in global SQLModel metadata.
+    for model in (StudyIndexJob, StudyIndexPage, StudyIndexChunk, StudyDeletionJob):
+        model.__table__.create(engine)
     with engine.begin() as conn:
         conn.exec_driver_sql(
             """
@@ -319,3 +323,38 @@ def test_build_identity_is_immutable_across_resume():
             assert str(exc) == "BUILD_IDENTITY_MISMATCH"
         else:
             raise AssertionError("source drift must be rejected")
+
+
+def test_successful_slice_resets_failure_retry_counter():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        claimed.failure_attempts = 7
+        s.add(claimed)
+        s.commit()
+        assert yield_index_job(
+            s, job_id=claimed.id, lease_token=claimed.lease_token,
+            worker_id="worker-a", stage="EMBED",
+        )
+        refreshed = s.get(StudyIndexJob, claimed.id)
+        assert refreshed.failure_attempts == 0
+
+
+def test_deletion_worker_purges_derivatives_after_source_row_is_removed():
+    from app.study_deletion_worker import run_deletion_slice
+
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        s.add(StudyIndexChunk(
+            owner_user_id=10, course_id=20, material_id=1,
+            index_version="v1", chunk_index=0, page_start=1, page_end=1,
+            text_content="private", text_sha256="x", embedding_json="[0.1]",
+        ))
+        s.add(StudyDeletionJob(owner_user_id=10, material_id=1))
+        s.exec(text("DELETE FROM studymaterial WHERE id=1"))
+        s.commit()
+        assert run_deletion_slice(s) == "DONE"
+        assert s.exec(text("SELECT COUNT(*) FROM studyindexchunk")).one()[0] == 0

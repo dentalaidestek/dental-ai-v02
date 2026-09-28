@@ -1,0 +1,364 @@
+"""PostgreSQL-native hybrid retrieval for Academic AI V2.
+
+Only published generations are visible. Lexical and semantic candidates are
+ranked independently in PostgreSQL and combined with reciprocal-rank fusion so
+their incomparable raw scores never need brittle hand tuning.
+"""
+from __future__ import annotations
+
+import io
+import logging
+import re
+from dataclasses import dataclass, field
+
+from pypdf import PdfReader, PdfWriter
+from sqlalchemy import text
+from sqlmodel import Session
+
+from app.object_storage import ensure_local as storage_ensure_local
+from app.study_provider import StudyProviderError, get_embedding_dimensions, get_embedding_target, get_provider
+
+logger = logging.getLogger(__name__)
+
+_FOLLOWUP_RE = re.compile(
+    r"^(?:peki|tamam|devam|neden|nasıl|hangisi|bunu|burada|onu|o zaman|"
+    r"daha (?:basit|detaylı)|açıkla|tekrar|\d+\.? soru)",
+    re.IGNORECASE,
+)
+_VISUAL_QUERY_RE = re.compile(r"\b(?:tablo|tablodaki|şekil|grafik|görsel|resim|şema)\b", re.I)
+
+
+@dataclass(frozen=True)
+class Evidence:
+    chunk_id: int
+    material_id: int
+    display_name: str
+    page_start: int
+    page_end: int
+    section_title: str | None
+    content_kind: str
+    text: str
+    lexical_rank: int | None
+    semantic_rank: int | None
+    hybrid_score: float
+
+
+@dataclass
+class RetrievalResult:
+    evidence: list[Evidence] = field(default_factory=list)
+    note_context: list[str] = field(default_factory=list)
+    attachments: list[dict] = field(default_factory=list)
+    source_material_ids: list[int] = field(default_factory=list)
+    resolved_query: str = ""
+    used_semantic_search: bool = False
+
+
+def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
+    """Add conversational referents only for short/clearly dependent turns."""
+    clean = re.sub(r"\s+", " ", query or "").strip()
+    if not clean or not recent_history:
+        return clean
+    dependent = len(clean.split()) <= 3 or bool(_FOLLOWUP_RE.search(clean))
+    if not dependent:
+        return clean
+    previous: list[str] = []
+    for item in reversed(recent_history[-6:]):
+        content = re.sub(r"\s+", " ", item.get("content") or "").strip()
+        if content:
+            previous.append(content[:700])
+        if len(previous) >= 2:
+            break
+    if not previous:
+        return clean
+    return clean + "\nÖnceki bağlam: " + " | ".join(reversed(previous))
+
+
+def _single_page_pdf(reference: str, page_number: int) -> bytes:
+    path = storage_ensure_local(reference)
+    reader = PdfReader(str(path))
+    if page_number < 1 or page_number > len(reader.pages):
+        raise ValueError("page outside source")
+    writer = PdfWriter()
+    writer.add_page(reader.pages[page_number - 1])
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _pgvector_available(session: Session, dimensions: int) -> bool:
+    if dimensions != 768:
+        return False
+    row = session.exec(text(
+        "SELECT to_regtype('vector') IS NOT NULL AND EXISTS ("
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='studyindexchunk' AND column_name='embedding_vector')"
+    )).one()
+    return bool(row[0])
+
+
+def _hybrid_rows(
+    session: Session,
+    *,
+    owner_user_id: int,
+    course_id: int,
+    lexical_query: str,
+    query_vector: list[float] | None,
+    embedding_provider: str,
+    embedding_model: str,
+    limit: int,
+) -> list:
+    candidate_limit = max(20, min(120, limit * 8))
+    common = """
+        FROM studyindexchunk c
+        JOIN studymaterial m
+          ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.active_index_version=c.index_version
+         AND m.index_status='READY' AND m.deleted_at IS NULL
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+    """
+    if query_vector:
+        dimensions = len(query_vector)
+        if _pgvector_available(session, dimensions):
+            semantic_score = "1 - (c.embedding_vector <=> CAST(:vector_literal AS vector))"
+            semantic_where = """
+                AND c.embedding_vector IS NOT NULL
+                AND c.embedding_provider=:embedding_provider
+                AND c.embedding_model=:embedding_model
+                AND c.embedding_dimensions=:embedding_dimensions
+            """
+            vector_params = {"vector_literal": "[" + ",".join(str(float(x)) for x in query_vector) + "]"}
+        else:
+            semantic_score = """
+                (SELECT SUM(e.value*q.value) /
+                    NULLIF(SQRT(SUM(e.value*e.value))*SQRT(SUM(q.value*q.value)), 0)
+                 FROM unnest(c.embedding_array) WITH ORDINALITY AS e(value, ord)
+                 JOIN unnest(CAST(:query_vector AS DOUBLE PRECISION[])) WITH ORDINALITY AS q(value, ord)
+                   ON q.ord=e.ord)
+            """
+            semantic_where = """
+                AND c.embedding_array IS NOT NULL
+                AND c.embedding_provider=:embedding_provider
+                AND c.embedding_model=:embedding_model
+                AND c.embedding_dimensions=:embedding_dimensions
+            """
+            vector_params = {"query_vector": query_vector}
+        semantic_cte = f"""
+            semantic AS (
+                SELECT c.id, {semantic_score} AS raw_score,
+                       ROW_NUMBER() OVER (ORDER BY {semantic_score} DESC, c.id) AS rank
+                {common} {semantic_where}
+                ORDER BY raw_score DESC, c.id
+                LIMIT :candidate_limit
+            ),
+        """
+        semantic_union = "UNION SELECT id FROM semantic"
+        semantic_columns = "s.rank AS semantic_rank, s.raw_score AS semantic_score,"
+        semantic_join = "LEFT JOIN semantic s ON s.id=c.id"
+        semantic_fusion = "COALESCE(1.0/(60+s.rank), 0)"
+    else:
+        semantic_cte = ""
+        semantic_union = ""
+        semantic_columns = "NULL AS semantic_rank, NULL AS semantic_score,"
+        semantic_join = ""
+        semantic_fusion = "0"
+        vector_params = {}
+
+    sql = f"""
+        WITH lexical AS (
+            SELECT c.id,
+                   ts_rank_cd(
+                     to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
+                     websearch_to_tsquery('simple', :lexical_query)
+                   ) AS raw_score,
+                   ROW_NUMBER() OVER (ORDER BY
+                     ts_rank_cd(
+                       to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
+                       websearch_to_tsquery('simple', :lexical_query)
+                     ) DESC, c.id) AS rank
+            {common}
+              AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content)
+                  @@ websearch_to_tsquery('simple', :lexical_query)
+            ORDER BY raw_score DESC, c.id
+            LIMIT :candidate_limit
+        ),
+        {semantic_cte}
+        candidates AS (
+            SELECT id FROM lexical
+            {semantic_union}
+        )
+        SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+               c.section_title, c.content_kind, c.text_content,
+               l.rank AS lexical_rank, l.raw_score AS lexical_score,
+               {semantic_columns}
+               (COALESCE(1.0/(60+l.rank), 0) + {semantic_fusion}) AS hybrid_score
+        FROM candidates x
+        JOIN studyindexchunk c ON c.id=x.id
+        JOIN studymaterial m ON m.id=c.material_id
+        LEFT JOIN lexical l ON l.id=c.id
+        {semantic_join}
+        ORDER BY hybrid_score DESC, c.page_start ASC, c.id ASC
+        LIMIT :limit
+    """
+    params = {
+        "owner": owner_user_id,
+        "course": course_id,
+        "lexical_query": lexical_query,
+        "candidate_limit": candidate_limit,
+        "limit": max(1, min(limit, 20)),
+        "embedding_provider": embedding_provider,
+        "embedding_model": embedding_model,
+        "embedding_dimensions": len(query_vector) if query_vector else 0,
+        **vector_params,
+    }
+    return list(session.exec(text(sql), params=params).all())
+
+
+def _neighbor_rows(
+    session: Session,
+    *,
+    owner_user_id: int,
+    course_id: int,
+    seed_ids: list[int],
+    exclude_ids: list[int],
+    limit: int = 4,
+) -> list:
+    if not seed_ids:
+        return []
+    return list(session.exec(text(
+        """
+        WITH seed_order AS (
+            SELECT id, ord FROM unnest(CAST(:seed_ids AS BIGINT[])) WITH ORDINALITY AS x(id, ord)
+        ), seeds AS (
+            SELECT c.id, c.material_id, c.index_version, c.chunk_index,
+                   c.page_start, s.ord
+            FROM seed_order s JOIN studyindexchunk c ON c.id=s.id
+        ), neighbors AS (
+            SELECT DISTINCT ON (c.id)
+                   c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+                   c.section_title, c.content_kind, c.text_content,
+                   NULL::BIGINT AS lexical_rank, NULL::DOUBLE PRECISION AS lexical_score,
+                   NULL::BIGINT AS semantic_rank, NULL::DOUBLE PRECISION AS semantic_score,
+                   (0.001 / seeds.ord)::DOUBLE PRECISION AS hybrid_score,
+                   seeds.ord AS seed_order
+            FROM seeds
+            JOIN studyindexchunk c
+              ON c.material_id=seeds.material_id AND c.index_version=seeds.index_version
+             AND (ABS(c.chunk_index-seeds.chunk_index)=1 OR ABS(c.page_start-seeds.page_start)=1)
+            JOIN studymaterial m
+              ON m.id=c.material_id AND m.owner_user_id=:owner
+             AND m.active_index_version=c.index_version
+             AND m.index_status='READY' AND m.deleted_at IS NULL
+            WHERE c.owner_user_id=:owner AND c.course_id=:course
+              AND NOT (c.id = ANY(CAST(:exclude_ids AS BIGINT[])))
+            ORDER BY c.id, seeds.ord, ABS(c.page_start-seeds.page_start), ABS(c.chunk_index-seeds.chunk_index)
+        )
+        SELECT id, material_id, display_name, page_start, page_end, section_title,
+               content_kind, text_content, lexical_rank, lexical_score,
+               semantic_rank, semantic_score, hybrid_score
+        FROM neighbors ORDER BY seed_order, page_start, id LIMIT :limit
+        """
+    ), params={
+        "seed_ids": seed_ids,
+        "exclude_ids": exclude_ids or [-1],
+        "owner": owner_user_id,
+        "course": course_id,
+        "limit": max(0, min(limit, 8)),
+    }).all())
+
+
+def retrieve_course_context_v2(
+    session: Session,
+    *,
+    owner_user_id: int,
+    course_id: int,
+    query: str,
+    recent_history: list[dict] | None = None,
+    limit: int = 8,
+) -> RetrievalResult:
+    if session.get_bind().dialect.name != "postgresql":
+        raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
+    resolved = resolve_followup_query(query, recent_history)
+    target = get_embedding_target()
+    vector: list[float] | None = None
+    try:
+        vector = get_provider(target.provider).embed_text(
+            model=target.model,
+            text="Diş hekimliği ders notunda bu sorunun kanıtını bul:\n" + resolved,
+            dimensions=get_embedding_dimensions(),
+        )
+    except StudyProviderError as exc:
+        logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
+
+    rows = _hybrid_rows(
+        session,
+        owner_user_id=owner_user_id,
+        course_id=course_id,
+        lexical_query=resolved,
+        query_vector=vector,
+        embedding_provider=target.provider,
+        embedding_model=target.model,
+        limit=limit,
+    )
+    primary_ids = [int(row[0]) for row in rows]
+    rows.extend(_neighbor_rows(
+        session,
+        owner_user_id=owner_user_id,
+        course_id=course_id,
+        seed_ids=primary_ids[:4],
+        exclude_ids=primary_ids,
+        limit=min(4, max(0, 12 - len(rows))),
+    ))
+    result = RetrievalResult(resolved_query=resolved)
+    for row in rows:
+        evidence = Evidence(
+            chunk_id=int(row[0]), material_id=int(row[1]), display_name=row[2],
+            page_start=int(row[3]), page_end=int(row[4]), section_title=row[5],
+            content_kind=row[6], text=row[7],
+            lexical_rank=int(row[8]) if row[8] is not None else None,
+            semantic_rank=int(row[10]) if row[10] is not None else None,
+            hybrid_score=float(row[12] or 0),
+        )
+        result.evidence.append(evidence)
+        if evidence.semantic_rank is not None:
+            result.used_semantic_search = True
+        result.note_context.append(
+            f"[KANIT material_id={evidence.material_id} sayfa={evidence.page_start} "
+            f"bölüm={evidence.section_title or '-'} tür={evidence.content_kind}]\n{evidence.text}"
+        )
+        if evidence.material_id not in result.source_material_ids:
+            result.source_material_ids.append(evidence.material_id)
+
+    visual_pages: list[tuple[int, int]] = []
+    for item in result.evidence:
+        if item.content_kind in {"TABLE", "VISUAL"} or _VISUAL_QUERY_RE.search(query or ""):
+            key = (item.material_id, item.page_start)
+            if key not in visual_pages:
+                visual_pages.append(key)
+        if len(visual_pages) >= 3:
+            break
+    if visual_pages:
+        material_rows = session.exec(
+            text("SELECT id, file_path, mime_type, display_name FROM studymaterial WHERE owner_user_id=:o AND id=ANY(:ids)"),
+            params={"o": owner_user_id, "ids": [item[0] for item in visual_pages]},
+        ).all()
+        materials = {int(row[0]): row for row in material_rows}
+        for material_id, page in visual_pages:
+            material = materials.get(material_id)
+            if not material:
+                continue
+            try:
+                if material[2] == "application/pdf":
+                    data = _single_page_pdf(material[1], page)
+                elif str(material[2]).startswith("image/"):
+                    data = storage_ensure_local(material[1]).read_bytes()
+                else:
+                    continue
+            except Exception:
+                logger.exception("Academic V2 visual page could not be prepared")
+                continue
+            result.attachments.append({
+                "mime_type": material[2],
+                "data": data,
+                "label": f"INTERNAL_SOURCE: {material[3]}, sayfa {page}",
+            })
+    return result

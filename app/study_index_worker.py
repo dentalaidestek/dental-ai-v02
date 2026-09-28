@@ -1,8 +1,9 @@
 """Bounded, crash-resumable Academic AI V2 indexing worker.
 
-This module is intentionally not wired into the live V1 upload path yet.
-Each invocation claims one durable job and performs one bounded slice. Durable
-page/chunk artifacts are the checkpoint; there is no fragile in-memory cursor.
+The web process may enqueue shadow builds behind a default-off feature flag,
+but it never imports or runs this worker. Each invocation claims one durable
+job and performs one bounded slice. Durable page/chunk artifacts are the
+checkpoint; process memory is never authoritative.
 """
 from __future__ import annotations
 
@@ -12,12 +13,13 @@ import logging
 import os
 import re
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from sqlmodel import Session, select
 
 from app.object_storage import ensure_local as storage_ensure_local
+from app.study_chunking import chunk_dental_page, normalize_extracted_text
 from app.study_index_jobs import (
     StudyIndexChunk,
     StudyIndexJob,
@@ -48,6 +50,10 @@ logger = logging.getLogger(__name__)
 TERMINAL_PAGE_STATES = {"EXTRACTED", "OCR_DONE"}
 
 
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _int_env(name: str, default: int, low: int, high: int) -> int:
     try:
         value = int(os.getenv(name, str(default)))
@@ -60,10 +66,6 @@ def worker_id() -> str:
     return (os.getenv("STUDY_INDEX_WORKER_ID") or f"{socket.gethostname()}:{os.getpid()}").strip()
 
 
-def _normalize_text(value: str | None) -> str:
-    return re.sub(r"\s+", " ", value or "").strip()
-
-
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -72,7 +74,7 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     """Conservative extraction gate: suspicious text goes to OCR, not READY."""
     if not text:
         return False, "EMPTY"
-    compact = re.sub(r"\\s+", "", text)
+    compact = re.sub(r"\s+", "", text)
     if len(compact) < 24:
         return False, "TOO_SHORT"
     printable = sum(1 for ch in text if ch.isprintable())
@@ -81,7 +83,7 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     alnum = sum(1 for ch in text if ch.isalnum())
     if alnum / max(1, len(compact)) < 0.35:
         return False, "LOW_ALNUM_RATIO"
-    replacement = text.count("\\ufffd")
+    replacement = text.count("\ufffd")
     if replacement / max(1, len(text)) > 0.01:
         return False, "DECODE_REPLACEMENTS"
     return True, None
@@ -102,7 +104,7 @@ def _sha256_file(path) -> str:
 def _index_fingerprint() -> str:
     target = get_embedding_target()
     payload = {
-        "schema": "academic-v2-page-baseline-1",
+        "schema": "academic-v2-dental-structure-2",
         "embedding_provider": target.provider,
         "embedding_model": target.model,
         "embedding_dimensions": get_embedding_dimensions(),
@@ -129,7 +131,7 @@ def _material_row(session: Session, material_id: int, owner_user_id: int):
 def _lease_still_owned(session: Session, job: StudyIndexJob) -> bool:
     if job.id is None or not job.lease_token or not job.worker_id:
         return False
-    now = datetime.utcnow()
+    now = _utcnow_naive()
     row = session.exec(
         __import__("sqlalchemy").text(
             """
@@ -156,6 +158,8 @@ def _upsert_chunk(
     chunk_index: int,
     page_number: int,
     text_content: str,
+    section_title: str | None = None,
+    content_kind: str = "TEXT",
 ) -> None:
     existing = session.exec(
         select(StudyIndexChunk)
@@ -177,7 +181,8 @@ def _upsert_chunk(
             chunk_index=chunk_index,
             page_start=page_number,
             page_end=page_number,
-            content_kind="TEXT",
+            section_title=section_title,
+            content_kind=content_kind,
             text_content=text_content,
             text_sha256=_sha256_text(text_content),
         )
@@ -205,7 +210,7 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
         if not _lease_still_owned(session, job):
             session.rollback()
             return "LEASE_LOST"
-        text = _normalize_text(reader.pages[page_number - 1].extract_text())
+        text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
         quality_ok, quality_reason = _text_quality(text)
         if not quality_ok:
             # OCR is a separate constrained stage. Empty or suspiciously
@@ -238,16 +243,6 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                 extraction_method="PDF_TEXT",
                 content_sha256=digest,
             )
-            # Stage-3 baseline is one durable page chunk. Structure-aware
-            # splitting replaces this in the retrieval/chunking phase without
-            # weakening crash recovery.
-            _upsert_chunk(
-                session,
-                job=job,
-                chunk_index=page_number - 1,
-                page_number=page_number,
-                text_content=text,
-            )
         session.commit()
 
     remaining = missing_page_numbers(
@@ -268,7 +263,89 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
     return "OCR" if unresolved else "CHUNK"
 
 
-def _ocr_slice(session: Session, job: StudyIndexJob, path) -> str:
+def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
+    """Create a bounded batch of deterministic, page-addressable chunks."""
+    batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 16, 1, 50)
+    rows = list(session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
+        .order_by(StudyIndexPage.page_number.asc())
+    ).all())
+    processed = 0
+    for page in rows:
+        existing = session.exec(
+            select(StudyIndexChunk.id)
+            .where(StudyIndexChunk.material_id == job.material_id)
+            .where(StudyIndexChunk.index_version == job.index_version)
+            .where(StudyIndexChunk.page_start == page.page_number)
+        ).first()
+        if existing:
+            continue
+        if processed >= batch:
+            return "CHUNK"
+        if not _lease_still_owned(session, job):
+            session.rollback()
+            return "LEASE_LOST"
+        chunks = chunk_dental_page(page.text_content or "")
+        if not chunks:
+            raise RuntimeError(f"NO_CHUNKS_FOR_PAGE:{page.page_number}")
+        if len(chunks) >= 1000:
+            raise RuntimeError(f"TOO_MANY_CHUNKS_FOR_PAGE:{page.page_number}")
+        for local_index, chunk in enumerate(chunks):
+            _upsert_chunk(
+                session,
+                job=job,
+                chunk_index=((page.page_number - 1) * 1000) + local_index,
+                page_number=page.page_number,
+                text_content=chunk.text,
+                section_title=chunk.section_title,
+                content_kind=chunk.content_kind,
+            )
+        session.commit()
+        processed += 1
+    return "EMBED"
+
+
+def _single_page_pdf(path, page_number: int) -> bytes:
+    reader = PdfReader(str(path))
+    if page_number < 1 or page_number > len(reader.pages):
+        raise RuntimeError(f"OCR_PAGE_OUT_OF_RANGE:{page_number}")
+    writer = PdfWriter()
+    writer.add_page(reader.pages[page_number - 1])
+    from io import BytesIO
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
+    existing = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.page_number == 1)
+    ).first()
+    if not existing:
+        upsert_page_checkpoint(
+            session,
+            owner_user_id=job.owner_user_id,
+            course_id=job.course_id,
+            material_id=job.material_id,
+            index_version=job.index_version,
+            page_number=1,
+            status="OCR_REQUIRED",
+            text_content=None,
+            extraction_method="IMAGE",
+            content_sha256=None,
+            error="OCR_REQUIRED:IMAGE_SOURCE",
+        )
+        session.commit()
+    return "OCR"
+
+
+def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> str:
     """Process a bounded OCR batch through an optional provider.
 
     OCR is opt-in and fail-closed. The concrete provider is deliberately
@@ -289,9 +366,87 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path) -> str:
     ).all())
     if not pages:
         return "CHUNK"
-    # No vendor is silently guessed. Unsupported configuration is a permanent
-    # configuration error rather than fabricated OCR output.
-    raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
+    if provider_name != "gemini":
+        # No vendor is silently guessed. Unsupported configuration is a
+        # permanent configuration error rather than fabricated OCR output.
+        raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
+    provider = get_provider("gemini")
+    model = (os.getenv("STUDY_V2_OCR_MODEL") or "gemini-3.8-flash").strip()
+    provider_key = f"ocr:gemini:{model}"
+    if provider_circuit_open(session, provider_key):
+        return "PROVIDER_PAUSED"
+    attachment_type = "application/pdf" if mime_type == "application/pdf" else mime_type
+    if not provider.supports_generation_attachment(attachment_type):
+        raise RuntimeError(f"OCR_PROVIDER_UNSUPPORTED:{attachment_type}")
+    for page in pages:
+        if not _lease_still_owned(session, job):
+            session.rollback()
+            return "LEASE_LOST"
+        from app.study_index_jobs import renew_index_lease
+        if not renew_index_lease(
+            session,
+            job_id=job.id,
+            lease_token=job.lease_token,
+            worker_id=job.worker_id,
+            lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
+        ):
+            session.rollback()
+            return "LEASE_LOST"
+        try:
+            text = provider.generate(
+                model=model,
+                system_prompt=(
+                    "Yalnız verilen diş hekimliği ders notu sayfasını eksiksiz yazıya dök. "
+                    "Başlıkları, maddeleri ve tablo satırlarını koru. Açıklama veya yorum ekleme."
+                ),
+                history=[],
+                prompt="Bu tek sayfalık PDF'yi OCR gibi aktar.",
+                attachments=[{
+                    "mime_type": attachment_type,
+                    "data": _single_page_pdf(path, page.page_number) if attachment_type == "application/pdf" else path.read_bytes(),
+                    "label": f"Kaynak sayfa {page.page_number}",
+                }],
+                temperature=0.0,
+                max_output_tokens=8000,
+            )
+        except StudyProviderError as exc:
+            record_provider_failure(
+                session,
+                provider_key,
+                error=str(exc),
+                threshold=_int_env("STUDY_V2_CIRCUIT_FAILURES", 3, 1, 20),
+                open_seconds=_int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800),
+            )
+            raise
+        if not _lease_still_owned(session, job):
+            session.rollback()
+            return "LEASE_LOST"
+        record_provider_success(session, provider_key)
+        text = normalize_extracted_text(text)
+        quality_ok, reason = _text_quality(text)
+        if not quality_ok:
+            raise StudyProviderError(f"OCR_QUALITY_REJECTED:{reason}", retryable=True)
+        upsert_page_checkpoint(
+            session,
+            owner_user_id=job.owner_user_id,
+            course_id=job.course_id,
+            material_id=job.material_id,
+            index_version=job.index_version,
+            page_number=page.page_number,
+            status="OCR_DONE",
+            text_content=text,
+            extraction_method=f"GEMINI_OCR:{model}",
+            content_sha256=_sha256_text(text),
+            error=None,
+        )
+        session.commit()
+    remaining = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status == "OCR_REQUIRED")
+    ).first()
+    return "OCR" if remaining else "CHUNK"
 
 
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
@@ -320,7 +475,7 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
         # Provider calls can be slower than local parsing. Renew before the
         # call when the lease is close to expiry; ownership token prevents a
         # stale worker from extending somebody else's reclaimed lease.
-        if job.lease_until and (job.lease_until - datetime.utcnow()).total_seconds() <= heartbeat_margin:
+        if job.lease_until and (job.lease_until - _utcnow_naive()).total_seconds() <= heartbeat_margin:
             from app.study_index_jobs import renew_index_lease
             if not renew_index_lease(
                 session,
@@ -331,7 +486,7 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
             ):
                 session.rollback()
                 return "LEASE_LOST"
-            job.lease_until = datetime.utcnow() + timedelta(seconds=heartbeat_extend)
+            job.lease_until = _utcnow_naive() + timedelta(seconds=heartbeat_extend)
         try:
             vector = provider.embed_text(
                 model=target.model,
@@ -355,12 +510,30 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
             session.rollback()
             return "LEASE_LOST"
         record_provider_success(session, provider_key)
+        vector_json = _vector_json(vector)
         row.embedding_provider = target.provider
         row.embedding_model = target.model
         row.embedding_dimensions = len(vector)
-        row.embedding_json = _vector_json(vector)
-        row.updated_at = datetime.utcnow()
+        row.embedding_json = vector_json
+        row.updated_at = _utcnow_naive()
         session.add(row)
+        session.flush()
+        if session.get_bind().dialect.name == "postgresql":
+            # Native array is always available and keeps semantic scoring in
+            # PostgreSQL. A pgvector column is filled too when the extension is
+            # installed; capability setup creates the helper safely.
+            from sqlalchemy import text as sql_text
+            session.exec(
+                sql_text(
+                    "UPDATE studyindexchunk SET embedding_array=:vector "
+                    "WHERE id=:chunk_id"
+                ),
+                params={"vector": vector, "chunk_id": row.id},
+            )
+            session.exec(
+                sql_text("SELECT study_v2_sync_pgvector(:chunk_id, :vector_json)"),
+                params={"chunk_id": row.id, "vector_json": vector_json},
+            )
         session.commit()
     return "EMBED" if pending_embedding_chunks(
         session,
@@ -429,11 +602,12 @@ def run_one_slice(
         if stage in {"PREPARE", "PARSE"}:
             if mime_type == "application/pdf":
                 next_stage = _extract_pdf_slice(session, job, path)
+            elif mime_type in {"image/jpeg", "image/png", "image/webp"}:
+                next_stage = _prepare_image_checkpoint(session, job)
             else:
                 raise RuntimeError(f"UNSUPPORTED_V2_MIME:{mime_type}")
         elif stage == "CHUNK":
-            # Page artifacts already create deterministic baseline chunks.
-            next_stage = "EMBED"
+            next_stage = _chunk_slice(session, job)
         elif stage == "EMBED":
             next_stage = _embed_slice(session, job)
         elif stage == "OCR":
@@ -447,7 +621,7 @@ def run_one_slice(
                     stage="OCR",
                 )
                 return "MOVED:OCR_HEAVY" if moved else "LEASE_LOST"
-            next_stage = _ocr_slice(session, job, path)
+            next_stage = _ocr_slice(session, job, path, mime_type)
         elif stage == "OCR_WAIT":
             next_stage = "OCR_WAIT"
         elif stage == "VERIFY":
@@ -480,7 +654,7 @@ def run_one_slice(
         if next_stage == "LEASE_LOST":
             return "LEASE_LOST"
         if next_stage == "PROVIDER_PAUSED":
-            retry_at = datetime.utcnow() + timedelta(seconds=_int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800))
+            retry_at = _utcnow_naive() + timedelta(seconds=_int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800))
             mark_index_job_failed(
                 session,
                 job_id=job.id,
@@ -493,7 +667,7 @@ def run_one_slice(
         if next_stage == "OCR_WAIT":
             # Release the lease and back off; no busy-loop while OCR support is
             # intentionally not active yet.
-            retry_at = datetime.utcnow() + timedelta(minutes=5)
+            retry_at = _utcnow_naive() + timedelta(minutes=5)
             mark_index_job_failed(
                 session,
                 job_id=job.id,
@@ -516,8 +690,8 @@ def run_one_slice(
         session.rollback()
         # Transient provider errors do not permanently fail the document.
         max_attempts = _int_env("STUDY_V2_MAX_ATTEMPTS", 8, 1, 50)
-        can_retry = bool(exc.retryable and job.attempts < max_attempts)
-        retry_at = datetime.utcnow() + timedelta(seconds=min(1800, 30 * (2 ** min(job.attempts, 6)))) if can_retry else None
+        can_retry = bool(exc.retryable and job.failure_attempts < max_attempts)
+        retry_at = _utcnow_naive() + timedelta(seconds=min(1800, 30 * (2 ** min(job.failure_attempts, 6)))) if can_retry else None
         mark_index_job_failed(
             session,
             job_id=job.id,

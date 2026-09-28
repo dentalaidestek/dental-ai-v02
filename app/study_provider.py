@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterator
 
 from app.study_router_state import (
     record_api_result,
@@ -63,6 +63,25 @@ class StudyProvider:
 
     def embed_text(self, *, model: str, text: str, dimensions: int = 768) -> list[float]:
         raise NotImplementedError
+
+    def generate_stream(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        history: list[dict],
+        prompt: str,
+        attachments: list[dict] | None = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 7000,
+    ) -> Iterator[str]:
+        # Providers without a streaming transport stay API-compatible. V2
+        # product code explicitly requires Gemini's real streaming override.
+        yield self.generate(
+            model=model, system_prompt=system_prompt, history=history,
+            prompt=prompt, attachments=attachments, temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
 
     def embed_binary(
         self,
@@ -383,6 +402,110 @@ class GeminiStudyProvider(StudyProvider):
         if not answer:
             raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
         return answer
+
+    def generate_stream(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        history: list[dict],
+        prompt: str,
+        attachments: list[dict] | None = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 7000,
+    ) -> Iterator[str]:
+        """Yield Gemini SSE text chunks; never retry after output is emitted."""
+        self._require_key()
+        if not router_target_available(self.name, model):
+            raise StudyProviderError(
+                "Gemini hedefi kota/sağlık kaydına göre geçici olarak beklemede.",
+                code=429, retryable=True, tracked=True,
+            )
+        contents: list[dict] = []
+        for item in history:
+            value = (item.get("content") or "").strip()
+            if value:
+                contents.append({
+                    "role": "model" if item.get("role") == "ASSISTANT" else "user",
+                    "parts": [{"text": value}],
+                })
+        latest_parts: list[dict] = [{"text": prompt}]
+        for attachment in attachments or []:
+            label = (attachment.get("label") or "").strip()
+            if label:
+                latest_parts.append({"text": label})
+            raw, mime_type = attachment.get("data"), attachment.get("mime_type")
+            if isinstance(raw, bytes) and mime_type:
+                latest_parts.append({"inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(raw).decode("ascii"),
+                }})
+        contents.append({"role": "user", "parts": latest_parts})
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature, "topP": 0.9,
+                "maxOutputTokens": max_output_tokens,
+            },
+        }
+        request = urllib.request.Request(
+            f"{self.BASE_URL}/{model}:streamGenerateContent?alt=sse",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
+        )
+        started = time.perf_counter()
+        emitted = False
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        event = json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    candidates = event.get("candidates") or []
+                    if not candidates:
+                        continue
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    piece = "".join(
+                        part.get("text", "") for part in parts
+                        if isinstance(part, dict) and part.get("text")
+                    )
+                    piece = re.sub(r"(?is)<think>.*?</think>", "", piece)
+                    if piece:
+                        emitted = True
+                        yield piece
+                record_api_result(
+                    provider=self.name, model=model, operation="generation", success=emitted,
+                    status_code=getattr(response, "status", 200),
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    response_headers=response.headers,
+                )
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            record_api_result(
+                provider=self.name, model=model, operation="generation", success=False,
+                status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
+                response_headers=exc.headers, error_body=body,
+            )
+            raise StudyProviderError(
+                self._safe_message(exc.code), code=exc.code,
+                retryable=(not emitted and exc.code in self.RETRYABLE_HTTP_CODES), tracked=True,
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            record_api_result(
+                provider=self.name, model=model, operation="generation", success=False,
+                status_code=None, latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            raise StudyProviderError(
+                "Akademik AI akış bağlantısı kesildi.", retryable=not emitted, tracked=True,
+            ) from exc
+        if not emitted:
+            raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
 
     def _embed(self, *, model: str, parts: list[dict], dimensions: int) -> list[float]:
         payload = {
