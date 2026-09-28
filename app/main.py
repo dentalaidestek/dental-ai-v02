@@ -5168,7 +5168,6 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     elif jt == "COMPLETION_DUE":
         # No requester decision within 24h: finalize exactly like requester confirmation.
         case.status = "COMPLETED"
-        case.requester_completed_at = now
         case.completed_at = now
         session.add(case)
         payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -6883,6 +6882,8 @@ def expert_support_annotate_message(request: Request, case_id: int, message_id: 
         original = s.get(ConsultationMessage, message_id)
         if not case or not original or original.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or original.message_type != "IMAGE":
             return HTMLResponse("Bu görüntü işaretlenemez.", status_code=403)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            return HTMLResponse("Bu danışmanlık mesajlaşmaya kapalı.", status_code=409)
         s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type="ANNOTATION", content="Görüntü işaretlemesi", original_media_path=original.media_path, annotation_json=annotation_json, reply_to_message_id=original.id))
         _consultation_event(s, case.id, "IMAGE_ANNOTATED", user.id)
         s.commit()
@@ -7425,7 +7426,7 @@ def _resolve_notifications(
     return events
 
 
-CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED")
+CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")
 
 
 def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
