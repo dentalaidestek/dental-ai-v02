@@ -58,7 +58,7 @@ function resetChatReconnect(){chatReconnectDelayMs=chatReconnectBaseMs;clearTime
 function scheduleChatReconnect(){clearTimeout(reconnectTimer);const delay=chatReconnectDelayMs;chatReconnectDelayMs=Math.min(chatReconnectMaxMs,chatReconnectDelayMs*2);reconnectTimer=setTimeout(connectChat,delay)}
 const currentComposerError=()=>document.getElementById("composerInlineError"),currentConsultationFile=()=>document.getElementById("consultationFile"),currentAttachmentPreview=()=>document.getElementById("attachmentPreview"),currentAttachmentThumb=()=>document.getElementById("attachmentThumb"),currentAttachmentName=()=>document.getElementById("attachmentName");
 function esc(v){const d=document.createElement("div");d.textContent=v||"";return d.innerHTML}
-function addMessage(m){if(!chat)return;let pending=null;if(m.client_message_id){pending=pendingTextSends.get(m.client_message_id)||pendingMediaSends.get(m.client_message_id)||null;if(pending){pendingTextSends.delete(m.client_message_id);pendingMediaSends.delete(m.client_message_id)}}const existing=document.getElementById("msg-"+m.id);if(existing){if(pending?.el&&pending.el!==existing)pending.el.remove();return}chat.querySelector(".expert-empty")?.remove();const mine=Number(m.sender_user_id)===Number(chat.dataset.userId),d=pending?.el||document.createElement("div"),url=m.media_url||("/expert-support/cases/{{ case.id }}/message-media/"+m.id);d.className="expert-bubble"+(mine?" mine":"");d.id="msg-"+m.id;d.dataset.messageId=m.id;let body="";if(m.message_type==="IMAGE")body='<div class="chat-image-wrap"><img class="chat-clinical-image" src="'+url+'" alt="Klinik görüntü"><button class="annotation-launch" type="button" data-message="'+m.id+'" data-src="'+url+'" aria-label="Görseli düzenle" title="Görseli düzenle">✎</button></div>';else if(m.message_type==="VOICE")body='<audio controls src="'+url+'"></audio>';else if(m.message_type==="FILE")body='<a href="'+url+'" target="_blank">Dosya · '+esc(m.content||"Belge")+'</a>';else if(m.message_type==="ANNOTATION")body='<div class="annotation-note">✎ İşaretlenmiş görüntü</div>';else body='<p>'+esc(m.content)+'</p>';d.innerHTML=(m.reply_to_message_id?'<a class="expert-reply-ref" href="#msg-'+m.reply_to_message_id+'">↩ Alıntılanan mesaj</a>':"")+body+'<small>'+new Date(m.created_at+"Z").toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+(mine?' <span class="message-receipt">✓ Gönderildi</span>':"")+'</small>';if(!pending)chat.appendChild(d);lastMessageId=Math.max(lastMessageId,Number(m.id));bindSwipe(d);bindAnnotation(d);scrollChatToBottom(!pending)}
+function addMessage(m){if(!chat)return;let pending=null;if(m.client_message_id){pending=pendingTextSends.get(m.client_message_id)||pendingMediaSends.get(m.client_message_id)||null;if(pending){pendingTextSends.delete(m.client_message_id);pendingMediaSends.delete(m.client_message_id)}}const existing=document.getElementById("msg-"+m.id);if(existing){if(pending?.el&&pending.el!==existing)pending.el.remove();return}chat.querySelector(".expert-empty")?.remove();const mine=Number(m.sender_user_id)===Number(chat.dataset.userId),d=pending?.el||document.createElement("div"),url=m.media_url||("/expert-support/cases/{{ case.id }}/message-media/"+m.id);d.className="expert-bubble"+(mine?" mine":"");d.id="msg-"+m.id;d.dataset.messageId=m.id;let body="";if(m.message_type==="IMAGE")body='<div class="chat-image-wrap"><img class="chat-clinical-image" src="'+url+'" alt="Klinik görüntü"><button class="annotation-launch" type="button" data-message="'+m.id+'" data-src="'+url+'" aria-label="Görseli düzenle" title="Görseli düzenle">✎</button></div>';else if(m.message_type==="VOICE")body='<audio controls src="'+url+'"></audio>';else if(m.message_type==="FILE")body='<a href="'+url+'" target="_blank">Dosya · '+esc(m.content||"Belge")+'</a>';else if(m.message_type==="ANNOTATION")body='<div class="annotation-note">✎ İşaretlenmiş görüntü</div>';else body='<p>'+esc(m.content)+'</p>';d.innerHTML=(m.reply_to_message_id?'<a class="expert-reply-ref" href="#msg-'+m.reply_to_message_id+'">↩ Alıntılanan mesaj</a>':"")+body+'<small>'+new Date(m.created_at+"Z").toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+(mine?' <span class="message-receipt">✓ Gönderildi</span>':"")+'</small>';if(!pending?.el)chat.appendChild(d);lastMessageId=Math.max(lastMessageId,Number(m.id));bindSwipe(d);bindAnnotation(d);scrollChatToBottom(!pending?.el)}
 let caseRefreshTimer=null,caseRefreshPromise=null,pendingCaseStatus=null;
 function replaceCaseDynamic(doc,group,anchor){document.querySelectorAll('[data-case-dynamic="'+group+'"]').forEach(x=>x.remove());doc.querySelectorAll('[data-case-dynamic="'+group+'"]').forEach(x=>anchor?.parentNode?.insertBefore(document.importNode(x,true),anchor));}
 function caseStateMarkup(data){
@@ -183,8 +183,8 @@ document.addEventListener("change",e=>{
 },{signal:roomSignal});
 document.addEventListener("click",e=>{if(e.target.closest?.("#attachmentCancel"))clearAttachment();},{signal:roomSignal});
 
-function optimisticImage(src){
- const key="pending-media-"+Date.now(),d=document.createElement("div");
+function optimisticImage(src,key){
+ const d=document.createElement("div");
  d.className="expert-bubble mine pending media-pending";d.id=key;
  d.innerHTML='<div class="chat-image-wrap"><img class="chat-clinical-image" src="'+src+'" alt="Gönderilen görüntü"></div><small>Şimdi <span class="message-receipt">◷ Yükleniyor…</span></small>';
  chat?.appendChild(d);scrollChatToBottom(true);return {key,el:d};
@@ -195,15 +195,15 @@ async function sendAttachment(file=selectedAttachment,{replyId="",previewUrl=""}
  uploadInFlight=true;if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
  let ownPreview=false;
  if(!previewUrl&&file.type.startsWith("image/")){previewUrl=URL.createObjectURL(file);ownPreview=true}
- const pending=previewUrl?optimisticImage(previewUrl):null;if(pending)pendingMediaSends.set(pending.key,pending);
- const fd=new FormData();fd.append("file",file);if(pending)fd.append("client_message_id",pending.key);if(replyId)fd.append("reply_to_message_id",replyId);
+ const mediaKey="pending-media-"+Date.now()+"-"+Math.random().toString(36).slice(2),pending=previewUrl?optimisticImage(previewUrl,mediaKey):{key:mediaKey,el:null};pendingMediaSends.set(mediaKey,pending);
+ const fd=new FormData();fd.append("file",file);fd.append("client_message_id",mediaKey);if(replyId)fd.append("reply_to_message_id",replyId);
  try{
   const r=await fetch("/expert-support/cases/{{ case.id }}/media-message",{method:"POST",body:fd,credentials:"same-origin",headers:{"X-Requested-With":"fetch","Accept":"application/json"}});
   const data=await r.json().catch(()=>({}));if(!r.ok||!data.ok)throw new Error(data.error||"upload");
   addMessage(data.message);clearAttachment();
   const composerError=currentComposerError();if(composerError)composerError.hidden=true;scrollChatToBottom(true);return true;
  }catch(e){
-  if(pending&&!pendingMediaSends.has(pending.key)){clearAttachment();return true}
+  if(!pendingMediaSends.has(pending.key)){clearAttachment();return true}
   if(pending?.el){pending.el.classList.remove("pending");pending.el.classList.add("send-failed");const receipt=pending.el.querySelector(".message-receipt");if(receipt)receipt.textContent="Gönderilemedi";}
   showComposerError(e.message&&e.message!=="upload"?e.message:"Dosya gönderilemedi. Tekrar deneyin.");return false;
  }finally{
