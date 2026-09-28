@@ -515,7 +515,9 @@ def run_one_slice(
     except StudyProviderError as exc:
         session.rollback()
         # Transient provider errors do not permanently fail the document.
-        retry_at = datetime.utcnow() + timedelta(seconds=60) if exc.retryable else None
+        max_attempts = _int_env("STUDY_V2_MAX_ATTEMPTS", 8, 1, 50)
+        can_retry = bool(exc.retryable and job.attempts < max_attempts)
+        retry_at = datetime.utcnow() + timedelta(seconds=min(1800, 30 * (2 ** min(job.attempts, 6)))) if can_retry else None
         mark_index_job_failed(
             session,
             job_id=job.id,
@@ -524,7 +526,7 @@ def run_one_slice(
             error=f"PROVIDER:{exc}",
             retry_at=retry_at,
         )
-        return "PROVIDER_RETRY" if exc.retryable else "PROVIDER_FAILED"
+        return "PROVIDER_RETRY" if can_retry else "PROVIDER_FAILED"
     except Exception as exc:
         logger.exception("Academic V2 index slice failed job=%s", job.id)
         session.rollback()
