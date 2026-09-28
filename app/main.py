@@ -6887,7 +6887,7 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
 
 
 @app.post("/expert-support/cases/{case_id}/media-message")
-async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
+async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None)):
     wants_json = request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", "")
     def upload_error(message: str, status_code: int = 400):
         return JSONResponse({"ok": False, "error": message}, status_code=status_code) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus(message)}", status_code=303)
@@ -6941,8 +6941,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         sender=s.get(User,user.id)
         realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
-        safe_client_message_id = client_message_id.strip()[:96] or None
-        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
+        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
     await consultation_socket_hub.broadcast(case_id,payload)
     for realtime_event in status_events + realtime_events:
         await _publish_realtime_event(realtime_event)
