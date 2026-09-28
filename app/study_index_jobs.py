@@ -44,6 +44,9 @@ class StudyIndexJob(SQLModel, table=True):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     retire_after: Optional[datetime] = Field(default=None, index=True)
+    expected_page_count: Optional[int] = None
+    source_sha256: Optional[str] = Field(default=None, index=True)
+    index_fingerprint: Optional[str] = Field(default=None, index=True)
 
 
 
@@ -188,6 +191,52 @@ def enqueue_index_job(
 
 
 
+
+
+def set_build_identity(
+    session: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    worker_id: str,
+    expected_page_count: int,
+    source_sha256: str,
+    index_fingerprint: str,
+) -> bool:
+    """Persist immutable source/config identity once, and reject drift on resume."""
+    now = utcnow_naive()
+    row = session.exec(
+        text(
+            """
+            SELECT expected_page_count, source_sha256, index_fingerprint
+            FROM studyindexjob
+            WHERE id=:job_id AND status='RUNNING'
+              AND lease_token=:lease_token AND worker_id=:worker_id
+              AND lease_until IS NOT NULL AND lease_until > :now
+            """
+        ),
+        params={"job_id": job_id, "lease_token": lease_token, "worker_id": worker_id, "now": now},
+    ).first()
+    if not row:
+        return False
+    existing = (row[0], row[1], row[2])
+    wanted = (expected_page_count, source_sha256, index_fingerprint)
+    if any(value is not None for value in existing) and existing != wanted:
+        raise RuntimeError("BUILD_IDENTITY_MISMATCH")
+    session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET expected_page_count=:pages, source_sha256=:sha,
+                index_fingerprint=:fingerprint, updated_at=:now
+            WHERE id=:job_id AND lease_token=:lease_token AND worker_id=:worker_id
+            """
+        ),
+        params={"pages": expected_page_count, "sha": source_sha256, "fingerprint": index_fingerprint,
+                "now": now, "job_id": job_id, "lease_token": lease_token, "worker_id": worker_id},
+    )
+    session.commit()
+    return True
 
 
 def upsert_page_checkpoint(
