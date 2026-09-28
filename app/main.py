@@ -7496,6 +7496,7 @@ def _case_status_realtime_payload(case: ConsultationCase, viewer_user_id: int) -
     status_key, status_label = _consultation_display_status(case, viewer_user_id, _utcnow_naive())
     return {
         "case_id": case.id,
+        "patient_id": case.patient_id,
         "status": case.status,
         "status_key": status_key,
         "status_label": status_label,
