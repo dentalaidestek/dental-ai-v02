@@ -64,6 +64,25 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _text_quality(text: str) -> tuple[bool, str | None]:
+    """Conservative extraction gate: suspicious text goes to OCR, not READY."""
+    if not text:
+        return False, "EMPTY"
+    compact = re.sub(r"\\s+", "", text)
+    if len(compact) < 24:
+        return False, "TOO_SHORT"
+    printable = sum(1 for ch in text if ch.isprintable())
+    if printable / max(1, len(text)) < 0.97:
+        return False, "LOW_PRINTABLE_RATIO"
+    alnum = sum(1 for ch in text if ch.isalnum())
+    if alnum / max(1, len(compact)) < 0.35:
+        return False, "LOW_ALNUM_RATIO"
+    replacement = text.count("\\ufffd")
+    if replacement / max(1, len(text)) > 0.01:
+        return False, "DECODE_REPLACEMENTS"
+    return True, None
+
+
 def _vector_json(vector: list[float]) -> str:
     return json.dumps([float(item) for item in vector], separators=(",", ":"))
 
@@ -163,9 +182,11 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             session.rollback()
             return "LEASE_LOST"
         text = _normalize_text(reader.pages[page_number - 1].extract_text())
-        if not text:
-            # OCR is a separate constrained stage. Do not pretend a blank scan
-            # is successfully indexed and do not publish around it.
+        quality_ok, quality_reason = _text_quality(text)
+        if not quality_ok:
+            # OCR is a separate constrained stage. Empty or suspiciously
+            # garbled extraction is never accepted merely because pypdf
+            # returned a non-empty string.
             upsert_page_checkpoint(
                 session,
                 owner_user_id=job.owner_user_id,
@@ -177,6 +198,7 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                 text_content=None,
                 extraction_method="PDF_TEXT",
                 content_sha256=None,
+                error=f"OCR_REQUIRED:{quality_reason}",
             )
         else:
             digest = _sha256_text(text)
