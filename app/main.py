@@ -5180,6 +5180,12 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
             session, user_id=case.requester_user_id, notice_type="CONSULTATION_COMPLETION_CONFIRMATION",
             related_type="consultation_case", related_id=case.id,
         ))
+        for stale_type in ("CONSULTATION_ACCEPTED", "CONSULTATION_PROPOSAL_ACCEPTED", "CONSULTATION_CONTINUE"):
+            notices.extend(_resolve_notifications(
+                session,
+                user_id=case.expert_user_id if stale_type != "CONSULTATION_ACCEPTED" else case.requester_user_id,
+                notice_type=stale_type, related_type="consultation_case", related_id=case.id,
+            ))
         _, event, _ = _notify_user(
             session, user_id=case.requester_user_id, actor_user_id=None,
             notice_type="CONSULTATION_COMPLETED", title="Danışmanlık tamamlandı",
