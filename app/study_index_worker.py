@@ -328,6 +328,11 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
                 open_seconds=open_seconds,
             )
             raise
+        # The external call may outlive our lease. Re-check ownership before
+        # persisting its result; otherwise a reclaimed stale worker could write.
+        if not _lease_still_owned(session, job):
+            session.rollback()
+            return "LEASE_LOST"
         record_provider_success(session, provider_key)
         row.embedding_provider = target.provider
         row.embedding_model = target.model
@@ -464,7 +469,7 @@ def run_one_slice(
     except StudyProviderError as exc:
         session.rollback()
         # Transient provider errors do not permanently fail the document.
-        retry_at = datetime.utcnow() + timedelta(seconds=60 if exc.retryable else 300)
+        retry_at = datetime.utcnow() + timedelta(seconds=60) if exc.retryable else None
         mark_index_job_failed(
             session,
             job_id=job.id,
@@ -473,7 +478,7 @@ def run_one_slice(
             error=f"PROVIDER:{exc}",
             retry_at=retry_at,
         )
-        return "PROVIDER_RETRY"
+        return "PROVIDER_RETRY" if exc.retryable else "PROVIDER_FAILED"
     except Exception as exc:
         logger.exception("Academic V2 index slice failed job=%s", job.id)
         session.rollback()
