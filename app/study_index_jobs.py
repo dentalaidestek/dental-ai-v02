@@ -31,6 +31,7 @@ class StudyIndexJob(SQLModel, table=True):
     status: str = Field(default="QUEUED", index=True)  # QUEUED/RUNNING/DONE/FAILED/CANCELLED
     stage: str = Field(default="PREPARE", index=True)
     priority: int = Field(default=0, index=True)
+    resource_class: str = Field(default="NORMAL", index=True)  # NORMAL/OCR_HEAVY
     attempts: int = 0
     next_retry_at: Optional[datetime] = Field(default=None, index=True)
     lease_until: Optional[datetime] = Field(default=None, index=True)
@@ -101,6 +102,7 @@ def enqueue_index_job(
     material_id: int,
     index_version: str,
     priority: int = 0,
+    resource_class: str = "NORMAL",
 ) -> StudyIndexJob:
     existing = session.exec(
         select(StudyIndexJob)
@@ -116,6 +118,7 @@ def enqueue_index_job(
         material_id=material_id,
         index_version=index_version,
         priority=priority,
+        resource_class=resource_class,
     )
     session.add(job)
     try:
@@ -374,11 +377,90 @@ def yield_index_job(
     return bool(getattr(result, "rowcount", 0) == 1)
 
 
+
+
+def set_job_resource_class(
+    session: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    worker_id: str,
+    resource_class: str,
+    stage: str,
+    retry_at: datetime | None = None,
+) -> bool:
+    """Move a live job between bounded worker classes without losing progress."""
+    now = utcnow_naive()
+    result = session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET status = 'QUEUED',
+                resource_class = :resource_class,
+                stage = :stage,
+                next_retry_at = :retry_at,
+                lease_until = NULL,
+                lease_token = NULL,
+                worker_id = NULL,
+                updated_at = :now
+            WHERE id = :job_id
+              AND status = 'RUNNING'
+              AND lease_token = :lease_token
+              AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
+            """
+        ),
+        params={
+            "resource_class": resource_class,
+            "stage": stage,
+            "retry_at": retry_at,
+            "now": now,
+            "job_id": job_id,
+            "lease_token": lease_token,
+            "worker_id": worker_id,
+        },
+    )
+    session.commit()
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
+def boost_material_job(
+    session: Session,
+    *,
+    owner_user_id: int,
+    material_id: int,
+    priority: int = 100,
+) -> bool:
+    """Interactive demand may raise priority, never bypass readiness."""
+    result = session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET priority = CASE WHEN priority < :priority THEN :priority ELSE priority END,
+                updated_at = :now
+            WHERE owner_user_id = :owner_user_id
+              AND material_id = :material_id
+              AND status = 'QUEUED'
+            """
+        ),
+        params={
+            "priority": priority,
+            "now": utcnow_naive(),
+            "owner_user_id": owner_user_id,
+            "material_id": material_id,
+        },
+    )
+    session.commit()
+    return bool(getattr(result, "rowcount", 0) > 0)
+
+
 def claim_next_index_job(
     session: Session,
     *,
     worker_id: str,
     lease_seconds: int = 120,
+    resource_class: str = "NORMAL",
 ) -> StudyIndexJob | None:
     """Claim one eligible job.
 
@@ -396,7 +478,8 @@ def claim_next_index_job(
                 """
                 SELECT id
                 FROM studyindexjob
-                WHERE
+                WHERE resource_class = :resource_class
+                  AND (
                     (
                         status = 'QUEUED'
                         AND (next_retry_at IS NULL OR next_retry_at <= :now)
@@ -406,12 +489,15 @@ def claim_next_index_job(
                         AND lease_until IS NOT NULL
                         AND lease_until <= :now
                     )
-                ORDER BY priority DESC, created_at ASC, id ASC
+                  )
+                ORDER BY priority DESC,
+                         CASE WHEN next_retry_at IS NULL THEN created_at ELSE next_retry_at END ASC,
+                         created_at ASC, id ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
                 """
             ),
-            params={"now": now},
+            params={"now": now, "resource_class": resource_class},
         ).first()
         if not row:
             return None
@@ -419,6 +505,7 @@ def claim_next_index_job(
     else:
         candidate = session.exec(
             select(StudyIndexJob)
+            .where(StudyIndexJob.resource_class == resource_class)
             .where(
                 ((StudyIndexJob.status == "QUEUED") & ((StudyIndexJob.next_retry_at == None) | (StudyIndexJob.next_retry_at <= now)))
                 | ((StudyIndexJob.status == "RUNNING") & (StudyIndexJob.lease_until != None) & (StudyIndexJob.lease_until <= now))
