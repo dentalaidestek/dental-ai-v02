@@ -249,3 +249,18 @@ def test_consultation_reference_state_cards_are_scoped_and_complete():
     assert '>× Reddet</button>' in template
     assert 'consult-review-toggle' in template
     assert 'form.classList.contains("case-state-form"))stateMenu.open=false' in template
+
+
+def test_consultation_room_avoids_idle_recovery_and_countdown_work():
+    root = Path(__file__).resolve().parents[1]
+    room = (root / "app" / "templates" / "expert_case_room.html").read_text(encoding="utf-8")
+    messages = (root / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    assert "let catchUpPromise=null" in room
+    assert 'if(!socket||socket.readyState!==WebSocket.OPEN)catchUp();' in room
+    assert 'if(!nodes.length){if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null}return}' in room
+    assert 'if(!hasCountdown){if(messageCountdownTimer!==null){clearInterval(messageCountdownTimer);messageCountdownTimer=null}return}' in messages
+    row_endpoint = source.split('def consultation_message_row', 1)[1].split('@app.get("/messages/deleted"', 1)[0]
+    assert '.limit(1)).first()' in row_endpoint
+    assert 'select(func.count(ConsultationMessage.id))' in row_endpoint
+    assert 'order_by(ConsultationMessage.created_at.desc())).all()' not in row_endpoint
