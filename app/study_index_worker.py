@@ -30,6 +30,7 @@ from app.study_index_jobs import (
     publish_index_version,
     record_provider_failure,
     record_provider_success,
+    set_build_identity,
     set_job_resource_class,
     upsert_page_checkpoint,
     verify_build_complete,
@@ -88,6 +89,26 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
 
 def _vector_json(vector: list[float]) -> str:
     return json.dumps([float(item) for item in vector], separators=(",", ":"))
+
+
+def _sha256_file(path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _index_fingerprint() -> str:
+    target = get_embedding_target()
+    payload = {
+        "schema": "academic-v2-page-baseline-1",
+        "embedding_provider": target.provider,
+        "embedding_model": target.model,
+        "embedding_dimensions": get_embedding_dimensions(),
+        "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip().lower(),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def _material_row(session: Session, material_id: int, owner_user_id: int):
@@ -384,6 +405,25 @@ def run_one_slice(
         mime_type = material[4] or ""
         stage = (job.stage or "PREPARE").upper()
 
+        # PREPARE establishes immutable identity. Every later slice reuses it;
+        # if the R2/local source or indexing configuration changes mid-build,
+        # the generation fails instead of mixing incompatible artifacts.
+        if stage == "PREPARE":
+            expected_pages = len(PdfReader(str(path)).pages) if mime_type == "application/pdf" else 1
+            if not set_build_identity(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                expected_page_count=expected_pages,
+                source_sha256=_sha256_file(path),
+                index_fingerprint=_index_fingerprint(),
+            ):
+                return "LEASE_LOST"
+            job.expected_page_count = expected_pages
+            job.source_sha256 = _sha256_file(path)
+            job.index_fingerprint = _index_fingerprint()
+
         if stage in {"PREPARE", "PARSE"}:
             if mime_type == "application/pdf":
                 next_stage = _extract_pdf_slice(session, job, path)
@@ -409,7 +449,11 @@ def run_one_slice(
         elif stage == "OCR_WAIT":
             next_stage = "OCR_WAIT"
         elif stage == "VERIFY":
-            page_count = len(PdfReader(str(path)).pages) if mime_type == "application/pdf" else 1
+            if not job.expected_page_count or not job.source_sha256 or not job.index_fingerprint:
+                raise RuntimeError("BUILD_IDENTITY_MISSING")
+            if _sha256_file(path) != job.source_sha256 or _index_fingerprint() != job.index_fingerprint:
+                raise RuntimeError("BUILD_IDENTITY_MISMATCH")
+            page_count = job.expected_page_count
             ok, reason = verify_build_complete(
                 session,
                 material_id=job.material_id,
