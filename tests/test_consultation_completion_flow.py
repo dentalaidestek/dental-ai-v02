@@ -233,3 +233,19 @@ def test_requester_decisions_consume_completion_deadline():
     assert 'case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"' in complete
     assert 'case.status = "ACTIVE"; case.completion_confirmation_deadline = None;' in complete
     assert 'case.status = "DISPUTE"\n            case.completion_confirmation_deadline = None' in complete
+
+
+def test_consultation_reference_state_cards_are_scoped_and_complete():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "app" / "templates" / "expert_case_room.html").read_text(encoding="utf-8")
+    css = (root / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    for state in ("REQUESTED", "PROPOSED", "WAITING_START", "ACTIVE", "EXPERT_COMPLETED", "DISPUTE", "COMPLETED", "REJECTED", "PROPOSAL_REJECTED", "EXPERT_TIMEOUT", "PROPOSAL_EXPIRED"):
+        assert state in template
+    for tone in ("state-wait", "state-proposed", "state-start", "state-active", "state-expert-completed", "state-dispute", "state-completed", "state-rejected", "state-timeout"):
+        assert f".expert-room .consult-state-card.{tone}" in css
+    assert 'class="case-live-status"' not in template
+    assert 'class="expert-actionbox case-state-form"' not in template
+    assert '>Başka Uzman Seç</button>' not in template
+    assert '>× Reddet</button>' in template
+    assert 'consult-review-toggle' in template
+    assert 'form.classList.contains("case-state-form"))stateMenu.open=false' in template
