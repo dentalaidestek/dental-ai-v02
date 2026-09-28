@@ -268,7 +268,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     const syncCursorKey="daiLastEventId:{{ user.id if user else 0 }}";
     let lastEventId = Number(sessionStorage.getItem(syncCursorKey) || 0);
     const seenEventIds=new Set(),seenEventOrder=[];const syncOverlap=100;
-    let syncSocket = null, reconnectTimer = null, pingTimer = null;
+    let syncSocket = null, reconnectTimer = null, pingTimer = null, catchUpEventsPromise = null, unreadCountPromise = null;
     const syncReconnectBaseMs=1000,syncReconnectMaxMs=30000;
     let syncReconnectDelayMs=syncReconnectBaseMs;
     function resetSyncReconnect(){syncReconnectDelayMs=syncReconnectBaseMs;clearTimeout(reconnectTimer);reconnectTimer=null;}
@@ -509,20 +509,26 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         if(notify||replayProgramState||replaySupportState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
-        try{
+        if(unreadCountPromise)return unreadCountPromise;
+        unreadCountPromise=(async()=>{try{
             const r=await fetch("/messages/unread-count",{credentials:"same-origin",cache:"no-store"});
             if(r.ok){const data=await r.json();paintMessageBadge(data.count);}
-        }catch(_){}
+        }catch(_){}})();
+        try{return await unreadCountPromise}finally{unreadCountPromise=null;}
     }
     async function catchUpEvents() {
-        let after=Math.max(0,lastEventId-syncOverlap), more=true;
-        while(more){
-            const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
-            if(!r.ok)return;
-            const data=await r.json(); (data.events||[]).forEach(evt=>applySyncEvent(evt,{notify:false}));
-            after=Number(data.last_event_id||after); more=Boolean(data.has_more);
-        }
-        await refreshUnreadCount();
+        if(catchUpEventsPromise)return catchUpEventsPromise;
+        catchUpEventsPromise=(async()=>{
+            let after=Math.max(0,lastEventId-syncOverlap), more=true;
+            while(more){
+                const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
+                if(!r.ok)return;
+                const data=await r.json(); (data.events||[]).forEach(evt=>applySyncEvent(evt,{notify:false}));
+                after=Number(data.last_event_id||after); more=Boolean(data.has_more);
+            }
+            await refreshUnreadCount();
+        })();
+        try{return await catchUpEventsPromise}finally{catchUpEventsPromise=null;}
     }
     function connectSync() {
         if(syncSocket&&(syncSocket.readyState===WebSocket.CONNECTING||syncSocket.readyState===WebSocket.OPEN))return;
