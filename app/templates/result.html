@@ -592,7 +592,9 @@ function submitReanalysis() {
         loading.style.display = "block";
     }
 
-    form.submit();
+    if (form.dataset.reanalysisSubmitting === '1') return;
+    form.dataset.reanalysisSubmitting = '1';
+    form.requestSubmit();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
