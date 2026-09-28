@@ -56,14 +56,17 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_stop)
 
     engine = build_worker_engine()
+    resource_class = (os.getenv("STUDY_V2_RESOURCE_CLASS") or "NORMAL").strip().upper()
+    if resource_class not in {"NORMAL", "OCR_HEAVY"}:
+        raise RuntimeError(f"Unsupported STUDY_V2_RESOURCE_CLASS: {resource_class}")
     idle_sleep = _int_env("STUDY_V2_IDLE_SLEEP_SECONDS", 2, 1, 30)
     error_sleep = _int_env("STUDY_V2_ERROR_SLEEP_SECONDS", 5, 1, 60)
 
-    logger.info("Academic V2 index worker started")
+    logger.info("Academic V2 index worker started resource_class=%s", resource_class)
     while not _stop:
         try:
             with Session(engine, expire_on_commit=False) as session:
-                result = run_one_slice(session)
+                result = run_one_slice(session, resource_class=resource_class)
             if result == "IDLE":
                 time.sleep(idle_sleep)
         except Exception:
