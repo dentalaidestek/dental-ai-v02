@@ -192,7 +192,7 @@
     if (form.dataset.submitting === '1' || group.dataset.submitting === '1') return false;
     form.dataset.submitting = '1';
     group.dataset.submitting = '1';
-    group.querySelectorAll('button[type="submit"],button:not([type])').forEach((button) => {
+    group.querySelectorAll('button').forEach((button) => {
       button.disabled = true;
       button.dataset.daiSubmitLocked = '1';
     });
