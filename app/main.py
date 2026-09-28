@@ -5165,8 +5165,42 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     elif jt == "START_DUE" and not case.expert_started_at:
         existing = session.exec(select(ConsultationEvent).where(ConsultationEvent.case_id == case.id, ConsultationEvent.event_type == "START_DEADLINE_MISSED")).first()
         if not existing: _consultation_event(session, case.id, "START_DEADLINE_MISSED", case.expert_user_id, {"deadline": deadline.isoformat()})
-    # COMPLETION_DUE intentionally only resolves the warning. Product semantics
-    # do not define automatic completion/dispute after 24h.
+    elif jt == "COMPLETION_DUE":
+        # No requester decision within 24h: finalize exactly like requester confirmation.
+        case.status = "COMPLETED"
+        case.requester_completed_at = now
+        case.completed_at = now
+        session.add(case)
+        payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
+        if payment and payment.status in PAYMENT_FUNDED_STATUSES:
+            payment.status = "PAYOUT_ELIGIBLE"
+            payment.updated_at = now
+            session.add(payment)
+        _consultation_event(session, case.id, "COMPLETION_AUTO_CONFIRMED", None, {"deadline": deadline.isoformat()})
+        notices.extend(_resolve_notifications(
+            session, user_id=case.requester_user_id, notice_type="CONSULTATION_COMPLETION_CONFIRMATION",
+            related_type="consultation_case", related_id=case.id,
+        ))
+        _, event, _ = _notify_user(
+            session, user_id=case.requester_user_id, actor_user_id=None,
+            notice_type="CONSULTATION_COMPLETED", title="Danışmanlık tamamlandı",
+            message="24 saatlik onay süresi dolduğu için danışmanlık otomatik olarak tamamlandı.",
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:completion-auto:{deadline.isoformat()}",
+            target_url=f"/expert-support/cases/{case.id}",
+        )
+        if event: notices.append(event)
+        _, event, _ = _notify_user(
+            session, user_id=case.expert_user_id, actor_user_id=None,
+            notice_type="CONSULTATION_COMPLETED", title="Danışmanlık tamamlandı",
+            message="Hekim 24 saat içinde farklı bir karar vermediği için danışmanlık otomatik olarak tamamlandı.",
+            related_type="consultation_case", related_id=case.id,
+            dedup_key=f"consultation:{case.id}:completion-auto-expert:{deadline.isoformat()}",
+            target_url=f"/expert-support/cases/{case.id}",
+        )
+        if event: notices.append(event)
+        notices.extend(_sync_expert_capacity(session, case.expert_user_id, actor_user_id=None))
+        case_events.extend(_record_case_status_realtime_events(session, case))
     return notices, case_events
 
 
@@ -6767,7 +6801,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
         notification_events: list[RealtimeEvent] = []
@@ -6949,7 +6983,7 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED"}:
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -7754,7 +7788,7 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                 status_events: list[RealtimeEvent] = []
                 if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
                     await websocket.send_json({"type":"error","error":"Yetkisiz işlem."}); continue
-                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED"}:
+                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
                     await websocket.send_json({"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}); continue
                 if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
                     await websocket.send_json({"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}); continue
