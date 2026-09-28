@@ -704,9 +704,23 @@ def publish_index_version(
         ),
         params={"material_id": material_id, "index_version": index_version},
     ).first()
+    expected_pages = session.exec(
+        text(
+            """
+            SELECT MAX(page_number)
+            FROM studyindexpage
+            WHERE material_id = :material_id AND index_version = :index_version
+            """
+        ),
+        params={"material_id": material_id, "index_version": index_version},
+    ).first()
+    page_total = int(page_stats[0] or 0) if page_stats else 0
+    page_ready = int(page_stats[1] or 0) if page_stats else 0
+    max_page = int(expected_pages[0] or 0) if expected_pages else 0
     if (
-        not page_stats or int(page_stats[0] or 0) <= 0
-        or int(page_stats[0] or 0) != int(page_stats[1] or 0)
+        page_total <= 0
+        or page_total != page_ready
+        or max_page != page_total
         or not chunk_stats or int(chunk_stats[0] or 0) <= 0
         or int(chunk_stats[0] or 0) != int(chunk_stats[1] or 0)
     ):
