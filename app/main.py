@@ -1926,6 +1926,9 @@ def init_db():
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS first_queued_at TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS retire_after TIMESTAMP',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS expected_page_count INTEGER',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS source_sha256 VARCHAR',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS index_fingerprint VARCHAR',
             ):
                 conn.exec_driver_sql(statement)
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
@@ -1949,6 +1952,12 @@ def init_db():
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN first_queued_at TIMESTAMP')
             if "retire_after" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN retire_after TIMESTAMP')
+            if "expected_page_count" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN expected_page_count INTEGER')
+            if "source_sha256" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN source_sha256 VARCHAR')
+            if "index_fingerprint" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN index_fingerprint VARCHAR')
             conn.exec_driver_sql('UPDATE "studyindexjob" SET first_queued_at = created_at WHERE first_queued_at IS NULL')
             study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
             additions = {
