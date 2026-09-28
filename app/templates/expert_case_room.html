@@ -53,9 +53,11 @@ function caseStateMarkup(data){
  const role=data.viewer_role||document.querySelector(".expert-room")?.dataset.viewerRole,status=data.status,deadline=data.consultation_start_deadline||data.requester_decision_deadline||data.completion_confirmation_deadline;
  const countdown=deadline?'<b class="case-live-countdown" data-deadline="'+esc(deadline)+'">--:--</b>':"";
  if(status==="REQUESTED")return role==="EXPERT"?'<section class="case-live-status"><strong>Yeni vaka talebi</strong><span>Yanıtınız bekleniyor.</span></section>':'<section class="case-live-status"><strong>Talebiniz uzmana iletildi</strong><span>Uzmanın yanıtı bekleniyor.</span></section>';
- if(status==="PROPOSED")return role==="REQUESTER"?'<section class="case-live-status case-live-status-action"><strong>Uzmanın süre önerisi — Hekim onayı bekleniyor</strong><span>Karar süresi '+countdown+'</span></section>':'<section class="case-live-status"><strong>Süre öneriniz hekime iletildi</strong><span>Hekimin kararı bekleniyor. '+countdown+'</span></section>';
+ if(status==="PROPOSED"&&role==="REQUESTER")return '<form class="expert-actionbox case-state-form" method="post" action="/expert-support/cases/{{ case.id }}/proposal"><p>Uzman <b>'+esc(data.proposed_start_label||"belirtilen sürede")+'</b> değerlendirmeye başlayabileceğini belirtti.'+(data.proposal_note?'<br><span class="case-proposal-note"><strong>Uzman notu:</strong> '+esc(data.proposal_note)+'</span>':"")+'</p><button class="expert-primary" name="decision" value="ACCEPT">Süreyi Onayla</button><button class="expert-secondary" name="decision" value="REJECT">Başka Uzman Seç</button><p class="case-form-error" role="alert" hidden></p></form>';
+ if(status==="PROPOSED")return '<section class="case-live-status"><strong>Süre öneriniz hekime iletildi</strong><span>Hekimin kararı bekleniyor. '+countdown+'</span></section>';
  if(status==="WAITING_START")return '<section class="case-live-status"><strong>Görüşme bekleniyor</strong><span>Başlangıç için kalan süre '+countdown+'</span></section>';
- if(status==="EXPERT_COMPLETED"&&role==="EXPERT")return '<section class="case-live-status"><strong>Hekim onayı bekleniyor</strong><span>Danışmanlığı sonlandırdınız. Gönderen hekimin onayı bekleniyor.</span></section>';
+ if(status==="EXPERT_COMPLETED"&&role==="REQUESTER")return '<form class="expert-actionbox case-completion-card case-state-form" method="post" action="/expert-support/cases/{{ case.id }}/complete"><p><strong>Uzman danışmanlığı sonlandırdı</strong><br>Görüşmenin tamamlandığını onaylayabilir, devam etmek istediğinizi belirtebilir veya sorun bildirebilirsiniz.</p><button class="expert-primary" name="action" value="COMPLETE">Tamamlandı</button><button class="expert-secondary" name="action" value="CONTINUE">Devam etmek istiyorum</button><button class="expert-secondary" name="action" value="DISPUTE">Sorun bildir</button><p class="case-form-error" role="alert" hidden></p></form>';
+ if(status==="EXPERT_COMPLETED")return '<section class="case-live-status"><strong>Hekim onayı bekleniyor</strong><span>Danışmanlığı sonlandırdınız. Gönderen hekimin onayı bekleniyor.</span></section>';
  if(status==="COMPLETED")return '<section class="case-live-status case-completed-status"><strong>Danışmanlık tamamlandı</strong><span>Görüşme iki taraf için kapatıldı.</span></section>';
  if(status==="PROPOSAL_REJECTED"&&role==="EXPERT")return '<section class="case-live-status"><strong>Süre önerisi kabul edilmedi</strong><span>Hekim önerdiğiniz başlangıç süresini kabul etmedi. Bu danışmanlık kapatıldı.</span></section>';
  if(status==="REJECTED")return '<section class="case-live-status"><strong>Danışmanlık talebi reddedildi</strong><span>Bu talep kapatıldı.</span></section>';
@@ -63,24 +65,32 @@ function caseStateMarkup(data){
  if(status==="ACTIVE")return "";
  return null;
 }
+function caseStatusLabel(status,role){
+ const labels={ACTIVE:"Aktif",WAITING_START:"Başlangıç bekleniyor",REJECTED:"Reddedildi",PROPOSAL_REJECTED:"Süre onaylanmadı",COMPLETED:"Tamamlandı",DISPUTE:"Sorun bildirildi"};
+ if(status==="REQUESTED")return role==="EXPERT"?"Yeni Talep":"Uzman Yanıtı Bekleniyor";
+ if(status==="PROPOSED")return role==="REQUESTER"?"Süre Onayınız Bekleniyor":"Süre Onayı Bekleniyor";
+ if(status==="EXPERT_COMPLETED")return role==="REQUESTER"?"Onayınız Bekleniyor":"Hekim Onayı Bekleniyor";
+ return labels[status]||status;
+}
 function canApplyCaseStateFast(data){
- const current=document.querySelector(".expert-room")?.dataset.caseStatus||"",next=data?.status||"",role=data?.viewer_role||document.querySelector(".expert-room")?.dataset.viewerRole;
+ const current=document.querySelector(".expert-room")?.dataset.caseStatus||"",next=data?.status||"";
  if(!next)return false;
- // These transitions add/remove interactive forms or the composer; use the authoritative snapshot.
- if((current==="REQUESTED"&&["ACTIVE","PROPOSED","REJECTED"].includes(next))||
-    (current==="PROPOSED"&&["WAITING_START","PROPOSAL_REJECTED"].includes(next))||
-    (next==="EXPERT_COMPLETED"&&role==="REQUESTER")||
-    (current==="EXPERT_COMPLETED"&&["ACTIVE","COMPLETED","DISPUTE"].includes(next)))return false;
+ // Completion creates the review form; keep that transition on the authoritative snapshot.
+ if(next==="COMPLETED"&&current!=="COMPLETED")return false;
  return true;
 }
 function applyCaseState(data){
  if(!canApplyCaseStateFast(data))return false;
  const room=document.querySelector(".expert-room"),region=document.getElementById("caseStateRegion");if(!room||!region)return false;
- if(data.viewer_role)room.dataset.viewerRole=data.viewer_role;room.dataset.caseStatus=data.status;
- const title=document.querySelector(".case-room-title small");if(title&&data.status_label){const parts=title.textContent.split(" · ");parts[parts.length-1]=data.status_label;title.textContent=parts.join(" · ");}
- const markup=caseStateMarkup(data);if(markup===null)return false;region.innerHTML=markup;
+ const role=data.viewer_role||room.dataset.viewerRole;if(data.viewer_role)room.dataset.viewerRole=data.viewer_role;room.dataset.caseStatus=data.status;
+ const title=document.querySelector(".case-room-title small");if(title){const parts=title.textContent.split(" · ");parts[parts.length-1]=data.status_label||caseStatusLabel(data.status,role);title.textContent=parts.join(" · ");}
+ const markup=caseStateMarkup({...data,viewer_role:role});if(markup===null)return false;
+ document.querySelectorAll('[data-case-dynamic="pre"]').forEach(x=>x.remove());region.innerHTML=markup;
  const menu=document.querySelector(".case-room-menu-panel"),oldComplete=menu?.querySelector('form[action$="/complete"]');if(oldComplete)oldComplete.remove();
- if(data.status==="ACTIVE"&&menu){const form=document.createElement("form");form.className="case-state-form";form.method="post";form.action="/expert-support/cases/{{ case.id }}/complete";form.innerHTML='<button type="submit" name="action" value="COMPLETE">'+(room.dataset.viewerRole==="REQUESTER"?"Danışmayı bitir":"Danışmanlığı bitir")+'</button><p class="case-form-error" role="alert" hidden></p>';menu.prepend(form);}
+ if(data.status==="ACTIVE"&&menu){const form=document.createElement("form");form.className="case-state-form";form.method="post";form.action="/expert-support/cases/{{ case.id }}/complete";form.innerHTML='<button type="submit" name="action" value="COMPLETE">'+(role==="REQUESTER"?"Danışmayı bitir":"Danışmanlığı bitir")+'</button><p class="case-form-error" role="alert" hidden></p>';menu.prepend(form);}
+ const composer=currentComposer(),waitLock=document.getElementById("expertWaitLock"),canMessage=["ACTIVE","EXPERT_COMPLETED"].includes(data.status)||(data.status==="WAITING_START"&&role==="EXPERT");
+ if(composer)composer.hidden=!canMessage;
+ if(waitLock)waitLock.hidden=!(data.status==="WAITING_START"&&role==="REQUESTER");
  tickCaseLiveCountdown();return true;
 }
 async function refreshCaseRoom(expectedStatus=null){
