@@ -6589,18 +6589,69 @@ def consultation_live_status(request: Request):
     return {"count": total, "latest": latest}
 
 
+def _consultation_unread_total(session: Session, user_id: int) -> int:
+    """Count inbox unread items without hydrating conversation rows, users or last messages."""
+    cases = session.exec(select(
+        ConsultationCase.id, ConsultationCase.status, ConsultationCase.expert_user_id
+    ).where(
+        (ConsultationCase.requester_user_id == user_id) | (ConsultationCase.expert_user_id == user_id)
+    )).all()
+    if not cases:
+        return 0
+    case_ids = [case_id for case_id, _, _ in cases]
+    state_rows = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.user_id == user_id,
+        ConsultationInboxState.case_id.in_(case_ids),
+    ).order_by(ConsultationInboxState.case_id.asc(), ConsultationInboxState.id.asc())).all()
+    states_by_case: dict[int, list[ConsultationInboxState]] = {}
+    for state in state_rows:
+        states_by_case.setdefault(state.case_id, []).append(state)
+
+    visible_ids: list[int] = []
+    last_read_by_case: dict[int, Optional[datetime]] = {}
+    fresh_request_ids: set[int] = set()
+    for case_id, status, expert_user_id in cases:
+        states = states_by_case.get(case_id, [])
+        newest = states[-1] if states else None
+        if newest and newest.deleted_at:
+            continue
+        visible_ids.append(case_id)
+        read_values = [row.last_read_at for row in states if row.last_read_at]
+        last_read = max(read_values) if read_values else None
+        last_read_by_case[case_id] = last_read
+        if status == "REQUESTED" and expert_user_id == user_id and last_read is None:
+            fresh_request_ids.add(case_id)
+    if not visible_ids:
+        return 0
+
+    unread_conditions = []
+    for case_id in visible_ids:
+        condition = (
+            (ConsultationMessage.case_id == case_id)
+            & (ConsultationMessage.sender_user_id != user_id)
+        )
+        last_read = last_read_by_case.get(case_id)
+        if last_read:
+            condition = condition & (ConsultationMessage.created_at > last_read)
+        unread_conditions.append(condition)
+    unread_by_case: dict[int, int] = {}
+    if unread_conditions:
+        unread_rows = session.exec(select(
+            ConsultationMessage.case_id, func.count(ConsultationMessage.id)
+        ).where(sa_or(*unread_conditions)).group_by(ConsultationMessage.case_id)).all()
+        unread_by_case = {case_id: int(count or 0) for case_id, count in unread_rows}
+    for case_id in fresh_request_ids:
+        unread_by_case[case_id] = max(1, unread_by_case.get(case_id, 0))
+    return sum(unread_by_case.values())
+
+
 @app.get("/messages/unread-count")
 def consultation_unread_count(request: Request):
     user = get_current_user(request)
     if not user:
         return {"count": 0}
     with Session(engine, expire_on_commit=False) as s:
-        cases = s.exec(select(ConsultationCase).where(
-            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
-        )).all()
-        rows = _consultation_inbox_rows(s, cases, user.id, _utcnow_naive())
-        total = sum(int(row["unread"] or 0) for row in rows)
-        s.commit()
+        total = _consultation_unread_total(s, user.id)
     return {"count": total}
 
 
