@@ -94,6 +94,125 @@ def enqueue_index_job(
     return job
 
 
+
+def begin_material_build(
+    session: Session,
+    *,
+    material_id: int,
+    owner_user_id: int,
+    index_version: str,
+) -> bool:
+    """Reserve a generation for one material before enqueueing its job."""
+    now = utcnow_naive()
+    result = session.exec(
+        text(
+            """
+            UPDATE studymaterial
+            SET building_index_version = :index_version,
+                index_status = CASE WHEN active_index_version IS NULL THEN 'PROCESSING' ELSE index_status END,
+                index_error = NULL
+            WHERE id = :material_id
+              AND owner_user_id = :owner_user_id
+              AND deleted_at IS NULL
+            """
+        ),
+        params={
+            "index_version": index_version,
+            "material_id": material_id,
+            "owner_user_id": owner_user_id,
+        },
+    )
+    # Keep caller in control of the surrounding upload/rebuild transaction.
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
+def tombstone_material(
+    session: Session,
+    *,
+    material_id: int,
+    owner_user_id: int,
+) -> bool:
+    """Immediately make a material unpublishable; physical cleanup is later."""
+    now = utcnow_naive()
+    result = session.exec(
+        text(
+            """
+            UPDATE studymaterial
+            SET deleted_at = :now,
+                index_status = 'DELETED',
+                building_index_version = NULL
+            WHERE id = :material_id
+              AND owner_user_id = :owner_user_id
+              AND deleted_at IS NULL
+            """
+        ),
+        params={"now": now, "material_id": material_id, "owner_user_id": owner_user_id},
+    )
+    session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET status = 'CANCELLED',
+                lease_until = NULL,
+                lease_token = NULL,
+                worker_id = NULL,
+                updated_at = :now,
+                completed_at = :now
+            WHERE material_id = :material_id
+              AND owner_user_id = :owner_user_id
+              AND status IN ('QUEUED', 'RUNNING')
+            """
+        ),
+        params={"now": now, "material_id": material_id, "owner_user_id": owner_user_id},
+    )
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
+def yield_index_job(
+    session: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    worker_id: str,
+    stage: str,
+    priority: int | None = None,
+) -> bool:
+    """Commit one bounded work slice and return the durable job to the queue."""
+    now = utcnow_naive()
+    priority_sql = ", priority = :priority" if priority is not None else ""
+    params = {
+        "now": now,
+        "job_id": job_id,
+        "lease_token": lease_token,
+        "worker_id": worker_id,
+        "stage": stage,
+    }
+    if priority is not None:
+        params["priority"] = priority
+    result = session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET status = 'QUEUED',
+                stage = :stage,
+                next_retry_at = NULL,
+                lease_until = NULL,
+                lease_token = NULL,
+                worker_id = NULL,
+                updated_at = :now
+            """ + priority_sql + """
+            WHERE id = :job_id
+              AND status = 'RUNNING'
+              AND lease_token = :lease_token
+              AND worker_id = :worker_id
+            """
+        ),
+        params=params,
+    )
+    session.commit()
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
 def claim_next_index_job(
     session: Session,
     *,
