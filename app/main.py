@@ -7061,7 +7061,7 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
     return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/message")
-async def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None)):
+async def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
     wants_json = "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     user = get_current_user(request)
     if not user:
@@ -7123,7 +7123,8 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         sender=s.get(User,user.id)
         realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
-        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat()}}
+        safe_client_message_id = client_message_id.strip()[:96] or None
+        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat(), "client_message_id": safe_client_message_id}}
     await consultation_socket_hub.broadcast(case_id, {"type": "message", "message": payload["message"]})
     for realtime_event in status_events + realtime_events:
         await _publish_realtime_event(realtime_event)
