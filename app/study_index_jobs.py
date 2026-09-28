@@ -186,13 +186,13 @@ def missing_page_numbers(
     page_count: int,
     limit: int,
 ) -> list[int]:
-    # Any persisted page row is already a checkpoint. OCR_REQUIRED is not
-    # complete for publication, but it must not be reparsed forever; the OCR
-    # stage owns it from here.
+    # Successful extraction and OCR hand-off are durable checkpoints. FAILED
+    # rows stay retryable instead of being silently skipped forever.
     done = set(session.exec(
         select(StudyIndexPage.page_number)
         .where(StudyIndexPage.material_id == material_id)
         .where(StudyIndexPage.index_version == index_version)
+        .where(StudyIndexPage.status.in_(["EXTRACTED", "OCR_REQUIRED", "OCR_DONE"]))
     ).all())
     result: list[int] = []
     for page_number in range(1, page_count + 1):
