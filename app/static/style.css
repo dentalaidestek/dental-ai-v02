@@ -5285,3 +5285,45 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
   grid-column:1;
   grid-row:1;
 }
+
+
+/* Consultation state cards — scoped reference UI; intentionally stronger than legacy global card rules. */
+.expert-room .consult-state-card{--state-bg:#f8fbff;--state-border:#bfdbfe;--state-ink:#0f172a;--state-accent:#2563eb;position:relative;display:grid;grid-template-columns:42px minmax(0,1fr);gap:11px;margin:10px 0 12px;padding:15px;border:1px solid var(--state-border);border-radius:16px;background:var(--state-bg);box-shadow:0 8px 22px rgba(15,23,42,.055);color:var(--state-ink)}
+.expert-room .consult-state-card.state-wait{--state-bg:#fffaf0;--state-border:#fde7a8;--state-accent:#c98a08}
+.expert-room .consult-state-card.state-proposed{--state-bg:#f4f9ff;--state-border:#bfdbfe;--state-accent:#2563eb}
+.expert-room .consult-state-card.state-start{--state-bg:#f7f5ff;--state-border:#ddd6fe;--state-accent:#6d28d9}
+.expert-room .consult-state-card.state-active,.expert-room .consult-state-card.state-completed{--state-bg:#f2fcf7;--state-border:#bbf7d0;--state-accent:#16a34a}
+.expert-room .consult-state-card.state-dispute,.expert-room .consult-state-card.state-rejected{--state-bg:#fff5f5;--state-border:#fecaca;--state-accent:#dc2626}
+.expert-room .consult-state-card.state-timeout{--state-bg:#f8fafc;--state-border:#dbe3ec;--state-accent:#64748b}
+.expert-room .consult-state-card.state-expert-completed{--state-bg:#fffaf0;--state-border:#fde7a8;--state-accent:#b77900}
+.expert-room .consult-state-icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--state-accent) 13%,white);color:var(--state-accent);font-size:21px;font-weight:900;line-height:1}
+.expert-room .consult-state-body{min-width:0;display:grid;gap:7px}
+.expert-room .consult-state-title{margin:0;color:var(--state-ink);font-size:15px;font-weight:900;line-height:1.2}
+.expert-room .consult-state-copy{margin:0;color:#475569;font-size:12.5px;line-height:1.5}
+.expert-room .consult-state-info{display:grid;gap:5px;margin-top:2px;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.68)}
+.expert-room .consult-state-row{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#475569;font-size:11.5px}
+.expert-room .consult-state-row b{color:#1e293b;font-weight:800;text-align:right}
+.expert-room .consult-state-card .case-live-countdown{color:var(--state-accent);font-variant-numeric:tabular-nums}
+.expert-room .consult-state-notice{margin-top:2px;padding:9px 10px;border-radius:9px;background:color-mix(in srgb,var(--state-accent) 9%,white);color:color-mix(in srgb,var(--state-accent) 78%,#0f172a);font-size:11.5px;line-height:1.45}
+.expert-room .consult-state-actions{display:grid;gap:7px;margin-top:3px}
+.expert-room .consult-state-actions.two{grid-template-columns:1fr 1fr}
+.expert-room .consult-state-actions button,.expert-room .consult-state-actions a{min-height:39px;width:100%;display:flex;align-items:center;justify-content:center;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:850;text-decoration:none;cursor:pointer}
+.expert-room .consult-state-actions .state-btn-primary{border:1px solid #16a34a;background:#22c55e;color:#fff}
+.expert-room .consult-state-actions .state-btn-blue{border:1px solid #2563eb;background:#fff;color:#1d4ed8}
+.expert-room .consult-state-actions .state-btn-danger{border:1px solid #ef4444;background:#fff;color:#dc2626}
+.expert-room .consult-state-actions .state-btn-muted{border:1px solid #94a3b8;background:#fff;color:#475569}
+.expert-room .consult-state-actions button:disabled{opacity:.58;cursor:wait}
+.expert-room .consult-state-card .case-form-error{grid-column:1/-1;margin:2px 0 0!important}
+.expert-room .consult-state-card.expired{opacity:.76}
+.expert-room .consult-state-card .case-proposal-note{display:block;margin-top:5px;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.72);color:#475569}
+.expert-room .case-review-form.consult-review-panel{margin-top:8px;border-color:#bbf7d0;background:#f7fef9;border-radius:14px}
+.expert-room .case-review-form.consult-review-panel[hidden]{display:none}
+.expert-room .consult-review-toggle{border:1px solid #22c55e!important;background:#fff!important;color:#15803d!important}
+@media(max-width:700px){
+ .expert-room .consult-state-card{grid-template-columns:36px minmax(0,1fr);gap:9px;padding:12px;border-radius:14px}
+ .expert-room .consult-state-icon{width:35px;height:35px;font-size:18px}
+ .expert-room .consult-state-title{font-size:14px}
+ .expert-room .consult-state-copy{font-size:12px}
+ .expert-room .consult-state-actions.two{grid-template-columns:1fr}
+ .expert-room .consult-state-row{align-items:flex-start}
+}
