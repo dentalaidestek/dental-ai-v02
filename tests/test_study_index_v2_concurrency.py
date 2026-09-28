@@ -219,3 +219,30 @@ def test_complete_current_generation_publishes_atomically():
             text("SELECT active_index_version, building_index_version, index_status FROM studymaterial WHERE id=1")
         ).one()
         assert tuple(row) == ("v1", None, "READY")
+
+
+def test_resource_classes_do_not_block_each_other():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        normal = _job(s, "normal-v")
+        s.exec(text("UPDATE studyindexjob SET resource_class='NORMAL' WHERE id=:id"), params={"id": normal.id})
+        s.commit()
+
+        # Second material represents OCR-heavy work.
+        _material(s, material_id=2, owner=10, course=20)
+        assert begin_material_build(s, material_id=2, owner_user_id=10, index_version="ocr-v")
+        ocr = enqueue_index_job(
+            s,
+            owner_user_id=10,
+            course_id=20,
+            material_id=2,
+            index_version="ocr-v",
+            resource_class="OCR_HEAVY",
+        )
+        s.commit()
+
+        claimed_normal = claim_next_index_job(s, worker_id="normal-worker", resource_class="NORMAL")
+        assert claimed_normal and claimed_normal.id == normal.id
+        claimed_ocr = claim_next_index_job(s, worker_id="ocr-worker", resource_class="OCR_HEAVY")
+        assert claimed_ocr and claimed_ocr.id == ocr.id
