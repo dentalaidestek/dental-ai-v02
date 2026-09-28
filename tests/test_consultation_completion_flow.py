@@ -216,3 +216,20 @@ def test_dispute_chat_stays_open_but_completed_chat_is_closed_on_every_write_pat
     annotation = main_source.split("def expert_support_annotate_message", 1)[1].split("PROFANITY_PATTERNS", 1)[0]
     assert 'case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}' in annotation
     assert '"COMPLETED"' not in annotation
+
+
+def test_dispute_is_open_for_capacity_and_inbox_not_history():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    messages_template = (Path(__file__).resolve().parents[1] / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
+    assert 'CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")' in source
+    assert 'ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"])' not in source
+    assert 'if case.status == "DISPUTE":\n        return "ACTIVE", "Sorun Bildirildi"' in source
+    assert '["HISTORY","CLOSED","DISPUTE"]' not in messages_template
+
+
+def test_requester_decisions_consume_completion_deadline():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    complete = source.split('async def expert_support_complete', 1)[1].split('@app.get("/patients/new"', 1)[0]
+    assert 'case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"' in complete
+    assert 'case.status = "ACTIVE"; case.completion_confirmation_deadline = None;' in complete
+    assert 'case.status = "DISPUTE"\n            case.completion_confirmation_deadline = None' in complete
