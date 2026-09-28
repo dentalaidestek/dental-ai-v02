@@ -57,6 +57,12 @@
             font-weight: 700;
         }
 
+        button.auth-submit[disabled] { cursor: wait; opacity: .86; }
+        .auth-spinner { display:none; width:17px; height:17px; border:2px solid rgba(255,255,255,.45); border-top-color:#fff; border-radius:50%; animation:auth-spin .7s linear infinite; }
+        button.auth-submit.is-loading { display:flex; align-items:center; justify-content:center; gap:9px; }
+        button.auth-submit.is-loading .auth-spinner { display:inline-block; }
+        @keyframes auth-spin { to { transform:rotate(360deg); } }
+
         .error {
             background: #fee2e2;
             color: #991b1b;
@@ -106,7 +112,7 @@
                 autocomplete="current-password"
             >
 
-            <button type="submit">Giriş Yap</button>
+            <button type="submit" class="auth-submit"><span class="auth-submit-label">Giriş Yap</span><span class="auth-spinner" aria-hidden="true"></span></button>
         </form>
 
         <div class="link">
@@ -118,5 +124,13 @@
             <a href="/register">Üye Ol</a>
         </div>
     </div>
+<script>
+(() => {
+ const form=document.querySelector('form[action="/login"]'),btn=form?.querySelector(".auth-submit");
+ if(!form||!btn)return;
+ form.addEventListener("submit",e=>{if(!form.checkValidity())return;if(btn.disabled){e.preventDefault();return}btn.disabled=true;btn.classList.add("is-loading");btn.setAttribute("aria-busy","true");});
+ window.addEventListener("pageshow",()=>{btn.disabled=false;btn.classList.remove("is-loading");btn.removeAttribute("aria-busy");});
+})();
+</script>
 </body>
 </html>
