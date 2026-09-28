@@ -6172,13 +6172,16 @@ def consultation_message_row(request: Request, case_id: int):
         state = _consultation_inbox_state(s, case.id, user.id)
         if state.deleted_at:
             return HTMLResponse("Sohbet bulunamadı.", status_code=404)
-        messages = s.exec(select(ConsultationMessage).where(
+        last_message = s.exec(select(ConsultationMessage).where(
             ConsultationMessage.case_id == case.id
-        ).order_by(ConsultationMessage.created_at.desc())).all()
-        last_message = messages[0] if messages else None
-        unread = sum(1 for message in messages if message.sender_user_id != user.id and (
-            not state.last_read_at or message.created_at > state.last_read_at
-        ))
+        ).order_by(ConsultationMessage.created_at.desc(), ConsultationMessage.id.desc()).limit(1)).first()
+        unread_stmt = select(func.count(ConsultationMessage.id)).where(
+            ConsultationMessage.case_id == case.id,
+            ConsultationMessage.sender_user_id != user.id,
+        )
+        if state.last_read_at:
+            unread_stmt = unread_stmt.where(ConsultationMessage.created_at > state.last_read_at)
+        unread = int(s.exec(unread_stmt).one() or 0)
         if case.status == "REQUESTED" and user.id == case.expert_user_id and not state.last_read_at:
             unread = max(1, unread)
         status_key, status_label = _consultation_display_status(case, user.id, now)
