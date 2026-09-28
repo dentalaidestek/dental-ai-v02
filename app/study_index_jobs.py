@@ -192,7 +192,6 @@ def renew_index_lease(
             "job_id": job_id,
             "lease_token": lease_token,
             "worker_id": worker_id,
-            "now": now,
         },
     )
     session.commit()
@@ -298,6 +297,7 @@ def publish_index_version(
             "index_version": index_version,
             "lease_token": lease_token,
             "worker_id": worker_id,
+            "now": now,
         },
     ).first()
     if not owned:
