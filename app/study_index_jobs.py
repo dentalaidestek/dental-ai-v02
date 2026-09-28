@@ -92,6 +92,21 @@ class StudyIndexChunk(SQLModel, table=True):
 
 
 
+class StudyDeletionJob(SQLModel, table=True):
+    """Durable privacy cleanup: DB tombstone is immediate, physical erasure retries."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(index=True)
+    material_id: int = Field(index=True)
+    storage_reference: Optional[str] = None
+    provider_file_name: Optional[str] = None
+    status: str = Field(default="QUEUED", index=True)  # QUEUED/RUNNING/DONE/FAILED
+    attempts: int = 0
+    next_retry_at: Optional[datetime] = Field(default=None, index=True)
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=utcnow_naive, index=True)
+    completed_at: Optional[datetime] = None
+
+
 class StudyProviderCircuit(SQLModel, table=True):
     """Shared provider outage state so many workers do not create retry storms."""
     provider_key: str = Field(primary_key=True)
@@ -426,6 +441,52 @@ def tombstone_material(
         params={"now": now, "material_id": material_id, "owner_user_id": owner_user_id},
     )
     return bool(getattr(result, "rowcount", 0) == 1)
+
+
+
+def enqueue_material_deletion(
+    session: Session,
+    *,
+    owner_user_id: int,
+    material_id: int,
+    storage_reference: str | None,
+    provider_file_name: str | None = None,
+) -> StudyDeletionJob:
+    existing = session.exec(
+        select(StudyDeletionJob)
+        .where(StudyDeletionJob.owner_user_id == owner_user_id)
+        .where(StudyDeletionJob.material_id == material_id)
+        .where(StudyDeletionJob.status.in_(["QUEUED", "RUNNING"]))
+    ).first()
+    if existing:
+        return existing
+    row = StudyDeletionJob(
+        owner_user_id=owner_user_id,
+        material_id=material_id,
+        storage_reference=storage_reference,
+        provider_file_name=provider_file_name,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def purge_material_index_artifacts(
+    session: Session,
+    *,
+    owner_user_id: int,
+    material_id: int,
+) -> None:
+    """Delete derived V2 content for a tombstoned material; safe to repeat."""
+    session.exec(
+        text("DELETE FROM studyindexchunk WHERE material_id=:m AND owner_user_id=:o"),
+        params={"m": material_id, "o": owner_user_id},
+    )
+    session.exec(
+        text("DELETE FROM studyindexpage WHERE material_id=:m AND owner_user_id=:o"),
+        params={"m": material_id, "o": owner_user_id},
+    )
+
 
 
 def yield_index_job(
