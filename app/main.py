@@ -1936,10 +1936,6 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexchunk_material_version_chunk ON "studyindexchunk" (material_id, index_version, chunk_index)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexchunk_embed_pending ON "studyindexchunk" (material_id, index_version, chunk_index) WHERE embedding_json IS NULL')
-            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
-            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexchunk_material_version_chunk ON "studyindexchunk" (material_id, index_version, chunk_index)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexchunk_embed_pending ON "studyindexchunk" (material_id, index_version, chunk_index) WHERE embedding_json IS NULL')
         elif dialect == "sqlite":
             study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
             additions = {
@@ -1959,6 +1955,10 @@ def init_db():
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (status, next_retry_at, priority, created_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexchunk_material_version_chunk ON "studyindexchunk" (material_id, index_version, chunk_index)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexchunk_embed_pending ON "studyindexchunk" (material_id, index_version, chunk_index) WHERE embedding_json IS NULL')
 
         # Consultation inbox state is logically one row per (case, user).
         # Older releases did not enforce that invariant. Consolidate duplicates
