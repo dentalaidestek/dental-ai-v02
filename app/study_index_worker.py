@@ -244,6 +244,32 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
     return "OCR" if unresolved else "CHUNK"
 
 
+def _ocr_slice(session: Session, job: StudyIndexJob, path) -> str:
+    """Process a bounded OCR batch through an optional provider.
+
+    OCR is opt-in and fail-closed. The concrete provider is deliberately
+    isolated behind this hook so the indexing contract does not depend on one
+    OCR vendor. Until configured, pages remain durable OCR_REQUIRED artifacts.
+    """
+    provider_name = (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip().lower()
+    if not provider_name:
+        return "OCR_WAIT"
+    batch = _int_env("STUDY_V2_OCR_BATCH_PAGES", 4, 1, 20)
+    pages = list(session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status == "OCR_REQUIRED")
+        .order_by(StudyIndexPage.page_number.asc())
+        .limit(batch)
+    ).all())
+    if not pages:
+        return "CHUNK"
+    # No vendor is silently guessed. Unsupported configuration is a permanent
+    # configuration error rather than fabricated OCR output.
+    raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
+
+
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     batch = _int_env("STUDY_V2_EMBED_BATCH_CHUNKS", 16, 1, 50)
     rows = pending_embedding_chunks(
@@ -355,9 +381,7 @@ def run_one_slice(
                     stage="OCR",
                 )
                 return "MOVED:OCR_HEAVY" if moved else "LEASE_LOST"
-            # OCR implementation is deliberately fail-closed until its engine
-            # is selected/benchmarked. Heavy jobs cannot occupy NORMAL workers.
-            next_stage = "OCR_WAIT"
+            next_stage = _ocr_slice(session, job, path)
         elif stage == "OCR_WAIT":
             next_stage = "OCR_WAIT"
         elif stage == "VERIFY":
