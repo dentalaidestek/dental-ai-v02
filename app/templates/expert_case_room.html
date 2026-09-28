@@ -61,7 +61,7 @@ function caseStateMarkup(data){
  if(status==="COMPLETED")return '<section class="case-live-status case-completed-status"><strong>Danışmanlık tamamlandı</strong><span>Görüşme iki taraf için kapatıldı.</span></section>';
  if(status==="PROPOSAL_REJECTED"&&role==="EXPERT")return '<section class="case-live-status"><strong>Süre önerisi kabul edilmedi</strong><span>Hekim önerdiğiniz başlangıç süresini kabul etmedi. Bu danışmanlık kapatıldı.</span></section>';
  if(status==="REJECTED")return '<section class="case-live-status"><strong>Danışmanlık talebi reddedildi</strong><span>Bu talep kapatıldı.</span></section>';
- if(status==="DISPUTE")return '<section class="case-live-status"><strong>Sorun bildirildi</strong><span>Danışmanlık inceleme durumuna alındı.</span></section>';
+ if(status==="DISPUTE")return '<section class="case-live-status"><strong>Sorun bildirildi</strong><span>Danışmanlık inceleme durumuna alındı. Mesajlaşmaya bu ekran üzerinden devam edebilirsiniz.</span></section>';
  if(status==="ACTIVE")return "";
  return null;
 }
