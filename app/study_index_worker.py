@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import socket
+import time
 from datetime import datetime, timedelta
 
 from pypdf import PdfReader
@@ -234,11 +235,28 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     target = get_embedding_target()
     dimensions = get_embedding_dimensions()
     provider = get_provider(target.provider)
+    heartbeat_margin = _int_env("STUDY_V2_HEARTBEAT_MARGIN_SECONDS", 45, 10, 300)
+    heartbeat_extend = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
 
     for row in rows:
         if not _lease_still_owned(session, job):
             session.rollback()
             return "LEASE_LOST"
+        # Provider calls can be slower than local parsing. Renew before the
+        # call when the lease is close to expiry; ownership token prevents a
+        # stale worker from extending somebody else's reclaimed lease.
+        if job.lease_until and (job.lease_until - datetime.utcnow()).total_seconds() <= heartbeat_margin:
+            from app.study_index_jobs import renew_index_lease
+            if not renew_index_lease(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                lease_seconds=heartbeat_extend,
+            ):
+                session.rollback()
+                return "LEASE_LOST"
+            job.lease_until = datetime.utcnow() + timedelta(seconds=heartbeat_extend)
         vector = provider.embed_text(
             model=target.model,
             text="Diş hekimliği ders materyalinde arama için bu bölümü temsil et:\n" + row.text_content,
