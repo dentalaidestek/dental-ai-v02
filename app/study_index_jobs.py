@@ -139,7 +139,39 @@ def record_provider_failure(
     threshold: int = 3,
     open_seconds: int = 120,
 ) -> datetime | None:
+    """Atomically increment shared failure state across concurrent workers."""
     now = utcnow_naive()
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        session.exec(
+            text(
+                """
+                INSERT INTO studyprovidercircuit
+                    (provider_key, consecutive_failures, open_until, last_error, updated_at)
+                VALUES (:key, 1, NULL, :error, :now)
+                ON CONFLICT (provider_key) DO UPDATE
+                SET consecutive_failures = studyprovidercircuit.consecutive_failures + 1,
+                    last_error = EXCLUDED.last_error,
+                    updated_at = EXCLUDED.updated_at
+                """
+            ),
+            params={"key": provider_key, "error": (error or "")[:1000], "now": now},
+        )
+        session.exec(
+            text(
+                """
+                UPDATE studyprovidercircuit
+                SET open_until = :open_until
+                WHERE provider_key = :key AND consecutive_failures >= :threshold
+                """
+            ),
+            params={"key": provider_key, "threshold": max(1, threshold),
+                    "open_until": now + timedelta(seconds=max(30, open_seconds))},
+        )
+        session.commit()
+        row = session.get(StudyProviderCircuit, provider_key)
+        return row.open_until if row else None
+
     row = session.get(StudyProviderCircuit, provider_key) or StudyProviderCircuit(provider_key=provider_key)
     row.consecutive_failures += 1
     row.last_error = (error or "")[:1000]
