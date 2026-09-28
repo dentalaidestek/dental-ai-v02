@@ -10,7 +10,9 @@ from app.study_index_jobs import (
     begin_material_build,
     claim_next_index_job,
     enqueue_index_job,
+    cleanup_retired_generations,
     publish_index_version,
+    retire_previous_generation,
     tombstone_material,
     yield_index_job,
 )
@@ -248,13 +250,15 @@ def test_resource_classes_do_not_block_each_other():
         assert claimed_ocr and claimed_ocr.id == ocr.id
 
 
-def test_gapped_pages_cannot_publish_even_if_all_present_rows_are_ready():
+def test_worker_verifier_rejects_gapped_pages_before_publish():
+    # Exact source page count belongs to the worker verifier; publish itself
+    # must not infer it from the artifacts it is validating.
+    from app.study_index_jobs import verify_build_complete
+
     engine = _db()
     with Session(engine) as s:
         _material(s)
         _job(s)
-        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
-        assert claimed and claimed.lease_token
         for page in (1, 3):
             s.add(StudyIndexPage(
                 owner_user_id=10, course_id=20, material_id=1,
@@ -267,8 +271,27 @@ def test_gapped_pages_cannot_publish_even_if_all_present_rows_are_ready():
             text_content="abc", text_sha256="x", embedding_json="[0.1]",
         ))
         s.commit()
-        assert not publish_index_version(
-            s, material_id=1, owner_user_id=10, index_version="v1",
-            job_id=claimed.id, lease_token=claimed.lease_token,
-            worker_id="worker-a",
+        ok, reason = verify_build_complete(
+            s, material_id=1, index_version="v1", expected_page_count=3
         )
+        assert not ok
+        assert reason == "PAGE_COVERAGE_INCOMPLETE"
+
+
+def test_retired_generation_gc_never_deletes_active_generation():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        _ready_artifacts(s)
+        assert publish_index_version(
+            s, material_id=1, owner_user_id=10, index_version="v1",
+            job_id=claimed.id, lease_token=claimed.lease_token, worker_id="worker-a",
+        )
+        retire_previous_generation(s, material_id=1, keep_index_version="other", grace_seconds=60)
+        s.exec(text("UPDATE studyindexjob SET retire_after=:past WHERE id=:id"),
+               params={"past": datetime.utcnow()-timedelta(seconds=1), "id": claimed.id})
+        s.commit()
+        assert cleanup_retired_generations(s, limit=10) == 0
+        assert s.exec(text("SELECT COUNT(*) FROM studyindexchunk WHERE index_version='v1'")).one()[0] == 1
