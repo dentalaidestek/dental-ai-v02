@@ -6677,7 +6677,7 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         if notice_event:
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
-        evt = _record_realtime_event(s, case.requester_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"proposed_start_label":case.proposed_start_label,"proposal_note":case.expert_proposal_note,"requester_decision_deadline":case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None})
+        realtime_events = _record_case_status_realtime_events(s, case)
         if case.status == "PROPOSED" and case.requester_decision_deadline:
             _enqueue_deadline_pair(s, case.id, "PROPOSAL", case.requester_decision_deadline)
         s.commit()
@@ -6685,7 +6685,8 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
     if status == "PROPOSED":
         _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status})
-    await _publish_realtime_event(evt)
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
@@ -6733,14 +6734,15 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         if notice_event:
             notification_events.append(notice_event)
         notification_events.extend(_sync_expert_capacity(s, case.expert_user_id, actor_user_id=user.id))
-        evt = _record_realtime_event(s, case.expert_user_id, "CASE_STATUS_UPDATED", "consultation_case", case.id, {"case_id":case.id,"status":case.status,"consultation_start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None,"rejected_by_requester":rejected})
+        realtime_events = _record_case_status_realtime_events(s, case)
         if not rejected and case.consultation_start_deadline:
             _enqueue_deadline_pair(s, case.id, "START", case.consultation_start_deadline)
         s.commit(); status=case.status; patient_id=case.patient_id
     if not rejected:
         _wake_consultation_deadline_worker()
     await consultation_socket_hub.broadcast(case_id, {"type":"case_status","case_id":case_id,"status":status,"rejected_by_requester":rejected})
-    await _publish_realtime_event(evt)
+    for realtime_event in realtime_events:
+        await _publish_realtime_event(realtime_event)
     for notification_event in notification_events:
         await _publish_realtime_event(notification_event)
     if wants_json:
