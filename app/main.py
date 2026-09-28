@@ -5169,6 +5169,7 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
         # No requester decision within 24h: finalize exactly like requester confirmation.
         case.status = "COMPLETED"
         case.completed_at = now
+        case.completion_confirmation_deadline = None
         session.add(case)
         payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
         if payment and payment.status in PAYMENT_FUNDED_STATUSES:
@@ -7884,7 +7885,7 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
-            case.requester_completed_at = now; case.completed_at = now; case.status = "COMPLETED"
+            case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
@@ -7893,9 +7894,10 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
             case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "CONTINUE":
-            case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
+            case.status = "ACTIVE"; case.completion_confirmation_deadline = None; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "DISPUTE":
             case.status = "DISPUTE"
+            case.completion_confirmation_deadline = None
             case.dispute_opened_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
