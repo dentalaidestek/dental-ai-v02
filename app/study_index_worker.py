@@ -211,17 +211,14 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
         limit=1,
     )
     if remaining:
-        # If all remaining pages are OCR_REQUIRED, hand off rather than loop.
-        unresolved = session.exec(
-            select(StudyIndexPage)
-            .where(StudyIndexPage.material_id == job.material_id)
-            .where(StudyIndexPage.index_version == job.index_version)
-            .where(StudyIndexPage.status == "OCR_REQUIRED")
-        ).first()
-        if unresolved:
-            return "OCR"
         return "PARSE"
-    return "CHUNK"
+    unresolved = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status == "OCR_REQUIRED")
+    ).first()
+    return "OCR" if unresolved else "CHUNK"
 
 
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
