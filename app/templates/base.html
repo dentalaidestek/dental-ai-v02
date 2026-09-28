@@ -567,5 +567,38 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
  else setTimeout(loadRuntimeConfig,0);
 })();
 </script>
+<script>
+(()=>{
+ const resetSubmitLock=(form)=>{
+  if(!form)return;
+  form.dataset.daiSubmitting="";
+  form.querySelectorAll("[data-dai-submit-locked='1']").forEach(button=>{
+   button.disabled=false;
+   button.classList.remove("dai-submit-loading");
+   button.removeAttribute("aria-busy");
+   delete button.dataset.daiSubmitLocked;
+  });
+  form.querySelectorAll("input[data-dai-submitter-copy='1']").forEach(input=>input.remove());
+ };
+ document.addEventListener("submit",event=>{
+  const form=event.target;
+  if(!(form instanceof HTMLFormElement)||event.defaultPrevented)return;
+  if(form.matches(".support-request-form,.support-reply-toggle form,.case-state-form,.case-review-form,.case-report-form,.expert-composer"))return;
+  const submitter=event.submitter instanceof HTMLButtonElement||event.submitter instanceof HTMLInputElement?event.submitter:null;
+  if(submitter?.classList?.contains("auth-submit"))return;
+  if(form.dataset.daiSubmitting==="1"){event.preventDefault();return;}
+  form.dataset.daiSubmitting="1";
+  if(submitter?.name&&!submitter.disabled){
+   const copy=document.createElement("input");
+   copy.type="hidden";copy.name=submitter.name;copy.value=submitter.value;copy.dataset.daiSubmitterCopy="1";
+   form.appendChild(copy);
+  }
+  const buttons=[...form.querySelectorAll('button[type="submit"],button:not([type]),input[type="submit"]')];
+  buttons.forEach(button=>{button.disabled=true;button.dataset.daiSubmitLocked="1";});
+  if(submitter){submitter.classList.add("dai-submit-loading");submitter.setAttribute("aria-busy","true");}
+ },false);
+ window.addEventListener("pageshow",()=>document.querySelectorAll("form[data-dai-submitting='1']").forEach(resetSubmitLock));
+})();
+</script>
 </body>
 </html>
