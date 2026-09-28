@@ -410,19 +410,21 @@ def run_one_slice(
         # the generation fails instead of mixing incompatible artifacts.
         if stage == "PREPARE":
             expected_pages = len(PdfReader(str(path)).pages) if mime_type == "application/pdf" else 1
+            source_sha = _sha256_file(path)
+            fingerprint = _index_fingerprint()
             if not set_build_identity(
                 session,
                 job_id=job.id,
                 lease_token=job.lease_token,
                 worker_id=job.worker_id,
                 expected_page_count=expected_pages,
-                source_sha256=_sha256_file(path),
-                index_fingerprint=_index_fingerprint(),
+                source_sha256=source_sha,
+                index_fingerprint=fingerprint,
             ):
                 return "LEASE_LOST"
             job.expected_page_count = expected_pages
-            job.source_sha256 = _sha256_file(path)
-            job.index_fingerprint = _index_fingerprint()
+            job.source_sha256 = source_sha
+            job.index_fingerprint = fingerprint
 
         if stage in {"PREPARE", "PARSE"}:
             if mime_type == "application/pdf":
