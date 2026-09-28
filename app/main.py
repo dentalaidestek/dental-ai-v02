@@ -54,7 +54,7 @@ from app.xray_trace import (
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
-from app.study_index_jobs import StudyIndexChunk, StudyIndexJob, StudyIndexPage
+from app.study_index_jobs import StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit
 from app.study_rag import (
     StudyRAGChunk,
     StudyRAGMemory,
@@ -1925,6 +1925,7 @@ def init_db():
                 'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS first_queued_at TIMESTAMP',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS retire_after TIMESTAMP',
             ):
                 conn.exec_driver_sql(statement)
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
@@ -1935,6 +1936,7 @@ def init_db():
             conn.exec_driver_sql('UPDATE "studyindexjob" SET first_queued_at = created_at WHERE first_queued_at IS NULL')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, first_queued_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_retire_after ON "studyindexjob" (status, retire_after)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexchunk_material_version_chunk ON "studyindexchunk" (material_id, index_version, chunk_index)')
@@ -1945,6 +1947,8 @@ def init_db():
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'')
             if "first_queued_at" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN first_queued_at TIMESTAMP')
+            if "retire_after" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN retire_after TIMESTAMP')
             conn.exec_driver_sql('UPDATE "studyindexjob" SET first_queued_at = created_at WHERE first_queued_at IS NULL')
             study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
             additions = {
