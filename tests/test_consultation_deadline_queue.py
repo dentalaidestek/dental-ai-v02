@@ -120,3 +120,66 @@ def test_deadline_and_user_state_transitions_lock_case_row_on_postgres():
     ):
         endpoint = MAIN.split(endpoint_name, 1)[1].split("@app.", 1)[0]
         assert "case_stmt.with_for_update()" in endpoint
+
+
+def test_completion_due_auto_completes_after_24h_and_keeps_actor_distinction():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    original_engine = main.engine
+    main.engine = engine
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            case = _case(session, status="EXPERT_COMPLETED")
+            deadline = main._utcnow_naive() - main.timedelta(seconds=1)
+            case.expert_completed_at = deadline - main.timedelta(hours=24)
+            case.completion_confirmation_deadline = deadline
+            session.add(case)
+            main._enqueue_deadline_pair(session, case.id, "COMPLETION", deadline)
+            session.commit()
+            job = session.exec(select(main.ConsultationDeadlineJob).where(
+                main.ConsultationDeadlineJob.case_id == case.id,
+                main.ConsultationDeadlineJob.job_type == "COMPLETION_DUE",
+            )).first()
+            notices, events = main._process_deadline_job(session, job, deadline + main.timedelta(seconds=1))
+            session.commit()
+            session.refresh(case)
+            assert case.status == "COMPLETED"
+            assert case.completed_at is not None
+            assert case.requester_completed_at is None
+            audit = session.exec(select(main.ConsultationEvent).where(
+                main.ConsultationEvent.case_id == case.id,
+                main.ConsultationEvent.event_type == "COMPLETION_AUTO_CONFIRMED",
+            )).first()
+            assert audit is not None
+            assert {event.user_id for event in events} == {case.requester_user_id, case.expert_user_id}
+            assert notices
+    finally:
+        main.engine = original_engine
+
+
+def test_completion_deadline_is_stale_after_requester_decision():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    original_engine = main.engine
+    main.engine = engine
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            case = _case(session, status="EXPERT_COMPLETED")
+            deadline = main._utcnow_naive() - main.timedelta(seconds=1)
+            case.completion_confirmation_deadline = deadline
+            session.add(case)
+            main._enqueue_deadline_pair(session, case.id, "COMPLETION", deadline)
+            session.flush()
+            job = session.exec(select(main.ConsultationDeadlineJob).where(
+                main.ConsultationDeadlineJob.case_id == case.id,
+                main.ConsultationDeadlineJob.job_type == "COMPLETION_DUE",
+            )).first()
+            case.status = "ACTIVE"
+            session.add(case)
+            session.flush()
+            notices, events = main._process_deadline_job(session, job, deadline + main.timedelta(seconds=1))
+            assert notices == []
+            assert events == []
+            assert case.status == "ACTIVE"
+    finally:
+        main.engine = original_engine
