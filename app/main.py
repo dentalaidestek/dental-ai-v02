@@ -10816,6 +10816,8 @@ def admin_center_delete_user(
     user_id: int,
     confirm_username: str = Form(...),
 ):
+    from app.account_erasure import begin_account_erasure
+
     admin = _admin_only(request)
     if not admin:
         return HTMLResponse("Yetkisiz işlem.", status_code=403)
@@ -10836,81 +10838,75 @@ def admin_center_delete_user(
             return HTMLResponse("Onay için kullanıcı adını eksiksiz yazın.", status_code=400)
         if not target.email:
             return HTMLResponse("Bu hesapta engellenecek e-posta adresi bulunamadı.", status_code=409)
-
-        previous = s.exec(
-            select(DeletedAccountEmail).where(DeletedAccountEmail.deleted_user_id == target.id)
-        ).first()
-        if previous:
-            return HTMLResponse("Bu hesap daha önce silinmiş.", status_code=409)
-
         fingerprint = _deleted_email_fingerprint(target.email)
-        blocked = s.exec(
-            select(DeletedAccountEmail).where(
-                DeletedAccountEmail.email_fingerprint == fingerprint
+        try:
+            storage_paths = begin_account_erasure(
+                s, user_id=target.id, actor="ADMIN",
+                block_registration=True,
+                deleted_email_fingerprint=fingerprint,
+                admin_user_id=admin.id,
             )
-        ).first()
-        if blocked and blocked.deleted_user_id != target.id:
-            return HTMLResponse("Bu e-posta daha önce başka bir silinen hesapla engellenmiş.", status_code=409)
-        if not blocked:
-            s.add(DeletedAccountEmail(
-                email_fingerprint=fingerprint,
-                deleted_user_id=target.id,
-                deleted_by_admin_id=admin.id,
-            ))
+            _cancel_user_program_reminders(s, target.id)
+            _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
+            s.commit()
+        except ValueError as exc:
+            s.rollback()
+            return HTMLResponse(str(exc), status_code=409)
 
-        if target.profile_photo_path:
-            storage_paths.append(target.profile_photo_path)
+    # Legacy non-academic objects still use best-effort cleanup for now.
+    # Academic originals/derivatives are already in durable deletion jobs.
+    for path in set(storage_paths):
+        try:
+            storage_delete(path)
+        except Exception:
+            logger.exception("Deleted account storage cleanup failed")
+    return RedirectResponse(ADMIN_CENTER_PATH + "?section=users&deleted=1", status_code=303)
 
-        profile = s.exec(
-            select(ExpertProfile).where(ExpertProfile.user_id == target.id)
-        ).first()
-        if profile:
-            if profile.credential_document_path:
-                storage_paths.append(profile.credential_document_path)
-            profile.phone = None
-            profile.phone_verified = False
-            profile.credential_document_path = None
-            profile.credential_document_name = None
-            profile.credential_document_mime = None
-            profile.availability = "PASSIVE"
-            profile.application_status = "REJECTED"
-            profile.verification_status = "REJECTED"
-            profile.identity_verified = False
-            profile.specialty_verified = False
-            profile.academic_title_verified = False
-            profile.verified_at = None
-            profile.updated_at = _utcnow_naive()
-            s.add(profile)
 
-        for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge):
-            rows = s.exec(select(model).where(model.user_id == target.id)).all()
-            for row in rows:
-                s.delete(row)
+@app.post("/account/delete")
+def delete_own_account(
+    request: Request,
+    confirm_username: str = Form(...),
+    password: str = Form(...),
+):
+    """User-initiated erasure: no permanent email registration block."""
+    from app.account_erasure import begin_account_erasure
 
-        # Keep an anonymized referential anchor for cases, payments and audits.
-        target.username = f"deleted_user_{target.id}_{uuid.uuid4().hex[:10]}"
-        target.display_name = "Silinmiş Kullanıcı"
-        target.email = None
-        target.password_hash = None
-        target.profile_photo_path = None
-        target.is_active = False
+    current = get_current_user(request)
+    if not current:
+        return HTMLResponse("Oturum gerekli.", status_code=401)
+    if current.role == "ADMIN":
+        return HTMLResponse("Yönetici hesabı bu ekrandan silinemez.", status_code=409)
+    if not secrets.compare_digest(
+        confirm_username.strip().casefold(),
+        (current.username or "").strip().casefold(),
+    ):
+        return HTMLResponse("Onay için kullanıcı adınızı eksiksiz yazın.", status_code=400)
+    if not current.password_hash or not verify_password(password, current.password_hash):
+        return HTMLResponse("Şifre doğrulanamadı.", status_code=403)
+
+    storage_paths: list[str] = []
+    with Session(engine, expire_on_commit=False) as s:
+        target = s.get(User, current.id)
+        if not target or not target.is_active:
+            return HTMLResponse("Hesap bulunamadı.", status_code=404)
+        storage_paths = begin_account_erasure(
+            s, user_id=target.id, actor="SELF", block_registration=False
+        )
         _cancel_user_program_reminders(s, target.id)
         _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
-        s.add(target)
-        s.add(AdminAuditLog(
-            admin_user_id=admin.id,
-            action="USER_PERMANENTLY_DELETED",
-            target_user_id=target.id,
-            detail="Hesap anonimleştirildi · e-posta yeniden kayıt engeline alındı",
-        ))
         s.commit()
 
     for path in set(storage_paths):
         try:
             storage_delete(path)
         except Exception:
-            logger.exception("Deleted account storage cleanup failed for %s", path)
-    return RedirectResponse(ADMIN_CENTER_PATH + "?section=users&deleted=1", status_code=303)
+            logger.exception("Self-deleted account storage cleanup failed")
+
+    response = RedirectResponse(url="/login?account_deleted=1", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie("dai_push_subscription_id")
+    return response
 
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/expert-status")
