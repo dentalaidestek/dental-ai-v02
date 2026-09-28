@@ -27,6 +27,7 @@ from app.study_index_jobs import (
     missing_page_numbers,
     pending_embedding_chunks,
     publish_index_version,
+    set_job_resource_class,
     upsert_page_checkpoint,
     verify_build_complete,
     yield_index_job,
@@ -276,11 +277,21 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     ) else "VERIFY"
 
 
-def run_one_slice(session: Session, *, identity: str | None = None) -> str:
+def run_one_slice(
+    session: Session,
+    *,
+    identity: str | None = None,
+    resource_class: str = "NORMAL",
+) -> str:
     """Claim and process at most one bounded unit. Returns a diagnostic state."""
     identity = identity or worker_id()
     lease_seconds = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
-    job = claim_next_index_job(session, worker_id=identity, lease_seconds=lease_seconds)
+    job = claim_next_index_job(
+        session,
+        worker_id=identity,
+        lease_seconds=lease_seconds,
+        resource_class=resource_class,
+    )
     if not job or job.id is None or not job.lease_token or not job.worker_id:
         return "IDLE"
 
@@ -312,8 +323,18 @@ def run_one_slice(session: Session, *, identity: str | None = None) -> str:
         elif stage == "EMBED":
             next_stage = _embed_slice(session, job)
         elif stage == "OCR":
-            # OCR gets its own constrained worker/resource class in the next
-            # phase. Keeping the job queued at OCR avoids false READY.
+            if resource_class != "OCR_HEAVY":
+                moved = set_job_resource_class(
+                    session,
+                    job_id=job.id,
+                    lease_token=job.lease_token,
+                    worker_id=job.worker_id,
+                    resource_class="OCR_HEAVY",
+                    stage="OCR",
+                )
+                return "MOVED:OCR_HEAVY" if moved else "LEASE_LOST"
+            # OCR implementation is deliberately fail-closed until its engine
+            # is selected/benchmarked. Heavy jobs cannot occupy NORMAL workers.
             next_stage = "OCR_WAIT"
         elif stage == "OCR_WAIT":
             next_stage = "OCR_WAIT"
