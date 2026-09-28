@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, select
 
 
@@ -76,7 +77,20 @@ def enqueue_index_job(
         priority=priority,
     )
     session.add(job)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # The DB unique index is the final arbiter if two request processes
+        # enqueue the same material generation concurrently.
+        session.rollback()
+        existing = session.exec(
+            select(StudyIndexJob)
+            .where(StudyIndexJob.material_id == material_id)
+            .where(StudyIndexJob.index_version == index_version)
+        ).first()
+        if existing:
+            return existing
+        raise
     return job
 
 
@@ -178,6 +192,7 @@ def renew_index_lease(
             "job_id": job_id,
             "lease_token": lease_token,
             "worker_id": worker_id,
+            "now": now,
         },
     )
     session.commit()
@@ -273,6 +288,8 @@ def publish_index_version(
               AND status = 'RUNNING'
               AND lease_token = :lease_token
               AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
             """ + suffix
         ),
         params={
