@@ -54,7 +54,7 @@ from app.xray_trace import (
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
-from app.study_index_jobs import StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit
+from app.study_index_jobs import StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit
 from app.study_rag import (
     StudyRAGChunk,
     StudyRAGMemory,
