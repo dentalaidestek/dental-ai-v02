@@ -88,7 +88,11 @@ def test_completion_transitions_and_realtime_events(consultation_app, monkeypatc
     with TestClient(main.app) as client:
         response = post_action(client, case_id, tokens[ids[actor]], action)
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "status": expected}
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == expected
+    assert payload["case_id"] == case_id
+    assert payload["viewer_role"] == ("REQUESTER" if actor == "requester" else "EXPERT")
     with Session(engine) as session:
         case = session.get(main.ConsultationCase, case_id)
         events = session.exec(select(main.RealtimeEvent).where(
@@ -105,7 +109,11 @@ def test_completion_transitions_and_realtime_events(consultation_app, monkeypatc
             assert case.requester_completed_at is not None
             assert case.completed_at is not None
     assert set(published) == {ids["requester"], ids["expert"]}
-    assert room_events == [(case_id, {"type": "case_status", "case_id": case_id, "status": expected})]
+    assert len(room_events) == 1
+    assert room_events[0][0] == case_id
+    assert room_events[0][1]["type"] == "case_status"
+    assert room_events[0][1]["case_id"] == case_id
+    assert room_events[0][1]["status"] == expected
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
@@ -133,12 +141,58 @@ def test_review_form_is_replaced_by_persisted_success_state(consultation_app):
     assert "Değerlendirmeniz için teşekkürler" in after.text
     assert "4/5" in after.text and "Faydalı görüşme" in after.text
     assert "Danışmanlığı bitir" not in after.text
-    assert 'id="expertComposeStack"' not in after.text
+    assert 'id="expertComposeStack"' in after.text
+    assert 'id="expertComposeStack" data-case-dynamic="post" hidden' in after.text
     assert duplicate.status_code == 409
     with Session(engine) as session:
         reviews = session.exec(select(main.ExpertReview).where(main.ExpertReview.case_id == case_id)).all()
         assert len(reviews) == 1
 
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_expert_today_proposal_uses_ajax_state_and_realtime_for_both_participants(consultation_app, monkeypatch):
+    engine, ids, tokens = consultation_app
+    case_id = create_case(engine, ids, "REQUESTED")
+    published = []
+    room_events = []
+
+    async def capture_publish(event):
+        published.append(event.user_id)
+
+    async def capture_room(case_number, payload):
+        room_events.append((case_number, payload))
+
+    monkeypatch.setattr(main, "_publish_realtime_event", capture_publish)
+    monkeypatch.setattr(main.consultation_socket_hub, "broadcast", capture_room)
+    with TestClient(main.app) as client:
+        response = client.post(
+            f"/expert-support/cases/{case_id}/expert-response",
+            data={"decision": "ACCEPT", "start_option": "TODAY", "proposal_note": "Bugün değerlendireceğim"},
+            cookies={main.SESSION_COOKIE: tokens[ids["expert"]]},
+            headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "PROPOSED"
+    assert payload["viewer_role"] == "EXPERT"
+    assert payload["proposed_start_label"] == "Bugün içinde"
+    assert payload["requester_decision_deadline"]
+    with Session(engine) as session:
+        case = session.get(main.ConsultationCase, case_id)
+        assert case.status == "PROPOSED"
+        assert case.proposed_start_minutes >= 1
+        events = session.exec(select(main.RealtimeEvent).where(
+            main.RealtimeEvent.entity_type == "consultation_case",
+            main.RealtimeEvent.entity_id == str(case_id),
+            main.RealtimeEvent.event_type == "CASE_STATUS_UPDATED",
+        )).all()
+        assert {event.user_id for event in events} == {ids["requester"], ids["expert"]}
+    assert set(published) == {ids["requester"], ids["expert"]}
+    assert room_events[0][1]["status"] == "PROPOSED"
+    assert room_events[0][1]["proposed_start_label"] == "Bugün içinde"
 
 def test_completed_ui_has_no_finish_action_and_realtime_refresh_is_debounced():
     menu = ROOM.split('<div class="case-room-menu-panel">', 1)[1].split("</div></details>", 1)[0]
@@ -147,6 +201,7 @@ def test_completed_ui_has_no_finish_action_and_realtime_refresh_is_debounced():
     assert 'case.status in ["ACTIVE","EXPERT_COMPLETED"]' not in menu
     assert "Uzman danışmanlığı sonlandırdı" in ROOM
     assert 'evt.event_type==="CASE_STATUS_UPDATED"' in ROOM
-    assert "scheduleCaseRoomRefresh(data.status)" in ROOM
+    assert "applyCaseState(data)" in ROOM
+    assert "if(!applyCaseState(data))await refreshCaseRoom" in ROOM
     assert "caseRefreshPromise" in ROOM and "caseRefreshTimer" in ROOM
     assert 'e.target.closest?.(".case-state-form,.case-review-form,.case-report-form")' in ROOM
