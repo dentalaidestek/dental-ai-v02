@@ -1924,6 +1924,7 @@ def init_db():
                 'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS index_error VARCHAR',
                 'ALTER TABLE "studymaterial" ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP',
                 'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'',
+                'ALTER TABLE "studyindexjob" ADD COLUMN IF NOT EXISTS first_queued_at TIMESTAMP',
             ):
                 conn.exec_driver_sql(statement)
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_index_status ON "studymaterial" (index_status)')
@@ -1931,7 +1932,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_deleted_at ON "studymaterial" (deleted_at)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, created_at)')
+            conn.exec_driver_sql('UPDATE "studyindexjob" SET first_queued_at = created_at WHERE first_queued_at IS NULL')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, first_queued_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
@@ -1941,6 +1943,9 @@ def init_db():
             job_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studyindexjob")').fetchall()}
             if "resource_class" not in job_cols:
                 conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN resource_class VARCHAR NOT NULL DEFAULT \'NORMAL\'')
+            if "first_queued_at" not in job_cols:
+                conn.exec_driver_sql('ALTER TABLE "studyindexjob" ADD COLUMN first_queued_at TIMESTAMP')
+            conn.exec_driver_sql('UPDATE "studyindexjob" SET first_queued_at = created_at WHERE first_queued_at IS NULL')
             study_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("studymaterial")').fetchall()}
             additions = {
                 "index_status": "VARCHAR NOT NULL DEFAULT 'LEGACY'",
@@ -1957,7 +1962,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_building_index_version ON "studymaterial" (building_index_version)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studymaterial_deleted_at ON "studymaterial" (deleted_at)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexjob_material_version ON "studyindexjob" (material_id, index_version)')
-            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, created_at)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_claim ON "studyindexjob" (resource_class, status, next_retry_at, priority, first_queued_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexjob_lease ON "studyindexjob" (status, lease_until)')
             conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_studyindexpage_material_version_page ON "studyindexpage" (material_id, index_version, page_number)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_studyindexpage_resume ON "studyindexpage" (material_id, index_version, status, page_number)')
