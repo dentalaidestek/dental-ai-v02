@@ -205,3 +205,14 @@ def test_completed_ui_has_no_finish_action_and_realtime_refresh_is_debounced():
     assert "if(!applyCaseState(data))await refreshCaseRoom" in ROOM
     assert "caseRefreshPromise" in ROOM and "caseRefreshTimer" in ROOM
     assert 'e.target.closest?.(".case-state-form,.case-review-form,.case-report-form")' in ROOM
+
+
+def test_dispute_chat_stays_open_but_completed_chat_is_closed_on_every_write_path():
+    main_source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    assert 'case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}' in main_source
+    assert 'case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}' in main_source
+    assert 'case.status not in ["ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"]' in ROOM
+    assert '["ACTIVE","EXPERT_COMPLETED","DISPUTE"].includes(data.status)' in ROOM
+    annotation = main_source.split("def expert_support_annotate_message", 1)[1].split("PROFANITY_PATTERNS", 1)[0]
+    assert 'case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}' in annotation
+    assert '"COMPLETED"' not in annotation
