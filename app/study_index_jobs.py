@@ -103,7 +103,6 @@ def begin_material_build(
     index_version: str,
 ) -> bool:
     """Reserve a generation for one material before enqueueing its job."""
-    now = utcnow_naive()
     result = session.exec(
         text(
             """
