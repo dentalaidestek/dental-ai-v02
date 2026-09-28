@@ -476,5 +476,20 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 </script>
+<style>
+.dai-tooth-submit-loading{cursor:wait}
+.dai-tooth-submit-loading::after{content:"";display:inline-block;width:15px;height:15px;margin-left:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:dai-tooth-submit-spin .7s linear infinite}
+@keyframes dai-tooth-submit-spin{to{transform:rotate(360deg)}}
+</style>
+<script>
+document.addEventListener("submit",event=>{
+ const form=event.target;if(!(form instanceof HTMLFormElement)||event.defaultPrevented)return;
+ if(form.dataset.submitting==="1"){event.preventDefault();return}
+ const button=event.submitter||form.querySelector('button[type="submit"]');form.dataset.submitting="1";
+ form.querySelectorAll('button[type="submit"],button:not([type])').forEach(item=>item.disabled=true);
+ if(button){button.classList.add("dai-tooth-submit-loading");button.setAttribute("aria-busy","true")}
+});
+window.addEventListener("pageshow",()=>document.querySelectorAll("form[data-submitting='1']").forEach(form=>{form.dataset.submitting="";form.querySelectorAll("button").forEach(button=>{button.disabled=false;button.classList.remove("dai-tooth-submit-loading");button.removeAttribute("aria-busy")})}));
+</script>
 </body>
 </html>
