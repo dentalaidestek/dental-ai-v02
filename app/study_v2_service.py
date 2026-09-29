@@ -93,9 +93,13 @@ def reactivate_configured_ocr_jobs(session: Session) -> int:
     result = session.exec(text(
         """
         UPDATE studyindexjob
-        SET failure_attempts = 0,
+        SET status = 'QUEUED',
+            failure_attempts = 0,
             next_retry_at = :now,
             last_error = 'OCR_PROVIDER_REACTIVATED',
+            lease_until = NULL,
+            lease_token = NULL,
+            worker_id = NULL,
             updated_at = :now
         WHERE resource_class = 'OCR_HEAVY'
           AND status IN ('QUEUED', 'FAILED')
