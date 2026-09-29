@@ -80,11 +80,14 @@ def enqueue_legacy_materials_v2(
 def reactivate_configured_ocr_jobs(session: Session) -> int:
     """Repair counters polluted by the old configuration-wait behavior.
 
-    This targets only queued OCR-stage jobs after an OCR provider is explicitly
-    configured. Real provider failures below the legacy threshold retain their
-    circuit/backoff state.
+    This is deliberately guarded by a one-shot operations flag and targets
+    only queued/failed OCR-stage jobs after a provider is configured.
     """
-    if not indexing_enabled() or not (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip():
+    if (
+        not indexing_enabled()
+        or not (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip()
+        or not _flag("STUDY_V2_REACTIVATE_OCR_ON_STARTUP")
+    ):
         return 0
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     result = session.exec(text(
@@ -95,12 +98,8 @@ def reactivate_configured_ocr_jobs(session: Session) -> int:
             last_error = 'OCR_PROVIDER_REACTIVATED',
             updated_at = :now
         WHERE resource_class = 'OCR_HEAVY'
-          AND status = 'QUEUED'
+          AND status IN ('QUEUED', 'FAILED')
           AND stage IN ('OCR', 'OCR_WAIT')
-          AND (
-            last_error = 'OCR_REQUIRED'
-            OR (last_error LIKE 'PROVIDER:%' AND failure_attempts >= 3)
-          )
         """
     ), params={"now": now})
     return int(getattr(result, "rowcount", 0) or 0)
