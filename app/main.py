@@ -6925,6 +6925,7 @@ def account_notifications(request: Request):
             select(AdminNotice).where(
                 AdminNotice.user_id == user.id,
                 AdminNotice.status == "ACTIVE",
+                AdminNotice.is_read == False,
             ).order_by(AdminNotice.created_at.desc()).limit(20)
         ).all()
         return {
