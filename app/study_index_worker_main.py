@@ -23,6 +23,8 @@ from app.study_index_jobs import (
 from app.study_index_worker import run_one_slice
 from app.study_deletion_worker import run_deletion_slice
 from app.study_v2_database import require_worker_capabilities
+from app.study_v2_service import enqueue_legacy_material_rows_v2
+from app.process_memory import recycle_if_over_limit
 
 logger = logging.getLogger(__name__)
 _stop = False
@@ -104,16 +106,20 @@ def main() -> None:
                     run_deletion_slice(session)
                     if loops % gc_every == 0:
                         cleanup_retired_generations(session, limit=10)
-                        from app.main import StudyMaterial
-                        from app.study_v2_service import enqueue_legacy_materials_v2
                         from app.work_jobs import WorkCapacity
                         try:
-                            enqueue_legacy_materials_v2(session, material_model=StudyMaterial, limit=10)
+                            enqueue_legacy_material_rows_v2(session, limit=10)
                             session.commit()
                         except WorkCapacity:
                             session.rollback()
             if result == "IDLE":
                 time.sleep(idle_sleep)
+            else:
+                recycle_if_over_limit(
+                    "STUDY_V2_RECYCLE_RSS_MB",
+                    module_name="app.study_index_worker_main",
+                    cleanup=engine.dispose,
+                )
         except Exception:
             # Process stays alive; durable leases/jobs are the recovery source.
             logger.exception("Academic V2 worker loop error")

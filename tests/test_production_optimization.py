@@ -255,6 +255,7 @@ def test_mixed_worker_services_ocr_under_continuous_normal_backlog(monkeypatch):
     monkeypatch.setattr(worker.signal, 'signal', lambda *args: None)
     monkeypatch.setattr(worker, 'require_worker_capabilities', lambda session: SimpleNamespace(fts=True, embedding_array=True, pgvector=False))
     monkeypatch.setattr(worker, 'run_deletion_slice', lambda session: None)
+    monkeypatch.setattr(worker, 'enqueue_legacy_material_rows_v2', lambda session, limit: 0)
     monkeypatch.setenv('STUDY_V2_RESOURCE_CLASS', 'MIXED')
     classes = []
     def run_slice(session, resource_class):
@@ -265,3 +266,54 @@ def test_mixed_worker_services_ocr_under_continuous_normal_backlog(monkeypatch):
     monkeypatch.setattr(worker, 'run_one_slice', run_slice)
     worker.main()
     assert classes == ['NORMAL', 'OCR_HEAVY', 'NORMAL', 'OCR_HEAVY']
+
+
+def test_academic_legacy_backfill_does_not_require_web_model_graph(monkeypatch):
+    from app import study_v2_service as service
+
+    class Result:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return [{
+                'id': 7,
+                'owner_user_id': 11,
+                'course_id': 13,
+                'mime_type': 'application/pdf',
+                'deleted_at': None,
+            }]
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params):
+            self.calls.append((str(statement), params))
+            return Result()
+
+    monkeypatch.setenv('STUDY_ACADEMIC_V2_INDEXING', '1')
+    seen = []
+    monkeypatch.setattr(service, 'enqueue_material_v2', lambda session, material: seen.append(material) or 'v2')
+    session = Session()
+    assert service.enqueue_legacy_material_rows_v2(session, limit=10) == 1
+    assert session.calls[0][1] == {'limit': 10}
+    assert 'FROM studymaterial' in session.calls[0][0]
+    assert [(row.id, row.owner_user_id, row.course_id, row.mime_type) for row in seen] == [
+        (7, 11, 13, 'application/pdf')
+    ]
+
+
+def test_postgres_notice_channels_do_not_wake_unrelated_workers():
+    from app import main
+
+    reconnect, channels = main._postgres_notice_state([
+        (main.PG_REALTIME_CHANNEL, '10'),
+        (main.PG_REALTIME_CHANNEL, '11'),
+    ])
+    assert not reconnect
+    assert channels == {main.PG_REALTIME_CHANNEL}
+
+    reconnect, channels = main._postgres_notice_state([None])
+    assert reconnect
+    assert channels == set()

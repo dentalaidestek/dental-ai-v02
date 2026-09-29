@@ -1,0 +1,188 @@
+previews:
+  generation: "off"
+
+envVarGroups:
+  - name: dental-runtime-bounds
+    envVars:
+      - key: DENTAL_MIGRATE_ON_STARTUP
+        value: "0"
+      - key: DENTAL_WORK_EXECUTION
+        value: external
+      - key: STUDY_ACADEMIC_V2_COLOCATED_WORKER
+        value: "0"
+      - key: DENTAL_WEB_DB_POOL_SIZE
+        value: "2"
+      - key: DENTAL_ROUTER_DB_POOL_SIZE
+        value: "2"
+      - key: DENTAL_MAX_HTTP_REQUESTS
+        value: "8"
+      - key: DENTAL_MAX_UPLOADS
+        value: "1"
+      - key: DENTAL_MAX_REQUEST_BYTES
+        value: "52428800"
+      - key: DENTAL_MAX_PENDING_JOBS
+        value: "1000"
+      - key: STUDY_MAX_PENDING_INDEX_JOBS
+        value: "1000"
+      - key: DENTAL_PROVIDER_MAX_INFLIGHT
+        value: "4"
+      - key: R2_CACHE_DIR
+        value: /tmp/dental-r2-cache
+      - key: R2_CACHE_MAX_BYTES
+        value: "268435456"
+      - key: STUDY_V1_SHADOW_INDEXING
+        value: "0"
+      - key: DENTAL_RUNTIME_DIAGNOSTICS
+        value: "0"
+
+services:
+  - type: web
+    name: dental-ai-v02
+    runtime: python
+    region: oregon
+    plan: starter
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r requirements-web.lock
+    preDeployCommand: python -m app.migrate
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /readyz
+    envVars:
+      - fromGroup: dental-runtime-bounds
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ENABLED
+        value: "1"
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: DENTAL_VISION_MODAL_URL
+        sync: false
+      - key: DENTAL_VISION_API_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_PRIVATE_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_PUBLIC_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_SUBJECT
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: BREVO_SENDER_NAME
+        sync: false
+      - key: ACCOUNT_BLOCKLIST_SECRET
+        sync: false
+      - key: ADMIN_BOOTSTRAP_TOKEN
+        sync: false
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        sync: false
+      - key: IYZICO_API_KEY
+        sync: false
+      - key: IYZICO_SECRET_KEY
+        sync: false
+
+  - type: worker
+    name: dental-ai-work-worker
+    runtime: python
+    region: oregon
+    plan: starter
+    autoDeployTrigger: "off"
+    maxShutdownDelaySeconds: 300
+    buildCommand: pip install -r requirements-web.lock
+    startCommand: python -m app.work_worker
+    envVars:
+      - fromGroup: dental-runtime-bounds
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ENABLED
+        value: "1"
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: DENTAL_VISION_MODAL_URL
+        sync: false
+      - key: DENTAL_VISION_API_KEY
+        sync: false
+      - key: DENTAL_WORKER_RECYCLE_RSS_MB
+        value: "420"
+
+  - type: worker
+    name: dental-ai-study-index-worker
+    runtime: python
+    region: oregon
+    plan: starter
+    autoDeployTrigger: "off"
+    maxShutdownDelaySeconds: 300
+    buildCommand: pip install -r requirements-web.lock
+    startCommand: python -m app.study_index_worker_main
+    envVars:
+      - fromGroup: dental-runtime-bounds
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ENABLED
+        value: "1"
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: STUDY_V2_DB_POOL_SIZE
+        value: "1"
+      - key: STUDY_V2_RESOURCE_CLASS
+        value: MIXED
+      - key: STUDY_V2_OCR_BATCH_PAGES
+        value: "1"
+      - key: STUDY_V2_EMBED_BATCH_CHUNKS
+        value: "4"
+      - key: STUDY_V2_RECYCLE_RSS_MB
+        value: "384"

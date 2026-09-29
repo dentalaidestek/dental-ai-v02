@@ -9,6 +9,7 @@ import time
 from contextlib import contextmanager
 from sqlmodel import Session
 from app.object_cache import scope as storage_scope
+from app.process_memory import recycle_if_over_limit
 from app.work_jobs import WorkCancelled, claim, current_job, finish, guard_publication, heartbeat
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,14 @@ def main():
     logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
     while not stop.is_set():
         try:
-            if not run_one(app_main.engine):
+            did_work = run_one(app_main.engine)
+            if did_work:
+                recycle_if_over_limit(
+                    "DENTAL_WORKER_RECYCLE_RSS_MB",
+                    module_name="app.work_worker",
+                    cleanup=app_main.engine.dispose,
+                )
+            else:
                 stop.wait(2)
         except Exception:
             logger.exception('Application queue iteration failed')
