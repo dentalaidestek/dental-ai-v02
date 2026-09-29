@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.study_index_jobs import begin_material_build, enqueue_index_job, new_index_version
@@ -73,6 +75,35 @@ def enqueue_legacy_materials_v2(
         if enqueue_material_v2(session, material):
             queued += 1
     return queued
+
+
+def reactivate_configured_ocr_jobs(session: Session) -> int:
+    """Repair counters polluted by the old configuration-wait behavior.
+
+    This targets only queued OCR-stage jobs after an OCR provider is explicitly
+    configured. Real provider failures below the legacy threshold retain their
+    circuit/backoff state.
+    """
+    if not indexing_enabled() or not (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip():
+        return 0
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = session.exec(text(
+        """
+        UPDATE studyindexjob
+        SET failure_attempts = 0,
+            next_retry_at = :now,
+            last_error = 'OCR_PROVIDER_REACTIVATED',
+            updated_at = :now
+        WHERE resource_class = 'OCR_HEAVY'
+          AND status = 'QUEUED'
+          AND stage IN ('OCR', 'OCR_WAIT')
+          AND (
+            last_error = 'OCR_REQUIRED'
+            OR (last_error LIKE 'PROVIDER:%' AND failure_attempts >= 3)
+          )
+        """
+    ), params={"now": now})
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int) -> bool:

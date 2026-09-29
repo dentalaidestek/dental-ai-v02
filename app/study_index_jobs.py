@@ -819,6 +819,49 @@ def mark_index_job_failed(
     return bool(getattr(result, "rowcount", 0) == 1)
 
 
+def defer_index_job(
+    session: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    worker_id: str,
+    reason: str,
+    retry_at: datetime,
+) -> bool:
+    """Release a lease for missing configuration without counting a failure."""
+    now = utcnow_naive()
+    result = session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET status = 'QUEUED',
+                next_retry_at = :retry_at,
+                last_error = :reason,
+                lease_until = NULL,
+                lease_token = NULL,
+                worker_id = NULL,
+                updated_at = :now
+            WHERE id = :job_id
+              AND status = 'RUNNING'
+              AND lease_token = :lease_token
+              AND worker_id = :worker_id
+              AND lease_until IS NOT NULL
+              AND lease_until > :now
+            """
+        ),
+        params={
+            "retry_at": retry_at,
+            "reason": (reason or "")[:2000],
+            "now": now,
+            "job_id": job_id,
+            "lease_token": lease_token,
+            "worker_id": worker_id,
+        },
+    )
+    session.commit()
+    return bool(getattr(result, "rowcount", 0) == 1)
+
+
 
 
 def retire_previous_generation(

@@ -26,6 +26,7 @@ from app.study_index_jobs import (
     StudyIndexJob,
     StudyIndexPage,
     claim_next_index_job,
+    defer_index_job,
     mark_index_job_failed,
     missing_page_numbers,
     pending_embedding_chunks,
@@ -683,12 +684,12 @@ def run_one_slice(
             # Release the lease and back off; no busy-loop while OCR support is
             # intentionally not active yet.
             retry_at = _utcnow_naive() + timedelta(minutes=5)
-            mark_index_job_failed(
+            defer_index_job(
                 session,
                 job_id=job.id,
                 lease_token=job.lease_token,
                 worker_id=job.worker_id,
-                error="OCR_REQUIRED",
+                reason="OCR_REQUIRED",
                 retry_at=retry_at,
             )
             return "OCR_WAIT"

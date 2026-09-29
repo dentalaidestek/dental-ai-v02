@@ -12,6 +12,7 @@ from app.study_index_jobs import (
     claim_next_index_job,
     enqueue_index_job,
     cleanup_retired_generations,
+    defer_index_job,
     publish_index_version,
     retire_previous_generation,
     set_build_identity,
@@ -126,6 +127,28 @@ def test_expired_lease_is_reclaimed_and_old_worker_cannot_yield():
             worker_id="worker-a",
             stage="EMBED",
         )
+
+
+def test_configuration_wait_does_not_consume_failure_budget():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        assert claimed and claimed.lease_token
+        assert defer_index_job(
+            s,
+            job_id=claimed.id,
+            lease_token=claimed.lease_token,
+            worker_id="worker-a",
+            reason="OCR_REQUIRED",
+            retry_at=datetime.utcnow() + timedelta(minutes=5),
+        )
+        row = s.exec(
+            text("SELECT status, failure_attempts, last_error FROM studyindexjob WHERE id=:id"),
+            params={"id": claimed.id},
+        ).one()
+        assert tuple(row) == ("QUEUED", 0, "OCR_REQUIRED")
 
 
 def test_delete_during_build_blocks_publish_and_cancels_job():

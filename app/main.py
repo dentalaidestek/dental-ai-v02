@@ -62,6 +62,7 @@ from app.study_index_jobs import (
 from app.study_retrieval_v2 import retrieve_course_context_v2
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2,
+    reactivate_configured_ocr_jobs,
     reads_enabled as study_v2_reads_enabled,
     streaming_enabled as study_v2_streaming_enabled,
 )
@@ -3658,9 +3659,13 @@ async def startup():
         queued_v2 = enqueue_legacy_materials_v2(
             study_session, material_model=StudyMaterial,
         )
-        if queued_v2:
+        reactivated_ocr = reactivate_configured_ocr_jobs(study_session)
+        if queued_v2 or reactivated_ocr:
             study_session.commit()
-            logger.info("Academic V2 queued %s legacy material(s)", queued_v2)
+            logger.info(
+                "Academic V2 startup queued_legacy=%s reactivated_ocr=%s",
+                queued_v2, reactivated_ocr,
+            )
     app.state.study_v2_worker_task = start_colocated_worker_task()
     _backfill_legacy_deadline_jobs_if_needed()
     _backfill_program_reminder_jobs()
