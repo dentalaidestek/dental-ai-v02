@@ -53,7 +53,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
         const started=await rr.json().catch(()=>({}));
         if(!rr.ok||started.ok===false)throw new Error(started.error||'Tedavi analizi başlatılamadı.');
         for(let n=0;n<80;n++){
-          await new Promise(x=>setTimeout(x,Math.min(15000,2000*Math.pow(1.3,n))+Math.random()*500));
+          await new Promise(x=>setTimeout(x,Math.min(5000,2000*Math.pow(1.3,n))+Math.random()*500));
           const q=await fetch(res,{cache:'no-store'});
           const result=await q.json().catch(()=>({}));
           if(q.status===202||result.status==='AI_ANALYZING')continue;

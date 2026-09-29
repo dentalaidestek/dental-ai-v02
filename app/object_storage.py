@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import mimetypes
 import os
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
+import threading
+import time
 from typing import Optional
 import uuid
 from app import object_cache
@@ -20,6 +23,39 @@ from app import object_cache
 
 class ObjectStorageError(RuntimeError):
     """Raised when configured persistent storage is unavailable."""
+
+
+_SIZE_CACHE: OrderedDict[str, tuple[float, int]] = OrderedDict()
+_SIZE_CACHE_LOCK = threading.Lock()
+_SIZE_CACHE_TTL_SECONDS = 600
+_SIZE_CACHE_MAX_ITEMS = 4096
+
+
+def _cached_size(key: str) -> int | None:
+    now = time.monotonic()
+    with _SIZE_CACHE_LOCK:
+        item = _SIZE_CACHE.get(key)
+        if item is None:
+            return None
+        created_at, value = item
+        if now - created_at > _SIZE_CACHE_TTL_SECONDS:
+            _SIZE_CACHE.pop(key, None)
+            return None
+        _SIZE_CACHE.move_to_end(key)
+        return value
+
+
+def _remember_size(key: str, value: int) -> None:
+    with _SIZE_CACHE_LOCK:
+        _SIZE_CACHE[key] = (time.monotonic(), max(0, int(value)))
+        _SIZE_CACHE.move_to_end(key)
+        while len(_SIZE_CACHE) > _SIZE_CACHE_MAX_ITEMS:
+            _SIZE_CACHE.popitem(last=False)
+
+
+def _forget_size(key: str) -> None:
+    with _SIZE_CACHE_LOCK:
+        _SIZE_CACHE.pop(key, None)
 
 
 def enabled() -> bool:
@@ -127,6 +163,7 @@ def persist_file(
     except Exception as exc:
         raise ObjectStorageError(f"R2 upload failed for {key}") from exc
     object_cache.invalidate(key)
+    _remember_size(key, local.stat().st_size)
     object_cache.uploaded(local)
     return str(local)
 
@@ -184,9 +221,15 @@ def size(reference: str | Path | None) -> int:
     if not enabled():
         return 0
     bucket, _, _, _ = _settings()
+    key = _object_key(reference)
+    cached = _cached_size(key)
+    if cached is not None:
+        return cached
     try:
-        result = _client().head_object(Bucket=bucket, Key=_object_key(reference))
-        return int(result.get("ContentLength") or 0)
+        result = _client().head_object(Bucket=bucket, Key=key)
+        value = int(result.get("ContentLength") or 0)
+        _remember_size(key, value)
+        return value
     except Exception as exc:
         if _is_missing(exc):
             return 0
@@ -203,10 +246,23 @@ def ensure_local(reference: str | Path) -> Path:
     bucket, _, _, _ = _settings()
     key = _object_key(reference)
 
+    def metadata():
+        try:
+            return _client().head_object(Bucket=bucket, Key=key)
+        except Exception as exc:
+            if _is_missing(exc):
+                raise FileNotFoundError(str(reference)) from exc
+            raise ObjectStorageError("R2 metadata unavailable") from exc
+
     def download(destination, expected_size):
         # Stream synchronously with bounded buffers, never boto3's multipart
         # thread pool or an unbounded read into RAM.
-        result = _client().get_object(Bucket=bucket, Key=key)
+        try:
+            result = _client().get_object(Bucket=bucket, Key=key)
+        except Exception as exc:
+            if _is_missing(exc):
+                raise FileNotFoundError(str(reference)) from exc
+            raise ObjectStorageError("R2 download unavailable") from exc
         body = result['Body']
         total = 0
         try:
@@ -221,7 +277,7 @@ def ensure_local(reference: str | Path) -> Path:
 
     return object_cache.materialize(
         key,
-        metadata=lambda: _client().head_object(Bucket=bucket, Key=key),
+        metadata=metadata,
         download=download,
     )
 
@@ -230,12 +286,15 @@ def delete(reference: str | Path | None) -> None:
     if not reference:
         return
     local = _local_path(reference)
+    key = _object_key(reference) if enabled() else None
     if enabled():
         bucket, _, _, _ = _settings()
         try:
-            _client().delete_object(Bucket=bucket, Key=_object_key(reference))
+            _client().delete_object(Bucket=bucket, Key=key)
         except Exception as exc:
             raise ObjectStorageError("R2 delete failed") from exc
 
-    object_cache.invalidate(_object_key(reference)) if enabled() else None
+    if key is not None:
+        object_cache.invalidate(key)
+        _forget_size(key)
     local.unlink(missing_ok=True)

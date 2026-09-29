@@ -99,6 +99,84 @@ def test_atomic_publication_has_no_connection_during_blob_io(database, monkeypat
         work_jobs.current_job.reset(token)
 
 
+def test_analysis_asset_releases_connection_before_blob_io(database, monkeypatch, tmp_path):
+    engine, ids = database
+    with Session(engine, expire_on_commit=False) as s:
+        user = s.get(main.User, ids.user)
+        s.add(main.ImageAsset(
+            analysis_id=ids.analysis,
+            original_filename='scan.jpg',
+            stored_filename='scan.jpg',
+            file_path='uploads/scan.jpg',
+        ))
+        s.commit()
+
+    local_path = tmp_path / 'scan.jpg'
+    local_path.write_bytes(b'image')
+    monkeypatch.setattr(main, 'get_current_user', lambda request: user)
+
+    def ensure_local(reference):
+        assert reference == 'uploads/scan.jpg'
+        assert engine.pool.checkedout() == 0
+        return local_path
+
+    monkeypatch.setattr(main, 'storage_ensure_local', ensure_local)
+    response = main.analysis_primary_asset(None, ids.analysis)
+
+    assert Path(response.path) == local_path
+
+
+def test_admin_storage_releases_connection_before_metadata_io(database, monkeypatch):
+    engine, ids = database
+    with Session(engine, expire_on_commit=False) as s:
+        user = s.get(main.User, ids.user)
+        user.profile_photo_path = 'uploads/profile.jpg'
+        s.add(user)
+        s.commit()
+
+    def size(reference):
+        assert reference == 'uploads/profile.jpg'
+        assert engine.pool.checkedout() == 0
+        return 17
+
+    monkeypatch.setattr(main, 'storage_size', size)
+    with Session(engine, expire_on_commit=False) as s:
+        summary = main._admin_user_storage_summaries(s, [user])
+
+    assert summary[ids.user]['total_bytes'] == 17
+
+
+def test_admin_user_detail_storage_releases_connection_before_metadata_io(database, monkeypatch):
+    engine, ids = database
+    with Session(engine, expire_on_commit=False) as s:
+        user = s.get(main.User, ids.user)
+        user.profile_photo_path = 'uploads/profile.jpg'
+        s.add(user)
+        s.commit()
+
+    def size(reference):
+        assert reference == 'uploads/profile.jpg'
+        assert engine.pool.checkedout() == 0
+        return 23
+
+    monkeypatch.setattr(main, 'storage_size', size)
+    with Session(engine, expire_on_commit=False) as s:
+        summary = main._admin_user_storage_summary(s, ids.user)
+
+    assert summary['total_bytes'] == 23
+
+
+def test_pending_ui_has_bounded_completion_detection_delay():
+    templates = Path(main.__file__).parent / 'templates'
+    viewer = (templates / 'analysis_viewer.html').read_text()
+    pending = (templates / 'work_pending.html').read_text()
+
+    assert 'Math.min(5000,2000*Math.pow(1.3,n))' in viewer
+    assert 'Math.min(10000,Math.round(delay*1.4))' in pending
+    assert 'Math.min(15000,' not in viewer
+    assert 'Math.min(30000,' not in pending
+
+
 @pytest.mark.parametrize('guest', [False, True])
 def test_vision_updates_correct_table_and_retries_partial(database, monkeypatch, guest):
     engine, ids = database

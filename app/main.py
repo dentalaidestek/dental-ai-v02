@@ -3629,9 +3629,10 @@ def protected_upload(request: Request, filename: str):
                     return HTMLResponse("Bu dosyaya erişim yetkiniz yok.", status_code=403)
                 reference = UPLOAD_DIR / safe_name
 
-    if not storage_exists(reference):
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    path = storage_ensure_local(reference)
     return FileResponse(path)
 def template_user_context(request: Request):
     user = get_current_user(request)
@@ -4121,9 +4122,10 @@ def study_material_file(request: Request, course_id: int, material_id: int):
         reference = material.file_path
         filename = material.original_filename
         mime_type = material.mime_type
-    if not storage_exists(reference):
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
         return HTMLResponse("Not dosyası sunucuda bulunamadı.", status_code=404)
-    path = storage_ensure_local(reference)
     return FileResponse(path, media_type=mime_type)
 
 
@@ -5735,6 +5737,10 @@ def _realtime_listener_rows(after_id, user_ids, event_ids=None):
         return list(session.exec(query.order_by(RealtimeEvent.id).limit(500)).all())
 
 
+def _postgres_notice_state(notices):
+    return None in notices, {item[0] for item in notices if item is not None}
+
+
 async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True, listen_program: bool = True) -> None:
     if engine.dialect.name != "postgresql" or not DATABASE_URL:
         return
@@ -5747,8 +5753,11 @@ async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realt
     try:
         while True:
             notices = await listener.batch()
-            if listen_deadline: _wake_consultation_deadline_worker()
-            if listen_program: _wake_program_reminder_worker()
+            reconnect_or_overflow, notice_channels = _postgres_notice_state(notices)
+            if listen_deadline and (reconnect_or_overflow or PG_DEADLINE_CHANNEL in notice_channels):
+                _wake_consultation_deadline_worker()
+            if listen_program and (reconnect_or_overflow or PG_PROGRAM_REMINDER_CHANNEL in notice_channels):
+                _wake_program_reminder_worker()
             users = tuple(user_realtime_socket_hub.users)
             if not users or not listen_realtime:
                 continue
@@ -5868,10 +5877,13 @@ def admin_consultation_report_media(request: Request, case_id: int, message_id: 
         ticket=s.exec(select(SupportTicket).where(SupportTicket.case_id==case_id,SupportTicket.source_type=="SUPPORT")).first()
         if not case or (not report and not ticket) or not message or message.case_id!=case.id or not message.media_path:
             return HTMLResponse("Bu inceleme kapsamında erişilebilir medya bulunamadı.",status_code=403)
-        if not storage_exists(message.media_path):return HTMLResponse("Dosya bulunamadı.",status_code=404)
-        path=storage_ensure_local(message.media_path)
+        reference = message.media_path
         s.add(DisputeAccessAudit(case_id=case.id,admin_user_id=user.id,action="REPORT_VIEW_MEDIA"));s.commit()
-        return FileResponse(path)
+    try:
+        path=storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Dosya bulunamadı.",status_code=404)
+    return FileResponse(path)
 
 
 @app.get("/admin/consultation-disputes/{case_id}", response_class=HTMLResponse)
@@ -5904,13 +5916,15 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
         message = s.get(ConsultationMessage, message_id)
         if not case or case.status != "DISPUTE" or not case.dispute_opened_at or not message or message.case_id != case.id or not message.media_path:
             return HTMLResponse("Aktif itiraz kapsamında erişilebilir medya bulunamadı.", status_code=403)
-        if not storage_exists(message.media_path):
-            return HTMLResponse("Dosya bulunamadı.", status_code=404)
-        path = storage_ensure_local(message.media_path)
+        reference = message.media_path
         s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="VIEW_MEDIA"))
         _consultation_event(s, case.id, "DISPUTE_ADMIN_MEDIA_ACCESSED", user.id, {"message_id": message.id})
         s.commit()
-        return FileResponse(path)
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Dosya bulunamadı.", status_code=404)
+    return FileResponse(path)
 
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
@@ -5943,10 +5957,10 @@ def admin_expert_credential_document(request: Request, profile_id: int):
         reference = profile.credential_document_path
         filename = profile.credential_document_name or Path(reference).name
         media_type = profile.credential_document_mime or "application/octet-stream"
-    if not storage_exists(reference):
-        return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
     try:
         path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Belge dosyası bulunamadı.", status_code=404)
     except Exception:
         logger.exception("Admin expert credential could not be loaded from storage: profile_id=%s", profile_id)
         return HTMLResponse("Belge depodan yüklenemedi.", status_code=503)
@@ -7203,10 +7217,12 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
         media = s.get(PatientMedia, link.patient_media_id)
         if not media:
             return HTMLResponse("Görsel bulunamadı.", status_code=404)
-        if not storage_exists(media.file_path):
-            return HTMLResponse("Dosya bulunamadı.", status_code=404)
-        path = storage_ensure_local(media.file_path)
-        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+        reference = media.file_path
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Dosya bulunamadı.", status_code=404)
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
@@ -7426,10 +7442,12 @@ def expert_support_message_media(request: Request, case_id: int, message_id: int
         msg = s.get(ConsultationMessage, message_id)
         if not case or not msg or msg.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or not msg.media_path:
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
-        if not storage_exists(msg.media_path):
-            return HTMLResponse("Dosya bulunamadı.", status_code=404)
-        path = storage_ensure_local(msg.media_path)
-        return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+        reference = msg.media_path
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Dosya bulunamadı.", status_code=404)
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.post("/expert-support/cases/{case_id}/annotate/{message_id}")
@@ -9498,9 +9516,10 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
         reference = media.file_path
 
-    if not storage_exists(reference):
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
         return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
-    path = storage_ensure_local(reference)
     return FileResponse(path)
 
 
@@ -10780,7 +10799,10 @@ def create_analysis(
             selected_media_rows.append(media)
         s.close()
         for media in selected_media_rows:
-            media_path = storage_ensure_local(media.file_path) if storage_exists(media.file_path) else Path(media.file_path)
+            try:
+                media_path = storage_ensure_local(media.file_path)
+            except FileNotFoundError:
+                return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
             if media_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not media_path.is_file():
                 return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
             selected_media_items.append((media, media_path))
@@ -11123,6 +11145,9 @@ def _admin_user_storage_summaries(session: Session, users: list[User]) -> dict[i
     profiles=session.exec(select(ExpertProfile).where(ExpertProfile.user_id.in_(user_ids))).all()
     profile_by_user={p.user_id:p for p in profiles}
     account_by_user={u.id:u for u in users if u.id is not None}
+    # R2 metadata calls can be slow. Release the scarce web DB connection after
+    # collecting ownership/reference rows and before performing any network I/O.
+    session.close()
     values={uid:{"Hasta dosyaları":0,"Analiz görüntüleri":0,"Sohbet ekleri":0,"Akademik dosyalar":0,"Misafir analizleri":0,"Uzmanlık belgesi":0,"Profil fotoğrafı":0} for uid in user_ids}
     for item in patient_media:values[item.owner_user_id]["Hasta dosyaları"]+=storage_size(item.file_path)
     for item in assets:
@@ -11163,8 +11188,11 @@ def _admin_user_storage_summary(session: Session, user_id: int):
     guest_ids = [g.id for g in session.exec(select(GuestAnalysis).where(GuestAnalysis.owner_user_id == user_id)).all()]
     guest_assets = session.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id.in_(guest_ids))).all() if guest_ids else []
     expert_profile = session.exec(select(ExpertProfile).where(ExpertProfile.user_id == user_id)).first()
-    credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
     account_user = session.get(User, user_id)
+    # All references are detached-safe because callers use expire_on_commit=False.
+    # Do not occupy a DB pool slot while R2 HEAD requests are in flight.
+    session.close()
+    credential_bytes = size(expert_profile.credential_document_path) if expert_profile and expert_profile.credential_document_path else 0
     profile_photo_bytes = size(account_user.profile_photo_path) if account_user and account_user.profile_photo_path else 0
     def human_bytes(value: int) -> str:
         amount=float(value)
@@ -12072,17 +12100,21 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
         asset = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id).order_by(ImageAsset.id.asc())).first()
-        if not asset or not storage_exists(asset.file_path):
+        if not asset:
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
-        s.close()
-        path = storage_ensure_local(asset.file_path)
+        reference = asset.file_path
+        original_filename = asset.original_filename
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        return HTMLResponse("Görüntü bulunamadı.", status_code=404)
     media_type = {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+    return FileResponse(path, media_type=media_type, filename=original_filename)
 
 
 @app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
