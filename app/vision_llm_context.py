@@ -8,6 +8,7 @@ import mimetypes
 import urllib.error
 import urllib.request
 from app.http_transport import urlopen
+from app.provider_budget import reservation
 import uuid
 from pathlib import Path
 
@@ -104,7 +105,7 @@ def _modal_infer(path: str, modality: str) -> dict:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urlopen(req, timeout=float(__import__("os").getenv("DENTAL_VISION_MODAL_TIMEOUT_SECONDS", "120"))) as response:
+    with reservation("modal", "dental-inference"), urlopen(req, timeout=float(__import__("os").getenv("DENTAL_VISION_MODAL_TIMEOUT_SECONDS", "120"))) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

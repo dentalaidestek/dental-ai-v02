@@ -55,10 +55,10 @@ window.addEventListener('message',async ev=>{
       let snap=null;
       for(let attempt=0;attempt<40;attempt++){
         const vr=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});
-        if(vr.ok){snap=await vr.json();break}
-        if(vr.status!==202)throw new Error('Kayıtlı motor sonucu alınamadı');
+        if(vr.ok&&vr.status!==202){snap=await vr.json();break}
+        if(vr.status!==202){const failed=await vr.json().catch(()=>({}));if(Number.isSafeInteger(failed.job_id))parent.postMessage({type:'dental-ai:job-failed',jobId:failed.job_id},location.origin);throw new Error('Kayıtlı motor sonucu alınamadı');}
         $('status').textContent='Görüntü motoru çalışıyor…';
-        await new Promise(resolve=>setTimeout(resolve,1500));
+        await new Promise(resolve=>setTimeout(resolve,Math.min(15000,2000*Math.pow(1.3,attempt))+Math.random()*500));
       }
       if(!snap)throw new Error('Görüntü motoru sonucu henüz hazır değil');
       result=snap.result||snap;

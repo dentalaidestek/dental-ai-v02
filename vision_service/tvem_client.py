@@ -6,6 +6,7 @@ import os
 import urllib.error
 import urllib.request
 from app.http_transport import urlopen
+from functools import wraps
 import uuid
 from pathlib import Path
 
@@ -62,6 +63,18 @@ def _detect(model_name: str, image_path: str, confidence: float) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _serialized(function):
+    @wraps(function)
+    def run(image_path):
+        if not enabled():
+            return [], [], []
+        from app.provider_budget import reservation
+        with reservation("tvem", "load-detect-unload", capacity=1, account_scope="tvem-session"):
+            return function(image_path)
+    return run
+
+
+@_serialized
 def run_sequential(image_path: str) -> tuple[list[dict], list[dict], list[dict]]:
     if not enabled():
         return [], [], []

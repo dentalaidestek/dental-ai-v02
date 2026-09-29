@@ -10,8 +10,9 @@ from app import main
 
 
 async def run() -> None:
-    main.init_db()
-    main._backfill_legacy_deadline_jobs_if_needed()
+    from app.migrate import require_schema
+    await asyncio.to_thread(require_schema, main.engine)
+    main._consultation_deadline_wakeup.bind()
     listener = asyncio.create_task(main._postgres_event_listener(listen_deadline=True, listen_realtime=False))
     worker = asyncio.create_task(main._consultation_deadline_worker())
     try:

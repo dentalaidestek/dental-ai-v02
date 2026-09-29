@@ -6,9 +6,12 @@ job and performs one bounded slice. Durable page/chunk artifacts are the
 checkpoint; process memory is never authoritative.
 """
 from __future__ import annotations
+from app.object_cache import scoped as storage_scoped
+
 
 import hashlib
 import gc
+from types import SimpleNamespace
 import json
 import logging
 import os
@@ -145,7 +148,7 @@ def _lease_still_owned(session: Session, job: StudyIndexJob) -> bool:
             WHERE id = :job_id AND status = 'RUNNING'
               AND lease_token = :lease_token AND worker_id = :worker_id
               AND lease_until IS NOT NULL AND lease_until > :now
-            """
+            """ + (" FOR UPDATE" if session.get_bind().dialect.name == "postgresql" else "")
         ),
         params={
             "job_id": job.id,
@@ -220,7 +223,11 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
+            session.close()
             text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
             quality_ok, quality_reason = _text_quality(text)
             if not quality_ok:
                 # OCR is a separate constrained stage. Empty or suspiciously
@@ -285,7 +292,11 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         .where(StudyIndexPage.material_id == job.material_id)
         .where(StudyIndexPage.index_version == job.index_version)
         .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
-        .order_by(StudyIndexPage.page_number.asc())
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
+        .order_by(StudyIndexPage.page_number.asc()).limit(batch + 1)
     ).all())
     processed = 0
     for page in rows:
@@ -377,6 +388,7 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         ):
             session.rollback()
             return "LEASE_LOST"
+        session.close()
         result = ocr_material_page(
             path,
             mime_type=mime_type,
@@ -435,28 +447,15 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     if provider_circuit_open(session, provider_key):
         return "PROVIDER_PAUSED"
     provider = get_provider(target.provider)
-    heartbeat_margin = _int_env("STUDY_V2_HEARTBEAT_MARGIN_SECONDS", 45, 10, 300)
-    heartbeat_extend = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
-
+    from app.study_index_jobs import renew_index_lease
+    rows = [SimpleNamespace(**row.model_dump()) for row in rows]
     for row in rows:
-        if not _lease_still_owned(session, job):
+        if not renew_index_lease(session, job_id=job.id, lease_token=job.lease_token,
+                                 worker_id=job.worker_id,
+                                 lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)):
             session.rollback()
             return "LEASE_LOST"
-        # Provider calls can be slower than local parsing. Renew before the
-        # call when the lease is close to expiry; ownership token prevents a
-        # stale worker from extending somebody else's reclaimed lease.
-        if job.lease_until and (job.lease_until - _utcnow_naive()).total_seconds() <= heartbeat_margin:
-            from app.study_index_jobs import renew_index_lease
-            if not renew_index_lease(
-                session,
-                job_id=job.id,
-                lease_token=job.lease_token,
-                worker_id=job.worker_id,
-                lease_seconds=heartbeat_extend,
-            ):
-                session.rollback()
-                return "LEASE_LOST"
-            job.lease_until = _utcnow_naive() + timedelta(seconds=heartbeat_extend)
+        session.close()
         try:
             vector = provider.embed_text(
                 model=target.model,
@@ -474,12 +473,17 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
                 open_seconds=open_seconds,
             )
             raise
+        record_provider_success(session, provider_key)
         # The external call may outlive our lease. Re-check ownership before
         # persisting its result; otherwise a reclaimed stale worker could write.
         if not _lease_still_owned(session, job):
             session.rollback()
             return "LEASE_LOST"
-        record_provider_success(session, provider_key)
+        live = session.get(StudyIndexChunk, row.id)
+        if live is None or live.index_version != job.index_version or live.text_sha256 != row.text_sha256:
+            session.rollback()
+            return "LEASE_LOST"
+        row = live
         vector_json = _vector_json(vector)
         row.embedding_provider = target.provider
         row.embedding_model = target.model
@@ -513,6 +517,7 @@ def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     ) else "VERIFY"
 
 
+@storage_scoped
 def run_one_slice(
     session: Session,
     *,
@@ -520,6 +525,7 @@ def run_one_slice(
     resource_class: str = "NORMAL",
 ) -> str:
     """Claim and process at most one bounded unit. Returns a diagnostic state."""
+    session.expire_on_commit = False
     identity = identity or worker_id()
     lease_seconds = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
     job = claim_next_index_job(
@@ -531,6 +537,30 @@ def run_one_slice(
     if not job or job.id is None or not job.lease_token or not job.worker_id:
         return "IDLE"
 
+    import threading
+    from app.study_index_jobs import renew_index_lease
+    stop = threading.Event()
+    bind = session.get_bind()
+    def renew():
+        while not stop.wait(max(10, lease_seconds // 3)):
+            try:
+                with Session(bind) as heartbeat_session:
+                    if not renew_index_lease(heartbeat_session, job_id=job.id,
+                            lease_token=job.lease_token, worker_id=job.worker_id,
+                            lease_seconds=lease_seconds):
+                        return
+            except Exception:
+                logger.exception("Index heartbeat failed job=%s", job.id)
+    thread = threading.Thread(target=renew, daemon=True, name="dental-index-heartbeat")
+    thread.start()
+    try:
+        return _run_claimed_slice(session, job, resource_class)
+    finally:
+        stop.set()
+        thread.join(6)
+
+
+def _run_claimed_slice(session, job, resource_class):
     try:
         material = _material_row(session, job.material_id, job.owner_user_id)
         if not material or material[6] is not None or material[7] != job.index_version:
@@ -544,6 +574,7 @@ def run_one_slice(
             )
             return "STALE"
 
+        session.close()
         path = storage_ensure_local(material[3])
         mime_type = material[4] or ""
         stage = (job.stage or "PREPARE").upper()

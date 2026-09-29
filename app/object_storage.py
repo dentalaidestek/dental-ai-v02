@@ -15,6 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 import uuid
+from app import object_cache
 
 
 class ObjectStorageError(RuntimeError):
@@ -116,13 +117,17 @@ def persist_file(
     key = _object_key(local)
     guessed = content_type or mimetypes.guess_type(local.name)[0]
     extra = {"ContentType": guessed} if guessed else None
+    from boto3.s3.transfer import TransferConfig
+    transfer = TransferConfig(use_threads=False, max_concurrency=1)
     try:
         if extra:
-            _client().upload_file(str(local), bucket, key, ExtraArgs=extra)
+            _client().upload_file(str(local), bucket, key, ExtraArgs=extra, Config=transfer)
         else:
-            _client().upload_file(str(local), bucket, key)
+            _client().upload_file(str(local), bucket, key, Config=transfer)
     except Exception as exc:
         raise ObjectStorageError(f"R2 upload failed for {key}") from exc
+    object_cache.invalidate(key)
+    object_cache.uploaded(local)
     return str(local)
 
 
@@ -134,7 +139,12 @@ def write_bytes(
 ) -> str:
     local = _local_path(path)
     local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(data)
+    temporary = local.with_name(f".{local.name}.{uuid.uuid4().hex}.writing")
+    try:
+        temporary.write_bytes(data)
+        temporary.replace(local)
+    finally:
+        temporary.unlink(missing_ok=True)
     return persist_file(local, content_type=content_type)
 
 
@@ -142,11 +152,16 @@ def write_text(path: str | Path, text: str, *, encoding: str = "utf-8") -> str:
     return write_bytes(path, text.encode(encoding), content_type="application/json")
 
 
+def _is_missing(exc):
+    response = getattr(exc, "response", {})
+    return str(response.get("Error", {}).get("Code", "")) in {"404", "NoSuchKey", "NotFound"}
+
+
 def exists(reference: str | Path | None) -> bool:
     if not reference:
         return False
     local = _local_path(reference)
-    if local.is_file():
+    if local.is_file() and not enabled():
         return True
     if not enabled():
         return False
@@ -154,15 +169,17 @@ def exists(reference: str | Path | None) -> bool:
     try:
         _client().head_object(Bucket=bucket, Key=_object_key(reference))
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        if _is_missing(exc):
+            return False
+        raise ObjectStorageError("R2 metadata unavailable") from exc
 
 
 def size(reference: str | Path | None) -> int:
     if not reference:
         return 0
     local = _local_path(reference)
-    if local.is_file():
+    if local.is_file() and not enabled():
         return local.stat().st_size
     if not enabled():
         return 0
@@ -170,45 +187,55 @@ def size(reference: str | Path | None) -> int:
     try:
         result = _client().head_object(Bucket=bucket, Key=_object_key(reference))
         return int(result.get("ContentLength") or 0)
-    except Exception:
-        return 0
+    except Exception as exc:
+        if _is_missing(exc):
+            return 0
+        raise ObjectStorageError("R2 metadata unavailable") from exc
 
 
 def ensure_local(reference: str | Path) -> Path:
-    """Return a readable local cache path, downloading from R2 when needed."""
+    """Materialize private remote objects within the caller's reader scope."""
     local = _local_path(reference)
-    if local.is_file():
-        return local
     if not enabled():
-        raise FileNotFoundError(str(local))
-    bucket, _, _, _ = _settings()
-    local.parent.mkdir(parents=True, exist_ok=True)
-    # Concurrent requests for the same object must never share a temporary
-    # filename. A fixed ".downloading" path lets two avatar requests race:
-    # one replaces/unlinks the file while the other is still using it.
-    temporary = local.with_name(f".{local.name}.{uuid.uuid4().hex}.downloading")
-    try:
-        _client().download_file(bucket, _object_key(reference), str(temporary))
-        # Another request may have populated the cache while this download ran.
-        # Replacing with the same immutable object is safe and atomic.
-        temporary.replace(local)
-    except Exception as exc:
-        temporary.unlink(missing_ok=True)
-        # If a concurrent request successfully populated the local cache, use it.
         if local.is_file():
             return local
-        raise FileNotFoundError(str(reference)) from exc
-    return local
+        raise FileNotFoundError(str(local))
+    bucket, _, _, _ = _settings()
+    key = _object_key(reference)
+
+    def download(destination, expected_size):
+        # Stream synchronously with bounded buffers, never boto3's multipart
+        # thread pool or an unbounded read into RAM.
+        result = _client().get_object(Bucket=bucket, Key=key)
+        body = result['Body']
+        total = 0
+        try:
+            with destination.open('wb') as output:
+                while chunk := body.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > expected_size:
+                        raise ObjectStorageError('R2 object changed during download')
+                    output.write(chunk)
+        finally:
+            body.close()
+
+    return object_cache.materialize(
+        key,
+        metadata=lambda: _client().head_object(Bucket=bucket, Key=key),
+        download=download,
+    )
 
 
 def delete(reference: str | Path | None) -> None:
     if not reference:
         return
     local = _local_path(reference)
-    local.unlink(missing_ok=True)
     if enabled():
         bucket, _, _, _ = _settings()
         try:
             _client().delete_object(Bucket=bucket, Key=_object_key(reference))
         except Exception as exc:
             raise ObjectStorageError("R2 delete failed") from exc
+
+    object_cache.invalidate(_object_key(reference)) if enabled() else None
+    local.unlink(missing_ok=True)

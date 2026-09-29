@@ -47,7 +47,8 @@ def test_case_room_socket_and_global_listeners_have_cleanup_lifecycle():
     assert "clearTimeout(reconnectTimer)" in ROOM
     assert "active.onclose=null" in ROOM
     assert "if(destroyed||socket!==connection)return" in ROOM
-    assert "window.__daiCaseRoomCleanup?.();" in BASE
+    assert "snapshot.cleanup?.()" in BASE
+    assert "window.__daiCaseRoomCleanup=snapshot.cleanup" in BASE
 
 
 def test_existing_realtime_send_and_dedup_are_preserved():

@@ -90,7 +90,8 @@ def analyze_intraoral_ensemble(image_path):
     body,ct=_multipart_body(str(path));headers={"Content-Type":ct,"Accept":"application/json","User-Agent":"DentalAI-Intraoral-Ensemble/2.1"}
     if INTRAORAL_ENSEMBLE_API_KEY:headers["Authorization"]=f"Bearer {INTRAORAL_ENSEMBLE_API_KEY}"
     try:
-        with urlopen(urllib.request.Request(f"{INTRAORAL_ENSEMBLE_URL}/infer?modality=intraoral",data=body,headers=headers,method="POST"),timeout=INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS) as r:payload=json.loads(r.read().decode())
+        from app.provider_budget import reservation
+        with reservation("modal", "dental-inference"), urlopen(urllib.request.Request(f"{INTRAORAL_ENSEMBLE_URL}/infer?modality=intraoral",data=body,headers=headers,method="POST"),timeout=INTRAORAL_ENSEMBLE_TIMEOUT_SECONDS) as r:payload=json.loads(r.read().decode())
     except urllib.error.HTTPError as exc:raise IntraoralEnsembleError(f"Intraoral ensemble HTTP {exc.code}: {exc.read().decode(errors='replace')[-1200:]}") from exc
     except (urllib.error.URLError,TimeoutError,json.JSONDecodeError) as exc:raise IntraoralEnsembleError(f"Intraoral ensemble erişim/yanıt hatası: {exc}") from exc
     if not isinstance(payload,dict):raise IntraoralEnsembleError("Intraoral ensemble geçersiz JSON döndürdü.")

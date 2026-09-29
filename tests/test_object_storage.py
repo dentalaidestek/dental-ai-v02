@@ -10,15 +10,19 @@ class FakeR2Client:
     def list_objects_v2(self, *, Bucket, MaxKeys):
         return {"Name": Bucket, "MaxKeys": MaxKeys}
 
-    def upload_file(self, filename, bucket, key, ExtraArgs=None):
+    def upload_file(self, filename, bucket, key, ExtraArgs=None, Config=None):
         self.objects[(bucket, key)] = Path(filename).read_bytes()
 
     def head_object(self, *, Bucket, Key):
+        if (Bucket, Key) not in self.objects:
+            from botocore.exceptions import ClientError
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
         value = self.objects[(Bucket, Key)]
         return {"ContentLength": len(value)}
 
-    def download_file(self, bucket, key, filename):
-        Path(filename).write_bytes(self.objects[(bucket, key)])
+    def get_object(self, *, Bucket, Key):
+        from io import BytesIO
+        return {"Body": BytesIO(self.objects[(Bucket, Key)])}
 
     def delete_object(self, *, Bucket, Key):
         self.objects.pop((Bucket, Key), None)
@@ -51,7 +55,10 @@ def test_r2_round_trip_restores_missing_local_cache(tmp_path, monkeypatch):
 
     assert object_storage.exists(reference)
     assert object_storage.size(reference) == len(b"radiograph")
-    assert object_storage.ensure_local(reference).read_bytes() == b"radiograph"
+    from app.object_cache import scope
+    monkeypatch.setenv("R2_CACHE_DIR", str(tmp_path / "cache"))
+    with scope():
+        assert object_storage.ensure_local(reference).read_bytes() == b"radiograph"
     object_storage.check_connection()
 
     object_storage.delete(reference)

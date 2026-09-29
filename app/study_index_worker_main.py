@@ -42,7 +42,7 @@ def _handle_stop(signum, frame) -> None:
 
 
 def build_worker_engine():
-    database_url = (os.getenv("DATABASE_URL") or "").strip()
+    database_url = (os.getenv("DATABASE_URL") or "").strip().replace("postgres://", "postgresql://", 1)
     if not database_url:
         raise RuntimeError("Academic V2 worker requires DATABASE_URL; SQLite is not supported for deployed workers")
     pool_size = _int_env("STUDY_V2_DB_POOL_SIZE", 2, 1, 5)
@@ -50,6 +50,8 @@ def build_worker_engine():
         database_url,
         pool_size=pool_size,
         max_overflow=0,
+        pool_timeout=5,
+        connect_args={"connect_timeout": 5, "application_name": "dental-indexer"},
         pool_pre_ping=True,
         pool_recycle=300,
     )
@@ -61,6 +63,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_stop)
 
     engine = build_worker_engine()
+    from app.migrate import require_schema
+    require_schema(engine)
     with Session(engine, expire_on_commit=False) as startup_session:
         capabilities = require_worker_capabilities(startup_session)
         logger.info(
@@ -100,6 +104,14 @@ def main() -> None:
                     run_deletion_slice(session)
                     if loops % gc_every == 0:
                         cleanup_retired_generations(session, limit=10)
+                        from app.main import StudyMaterial
+                        from app.study_v2_service import enqueue_legacy_materials_v2
+                        from app.work_jobs import WorkCapacity
+                        try:
+                            enqueue_legacy_materials_v2(session, material_model=StudyMaterial, limit=10)
+                            session.commit()
+                        except WorkCapacity:
+                            session.rollback()
             if result == "IDLE":
                 time.sleep(idle_sleep)
         except Exception:

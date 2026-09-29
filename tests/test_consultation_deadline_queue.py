@@ -74,7 +74,7 @@ def test_failed_job_processing_isolated_by_savepoint():
 
 def test_waiting_start_message_paths_resolve_warning_and_publish_status():
     http = MAIN.split("def expert_support_message(", 1)[1].split("@app.get", 1)[0]
-    ws = MAIN.split("def expert_support_case_socket", 1)[1].split("@app.post", 1)[0]
+    ws = MAIN.split("def _socket_message_sync", 1)[1].split("@app.websocket", 1)[0]
     media = MAIN.split("def expert_support_media_message", 1)[1].split("@app.get", 1)[0]
     for path in (http, ws, media):
         assert "CONSULTATION_DEADLINE_WARNING" in path

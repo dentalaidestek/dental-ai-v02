@@ -10,10 +10,10 @@ NOTEBOOK = ROOT / "notebooks" / "kaggle_3d_visual_test.ipynb"
 
 
 class Viewer3DContractTests(unittest.TestCase):
-    def test_only_one_renderer_override_layer_is_loaded(self):
+    def test_declared_renderer_layers_are_loaded_once(self):
         html = HTML.read_text(encoding="utf-8")
         scripts = re.findall(r'<script src="([^"]+viewer-v3[^"]*)"', html)
-        self.assertEqual(scripts, ["/viewer-v3.js", "/viewer-v3-finalfix.js"])
+        self.assertEqual(scripts, ["/viewer-v3.js", "/viewer-v3-finalfix.js", "/viewer-v3-postfix.js"])
         self.assertNotIn("viewer-v3-patch.js", html)
         self.assertNotIn("viewer-v3-enhance.js", html)
         self.assertNotIn("viewer-v3-realjaw.js", html)
@@ -97,7 +97,7 @@ class Viewer3DContractTests(unittest.TestCase):
         self.assertIn("liodon_panorama3.onnx", notebook)
         self.assertIn("93c7037b11275d94cbf6c2f5d1ea86452910dc3a", notebook)
         self.assertIn("4cee38b54203634d895ed30a8910f5d7c4cefe22b18f9116b5561d9dd6e83a71", notebook)
-        self.assertIn('DENTAL_LIODON3_CONF", "0.25"', pipeline)
+        self.assertIn('DENTAL_LIODON3_CONF", "0.02"', pipeline)
 
 
 if __name__ == "__main__":

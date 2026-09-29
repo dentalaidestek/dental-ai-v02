@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.request
 from app.http_transport import urlopen
+from app.provider_budget import reservation
 
 try:
     from app.xray_trace import xray_trace_event
@@ -124,7 +125,7 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None, stru
             method="POST",
         )
         try:
-            with urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
+            with reservation("gemini", GEMINI_MODEL), urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
                 result = json.loads(response.read().decode("utf-8"))
             candidates = result.get("candidates", [])
             if not candidates:

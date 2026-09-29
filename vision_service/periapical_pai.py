@@ -103,7 +103,8 @@ def analyze_periapical(image_path: str) -> dict[str, Any]:
 
     request = urllib.request.Request(f"{PERIAPICAL_INFERENCE_URL}/infer?modality=periapical", data=body, headers=headers, method="POST")
     try:
-        with urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
+        from app.provider_budget import reservation
+        with reservation("modal", "dental-inference"), urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[-1200:]

@@ -14,7 +14,12 @@ def test_baseline_notebook_is_valid_python():
     assert "wilson_lower" in code
     assert ">=13" in code
     assert "annotation_exhaustive" in code
-    assert "pan_targets=list(REGISTRY48)" in code
+    import ast
+    from vision_service.motors.registry48 import MOTOR_SPECS as REGISTRY48
+    tree = ast.parse(code)
+    assignment = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                      and any(isinstance(t, ast.Name) and t.id == "pan_targets" for t in n.targets))
+    assert set(ast.literal_eval(assignment.value)) == set(REGISTRY48)
     assert "dentalai_baseline_artifact.zip" in code
     assert "Restoring previous baseline state" in code
     assert "Select and lock only after every adapter" in code

@@ -1,104 +1,143 @@
-# Render optimization branch
+# Dental AI: deployment and blueprint verification
 
-## Release status
+## Scope and capacity
 
-This branch improves execution boundaries and resource use without changing dental prompts, model thresholds, retrieval scoring, or source cards. It is a **staging candidate**, not a certification of production capacity or clinical accuracy. Run synthetic cases on an isolated Render service/database before switching production traffic.
+This patch preserves the dental corpus, prompts, OCR/chunking rules, inference models, thresholds and evidence scoring. It changes execution, storage and publication boundaries. Existing public routes remain available; three authenticated job-control routes are added.
 
-## What changed
+**60,000 registered users is a planning target, not a verified concurrency or latency claim.** Capacity depends on simultaneous sessions, requests per second, PDF size/page count, inference latency, provider quotas and the monthly budget. The limits below deliberately reject excess work or queue it. One small Render instance cannot promise 60,000 simultaneous OCR/inference requests.
 
-| File | Change |
-| --- | --- |
-| `app/execution.py`, `app/main.py` | Execute synchronous HTTP handler work in AnyIO worker threads; return async request/broadcast operations to the owning event loop. Startup and maintenance queries also run off the event loop. Wakeups tolerate lifespan restarts and cross-thread signals. |
-| `app/database.py`, `app/study_router_state.py` | PostgreSQL pools default to two connections per engine, no overflow, five-second pool acquisition timeout. Separate web/router settings. |
-| `app/main.py` | Fetch only eight recent history rows; release the academic request's DB connection before query embedding and answer generation. Recheck course ownership/existence before saving the answer. Add `/healthz` and `/readyz`. |
-| `dental_rag/rag.py` | Cache the prepared lexical corpus once per process, preserving existing ranking and tie order. Restart after changing source cards. |
-| `app/http_transport.py`, provider adapters | Reuse up to four connections per provider host, bounded pool wait/connect timeouts, existing read timeouts and retry policies. No added transport retries. Streaming errors retain urllib error handling. Provider endpoints must be canonical; redirects are rejected. |
-| `app/vision_llm_context.py` | Cache successful inference only; return independent copies; include inference revision in the process cache key. |
-| `vision_service/app.py` | Synchronous inference endpoints run in FastAPI's thread pool. Admit one local inference at a time, return 503/Retry-After on overload, limit each saved image to 25 MiB, clean temporary files after success/error. Diagnostics require explicit enablement. |
-| `app/study_index_worker_main.py` | Alternate NORMAL and OCR_HEAVY work in MIXED mode so OCR is serviced under sustained normal backlog. |
-| `app/study_v2_service.py` | Stop V1 indexing on new uploads when V2 reads are enabled unless explicit shadow indexing is requested. Reject V2 reads without V2 indexing at startup. |
+The earlier **1.115 ms** lexical result was a local reference benchmark. The implemented cache subsequently measured **0.265 ms median versus 24.566 ms** on the same synthetic search workload, with 40 exact search-output comparisons and ten specialty-context comparisons. These numbers exclude network, embeddings, generation and inference. They are not response-time guarantees.
 
-## Web service
+## Blueprint cross-reference
 
-Use Python **3.12.14** (`.python-version`). Build:
+“Covered” means implemented with the listed checks, not certified under production load. Mechanical model/router extraction was explicitly marked “later” in the original blueprint; those declarations remain to preserve schema and route contracts.
+
+| Blueprint component | Implementation | Evidence / practical boundary |
+| --- | --- | --- |
+| Async HTTP/auth/maintenance boundaries | `execution.py`, synchronous offloaded routes, `settings_cache.py` | ASGI tests; flags cached two seconds, identities not globally cached. |
+| DB pools and role isolation | `database.py`, indexer engine, router engine | Pool saturation/recovery checked on PostgreSQL; no overflow; five-second acquisition timeout. Pools multiply per process. |
+| Short academic transactions | `study_rag.py`, `study_retrieval_v2.py`, ask/stream handlers | Embedding, attachment download and generation outside SQL; source versions and owner checked before publication. |
+| Clinical orchestration | `work_jobs.py`, `work_worker.py`, main clinical functions | Durable queue, immutable result blobs, guarded DB result pointer/status commit; no blob I/O transaction in regression test. |
+| Realtime/WebSockets | `realtime_io.py`, thread-based LISTEN, socket helpers, case-room catchup | SQL/auth off-loop, serialized bounded writes, real PostgreSQL notification/shutdown test. Explicit event IDs cover reversed commit order. Reconnect/overflow requests durable resync. |
+| Cross-instance chat | Existing event log plus case HTTP catchup | Global MESSAGE_CREATED now triggers room catchup even with an open room socket; 500-row pages and coalesced continuation. Process hubs are delivery caches only. |
+| Durable application jobs | `work_jobs.py` | Dedupe, one running job per resource, bounded global/owner backlog, expiring leases, heartbeat, source/owner fencing, bounded retries, cancellation, 30-day history cleanup. PostgreSQL parallel claims tested. |
+| Pending/error/retry UI | `/jobs/{id}`, POST retry/cancel; `work_pending.html`, viewers | Authorized endpoints, 202 stays pending, polling backs off; failed vision jobs expose an explicit retry form. Cancellation fences publication; it cannot undo a provider call already in flight. |
+| Lexical RAG footprint | `dental_rag/rag.py` | Immutable process cache; all evidence cards retained; no generated corpus copies/index downloads. Restart after corpus changes. |
+| Academic V1 indexing | LEGACY_INDEX application job | Upload/index job admitted in one transaction; background callback failures propagate to queue. V1 ranking/fallback stays intact. |
+| Academic V2 indexing | `study_index_jobs.py`, `study_index_worker.py` | Short checkpoints, heartbeat during external work, fenced post-call writes, bounded page/chunk slices and queue admission. Existing lease/publication regressions pass. |
+| Fair background scheduling | `study_index_worker_main.py`, `work_worker.py` | MIXED alternates normal/OCR; erasure drains during continuous work; bounded legacy backfill continues periodically. |
+| Colocated indexer | Existing `study_colocated_worker.py` | Explicit optional subprocess supervisor. Disable when an external indexer is configured. Shares web RAM/CPU. |
+| Pooled provider transport | `http_transport.py`, clinical/academic/modality adapters | Four pooled connections per host, eight host pools, bounded waits, original read timeouts; no new automatic HTTP retry layer. |
+| Shared API request budgets | `provider_budget.py` | PostgreSQL slots/counters, account-wide wildcard request budgets and expiring heartbeats. Cross-process concurrency test passes; legacy router observations are not authoritative global billing totals. |
+| Provider batching | Existing adapter semantics preserved | No speculative batching: model/task-specific vector equivalence has not been established with live providers. Serial calls checkpoint individually. |
+| Vision snapshot reuse | `vision_llm_context.py`, persisted asset snapshots | Successful-only cache, defensive copies, inference revision, batches of four; partial failures retry missing assets. Clinical routing reuses structured snapshots. |
+| Vision service admission | `vision_service/app.py`, `request_limits.py` | One local model request at a time; bounded per-image/body sizes and temp cleanup; diagnostic endpoints disabled by default. |
+| TVEM shared model residency | `tvem_client.py` | Load/detect/unload serialized through a shared PostgreSQL slot. All clients using that TVEM instance must share this coordinator. |
+| R2 handlers/cache | `object_storage.py`, `object_cache.py` | Bounded streaming download, disk budget, reader pins across processes, immutable cache generations, response-lifetime cleanup. Failed remote delete propagates; failed HEAD is not “object missing”. |
+| Erasure/recovery | `study_deletion_worker.py` | Atomic reclaimable claim, attempts fence, remote I/O outside transaction, retry on failure; successful academic deletion does not depend on web-process lifetime. |
+| Result garbage collection | `WorkGarbage` | Allocate cleanup before result upload; delayed cleanup checks live result pointers, including ambiguous-commit recovery. Existing uploaded source keys remain authoritative. |
+| Upload pressure | `request_limits.py`, `upload_io.py` | Two multipart requests/process, aggregate byte counting including chunked bodies, 25 MiB clinical image copy cap, no partial file on rejected copy. |
+| Deadline/reminder workers | Existing queues plus offloaded scheduling/listener | Business transitions retained; startup migration removed from dedicated worker; existing lifecycle/transaction tests pass. |
+| Observability | Existing study/xray traces plus job IDs and worker duration | Structured safe clinical timing/attempt/token fields on stdout. Diagnostic rings remain bounded and instance-local. No new public metrics endpoint exposing case data. |
+| Controlled migrations | `python -m app.migrate` | Revision 2; serialized release lock, existing baseline DDL retained, immutable result pointer columns, queue/provider tables and cursor indexes. Fresh/upgrade/repeat checks on PostgreSQL. |
+| Dependencies / CI | `requirements-web.lock`, application/PostgreSQL tests; separate CI patch | Verified Linux Python3.12 dependency closure pinned; full tests and isolated PostgreSQL schemas pass locally. GitHub rejected the workflow update because the repository credential lacks workflows permission; the task includes `ci-integration.patch` for an authorized maintainer. Existing workflow remains intact. Torch/model weights stay out of web install. |
+| Later model/router extraction | Existing main declarations retained | Route inventory shows no removed contracts; avoids speculative schema/module churn. Queue, cache, transport, admission and listener logic are extracted. |
+| Dental/vision/OCR logic | Existing AI engine, motors, source cards, specialty rules, chunking and OCR | Existing contracts and OCR tests pass. Live clinical accuracy and GPU inference still need representative authorized fixtures. |
+
+## Render processes
+
+Use the same commit and configuration on all consumers. Configure Python **3.12.14**.
+
+Build web and application/index workers:
 
 ```sh
-pip install -r requirements.txt
+pip install -r requirements-web.lock
 ```
 
-Start:
+Before starting this revision, run once with the target database:
 
 ```sh
-uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers 1
+python -m app.migrate
 ```
 
-Use `/readyz` for Render's health check; `/healthz` is lightweight process liveness. Supply Render's internal PostgreSQL `DATABASE_URL`. Do not use SQLite on an ephemeral web filesystem. Keep one Uvicorn worker initially: each additional process multiplies pools, caches and embedded schedulers.
+Use a controlled release/pre-deploy step where available, or run the command in an operations shell before switching services. Migration retains existing idempotent baseline DDL, which can lock large tables; schedule the release accordingly. Production web/worker processes check the revision instead of independently performing schema upgrades. Do not enable `DENTAL_MIGRATE_ON_STARTUP` on every replica.
 
-Settings introduced by this patch:
+| Service | Start command | Port / notes |
+| --- | --- | --- |
+| Web | `uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers 1` | Render HTTP port; `/readyz` checks DB, `/healthz` checks process. |
+| Application consumer | `python -m app.work_worker` | Background worker, no HTTP port. Vision, preliminary/final AI, V1 index and erasure. |
+| Academic V2 consumer | `python -m app.study_index_worker_main` | Background worker, no HTTP port; `STUDY_V2_RESOURCE_CLASS=MIXED`. |
+| Optional deadline consumer | `python -m app.deadline_worker` | Set `DENTALAI_DEADLINE_EXECUTION=external` on web only when this is running. Program reminders remain embedded. |
+| Optional local inference | Existing GPU/model deployment, or `uvicorn vision_service.app:app --host 0.0.0.0 --port "$PORT" --workers 1` | Separate model environment; install `vision_service/requirements.txt` and existing weights. Do not install GPU stacks in the web image. |
+
+Keep one web process initially. Add measured replicas rather than blindly multiplying Uvicorn workers. Inference services need their own measured memory/model capacity.
+
+### Required shared configuration
+
+Set secrets in Render's environment configuration; do not commit values:
+
+- `DATABASE_URL`: same internal PostgreSQL database for web, workers and quota coordination. Production refuses missing database configuration.
+- `R2_ENABLED=1`, `R2_BUCKET_NAME`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`: same private bucket on each service. Keep stored `uploads/...` keys intact when migrating existing files.
+- Existing `GEMINI_API_KEY`, clinical model and academic provider keys/model settings. Preserve the selected models and OCR languages.
+- `DENTAL_VISION_MODAL_URL`: existing API base implementing `POST /infer?modality=...` with multipart field `image`. This is **not** interchangeable with the standalone vision service's `/analyze`, `/analyze-intraoral`, `/analyze-bitewing`, `/analyze-periapical` endpoints, which require `X-Vision-Key` / `DENTAL_VISION_API_KEY`. Keep the current contract or provide a compatible external adapter.
+- Increment `DENTAL_INFERENCE_REVISION` when inference behavior/weights change, on every service. Restart consumers when changing corpus/model/provider configuration.
+
+Conservative starting limits (tune from measurements):
 
 ```dotenv
+DENTAL_WORK_EXECUTION=external
+STUDY_ACADEMIC_V2_COLOCATED_WORKER=0
 DENTAL_WEB_DB_POOL_SIZE=2
 DENTAL_ROUTER_DB_POOL_SIZE=2
+DENTAL_MAX_HTTP_REQUESTS=32
+DENTAL_MAX_UPLOADS=2
+DENTAL_MAX_REQUEST_BYTES=335544320
+DENTAL_MAX_SOCKETS=2000
+DENTAL_MAX_PENDING_JOBS=1000
+STUDY_MAX_PENDING_INDEX_JOBS=1000
+DENTAL_PROVIDER_MAX_INFLIGHT=4
+R2_CACHE_DIR=/tmp/dental-r2-cache
+R2_CACHE_MAX_BYTES=268435456
+STUDY_V2_DB_POOL_SIZE=2
+STUDY_V2_RESOURCE_CLASS=MIXED
+STUDY_V2_OCR_BATCH_PAGES=1
+STUDY_V2_EMBED_BATCH_CHUNKS=4
 STUDY_V1_SHADOW_INDEXING=0
 DENTAL_INFERENCE_REVISION=1
-VISION_MAX_IMAGE_BYTES=26214400
 DENTAL_RUNTIME_DIAGNOSTICS=0
 ```
 
-Pools are per process/engine, not a global database limit. Size against PostgreSQL's connection allowance, accounting for the indexer, event listener, and other services. Pool timeout failures require observing held transactions; increasing the pool alone is not a throughput fix.
+`STUDY_ROUTER_REQUEST_BUDGETS_JSON` accepts verified account limits, for example `{"gemini:*":{"day":1000}}` **only if 1000 is your chosen actual budget**. Request counts are conservative reservations, not token/dollar accounting. Configure provider-side spending limits too. Concurrency is global only when services use the same database. Pool size is per engine/process; include the dedicated LISTEN connection, router engines and workers in the DB connection budget.
 
-## Replace tmux indexing with a managed process
+Enable V2 indexing with `STUDY_ACADEMIC_V2_INDEXING=1`. Enable `STUDY_ACADEMIC_V2_READS=1` only after the preserved V2 validation/canary path has built the materials. Reads require indexing. Streaming remains separately controlled by `STUDY_ACADEMIC_V2_STREAMING`. This patch does not silently switch retrieval algorithms.
 
-A tmux session on another machine is not a Render process supervisor. Choose **one** of these topologies:
+For a single-container test, `DENTAL_WORK_EXECUTION=embedded` runs one application consumer in a thread; `STUDY_ACADEMIC_V2_COLOCATED_WORKER=1` starts the existing indexer subprocess. This saves a service but shares RAM/CPU and availability with web. Durable jobs survive process restarts; running provider requests can be repeated after a crash, while stale result publication is fenced.
 
-1. Separate Render background worker (preferred for isolation): use the same branch, Python version and build command, and start `python -m app.study_index_worker_main`. Configure the same PostgreSQL, object storage and academic provider settings. No HTTP port is required. On the web service set `STUDY_ACADEMIC_V2_COLOCATED_WORKER=0`.
-2. Single-container option: set `STUDY_ACADEMIC_V2_COLOCATED_WORKER=1` on the web service. The existing lifecycle supervisor starts the indexer subprocess. It shares web memory/CPU and stops when the web service stops; this does not provide independent worker availability.
+## Replacing tmux and tracing traffic
 
-For either topology:
+1. Identify the current tmux commands, machine, bound interfaces/ports and endpoint contracts. Supply those commands with secret values redacted, plus Render service names/regions/instance sizes and any reverse proxy routing.
+2. Move consumers to the managed worker commands above. Verify DB/R2/provider connectivity, stop the corresponding tmux consumers, then enable traffic. Avoid two independently configured supervisors for the same intended allocation.
+3. If GPU inference stays on the other machine, expose its existing authenticated HTTPS endpoint through your chosen reverse proxy/private network. Render cannot reach that machine's `localhost`, and a tmux session does not bridge networks. Do not point the Modal `/infer` client directly at a different `/analyze` contract.
+4. Verify `/readyz`, upload a synthetic image/PDF, inspect the returned job ID, and follow `work.finished`, `xray.event` and `[STUDY_TRACE]` logs across services. No customer data or production traffic was inspected for this patch.
+5. To monitor live traffic, provide authorized read-only Render logs/metrics, database connection limits and aggregate queue timings; provider quota/latency/error metrics; R2 operation counts; p95/p99 HTTP latency, event-loop lag, worker RSS, oldest queued job and 429/503 rates. Do not paste keys, tokens or patient content.
 
-```dotenv
-STUDY_ACADEMIC_V2_INDEXING=1
-STUDY_V2_RESOURCE_CLASS=MIXED
-STUDY_V2_DB_POOL_SIZE=1
-STUDY_V2_OCR_BATCH_PAGES=1
-STUDY_V2_EMBED_BATCH_CHUNKS=4
+Useful aggregate PostgreSQL checks:
+
+```sql
+SELECT kind, status, count(*) AS jobs,
+       max(now() - created_at) AS oldest_age
+FROM workjob GROUP BY kind, status;
+SELECT stage, status, count(*) FROM studyindexjob GROUP BY stage, status;
+SELECT status, count(*) FROM studydeletionjob GROUP BY status;
+SELECT application_name, state, wait_event_type, count(*)
+FROM pg_stat_activity WHERE datname=current_database()
+GROUP BY application_name, state, wait_event_type;
 ```
 
-Keep `STUDY_ACADEMIC_V2_READS=0` during migration. Once existing materials have READY active generations and sample answers pass review, set reads to `1` to stop the duplicate V1 upload indexing path. V2 reads also require indexing enabled. Streaming remains separately controlled by `STUDY_ACADEMIC_V2_STREAMING`. This patch does not automatically migrate or switch production data.
+## Verification and release boundaries
 
-The existing consultation deadline executor can run as another background worker via `python -m app.deadline_worker`; only then set web `DENTALAI_DEADLINE_EXECUTION=external`. Otherwise retain the embedded executor. Program reminders remain embedded.
+The full local suite passed with real PostgreSQL enabled. Tests cover leases, queue admission, stale publication, upload/provider session release, cache pressure, storage failure, realtime replay and existing dental contracts. The supplied CI upgrade runs the same application suite alongside existing vision/model inspections; publishing that workflow requires GitHub workflows write permission. Until applied, CI retains its original coverage. See the accompanying task report for final counts.
 
-## Shared storage and provider routing
+The bundled S3 emulator verified SDK upload/head/download/delete, upload cleanup and pinned readers for a small object. Its `CreateMultipartUpload` endpoint is unsupported; **real R2 multipart remains a required deployment smoke check**. The emulator catalog does not include Gemini/Modal, so provider inference quality, cancellation behavior and rate limits were not simulated as verified live behavior.
 
-For separate services, enable the existing R2 integration and set `R2_ENABLED=1`, `R2_BUCKET_NAME`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` on both services using Render secret settings. Existing local uploads must be migrated before moving workers; a path in the web filesystem is not visible to a separate worker. This patch does not delete existing uploads or introduce unsafe cache eviction.
-
-Keep the current Modal inference base in `DENTAL_VISION_MODAL_URL` and its read timeout in `DENTAL_VISION_MODAL_TIMEOUT_SECONDS`. The caller appends `/infer`. The standalone vision app exposes `/analyze*`, **not** that protocol; do not substitute its URL for Modal's base URL.
-
-If deploying standalone vision for compatible clients, install `vision_service/requirements.txt` from the repository root and start `uvicorn vision_service.app:app --host 0.0.0.0 --port "$PORT" --workers 1`. Set `DENTAL_VISION_API_KEY` and send `X-Vision-Key`. Model dependencies and weights belong on this service, not the web service. Each service needs its own capacity measurement.
-
-## Verification and remaining limits
-
-The branch includes synthetic ASGI, connection reuse, vision admission/cleanup, transient-failure cache, RAG cache, configuration, and academic DB-release/deletion tests. Existing clinical and OCR tests remain in the full suite. See the commit handoff for actual pass/failure results.
-
-Remaining architectural work is explicit:
-
-- Clinical preliminary/final analysis and legacy V1 indexing still use request execution or FastAPI BackgroundTasks. They are not durable across restarts. The existing durable V2 queue covers academic indexing only; no unfinished general-purpose queue is shipped.
-- Thread offloading prevents event-loop blocking; it does not remove every held database transaction or bound every request backlog. Websocket SQL and portions of the PostgreSQL listener still use synchronous driver calls.
-- Provider quotas and vision cache are process-local; simultaneous identical requests can still duplicate inference. Increasing replica count requires coordinated quota/admission design.
-- The 25 MiB vision limit applies while copying an already parsed multipart upload. An ingress request-body limit is also needed to bound multipart spooling.
-- Persisted vision snapshots retain their existing lifecycle; changing `DENTAL_INFERENCE_REVISION` invalidates the process cache, not stored snapshots.
-- Live multi-user latency, real provider behavior, restart recovery, model accuracy and Render memory limits have not been certified by synthetic tests.
-
-For staging, observe p95 request time, 429/503 rates, DB checkout waits, worker lease/retry counts, and RSS using synthetic dental cases. Do not log uploaded images, patient data, prompts or secrets. Compare retrieved sources and model output against the current deployment before increasing traffic. Roll back by selecting the previous branch/commit and restoring its feature flags; the patch adds no database tables or schema migration.
-
-### Verification at publication
-
-- Twelve optimization regression cases pass, including actual ASGI responsiveness and DB connection release during a simulated slow provider call.
-- Forty clinical search outputs and ten specialty contexts exactly match the base commit. Local median search time: 24.566 ms before / 0.265 ms with the warm cache; this is a local microbenchmark, not Render end-to-end latency.
-- PostgreSQL 16 pool check passes: two connections, no overflow, successful reuse after saturation.
-- Application/test/training Python compilation and Git whitespace checks pass.
-- All three CI remote checkpoint checks pass (pinned Liodon hash/classes, repository metadata, bone-loss/periapical ONNX inspection).
-- The full suite still has ten pre-existing failures: two 3D viewer contracts, baseline notebook content contract, chat navigation cleanup contract, two consultation UI contracts, expert-support UI contract, and three realtime messaging/reminder contracts. These are not waived as production gates. The previously failing OCR fixture now uses the installed Amazon Linux font and passes.
-- CodeRabbit review was attempted but is disabled for this task. No completed CodeRabbit review or production load test is claimed.
-
-Reproduce the new checks with `python -m pytest -q tests/test_production_optimization.py` after installing root requirements plus pytest, httpx, NumPy and opencv-python-headless in a development environment. The remote checkpoint scripts additionally require onnx and huggingface_hub. Keep these test dependencies out of the web service's production build.
+Before sending production traffic, use an isolated Render database/bucket and representative authorized cases. Verify a worker restart during inference, stale/deleted-source rejection, large PDF/OCR memory, R2 multipart upload, multi-instance chat, and provider quality parity. Measure the intended concurrency and budget. Schema rollback should retain the additive columns/tables and drain/stop consumers before rolling application code back; immutable result pointers are a new read contract, so older code will not display newly generated result files.

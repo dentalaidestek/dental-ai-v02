@@ -40,6 +40,9 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
   document.querySelectorAll('.asset-chip').forEach((b,i)=>b.onclick=()=>load(i));
   window.addEventListener('message',async ev=>{
     if(ev.origin!==location.origin||ev.source!==frame.contentWindow)return;const d=ev.data||{};if(d.type==='dental-ai:viewer-ready'){send();return}
+    if(d.type==='dental-ai:job-failed'&&Number.isSafeInteger(d.jobId)&&d.jobId>0){
+      document.getElementById('viewer-job-retry')?.remove();const form=document.createElement('form');form.id='viewer-job-retry';form.method='post';form.action='/jobs/'+d.jobId+'/retry';const button=document.createElement('button');button.textContent='Analiz tamamlanamadı — yeniden dene';button.type='submit';form.append(button);frame.before(form);return;
+    }
     if(d.type==='dental-ai:save-manual-finding'){if(guest){frame.contentWindow?.postMessage({type:'dental-ai:manual-finding-saved',ok:false,error:'Hasta kaydı gerekli.'},location.origin);return}const r=await fetch('/analysis/'+analysisId+'/viewer-finding',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tooth:d.tooth||'',finding:d.finding||'',note:d.note||''})});frame.contentWindow?.postMessage({type:'dental-ai:manual-finding-saved',ok:r.ok},location.origin);return}
     if(d.type==='dental-ai:save-clinical-note'){const url=guest?('/analysis/guest/'+analysisId+'/viewer-note'):('/analysis/'+analysisId+'/viewer-note');const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tooth:d.tooth||'',note:d.note||''})});frame.contentWindow?.postMessage({type:'dental-ai:clinical-note-saved',ok:r.ok},location.origin);return}
     if(d.type==='dental-ai:run-treatment-analysis'){
@@ -50,7 +53,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
         const started=await rr.json().catch(()=>({}));
         if(!rr.ok||started.ok===false)throw new Error(started.error||'Tedavi analizi başlatılamadı.');
         for(let n=0;n<80;n++){
-          await new Promise(x=>setTimeout(x,1500));
+          await new Promise(x=>setTimeout(x,Math.min(15000,2000*Math.pow(1.3,n))+Math.random()*500));
           const q=await fetch(res,{cache:'no-store'});
           const result=await q.json().catch(()=>({}));
           if(q.status===202||result.status==='AI_ANALYZING')continue;

@@ -44,8 +44,14 @@ logger = _study_trace_logging.getLogger(__name__)
 import time as _xray_trace_time
 import asyncio
 from app.execution import offload, on_loop, LoopWakeup
+from app.realtime_io import PostgresNotices, socket_writes
 from starlette.concurrency import run_in_threadpool
 from app.database import create_app_engine
+from app import work_jobs
+from app.upload_io import copy_image
+from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
+from app.object_cache import scoped as storage_scoped, CacheCapacityError
+from app.object_storage import ObjectStorageError
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -136,6 +142,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     engine = create_app_engine(DATABASE_URL, role="web", allow_sqlite=not bool(os.getenv("RENDER")))
 else:
+    if os.getenv("RENDER"):
+        raise RuntimeError("Render requires a PostgreSQL DATABASE_URL")
     DB_PATH = BASE.parent / "dental_ai.db"
     engine = create_engine(
         f"sqlite:///{DB_PATH}",
@@ -341,6 +349,7 @@ class Analysis(SQLModel, table=True):
     image_path: Optional[str] = None
     radiograph_path: Optional[str] = None
     clinical_notes: Optional[str] = None
+    result_path: Optional[str] = None
     status: str = "DRAFT"
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
@@ -408,6 +417,7 @@ class GuestAnalysis(SQLModel, table=True):
     owner_user_id: int = Field(index=True)
     tooth_number: Optional[str] = None
     clinical_notes: Optional[str] = None
+    result_path: Optional[str] = None
     status: str = "DRAFT"
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
@@ -1597,12 +1607,12 @@ async def _program_reminder_worker() -> None:
         try:
             now = _utcnow_naive()
             if _program_reminder_last_cleanup is None or now - _program_reminder_last_cleanup >= timedelta(hours=24):
-                _cleanup_program_reminder_jobs(now)
+                await run_in_threadpool(_cleanup_program_reminder_jobs, now)
                 _program_reminder_last_cleanup = now
             while await _process_program_reminder_jobs():
                 await asyncio.sleep(0)
             _program_reminder_wakeup.clear()
-            next_at = _next_program_reminder_at()
+            next_at = await run_in_threadpool(_next_program_reminder_at)
             wait_seconds = PROGRAM_REMINDER_RECOVERY_SECONDS if next_at is None else max(
                 0.05, min((next_at - _utcnow_naive()).total_seconds(), PROGRAM_REMINDER_RECOVERY_SECONDS)
             )
@@ -1823,6 +1833,13 @@ def init_db():
     # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
     with engine.begin() as conn:
         dialect = engine.dialect.name
+        for table in ("analysis", "guestanalysis"):
+            if dialect == "postgresql":
+                conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS result_path TEXT')
+            else:
+                columns = {row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")').fetchall()}
+                if "result_path" not in columns:
+                    conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN result_path TEXT')
         for table in ("imageasset", "guestimageasset"):
             if dialect == "postgresql":
                 conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS vision_snapshot_json TEXT')
@@ -2338,6 +2355,9 @@ def send_brevo_password_reset_email(
 
 
 app = FastAPI(title="DENTAL-AI", version="0.1.0")
+
+from app.object_cache import StorageScopeMiddleware
+app.add_middleware(StorageScopeMiddleware)
 
 
 
@@ -3662,22 +3682,32 @@ templates = Jinja2Templates(
 )
 
 def _startup_database():
+    from app.settings_cache import invalidate
+    invalidate()
     validate_configuration()
     storage_check_connection()
-    init_db()
-    with Session(engine, expire_on_commit=False) as study_session:
-        queued_v2 = enqueue_legacy_materials_v2(
-            study_session, material_model=StudyMaterial,
-        )
-        reactivated_ocr = reactivate_configured_ocr_jobs(study_session)
-        if queued_v2 or reactivated_ocr:
-            study_session.commit()
-            logger.info(
-                "Academic V2 startup queued_legacy=%s reactivated_ocr=%s",
-                queued_v2, reactivated_ocr,
+    if os.getenv("RENDER") and os.getenv("DENTAL_MIGRATE_ON_STARTUP", "0") != "1":
+        from app.migrate import require_schema
+        require_schema(engine)
+    else:
+        init_db()
+    try:
+        with Session(engine, expire_on_commit=False) as study_session:
+            queued_v2 = enqueue_legacy_materials_v2(
+                study_session, material_model=StudyMaterial,
             )
-    _backfill_legacy_deadline_jobs_if_needed()
-    _backfill_program_reminder_jobs()
+            reactivated_ocr = reactivate_configured_ocr_jobs(study_session)
+            if queued_v2 or reactivated_ocr:
+                study_session.commit()
+                logger.info(
+                    "Academic V2 startup queued_legacy=%s reactivated_ocr=%s",
+                    queued_v2, reactivated_ocr,
+                )
+    except work_jobs.WorkCapacity:
+        logger.info("Academic backfill deferred: queue at capacity")
+    if not os.getenv("RENDER"):
+        _backfill_legacy_deadline_jobs_if_needed()
+        _backfill_program_reminder_jobs()
     from dental_rag.rag import _search_chunks
     _search_chunks()
 
@@ -3688,6 +3718,8 @@ async def startup():
     _consultation_deadline_wakeup.bind()
     await run_in_threadpool(_startup_database)
     app.state.study_v2_worker_task = start_colocated_worker_task()
+    from app.work_worker import embedded
+    app.state.work_task = asyncio.create_task(embedded()) if os.getenv("DENTAL_WORK_EXECUTION", "external") == "embedded" else None
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
     # Program reminders have no separate external executor. Keep their durable
@@ -3702,6 +3734,14 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown_consultation_deadline_worker():
+    work_task = getattr(app.state, "work_task", None)
+    if work_task:
+        work_task.cancel()
+        try:
+            await work_task
+        except asyncio.CancelledError:
+            pass
+
     tasks = [
         getattr(app.state, "consultation_deadline_task", None),
         getattr(app.state, "program_reminder_task", None),
@@ -3872,10 +3912,6 @@ def delete_study_course(request: Request, course_id: int):
         s.delete(course)
         s.commit()
 
-    for path in stored_paths:
-        storage_delete(path)
-    for name in gemini_names:
-        delete_study_ai_file(name)
     return RedirectResponse("/notes?deleted=1", status_code=303)
 
 
@@ -3917,6 +3953,7 @@ def _index_study_course_background(owner_user_id: int, course_id: int) -> None:
         )
         # === TEMP_STUDY_TRACE_BG_ERROR_END ===
         logger.exception("Background study indexing failed: course=%s", course_id)
+        raise
 
 
 @app.post("/notes/courses/{course_id}/materials")
@@ -3957,6 +3994,8 @@ def upload_study_materials(
 
             destination_dir = UPLOAD_DIR / "study" / f"user_{user.id}" / f"course_{course_id}"
             destination_dir.mkdir(parents=True, exist_ok=True)
+            s.close()
+            pending_materials = []
             added = 0
             for upload in selected:
                 original_name = Path(upload.filename).name
@@ -4005,16 +4044,25 @@ def upload_study_materials(
                     mime_type=mime_type,
                     size_bytes=total,
                 )
-                s.add(material)
-                s.flush()
+                pending_materials.append(material)
                 # Default-off shadow build. It never changes the live V1 ask
                 # path; enabling it only prepares a V2 generation for later
                 # benchmark/canary comparison.
-                enqueue_material_v2(s, material)
                 added += 1
 
             if added == 0:
                 return HTMLResponse("Kaydedilecek geçerli PDF veya görsel bulunamadı.", status_code=400)
+            course = s.exec(select(StudyCourse).where(StudyCourse.id == course_id,
+                StudyCourse.owner_user_id == user.id).with_for_update()).first()
+            live_user = s.get(User, user.id)
+            if not course or not live_user or not live_user.is_active:
+                raise ValueError("Ders silindi veya erişim yetkiniz değişti.")
+            for material in pending_materials:
+                s.add(material)
+                s.flush()
+                enqueue_material_v2(s, material)
+            if legacy_indexing_required():
+                work_jobs.enqueue(s, kind="LEGACY_INDEX", resource_type="COURSE", resource_id=course_id)
             course.updated_at = _utcnow_naive()
             s.add(course)
             s.commit()
@@ -4055,8 +4103,6 @@ def upload_study_materials(
         raise
 
     # Index once after upload; the user does not wait for embedding work.
-    if legacy_indexing_required():
-        background_tasks.add_task(_index_study_course_background, user.id, course_id)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_BEGIN ===
     trace_event("upload.index.scheduled", course_id=course_id)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
@@ -4116,10 +4162,6 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             course.updated_at = _utcnow_naive()
             s.add(course)
         s.commit()
-    if local_path:
-        storage_delete(local_path)
-    if gemini_name:
-        delete_study_ai_file(gemini_name)
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
 
 
@@ -4204,6 +4246,14 @@ def _remember_study_exchange_background(
         return
 
 
+def _study_source_versions(session, owner_user_id, course_id, *, lock=False):
+    query = select(StudyMaterial).where(StudyMaterial.owner_user_id == owner_user_id,
+        StudyMaterial.course_id == course_id, StudyMaterial.deleted_at == None).order_by(StudyMaterial.id)
+    if lock: query = query.with_for_update()
+    return [(row.id, row.file_path, row.size_bytes, row.active_index_version, row.building_index_version)
+            for row in session.exec(query.execution_options(populate_existing=True)).all()]
+
+
 @app.post("/notes/courses/{course_id}/ai/ask")
 def study_ai_ask(
     request: Request,
@@ -4280,18 +4330,10 @@ def study_ai_ask(
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_END ===
             if not use_v2 and not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
-                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_BEGIN ===
-                _lazy_started = _study_trace_time.perf_counter()
-                trace_event("ask.lazy_index.begin", course_id=course_id)
-                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_END ===
-                ensure_course_index(s, materials)
-                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_DONE_BEGIN ===
-                trace_event(
-                    "ask.lazy_index.success",
-                    course_id=course_id,
-                    elapsed_ms=round((_study_trace_time.perf_counter() - _lazy_started) * 1000, 1),
-                )
-                # === TEMP_STUDY_TRACE_ASK_LAZY_INDEX_DONE_END ===
+                s.close()
+                job = _queue_work("LEGACY_INDEX", "COURSE", course_id)
+                return JSONResponse({"ok": False, "error": "Ders notları hazırlanıyor.",
+                                     "code": "INDEX_PENDING", "job_id": job.id}, status_code=409)
 
             history_rows = s.exec(
                 select(StudyChatMessage)
@@ -4317,6 +4359,7 @@ def study_ai_ask(
                     "code": "ACADEMIC_V2_INDEX_NOT_READY",
                 }, status_code=409)
             # Release the read transaction before embedding/provider I/O.
+            source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
             s.close()
             if use_v2:
@@ -4397,9 +4440,12 @@ def study_ai_ask(
             course = s.exec(select(StudyCourse).where(
                 StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
             ).with_for_update()).first()
-            if course is None:
-                return JSONResponse({"ok": False, "error": "Ders artık mevcut değil."}, status_code=409)
+            live_user = s.get(User, user.id)
+            if course is None or not live_user or not live_user.is_active:
+                return JSONResponse({"ok": False, "error": "Ders artık mevcut değil veya erişim değişti."}, status_code=409)
 
+            if _study_source_versions(s, user.id, course_id, lock=True) != source_versions:
+                return JSONResponse({"ok": False, "error": "Ders kaynakları değişti. Lütfen yeniden sorun."}, status_code=409)
             s.add(StudyChatMessage(
                 course_id=course_id,
                 owner_user_id=user.id,
@@ -4500,6 +4546,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
+        source_versions = _study_source_versions(s, user.id, course_id)
         try:
             retrieval = retrieve_course_context_v2(
                 s, owner_user_id=user.id, course_id=course_id,
@@ -4539,10 +4586,13 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 live_course = save_session.exec(
                     select(StudyCourse)
                     .where(StudyCourse.id == course_id)
-                    .where(StudyCourse.owner_user_id == owner_user_id)
+                    .where(StudyCourse.owner_user_id == owner_user_id).with_for_update()
                 ).first()
-                if not live_course:
-                    raise StudyAIError("Ders akış sırasında silindi.")
+                live_user = save_session.get(User, owner_user_id)
+                if not live_course or not live_user or not live_user.is_active:
+                    raise StudyAIError("Ders akış sırasında silindi veya erişim değişti.")
+                if _study_source_versions(save_session, owner_user_id, course_id, lock=True) != source_versions:
+                    raise StudyAIError("Ders kaynakları akış sırasında değişti. Lütfen yeniden sorun.")
                 save_session.add(StudyChatMessage(
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="USER", content=clean_message,
@@ -5657,14 +5707,14 @@ async def _consultation_deadline_worker() -> None:
         try:
             now = _utcnow_naive()
             if _consultation_deadline_last_cleanup is None or now - _consultation_deadline_last_cleanup >= timedelta(hours=24):
-                _cleanup_consultation_deadline_jobs(now)
+                await run_in_threadpool(_cleanup_consultation_deadline_jobs, now)
                 _consultation_deadline_last_cleanup = now
             while await _process_consultation_deadline_jobs():
                 await asyncio.sleep(0)
             _consultation_deadline_wakeup.clear()
             # Re-read after clear: if enqueue raced with clear, DB truth still
             # shortens the sleep even when the in-process wake signal was lost.
-            next_at = _next_consultation_job_at()
+            next_at = await run_in_threadpool(_next_consultation_job_at)
             wait_seconds = CONSULTATION_DEADLINE_RECOVERY_SECONDS if next_at is None else max(0.05, min((next_at - _utcnow_naive()).total_seconds(), CONSULTATION_DEADLINE_RECOVERY_SECONDS))
             if next_at and next_at <= _utcnow_naive():
                 continue
@@ -5678,49 +5728,46 @@ async def _consultation_deadline_worker() -> None:
 
 
 
+def _realtime_listener_rows(after_id, user_ids, event_ids=None):
+    with Session(engine, expire_on_commit=False) as session:
+        query = select(RealtimeEvent).where(RealtimeEvent.user_id.in_(user_ids))
+        query = query.where(RealtimeEvent.id.in_(event_ids)) if event_ids else query.where(RealtimeEvent.id > after_id)
+        return list(session.exec(query.order_by(RealtimeEvent.id).limit(500)).all())
+
+
 async def _postgres_event_listener(*, listen_deadline: bool = True, listen_realtime: bool = True, listen_program: bool = True) -> None:
-    """Transactional PostgreSQL fanout; callers subscribe only to channels they need."""
     if engine.dialect.name != "postgresql" or not DATABASE_URL:
         return
-    while True:
-        conn = None
-        try:
-            conn = await asyncio.to_thread(psycopg2.connect, DATABASE_URL)
-            conn.set_session(autocommit=True)
-            cur = conn.cursor()
-            if listen_deadline:
-                cur.execute(f'LISTEN "{PG_DEADLINE_CHANNEL}"')
-            if listen_realtime:
-                cur.execute(f'LISTEN "{PG_REALTIME_CHANNEL}"')
-            if listen_program:
-                cur.execute(f'LISTEN "{PG_PROGRAM_REMINDER_CHANNEL}"')
-            while True:
-                ready = await asyncio.to_thread(select_module.select, [conn], [], [], 60.0)
-                if not ready[0]:
-                    continue
-                conn.poll()
-                while conn.notifies:
-                    notice = conn.notifies.pop(0)
-                    if notice.channel == PG_DEADLINE_CHANNEL:
-                        _wake_consultation_deadline_worker()
-                    elif notice.channel == PG_PROGRAM_REMINDER_CHANNEL:
-                        _wake_program_reminder_worker()
-                    elif notice.channel == PG_REALTIME_CHANNEL:
-                        try: event_id = int(notice.payload)
-                        except (TypeError, ValueError): continue
-                        with Session(engine, expire_on_commit=False) as s:
-                            event = s.get(RealtimeEvent, event_id)
-                        if event:
-                            await _publish_realtime_event(event)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("PostgreSQL event listener disconnected; retrying")
-            await asyncio.sleep(2)
-        finally:
-            if conn is not None:
-                try: conn.close()
-                except Exception: pass
+    channels = []
+    if listen_deadline: channels.append(PG_DEADLINE_CHANNEL)
+    if listen_realtime: channels.append(PG_REALTIME_CHANNEL)
+    if listen_program: channels.append(PG_PROGRAM_REMINDER_CHANNEL)
+    listener = PostgresNotices(engine.url.set(drivername="postgresql").render_as_string(hide_password=False), channels)
+    listener.start()
+    try:
+        while True:
+            notices = await listener.batch()
+            if listen_deadline: _wake_consultation_deadline_worker()
+            if listen_program: _wake_program_reminder_worker()
+            users = tuple(user_realtime_socket_hub.users)
+            if not users or not listen_realtime:
+                continue
+            # Sequence IDs are allocated before commit. Deliver explicit IDs:
+            # a transaction committing late may have an ID below our cursor.
+            ids = sorted({int(payload) for item in notices if item is not None
+                          for channel, payload in [item]
+                          if channel == PG_REALTIME_CHANNEL and payload.isdecimal()})
+            for offset in range(0, len(ids), 500):
+                events = await run_in_threadpool(_realtime_listener_rows, 0, users, ids[offset:offset + 500])
+                for event in events:
+                    await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
+            if None in notices:
+                # On reconnect/overflow ask clients to replay durable state.
+                # Their bounded HTTP catchup also covers out-of-order commits.
+                await asyncio.gather(*(user_realtime_socket_hub.send(uid, {"type": "resync"}) for uid in users))
+    finally:
+        await listener.close()
+
 
 def _expire_pending_expert_requests(session: Session, expert_user_id: Optional[int] = None) -> None:
     """Legacy route hook retained for compatibility.
@@ -7325,7 +7372,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
             notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
             status_events.extend(_record_case_status_realtime_events(s, case))
-        raw = file.file.read()
+        raw = file.file.read(CONSULTATION_UPLOAD_MAX_BYTES + 1)
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
             return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
         suffix = Path(file.filename or "").suffix.lower()
@@ -7563,8 +7610,8 @@ def expert_support_messages_live(request: Request, case_id: int, after_id: int =
     with Session(engine, expire_on_commit=False) as s:
         case=s.get(ConsultationCase,case_id)
         if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
-        rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id)).all()
-        return {"ok":True,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+        rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id).limit(500)).all()
+        return {"ok":True,"has_more":len(rows)==500,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
 
 class UserRealtimeSocketHub:
     """Authenticated per-user realtime channel backed by a durable event log."""
@@ -7573,13 +7620,17 @@ class UserRealtimeSocketHub:
         self.visible_sockets: set[WebSocket] = set()
 
     async def connect(self, user_id: int, websocket: WebSocket):
-        await websocket.accept()
+        if len(self.users.get(user_id, ())) >= 4 or not await socket_writes.accept(websocket):
+            await websocket.close(code=1013)
+            return False
         self.users.setdefault(user_id, set()).add(websocket)
+        return True
 
     def disconnect(self, user_id: int, websocket: WebSocket):
         sockets = self.users.get(user_id)
         if not sockets:
             return
+        socket_writes.discard(websocket)
         sockets.discard(websocket)
         self.visible_sockets.discard(websocket)
         if not sockets:
@@ -7595,14 +7646,11 @@ class UserRealtimeSocketHub:
         return any(socket in self.visible_sockets for socket in self.users.get(user_id, set()))
 
     async def send(self, user_id: int, payload: dict):
-        stale = []
-        for socket in list(self.users.get(user_id, set())):
-            try:
-                await socket.send_json(payload)
-            except Exception:
-                stale.append(socket)
-        for socket in stale:
-            self.disconnect(user_id, socket)
+        sockets = list(self.users.get(user_id, set()))
+        results = await asyncio.gather(*(socket_writes.send(socket, payload) for socket in sockets))
+        for socket, sent in zip(sockets, results):
+            if not sent:
+                self.disconnect(user_id, socket)
 
 
 user_realtime_socket_hub = UserRealtimeSocketHub()
@@ -8216,31 +8264,69 @@ def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
             "last_event_id":events[-1].id if events else after_id,"has_more":len(events)==limit}
 
 
+def _socket_current_user(websocket):
+    websocket.state._dai_current_user_checked = False
+    return get_current_user(websocket)
+
+
+def _socket_replay(user_id, after_id):
+    with Session(engine, expire_on_commit=False) as session:
+        return list(session.exec(select(RealtimeEvent).where(
+            RealtimeEvent.user_id == user_id, RealtimeEvent.id > after_id,
+        ).order_by(RealtimeEvent.id).limit(500)).all())
+
+
+def _socket_case_authorized(user_id, case_id, *, mark_read=False):
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        if not case or user_id not in {case.requester_user_id, case.expert_user_id}:
+            return False
+        if mark_read:
+            state = _consultation_inbox_state(session, case_id, user_id)
+            latest = session.exec(select(ConsultationMessage).where(
+                ConsultationMessage.case_id == case_id).order_by(ConsultationMessage.id.desc()).limit(1)).first()
+            events = []
+            read_at = _utcnow_naive()
+            through = latest.id if latest else 0
+            if latest and (state.last_read_at is None or latest.created_at > state.last_read_at):
+                state.last_read_at = read_at
+                session.add(state)
+                events = [_record_realtime_event(session, recipient, "CASE_READ", "consultation_case", case_id,
+                    {"case_id": case_id, "user_id": user_id, "through_id": through, "at": read_at.isoformat()})
+                    for recipient in {case.requester_user_id, case.expert_user_id}]
+                session.commit()
+            return {"events": events, "through_id": through, "at": read_at.isoformat()}
+        return True
+
+
 @app.websocket("/ws/sync")
 async def realtime_sync_socket(websocket: WebSocket):
-    user=get_current_user(websocket)
+    user=await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
-    await user_realtime_socket_hub.connect(user.id,websocket)
+    if not await user_realtime_socket_hub.connect(user.id,websocket):
+        return
     try:
-        await websocket.send_json({"type":"ready","user_id":user.id})
+        await socket_writes.send(websocket, {"type":"ready","user_id":user.id})
         while True:
             data=await websocket.receive_json(); kind=str(data.get("type") or "")
             if kind=="ping":
-                await websocket.send_json({"type":"pong"})
+                await socket_writes.send(websocket, {"type":"pong"})
             elif kind=="visibility":
                 user_realtime_socket_hub.set_visibility(websocket, bool(data.get("visible")))
             elif kind=="resume":
                 try: after_id=max(0,int(data.get("after_id") or 0))
                 except (TypeError,ValueError): after_id=0
-                with Session(engine,expire_on_commit=False) as s:
-                    events=s.exec(select(RealtimeEvent).where(RealtimeEvent.user_id==user.id,RealtimeEvent.id>after_id)
-                                  .order_by(RealtimeEvent.id.asc()).limit(500)).all()
+                user = await run_in_threadpool(_socket_current_user, websocket)
+                if not user:
+                    await websocket.close(code=4401)
+                    break
+                events = await run_in_threadpool(_socket_replay, user.id, after_id)
                 for event in events:
                     payload = _realtime_event_payload(event)
                     payload["replay"] = True
-                    await websocket.send_json(payload)
-                await websocket.send_json({"type":"resume_complete","last_event_id":events[-1].id if events else after_id,
+                    await socket_writes.send(websocket, payload)
+                await socket_writes.send(websocket, {"type":"resume_complete","last_event_id":events[-1].id if events else after_id,
                                            "has_more":len(events)==500})
     except WebSocketDisconnect:
         pass
@@ -8255,94 +8341,116 @@ class ConsultationSocketHub:
         self.rooms: dict[int, set[WebSocket]] = {}
 
     async def connect(self, case_id: int, websocket: WebSocket):
-        await websocket.accept()
+        if len(self.rooms.get(case_id, ())) >= 16 or not await socket_writes.accept(websocket):
+            await websocket.close(code=1013)
+            return False
         self.rooms.setdefault(case_id, set()).add(websocket)
+        return True
 
     def disconnect(self, case_id: int, websocket: WebSocket):
         room = self.rooms.get(case_id)
         if not room: return
+        socket_writes.discard(websocket)
         room.discard(websocket)
         if not room: self.rooms.pop(case_id, None)
 
     async def broadcast(self, case_id: int, payload: dict):
-        stale = []
-        for socket in list(self.rooms.get(case_id, set())):
-            try: await socket.send_json(payload)
-            except Exception: stale.append(socket)
-        for socket in stale: self.disconnect(case_id, socket)
+        sockets = list(self.rooms.get(case_id, set()))
+        results = await asyncio.gather(*(socket_writes.send(socket, payload) for socket in sockets))
+        for socket, sent in zip(sockets, results):
+            if not sent:
+                self.disconnect(case_id, socket)
 
 consultation_socket_hub = ConsultationSocketHub()
 
+def _socket_message_sync(user, case_id, data, text_value):
+    now = _utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = s.exec(select(ConsultationCase).where(ConsultationCase.id == case_id).with_for_update()).first()
+        notification_events: list[RealtimeEvent] = []
+        status_events: list[RealtimeEvent] = []
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return {"type":"error","error":"Yetkisiz işlem."}, [], []
+        if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
+            return {"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}, [], []
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            return {"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}, [], []
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
+            case.status = "ACTIVE"; _consultation_event(s,case.id,"REQUESTER_STARTED_AFTER_DEADLINE",user.id); s.add(case)
+            notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+            status_events.extend(_record_case_status_realtime_events(s, case))
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s,user.id,other_id):
+            return {"type":"error","error":"Bu kullanıcıyla mesajlaşma engellenmiş."}, [], []
+        if _contains_profanity(text_value):
+            _consultation_event(s,case.id,"PROFANITY_BLOCKED",user.id); s.commit()
+            return {"type":"error","error":"Bu mesaj gönderilmedi. Hakaret/küfür içeren mesajlara izin verilmez."}, [], []
+        reply_id = data.get("reply_to_message_id")
+        try: reply_id = int(reply_id) if reply_id else None
+        except (TypeError,ValueError): reply_id = None
+        if reply_id:
+            replied=s.get(ConsultationMessage,reply_id)
+            if not replied or replied.case_id != case.id: reply_id=None
+        message=ConsultationMessage(case_id=case.id,sender_user_id=user.id,content=text_value,reply_to_message_id=reply_id)
+        s.add(message)
+        if user.id == case.expert_user_id and case.expert_started_at is None:
+            case.expert_started_at=now
+            if case.status=="WAITING_START":
+                case.status="ACTIVE"
+                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                status_events.extend(_record_case_status_realtime_events(s, case))
+            _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
+        _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.flush()
+        sender=s.get(User,user.id)
+        realtime_events=_record_message_realtime_events(s,case,message,sender)
+        s.commit()
+        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+
+    return payload, status_events + realtime_events, notification_events
+
+
 @app.websocket("/ws/expert-support/cases/{case_id}")
 async def expert_support_case_socket(websocket: WebSocket, case_id: int):
-    user = get_current_user(websocket)
+    user = await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
-    with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
-            await websocket.close(code=4403); return
-    await consultation_socket_hub.connect(case_id, websocket)
+    if not await run_in_threadpool(_socket_case_authorized, user.id, case_id):
+        await websocket.close(code=4403); return
+    if not await consultation_socket_hub.connect(case_id, websocket):
+        return
     try:
-        await websocket.send_json({"type":"ready","case_id":case_id})
+        await socket_writes.send(websocket, {"type":"ready","case_id":case_id})
         while True:
             data = await websocket.receive_json()
             kind = str(data.get("type") or "")
             if kind == "ping":
-                await websocket.send_json({"type":"pong"}); continue
+                await socket_writes.send(websocket, {"type":"pong"}); continue
+            if kind in {"read", "send"}:
+                user = await run_in_threadpool(_socket_current_user, websocket)
+                if not user:
+                    await websocket.close(code=4401)
+                    break
             if kind == "read":
-                with Session(engine, expire_on_commit=False) as s:
-                    state = _consultation_inbox_state(s, case_id, user.id)
-                    state.last_read_at = _utcnow_naive(); s.add(state); s.commit()
-                await consultation_socket_hub.broadcast(case_id, {"type":"read","user_id":user.id,"at":_utcnow_naive().isoformat()})
+                receipt = await run_in_threadpool(_socket_case_authorized, user.id, case_id, mark_read=True)
+                if not receipt:
+                    await websocket.close(code=4403)
+                    break
+                await consultation_socket_hub.broadcast(case_id, {"type":"read","user_id":user.id,"at":receipt["at"],"through_id":receipt["through_id"]})
+                for event in receipt["events"]:
+                    await _publish_realtime_event(event)
                 continue
             if kind != "send": continue
             text_value = str(data.get("content") or "").strip()
             if not text_value or len(text_value) > 4000:
-                await websocket.send_json({"type":"error","error":"Mesaj boş olamaz ve 4000 karakteri aşamaz."}); continue
-            now = _utcnow_naive()
-            with Session(engine, expire_on_commit=False) as s:
-                case = s.get(ConsultationCase, case_id)
-                notification_events: list[RealtimeEvent] = []
-                status_events: list[RealtimeEvent] = []
-                if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
-                    await websocket.send_json({"type":"error","error":"Yetkisiz işlem."}); continue
-                if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
-                    await websocket.send_json({"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}); continue
-                if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
-                    await websocket.send_json({"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}); continue
-                if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
-                    case.status = "ACTIVE"; _consultation_event(s,case.id,"REQUESTER_STARTED_AFTER_DEADLINE",user.id); s.add(case)
-                    notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
-                    status_events.extend(_record_case_status_realtime_events(s, case))
-                other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
-                if _users_blocked(s,user.id,other_id):
-                    await websocket.send_json({"type":"error","error":"Bu kullanıcıyla mesajlaşma engellenmiş."}); continue
-                if _contains_profanity(text_value):
-                    _consultation_event(s,case.id,"PROFANITY_BLOCKED",user.id); s.commit()
-                    await websocket.send_json({"type":"error","error":"Bu mesaj gönderilmedi. Hakaret/küfür içeren mesajlara izin verilmez."}); continue
-                reply_id = data.get("reply_to_message_id")
-                try: reply_id = int(reply_id) if reply_id else None
-                except (TypeError,ValueError): reply_id = None
-                if reply_id:
-                    replied=s.get(ConsultationMessage,reply_id)
-                    if not replied or replied.case_id != case.id: reply_id=None
-                message=ConsultationMessage(case_id=case.id,sender_user_id=user.id,content=text_value,reply_to_message_id=reply_id)
-                s.add(message)
-                if user.id == case.expert_user_id and case.expert_started_at is None:
-                    case.expert_started_at=now
-                    if case.status=="WAITING_START":
-                        case.status="ACTIVE"
-                        notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
-                        status_events.extend(_record_case_status_realtime_events(s, case))
-                    _consultation_event(s,case.id,"EXPERT_FIRST_RESPONSE",user.id); s.add(case)
-                _consultation_event(s,case.id,"MESSAGE_SENT",user.id); s.commit(); s.refresh(message)
-                sender=s.get(User,user.id)
-                realtime_events=_record_message_realtime_events(s,case,message,sender)
-                s.commit()
-                payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat()}}
+                await socket_writes.send(websocket, {"type":"error","error":"Mesaj boş olamaz ve 4000 karakteri aşamaz."}); continue
+            payload, realtime_events, notification_events = await run_in_threadpool(
+                _socket_message_sync, user, case_id, data, text_value,
+            )
+            if payload.get("type") == "error":
+                await socket_writes.send(websocket, payload)
+                continue
             await consultation_socket_hub.broadcast(case_id,payload)
-            for realtime_event in status_events + realtime_events:
+            for realtime_event in realtime_events:
                 await _publish_realtime_event(realtime_event)
             for notification_event in notification_events:
                 await _publish_realtime_event(notification_event)
@@ -8352,6 +8460,9 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
         consultation_socket_hub.disconnect(case_id,websocket)
         try: await websocket.close(code=1011)
         except Exception: pass
+
+    finally:
+        consultation_socket_hub.disconnect(case_id,websocket)
 
 
 @app.post("/expert-support/cases/{case_id}/review")
@@ -9606,6 +9717,7 @@ def _get_specialty_rag_context(
     analysis,
     assets,
     extra_text="",
+    vision_payload=None,
 ):
     image_types = [
         asset.image_type
@@ -9622,6 +9734,7 @@ def _get_specialty_rag_context(
     )
 
     router = route_clinical_case(
+        structured_vision=json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":")) if vision_payload is not None else None,
         age=patient.age,
         tooth_number=analysis.tooth_number or "",
         clinical_notes=analysis.clinical_notes or "",
@@ -9722,6 +9835,7 @@ def _get_guest_specialty_rag_context(
     analysis,
     assets,
     extra_text="",
+    vision_payload=None,
 ):
     image_types = [
         asset.image_type
@@ -9738,6 +9852,7 @@ def _get_guest_specialty_rag_context(
     )
 
     router = route_clinical_case(
+        structured_vision=json.dumps(vision_payload, ensure_ascii=False, separators=(",", ":")) if vision_payload is not None else None,
         age=None,
         tooth_number=analysis.tooth_number or "",
         clinical_notes=analysis.clinical_notes or "",
@@ -9831,6 +9946,171 @@ açısından en ilgili güncel kanıtları bul.
 
 
 
+def _enqueue_work(session, kind, resource_type, resource_id, payload=None):
+    job = work_jobs.enqueue(session, kind=kind, resource_type=resource_type,
+                            resource_id=resource_id, payload=payload)
+    if resource_type != "COURSE" and job.status in {"QUEUED", "RUNNING"}:
+        model = GuestAnalysis if resource_type == "GUEST" else Analysis
+        live = session.get(model, resource_id)
+        live.status = "VISION_PENDING" if kind == "VISION" else "AI_ANALYZING"
+        session.add(live)
+    return job
+
+
+def _queue_work(kind, resource_type, resource_id, payload=None):
+    with Session(engine, expire_on_commit=False) as session:
+        job = _enqueue_work(session, kind, resource_type, resource_id, payload)
+        session.commit()
+        return job
+
+
+def _publish_clinical_result(session, analysis, serialized, *, status):
+    session.close()
+    guest = isinstance(analysis, GuestAnalysis)
+    path = Path("uploads/ai_results") / ("guest" if guest else "patient") / str(analysis.id) / (secrets.token_hex(16) + ".json")
+    # Register cleanup before remote upload. Ambiguous DB commits must never
+    # delete an object that might already be the published analysis pointer.
+    with Session(engine) as allocation:
+        allocation.add(work_jobs.WorkGarbage(reference=str(path)))
+        allocation.commit()
+    storage_write_text(path, serialized, encoding="utf-8")
+    try:
+        work_jobs.guard_publication(session)
+        live = session.get(type(analysis), analysis.id)
+        if live is None:
+            raise work_jobs.WorkCancelled("RESOURCE_DELETED")
+        previous = live.result_path
+        live.result_path = str(path)
+        live.status = status
+        session.add(live)
+        job = work_jobs.current_job.get()
+        if job is not None:
+            live_job = session.get(work_jobs.WorkJob, job.id)
+            result_status = (json.loads(serialized).get("ai_result") or {}).get("status")
+            live_job.status = "FAILED" if result_status in {"AI_ERROR", "AI_INVALID"} else "DONE"
+            live_job.error_code = result_status if live_job.status == "FAILED" else None
+            live_job.result_ref = str(path)
+            live_job.lease_token = None
+            live_job.lease_until = None
+            live_job.updated_at = work_jobs.now()
+            session.add(live_job)
+        if previous and previous != str(path):
+            session.add(work_jobs.WorkGarbage(reference=previous))
+        session.exec(__import__("sqlalchemy").delete(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == str(path)))
+        session.commit()
+    except BaseException:
+        session.rollback()
+        session.close()
+        raise
+
+
+def _result_reference(analysis, guest=False):
+    return Path(analysis.result_path or f"uploads/ai_results/{'guest_' if guest else ''}{analysis.id}.json")
+
+
+def _latest_work(session, resource_type, resource_id):
+    return session.exec(select(work_jobs.WorkJob).where(
+        work_jobs.WorkJob.resource_type == resource_type, work_jobs.WorkJob.resource_id == resource_id,
+        work_jobs.WorkJob.kind.in_(["PRELIMINARY", "FINAL"]),
+    ).order_by(work_jobs.WorkJob.id.desc()).limit(1)).first()
+
+
+def _pending_result(request, analysis, guest=False):
+    with Session(engine, expire_on_commit=False) as session:
+        job = _latest_work(session, "GUEST" if guest else "ANALYSIS", analysis.id)
+    if job and job.kind != "VISION" and job.status != "DONE":
+        return templates.TemplateResponse(request=request, name="work_pending.html", context={
+            "job": job, "result_url": f"/analysis/{'guest/' if guest else ''}{analysis.id}",
+        })
+    return None
+
+
+@app.get("/jobs/{job_id}")
+def work_status(request: Request, job_id: int):
+    user = get_current_user(request)
+    with Session(engine) as session:
+        job = session.get(work_jobs.WorkJob, job_id)
+        if not user or not job or (job.owner_user_id != user.id and user.role != "ADMIN"):
+            return JSONResponse({"ok": False}, status_code=404)
+        return JSONResponse({"ok": True, "status": job.status, "retryable": job.status == "FAILED" or (job.status == "CANCELLED" and job.error_code == "USER_CANCELLED")},
+                            headers={"Cache-Control": "no-store", "Retry-After": "5"})
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_work(request: Request, job_id: int):
+    user = get_current_user(request)
+    with Session(engine) as session:
+        job = session.get(work_jobs.WorkJob, job_id)
+        if not user or not job or (job.owner_user_id != user.id and user.role != "ADMIN"):
+            return JSONResponse({"ok": False}, status_code=404)
+        session.exec(__import__("sqlalchemy").update(work_jobs.WorkJob).where(
+            work_jobs.WorkJob.id == job_id, work_jobs.WorkJob.status.in_(["QUEUED", "RUNNING"])
+        ).values(status="CANCELLED", error_code="USER_CANCELLED", lease_token=None,
+                 lease_until=None, updated_at=work_jobs.now()))
+        session.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/jobs/{job_id}/retry")
+def retry_work(request: Request, job_id: int):
+    user = get_current_user(request)
+    with Session(engine, expire_on_commit=False) as session:
+        job = session.get(work_jobs.WorkJob, job_id)
+        if not user or not job or (job.owner_user_id != user.id and user.role != "ADMIN"):
+            return JSONResponse({"ok": False}, status_code=404)
+        job = work_jobs.retry(session, job)
+        session.commit()
+        target = f"/notes/courses/{job.resource_id}" if job.resource_type == "COURSE" else f"/analysis/{'guest/' if job.resource_type == 'GUEST' else ''}{job.resource_id}"
+    if job.kind == "VISION":
+        target += "/viewer"
+    return RedirectResponse(target, status_code=303)
+
+
+def _enqueue_final(request, analysis_id, *, guest):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine) as session:
+        _, owner, _ = work_jobs.source_identity(session, "FINAL", "GUEST" if guest else "ANALYSIS", analysis_id)
+        if owner != user.id and user.role != "ADMIN":
+            return HTMLResponse("Yetkisiz işlem.", status_code=404)
+    form = on_loop(request.form)
+    answers = {str(k): str(v) for k, v in form.items() if str(k).startswith("answer_")}
+    _queue_work("FINAL", "GUEST" if guest else "ANALYSIS", analysis_id, payload=answers)
+    return RedirectResponse(f"/analysis/{'guest/' if guest else ''}{analysis_id}", status_code=303)
+
+
+@app.post("/analysis/guest/{analysis_id}/final", response_class=HTMLResponse)
+@offload
+def guest_final_analysis(request: Request, analysis_id: int):
+    return _enqueue_final(request, analysis_id, guest=True)
+
+
+@app.post("/analysis/{analysis_id}/final", response_class=HTMLResponse)
+@offload
+def final_analysis(request: Request, analysis_id: int):
+    return _enqueue_final(request, analysis_id, guest=False)
+
+
+@app.exception_handler(ObjectStorageError)
+async def storage_unavailable(request, exc):
+    return JSONResponse({"ok": False, "error": "Dosya servisi geçici olarak kullanılamıyor."},
+                        status_code=503, headers={"Retry-After": "5"})
+
+
+@app.exception_handler(ProviderBusy)
+@app.exception_handler(work_jobs.WorkCapacity)
+@app.exception_handler(CacheCapacityError)
+async def work_capacity_error(request, exc):
+    return JSONResponse({"ok": False, "error": "İşlem kapasitesi dolu. Lütfen biraz sonra tekrar deneyin."},
+                        status_code=503, headers={"Retry-After": "5"})
+
+
+@app.exception_handler(work_jobs.WorkCancelled)
+async def stale_work_error(request, exc):
+    return JSONResponse({"ok": False, "error": "Kaynak değişti veya artık mevcut değil. Analizi yeniden başlatın."}, status_code=409)
+
+
 VALID_ANALYSIS_IMAGE_TYPES = {"PANORAMIC", "BITEWING", "PERIAPICAL", "INTRAORAL_PHOTO"}
 
 def _analysis_image_type(value: Optional[str]) -> str:
@@ -9848,21 +10128,32 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
         except (TypeError, ValueError, json.JSONDecodeError):
             snap = None
         # Only successful motor snapshots are durable. Transient failures stay retryable.
-        if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable":
+        if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable" and snap.get("_inference_revision", "1") == os.getenv("DENTAL_INFERENCE_REVISION", "1"):
             images.append((asset, snap))
         else:
             missing.append(asset)
 
     if missing:
-        fresh = structured_vision_payload(
-            [str(storage_ensure_local(asset.file_path)) for asset in missing],
-            modality_hint=modality_hint,
-            image_types=[asset.image_type or "OTHER" for asset in missing],
-        )
-        failures.extend(fresh.get("partial_failures") or [])
-        fresh_images = fresh.get("images") or []
+        session.close()
+        fresh_images = []
+        for start in range(0, len(missing), 4):
+            batch = missing[start:start + 4]
+            fresh = structured_vision_payload(
+                [str(storage_ensure_local(asset.file_path)) for asset in batch],
+                modality_hint=modality_hint,
+                image_types=[asset.image_type or "OTHER" for asset in batch],
+            )
+            failures.extend(fresh.get("partial_failures") or [])
+            fresh_images.extend(fresh.get("images") or [])
+        work_jobs.guard_publication(session)
         for asset, snap in zip(missing, fresh_images):
+            live = session.get(type(asset), asset.id)
+            if live is None or live.file_path != asset.file_path or live.image_type != asset.image_type:
+                raise work_jobs.WorkCancelled("ASSET_CHANGED")
+            original_asset = asset
+            asset = live
             snap = dict(snap)
+            snap["_inference_revision"] = os.getenv("DENTAL_INFERENCE_REVISION", "1")
             snap["source_image_id"] = f"analysis_asset:{asset.id}"
             captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
             for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
@@ -9872,6 +10163,7 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
                         finding["captured_at"] = finding.get("captured_at") or captured_at
             if snap.get("ok", True) and snap.get("status") != "unavailable":
                 asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
+                original_asset.vision_snapshot_json = asset.vision_snapshot_json
                 session.add(asset)
                 images.append((asset, snap))
             else:
@@ -9884,6 +10176,7 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
                 )
         session.commit()
 
+    session.close()
     ordered = []
     by_id = {getattr(asset, "id", None): snap for asset, snap in images}
     for asset in assets:
@@ -9909,29 +10202,34 @@ def _persisted_vision_payload(session: Session, assets, modality_hint: str = "")
 
 
 
-def _run_analysis_vision(analysis_id: int):
-    """Run dedicated image motors once after upload and persist their snapshots."""
-    with Session(engine, expire_on_commit=False) as s:
-        analysis = s.get(Analysis, analysis_id)
-        if not analysis:
-            return
-        assets = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).all()
-        payload = _persisted_vision_payload(s, assets)
+def _run_vision(analysis_id: int, *, guest: bool):
+    model = GuestAnalysis if guest else Analysis
+    asset_model = GuestImageAsset if guest else ImageAsset
+    with Session(engine, expire_on_commit=False) as session:
+        analysis = session.get(model, analysis_id)
+        if analysis is None:
+            raise work_jobs.WorkCancelled("RESOURCE_DELETED")
+        condition = asset_model.guest_analysis_id == analysis_id if guest else asset_model.analysis_id == analysis_id
+        assets = session.exec(select(asset_model).where(condition)).all()
+        payload = _persisted_vision_payload(session, assets)
+        work_jobs.guard_publication(session)
+        analysis = session.get(model, analysis_id)
+        if analysis is None:
+            raise work_jobs.WorkCancelled("RESOURCE_DELETED")
         analysis.status = "VISION_READY" if payload.get("status") in {"ok", "partial"} else "VISION_ERROR"
-        s.add(analysis)
-        s.commit()
+        session.add(analysis)
+        session.commit()
+        # Keep successful snapshots; retries process only failed assets.
+        if payload.get("status") != "ok":
+            raise RuntimeError("VISION_PROVIDER_UNAVAILABLE")
+
+
+def _run_analysis_vision(analysis_id: int):
+    _run_vision(analysis_id, guest=False)
+
 
 def _run_guest_vision(analysis_id: int):
-    """Run guest image motors once; clinical analysis is started separately by the user."""
-    with Session(engine, expire_on_commit=False) as s:
-        analysis = s.get(GuestAnalysis, analysis_id)
-        if not analysis:
-            return
-        assets = s.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id == analysis_id)).all()
-        payload = _persisted_vision_payload(s, assets)
-        analysis.status = "VISION_READY" if payload.get("status") in {"ok", "partial"} else "VISION_ERROR"
-        s.add(analysis)
-        s.commit()
+    _run_vision(analysis_id, guest=True)
 
 
 def _run_guest_preliminary_ai(analysis_id: int):
@@ -9970,6 +10268,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
             )
         ).all()
 
+        s.close()
         image_paths = [
             str(storage_ensure_local(asset.file_path))
             for asset in assets
@@ -9987,7 +10286,10 @@ def _run_guest_preliminary_ai(analysis_id: int):
         # === TEMP_XRAY_TRACE_GUEST_PRE_IMAGES_END ===
 
         try:
+            s.close()
+            vision_payload = _persisted_vision_payload(s, assets)
             knowledge_context = _get_guest_specialty_rag_context(
+                vision_payload=vision_payload,
                 analysis=analysis,
                 assets=assets,
             )
@@ -10010,6 +10312,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 schema="preliminary",
             )
             # === TEMP_XRAY_TRACE_GUEST_PRE_AI_END ===
+            s.close()
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -10036,6 +10339,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 # === TEMP_XRAY_TRACE_GUEST_PRE_SCHEMA_RETRY_BEGIN ===
                 xray_trace_event("analysis.schema.retry", stage="preliminary")
                 # === TEMP_XRAY_TRACE_GUEST_PRE_SCHEMA_RETRY_END ===
+                s.close()
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -10069,8 +10373,7 @@ def _run_guest_preliminary_ai(analysis_id: int):
 
         result_file = result_dir / f"guest_{analysis_id}.json"
 
-        storage_write_text(result_file,
-            json.dumps(
+        _publish_clinical_result(s, analysis, json.dumps(
                 {
                     "ai_result": ai_result,
                     "ai_text": ai_text,
@@ -10078,13 +10381,9 @@ def _run_guest_preliminary_ai(analysis_id: int):
                 },
                 ensure_ascii=False,
                 indent=2,
-            ),
-            encoding="utf-8",
-        )
+            ), status="AI_ANALYZED")
 
-        analysis.status = "AI_ANALYZED"
-        s.add(analysis)
-        s.commit()
+
         # === TEMP_XRAY_TRACE_GUEST_PRE_COMPLETE_BEGIN ===
         xray_trace_event(
             "analysis.complete",
@@ -10134,6 +10433,7 @@ def _run_preliminary_ai(analysis_id: int):
             )
         ).all()
 
+        s.close()
         image_paths = [
             str(storage_ensure_local(asset.file_path))
             for asset in assets
@@ -10164,7 +10464,10 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
             if not patient:
                 raise RuntimeError("Hasta kaydı bulunamadı.")
 
+            s.close()
+            vision_payload = _persisted_vision_payload(s, assets)
             knowledge_context = _get_specialty_rag_context(
+                vision_payload=vision_payload,
                 patient=patient,
                 analysis=analysis,
                 assets=assets,
@@ -10273,6 +10576,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 schema="preliminary",
             )
             # === TEMP_XRAY_TRACE_PATIENT_PRE_AI_END ===
+            s.close()
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -10298,6 +10602,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 # === TEMP_XRAY_TRACE_PATIENT_PRE_SCHEMA_RETRY_BEGIN ===
                 xray_trace_event("analysis.schema.retry", stage="preliminary")
                 # === TEMP_XRAY_TRACE_PATIENT_PRE_SCHEMA_RETRY_END ===
+                s.close()
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -10332,8 +10637,7 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
 
         result_file = result_dir / f"{analysis_id}.json"
 
-        storage_write_text(result_file,
-            json.dumps(
+        _publish_clinical_result(s, analysis, json.dumps(
                 {
                     "ai_result": ai_result,
                     "ai_text": ai_text,
@@ -10342,13 +10646,9 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
                 },
                 ensure_ascii=False,
                 indent=2
-            ),
-            encoding="utf-8"
-        )
+            ), status="AI_ANALYZED")
 
-        analysis.status = "AI_ANALYZED"
-        s.add(analysis)
-        s.commit()
+
         # === TEMP_XRAY_TRACE_PATIENT_PRE_COMPLETE_BEGIN ===
         xray_trace_event(
             "analysis.complete",
@@ -10386,6 +10686,8 @@ def create_guest_analysis(
         s.add(analysis)
         s.commit()
         s.refresh(analysis)
+        s.close()
+        pending_assets = []
 
         allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
         valid_images = [img for img in images if img and img.filename]
@@ -10409,8 +10711,7 @@ def create_guest_analysis(
 
             destination = UPLOAD_DIR / stored_name
 
-            with destination.open("wb") as buffer:
-                shutil.copyfileobj(image.file, buffer)
+            copy_image(image.file, destination)
 
             storage_persist_file(destination)
 
@@ -10422,20 +10723,19 @@ def create_guest_analysis(
                 image_type=classify_dental_image(str(destination)),
             )
 
-            s.add(asset)
+            pending_assets.append(asset)
 
+        live_user = s.get(User, user.id)
+        if not live_user or not live_user.is_active:
+            raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
+        s.add_all(pending_assets)
+        s.flush()
+        _enqueue_work(s, "VISION" if pending_assets else "PRELIMINARY", "GUEST", analysis.id)
         s.commit()
 
         analysis_id = analysis.id
 
-    with Session(engine, expire_on_commit=False) as s:
-        has_assets = bool(s.exec(select(GuestImageAsset).where(GuestImageAsset.guest_analysis_id == analysis_id)).first())
-    if has_assets:
-        background_tasks.add_task(_run_guest_vision, analysis_id)
-        target = f"/analysis/guest/{analysis_id}/viewer"
-    else:
-        background_tasks.add_task(_run_guest_preliminary_ai, analysis_id)
-        target = f"/analysis/guest/{analysis_id}"
+    target = f"/analysis/guest/{analysis_id}" + ("/viewer" if pending_assets else "")
     return RedirectResponse(url=target, status_code=303)
 
 
@@ -10470,12 +10770,16 @@ def create_analysis(
             return HTMLResponse("Tek analizde toplam en fazla 4 görüntü kullanabilirsiniz.", status_code=400)
 
         selected_media_items: list[tuple[PatientMedia, Path]] = []
+        selected_media_rows = []
         for selected_id in requested_media_ids:
             media = s.get(PatientMedia, selected_id)
             if not media or media.patient_id != patient_id:
                 return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
             if user.role != "ADMIN" and media.owner_user_id != user.id:
                 return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+            selected_media_rows.append(media)
+        s.close()
+        for media in selected_media_rows:
             media_path = storage_ensure_local(media.file_path) if storage_exists(media.file_path) else Path(media.file_path)
             if media_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not media_path.is_file():
                 return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
@@ -10491,6 +10795,8 @@ def create_analysis(
         s.add(analysis)
         s.commit()
         s.refresh(analysis)
+        s.close()
+        pending_assets = []
 
         allowed_extensions = {
             ".jpg", ".jpeg", ".png", ".webp"
@@ -10505,7 +10811,7 @@ def create_analysis(
             destination = UPLOAD_DIR / stored_name
             shutil.copy2(selected_media_path, destination)
             storage_persist_file(destination)
-            s.add(ImageAsset(
+            pending_assets.append(ImageAsset(
                 analysis_id=analysis.id,
                 original_filename=selected_media.original_filename,
                 stored_filename=stored_name,
@@ -10530,8 +10836,7 @@ def create_analysis(
 
             destination = UPLOAD_DIR / stored_name
 
-            with destination.open("wb") as buffer:
-                shutil.copyfileobj(image.file, buffer)
+            copy_image(image.file, destination)
 
             storage_persist_file(destination)
 
@@ -10543,24 +10848,27 @@ def create_analysis(
                 image_type=classify_dental_image(str(destination)),
             )
 
-            s.add(asset)
+            pending_assets.append(asset)
 
+        live_user = s.get(User, user.id)
+        if not live_user or not live_user.is_active:
+            raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
+        live_patient = s.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
+        if not live_patient or (user.role != "ADMIN" and live_patient.owner_user_id != user.id):
+            raise work_jobs.WorkCancelled("OWNER_CHANGED")
+        s.add_all(pending_assets)
+        s.flush()
+        _enqueue_work(s, "VISION" if pending_assets else "PRELIMINARY", "ANALYSIS", analysis.id)
         s.commit()
 
         analysis_id = analysis.id
 
-    with Session(engine, expire_on_commit=False) as s:
-        has_assets = bool(s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id)).first())
-    if has_assets:
-        background_tasks.add_task(_run_analysis_vision, analysis_id)
-        target = f"/analysis/{analysis_id}/viewer"
-    else:
-        background_tasks.add_task(_run_preliminary_ai, analysis_id)
-        target = f"/analysis/{analysis_id}"
+    target = f"/analysis/{analysis_id}" + ("/viewer" if pending_assets else "")
     return RedirectResponse(url=target, status_code=303)
 
 
 ADMIN_CENTER_PATH = "/dayedunyaxayine4721"
+
 
 def _admin_only(request: Request) -> Optional[User]:
     user = get_current_user(request)
@@ -10575,17 +10883,22 @@ def legacy_admin_hidden(request: Request):
 ADMIN_SECTIONS = {"home":"Ana Sayfa","users":"Kullanıcılar","experts":"Uzmanlar","approvals":"Onay Bekleyenler","bans":"Ban İşlemleri","search":"Kullanıcı Ara","complaints":"Şikayet / Sorun Bildirimleri","support":"Destek Talepleri","broadcast":"Toplu Bildirim Gönder","notice":"Kullanıcıya Özel Bildirim","email":"E-posta Yönetimi","homepage":"Ana Sayfa İçerikleri","texts":"Başlıklar ve Metinler","announcements":"Duyurular","faq":"SSS Yönetimi","legal":"Yasal Sayfalar","maintenance":"Bakım Modu","stats":"Site İstatistikleri","reports":"Kullanım Raporları","revenue":"Gelir / Ödemeler","logs":"Sistem Logları","settings":"Genel Ayarlar","security":"Güvenlik","admins":"Admin Hesapları","backup":"Yedekleme"}
 
 def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
+    from app.settings_cache import invalidate
+    invalidate()
     row=session.exec(select(SiteSetting).where(SiteSetting.key==key)).first()
     if not row: row=SiteSetting(key=key)
     row.value=value; row.updated_by_user_id=admin_id; row.updated_at=_utcnow_naive(); session.add(row)
 
 def _maintenance_response(request):
     try:
-        with Session(engine, expire_on_commit=False) as session:
-            rows = session.exec(select(SiteSetting).where(
-                SiteSetting.key.in_(["maintenance_mode", "maintenance_message"])
-            )).all()
-            settings = {row.key: row.value for row in rows}
+        from app.settings_cache import get
+        def load_settings():
+            with Session(engine, expire_on_commit=False) as session:
+                rows = session.exec(select(SiteSetting).where(
+                    SiteSetting.key.in_(["maintenance_mode", "maintenance_message"])
+                )).all()
+                return {row.key: row.value for row in rows}
+        settings = get(load_settings)
         if settings.get("maintenance_mode") == "1":
             user = get_current_user(request)
             if not user or user.role != "ADMIN":
@@ -11397,10 +11710,7 @@ def start_guest_clinical_analysis(request: Request, analysis_id: int, background
         analysis = s.get(GuestAnalysis, analysis_id)
         if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
             return HTMLResponse("Analiz bulunamadı.", status_code=404)
-        analysis.status = "AI_ANALYZING"
-        s.add(analysis)
-        s.commit()
-    background_tasks.add_task(_run_guest_preliminary_ai, analysis_id)
+    _queue_work("PRELIMINARY", "GUEST", analysis_id)
     return RedirectResponse(f"/analysis/guest/{analysis_id}", status_code=303)
 
 
@@ -11432,9 +11742,11 @@ def guest_analysis_result(request: Request, analysis_id: int):
             )
         ).first()
 
-    result_file = Path(
-        f"uploads/ai_results/guest_{analysis_id}.json"
-    )
+    pending = _pending_result(request, analysis, guest=True)
+    if pending is not None:
+        return pending
+
+    result_file = _result_reference(analysis, guest=True)
 
     ai_result = {
         "status": "AI_ANALYZING",
@@ -11551,8 +11863,9 @@ def viewer_analyze(request: Request, analysis_id: int, background_tasks: Backgro
         if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         if teeth:
             analysis.tooth_number=",".join(teeth)
-        analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
-    background_tasks.add_task(_run_preliminary_ai,analysis_id)
+        s.add(analysis);s.flush()
+        _enqueue_work(s, "PRELIMINARY", "ANALYSIS", analysis_id)
+        s.commit()
     return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
 
 
@@ -11569,9 +11882,22 @@ def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: B
         if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         if teeth:
             analysis.tooth_number=",".join(teeth)
-        analysis.status="AI_ANALYZING";s.add(analysis);s.commit()
-    background_tasks.add_task(_run_guest_preliminary_ai,analysis_id)
+        s.add(analysis);s.flush()
+        _enqueue_work(s, "PRELIMINARY", "GUEST", analysis_id)
+        s.commit()
     return JSONResponse({"ok":True,"status":"AI_ANALYZING"})
+
+
+def _viewer_job_state(analysis, guest=False):
+    with Session(engine, expire_on_commit=False) as session:
+        job = _latest_work(session, "GUEST" if guest else "ANALYSIS", analysis.id)
+    if job and job.status != "DONE":
+        failed = job.status in {"FAILED", "CANCELLED"}
+        return JSONResponse({"ok": not failed, "status": "AI_ERROR" if failed else "AI_ANALYZING",
+            "job_id": job.id, "retry_url": f"/jobs/{job.id}/retry",
+            "error": "Analiz tamamlanamadı. Analiz sayfasından yeniden deneyin." if failed else ""},
+            status_code=503 if failed else 202, headers={"Cache-Control": "no-store", "Retry-After": "5"})
+    return None
 
 
 @app.get("/analysis/{analysis_id}/viewer-result")
@@ -11582,7 +11908,10 @@ def viewer_result(request: Request, analysis_id: int):
         analysis=s.get(Analysis,analysis_id); patient=s.get(Patient,analysis.patient_id) if analysis else None
         if not analysis or not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         status=analysis.status
-    p=Path(f"uploads/ai_results/{analysis_id}.json")
+    pending = _viewer_job_state(analysis, guest=False)
+    if pending is not None:
+        return pending
+    p=_result_reference(analysis)
     if status!="AI_ANALYZED" or not storage_exists(p):return JSONResponse({"ok":True,"status":status},status_code=202)
     p = storage_ensure_local(p)
     try:
@@ -11601,7 +11930,10 @@ def guest_viewer_result(request: Request, analysis_id: int):
         analysis=s.get(GuestAnalysis,analysis_id)
         if not analysis or (user.role!="ADMIN" and analysis.owner_user_id!=user.id):return JSONResponse({"ok":False},status_code=404)
         status=analysis.status
-    p=Path(f"uploads/ai_results/guest_{analysis_id}.json")
+    pending = _viewer_job_state(analysis, guest=True)
+    if pending is not None:
+        return pending
+    p=_result_reference(analysis, guest=True)
     if status!="AI_ANALYZED" or not storage_exists(p):return JSONResponse({"ok":True,"status":status},status_code=202)
     p = storage_ensure_local(p)
     try:
@@ -11625,8 +11957,9 @@ def analysis_asset(request: Request, analysis_id: int, asset_id: int):
         if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
             return HTMLResponse("Bu görüntüye erişim yetkiniz yok.", status_code=403)
         asset = s.get(ImageAsset, asset_id)
-        if not asset or asset.analysis_id != analysis_id or not storage_exists(asset.file_path):
+        if not asset or asset.analysis_id != analysis_id:
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        s.close()
         path = storage_ensure_local(asset.file_path)
     media_type = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
@@ -11646,37 +11979,17 @@ def analysis_asset_vision(request: Request, analysis_id: int, asset_id: int):
             return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
         if not asset or asset.analysis_id != analysis_id:
             return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
-        if not asset.vision_snapshot_json:
-            # A background task may be interrupted or may not have persisted the
-            # radiographic snapshot. Recover it on the viewer read path so
-            # PANORAMIC/BITEWING/PERIAPICAL findings are not left permanently blank.
-            file_path = asset.file_path
-            image_type = asset.image_type or "OTHER"
-            if not storage_exists(file_path):
-                return JSONResponse({"ok": False, "status": "VISION_FILE_MISSING"}, status_code=404)
-            file_path = str(storage_ensure_local(file_path))
-            try:
-                fresh = structured_vision_payload([file_path], image_types=[image_type])
-                images = fresh.get("images") or []
-                snap = dict(images[0]) if images else None
-                if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable":
-                    snap["source_image_id"] = f"analysis_asset:{asset.id}"
-                    captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
-                    for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
-                        for finding in snap.get(pool) or []:
-                            if isinstance(finding, dict):
-                                finding["source_image_id"] = snap["source_image_id"]
-                                finding["captured_at"] = finding.get("captured_at") or captured_at
-                    asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
-                    s.add(asset)
-                    analysis.status = "VISION_READY"
-                    s.add(analysis)
-                    s.commit()
-                    return JSONResponse(snap, headers={"Cache-Control":"no-store"})
-            except Exception as exc:
-                logger.exception("vision recovery failed analysis=%s asset=%s", analysis_id, asset_id)
-                return JSONResponse({"ok": False, "status": "VISION_ERROR", "error": str(exc)}, status_code=503, headers={"Cache-Control":"no-store"})
-            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202, headers={"Cache-Control":"no-store"})
+        try:
+            stored_snapshot = json.loads(asset.vision_snapshot_json or "null")
+        except ValueError:
+            stored_snapshot = None
+        if not stored_snapshot or stored_snapshot.get("_inference_revision", "1") != os.getenv("DENTAL_INFERENCE_REVISION", "1"):
+            s.close()
+            job = _queue_work("VISION", "ANALYSIS", analysis_id)
+            return JSONResponse({"ok": False, "status": "VISION_ERROR" if job.status in {"FAILED", "CANCELLED"} else "VISION_PENDING",
+                                 "job_id": job.id, "retry_url": f"/jobs/{job.id}/retry"},
+                                status_code=503 if job.status in {"FAILED", "CANCELLED"} else 202,
+                                headers={"Cache-Control": "no-store", "Retry-After": "5"})
         try:
             return JSONResponse(json.loads(asset.vision_snapshot_json), headers={"Cache-Control":"no-store"})
         except Exception:
@@ -11707,8 +12020,9 @@ def guest_analysis_asset(request: Request, analysis_id: int, asset_id: int):
         asset = s.get(GuestImageAsset, asset_id)
         if not analysis or (user.role != "ADMIN" and analysis.owner_user_id != user.id):
             return HTMLResponse("Analiz bulunamadı.", status_code=404)
-        if not asset or asset.guest_analysis_id != analysis_id or not storage_exists(asset.file_path):
+        if not asset or asset.guest_analysis_id != analysis_id:
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        s.close()
         path = storage_ensure_local(asset.file_path)
     media_type={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp"}.get(path.suffix.lower(),"application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=asset.original_filename)
@@ -11726,55 +12040,17 @@ def guest_analysis_asset_vision(request: Request, analysis_id: int, asset_id: in
             return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
         if not asset or asset.guest_analysis_id != analysis_id:
             return JSONResponse({"ok": False, "status": "NOT_FOUND"}, status_code=404)
-        if not asset.vision_snapshot_json:
-            # BackgroundTasks can be interrupted by a deploy/restart. The viewer
-            # polls this endpoint, so make the read path self-healing instead of
-            # leaving a valid upload permanently stuck at VISION_PENDING.
-            file_path = asset.file_path
-            image_type = asset.image_type or "OTHER"
-            if not storage_exists(file_path):
-                return JSONResponse({"ok": False, "status": "VISION_FILE_MISSING"}, status_code=404)
-            file_path = str(storage_ensure_local(file_path))
-            try:
-                fresh = structured_vision_payload(
-                    [file_path],
-                    image_types=[image_type],
-                )
-                images = fresh.get("images") or []
-                snap = dict(images[0]) if images else None
-                if isinstance(snap, dict) and snap.get("ok", True) and snap.get("status") != "unavailable":
-                    snap["source_image_id"] = f"analysis_asset:{asset.id}"
-                    captured_at = asset.uploaded_at.isoformat() if asset.uploaded_at else None
-                    for pool in ("findings", "auxiliary_radiographic_findings", "image_level_findings"):
-                        for finding in snap.get(pool) or []:
-                            if isinstance(finding, dict):
-                                finding["source_image_id"] = snap["source_image_id"]
-                                finding["captured_at"] = finding.get("captured_at") or captured_at
-                    asset.vision_snapshot_json = json.dumps(snap, ensure_ascii=False, separators=(",", ":"))
-                    session_asset_id = asset.id
-                    s.add(asset)
-                    analysis.status = "VISION_READY"
-                    s.add(analysis)
-                    s.commit()
-                    logger.info(
-                        "guest vision recovered on poll analysis=%s asset=%s modality=%s teeth=%s findings=%s",
-                        analysis_id, session_asset_id, snap.get("modality"),
-                        len(snap.get("teeth") or []),
-                        sum(len(snap.get(k) or []) for k in ("findings","auxiliary_radiographic_findings","image_level_findings")),
-                    )
-                    return JSONResponse(snap, headers={"Cache-Control":"no-store"})
-                logger.error(
-                    "guest vision recovery unavailable analysis=%s asset=%s failures=%s",
-                    analysis_id, asset_id, fresh.get("partial_failures") or [],
-                )
-            except Exception as exc:
-                logger.exception("guest vision recovery failed analysis=%s asset=%s", analysis_id, asset_id)
-                return JSONResponse(
-                    {"ok": False, "status": "VISION_ERROR", "error": str(exc)},
-                    status_code=503,
-                    headers={"Cache-Control":"no-store"},
-                )
-            return JSONResponse({"ok": False, "status": "VISION_PENDING"}, status_code=202, headers={"Cache-Control":"no-store"})
+        try:
+            stored_snapshot = json.loads(asset.vision_snapshot_json or "null")
+        except ValueError:
+            stored_snapshot = None
+        if not stored_snapshot or stored_snapshot.get("_inference_revision", "1") != os.getenv("DENTAL_INFERENCE_REVISION", "1"):
+            s.close()
+            job = _queue_work("VISION", "GUEST", analysis_id)
+            return JSONResponse({"ok": False, "status": "VISION_ERROR" if job.status in {"FAILED", "CANCELLED"} else "VISION_PENDING",
+                                 "job_id": job.id, "retry_url": f"/jobs/{job.id}/retry"},
+                                status_code=503 if job.status in {"FAILED", "CANCELLED"} else 202,
+                                headers={"Cache-Control": "no-store", "Retry-After": "5"})
         try:
             return JSONResponse(json.loads(asset.vision_snapshot_json), headers={"Cache-Control":"no-store"})
         except Exception:
@@ -11798,6 +12074,7 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         asset = s.exec(select(ImageAsset).where(ImageAsset.analysis_id == analysis_id).order_by(ImageAsset.id.asc())).first()
         if not asset or not storage_exists(asset.file_path):
             return HTMLResponse("Görüntü bulunamadı.", status_code=404)
+        s.close()
         path = storage_ensure_local(asset.file_path)
     media_type = {
         ".jpg": "image/jpeg",
@@ -11848,10 +12125,9 @@ def analyze_selected_tooth(request: Request, analysis_id: int, tooth_fdi: int, b
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return JSONResponse({"ok": False, "error": "Bu analize erişim yetkiniz yok."}, status_code=403)
         analysis.tooth_number = fdi_text
-        analysis.status = "ANALYZING"
-        s.add(analysis)
+        s.add(analysis);s.flush()
+        _enqueue_work(s, "PRELIMINARY", "ANALYSIS", analysis_id)
         s.commit()
-    background_tasks.add_task(_run_preliminary_ai, analysis_id)
     return JSONResponse({"ok": True, "analysis_id": analysis_id, "tooth_fdi": fdi_text, "status": "ANALYZING", "result_url": f"/analysis/{analysis_id}"})
 
 
@@ -11891,9 +12167,11 @@ def analysis_result(request: Request, analysis_id: int):
     # Sadece daha önce kaydedilmiş sonucu okuyor.
     # -----------------------------------------------------
 
-    result_file = Path(
-        f"uploads/ai_results/{analysis_id}.json"
-    )
+    pending = _pending_result(request, analysis, guest=False)
+    if pending is not None:
+        return pending
+
+    result_file = _result_reference(analysis, guest=False)
 
     ai_result = {
         "status": "AI_ANALYZING",
@@ -11947,12 +12225,8 @@ def analysis_result(request: Request, analysis_id: int):
 # ---------------------------------------------------------
 
 
-@app.post("/analysis/guest/{analysis_id}/final", response_class=HTMLResponse)
-@offload
-def guest_final_analysis(
-    request: Request,
-    analysis_id: int
-):
+@storage_scoped
+def _run_guest_final_analysis(analysis_id: int, owner_user_id: int, form: dict):
     from app.ai_engine import (
         FINAL_RESPONSE_SCHEMA,
         build_final_prompt,
@@ -11961,7 +12235,8 @@ def guest_final_analysis(
     )
     from app.ai_provider import ask_ai
 
-    user = get_current_user(request)
+    with Session(engine, expire_on_commit=False) as auth_session:
+        user = auth_session.get(User, owner_user_id)
 
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -12005,6 +12280,7 @@ def guest_final_analysis(
             )
         ).all()
 
+        s.close()
         image_paths = [
             str(storage_ensure_local(asset.file_path))
             for asset in assets
@@ -12013,7 +12289,7 @@ def guest_final_analysis(
 
         image_path = image_paths[0] if image_paths else None
 
-        form = on_loop(request.form)
+        # Final answers were captured durably by the HTTP endpoint.
 
         answers = {}
 
@@ -12035,7 +12311,10 @@ def guest_final_analysis(
         # === TEMP_XRAY_TRACE_GUEST_FINAL_ANSWERS_END ===
 
         try:
+            s.close()
+            vision_payload = _persisted_vision_payload(s, assets)
             knowledge_context = _get_guest_specialty_rag_context(
+                vision_payload=vision_payload,
                 analysis=analysis,
                 assets=assets,
                 extra_text=f"Hekim cevapları: {answers}",
@@ -12060,6 +12339,7 @@ def guest_final_analysis(
                 schema="final",
             )
             # === TEMP_XRAY_TRACE_GUEST_FINAL_AI_END ===
+            s.close()
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -12083,6 +12363,7 @@ def guest_final_analysis(
                 # === TEMP_XRAY_TRACE_GUEST_FINAL_SCHEMA_RETRY_BEGIN ===
                 xray_trace_event("analysis.schema.retry", stage="final")
                 # === TEMP_XRAY_TRACE_GUEST_FINAL_SCHEMA_RETRY_END ===
+                s.close()
                 ai_text = ask_ai(
                     prompt,
                     image_paths=image_paths,
@@ -12121,8 +12402,7 @@ def guest_final_analysis(
             f"guest_{analysis_id}.json"
         )
 
-        storage_write_text(result_file,
-            json.dumps(
+        _publish_clinical_result(s, analysis, json.dumps(
                 {
                     "ai_result": ai_result,
                     "ai_text": ai_text,
@@ -12131,13 +12411,9 @@ def guest_final_analysis(
                 },
                 ensure_ascii=False,
                 indent=2
-            ),
-            encoding="utf-8"
-        )
+            ), status="AI_FINAL")
 
-        analysis.status = "AI_FINAL"
-        s.add(analysis)
-        s.commit()
+
         # === TEMP_XRAY_TRACE_GUEST_FINAL_COMPLETE_BEGIN ===
         xray_trace_event(
             "analysis.complete",
@@ -12154,12 +12430,8 @@ def guest_final_analysis(
     )
 
 
-@app.post("/analysis/{analysis_id}/final", response_class=HTMLResponse)
-@offload
-def final_analysis(
-    request: Request,
-    analysis_id: int
-):
+@storage_scoped
+def _run_final_analysis(analysis_id: int, owner_user_id: int, form: dict):
 
     from app.ai_engine import (
         FINAL_RESPONSE_SCHEMA,
@@ -12169,7 +12441,8 @@ def final_analysis(
     )
     from app.ai_provider import ask_ai
 
-    user = get_current_user(request)
+    with Session(engine, expire_on_commit=False) as auth_session:
+        user = auth_session.get(User, owner_user_id)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
@@ -12227,6 +12500,7 @@ def final_analysis(
             )
         ).all()
 
+        s.close()
         image_paths = [
             str(storage_ensure_local(asset.file_path))
             for asset in assets
@@ -12239,7 +12513,7 @@ def final_analysis(
     # HEKİM CEVAPLARINI AL
     # -----------------------------------------------------
 
-    form = on_loop(request.form)
+    # Final answers were captured durably by the HTTP endpoint.
 
     answers = {}
 
@@ -12292,7 +12566,10 @@ için en ilgili kanıtları bul.
         if not patient:
             raise RuntimeError("Hasta kaydı bulunamadı.")
 
+        s.close()
+        vision_payload = _persisted_vision_payload(s, assets)
         knowledge_context = _get_specialty_rag_context(
+            vision_payload=vision_payload,
             patient=patient,
             analysis=analysis,
             assets=assets,
@@ -12318,6 +12595,7 @@ için en ilgili kanıtları bul.
             schema="final",
         )
         # === TEMP_XRAY_TRACE_PATIENT_FINAL_AI_END ===
+        s.close()
         ai_text = ask_ai(
             prompt,
             image_paths=image_paths,
@@ -12341,6 +12619,7 @@ için en ilgili kanıtları bul.
             # === TEMP_XRAY_TRACE_PATIENT_FINAL_SCHEMA_RETRY_BEGIN ===
             xray_trace_event("analysis.schema.retry", stage="final")
             # === TEMP_XRAY_TRACE_PATIENT_FINAL_SCHEMA_RETRY_END ===
+            s.close()
             ai_text = ask_ai(
                 prompt,
                 image_paths=image_paths,
@@ -12386,8 +12665,7 @@ için en ilgili kanıtları bul.
         f"{analysis_id}.json"
     )
 
-    storage_write_text(result_file,
-        json.dumps(
+    _publish_clinical_result(s, analysis, json.dumps(
             {
                 "ai_result": ai_result,
                 "ai_text": ai_text,
@@ -12396,24 +12674,7 @@ için en ilgili kanıtları bul.
             },
             ensure_ascii=False,
             indent=2
-        ),
-        encoding="utf-8"
-    )
-
-    with Session(
-        engine,
-        expire_on_commit=False
-    ) as s:
-
-        analysis = s.get(
-            Analysis,
-            analysis_id
-        )
-
-        if analysis:
-            analysis.status = "AI_FINAL"
-            s.add(analysis)
-            s.commit()
+        ), status="AI_FINAL")
 
     # === TEMP_XRAY_TRACE_PATIENT_FINAL_COMPLETE_BEGIN ===
     xray_trace_event(
@@ -12509,3 +12770,8 @@ Hekimin sorusu:
             "ai_error": error,
         },
     )
+
+
+# Outermost admission includes middleware/authentication and multipart intake.
+from app.request_limits import RequestLimits
+app.add_middleware(RequestLimits)

@@ -111,7 +111,7 @@ class WebPushContractTests(unittest.TestCase):
         self.assertNotIn('event.event_type == "CASE_CREATED"', publish)
 
     def test_header_startup_connects_realtime_immediately_then_reconciles_deferred(self):
-        startup = BASE.split("async function catchUpEvents()", 1)[1].split("</script>", 1)[0]
+        startup = BASE.split("async function catchUpEvents(full=false)", 1)[1].split("</script>", 1)[0]
         self.assertIn("await refreshUnreadCount();", startup)
         self.assertIn("connectSync();", startup)
         self.assertIn("const startDeferredSync=()=>catchUpEvents().finally(refreshNotificationCenter);", startup)

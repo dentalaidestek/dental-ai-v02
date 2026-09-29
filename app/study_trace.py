@@ -60,6 +60,10 @@ def trace_event(stage: str, *, trace_id=None, owner_user_id=None, **fields) -> N
         "_owner_user_id": owner,
         "user_tag": _user_tag(owner),
     }
+    from app.work_jobs import current_job
+    job = current_job.get()
+    if job is not None:
+        event["job_id"] = job.id
     for key, value in fields.items():
         low = str(key).lower()
         if any(token in low for token in (

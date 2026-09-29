@@ -11,6 +11,8 @@ import time
 import urllib.error
 import urllib.request
 from app.http_transport import urlopen
+from app.provider_budget import reservation, ProviderBusy
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Iterator
 
@@ -36,6 +38,15 @@ class StudyProviderError(RuntimeError):
         self.code = code
         self.retryable = retryable
         self.tracked = tracked
+
+
+@contextmanager
+def provider_reservation(provider, model):
+    try:
+        with reservation(provider, model):
+            yield
+    except ProviderBusy as exc:
+        raise StudyProviderError(str(exc), code=429, retryable=True, tracked=True) from exc
 
 
 @dataclass(frozen=True)
@@ -282,7 +293,7 @@ class GeminiStudyProvider(StudyProvider):
             )
             started = time.perf_counter()
             try:
-                with urlopen(request, timeout=timeout or self.timeout) as response:
+                with provider_reservation(self.name, model), urlopen(request, timeout=timeout or self.timeout) as response:
                     body = response.read().decode("utf-8")
                     try:
                         result = json.loads(body)
@@ -459,7 +470,7 @@ class GeminiStudyProvider(StudyProvider):
         started = time.perf_counter()
         emitted = False
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with provider_reservation(self.name, model), urlopen(request, timeout=self.timeout) as response:
                 for raw_line in response:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data:"):
@@ -602,7 +613,7 @@ class CohereStudyProvider(StudyProvider):
         )
         started = time.perf_counter()
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with provider_reservation(self.name, model), urlopen(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8")
                 try:
                     result = json.loads(body)
@@ -781,7 +792,7 @@ class OpenAICompatibleStudyProvider(StudyProvider):
         )
         started = time.perf_counter()
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with provider_reservation(self.name, model), urlopen(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8")
                 try:
                     result = json.loads(body)

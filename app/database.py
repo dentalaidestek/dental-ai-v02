@@ -5,6 +5,7 @@ from sqlmodel import create_engine
 
 
 def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False):
+    url = url.replace("postgres://", "postgresql://", 1) if url.startswith("postgres://") else url
     parsed = make_url(url)
     if parsed.get_backend_name() == "sqlite":
         if not allow_sqlite:

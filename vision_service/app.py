@@ -174,3 +174,7 @@ def diagnostics_runtime(stage:str,_:None=Depends(require_vision_key)):
     try:
         p=subprocess.run([sys.executable,"-c",probes[stage]],capture_output=True,text=True,timeout=90); return {"stage":stage,"returncode":p.returncode,"stdout":p.stdout,"stderr":p.stderr[-3000:]}
     except subprocess.TimeoutExpired: return {"stage":stage,"timeout":True}
+
+
+from app.request_limits import RequestLimits
+app.add_middleware(RequestLimits, max_bytes=int(os.getenv("VISION_MAX_REQUEST_BYTES", str(210 * 1024 * 1024))))

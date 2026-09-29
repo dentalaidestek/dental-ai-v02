@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card" id="analysis-progress" data-status-url="/jobs/{{ job.id }}" data-result-url="{{ result_url }}">
+<h2>Analiz durumu</h2>
+<p id="analysis-progress-message">{% if job.status == 'FAILED' %}Analiz tamamlanamadı. Yeniden deneyebilirsiniz.{% elif job.status == 'CANCELLED' and job.error_code == 'USER_CANCELLED' %}İşlem iptal edildi. Yeniden deneyebilirsiniz.{% elif job.status == 'CANCELLED' %}Vaka bilgileri değişti. Analizi vaka sayfasından yeniden başlatın.{% else %}Analiziniz sırada veya hazırlanıyor. Bu sayfayı kapatsanız da işlem devam eder.{% endif %}</p>
+<form id="analysis-retry" method="post" action="/jobs/{{ job.id }}/retry" {% if job.status != 'FAILED' and job.error_code != 'USER_CANCELLED' %}hidden{% endif %}><button type="submit">Yeniden dene</button></form>
+<form id="analysis-cancel" method="post" action="/jobs/{{ job.id }}/cancel" {% if job.status not in ['QUEUED','RUNNING'] %}hidden{% endif %}><button type="submit">İptal et</button></form>
+</section>
+<script>
+(()=>{const panel=document.getElementById('analysis-progress');let delay=4000,timer,stopped=false;
+document.getElementById('analysis-cancel').addEventListener('submit',async event=>{event.preventDefault();const response=await fetch(event.currentTarget.action,{method:'POST'});if(response.ok){stopped=true;clearTimeout(timer);location.reload();}});
+const poll=async()=>{if(stopped)return;try{const response=await fetch(panel.dataset.statusUrl,{headers:{Accept:'application/json'},cache:'no-store'});if(response.status===404){stopped=true;return;}if(response.ok){const job=await response.json();if(job.status==='DONE'){location.replace(panel.dataset.resultUrl);return;}if(job.status==='FAILED'||job.status==='CANCELLED'){document.getElementById('analysis-progress-message').textContent=job.status==='FAILED'?'Analiz tamamlanamadı. Yeniden deneyebilirsiniz.':(job.retryable?'İşlem iptal edildi. Yeniden deneyebilirsiniz.':'Vaka bilgileri değişti. Analizi yeniden başlatın.');document.getElementById('analysis-retry').hidden=!job.retryable;document.getElementById('analysis-cancel').hidden=true;stopped=true;return;}}}catch(e){}delay=Math.min(30000,Math.round(delay*1.4));timer=setTimeout(poll,delay+Math.random()*1000);};
+if({{ (job.status in ['QUEUED','RUNNING'])|tojson }})timer=setTimeout(poll,delay);window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);},{once:true});})();
+</script>
+{% endblock %}

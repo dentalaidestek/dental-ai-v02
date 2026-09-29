@@ -212,6 +212,7 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
     monkeypatch.setattr(main, 'study_v2_reads_enabled', lambda: False)
     monkeypatch.setattr(main, 'course_index_ready', lambda *args, **kwargs: True)
     with Session(engine) as session:
+        session.add(main.User(id=1, username='synthetic', role='DOCTOR', display_name='Synthetic'))
         session.add(main.StudyCourse(id=1, owner_user_id=1, title='Ortodonti'))
         session.add(main.StudyMaterial(id=1, owner_user_id=1, course_id=1,
             original_filename='note.pdf', display_name='Note', stored_filename='note.pdf',
@@ -247,6 +248,8 @@ def test_mixed_worker_services_ocr_under_continuous_normal_backlog(monkeypatch):
     from sqlmodel import create_engine
     from app import study_index_worker_main as worker
     engine = create_engine('sqlite://')
+    from app import migrate
+    monkeypatch.setattr(migrate, 'require_schema', lambda engine: None)
     monkeypatch.setattr(worker, '_stop', False)
     monkeypatch.setattr(worker, 'build_worker_engine', lambda: engine)
     monkeypatch.setattr(worker.signal, 'signal', lambda *args: None)

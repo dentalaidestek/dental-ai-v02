@@ -246,6 +246,10 @@ _ENGINE = _create_router_engine()
 
 
 def _ensure_tables() -> None:
+    if os.getenv("RENDER"):
+        from app.migrate import require_schema
+        require_schema(_ENGINE)
+        return
     SQLModel.metadata.create_all(
         _ENGINE,
         tables=[
