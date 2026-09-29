@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+from copy import deepcopy
 import threading
 import mimetypes
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 import uuid
 from pathlib import Path
 
@@ -15,7 +18,7 @@ _MAX_CACHE = 32
 
 
 def _fingerprint(paths: list[str], modality_hint: str = "") -> tuple:
-    parts = [("modality_hint", modality_hint.strip().upper())]
+    parts = [("modality_hint", modality_hint.strip().upper()), ("inference_revision", os.getenv("DENTAL_INFERENCE_REVISION", "1"))]
     for raw in paths:
         p = Path(raw)
         try:
@@ -101,7 +104,7 @@ def _modal_infer(path: str, modality: str) -> dict:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=float(__import__("os").getenv("DENTAL_VISION_MODAL_TIMEOUT_SECONDS", "120"))) as response:
+    with urlopen(req, timeout=float(__import__("os").getenv("DENTAL_VISION_MODAL_TIMEOUT_SECONDS", "120"))) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -203,7 +206,7 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
     with _LOCK:
         cached = _CACHE.get(key)
     if cached is not None:
-        return cached
+        return deepcopy(cached)
 
     payload = {"status": "ok", "route": route, "images": [], "partial_failures": []}
     for index, (path, hint) in enumerate(pairs[:4]):
@@ -259,10 +262,11 @@ def structured_vision_payload(image_paths: list[str] | None, modality_hint: str 
     elif payload["partial_failures"]:
         payload["status"] = "partial"
 
-    with _LOCK:
-        if len(_CACHE) >= _MAX_CACHE:
-            _CACHE.pop(next(iter(_CACHE)))
-        _CACHE[key] = payload
+    if payload.get("status") == "ok":
+        with _LOCK:
+            if key not in _CACHE and len(_CACHE) >= _MAX_CACHE:
+                _CACHE.pop(next(iter(_CACHE)))
+            _CACHE[key] = deepcopy(payload)
     return payload
 
 

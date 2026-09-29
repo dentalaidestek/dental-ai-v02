@@ -120,3 +120,13 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
         row.index_status == "READY" and bool(row.active_index_version)
         for row in rows
     )
+
+
+def legacy_indexing_required() -> bool:
+    """Keep V1 until V2 reads are live; shadow indexing is an explicit canary."""
+    return not reads_enabled() or _flag("STUDY_V1_SHADOW_INDEXING")
+
+
+def validate_configuration() -> None:
+    if reads_enabled() and not indexing_enabled():
+        raise RuntimeError("STUDY_ACADEMIC_V2_READS requires STUDY_ACADEMIC_V2_INDEXING")

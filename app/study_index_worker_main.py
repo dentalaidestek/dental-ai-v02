@@ -76,17 +76,17 @@ def main() -> None:
     logger.info("Academic V2 index worker started resource_class=%s", resource_class)
     gc_every = _int_env("STUDY_V2_GC_EVERY_LOOPS", 60, 10, 3600)
     loops = 0
+    next_mixed_class = "NORMAL"
     while not _stop:
         try:
             with Session(engine, expire_on_commit=False) as session:
-                active_class = "NORMAL" if resource_class == "MIXED" else resource_class
+                active_class = next_mixed_class if resource_class == "MIXED" else resource_class
                 result = run_one_slice(session, resource_class=active_class)
-                if resource_class == "MIXED" and result == "IDLE":
-                    # One low-footprint process can service both queues on the
-                    # free instance. Normal text work gets first opportunity;
-                    # OCR work runs whenever that queue is idle.
-                    active_class = "OCR_HEAVY"
-                    result = run_one_slice(session, resource_class=active_class)
+                if resource_class == "MIXED":
+                    if result == "IDLE":
+                        active_class = "OCR_HEAVY" if active_class == "NORMAL" else "NORMAL"
+                        result = run_one_slice(session, resource_class=active_class)
+                    next_mixed_class = "OCR_HEAVY" if active_class == "NORMAL" else "NORMAL"
                 if result != "IDLE":
                     logger.info(
                         "Academic V2 slice resource_class=%s result=%s",

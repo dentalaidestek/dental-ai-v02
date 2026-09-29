@@ -5,6 +5,7 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +103,7 @@ def analyze_periapical(image_path: str) -> dict[str, Any]:
 
     request = urllib.request.Request(f"{PERIAPICAL_INFERENCE_URL}/infer?modality=periapical", data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=PERIAPICAL_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[-1200:]

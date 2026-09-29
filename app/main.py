@@ -43,6 +43,9 @@ logger = _study_trace_logging.getLogger(__name__)
 # === TEMP_XRAY_TRACE_MAIN_IMPORT_BEGIN ===
 import time as _xray_trace_time
 import asyncio
+from app.execution import offload, on_loop, LoopWakeup
+from starlette.concurrency import run_in_threadpool
+from app.database import create_app_engine
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -61,7 +64,7 @@ from app.study_index_jobs import (
 )
 from app.study_retrieval_v2 import retrieve_course_context_v2
 from app.study_v2_service import (
-    course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2,
+    course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
     reads_enabled as study_v2_reads_enabled,
     streaming_enabled as study_v2_streaming_enabled,
@@ -131,7 +134,7 @@ def _utcnow_naive() -> datetime:
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    engine = create_engine(DATABASE_URL)
+    engine = create_app_engine(DATABASE_URL, role="web", allow_sqlite=not bool(os.getenv("RENDER")))
 else:
     DB_PATH = BASE.parent / "dental_ai.db"
     engine = create_engine(
@@ -786,7 +789,7 @@ PROGRAM_TYPE_ICONS = {
 REMINDER_OPTIONS = {0, 15, 30, 60, 120, 1440}
 RECURRENCE_OPTIONS = {"NONE", "WEEKLY"}
 
-_program_reminder_wakeup = asyncio.Event()
+_program_reminder_wakeup = LoopWakeup()
 PROGRAM_REMINDER_RECOVERY_SECONDS = 300
 PROGRAM_REMINDER_BATCH_SIZE = 100
 PROGRAM_REMINDER_RETENTION_DAYS = 30
@@ -1549,7 +1552,8 @@ def _next_program_reminder_at() -> Optional[datetime]:
         ).order_by(ProgramReminderJob.run_at.asc()).limit(1)).first()
 
 
-async def _process_program_reminder_jobs() -> bool:
+@offload
+def _process_program_reminder_jobs() -> bool:
     now = _utcnow_naive()
     publish_events: list[RealtimeEvent] = []
     with Session(engine, expire_on_commit=False) as s:
@@ -1583,7 +1587,7 @@ async def _process_program_reminder_jobs() -> bool:
                 logger.exception("Program reminder job failed: %s", job.id)
         s.commit()
     for event in publish_events:
-        await _publish_realtime_event(event)
+        on_loop(_publish_realtime_event, event)
     return len(jobs) >= PROGRAM_REMINDER_BATCH_SIZE
 
 
@@ -2552,7 +2556,8 @@ def support_request_fragment(request: Request):
     return templates.TemplateResponse(request=request,name="_support_status_regions.html",context={"tickets":tickets,"reports":reports,"support_messages_by_ticket":by_ticket,"support_unread_by_ticket":support_unread_by_ticket,"support_can_reply_by_ticket":support_can_reply_by_ticket,"support_waiting_by_ticket":support_waiting_by_ticket,"report_ticket_by_report":report_ticket_by_report})
 
 @app.post("/support-request")
-async def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
+@offload
+def contact_submit(request: Request, subject: str = Form(...), message: str = Form(...), case_id: str = Form("")):
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     user=get_current_user(request)
     subject=subject.strip()[:160];message=message.strip()[:4000]
@@ -2578,7 +2583,7 @@ async def contact_submit(request: Request, subject: str = Form(...), message: st
             for admin in admins:
                 admin_events.append(_record_realtime_event(s,admin.id,"SUPPORT_TICKET_CREATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"user_id":user.id,"subject":ticket.subject,"status":"OPEN","requires_fragment":True}))
         s.commit()
-    for event in admin_events: await _publish_realtime_event(event)
+    for event in admin_events: on_loop(_publish_realtime_event, event)
     if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":"OPEN"})
     return RedirectResponse("/support-request?sent=1",status_code=303)
 
@@ -2607,7 +2612,8 @@ def support_ticket_user_conversation(request: Request, ticket_id: int, before_id
 
 
 @app.post("/support-request/{ticket_id}/reply")
-async def support_ticket_user_reply(request: Request, ticket_id: int, message: str = Form(...)):
+@offload
+def support_ticket_user_reply(request: Request, ticket_id: int, message: str = Form(...)):
     user=get_current_user(request)
     if not user:return RedirectResponse("/login",status_code=303)
     message=message.strip()[:4000]
@@ -2632,14 +2638,15 @@ async def support_ticket_user_reply(request: Request, ticket_id: int, message: s
                 _support_message_payload(ticket,support_message,viewer_role="ADMIN"),
             ))
         s.commit()
-    for event in admin_events:await _publish_realtime_event(event)
+    for event in admin_events:on_loop(_publish_realtime_event, event)
     if request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept",""):
         return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":ticket.status,"message_id":support_message.id,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"USER","can_reply":False})
     return RedirectResponse("/support-request?reply_sent=1",status_code=303)
 
 
 @app.post("/support-request/{ticket_id}/read")
-async def support_ticket_user_read(request: Request, ticket_id: int, through_message_id: Optional[int] = Form(None)):
+@offload
+def support_ticket_user_read(request: Request, ticket_id: int, through_message_id: Optional[int] = Form(None)):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
     with Session(engine,expire_on_commit=False) as s:
@@ -2948,7 +2955,8 @@ def profile_photo(request: Request, user_id: int):
 
 
 @app.post("/account/profile-photo")
-async def account_profile_photo(request: Request, profile_photo_data: str = Form(...)):
+@offload
+def account_profile_photo(request: Request, profile_photo_data: str = Form(...)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -2971,12 +2979,13 @@ async def account_profile_photo(request: Request, profile_photo_data: str = Form
         storage_delete(path)
         raise
     _remove_replaced_profile_photo(previous_path, path)
-    await _publish_realtime_event(photo_event)
+    on_loop(_publish_realtime_event, photo_event)
     return RedirectResponse("/account?photo_saved=1", status_code=303)
 
 
 @app.post("/account/professional-title")
-async def change_professional_title(
+@offload
+def change_professional_title(
     request: Request,
     professional_title: str = Form(...),
     confirm_change: str = Form(""),
@@ -3035,14 +3044,15 @@ async def change_professional_title(
         expert_profile_events = _record_expert_profile_realtime_events(s, expert_profile) if current_title and current_title != professional_title and expert_profile else []
         s.commit()
 
-    await _publish_realtime_event(profile_event)
+    on_loop(_publish_realtime_event, profile_event)
     for expert_profile_event in expert_profile_events:
-        await _publish_realtime_event(expert_profile_event)
+        on_loop(_publish_realtime_event, expert_profile_event)
     return RedirectResponse("/account?profile_updated=1", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
-async def change_username(request: Request, username: str = Form(...)):
+@offload
+def change_username(request: Request, username: str = Form(...)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -3106,7 +3116,7 @@ async def change_username(request: Request, username: str = Form(...)):
         profile_event=_record_realtime_event(s,user.id,"PROFILE_UPDATED","user",user.id,
             {"user_id":user.id,"username":db_user.username})
         s.commit()
-        await _publish_realtime_event(profile_event)
+        on_loop(_publish_realtime_event, profile_event)
         return render_account(success="Kullanıcı adınız başarıyla değiştirildi. 15 gün boyunca tekrar değiştirilemez.")
 
 
@@ -3651,8 +3661,8 @@ templates = Jinja2Templates(
     context_processors=[template_user_context],
 )
 
-@app.on_event("startup")
-async def startup():
+def _startup_database():
+    validate_configuration()
     storage_check_connection()
     init_db()
     with Session(engine, expire_on_commit=False) as study_session:
@@ -3666,9 +3676,18 @@ async def startup():
                 "Academic V2 startup queued_legacy=%s reactivated_ocr=%s",
                 queued_v2, reactivated_ocr,
             )
-    app.state.study_v2_worker_task = start_colocated_worker_task()
     _backfill_legacy_deadline_jobs_if_needed()
     _backfill_program_reminder_jobs()
+    from dental_rag.rag import _search_chunks
+    _search_chunks()
+
+
+@app.on_event("startup")
+async def startup():
+    _program_reminder_wakeup.bind()
+    _consultation_deadline_wakeup.bind()
+    await run_in_threadpool(_startup_database)
+    app.state.study_v2_worker_task = start_colocated_worker_task()
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
     app.state.consultation_deadline_task = asyncio.create_task(_consultation_deadline_worker()) if run_embedded_deadline_worker else None
     # Program reminders have no separate external executor. Keep their durable
@@ -3901,7 +3920,8 @@ def _index_study_course_background(owner_user_id: int, course_id: int) -> None:
 
 
 @app.post("/notes/courses/{course_id}/materials")
-async def upload_study_materials(
+@offload
+def upload_study_materials(
     request: Request,
     course_id: int,
     background_tasks: BackgroundTasks,
@@ -3952,7 +3972,7 @@ async def upload_study_materials(
                 total = 0
                 with destination.open("wb") as output:
                     while True:
-                        chunk = await upload.read(1024 * 1024)
+                        chunk = upload.file.read(1024 * 1024)
                         if not chunk:
                             break
                         total += len(chunk)
@@ -4035,7 +4055,8 @@ async def upload_study_materials(
         raise
 
     # Index once after upload; the user does not wait for embedding work.
-    background_tasks.add_task(_index_study_course_background, user.id, course_id)
+    if legacy_indexing_required():
+        background_tasks.add_task(_index_study_course_background, user.id, course_id)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_BEGIN ===
     trace_event("upload.index.scheduled", course_id=course_id)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
@@ -4276,11 +4297,11 @@ def study_ai_ask(
                 select(StudyChatMessage)
                 .where(StudyChatMessage.course_id == course_id)
                 .where(StudyChatMessage.owner_user_id == user.id)
-                .order_by(StudyChatMessage.id)
+                .order_by(StudyChatMessage.id.desc()).limit(8)
             ).all()
             history = [
                 {"role": row.role, "content": row.content}
-                for row in history_rows[-8:]
+                for row in reversed(history_rows)
             ]
 
             # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
@@ -4295,6 +4316,9 @@ def study_ai_ask(
                     "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
                     "code": "ACADEMIC_V2_INDEX_NOT_READY",
                 }, status_code=409)
+            # Release the read transaction before embedding/provider I/O.
+            course_title = course.title
+            s.close()
             if use_v2:
                 rag_result = retrieve_course_context_v2(
                     s,
@@ -4327,16 +4351,18 @@ def study_ai_ask(
             trace_event("ask.generation.begin", course_id=course_id)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_END ===
 
+            # Generation may take minutes; it must not occupy a DB connection.
+            s.close()
             if use_v2:
                 answer = ask_study_ai_v2(
-                    course.title,
+                    course_title,
                     clean_message,
                     history,
                     rag_result,
                 )
             else:
                 answer = ask_study_ai(
-                    course.title,
+                    course_title,
                     clean_message,
                     history,
                     rag_result.note_context,
@@ -4366,6 +4392,13 @@ def study_ai_ask(
                 ], ensure_ascii=False)
                 if use_v2 else None
             )
+
+            # Re-authorize after the provider call; never reattach a deleted course.
+            course = s.exec(select(StudyCourse).where(
+                StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
+            ).with_for_update()).first()
+            if course is None:
+                return JSONResponse({"ok": False, "error": "Ders artık mevcut değil."}, status_code=409)
 
             s.add(StudyChatMessage(
                 course_id=course_id,
@@ -4464,9 +4497,9 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             select(StudyChatMessage)
             .where(StudyChatMessage.course_id == course_id)
             .where(StudyChatMessage.owner_user_id == user.id)
-            .order_by(StudyChatMessage.id)
+            .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
-        history = [{"role": row.role, "content": row.content} for row in history_rows[-8:]]
+        history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
         try:
             retrieval = retrieve_course_context_v2(
                 s, owner_user_id=user.id, course_id=course_id,
@@ -4722,7 +4755,8 @@ def program_new_page(
 
 
 @app.post("/program/new")
-async def program_create(
+@offload
+def program_create(
     request: Request,
     event_type: str = Form(...),
     title: str = Form(...),
@@ -4789,7 +4823,7 @@ async def program_create(
         s.commit()
     _wake_program_reminder_worker()
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -4842,7 +4876,8 @@ def program_edit_page(request: Request, event_id: int):
 
 
 @app.post("/program/{event_id}/edit")
-async def program_edit(
+@offload
+def program_edit(
     request: Request,
     event_id: int,
     event_type: str = Form(...),
@@ -4916,7 +4951,7 @@ async def program_edit(
         s.commit()
     _wake_program_reminder_worker()
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
 
@@ -4924,7 +4959,8 @@ async def program_edit(
 
 
 @app.post("/program/{event_id}/copy")
-async def program_copy_to_days(
+@offload
+def program_copy_to_days(
     request: Request,
     event_id: int,
     target_days: str = Form(...),
@@ -5011,13 +5047,14 @@ async def program_copy_to_days(
         s.commit()
     _wake_program_reminder_worker()
     if program_realtime_event:
-        await _publish_realtime_event(program_realtime_event)
+        on_loop(_publish_realtime_event, program_realtime_event)
 
     return RedirectResponse("/program?view=week&day=" + target_dates[0].isoformat(), status_code=303)
 
 
 @app.post("/program/{event_id}/complete")
-async def program_complete(request: Request, event_id: int):
+@offload
+def program_complete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -5042,13 +5079,14 @@ async def program_complete(request: Request, event_id: int):
         realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_COMPLETED", event.id))
         s.commit()
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
 
     return RedirectResponse("/program?completed=1", status_code=303)
 
 
 @app.post("/program/{event_id}/delete")
-async def program_delete(request: Request, event_id: int):
+@offload
+def program_delete(request: Request, event_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -5068,7 +5106,7 @@ async def program_delete(request: Request, event_id: int):
         realtime_events.append(_record_program_realtime_event(s, user.id, "PROGRAM_DELETED", event.id))
         s.commit()
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
 
     return RedirectResponse("/program?deleted=1", status_code=303)
 
@@ -5376,7 +5414,7 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
             "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
 
 
-_consultation_deadline_wakeup = asyncio.Event()
+_consultation_deadline_wakeup = LoopWakeup()
 CONSULTATION_DEADLINE_RECOVERY_SECONDS = 300
 CONSULTATION_DEADLINE_BATCH_SIZE = 100
 CONSULTATION_DEADLINE_RETENTION_DAYS = 30
@@ -5579,7 +5617,8 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     return notices, case_events
 
 
-async def _process_consultation_deadline_jobs() -> bool:
+@offload
+def _process_consultation_deadline_jobs() -> bool:
     """Drain one bounded due batch. PostgreSQL workers skip rows locked elsewhere."""
     now = _utcnow_naive(); publish_events: list[RealtimeEvent] = []; case_events: list[RealtimeEvent] = []
     with Session(engine, expire_on_commit=False) as s:
@@ -5606,8 +5645,8 @@ async def _process_consultation_deadline_jobs() -> bool:
                 s.add(job)
                 logger.exception("Consultation deadline job failed: %s", job.id)
         s.commit()
-    for event in case_events: await _publish_realtime_event(event)
-    for event in publish_events: await _publish_realtime_event(event)
+    for event in case_events: on_loop(_publish_realtime_event, event)
+    for event in publish_events: on_loop(_publish_realtime_event, event)
     return len(jobs) >= CONSULTATION_DEADLINE_BATCH_SIZE
 
 
@@ -5976,12 +6015,13 @@ def expert_support_availability_watch(request: Request, specialty: str = Form(..
 
 
 @app.post("/expert-support/availability")
-async def expert_support_availability_update(request: Request):
+@offload
+def expert_support_availability_update(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "detail": "Oturum gerekli."}, status_code=401)
     try:
-        body = await request.json()
+        body = on_loop(request.json)
     except Exception:
         body = {}
     availability = str(body.get("availability") or "").upper()
@@ -6036,9 +6076,9 @@ async def expert_support_availability_update(request: Request):
                     s.add(watch)
         s.commit()
     for event in profile_events:
-        await _publish_realtime_event(event)
+        on_loop(_publish_realtime_event, event)
     for event in notice_events:
-        await _publish_realtime_event(event)
+        on_loop(_publish_realtime_event, event)
     return JSONResponse({"ok": True, "availability": availability})
 
 
@@ -6068,7 +6108,8 @@ def expert_support_profile_page(request: Request):
 
 
 @app.post("/expert-support/profile")
-async def expert_support_profile_save(
+@offload
+def expert_support_profile_save(
     request: Request,
     specialty: str = Form(...),
     phone: str = Form(...),
@@ -6114,7 +6155,7 @@ async def expert_support_profile_save(
             allowed = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
             if suffix not in allowed:
                 return HTMLResponse("e-Devlet belgesi PDF, JPG veya PNG olmalıdır.", status_code=400)
-            document_bytes = await credential_document.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
+            document_bytes = credential_document.file.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
             if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
                 return HTMLResponse("e-Devlet belgesi boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
             document_dir = UPLOAD_DIR / "expert_credentials" / f"user_{user.id}"
@@ -6202,9 +6243,9 @@ async def expert_support_profile_save(
     if new_photo_path:
         _remove_replaced_profile_photo(previous_photo_path, new_photo_path)
     if photo_event:
-        await _publish_realtime_event(photo_event)
+        on_loop(_publish_realtime_event, photo_event)
     for profile_event in profile_events:
-        await _publish_realtime_event(profile_event)
+        on_loop(_publish_realtime_event, profile_event)
     return RedirectResponse("/expert-support/profile?saved=1", status_code=303)
 
 
@@ -6245,7 +6286,8 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
 
 
 @app.post("/expert-support/request/{expert_user_id}")
-async def expert_support_request_create(
+@offload
+def expert_support_request_create(
     request: Request,
     expert_user_id: int,
     clinical_summary: str = Form(...),
@@ -6334,9 +6376,9 @@ async def expert_support_request_create(
         )
         s.commit()
     _wake_consultation_deadline_worker()
-    await _publish_realtime_event(expert_event)
+    on_loop(_publish_realtime_event, expert_event)
     if notice_event:
-        await _publish_realtime_event(notice_event)
+        on_loop(_publish_realtime_event, notice_event)
     return RedirectResponse(f"/expert-support/cases/{case.id}", status_code=303)
 
 
@@ -6707,7 +6749,8 @@ def account_push_config(request: Request):
 
 
 @app.post("/account/push/subscribe")
-async def account_push_subscribe(request: Request):
+@offload
+def account_push_subscribe(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False}, status_code=401)
@@ -6716,7 +6759,7 @@ async def account_push_subscribe(request: Request):
     if not _web_push_configured():
         return JSONResponse({"ok": False, "error": "Cihaz bildirimleri henüz yapılandırılmamış."}, status_code=503)
     try:
-        body = await request.json()
+        body = on_loop(request.json)
         endpoint = str(body.get("endpoint") or "").strip()
         keys = body.get("keys") or {}
         p256dh = str(keys.get("p256dh") or "").strip()
@@ -6750,14 +6793,15 @@ async def account_push_subscribe(request: Request):
 
 
 @app.post("/account/push/unsubscribe")
-async def account_push_unsubscribe(request: Request):
+@offload
+def account_push_unsubscribe(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False}, status_code=401)
     if not _push_request_same_origin(request):
         return JSONResponse({"ok": False}, status_code=403)
     try:
-        body = await request.json(); endpoint = str(body.get("endpoint") or "").strip()
+        body = on_loop(request.json); endpoint = str(body.get("endpoint") or "").strip()
     except Exception:
         endpoint = ""
     if not endpoint:
@@ -6830,14 +6874,15 @@ def account_notifications(request: Request):
 
 
 @app.post("/account/notifications/read-all")
-async def account_notifications_read_all(request: Request):
+@offload
+def account_notifications_read_all(request: Request):
     """Opening the notification center marks only notices already visible at open time as seen."""
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False}, status_code=401)
     now = _utcnow_naive()
     try:
-        body = await request.json()
+        body = on_loop(request.json)
     except Exception:
         body = {}
     try:
@@ -6867,7 +6912,7 @@ async def account_notifications_read_all(request: Request):
             )
         s.commit()
     if realtime_event:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True, "read_count": len(rows)}
 
 
@@ -7037,7 +7082,8 @@ def expert_support_cases(request: Request):
 
 
 @app.get("/expert-support/cases/{case_id}", response_class=HTMLResponse)
-async def expert_support_case_room(request: Request, case_id: int):
+@offload
+def expert_support_case_room(request: Request, case_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -7117,7 +7163,8 @@ def expert_support_case_media(request: Request, case_id: int, case_media_id: int
 
 
 @app.post("/expert-support/cases/{case_id}/expert-response")
-async def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
+@offload
+def expert_support_expert_response(request: Request, case_id: int, decision: str = Form(...), start_option: str = Form("NOW"), proposal_note: str = Form("")):
     wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
     if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
@@ -7188,18 +7235,19 @@ async def expert_support_expert_response(request: Request, case_id: int, decisio
         socket_state = _case_status_socket_payload(case)
     if status == "PROPOSED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, socket_state)
+    on_loop(consultation_socket_hub.broadcast, case_id, socket_state)
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     for notification_event in notification_events:
-        await _publish_realtime_event(notification_event)
+        on_loop(_publish_realtime_event, notification_event)
     if wants_json:
         return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
 @app.post("/expert-support/cases/{case_id}/proposal")
-async def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
+@offload
+def expert_support_proposal_decision(request: Request, case_id: int, decision: str = Form(...)):
     wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
     if not user: return JSONResponse({"ok": False, "error": "Oturum süresi doldu."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
@@ -7244,11 +7292,11 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
         s.commit(); status=case.status; patient_id=case.patient_id; response_state=_case_status_realtime_payload(case, user.id); socket_state=_case_status_socket_payload(case)
     if not rejected:
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, {**socket_state, "rejected_by_requester": rejected})
+    on_loop(consultation_socket_hub.broadcast, case_id, {**socket_state, 'rejected_by_requester': rejected})
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     for notification_event in notification_events:
-        await _publish_realtime_event(notification_event)
+        on_loop(_publish_realtime_event, notification_event)
     if wants_json:
         return JSONResponse({"ok": True, **response_state, "redirect_url": (f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support") if rejected else None})
     if rejected: return RedirectResponse(f"/expert-support?patient_id={patient_id}" if patient_id else "/expert-support", status_code=303)
@@ -7256,7 +7304,8 @@ async def expert_support_proposal_decision(request: Request, case_id: int, decis
 
 
 @app.post("/expert-support/cases/{case_id}/media-message")
-async def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
+@offload
+def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
     wants_json = request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", "")
     def upload_error(message: str, status_code: int = 400):
         return JSONResponse({"ok": False, "error": message}, status_code=status_code) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus(message)}", status_code=303)
@@ -7276,7 +7325,7 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
             case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
             notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
             status_events.extend(_record_case_status_realtime_events(s, case))
-        raw = await file.read()
+        raw = file.file.read()
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
             return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
         suffix = Path(file.filename or "").suffix.lower()
@@ -7312,11 +7361,11 @@ async def expert_support_media_message(request: Request, case_id: int, file: Upl
         s.commit()
         safe_client_message_id = client_message_id.strip()[:96] or None
         payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
-    await consultation_socket_hub.broadcast(case_id,payload)
+    on_loop(consultation_socket_hub.broadcast, case_id, payload)
     for realtime_event in status_events + realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     for notification_event in notification_events:
-        await _publish_realtime_event(notification_event)
+        on_loop(_publish_realtime_event, notification_event)
     return JSONResponse({"ok": True, "message": payload["message"]}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
@@ -7399,7 +7448,8 @@ def consultation_unblock_user(request: Request, case_id: int):
     return RedirectResponse(f"/expert-support/cases/{case_id}",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/report")
-async def consultation_report_user(request: Request, case_id: int, reason: str = Form(...), detail: str = Form("")):
+@offload
+def consultation_report_user(request: Request, case_id: int, reason: str = Form(...), detail: str = Form("")):
     user=get_current_user(request)
     if not user:return RedirectResponse("/login",status_code=303)
     allowed={"HARASSMENT","PROFANITY","SPAM","INAPPROPRIATE","OTHER"}
@@ -7425,13 +7475,14 @@ async def consultation_report_user(request: Request, case_id: int, reason: str =
         admins=s.exec(select(User).where(User.role=="ADMIN",User.is_active==True)).all()
         for admin in admins:admin_events.append(_record_realtime_event(s,admin.id,"USER_REPORT_CREATED","user_report",report.id,{"report_id":report.id,"case_id":case.id,"reporter_user_id":user.id,"status":"OPEN","requires_fragment":True}))
         s.commit()
-    if realtime_event:await _publish_realtime_event(realtime_event)
-    for event in admin_events:await _publish_realtime_event(event)
+    if realtime_event:on_loop(_publish_realtime_event, realtime_event)
+    for event in admin_events:on_loop(_publish_realtime_event, event)
     if wants_json:return JSONResponse({"ok":True,"report_id":report.id,"case_id":case.id})
     return RedirectResponse(f"/expert-support/cases/{case_id}?reported=1",status_code=303)
 
 @app.post("/expert-support/cases/{case_id}/message")
-async def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
+@offload
+def expert_support_message(request: Request, case_id: int, content: str = Form(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
     wants_json = "application/json" in request.headers.get("accept", "") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     user = get_current_user(request)
     if not user:
@@ -7495,11 +7546,11 @@ async def expert_support_message(request: Request, case_id: int, content: str = 
         s.commit()
         safe_client_message_id = client_message_id.strip()[:96] or None
         payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat(), "client_message_id": safe_client_message_id}}
-    await consultation_socket_hub.broadcast(case_id, {"type": "message", "message": payload["message"]})
+    on_loop(consultation_socket_hub.broadcast, case_id, {'type': 'message', 'message': payload['message']})
     for realtime_event in status_events + realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     for notification_event in notification_events:
-        await _publish_realtime_event(notification_event)
+        on_loop(_publish_realtime_event, notification_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
@@ -8331,7 +8382,8 @@ def expert_support_review(request: Request, case_id: int, rating: int = Form(...
 
 
 @app.post("/expert-support/cases/{case_id}/complete")
-async def expert_support_complete(request: Request, case_id: int, action: str = Form("COMPLETE")):
+@offload
+def expert_support_complete(request: Request, case_id: int, action: str = Form("COMPLETE")):
     user = get_current_user(request)
     wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
     if not user:
@@ -8426,11 +8478,11 @@ async def expert_support_complete(request: Request, case_id: int, action: str = 
         socket_state = _case_status_socket_payload(case)
     if status == "EXPERT_COMPLETED":
         _wake_consultation_deadline_worker()
-    await consultation_socket_hub.broadcast(case_id, socket_state)
+    on_loop(consultation_socket_hub.broadcast, case_id, socket_state)
     for realtime_event in realtime_events:
-        await _publish_realtime_event(realtime_event)
+        on_loop(_publish_realtime_event, realtime_event)
     for notification_event in notification_events:
-        await _publish_realtime_event(notification_event)
+        on_loop(_publish_realtime_event, notification_event)
     if wants_json:
         return JSONResponse({"ok": True, **response_state})
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
@@ -8448,7 +8500,8 @@ def new_patient(request: Request):
     )
 
 @app.post("/patients/new")
-async def create_patient(
+@offload
+def create_patient(
     request: Request,
     first_name: str = Form(...),
     last_name: str = Form(...),
@@ -8550,7 +8603,7 @@ async def create_patient(
         s.commit()
 
         for patient_event in patient_events:
-            await _publish_realtime_event(patient_event)
+            on_loop(_publish_realtime_event, patient_event)
 
         if request.query_params.get("next") == "analysis":
             return RedirectResponse(
@@ -9059,7 +9112,8 @@ def patient_realtime_snapshot(request: Request, patient_id: int):
 
 
 @app.post("/patients/{patient_id}/edit")
-async def edit_patient(
+@offload
+def edit_patient(
     request: Request,
     patient_id: int,
     first_name: str = Form(...),
@@ -9107,14 +9161,15 @@ async def edit_patient(
         patient_events = _record_patient_realtime_events(s, patient, "PATIENT_UPDATED", profile)
         s.commit()
     for patient_event in patient_events:
-        await _publish_realtime_event(patient_event)
+        on_loop(_publish_realtime_event, patient_event)
     if "application/json" in request.headers.get("accept", ""):
         return {"ok": True, "patient_id": patient_id}
     return RedirectResponse(f"/patients/{patient_id}?updated=1", status_code=303)
 
 
 @app.post("/patients/{patient_id}/delete")
-async def delete_patient(request: Request, patient_id: int):
+@offload
+def delete_patient(request: Request, patient_id: int):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -9129,7 +9184,7 @@ async def delete_patient(request: Request, patient_id: int):
         s.delete(patient)
         s.commit()
     for patient_event in patient_events:
-        await _publish_realtime_event(patient_event)
+        on_loop(_publish_realtime_event, patient_event)
     if "application/json" in request.headers.get("accept", ""):
         return {"ok": True, "patient_id": patient_id}
     return RedirectResponse("/patients?deleted=1", status_code=303)
@@ -9230,7 +9285,8 @@ def _parse_patient_media_ids(raw_value: Optional[str]) -> list[int]:
 
 
 @app.post("/patients/{patient_id}/media")
-async def upload_patient_media(
+@offload
+def upload_patient_media(
     request: Request,
     patient_id: int,
     media_type: str = Form(...),
@@ -9275,7 +9331,7 @@ async def upload_patient_media(
                 total = 0
                 with destination.open("wb") as buffer:
                     while True:
-                        chunk = await upload.read(1024 * 1024)
+                        chunk = upload.file.read(1024 * 1024)
                         if not chunk:
                             break
                         total += len(chunk)
@@ -10306,7 +10362,8 @@ ve tedavi yaklaşımını etkileyebilecek güncel kanıtları bul.
 
 
 @app.post("/analysis/guest/new")
-async def create_guest_analysis(
+@offload
+def create_guest_analysis(
     request: Request,
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
@@ -10383,7 +10440,8 @@ async def create_guest_analysis(
 
 
 @app.post("/analysis/new/{patient_id}")
-async def create_analysis(
+@offload
+def create_analysis(
     request: Request,
     patient_id: int,
     background_tasks: BackgroundTasks,
@@ -10521,22 +10579,46 @@ def _set_site_setting(session: Session, key: str, value: str, admin_id: int):
     if not row: row=SiteSetting(key=key)
     row.value=value; row.updated_by_user_id=admin_id; row.updated_at=_utcnow_naive(); session.add(row)
 
+def _maintenance_response(request):
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            rows = session.exec(select(SiteSetting).where(
+                SiteSetting.key.in_(["maintenance_mode", "maintenance_message"])
+            )).all()
+            settings = {row.key: row.value for row in rows}
+        if settings.get("maintenance_mode") == "1":
+            user = get_current_user(request)
+            if not user or user.role != "ADMIN":
+                message = html.escape(settings.get("maintenance_message") or "Kısa süre sonra tekrar deneyin.")
+                return HTMLResponse("<h2>Dental AI kısa süreli bakımda</h2><p>" + message + "</p>", status_code=503)
+    except Exception:
+        logger.exception("Maintenance settings unavailable")
+    return None
+
+
 @app.middleware("http")
 async def admin_maintenance_guard(request: Request, call_next):
-    path=request.url.path
-    if path.startswith("/static") or path.startswith(ADMIN_CENTER_PATH) or path in {"/login","/logout","/site/runtime-config"}:
+    path = request.url.path
+    if path.startswith("/static") or path.startswith(ADMIN_CENTER_PATH) or path in {"/login", "/logout", "/site/runtime-config", "/healthz", "/readyz"}:
         return await call_next(request)
+    response = await run_in_threadpool(_maintenance_response, request)
+    return response if response is not None else await call_next(request)
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz():
     try:
-        with Session(engine, expire_on_commit=False) as s:
-            row=s.exec(select(SiteSetting).where(SiteSetting.key=="maintenance_mode")).first()
-            if row and row.value=="1":
-                user=get_current_user(request)
-                if not user or user.role!="ADMIN":
-                    msg=s.exec(select(SiteSetting).where(SiteSetting.key=="maintenance_message")).first()
-                    return HTMLResponse("<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><title>Dental AI Bakım</title><div style='font-family:system-ui;max-width:420px;margin:20vh auto;padding:24px'><h2>Dental AI kısa süreli bakımda</h2><p>"+html.escape((msg.value if msg else "") or "Kısa süre sonra tekrar deneyin.")+"</p></div>",status_code=503)
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"ok": True}
     except Exception:
-        pass
-    return await call_next(request)
+        return JSONResponse({"ok": False}, status_code=503)
+
 
 @app.get("/site/runtime-config")
 def site_runtime_config():
@@ -10822,7 +10904,8 @@ def admin_center_user_detail(request: Request, user_id: int):
 
 
 @app.post(ADMIN_CENTER_PATH + "/settings")
-async def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
+@offload
+def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     allowed={"home_title","home_subtitle","announcement","faq_text","legal_text","maintenance_mode","maintenance_message","site_name","support_email"}
@@ -10833,11 +10916,12 @@ async def admin_center_settings(request: Request, section: str = Form(...), key:
         setting_events=[_record_realtime_event(s,target.id,"SITE_CONFIG_UPDATED","site_setting",key,{"key":key,"value":value.strip()}) for target in targets]
         s.add(AdminAuditLog(admin_user_id=admin.id,action="SETTING_UPDATED",detail=key));s.commit()
     for setting_event in setting_events:
-        await _publish_realtime_event(setting_event)
+        on_loop(_publish_realtime_event, setting_event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section={section}",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/broadcast")
-async def admin_center_broadcast(request: Request, title: str = Form(...), message: str = Form(...)):
+@offload
+def admin_center_broadcast(request: Request, title: str = Form(...), message: str = Form(...)):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     title=title.strip()[:120];message=message.strip()[:2000]
@@ -10863,7 +10947,7 @@ async def admin_center_broadcast(request: Request, title: str = Form(...), messa
                 delivered += 1
         s.add(AdminAuditLog(admin_user_id=admin.id,action="BROADCAST_SENT",detail=f"{title} · {delivered} kullanıcı"));s.commit()
     for event in notice_events:
-        await _publish_realtime_event(event)
+        on_loop(_publish_realtime_event, event)
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=broadcast",status_code=303)
 
 @app.get(ADMIN_CENTER_PATH + "/support-fragment", response_class=HTMLResponse)
@@ -10935,7 +11019,8 @@ def admin_center_support_conversation(request: Request, ticket_id: int, before_i
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/read")
-async def admin_center_support_read(request: Request, ticket_id: int, through_message_id: Optional[int] = Form(None)):
+@offload
+def admin_center_support_read(request: Request, ticket_id: int, through_message_id: Optional[int] = Form(None)):
     admin=_admin_only(request)
     if not admin:return JSONResponse({"ok":False},status_code=403)
     with Session(engine,expire_on_commit=False) as s:
@@ -10947,7 +11032,8 @@ async def admin_center_support_read(request: Request, ticket_id: int, through_me
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}/message")
-async def admin_center_support_message(request: Request, ticket_id: int, message: str = Form(...)):
+@offload
+def admin_center_support_message(request: Request, ticket_id: int, message: str = Form(...)):
     admin=_admin_only(request)
     if not admin:return JSONResponse({"ok":False,"error":"Yetkisiz işlem."},status_code=403)
     message=message.strip()[:4000]
@@ -10982,9 +11068,9 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
             ))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="SUPPORT_MESSAGE_SENT",target_user_id=ticket.user_id,detail=f"#{ticket.id}"))
         s.commit()
-    if user_event:await _publish_realtime_event(user_event)
-    if notice_event:await _publish_realtime_event(notice_event)
-    for event in peer_events:await _publish_realtime_event(event)
+    if user_event:on_loop(_publish_realtime_event, user_event)
+    if notice_event:on_loop(_publish_realtime_event, notice_event)
+    for event in peer_events:on_loop(_publish_realtime_event, event)
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     if wants_json:
         return JSONResponse({"ok":True,"ticket_id":ticket.id,"message_id":support_message.id,"status":ticket.status,"message":support_message.message,"created_at":support_message.created_at.isoformat(),"sender_role":"ADMIN"})
@@ -10992,7 +11078,8 @@ async def admin_center_support_message(request: Request, ticket_id: int, message
 
 
 @app.post(ADMIN_CENTER_PATH + "/support/{ticket_id}")
-async def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
+@offload
+def admin_center_support_update(request: Request, ticket_id: int, status: str = Form(...), reply: str = Form("")):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
@@ -11031,14 +11118,15 @@ async def admin_center_support_update(request: Request, ticket_id: int, status: 
         action="SUPPORT_CLOSED" if status=="CLOSED" else "SUPPORT_IN_PROGRESS"
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,{"ticket_id":ticket.id,"status":status,"requires_fragment":False,"has_reply":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action=action,target_user_id=ticket.user_id,detail=f"#{ticket.id}"));s.commit()
-    if notice_event:await _publish_realtime_event(notice_event)
-    if user_status_event:await _publish_realtime_event(user_status_event)
-    for event in admin_events:await _publish_realtime_event(event)
+    if notice_event:on_loop(_publish_realtime_event, notice_event)
+    if user_status_event:on_loop(_publish_realtime_event, user_status_event)
+    for event in admin_events:on_loop(_publish_realtime_event, event)
     if wants_json:return JSONResponse({"ok":True,"ticket_id":ticket.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=support",status_code=303)
 
 @app.post(ADMIN_CENTER_PATH + "/reports/{report_id}")
-async def admin_center_report_update(request: Request, report_id: int, status: str = Form(...)):
+@offload
+def admin_center_report_update(request: Request, report_id: int, status: str = Form(...)):
     admin=_admin_only(request)
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if status not in {"OPEN","IN_PROGRESS","CLOSED"}:return HTMLResponse("Geçersiz durum.",status_code=400)
@@ -11073,9 +11161,9 @@ async def admin_center_report_update(request: Request, report_id: int, status: s
             )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
-    if notice_event: await _publish_realtime_event(notice_event)
-    if report_support_event: await _publish_realtime_event(report_support_event)
-    for event in admin_events:await _publish_realtime_event(event)
+    if notice_event: on_loop(_publish_realtime_event, notice_event)
+    if report_support_event: on_loop(_publish_realtime_event, report_support_event)
+    for event in admin_events:on_loop(_publish_realtime_event, event)
     if wants_json:return JSONResponse({"ok":True,"report_id":report.id,"status":status})
     return RedirectResponse(f"{ADMIN_CENTER_PATH}?section=complaints",status_code=303)
 
@@ -11227,7 +11315,8 @@ def admin_center_expert_status(request: Request, user_id: int, action: str = For
 
 
 @app.post(ADMIN_CENTER_PATH + "/users/{user_id}/notice")
-async def admin_center_notice(request: Request, user_id: int, title: str = Form(...), message: str = Form(...)):
+@offload
+def admin_center_notice(request: Request, user_id: int, title: str = Form(...), message: str = Form(...)):
     admin=_admin_only(request)
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     title=title.strip();message=message.strip()
@@ -11245,12 +11334,13 @@ async def admin_center_notice(request: Request, user_id: int, title: str = Form(
         )
         s.add(AdminAuditLog(admin_user_id=admin.id,action="NOTICE_SENT",target_user_id=user_id,detail=title[:120]));s.commit()
     if notice_event:
-        await _publish_realtime_event(notice_event)
+        on_loop(_publish_realtime_event, notice_event)
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
 @app.post(ADMIN_CENTER_PATH + "/expert-verifications/{profile_id}")
-async def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
+@offload
+def admin_center_verify(request: Request, profile_id: int, decision: str = Form(...)):
     admin=_admin_only(request)
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if decision not in {"APPROVE","REJECT","SUBMITTED"}: return HTMLResponse("Geçersiz karar.",status_code=400)
@@ -11294,7 +11384,7 @@ async def admin_center_verify(request: Request, profile_id: int, decision: str =
         )
         profile.updated_at=_utcnow_naive();s.add(profile);s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_"+decision,target_user_id=profile.user_id));s.commit()
     if notice_event:
-        await _publish_realtime_event(notice_event)
+        on_loop(_publish_realtime_event, notice_event)
     return RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
 
 
@@ -11392,10 +11482,11 @@ def guest_analysis_result(request: Request, analysis_id: int):
 
 
 @app.post("/analysis/{analysis_id}/viewer-note")
-async def save_analysis_viewer_note(request: Request, analysis_id: int):
+@offload
+def save_analysis_viewer_note(request: Request, analysis_id: int):
     user = get_current_user(request)
     if not user: return JSONResponse({"ok":False}, status_code=401)
-    body = await request.json()
+    body = on_loop(request.json)
     tooth = str(body.get("tooth") or "").strip()
     note = str(body.get("note") or "").strip()
     if not note: return JSONResponse({"ok":False,"error":"Not boş olamaz."}, status_code=400)
@@ -11412,10 +11503,11 @@ async def save_analysis_viewer_note(request: Request, analysis_id: int):
 
 
 @app.post("/analysis/guest/{analysis_id}/viewer-note")
-async def save_guest_viewer_note(request: Request, analysis_id: int):
+@offload
+def save_guest_viewer_note(request: Request, analysis_id: int):
     user = get_current_user(request)
     if not user: return JSONResponse({"ok":False}, status_code=401)
-    body = await request.json()
+    body = on_loop(request.json)
     tooth = str(body.get("tooth") or "").strip()
     note = str(body.get("note") or "").strip()
     if not note: return JSONResponse({"ok":False,"error":"Not boş olamaz."}, status_code=400)
@@ -11431,10 +11523,11 @@ async def save_guest_viewer_note(request: Request, analysis_id: int):
 
 
 @app.post("/analysis/{analysis_id}/viewer-finding")
-async def save_viewer_finding(request: Request, analysis_id: int):
+@offload
+def save_viewer_finding(request: Request, analysis_id: int):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
-    body=await request.json(); tooth=str(body.get("tooth") or "").strip(); finding=str(body.get("finding") or "").strip(); note=str(body.get("note") or "").strip()
+    body=on_loop(request.json); tooth=str(body.get("tooth") or "").strip(); finding=str(body.get("finding") or "").strip(); note=str(body.get("note") or "").strip()
     if not finding:return JSONResponse({"ok":False,"error":"Bulgu gerekli."},status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         analysis=s.get(Analysis,analysis_id); patient=s.get(Patient,analysis.patient_id) if analysis else None
@@ -11446,10 +11539,11 @@ async def save_viewer_finding(request: Request, analysis_id: int):
     return JSONResponse({"ok":True})
 
 @app.post("/analysis/{analysis_id}/viewer-analyze")
-async def viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+@offload
+def viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
-    try: body=await request.json()
+    try: body=on_loop(request.json)
     except Exception: body={}
     teeth=[str(x).strip() for x in (body.get("teeth") or []) if str(x).strip()]
     with Session(engine, expire_on_commit=False) as s:
@@ -11463,10 +11557,11 @@ async def viewer_analyze(request: Request, analysis_id: int, background_tasks: B
 
 
 @app.post("/analysis/guest/{analysis_id}/viewer-analyze")
-async def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
+@offload
+def guest_viewer_analyze(request: Request, analysis_id: int, background_tasks: BackgroundTasks):
     user=get_current_user(request)
     if not user:return JSONResponse({"ok":False},status_code=401)
-    try: body=await request.json()
+    try: body=on_loop(request.json)
     except Exception: body={}
     teeth=[str(x).strip() for x in (body.get("teeth") or []) if str(x).strip()]
     with Session(engine, expire_on_commit=False) as s:
@@ -11853,7 +11948,8 @@ def analysis_result(request: Request, analysis_id: int):
 
 
 @app.post("/analysis/guest/{analysis_id}/final", response_class=HTMLResponse)
-async def guest_final_analysis(
+@offload
+def guest_final_analysis(
     request: Request,
     analysis_id: int
 ):
@@ -11917,7 +12013,7 @@ async def guest_final_analysis(
 
         image_path = image_paths[0] if image_paths else None
 
-        form = await request.form()
+        form = on_loop(request.form)
 
         answers = {}
 
@@ -12059,7 +12155,8 @@ async def guest_final_analysis(
 
 
 @app.post("/analysis/{analysis_id}/final", response_class=HTMLResponse)
-async def final_analysis(
+@offload
+def final_analysis(
     request: Request,
     analysis_id: int
 ):
@@ -12142,7 +12239,7 @@ async def final_analysis(
     # HEKİM CEVAPLARINI AL
     # -----------------------------------------------------
 
-    form = await request.form()
+    form = on_loop(request.form)
 
     answers = {}
 

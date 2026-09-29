@@ -5,6 +5,7 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 import uuid
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def enabled() -> bool:
 
 def _post_no_body(path: str) -> dict:
     req = urllib.request.Request(f"{TVEM_URL}{path}", data=b"", method="POST")
-    with urllib.request.urlopen(req, timeout=TVEM_TIMEOUT) as resp:
+    with urlopen(req, timeout=TVEM_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -57,7 +58,7 @@ def _detect(model_name: str, image_path: str, confidence: float) -> dict:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=TVEM_TIMEOUT) as resp:
+    with urlopen(req, timeout=TVEM_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 

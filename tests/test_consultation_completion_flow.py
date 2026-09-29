@@ -229,7 +229,7 @@ def test_dispute_is_open_for_capacity_and_inbox_not_history():
 
 def test_requester_decisions_consume_completion_deadline():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
-    complete = source.split('async def expert_support_complete', 1)[1].split('@app.get("/patients/new"', 1)[0]
+    complete = source.split('def expert_support_complete', 1)[1].split('@app.get("/patients/new"', 1)[0]
     assert 'case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"' in complete
     assert 'case.status = "ACTIVE"; case.completion_confirmation_deadline = None;' in complete
     assert 'case.status = "DISPUTE"\n            case.completion_confirmation_deadline = None' in complete

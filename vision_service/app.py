@@ -1,7 +1,8 @@
 from pathlib import Path
+from contextlib import contextmanager, ExitStack
+from app.execution import CapacityExceeded, WorkGate
 import hmac
 import os
-import shutil
 import tempfile
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
@@ -72,59 +73,101 @@ def readiness(_:None=Depends(require_vision_key)): return readiness_snapshot()
 def motor_catalog(_:None=Depends(require_vision_key)):
     return {"total":len(MOTOR_SPECS),"motors":[{"code":spec.code,"label":FINDING_CATALOG[spec.code][0],"category":FINDING_CATALOG[spec.code][1],"strategy":spec.strategy,"sources":list(spec.sources),"description":spec.description} for spec in MOTOR_SPECS.values()]}
 
-async def _save_upload(image:UploadFile, default_name:str):
-    suffix=Path(image.filename or default_name).suffix.lower()
-    if suffix not in {".jpg",".jpeg",".png",".webp",".bmp",".tif",".tiff"}: raise HTTPException(status_code=400,detail="Desteklenmeyen görüntü formatı.")
-    tmp=tempfile.NamedTemporaryFile(delete=False,suffix=suffix); shutil.copyfileobj(image.file,tmp); tmp.close(); return tmp.name
+# One process and one in-flight local inference until model concurrency is tested.
+_vision_gate = WorkGate(1)
+_MAX_IMAGE_BYTES = int(os.getenv("VISION_MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
+
+
+@contextmanager
+def _admit_vision():
+    try:
+        with _vision_gate.enter():
+            yield
+    except CapacityExceeded as exc:
+        raise HTTPException(503, "Vision is busy; retry later", headers={"Retry-After": "2"}) from exc
+
+
+@contextmanager
+def _saved_image(image, default_name):
+    suffix = Path(image.filename or default_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
+        raise HTTPException(400, "Desteklenmeyen görüntü formatı.")
+    with tempfile.TemporaryDirectory(prefix="dental-vision-") as directory:
+        path = Path(directory) / ("input" + suffix)
+        with path.open("wb") as target:
+            total = 0
+            while True:
+                part = image.file.read(1024 * 1024)
+                if not part:
+                    break
+                total += len(part)
+                if total > _MAX_IMAGE_BYTES:
+                    raise HTTPException(413, "Image exceeds the configured upload limit")
+                target.write(part)
+        if not total:
+            raise HTTPException(400, "Empty image")
+        yield str(path)
+
 
 @app.post("/analyze")
-async def analyze_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
-    p=None
-    try: p=await _save_upload(image,"image.jpg"); return analyze_panorama(p)
-    except VisionError as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
-    finally:
-        if p: Path(p).unlink(missing_ok=True)
+def analyze_image(image: UploadFile = File(...), _: None = Depends(require_vision_key)):
+    with _admit_vision(), _saved_image(image, "image.jpg") as path:
+        try:
+            return analyze_panorama(path)
+        except VisionError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+
 @app.post("/analyze-intraoral")
-async def analyze_intraoral_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
-    p=None
-    try:
-        p=await _save_upload(image,"intraoral.jpg")
-        if intraoral_ensemble_configured(): return analyze_intraoral_ensemble(p)
-        if oraldetect_configured():
-            r=analyze_intraoral(p); r["engine_role"]="fallback"; return r
-        raise IntraoralEnsembleError("Ağız içi analiz motoru yapılandırılmadı. INTRAORAL_ENSEMBLE_URL gerekli.")
-    except (IntraoralEnsembleError,OralDetectError) as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
-    finally:
-        if p: Path(p).unlink(missing_ok=True)
+def analyze_intraoral_image(image: UploadFile = File(...), _: None = Depends(require_vision_key)):
+    with _admit_vision(), _saved_image(image, "intraoral.jpg") as path:
+        try:
+            if intraoral_ensemble_configured():
+                return analyze_intraoral_ensemble(path)
+            if oraldetect_configured():
+                result = analyze_intraoral(path)
+                result["engine_role"] = "fallback"
+                return result
+            raise IntraoralEnsembleError("INTRAORAL_ENSEMBLE_URL gerekli.")
+        except (IntraoralEnsembleError, OralDetectError) as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+
 @app.post("/analyze-bitewing")
-async def analyze_bitewing_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
-    p=None
-    try: p=await _save_upload(image,"bitewing.jpg"); return analyze_bitewing(p)
-    except BitewingEngineError as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
-    finally:
-        if p: Path(p).unlink(missing_ok=True)
+def analyze_bitewing_image(image: UploadFile = File(...), _: None = Depends(require_vision_key)):
+    with _admit_vision(), _saved_image(image, "bitewing.jpg") as path:
+        try:
+            return analyze_bitewing(path)
+        except BitewingEngineError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+
 @app.post("/analyze-periapical")
-async def analyze_periapical_image(image:UploadFile=File(...),_:None=Depends(require_vision_key)):
-    p=None
-    try: p=await _save_upload(image,"periapical.jpg"); return analyze_periapical(p)
-    except PeriapicalPAIError as exc: raise HTTPException(status_code=503,detail=str(exc)) from exc
-    finally:
-        if p: Path(p).unlink(missing_ok=True)
+def analyze_periapical_image(image: UploadFile = File(...), _: None = Depends(require_vision_key)):
+    with _admit_vision(), _saved_image(image, "periapical.jpg") as path:
+        try:
+            return analyze_periapical(path)
+        except PeriapicalPAIError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
 
 @app.post("/photo3d/reconstruct")
-async def photo3d_reconstruct(images:list[UploadFile]=File(...),_:None=Depends(require_vision_key)):
-    chosen=[x for x in images if x and x.filename][:8]
-    if not chosen: raise HTTPException(status_code=400,detail="En az bir ağız içi fotoğraf gerekli.")
-    paths=[]
-    try:
-        for u in chosen: paths.append(await _save_upload(u,"photo.jpg"))
-        return reconstruct(paths)
-    except Photo3DError as exc: raise HTTPException(status_code=422,detail=str(exc)) from exc
-    finally:
-        for p in paths: Path(p).unlink(missing_ok=True)
+def photo3d_reconstruct(images: list[UploadFile] = File(...), _: None = Depends(require_vision_key)):
+    chosen = [item for item in images if item and item.filename][:8]
+    if not chosen:
+        raise HTTPException(400, "En az bir ağız içi fotoğraf gerekli.")
+    with _admit_vision(), ExitStack() as stack:
+        paths = [stack.enter_context(_saved_image(item, "photo.jpg")) for item in chosen]
+        try:
+            return reconstruct(paths)
+        except Photo3DError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
 
 @app.get("/diagnostics/runtime/{stage}")
 def diagnostics_runtime(stage:str,_:None=Depends(require_vision_key)):
+    if os.getenv("DENTAL_RUNTIME_DIAGNOSTICS", "0") != "1":
+        raise HTTPException(status_code=404, detail="Not found")
     import subprocess,sys
     probes={"torch":"import resource; print('BEFORE_MB', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, flush=True); import torch; print('TORCH_OK', torch.__version__, flush=True); print('AFTER_MB', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, flush=True)","ultralytics":"import resource; print('BEFORE_MB', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, flush=True); from ultralytics import YOLO; print('ULTRALYTICS_OK', flush=True); print('AFTER_MB', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024, flush=True)","opencv":"import cv2; print('OPENCV_OK', cv2.__version__, flush=True)"}
     if stage not in probes: raise HTTPException(status_code=400,detail="stage torch, ultralytics veya opencv olmalı")

@@ -10,6 +10,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 from dataclasses import dataclass
 from typing import Callable, Iterator
 
@@ -281,7 +282,7 @@ class GeminiStudyProvider(StudyProvider):
             )
             started = time.perf_counter()
             try:
-                with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
+                with urlopen(request, timeout=timeout or self.timeout) as response:
                     body = response.read().decode("utf-8")
                     try:
                         result = json.loads(body)
@@ -458,7 +459,7 @@ class GeminiStudyProvider(StudyProvider):
         started = time.perf_counter()
         emitted = False
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 for raw_line in response:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data:"):
@@ -601,7 +602,7 @@ class CohereStudyProvider(StudyProvider):
         )
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8")
                 try:
                     result = json.loads(body)
@@ -780,7 +781,7 @@ class OpenAICompatibleStudyProvider(StudyProvider):
         )
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8")
                 try:
                     result = json.loads(body)

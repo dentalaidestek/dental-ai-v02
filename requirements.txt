@@ -19,3 +19,6 @@ tesserocr==2.11.0
 boto3>=1.35,<2
 websockets==15.0.1
 pywebpush>=2.0,<3
+
+# Bounded provider connection pools
+urllib3==2.8.0

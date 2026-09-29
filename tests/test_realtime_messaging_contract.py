@@ -37,10 +37,10 @@ def test_message_event_is_durable_for_both_participants():
 
 
 def test_http_text_send_broadcasts_room_after_commit():
-    endpoint = MAIN.split("async def expert_support_message(", 1)[1].split("@app.get", 1)[0]
+    endpoint = MAIN.split("def expert_support_message(", 1)[1].split("@app.get", 1)[0]
     assert "s.commit()" in endpoint
-    assert "await consultation_socket_hub.broadcast" in endpoint
-    assert endpoint.index("s.commit()") < endpoint.index("await consultation_socket_hub.broadcast")
+    assert "on_loop(consultation_socket_hub.broadcast" in endpoint
+    assert endpoint.index("s.commit()") < endpoint.index("on_loop(consultation_socket_hub.broadcast")
     assert "for realtime_event in realtime_events" in endpoint
 
 
@@ -245,9 +245,9 @@ def test_notification_center_open_marks_active_notices_seen():
     assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
     assert '"NOTIFICATIONS_READ"' in MAIN
     assert 'evt.event_type==="NOTIFICATIONS_READ"' in BASE
-    read_all = MAIN.split("async def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
+    read_all = MAIN.split("def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
     assert "_record_realtime_event" in read_all
-    assert "await _publish_realtime_event(realtime_event)" in read_all
+    assert "on_loop(_publish_realtime_event, realtime_event)" in read_all
 
 
 

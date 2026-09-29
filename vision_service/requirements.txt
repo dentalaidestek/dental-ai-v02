@@ -3,3 +3,4 @@ uvicorn[standard]
 python-multipart
 ultralytics
 huggingface_hub
+urllib3==2.8.0
