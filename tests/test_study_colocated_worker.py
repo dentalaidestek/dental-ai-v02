@@ -19,7 +19,7 @@ def test_worker_environment_is_low_footprint_and_overrideable():
     environment = worker.build_worker_environment({})
     assert environment["STUDY_V2_RESOURCE_CLASS"] == "MIXED"
     assert environment["STUDY_V2_DB_POOL_SIZE"] == "1"
-    assert environment["STUDY_V2_PARSE_BATCH_PAGES"] == "4"
+    assert environment["STUDY_V2_PARSE_BATCH_PAGES"] == "12"
 
     overridden = worker.build_worker_environment({"STUDY_V2_DB_POOL_SIZE": "2"})
     assert overridden["STUDY_V2_DB_POOL_SIZE"] == "2"

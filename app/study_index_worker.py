@@ -8,6 +8,7 @@ checkpoint; process memory is never authoritative.
 from __future__ import annotations
 
 import hashlib
+import gc
 import json
 import logging
 import os
@@ -191,76 +192,84 @@ def _upsert_chunk(
 
 
 def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
+    # PdfReader keeps cyclic page/xref graphs. Reclaim the previous bounded
+    # slice before opening the document again on memory-limited workers.
+    gc.collect()
     reader = PdfReader(str(path))
-    max_pages = _int_env("STUDY_RAG_MAX_PDF_PAGES", 300, 1, 2000)
-    if len(reader.pages) > max_pages:
-        raise RuntimeError(f"PDF_PAGE_LIMIT:{len(reader.pages)}>{max_pages}")
-    batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 12, 1, 50)
-    missing = missing_page_numbers(
-        session,
-        material_id=job.material_id,
-        index_version=job.index_version,
-        page_count=len(reader.pages),
-        limit=batch,
-    )
-    if not missing:
-        return "CHUNK"
+    try:
+        max_pages = _int_env("STUDY_RAG_MAX_PDF_PAGES", 300, 1, 2000)
+        if len(reader.pages) > max_pages:
+            raise RuntimeError(f"PDF_PAGE_LIMIT:{len(reader.pages)}>{max_pages}")
+        batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 12, 1, 50)
+        missing = missing_page_numbers(
+            session,
+            material_id=job.material_id,
+            index_version=job.index_version,
+            page_count=len(reader.pages),
+            limit=batch,
+        )
+        if not missing:
+            return "CHUNK"
 
-    for page_number in missing:
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
-        quality_ok, quality_reason = _text_quality(text)
-        if not quality_ok:
-            # OCR is a separate constrained stage. Empty or suspiciously
-            # garbled extraction is never accepted merely because pypdf
-            # returned a non-empty string.
-            upsert_page_checkpoint(
-                session,
-                owner_user_id=job.owner_user_id,
-                course_id=job.course_id,
-                material_id=job.material_id,
-                index_version=job.index_version,
-                page_number=page_number,
-                status="OCR_REQUIRED",
-                text_content=None,
-                extraction_method="PDF_TEXT",
-                content_sha256=None,
-                error=f"OCR_REQUIRED:{quality_reason}",
-            )
-        else:
-            digest = _sha256_text(text)
-            upsert_page_checkpoint(
-                session,
-                owner_user_id=job.owner_user_id,
-                course_id=job.course_id,
-                material_id=job.material_id,
-                index_version=job.index_version,
-                page_number=page_number,
-                status="EXTRACTED",
-                text_content=text,
-                extraction_method="PDF_TEXT",
-                content_sha256=digest,
-            )
-        session.commit()
+        for page_number in missing:
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
+            text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
+            quality_ok, quality_reason = _text_quality(text)
+            if not quality_ok:
+                # OCR is a separate constrained stage. Empty or suspiciously
+                # garbled extraction is never accepted merely because pypdf
+                # returned a non-empty string.
+                upsert_page_checkpoint(
+                    session,
+                    owner_user_id=job.owner_user_id,
+                    course_id=job.course_id,
+                    material_id=job.material_id,
+                    index_version=job.index_version,
+                    page_number=page_number,
+                    status="OCR_REQUIRED",
+                    text_content=None,
+                    extraction_method="PDF_TEXT",
+                    content_sha256=None,
+                    error=f"OCR_REQUIRED:{quality_reason}",
+                )
+            else:
+                digest = _sha256_text(text)
+                upsert_page_checkpoint(
+                    session,
+                    owner_user_id=job.owner_user_id,
+                    course_id=job.course_id,
+                    material_id=job.material_id,
+                    index_version=job.index_version,
+                    page_number=page_number,
+                    status="EXTRACTED",
+                    text_content=text,
+                    extraction_method="PDF_TEXT",
+                    content_sha256=digest,
+                )
+            session.commit()
 
-    remaining = missing_page_numbers(
-        session,
-        material_id=job.material_id,
-        index_version=job.index_version,
-        page_count=len(reader.pages),
-        limit=1,
-    )
-    if remaining:
-        return "PARSE"
-    unresolved = session.exec(
-        select(StudyIndexPage)
-        .where(StudyIndexPage.material_id == job.material_id)
-        .where(StudyIndexPage.index_version == job.index_version)
-        .where(StudyIndexPage.status == "OCR_REQUIRED")
-    ).first()
-    return "OCR" if unresolved else "CHUNK"
+        remaining = missing_page_numbers(
+            session,
+            material_id=job.material_id,
+            index_version=job.index_version,
+            page_count=len(reader.pages),
+            limit=1,
+        )
+        if remaining:
+            return "PARSE"
+        unresolved = session.exec(
+            select(StudyIndexPage)
+            .where(StudyIndexPage.material_id == job.material_id)
+            .where(StudyIndexPage.index_version == job.index_version)
+            .where(StudyIndexPage.status == "OCR_REQUIRED")
+        ).first()
+        return "OCR" if unresolved else "CHUNK"
+    finally:
+        stream = getattr(reader, "stream", None)
+        if stream and hasattr(stream, "close"):
+            stream.close()
 
 
 def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
@@ -309,15 +318,21 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
 
 
 def _single_page_pdf(path, page_number: int) -> bytes:
+    gc.collect()
     reader = PdfReader(str(path))
-    if page_number < 1 or page_number > len(reader.pages):
-        raise RuntimeError(f"OCR_PAGE_OUT_OF_RANGE:{page_number}")
-    writer = PdfWriter()
-    writer.add_page(reader.pages[page_number - 1])
-    from io import BytesIO
-    output = BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    try:
+        if page_number < 1 or page_number > len(reader.pages):
+            raise RuntimeError(f"OCR_PAGE_OUT_OF_RANGE:{page_number}")
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_number - 1])
+        from io import BytesIO
+        output = BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    finally:
+        stream = getattr(reader, "stream", None)
+        if stream and hasattr(stream, "close"):
+            stream.close()
 
 
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:

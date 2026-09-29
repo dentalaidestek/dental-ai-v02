@@ -32,7 +32,9 @@ def build_worker_environment(source: Mapping[str, str] | None = None) -> dict[st
     defaults = {
         "STUDY_V2_RESOURCE_CLASS": "MIXED",
         "STUDY_V2_DB_POOL_SIZE": "1",
-        "STUDY_V2_PARSE_BATCH_PAGES": "4",
+        # PdfReader has a document-sized memory floor. Fewer, larger slices
+        # avoid reopening a large PDF dozens of times on the 512 MB instance.
+        "STUDY_V2_PARSE_BATCH_PAGES": "12",
         "STUDY_V2_CHUNK_BATCH_PAGES": "4",
         "STUDY_V2_EMBED_BATCH_CHUNKS": "4",
         "STUDY_V2_OCR_BATCH_PAGES": "1",
@@ -90,4 +92,3 @@ def start_colocated_worker_task() -> asyncio.Task | None:
     return asyncio.create_task(
         supervise_colocated_worker(), name="academic-v2-colocated-worker"
     )
-

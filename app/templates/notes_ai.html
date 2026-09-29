@@ -69,11 +69,37 @@
     const courseId = {{ course.id }};
     const materialCount = {{ material_count }};
     const v2Streaming = {{ 'true' if v2_streaming else 'false' }};
+    let v2Ready = {{ 'true' if v2_ready else 'false' }};
     const form = document.getElementById('studyChatForm');
     const input = document.getElementById('studyChatInput');
     const send = document.getElementById('studySendButton');
     const chat = document.getElementById('studyChat');
     const status = document.getElementById('studyChatStatus');
+
+    function applyIndexReadiness() {
+        const blocked = v2Streaming && !v2Ready;
+        input.disabled = !materialCount || blocked;
+        send.disabled = !materialCount || blocked;
+        document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
+        if (blocked) status.textContent='Ders notları hazırlanıyor. Bu sayfa açıkken otomatik devam edecek.';
+    }
+
+    async function waitForIndex() {
+        applyIndexReadiness();
+        if (!v2Streaming || v2Ready || document.hidden) return;
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/index-status',{credentials:'same-origin',cache:'no-store'});
+            const result=await response.json();
+            if (response.ok && result.ready) {
+                v2Ready=true;
+                applyIndexReadiness();
+                status.textContent='Ders notları hazır. Sorunu gönderebilirsin.';
+                setTimeout(() => { if (v2Ready) status.textContent=''; },3000);
+                return;
+            }
+        } catch (_) {}
+        setTimeout(waitForIndex,15000);
+    }
 
     function escapeHtml(value) {
         return value.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
@@ -159,7 +185,7 @@
             return;
         }
         status.textContent='';
-        addMessage('user', text, false, true);
+        const userMessage = addMessage('user', text, false, true);
         const pending = addMessage('assistant','',true,true);
         input.value='';
         input.style.height='auto';
@@ -204,6 +230,7 @@
             scrollChatBottom();
         } catch (err) {
             pending.remove();
+            userMessage.remove();
             status.textContent = err.message || 'Bir hata oluştu.';
         } finally {
             send.disabled=false;
@@ -223,6 +250,8 @@
         }
     });
     document.querySelectorAll('.study-quick-prompts button').forEach(btn => btn.addEventListener('click', () => sendMessage(btn.dataset.prompt)));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !v2Ready) waitForIndex(); });
+    waitForIndex();
     requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
 })();
 </script>

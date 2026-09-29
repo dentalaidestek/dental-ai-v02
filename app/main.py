@@ -4118,6 +4118,13 @@ def study_ai_page(request: Request, course_id: int):
             .where(StudyChatMessage.owner_user_id == user.id)
             .order_by(StudyChatMessage.id)
         ).all()
+        v2_ready = (
+            course_v2_ready(
+                s, material_model=StudyMaterial,
+                owner_user_id=user.id, course_id=course_id,
+            )
+            if study_v2_reads_enabled() else True
+        )
 
     return templates.TemplateResponse(
         request=request,
@@ -4127,7 +4134,26 @@ def study_ai_page(request: Request, course_id: int):
             "material_count": len(materials),
             "messages": messages[-40:],
             "v2_streaming": study_v2_streaming_enabled(),
+            "v2_ready": v2_ready,
         },
+    )
+
+
+@app.get("/notes/courses/{course_id}/ai/index-status")
+def study_ai_index_status(request: Request, course_id: int):
+    """Small authenticated readiness probe used only while this page is open."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        if not _owned_study_course(s, user, course_id):
+            return JSONResponse({"ok": False}, status_code=404)
+        ready = course_v2_ready(
+            s, material_model=StudyMaterial,
+            owner_user_id=user.id, course_id=course_id,
+        )
+    return JSONResponse(
+        {"ok": True, "ready": ready}, headers={"Cache-Control": "no-store"},
     )
 
 

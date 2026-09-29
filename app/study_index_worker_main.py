@@ -85,7 +85,14 @@ def main() -> None:
                     # One low-footprint process can service both queues on the
                     # free instance. Normal text work gets first opportunity;
                     # OCR work runs whenever that queue is idle.
-                    result = run_one_slice(session, resource_class="OCR_HEAVY")
+                    active_class = "OCR_HEAVY"
+                    result = run_one_slice(session, resource_class=active_class)
+                if result != "IDLE":
+                    logger.info(
+                        "Academic V2 slice resource_class=%s result=%s",
+                        active_class,
+                        result,
+                    )
                 loops += 1
                 if resource_class in {"NORMAL", "MIXED"}:
                     # Privacy erasure is serviced continuously and is never
