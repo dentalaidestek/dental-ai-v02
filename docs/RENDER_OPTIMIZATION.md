@@ -23,7 +23,7 @@ The earlier **1.115 ms** lexical result was a local reference benchmark. The imp
 | Durable application jobs | `work_jobs.py` | Dedupe, one running job per resource, bounded global/owner backlog, expiring leases, heartbeat, source/owner fencing, bounded retries, cancellation, 30-day history cleanup. PostgreSQL parallel claims tested. |
 | Pending/error/retry UI | `/jobs/{id}`, POST retry/cancel; `work_pending.html`, viewers | Authorized endpoints, 202 stays pending, polling backs off; failed vision jobs expose an explicit retry form. Cancellation fences publication; it cannot undo a provider call already in flight. |
 | Lexical RAG footprint | `dental_rag/rag.py` | Immutable process cache; all evidence cards retained; no generated corpus copies/index downloads. Restart after corpus changes. |
-| Academic V1 indexing | LEGACY_INDEX application job | Upload/index job admitted in one transaction; background callback failures propagate to queue. V1 ranking/fallback stays intact. |
+| Academic V1 indexing | Disabled after V2 cutover | `STUDY_ACADEMIC_V2_ONLY=1` prevents new V1 jobs and cancels previously queued V1 jobs. The dormant implementation remains for one-release rollback safety. |
 | Academic V2 indexing | `study_index_jobs.py`, `study_index_worker.py` | Short checkpoints, heartbeat during external work, fenced post-call writes, bounded page/chunk slices and queue admission. Existing lease/publication regressions pass. |
 | Fair background scheduling | `study_index_worker_main.py`, `work_worker.py` | MIXED alternates normal/OCR; erasure drains during continuous work; bounded legacy backfill continues periodically. |
 | Colocated indexer | Existing `study_colocated_worker.py` | Explicit optional subprocess supervisor. Disable when an external indexer is configured. Shares web RAM/CPU. |
@@ -46,9 +46,11 @@ The earlier **1.115 ms** lexical result was a local reference benchmark. The imp
 
 ## Render processes
 
-`render.yaml` is the checked-in deployment contract for the web service and
-the two independent consumers. Automatic deploys and previews are disabled in
-that file. Do not create a second `dental-ai-v02` web service accidentally:
+`render.yaml` is the checked-in deployment contract for the existing free web
+service only. It deliberately declares no Render background workers, so applying
+it cannot add paid worker services. Automatic deploys and previews are disabled.
+Run the application and Academic V2 consumers on the already available external
+free worker host. Do not create a second `dental-ai-v02` web service accidentally:
 link/adopt the existing service when applying the Blueprint, or copy the
 verified commands and variables to the existing service manually. Supplying
 secret values and applying the Blueprint are explicit release operations, not
@@ -73,8 +75,8 @@ Use a controlled release/pre-deploy step where available, or run the command in 
 | Service | Start command | Port / notes |
 | --- | --- | --- |
 | Web | `uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --workers 1` | Render HTTP port; `/readyz` checks DB, `/healthz` checks process. |
-| Application consumer | `python -m app.work_worker` | Background worker, no HTTP port. Vision, preliminary/final AI, V1 index and erasure. |
-| Academic V2 consumer | `python -m app.study_index_worker_main` | Background worker, no HTTP port; `STUDY_V2_RESOURCE_CLASS=MIXED`. |
+| Application consumer | `python -m app.work_worker` | Existing external free host; vision, preliminary/final AI and erasure. V1 jobs are cancelled in V2-only mode. |
+| Academic V2 consumer | `python -m app.study_index_worker_main` | Existing external free host; no HTTP port; `STUDY_V2_RESOURCE_CLASS=MIXED`. |
 | Optional deadline consumer | `python -m app.deadline_worker` | Set `DENTALAI_DEADLINE_EXECUTION=external` on web only when this is running. Program reminders remain embedded. |
 | Optional local inference | Existing GPU/model deployment, or `uvicorn vision_service.app:app --host 0.0.0.0 --port "$PORT" --workers 1` | Separate model environment; install `vision_service/requirements.txt` and existing weights. Do not install GPU stacks in the web image. |
 
@@ -95,6 +97,10 @@ Conservative starting limits (tune from measurements):
 ```dotenv
 DENTAL_WORK_EXECUTION=external
 STUDY_ACADEMIC_V2_COLOCATED_WORKER=0
+STUDY_ACADEMIC_V2_INDEXING=1
+STUDY_ACADEMIC_V2_READS=1
+STUDY_ACADEMIC_V2_STREAMING=1
+STUDY_ACADEMIC_V2_ONLY=1
 DENTAL_WEB_DB_POOL_SIZE=2
 DENTAL_ROUTER_DB_POOL_SIZE=2
 DENTAL_MAX_HTTP_REQUESTS=8
@@ -125,7 +131,21 @@ work. Set either value to `0` to disable recycling on a larger measured plan.
 
 `STUDY_ROUTER_REQUEST_BUDGETS_JSON` accepts verified account limits, for example `{"gemini:*":{"day":1000}}` **only if 1000 is your chosen actual budget**. Request counts are conservative reservations, not token/dollar accounting. Configure provider-side spending limits too. Concurrency is global only when services use the same database. Pool size is per engine/process; include the dedicated LISTEN connection, router engines and workers in the DB connection budget.
 
-Enable V2 indexing with `STUDY_ACADEMIC_V2_INDEXING=1`. Enable `STUDY_ACADEMIC_V2_READS=1` only after the preserved V2 validation/canary path has built the materials. Reads require indexing. Streaming remains separately controlled by `STUDY_ACADEMIC_V2_STREAMING`. This patch does not silently switch retrieval algorithms.
+Cut over in two phases. First run the external free Academic consumer with
+`STUDY_ACADEMIC_V2_INDEXING=1` while production reads remain unchanged. Wait
+until every non-deleted material has `index_status='READY'` and a non-null
+`active_index_version`. Then deploy the web configuration with reads, streaming
+and `STUDY_ACADEMIC_V2_ONLY=1`. The V2-only flag requires indexing and reads,
+prevents new V1 indexing, and makes the application consumer cancel old queued
+`LEGACY_INDEX` work. Do not enable the V2-only web configuration before this
+readiness query returns zero:
+
+```sql
+SELECT count(*) AS pending_v2_materials
+FROM studymaterial
+WHERE deleted_at IS NULL
+  AND (index_status <> 'READY' OR active_index_version IS NULL);
+```
 
 For a single-container test, `DENTAL_WORK_EXECUTION=embedded` runs one application consumer in a thread; `STUDY_ACADEMIC_V2_COLOCATED_WORKER=1` starts the existing indexer subprocess. This saves a service but shares RAM/CPU and availability with web. Durable jobs survive process restarts; running provider requests can be repeated after a crash, while stale result publication is fenced.
 

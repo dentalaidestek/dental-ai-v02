@@ -10,6 +10,14 @@ envVarGroups:
         value: external
       - key: STUDY_ACADEMIC_V2_COLOCATED_WORKER
         value: "0"
+      - key: STUDY_ACADEMIC_V2_INDEXING
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_READS
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_STREAMING
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_ONLY
+        value: "1"
       - key: DENTAL_WEB_DB_POOL_SIZE
         value: "2"
       - key: DENTAL_ROUTER_DB_POOL_SIZE
@@ -40,10 +48,9 @@ services:
     name: dental-ai-v02
     runtime: python
     region: oregon
-    plan: starter
+    plan: free
     autoDeployTrigger: "off"
     buildCommand: pip install -r requirements-web.lock
-    preDeployCommand: python -m app.migrate
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /readyz
     envVars:
@@ -98,91 +105,3 @@ services:
         sync: false
       - key: IYZICO_SECRET_KEY
         sync: false
-
-  - type: worker
-    name: dental-ai-work-worker
-    runtime: python
-    region: oregon
-    plan: starter
-    autoDeployTrigger: "off"
-    maxShutdownDelaySeconds: 300
-    buildCommand: pip install -r requirements-web.lock
-    startCommand: python -m app.work_worker
-    envVars:
-      - fromGroup: dental-runtime-bounds
-      - key: DATABASE_URL
-        sync: false
-      - key: R2_ENABLED
-        value: "1"
-      - key: R2_BUCKET_NAME
-        sync: false
-      - key: R2_ENDPOINT_URL
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: COHERE_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: MISTRAL_API_KEY
-        sync: false
-      - key: DENTAL_VISION_MODAL_URL
-        sync: false
-      - key: DENTAL_VISION_API_KEY
-        sync: false
-      - key: DENTAL_WORKER_RECYCLE_RSS_MB
-        value: "420"
-
-  - type: worker
-    name: dental-ai-study-index-worker
-    runtime: python
-    region: oregon
-    plan: starter
-    autoDeployTrigger: "off"
-    maxShutdownDelaySeconds: 300
-    buildCommand: pip install -r requirements-web.lock
-    startCommand: python -m app.study_index_worker_main
-    envVars:
-      - fromGroup: dental-runtime-bounds
-      - key: DATABASE_URL
-        sync: false
-      - key: R2_ENABLED
-        value: "1"
-      - key: R2_BUCKET_NAME
-        sync: false
-      - key: R2_ENDPOINT_URL
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: COHERE_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: MISTRAL_API_KEY
-        sync: false
-      - key: STUDY_V2_DB_POOL_SIZE
-        value: "1"
-      - key: STUDY_V2_RESOURCE_CLASS
-        value: MIXED
-      - key: STUDY_V2_OCR_BATCH_PAGES
-        value: "1"
-      - key: STUDY_V2_EMBED_BATCH_CHUNKS
-        value: "4"
-      - key: STUDY_V2_RECYCLE_RSS_MB
-        value: "384"

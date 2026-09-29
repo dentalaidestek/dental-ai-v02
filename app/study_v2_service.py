@@ -28,6 +28,11 @@ def streaming_enabled() -> bool:
     return reads_enabled() and _flag("STUDY_ACADEMIC_V2_STREAMING")
 
 
+def v2_only_enabled() -> bool:
+    """Return whether Academic AI must never enqueue or execute V1 work."""
+    return _flag("STUDY_ACADEMIC_V2_ONLY")
+
+
 def enqueue_material_v2(session: Session, material) -> str | None:
     """Reserve and enqueue exactly one new generation inside caller's tx."""
     if not indexing_enabled() or material.id is None or material.deleted_at is not None:
@@ -155,9 +160,15 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
 
 def legacy_indexing_required() -> bool:
     """Keep V1 until V2 reads are live; shadow indexing is an explicit canary."""
+    if v2_only_enabled():
+        return False
     return not reads_enabled() or _flag("STUDY_V1_SHADOW_INDEXING")
 
 
 def validate_configuration() -> None:
     if reads_enabled() and not indexing_enabled():
         raise RuntimeError("STUDY_ACADEMIC_V2_READS requires STUDY_ACADEMIC_V2_INDEXING")
+    if v2_only_enabled() and not indexing_enabled():
+        raise RuntimeError("STUDY_ACADEMIC_V2_ONLY requires STUDY_ACADEMIC_V2_INDEXING")
+    if v2_only_enabled() and not reads_enabled():
+        raise RuntimeError("STUDY_ACADEMIC_V2_ONLY requires STUDY_ACADEMIC_V2_READS")

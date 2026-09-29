@@ -196,6 +196,8 @@ def test_v2_configuration_prevents_accidental_double_indexing(monkeypatch):
     assert not legacy_indexing_required()
     monkeypatch.setenv('STUDY_V1_SHADOW_INDEXING', '1')
     assert legacy_indexing_required()
+    monkeypatch.setenv('STUDY_ACADEMIC_V2_ONLY', '1')
+    assert not legacy_indexing_required()
 
 
 @pytest.mark.parametrize('delete_during_generation', [False, True])
