@@ -3687,9 +3687,16 @@ def _startup_database():
     invalidate()
     validate_configuration()
     storage_check_connection()
-    if os.getenv("RENDER") and os.getenv("DENTAL_MIGRATE_ON_STARTUP", "0") != "1":
-        from app.migrate import require_schema
-        require_schema(engine)
+    if os.getenv("RENDER"):
+        if os.getenv("DENTAL_MIGRATE_ON_STARTUP", "0") == "1":
+            # One-shot compatibility path for deployments that cannot run a
+            # pre-deploy command yet. app.migrate serializes the release DDL
+            # and records the required schema revision for colocated workers.
+            from app.migrate import apply
+            apply()
+        else:
+            from app.migrate import require_schema
+            require_schema(engine)
     else:
         init_db()
     try:
