@@ -4,6 +4,8 @@ from collections import deque
 from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
+import logging
+import json
 import secrets
 import threading
 
@@ -58,8 +60,16 @@ def xray_trace_event(event: str, **data) -> None:
     for key, value in data.items():
         # Ham hasta notu, soru, cevap, prompt, AI yanıtı veya görüntü bytes loglanmaz.
         item[str(key)[:80]] = _safe(value)
+    from app.work_jobs import current_job
+    job = current_job.get()
+    if job is not None:
+        item["job_id"] = job.id
     with _LOCK:
         _EVENTS.append(item)
+    public = {key: value for key, value in item.items() if key in {
+        "ts", "trace_id", "event", "job_id", "stage", "status", "provider", "model",
+        "attempt", "elapsed_ms", "total_elapsed_ms", "prompt_tokens", "output_tokens", "total_tokens"}}
+    logging.getLogger("dental_ai.xray_trace").info("xray.event %s", json.dumps(public))
 
 
 def end_xray_trace(**data) -> None:

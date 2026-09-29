@@ -23,6 +23,8 @@ from app.study_index_jobs import (
 from app.study_index_worker import run_one_slice
 from app.study_deletion_worker import run_deletion_slice
 from app.study_v2_database import require_worker_capabilities
+from app.study_v2_service import enqueue_legacy_material_rows_v2
+from app.process_memory import recycle_if_over_limit
 
 logger = logging.getLogger(__name__)
 _stop = False
@@ -42,7 +44,7 @@ def _handle_stop(signum, frame) -> None:
 
 
 def build_worker_engine():
-    database_url = (os.getenv("DATABASE_URL") or "").strip()
+    database_url = (os.getenv("DATABASE_URL") or "").strip().replace("postgres://", "postgresql://", 1)
     if not database_url:
         raise RuntimeError("Academic V2 worker requires DATABASE_URL; SQLite is not supported for deployed workers")
     pool_size = _int_env("STUDY_V2_DB_POOL_SIZE", 2, 1, 5)
@@ -50,6 +52,8 @@ def build_worker_engine():
         database_url,
         pool_size=pool_size,
         max_overflow=0,
+        pool_timeout=5,
+        connect_args={"connect_timeout": 5, "application_name": "dental-indexer"},
         pool_pre_ping=True,
         pool_recycle=300,
     )
@@ -61,6 +65,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_stop)
 
     engine = build_worker_engine()
+    from app.migrate import require_schema
+    require_schema(engine)
     with Session(engine, expire_on_commit=False) as startup_session:
         capabilities = require_worker_capabilities(startup_session)
         logger.info(
@@ -76,17 +82,17 @@ def main() -> None:
     logger.info("Academic V2 index worker started resource_class=%s", resource_class)
     gc_every = _int_env("STUDY_V2_GC_EVERY_LOOPS", 60, 10, 3600)
     loops = 0
+    next_mixed_class = "NORMAL"
     while not _stop:
         try:
             with Session(engine, expire_on_commit=False) as session:
-                active_class = "NORMAL" if resource_class == "MIXED" else resource_class
+                active_class = next_mixed_class if resource_class == "MIXED" else resource_class
                 result = run_one_slice(session, resource_class=active_class)
-                if resource_class == "MIXED" and result == "IDLE":
-                    # One low-footprint process can service both queues on the
-                    # free instance. Normal text work gets first opportunity;
-                    # OCR work runs whenever that queue is idle.
-                    active_class = "OCR_HEAVY"
-                    result = run_one_slice(session, resource_class=active_class)
+                if resource_class == "MIXED":
+                    if result == "IDLE":
+                        active_class = "OCR_HEAVY" if active_class == "NORMAL" else "NORMAL"
+                        result = run_one_slice(session, resource_class=active_class)
+                    next_mixed_class = "OCR_HEAVY" if active_class == "NORMAL" else "NORMAL"
                 if result != "IDLE":
                     logger.info(
                         "Academic V2 slice resource_class=%s result=%s",
@@ -100,8 +106,20 @@ def main() -> None:
                     run_deletion_slice(session)
                     if loops % gc_every == 0:
                         cleanup_retired_generations(session, limit=10)
+                        from app.work_jobs import WorkCapacity
+                        try:
+                            enqueue_legacy_material_rows_v2(session, limit=10)
+                            session.commit()
+                        except WorkCapacity:
+                            session.rollback()
             if result == "IDLE":
                 time.sleep(idle_sleep)
+            else:
+                recycle_if_over_limit(
+                    "STUDY_V2_RECYCLE_RSS_MB",
+                    module_name="app.study_index_worker_main",
+                    cleanup=engine.dispose,
+                )
         except Exception:
             # Process stays alive; durable leases/jobs are the recovery source.
             logger.exception("Academic V2 worker loop error")

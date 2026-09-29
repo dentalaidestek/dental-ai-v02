@@ -7,6 +7,7 @@ from app.study_local_ocr import LOCAL_OCR_ENGINE_VERSION, ocr_material_page
 
 def _font(size: int):
     candidates = (
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     )

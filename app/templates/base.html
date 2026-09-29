@@ -494,6 +494,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){if(notify){setNotificationUnreadCount(notificationUnreadCount+1);let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
+        else if(evt.event_type==="CASE_READ"){refreshUnreadCount();}
         else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
@@ -506,7 +507,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         // disconnect. Other stateful event types already have dedicated handlers.
         const replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(evt.event_type);
         const replaySupportState=evt.replay===true&&["SUPPORT_TICKET_CREATED","SUPPORT_TICKET_UPDATED","SUPPORT_MESSAGE_CREATED","USER_REPORT_CREATED","USER_REPORT_UPDATED"].includes(evt.event_type);
-        if(notify||replayProgramState||replaySupportState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        if(notify||replayProgramState||replaySupportState||["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_READ"].includes(evt.event_type))window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         if(unreadCountPromise)return unreadCountPromise;
@@ -516,10 +517,10 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         }catch(_){}})();
         try{return await unreadCountPromise}finally{unreadCountPromise=null;}
     }
-    async function catchUpEvents() {
+    async function catchUpEvents(full=false) {
         if(catchUpEventsPromise)return catchUpEventsPromise;
         catchUpEventsPromise=(async()=>{
-            let after=Math.max(0,lastEventId-syncOverlap), more=true;
+            let after=full?0:Math.max(0,lastEventId-syncOverlap), more=true;
             while(more){
                 const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
                 if(!r.ok)return;
@@ -536,7 +537,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
         connection.onopen=()=>{if(syncSocket!==connection)return;resetSyncReconnect();connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
-        connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
+        connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);if(evt.type==="resume_complete"&&evt.has_more){connection.send(JSON.stringify({type:"resume",after_id:evt.last_event_id}));return;}if(evt.type==="resync"){catchUpEvents(true).finally(()=>window.dispatchEvent(new Event("dai:realtime-resync")));return;}applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);scheduleSyncReconnect();};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }

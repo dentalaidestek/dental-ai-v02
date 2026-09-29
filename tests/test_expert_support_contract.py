@@ -39,4 +39,4 @@ def test_chat_has_read_receipt_and_inline_upload_error_contract():
     assert "✓✓ Okundu" in CASE_ROOM
     assert "composerInlineError" in CASE_ROOM
     assert "upload_max_mb" in CASE_ROOM
-    assert "iyzico entegrasyonu henüz aktif değil" in CASE_ROOM
+    assert "Ödeme işlemleri yakında kullanılabilir olacak" in CASE_ROOM

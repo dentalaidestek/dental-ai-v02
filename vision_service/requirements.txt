@@ -3,3 +3,9 @@ uvicorn[standard]
 python-multipart
 ultralytics
 huggingface_hub
+urllib3==2.8.0
+
+# Shared PostgreSQL admission for the optional TVEM load/detect/unload session.
+sqlmodel==0.0.44
+SQLAlchemy==2.0.54
+psycopg2-binary==2.9.13

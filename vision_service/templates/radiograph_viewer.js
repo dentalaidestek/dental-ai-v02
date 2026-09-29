@@ -20,10 +20,10 @@ window.DentalEmbeddedLoad=async d=>{
   let snap=null;
   for(let attempt=0;attempt<40;attempt++){
     const r=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});
-    if(r.ok){snap=await r.json();break}
-    if(r.status!==202)throw new Error('Kayıtlı motor sonucu alınamadı.');
+    if(r.ok&&r.status!==202){snap=await r.json();break}
+    if(r.status!==202){const failed=await r.json().catch(()=>({}));if(Number.isSafeInteger(failed.job_id))parent.postMessage({type:'dental-ai:job-failed',jobId:failed.job_id},location.origin);throw new Error('Kayıtlı motor sonucu alınamadı.');}
     panel.innerHTML='<div class="empty">Görüntü motoru çalışıyor…</div>';
-    await new Promise(x=>setTimeout(x,1500));
+    await new Promise(x=>setTimeout(x,Math.min(15000,2000*Math.pow(1.3,attempt))+Math.random()*500));
   }
   if(!snap)throw new Error('Görüntü motoru sonucu henüz hazır değil.');
   result=snap.result||snap;

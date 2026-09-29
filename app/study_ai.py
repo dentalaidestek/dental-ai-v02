@@ -303,9 +303,13 @@ def upload_file(path: str, mime_type: str, display_name: str) -> dict:
     }
 
 
-def delete_file(name: str) -> None:
+def delete_file(name: str, *, strict: bool = False) -> None:
     """Clean old pre-RAG Gemini Files references if a user deletes old material."""
-    if not name or not GEMINI_API_KEY:
+    if not name:
+        return
+    if not GEMINI_API_KEY:
+        if strict:
+            raise RuntimeError("GEMINI_DELETE_NOT_CONFIGURED")
         return
     request = urllib.request.Request(
         FILES_BASE_URL + name,
@@ -313,6 +317,12 @@ def delete_file(name: str) -> None:
         headers={"x-goog-api-key": GEMINI_API_KEY},
     )
     try:
-        urllib.request.urlopen(request, timeout=20).close()
+        from app.http_transport import urlopen
+        urlopen(request, timeout=20).close()
+    except urllib.error.HTTPError as exc:
+        if strict and exc.code != 404:
+            raise
     except Exception:
-        logger.info("Legacy temporary Gemini study file could not be deleted: %s", name)
+        if strict:
+            raise
+        logger.info("Legacy temporary Gemini study file could not be deleted")

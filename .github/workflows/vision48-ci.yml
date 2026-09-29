@@ -7,8 +7,26 @@ on:
     branches:
       - main
       - "work/**"
+      - "coderabbit/**"
+      - "jules/**"
 
 jobs:
+  application-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-web.lock
+      - name: Install application and test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check pytest==9.1.1 httpx==0.28.1 numpy==2.5.3 opencv-python-headless==5.0.0.93
+      - name: Run application regressions
+        run: python -m pytest -q
+
   contract-tests:
     runs-on: ubuntu-latest
     steps:
@@ -16,10 +34,48 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-web.lock
+      - name: Install contract-test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check numpy==2.5.3 opencv-python-headless==5.0.0.93
       - name: Compile application and training code
         run: python -m compileall -q vision_service app tests training
       - name: Vision48, baseline, 3D viewer, training-plan, no-pixels-to-LLM and photo3D contract tests
         run: python -m unittest tests.test_vision_registry tests.test_training_sources tests.test_baseline_notebook tests.test_derived48 tests.test_pipeline_contract tests.test_ai_image_policy tests.test_photo3d_contract tests.test_3d_viewer_contract tests.test_web_push -v
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dental_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dental_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DENTAL_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dental_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-web.lock
+      - name: Install application and test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check pytest==9.1.1
+      - name: Run PostgreSQL concurrency and migration tests
+        run: python -m pytest -q tests/test_postgres_optimization.py
 
   ready-model-contract:
     runs-on: ubuntu-latest

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.object_cache import scoped as storage_scoped
+
 
 import hashlib
 import io
@@ -295,6 +297,7 @@ def ensure_material_index(session: Session, material) -> int:
     # === TEMP_STUDY_TRACE_MATERIAL_START_END ===
     if not material.id:
         raise StudyRAGError("Ders notu kaydı tamamlanmamış.")
+    session.close()
     path = storage_ensure_local(material.file_path)
     if not path.is_file():
         raise StudyRAGError(f"Not dosyası sunucuda bulunamadı: {material.display_name}")
@@ -325,6 +328,7 @@ def ensure_material_index(session: Session, material) -> int:
         # === TEMP_STUDY_TRACE_MATERIAL_REUSE_END ===
         return len(quick_current)
 
+    session.close()
     material_hash = _sha256(path)
     current = _existing_current_chunks(
         session,
@@ -352,6 +356,7 @@ def ensure_material_index(session: Session, material) -> int:
     except StudyProviderError as exc:
         raise StudyRAGError(str(exc)) from exc
 
+    session.close()
     pending: list[StudyRAGChunk] = []
     mime_type = material.mime_type
 
@@ -459,6 +464,8 @@ def ensure_material_index(session: Session, material) -> int:
     if not pending:
         raise StudyRAGError(f"{material.display_name} içinden indekslenebilir içerik alınamadı.")
 
+    from app.work_jobs import guard_publication
+    guard_publication(session)
     # Replace only after the new complete index is ready. Failed re-indexing never
     # destroys the previous usable index.
     old_rows = session.exec(
@@ -497,6 +504,7 @@ def course_index_ready(session: Session, *, owner_user_id: int, course_id: int) 
     ).first()
     return row is not None
 
+@storage_scoped
 def ensure_course_index(session: Session, materials: list) -> tuple[int, list[str]]:
     """Ensure every current material has a persistent index.
 
@@ -692,6 +700,7 @@ def _page_attachment(material, page_number: int | None, *, show_source: bool = F
     return None
 
 
+@storage_scoped
 def retrieve_course_context(
 
     session: Session,
@@ -713,6 +722,7 @@ def retrieve_course_context(
         material_count=len(materials or []),
     )
     # === TEMP_STUDY_TRACE_RAG_START_END ===
+    session.close()
     target = get_embedding_target()
     try:
         provider = get_provider(target.provider)
@@ -764,6 +774,7 @@ def retrieve_course_context(
         .where(StudyRAGChunk.embedding_provider == target.provider)
         .where(StudyRAGChunk.embedding_model == target.model)
     ).all()
+    session.close()
     # === TEMP_STUDY_TRACE_RAG_ROWS_BEGIN ===
     trace_event("rag.rows.loaded", course_id=course_id, indexed_rows=len(rows))
     # === TEMP_STUDY_TRACE_RAG_ROWS_END ===

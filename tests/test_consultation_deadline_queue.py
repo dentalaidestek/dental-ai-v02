@@ -60,22 +60,22 @@ def test_worker_contract_is_bounded_and_multi_worker_safe():
 
 
 def test_render_paths_do_not_mutate_deadline_state():
-    room = MAIN.split("async def expert_support_case_room", 1)[1].split("@app.get", 1)[0]
+    room = MAIN.split("def expert_support_case_room", 1)[1].split("@app.get", 1)[0]
     inbox = MAIN.split("def consultation_messages_inbox", 1)[1].split("@app.get", 1)[0]
     assert 'case.status = "PROPOSAL_EXPIRED"' not in room
     assert '"START_DEADLINE_MISSED"' not in inbox
 
 
 def test_failed_job_processing_isolated_by_savepoint():
-    processor = MAIN.split("async def _process_consultation_deadline_jobs", 1)[1].split("async def _consultation_deadline_worker", 1)[0]
+    processor = MAIN.split("def _process_consultation_deadline_jobs", 1)[1].split("def _consultation_deadline_worker", 1)[0]
     assert "with s.begin_nested():" in processor
     assert "rolled back every partial domain/notice/event" in processor
 
 
 def test_waiting_start_message_paths_resolve_warning_and_publish_status():
-    http = MAIN.split("async def expert_support_message(", 1)[1].split("@app.get", 1)[0]
-    ws = MAIN.split("async def expert_support_case_socket", 1)[1].split("@app.post", 1)[0]
-    media = MAIN.split("async def expert_support_media_message", 1)[1].split("@app.get", 1)[0]
+    http = MAIN.split("def expert_support_message(", 1)[1].split("@app.get", 1)[0]
+    ws = MAIN.split("def _socket_message_sync", 1)[1].split("@app.websocket", 1)[0]
+    media = MAIN.split("def expert_support_media_message", 1)[1].split("@app.get", 1)[0]
     for path in (http, ws, media):
         assert "CONSULTATION_DEADLINE_WARNING" in path
         assert "_record_case_status_realtime_events" in path
@@ -87,7 +87,7 @@ def test_postgres_cross_process_wakeup_contract():
     assert 'PG_DEADLINE_CHANNEL = "dentalai_deadline_jobs"' in MAIN
     assert 'PG_REALTIME_CHANNEL = "dentalai_realtime_events"' in MAIN
     assert "pg_notify(:channel, :payload)" in MAIN
-    assert "async def _postgres_event_listener" in MAIN
+    assert "def _postgres_event_listener" in MAIN
     assert 'DEADLINE_EXECUTION_MODE = os.getenv("DENTALAI_DEADLINE_EXECUTION", "embedded")' in MAIN
 
 
@@ -98,7 +98,7 @@ def test_deadline_enqueue_duplicate_isolated_from_domain_transaction():
 
 
 def test_capacity_slot_allocation_is_serialized_on_postgres():
-    endpoint = MAIN.split("async def expert_support_request_create", 1)[1].split("@app.", 1)[0]
+    endpoint = MAIN.split("def expert_support_request_create", 1)[1].split("@app.", 1)[0]
     assert "profile_stmt.with_for_update()" in endpoint
     assert "_expert_open_case_count(s, expert_user_id)" in endpoint
 
@@ -111,12 +111,12 @@ def test_startup_reconciles_missing_jobs_even_when_queue_already_has_rows():
 
 
 def test_deadline_and_user_state_transitions_lock_case_row_on_postgres():
-    processor = MAIN.split("def _process_deadline_job", 1)[1].split("async def _process_consultation_deadline_jobs", 1)[0]
+    processor = MAIN.split("def _process_deadline_job", 1)[1].split("def _process_consultation_deadline_jobs", 1)[0]
     assert "case_stmt.with_for_update()" in processor
     for endpoint_name in (
-        "async def expert_support_expert_response",
-        "async def expert_support_proposal_decision",
-        "async def expert_support_complete",
+        "def expert_support_expert_response",
+        "def expert_support_proposal_decision",
+        "def expert_support_complete",
     ):
         endpoint = MAIN.split(endpoint_name, 1)[1].split("@app.", 1)[0]
         assert "case_stmt.with_for_update()" in endpoint

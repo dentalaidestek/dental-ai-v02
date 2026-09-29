@@ -37,11 +37,11 @@ def test_message_event_is_durable_for_both_participants():
 
 
 def test_http_text_send_broadcasts_room_after_commit():
-    endpoint = MAIN.split("async def expert_support_message(", 1)[1].split("@app.get", 1)[0]
+    endpoint = MAIN.split("def expert_support_message(", 1)[1].split("@app.get", 1)[0]
     assert "s.commit()" in endpoint
-    assert "await consultation_socket_hub.broadcast" in endpoint
-    assert endpoint.index("s.commit()") < endpoint.index("await consultation_socket_hub.broadcast")
-    assert "for realtime_event in realtime_events" in endpoint
+    assert "on_loop(consultation_socket_hub.broadcast" in endpoint
+    assert endpoint.index("s.commit()") < endpoint.index("on_loop(consultation_socket_hub.broadcast")
+    assert "for realtime_event in status_events + realtime_events" in endpoint
 
 
 def test_inbox_updates_existing_card_without_full_page_fetch():
@@ -49,7 +49,7 @@ def test_inbox_updates_existing_card_without_full_page_fetch():
     assert 'querySelector(".message-side time")' in MESSAGES
     assert "data.is_outgoing" in MESSAGES
     assert "sortMessageRows" in MESSAGES
-    assert 'a.dataset.status==="NEW_REQUEST"' in MESSAGES
+    assert 'status==="NEW_REQUEST"' in MESSAGES
     assert 'fetch("/messages"' not in MESSAGES
     assert '"/messages/"+encodeURIComponent(caseId)+"/row"' in MESSAGES
     assert 'data-last-message-id=' in ROW
@@ -245,9 +245,9 @@ def test_notification_center_open_marks_active_notices_seen():
     assert 'sessionStorage.setItem(notificationUnreadKey' in BASE
     assert '"NOTIFICATIONS_READ"' in MAIN
     assert 'evt.event_type==="NOTIFICATIONS_READ"' in BASE
-    read_all = MAIN.split("async def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
+    read_all = MAIN.split("def account_notifications_read_all", 1)[1].split('@app.get("/account/admin-notices")', 1)[0]
     assert "_record_realtime_event" in read_all
-    assert "await _publish_realtime_event(realtime_event)" in read_all
+    assert "on_loop(_publish_realtime_event, realtime_event)" in read_all
 
 
 
@@ -289,9 +289,10 @@ def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active
         )).all()
         assert len(events) == 1
 
-def test_seen_program_reminders_expire_without_touching_other_notices():
-    helper = MAIN.split("def _expire_seen_program_reminders", 1)[1].split('@app.get("/account/notifications")', 1)[0]
-    assert 'AdminNotice.notice_type == "PROGRAM_REMINDER"' in helper
+def test_seen_notifications_expire_after_twenty_four_hours():
+    helper = MAIN.split("def _expire_seen_notifications", 1)[1].split('@app.get("/account/notifications")', 1)[0]
+    assert 'AdminNotice.status == "ACTIVE"' in helper
+    assert "AdminNotice.user_id == user_id" in helper
     assert "AdminNotice.is_read == True" in helper
     assert "AdminNotice.read_at <= cutoff" in helper
     assert 'notice.status = "RESOLVED"' in helper

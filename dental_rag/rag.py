@@ -217,66 +217,62 @@ def load_documents():
     return documents
 
 
-def search(query, top_k=5):
+from functools import lru_cache
+from typing import NamedTuple, FrozenSet
 
+
+class SearchChunk(NamedTuple):
+    source: str
+    category: str
+    text: str
+    tokens: FrozenSet[str]
+    title_tokens: FrozenSet[str]
+
+
+@lru_cache(maxsize=1)
+def _search_chunks():
+    rows = []
+    # Retain the existing traversal order: stable sorting uses it for ties.
+    for document in load_documents():
+        title_tokens = frozenset(tokenize(document["source"]))
+        for chunk in chunk_text(document["text"]):
+            rows.append(SearchChunk(
+                document["source"], document["category"], chunk,
+                frozenset(tokenize(chunk)), title_tokens,
+            ))
+    return tuple(rows)
+
+
+def search(query, top_k=5):
     query_tokens = tokenize(query)
     category_scores = detect_categories(query)
-
     if not query_tokens:
         return []
 
     results = []
+    for chunk in _search_chunks():
+        overlap = query_tokens.intersection(chunk.tokens)
+        if not overlap:
+            continue
+        score = len(overlap)
+        if chunk.category in category_scores:
+            score += category_scores[chunk.category] * 3
+        score += len(query_tokens.intersection(chunk.title_tokens)) * 2
+        results.append({"score": score, "source": chunk.source, "text": chunk.text})
 
-    for document in load_documents():
-
-        for chunk in chunk_text(document["text"]):
-
-            chunk_tokens = tokenize(chunk)
-
-            overlap = query_tokens.intersection(chunk_tokens)
-
-            if not overlap:
-                continue
-
-            score = len(overlap)
-
-            category = document["category"]
-
-            # Vakanın konusuyla eşleşen kategoriye güçlü öncelik.
-            if category in category_scores:
-                score += category_scores[category] * 3
-
-            # Başlıkta geçen kelimeler ayrıca değerli.
-            source_tokens = tokenize(document["source"])
-            title_overlap = query_tokens.intersection(source_tokens)
-            score += len(title_overlap) * 2
-
-            results.append({
-                "score": score,
-                "source": document["source"],
-                "text": chunk
-            })
-
-    results.sort(
-        key=lambda item: item["score"],
-        reverse=True
-    )
-
-    # Aynı kaynağın tekrar tekrar gelmesini önle.
+    results.sort(key=lambda item: item["score"], reverse=True)
     unique_results = []
     seen = set()
-
     for result in results:
         if result["source"] in seen:
             continue
-
         seen.add(result["source"])
         unique_results.append(result)
-
         if len(unique_results) >= top_k:
             break
-
     return unique_results
+
+
 
 
 def get_relevant_context(

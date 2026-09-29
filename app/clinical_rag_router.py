@@ -678,6 +678,7 @@ def route_clinical_case(
     image_paths: list[str] | None = None,
     stored_image_types: list[str] | None = None,
     cache_key: str = "",
+    structured_vision: str | None = None,
     top_k: int = 5,
 ) -> dict:
     """Multimodal AI-first RAG routing; lexical router is failure fallback only."""
@@ -693,6 +694,8 @@ def route_clinical_case(
         stored_image_types=stored_types,
         top_k=top_k,
     )
+    if structured_vision is not None:
+        fingerprint = hashlib.sha256((fingerprint + structured_vision).encode()).hexdigest()
     cached = _route_cache_get(cache_key, fingerprint)
     if cached is not None:
         return cached
@@ -726,6 +729,7 @@ def route_clinical_case(
             prompt,
             image_paths=paths,
             response_schema=_CLINICAL_RAG_ROUTER_SCHEMA,
+            structured_vision=structured_vision,
         )
         data = _json_object(text)
 

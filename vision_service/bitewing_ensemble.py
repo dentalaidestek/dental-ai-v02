@@ -5,6 +5,7 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 from pathlib import Path
 from typing import Any
 
@@ -173,7 +174,8 @@ def analyze_bitewing(image_path: str):
 
     try:
         req = urllib.request.Request(f"{BITEWING_ENSEMBLE_URL}/infer?modality=bitewing", data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=BITEWING_ENSEMBLE_TIMEOUT_SECONDS) as response:
+        from app.provider_budget import reservation
+        with reservation("modal", "dental-inference"), urlopen(req, timeout=BITEWING_ENSEMBLE_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode())
     except urllib.error.HTTPError as exc:
         raise BitewingEngineError(f"Bitewing inference HTTP {exc.code}: {exc.read().decode(errors='replace')[-1200:]}") from exc

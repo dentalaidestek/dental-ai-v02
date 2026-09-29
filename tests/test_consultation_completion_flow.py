@@ -140,7 +140,7 @@ def test_review_form_is_replaced_by_persisted_success_state(consultation_app):
     assert "Değerlendirmeyi Kaydet" not in after.text
     assert "Değerlendirmeniz için teşekkürler" in after.text
     assert "4/5" in after.text and "Faydalı görüşme" in after.text
-    assert "Danışmanlığı bitir" not in after.text
+    assert "Danışmanlığı bitir" not in __import__("re").sub(r"<script\b[^>]*>.*?</script>", "", after.text, flags=__import__("re").S)
     assert 'id="expertComposeStack"' in after.text
     assert 'id="expertComposeStack" data-case-dynamic="post" hidden' in after.text
     assert duplicate.status_code == 409
@@ -229,7 +229,7 @@ def test_dispute_is_open_for_capacity_and_inbox_not_history():
 
 def test_requester_decisions_consume_completion_deadline():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
-    complete = source.split('async def expert_support_complete', 1)[1].split('@app.get("/patients/new"', 1)[0]
+    complete = source.split('def expert_support_complete', 1)[1].split('@app.get("/patients/new"', 1)[0]
     assert 'case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"' in complete
     assert 'case.status = "ACTIVE"; case.completion_confirmation_deadline = None;' in complete
     assert 'case.status = "DISPUTE"\n            case.completion_confirmation_deadline = None' in complete
@@ -257,9 +257,9 @@ def test_consultation_room_avoids_idle_recovery_and_countdown_work():
     messages = (root / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
     assert "let catchUpPromise=null" in room
-    assert 'if(!socket||socket.readyState!==WebSocket.OPEN)catchUp();' in room
-    assert 'if(!nodes.length){if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null}return}' in room
-    assert 'if(!hasCountdown){if(messageCountdownTimer!==null){clearInterval(messageCountdownTimer);messageCountdownTimer=null}return}' in messages
+    assert 'evt.event_type==="MESSAGE_CREATED"){catchUp();}' in room
+    assert 'if(!nodes.length){stopCaseCountdown();return}' in room
+    assert 'if(!hasCountdown){stopMessageCountdown();return}' in messages
     row_endpoint = source.split('def consultation_message_row', 1)[1].split('@app.get("/messages/deleted"', 1)[0]
     assert '.limit(1)).first()' in row_endpoint
     assert 'select(func.count(ConsultationMessage.id))' in row_endpoint

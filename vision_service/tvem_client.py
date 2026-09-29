@@ -5,6 +5,8 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
+from functools import wraps
 import uuid
 from pathlib import Path
 
@@ -22,7 +24,7 @@ def enabled() -> bool:
 
 def _post_no_body(path: str) -> dict:
     req = urllib.request.Request(f"{TVEM_URL}{path}", data=b"", method="POST")
-    with urllib.request.urlopen(req, timeout=TVEM_TIMEOUT) as resp:
+    with urlopen(req, timeout=TVEM_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -57,10 +59,22 @@ def _detect(model_name: str, image_path: str, confidence: float) -> dict:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=TVEM_TIMEOUT) as resp:
+    with urlopen(req, timeout=TVEM_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _serialized(function):
+    @wraps(function)
+    def run(image_path):
+        if not enabled():
+            return [], [], []
+        from app.provider_budget import reservation
+        with reservation("tvem", "load-detect-unload", capacity=1, account_scope="tvem-session"):
+            return function(image_path)
+    return run
+
+
+@_serialized
 def run_sequential(image_path: str) -> tuple[list[dict], list[dict], list[dict]]:
     if not enabled():
         return [], [], []

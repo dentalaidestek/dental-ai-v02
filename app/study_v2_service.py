@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -77,6 +78,36 @@ def enqueue_legacy_materials_v2(
     return queued
 
 
+def enqueue_legacy_material_rows_v2(session: Session, *, limit: int = 100) -> int:
+    """Queue legacy uploads without importing the web application's model graph.
+
+    The standalone index worker must stay independent from ``app.main``.  That
+    module constructs the FastAPI application, template registry and web DB
+    engine, all of which are unnecessary resident memory in a PDF/OCR worker.
+    Keep this compatibility backfill on the shared SQL table contract instead.
+    """
+    if not indexing_enabled():
+        return 0
+    bounded_limit = max(1, min(int(limit), 1000))
+    rows = session.execute(text(
+        """
+        SELECT id, owner_user_id, course_id, mime_type, deleted_at
+        FROM studymaterial
+        WHERE deleted_at IS NULL
+          AND index_status = 'LEGACY'
+          AND active_index_version IS NULL
+          AND building_index_version IS NULL
+        ORDER BY id
+        LIMIT :limit
+        """
+    ), {"limit": bounded_limit}).mappings().all()
+    queued = 0
+    for row in rows:
+        if enqueue_material_v2(session, SimpleNamespace(**dict(row))):
+            queued += 1
+    return queued
+
+
 def reactivate_configured_ocr_jobs(session: Session) -> int:
     """Repair counters polluted by the old configuration-wait behavior.
 
@@ -120,3 +151,13 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
         row.index_status == "READY" and bool(row.active_index_version)
         for row in rows
     )
+
+
+def legacy_indexing_required() -> bool:
+    """Keep V1 until V2 reads are live; shadow indexing is an explicit canary."""
+    return not reads_enabled() or _flag("STUDY_V1_SHADOW_INDEXING")
+
+
+def validate_configuration() -> None:
+    if reads_enabled() and not indexing_enabled():
+        raise RuntimeError("STUDY_ACADEMIC_V2_READS requires STUDY_ACADEMIC_V2_INDEXING")

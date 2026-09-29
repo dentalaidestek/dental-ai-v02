@@ -238,13 +238,18 @@ def _create_router_engine():
     url = _database_url()
     if url.startswith("sqlite:"):
         return create_engine(url, connect_args={"check_same_thread": False})
-    return create_engine(url, pool_pre_ping=True)
+    from app.database import create_app_engine
+    return create_app_engine(url, role="router")
 
 
 _ENGINE = _create_router_engine()
 
 
 def _ensure_tables() -> None:
+    if os.getenv("RENDER"):
+        from app.migrate import require_schema
+        require_schema(_ENGINE)
+        return
     SQLModel.metadata.create_all(
         _ENGINE,
         tables=[

@@ -5,6 +5,7 @@ import mimetypes
 import os
 import urllib.error
 import urllib.request
+from app.http_transport import urlopen
 from pathlib import Path
 from typing import Any
 
@@ -170,7 +171,8 @@ def analyze_intraoral(image_path: str, vocabulary: list[str] | None = None) -> d
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=ORALDETECT_TIMEOUT_SECONDS) as response:
+        from app.provider_budget import reservation
+        with reservation("oraldetect", "dental-inference"), urlopen(request, timeout=ORALDETECT_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[-1200:]

@@ -211,6 +211,14 @@ def enqueue_index_job(
     ).first()
     if existing:
         return existing
+    from app.work_jobs import WorkCapacity
+    from sqlalchemy import func
+    if session.get_bind().dialect.name == "postgresql":
+        session.exec(text("SELECT pg_advisory_xact_lock(71048233)"))
+    backlog = session.exec(select(func.count()).select_from(StudyIndexJob).where(
+        StudyIndexJob.status.in_(["QUEUED", "RUNNING"]))).one()
+    if backlog >= int(__import__("os").getenv("STUDY_MAX_PENDING_INDEX_JOBS", "1000")):
+        raise WorkCapacity("Academic indexing queue is full; retry later")
     job = StudyIndexJob(
         owner_user_id=owner_user_id,
         course_id=course_id,
@@ -220,13 +228,13 @@ def enqueue_index_job(
         resource_class=resource_class,
         first_queued_at=utcnow_naive(),
     )
-    session.add(job)
     try:
-        session.flush()
+        with session.begin_nested():
+            session.add(job)
+            session.flush()
     except IntegrityError:
         # The DB unique index is the final arbiter if two request processes
         # enqueue the same material generation concurrently.
-        session.rollback()
         existing = session.exec(
             select(StudyIndexJob)
             .where(StudyIndexJob.material_id == material_id)
