@@ -7384,10 +7384,10 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         status_events: list[RealtimeEvent] = []
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
             return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
-        if case.status == "WAITING_START" and user.id == case.requester_user_id and (not case.consultation_start_deadline or now >= case.consultation_start_deadline):
-            case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
-            notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
-            status_events.extend(_record_case_status_realtime_events(s, case))
+        # Uploads can take seconds on R2. Do not reserve a PostgreSQL pool slot
+        # while reading or publishing the payload; revalidate under a row lock
+        # immediately before recording the message.
+        s.close()
         raw = file.file.read(CONSULTATION_UPLOAD_MAX_BYTES + 1)
         if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
             return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
@@ -7401,29 +7401,52 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         path = case_dir / stored
         try:
             storage_write_bytes(path, raw, content_type=file.content_type)
-        except OSError:
+        except (OSError, ObjectStorageError):
+            path.unlink(missing_ok=True)
             return upload_error("Dosya yüklenemedi. Lütfen tekrar deneyin.")
-        kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
-        if reply_to_message_id:
-            replied = s.get(ConsultationMessage, reply_to_message_id)
-            if not replied or replied.case_id != case.id:
-                reply_to_message_id = None
-        message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
-        s.add(message)
-        if user.id == case.expert_user_id and case.expert_started_at is None:
-            case.expert_started_at = now
-            if case.status == "WAITING_START":
-                case.status = "ACTIVE"
+        try:
+            case_query = select(ConsultationCase).where(ConsultationCase.id == case_id)
+            if engine.dialect.name == "postgresql":
+                case_query = case_query.with_for_update()
+            case = s.exec(case_query).first()
+            now = _utcnow_naive()
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Bu vakaya dosya gönderilemez.")
+            if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
+            if case.status == "WAITING_START" and user.id == case.requester_user_id:
+                case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
                 notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
                 status_events.extend(_record_case_status_realtime_events(s, case))
-            _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id); s.add(case)
-        _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
-        s.commit(); s.refresh(message)
-        sender=s.get(User,user.id)
-        realtime_events=_record_message_realtime_events(s,case,message,sender)
-        s.commit()
-        safe_client_message_id = client_message_id.strip()[:96] or None
-        payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
+            kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+            if reply_to_message_id:
+                replied = s.get(ConsultationMessage, reply_to_message_id)
+                if not replied or replied.case_id != case.id:
+                    reply_to_message_id = None
+            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
+            s.add(message)
+            if user.id == case.expert_user_id and case.expert_started_at is None:
+                case.expert_started_at = now
+                if case.status == "WAITING_START":
+                    case.status = "ACTIVE"
+                    notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                    status_events.extend(_record_case_status_realtime_events(s, case))
+                _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id); s.add(case)
+            _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
+            s.commit(); s.refresh(message)
+            sender=s.get(User,user.id)
+            realtime_events=_record_message_realtime_events(s,case,message,sender)
+            s.commit()
+            safe_client_message_id = client_message_id.strip()[:96] or None
+            payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
+        except Exception:
+            s.rollback(); s.close()
+            storage_delete(path)
+            raise
     on_loop(consultation_socket_hub.broadcast, case_id, payload)
     for realtime_event in status_events + realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
@@ -9439,53 +9462,62 @@ def upload_patient_media(
         return HTMLResponse("Tek seferde en fazla 12 görüntü yükleyebilirsiniz.", status_code=400)
 
     try:
-        with Session(engine, expire_on_commit=False) as s:
-            patient = s.get(Patient, patient_id)
+        with Session(engine, expire_on_commit=False) as auth_session:
+            patient = auth_session.get(Patient, patient_id)
             if not patient:
                 return HTMLResponse("Hasta bulunamadı", status_code=404)
             if user.role != "ADMIN" and patient.owner_user_id != user.id:
                 return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
-
             owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
-            valid_count = 0
-            for upload in selected_files:
-                original_name = Path(upload.filename).name
-                extension = Path(original_name).suffix.lower()
-                if extension not in allowed_extensions:
-                    continue
 
-                stored_name = f"patient_{patient_id}_{uuid.uuid4().hex}{extension}"
-                destination = UPLOAD_DIR / stored_name
-                saved_paths.append(destination)
-                total = 0
-                with destination.open("wb") as buffer:
-                    while True:
-                        chunk = upload.file.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if total > max_bytes:
-                            raise ValueError("Bir görüntü en fazla 12 MB olabilir.")
-                        buffer.write(chunk)
+        pending_media: list[PatientMedia] = []
+        valid_count = 0
+        for upload in selected_files:
+            original_name = Path(upload.filename).name
+            extension = Path(original_name).suffix.lower()
+            if extension not in allowed_extensions:
+                continue
 
-                if not _patient_media_has_valid_signature(destination, extension):
-                    raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
-                storage_persist_file(destination)
+            stored_name = f"patient_{patient_id}_{uuid.uuid4().hex}{extension}"
+            destination = UPLOAD_DIR / stored_name
+            saved_paths.append(destination)
+            total = 0
+            with destination.open("wb") as buffer:
+                while True:
+                    chunk = upload.file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError("Bir görüntü en fazla 12 MB olabilir.")
+                    buffer.write(chunk)
 
-                s.add(PatientMedia(
-                    patient_id=patient_id,
-                    owner_user_id=owner_id,
-                    original_filename=original_name,
-                    stored_filename=stored_name,
-                    file_path=str(destination),
-                    media_type=normalized_type,
-                    tooth_number=(tooth_number or "").strip() or None,
-                    note=(note or "").strip() or None,
-                ))
-                valid_count += 1
+            if not _patient_media_has_valid_signature(destination, extension):
+                raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
+            storage_persist_file(destination)
+            pending_media.append(PatientMedia(
+                patient_id=patient_id,
+                owner_user_id=owner_id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                file_path=str(destination),
+                media_type=normalized_type,
+                tooth_number=(tooth_number or "").strip() or None,
+                note=(note or "").strip() or None,
+            ))
+            valid_count += 1
 
-            if valid_count == 0:
-                return HTMLResponse("Kaydedilecek geçerli JPG/PNG/WEBP görüntüsü seçilmedi.", status_code=400)
+        if valid_count == 0:
+            return HTMLResponse("Kaydedilecek geçerli JPG/PNG/WEBP görüntüsü seçilmedi.", status_code=400)
+
+        with Session(engine, expire_on_commit=False) as s:
+            patient_query = select(Patient).where(Patient.id == patient_id)
+            if engine.dialect.name == "postgresql":
+                patient_query = patient_query.with_for_update()
+            live_patient = s.exec(patient_query).first()
+            if not live_patient or (user.role != "ADMIN" and live_patient.owner_user_id != user.id):
+                raise ValueError("Hasta silindi veya erişim yetkiniz değişti.")
+            s.add_all(pending_media)
             s.commit()
     except ValueError as exc:
         for path in saved_paths:
