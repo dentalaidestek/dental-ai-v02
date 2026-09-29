@@ -13,6 +13,8 @@ uvicorn==0.53.0
 pypdf==6.19.0
 
 Pillow==12.3.0
+pypdfium2==5.13.0
+tesserocr==2.11.0
 
 boto3>=1.35,<2
 websockets==15.0.1

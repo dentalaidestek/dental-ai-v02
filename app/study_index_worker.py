@@ -16,7 +16,7 @@ import re
 import socket
 from datetime import datetime, timedelta, timezone
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 from sqlmodel import Session, select
 
 from app.object_storage import ensure_local as storage_ensure_local
@@ -34,12 +34,14 @@ from app.study_index_jobs import (
     publish_index_version,
     record_provider_failure,
     record_provider_success,
+    restart_build_for_profile_change,
     set_build_identity,
     set_job_resource_class,
     upsert_page_checkpoint,
     verify_build_complete,
     yield_index_job,
 )
+from app.study_local_ocr import LOCAL_OCR_ENGINE_VERSION, ocr_material_page
 from app.study_provider import (
     StudyProviderError,
     get_embedding_dimensions,
@@ -110,7 +112,9 @@ def _index_fingerprint() -> str:
         "embedding_provider": target.provider,
         "embedding_model": target.model,
         "embedding_dimensions": get_embedding_dimensions(),
-        "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip().lower(),
+        "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower(),
+        "ocr_engine": LOCAL_OCR_ENGINE_VERSION,
+        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 180, 120, 240),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
@@ -318,24 +322,6 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
     return "EMBED"
 
 
-def _single_page_pdf(path, page_number: int) -> bytes:
-    gc.collect()
-    reader = PdfReader(str(path))
-    try:
-        if page_number < 1 or page_number > len(reader.pages):
-            raise RuntimeError(f"OCR_PAGE_OUT_OF_RANGE:{page_number}")
-        writer = PdfWriter()
-        writer.add_page(reader.pages[page_number - 1])
-        from io import BytesIO
-        output = BytesIO()
-        writer.write(output)
-        return output.getvalue()
-    finally:
-        stream = getattr(reader, "stream", None)
-        if stream and hasattr(stream, "close"):
-            stream.close()
-
-
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
     existing = session.exec(
         select(StudyIndexPage)
@@ -362,15 +348,8 @@ def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
 
 
 def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> str:
-    """Process a bounded OCR batch through an optional provider.
-
-    OCR is opt-in and fail-closed. The concrete provider is deliberately
-    isolated behind this hook so the indexing contract does not depend on one
-    OCR vendor. Until configured, pages remain durable OCR_REQUIRED artifacts.
-    """
-    provider_name = (os.getenv("STUDY_V2_OCR_PROVIDER") or "").strip().lower()
-    if not provider_name:
-        return "OCR_WAIT"
+    """Process a bounded batch locally; source pages never leave the service."""
+    provider_name = (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower()
     batch = _int_env("STUDY_V2_OCR_BATCH_PAGES", 4, 1, 20)
     pages = list(session.exec(
         select(StudyIndexPage)
@@ -382,18 +361,8 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
     ).all())
     if not pages:
         return "CHUNK"
-    if provider_name != "gemini":
-        # No vendor is silently guessed. Unsupported configuration is a
-        # permanent configuration error rather than fabricated OCR output.
+    if provider_name != "local":
         raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
-    provider = get_provider("gemini")
-    model = (os.getenv("STUDY_V2_OCR_MODEL") or "gemini-3.8-flash").strip()
-    provider_key = f"ocr:gemini:{model}"
-    if provider_circuit_open(session, provider_key):
-        return "PROVIDER_PAUSED"
-    attachment_type = "application/pdf" if mime_type == "application/pdf" else mime_type
-    if not provider.supports_generation_attachment(attachment_type):
-        raise RuntimeError(f"OCR_PROVIDER_UNSUPPORTED:{attachment_type}")
     for page in pages:
         if not _lease_still_owned(session, job):
             session.rollback()
@@ -408,40 +377,25 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         ):
             session.rollback()
             return "LEASE_LOST"
-        try:
-            text = provider.generate(
-                model=model,
-                system_prompt=(
-                    "Yalnız verilen diş hekimliği ders notu sayfasını eksiksiz yazıya dök. "
-                    "Başlıkları, maddeleri ve tablo satırlarını koru. Açıklama veya yorum ekleme."
-                ),
-                history=[],
-                prompt="Bu tek sayfalık PDF'yi OCR gibi aktar.",
-                attachments=[{
-                    "mime_type": attachment_type,
-                    "data": _single_page_pdf(path, page.page_number) if attachment_type == "application/pdf" else path.read_bytes(),
-                    "label": f"Kaynak sayfa {page.page_number}",
-                }],
-                temperature=0.0,
-                max_output_tokens=8000,
-            )
-        except StudyProviderError as exc:
-            record_provider_failure(
-                session,
-                provider_key,
-                error=str(exc),
-                threshold=_int_env("STUDY_V2_CIRCUIT_FAILURES", 3, 1, 20),
-                open_seconds=_int_env("STUDY_V2_CIRCUIT_OPEN_SECONDS", 120, 30, 1800),
-            )
-            raise
+        result = ocr_material_page(
+            path,
+            mime_type=mime_type,
+            page_number=page.page_number,
+        )
         if not _lease_still_owned(session, job):
             session.rollback()
             return "LEASE_LOST"
-        record_provider_success(session, provider_key)
-        text = normalize_extracted_text(text)
-        quality_ok, reason = _text_quality(text)
-        if not quality_ok:
-            raise StudyProviderError(f"OCR_QUALITY_REJECTED:{reason}", retryable=True)
+        text = normalize_extracted_text(result.text)
+        method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+        if result.visual_only:
+            # A diagram/blank page can legitimately contain no dependable text.
+            # Account for it without inventing clinical content; the immutable
+            # source PDF remains the visual evidence for page-aware fallback.
+            text = (
+                f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
+                "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+            )
+            method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
         upsert_page_checkpoint(
             session,
             owner_user_id=job.owner_user_id,
@@ -451,7 +405,7 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
             page_number=page.page_number,
             status="OCR_DONE",
             text_content=text,
-            extraction_method=f"GEMINI_OCR:{model}",
+            extraction_method=method,
             content_sha256=_sha256_text(text),
             error=None,
         )
@@ -594,13 +548,26 @@ def run_one_slice(
         mime_type = material[4] or ""
         stage = (job.stage or "PREPARE").upper()
 
+        # Never mix artifacts generated by two OCR/embedding profiles. This is
+        # especially important when migrating a paused remote-OCR generation to
+        # local OCR: discard only the unpublished generation and replay it.
+        current_fingerprint = _index_fingerprint()
+        if stage != "PREPARE" and job.index_fingerprint != current_fingerprint:
+            restarted = restart_build_for_profile_change(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+            )
+            return "RESTARTED:PROFILE_CHANGED" if restarted else "LEASE_LOST"
+
         # PREPARE establishes immutable identity. Every later slice reuses it;
         # if the R2/local source or indexing configuration changes mid-build,
         # the generation fails instead of mixing incompatible artifacts.
         if stage == "PREPARE":
             expected_pages = len(PdfReader(str(path)).pages) if mime_type == "application/pdf" else 1
             source_sha = _sha256_file(path)
-            fingerprint = _index_fingerprint()
+            fingerprint = current_fingerprint
             if not set_build_identity(
                 session,
                 job_id=job.id,

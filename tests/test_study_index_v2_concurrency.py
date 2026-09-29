@@ -15,6 +15,7 @@ from app.study_index_jobs import (
     defer_index_job,
     publish_index_version,
     retire_previous_generation,
+    restart_build_for_profile_change,
     set_build_identity,
     tombstone_material,
     yield_index_job,
@@ -346,6 +347,37 @@ def test_build_identity_is_immutable_across_resume():
             assert str(exc) == "BUILD_IDENTITY_MISMATCH"
         else:
             raise AssertionError("source drift must be rejected")
+
+
+def test_profile_change_restart_discards_only_unpublished_generation():
+    engine = _db()
+    with Session(engine) as s:
+        _material(s)
+        _job(s)
+        claimed = claim_next_index_job(s, worker_id="worker-a", lease_seconds=120)
+        assert claimed and claimed.lease_token
+        assert set_build_identity(
+            s, job_id=claimed.id, lease_token=claimed.lease_token,
+            worker_id="worker-a", expected_page_count=1,
+            source_sha256="source-a", index_fingerprint="old-profile",
+        )
+        _ready_artifacts(s)
+
+        assert restart_build_for_profile_change(
+            s, job_id=claimed.id, lease_token=claimed.lease_token,
+            worker_id="worker-a",
+        )
+        row = s.exec(text(
+            "SELECT status, stage, resource_class, expected_page_count, "
+            "source_sha256, index_fingerprint FROM studyindexjob WHERE id=:id"
+        ), params={"id": claimed.id}).one()
+        assert tuple(row) == ("QUEUED", "PREPARE", "NORMAL", None, None, None)
+        assert s.exec(text("SELECT COUNT(*) FROM studyindexpage")).one()[0] == 0
+        assert s.exec(text("SELECT COUNT(*) FROM studyindexchunk")).one()[0] == 0
+        material = s.exec(text(
+            "SELECT building_index_version, active_index_version FROM studymaterial WHERE id=1"
+        )).one()
+        assert tuple(material) == ("v1", None)
 
 
 def test_successful_slice_resets_failure_retry_counter():

@@ -287,6 +287,89 @@ def set_build_identity(
     return True
 
 
+def restart_build_for_profile_change(
+    session: Session,
+    *,
+    job_id: int,
+    lease_token: str,
+    worker_id: str,
+) -> bool:
+    """Discard an unpublished mixed-profile build and restart it safely.
+
+    A deployment can change OCR or embedding configuration while a durable job
+    is paused. Reusing its old artifacts would violate generation identity.
+    The lease fence makes the cleanup and reset atomic for the current worker.
+    """
+    now = utcnow_naive()
+    owned = session.exec(
+        text(
+            """
+            SELECT material_id, index_version
+            FROM studyindexjob
+            WHERE id=:job_id AND status='RUNNING'
+              AND lease_token=:lease_token AND worker_id=:worker_id
+              AND lease_until IS NOT NULL AND lease_until > :now
+            """
+        ),
+        params={
+            "job_id": job_id,
+            "lease_token": lease_token,
+            "worker_id": worker_id,
+            "now": now,
+        },
+    ).first()
+    if not owned:
+        session.rollback()
+        return False
+    material_id, index_version = int(owned[0]), str(owned[1])
+    current = session.exec(
+        text(
+            "SELECT 1 FROM studymaterial "
+            "WHERE id=:material_id AND deleted_at IS NULL "
+            "AND building_index_version=:index_version"
+        ),
+        params={"material_id": material_id, "index_version": index_version},
+    ).first()
+    if not current:
+        session.rollback()
+        return False
+    session.exec(
+        text("DELETE FROM studyindexchunk WHERE material_id=:m AND index_version=:v"),
+        params={"m": material_id, "v": index_version},
+    )
+    session.exec(
+        text("DELETE FROM studyindexpage WHERE material_id=:m AND index_version=:v"),
+        params={"m": material_id, "v": index_version},
+    )
+    result = session.exec(
+        text(
+            """
+            UPDATE studyindexjob
+            SET status='QUEUED', stage='PREPARE', resource_class='NORMAL',
+                failure_attempts=0, next_retry_at=NULL,
+                expected_page_count=NULL, source_sha256=NULL,
+                index_fingerprint=NULL, last_error='INDEX_PROFILE_CHANGED',
+                lease_until=NULL, lease_token=NULL, worker_id=NULL,
+                updated_at=:now
+            WHERE id=:job_id AND status='RUNNING'
+              AND lease_token=:lease_token AND worker_id=:worker_id
+              AND lease_until IS NOT NULL AND lease_until > :now
+            """
+        ),
+        params={
+            "job_id": job_id,
+            "lease_token": lease_token,
+            "worker_id": worker_id,
+            "now": now,
+        },
+    )
+    if getattr(result, "rowcount", 0) != 1:
+        session.rollback()
+        return False
+    session.commit()
+    return True
+
+
 def upsert_page_checkpoint(
     session: Session,
     *,
