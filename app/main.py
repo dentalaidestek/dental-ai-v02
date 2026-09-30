@@ -3207,10 +3207,17 @@ def _safe_login_next(next_url: str) -> str:
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, reset: str = "", next: str = ""):
+def login_page(
+    request: Request,
+    reset: str = "",
+    account_deleted: str = "",
+    next: str = "",
+):
     message = (
         "Şifreniz başarıyla değiştirildi. Yeni şifrenizle giriş yapabilirsiniz."
         if reset == "success"
+        else "Hesabınız silindi ve bu cihazdaki oturumunuz kapatıldı."
+        if account_deleted == "1"
         else None
     )
     return templates.TemplateResponse(

@@ -117,7 +117,9 @@
     .password-form input,.password-form select{min-height:46px;border-radius:12px;background:#fff}.password-form button{min-height:46px;border-radius:12px}
     @media(max-width:650px){.account-card{padding:15px}.account-profile-avatar{width:54px;height:54px;flex-basis:54px;border-radius:16px}.account-profile-copy h1{font-size:20px}.info-grid{grid-template-columns:1fr 1fr}.info-item:nth-child(2){grid-column:auto}.info-value{font-size:13px}.account-card h2{font-size:16px}}
     .push-setting{display:flex;align-items:center;justify-content:space-between;gap:14px}.push-setting-copy{min-width:0}.push-setting-copy h2{margin-bottom:5px}.push-setting-copy p{margin:0!important}.push-setting-action{flex:0 0 auto;min-width:150px;min-height:42px;border:0;border-radius:11px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;padding:9px 13px}.push-setting-action.secondary{background:#f1f5f9;color:#334155}.push-setting-action:disabled{cursor:not-allowed;opacity:.6}.push-setting-status{display:block;margin-top:7px;font-size:12px;color:#64748b}
+    .account-actions{display:grid;gap:13px}.account-action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.account-action-button{min-height:46px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:12px;padding:11px 14px;font-size:14px;font-weight:850;text-decoration:none;cursor:pointer}.account-logout-button{border:1px solid #0b2341;background:#0b2341;color:#fff}body #accountDeleteTrigger{border:1px solid #fecaca!important;background:#fff!important;color:#b42318!important}.account-delete-note{margin:0!important;font-size:12px!important;color:#64748b!important}.account-delete-dialog{width:min(480px,calc(100vw - 28px));box-sizing:border-box;border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px rgba(15,23,42,.28)}.account-delete-dialog::backdrop{background:rgba(15,23,42,.58)}.account-delete-dialog form{display:grid;gap:12px;padding:20px}.account-delete-dialog h2{margin:0;color:#991b1b}.account-delete-dialog p{margin:0;color:#475569;font-size:13px;line-height:1.55}.account-delete-dialog label{display:grid;gap:6px;color:#334155;font-size:13px;font-weight:750}.account-delete-dialog input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid #cbd5e1;border-radius:11px;padding:10px 12px;font-size:16px}.account-delete-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:4px}body #accountDeleteCancel{border:1px solid #cbd5e1!important;background:#fff!important;color:#334155!important}body #accountDeleteConfirm{border:1px solid #b42318!important;background:#b42318!important;color:#fff!important}body #accountDeleteConfirm:disabled{opacity:.55;cursor:not-allowed}
     @media(max-width:650px){.push-setting{align-items:stretch;flex-direction:column}.push-setting-action{width:100%}}
+    @media(max-width:430px){.account-action-row,.account-delete-dialog-actions{grid-template-columns:1fr}}
     @media(max-width:390px){.info-grid{grid-template-columns:1fr}}
 </style>
 
@@ -277,7 +279,39 @@
         </a>
     </div>
 
+    <div class="account-card account-actions">
+        <div>
+            <h2>Hesap İşlemleri</h2>
+            <p class="account-delete-note">Bu cihazdaki oturumunuzu kapatabilir veya hesabınızın silinmesini başlatabilirsiniz.</p>
+        </div>
+        <div class="account-action-row">
+            <a class="account-action-button account-logout-button" href="/logout">Çıkış Yap</a>
+            {% if user.role != 'ADMIN' %}
+            <button class="account-action-button account-delete-trigger" id="accountDeleteTrigger" type="button">Hesabımı Sil</button>
+            {% endif %}
+        </div>
+    </div>
+
 </div>
+
+{% if user.role != 'ADMIN' %}
+<dialog class="account-delete-dialog" id="accountDeleteDialog">
+    <form method="post" action="/account/delete" id="accountDeleteForm" data-expected-username="{{ user.username }}">
+        <h2>Hesabımı Sil</h2>
+        <p>Bu işlem geri alınamaz. Hesabınıza erişim hemen kapatılır; kişisel profiliniz ve Akademik AI içerikleriniz silinir. Hukuken saklanması gereken işlem kayıtları kimliğinizden ayrıştırılarak tutulabilir.</p>
+        <label>Kullanıcı adınızı yazın
+            <input name="confirm_username" id="deleteConfirmUsername" autocomplete="off" required placeholder="{{ user.username }}">
+        </label>
+        <label>Mevcut şifreniz
+            <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <div class="account-delete-dialog-actions">
+            <button class="account-delete-cancel" type="button" id="accountDeleteCancel">Vazgeç</button>
+            <button class="account-delete-confirm" type="submit" id="accountDeleteConfirm">Hesabı Kalıcı Olarak Sil</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
 
 <dialog class="expert-crop-dialog" id="accountCropDialog"><form method="dialog"><header><strong>Profil fotoğrafı</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="accountCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="accountCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="accountCropApply" class="expert-primary">Kaydet</button></div></form></dialog>
 
@@ -306,7 +340,23 @@ document.addEventListener('DOMContentLoaded', function() {
     if (select) select.dataset.initialValue = select.value;
     setupAccountPhotoCrop();
     setupDevicePushSetting();
+    setupAccountActions();
 });
+function setupAccountActions(){
+    const dialog=document.getElementById('accountDeleteDialog'),trigger=document.getElementById('accountDeleteTrigger'),cancel=document.getElementById('accountDeleteCancel'),form=document.getElementById('accountDeleteForm'),username=document.getElementById('deleteConfirmUsername'),confirmButton=document.getElementById('accountDeleteConfirm');
+    if(!dialog||!trigger||!cancel||!form||!username||!confirmButton)return;
+    trigger.addEventListener('click',()=>dialog.showModal());
+    cancel.addEventListener('click',()=>dialog.close());
+    dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+    form.addEventListener('submit',event=>{
+        const matches=username.value.trim()===String(form.dataset.expectedUsername||'').trim();
+        username.setCustomValidity(matches?'':'Kullanıcı adınızı eksiksiz yazın.');
+        if(!matches||!form.checkValidity()){event.preventDefault();form.reportValidity();return;}
+        if(confirmButton.disabled){event.preventDefault();return;}
+        confirmButton.disabled=true;confirmButton.textContent='Hesap siliniyor…';
+    });
+    username.addEventListener('input',()=>username.setCustomValidity(''));
+}
 function urlBase64ToUint8Array(value){const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(base64);return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));}
 async function setupDevicePushSetting(){
     const button=document.getElementById('pushSettingButton'),status=document.getElementById('pushSettingStatus');if(!button||!status)return;
