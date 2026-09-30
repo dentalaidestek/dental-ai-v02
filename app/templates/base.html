@@ -264,7 +264,8 @@ if (!window.__daiMessagesPartialNavigationStarted) {
         if(casePathPattern.test(location.pathname)&&document.querySelector("main .messages-chat-list"))openCaseWithoutReload(location.href,{pushHistory:false});
     });
 }
-async function daiEnsureWebPush({requestPermission=false}={}){
+let daiPushReconcilePromise=null;
+async function daiEnsureWebPushOnce({requestPermission=false}={}){
     if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window))return {ok:false,state:"unsupported"};
     let config={};try{const r=await fetch("/account/push/config",{credentials:"same-origin",cache:"no-store"});config=r.ok?await r.json():{};}catch(_){return {ok:false,state:"error"};}
     if(!config.configured)return {ok:false,state:"unconfigured"};
@@ -282,6 +283,12 @@ async function daiEnsureWebPush({requestPermission=false}={}){
         window.dispatchEvent(new CustomEvent("dai:push-state-changed",{detail:{enabled:true}}));
         return {ok:true,state:"granted",subscription};
     }catch(_){return {ok:false,state:"error"};}
+}
+
+async function daiEnsureWebPush(options={}){
+    if(daiPushReconcilePromise)return daiPushReconcilePromise;
+    daiPushReconcilePromise=daiEnsureWebPushOnce(options);
+    try{return await daiPushReconcilePromise}finally{daiPushReconcilePromise=null;}
 }
 window.daiEnsureWebPush=daiEnsureWebPush;
 // Browser permission is origin-wide. If it was already granted, reconcile the
