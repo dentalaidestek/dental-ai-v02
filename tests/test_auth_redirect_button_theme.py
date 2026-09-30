@@ -81,6 +81,8 @@ def test_navy_button_theme_is_loaded_last_and_excludes_message_senders():
     theme = (ROOT / "app/static/button-theme.css").read_text(encoding="utf-8")
     assert base.index("button-theme.css") > base.index("dashboard-v2.css")
     assert "--dai-button-navy: #0b2341" in theme
+    assert "background-color: var(--dai-button-navy) !important" in theme
+    assert "background: var(--dai-button-navy)" not in theme
     assert ".expert-send-circle" in theme
     assert "#studySendButton" in theme
     assert ".support-reply-actions button" in theme

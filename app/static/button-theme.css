@@ -44,7 +44,7 @@ body :is(
     .support-reply-actions button,
     .admin-support-message-form button
 )) {
-    background: var(--dai-button-navy) !important;
+    background-color: var(--dai-button-navy) !important;
     background-image: none !important;
     border-color: var(--dai-button-navy) !important;
     color: #ffffff !important;
@@ -85,7 +85,7 @@ body :is(
     .support-reply-actions button,
     .admin-support-message-form button
 )):hover {
-    background: var(--dai-button-navy-hover) !important;
+    background-color: var(--dai-button-navy-hover) !important;
     border-color: var(--dai-button-navy-hover) !important;
     color: #ffffff !important;
 }
@@ -93,4 +93,3 @@ body :is(
 body :is(button, input[type="button"], input[type="submit"], input[type="reset"]):disabled {
     opacity: .58;
 }
-
