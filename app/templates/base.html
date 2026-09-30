@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/static/style.css?v=20260927-program-final-v1">
     <link rel="stylesheet" href="/static/design-system.css?v=20260927-notification-controls-v1">
     <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260927-mobile-fluid-v1">
+    <link rel="stylesheet" href="/static/button-theme.css?v=20260930-navy-v1">
 </head>
 <body class="dai-app-shell">
 <nav class="topbar">
@@ -308,6 +309,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     }
     const notificationUnreadKey="daiNotificationUnread:{{ user.id if user else 0 }}";
     let notificationUnreadCount=Math.max(0,Number(sessionStorage.getItem(notificationUnreadKey)||0));
+    let notificationCenterPromise=null,notificationCenterQueued=false;
     function setNotificationUnreadCount(count) {
         notificationUnreadCount=Math.max(0,Number(count||0));
         sessionStorage.setItem(notificationUnreadKey,String(notificationUnreadCount));
@@ -357,10 +359,17 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         }));
     }
     async function refreshNotificationCenter() {
-        try{
-            const r=await fetch("/account/notifications",{credentials:"same-origin",cache:"no-store"});
-            if(r.ok)renderNotificationCenter(await r.json());
-        }catch(_){}
+        if(notificationCenterPromise){notificationCenterQueued=true;return notificationCenterPromise;}
+        notificationCenterPromise=(async()=>{
+            do{
+                notificationCenterQueued=false;
+                try{
+                    const r=await fetch("/account/notifications",{credentials:"same-origin",cache:"no-store"});
+                    if(r.ok)renderNotificationCenter(await r.json());
+                }catch(_){}
+            }while(notificationCenterQueued);
+        })();
+        try{return await notificationCenterPromise}finally{notificationCenterPromise=null;}
     }
     async function markNotificationsSeen() {
         const seenBefore=new Date().toISOString();
@@ -491,11 +500,11 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(notify){bumpMessageBadge();showLiveMessage({case_id:data.case_id,sender:"Yeni danışmanlık talebi",preview:"Yeni bir danışmanlık talebiniz var."});}
             if(notify&&location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
-            window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
+            if(notify)window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
         } else if(evt.event_type==="NOTICE_CREATED"){if(notify){setNotificationUnreadCount(notificationUnreadCount+1);let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
-        else if(evt.event_type==="CASE_READ"){refreshUnreadCount();}
-        else if(evt.event_type==="NOTIFICATIONS_READ"){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}
+        else if(evt.event_type==="CASE_READ"){if(notify)refreshUnreadCount();}
+        else if(evt.event_type==="NOTIFICATIONS_READ"){if(notify){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}}
         else if(evt.event_type==="PROFILE_PHOTO_UPDATED"){refreshProfileImages(data.user_id,data.photo_url);}
         else if(evt.event_type==="PROFILE_UPDATED"){window.dispatchEvent(new CustomEvent("dai:profile-updated",{detail:data}));}
         else if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(evt.event_type)){applyPatientEvent(evt.event_type,data,id);}
@@ -507,7 +516,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         // disconnect. Other stateful event types already have dedicated handlers.
         const replayProgramState=evt.replay===true&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(evt.event_type);
         const replaySupportState=evt.replay===true&&["SUPPORT_TICKET_CREATED","SUPPORT_TICKET_UPDATED","SUPPORT_MESSAGE_CREATED","USER_REPORT_CREATED","USER_REPORT_UPDATED"].includes(evt.event_type);
-        if(notify||replayProgramState||replaySupportState||["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_READ"].includes(evt.event_type))window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
+        if(notify||replayProgramState||replaySupportState)window.dispatchEvent(new CustomEvent("dai:sync-event",{detail:evt}));
     }
     async function refreshUnreadCount() {
         if(unreadCountPromise)return unreadCountPromise;
@@ -520,14 +529,15 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
     async function catchUpEvents(full=false) {
         if(catchUpEventsPromise)return catchUpEventsPromise;
         catchUpEventsPromise=(async()=>{
-            let after=full?0:Math.max(0,lastEventId-syncOverlap), more=true;
+            let after=full?0:Math.max(0,lastEventId-syncOverlap), more=true, sawEvents=false;
             while(more){
                 const r=await fetch("/sync/events?after_id="+encodeURIComponent(after)+"&limit=200",{credentials:"same-origin",cache:"no-store"});
                 if(!r.ok)return;
-                const data=await r.json(); (data.events||[]).forEach(evt=>applySyncEvent(evt,{notify:false}));
+                const data=await r.json(),events=data.events||[];if(events.length)sawEvents=true;events.forEach(evt=>applySyncEvent(evt,{notify:false}));
                 after=Number(data.last_event_id||after); more=Boolean(data.has_more);
             }
             await refreshUnreadCount();
+            if(sawEvents)window.dispatchEvent(new Event("dai:realtime-resync"));
         })();
         try{return await catchUpEventsPromise}finally{catchUpEventsPromise=null;}
     }
@@ -537,7 +547,8 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
         const proto=location.protocol==="https:"?"wss:":"ws:";
         const connection=new WebSocket(proto+"//"+location.host+"/ws/sync"); syncSocket=connection;
         connection.onopen=()=>{if(syncSocket!==connection)return;resetSyncReconnect();connection.send(JSON.stringify({type:"visibility",visible:!document.hidden}));connection.send(JSON.stringify({type:"resume",after_id:Math.max(0,lastEventId-syncOverlap)}));pingTimer=setInterval(()=>{if(connection.readyState===WebSocket.OPEN)connection.send(JSON.stringify({type:"ping"}));},25000);};
-        connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);if(evt.type==="resume_complete"&&evt.has_more){connection.send(JSON.stringify({type:"resume",after_id:evt.last_event_id}));return;}if(evt.type==="resync"){catchUpEvents(true).finally(()=>window.dispatchEvent(new Event("dai:realtime-resync")));return;}applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
+        let replaySeen=false;
+        connection.onmessage=e=>{if(syncSocket!==connection)return;try{const evt=JSON.parse(e.data);if(evt?.replay===true)replaySeen=true;if(evt.type==="resume_complete"){if(evt.has_more){connection.send(JSON.stringify({type:"resume",after_id:evt.last_event_id}));return;}if(replaySeen){replaySeen=false;window.dispatchEvent(new Event("dai:realtime-resync"));}return;}if(evt.type==="resync"){catchUpEvents(true);return;}applySyncEvent(evt,{notify:evt?.replay!==true});}catch(_){}};
         connection.onclose=()=>{if(syncSocket!==connection)return;syncSocket=null;clearInterval(pingTimer);scheduleSyncReconnect();};
         connection.onerror=()=>{try{connection.close();}catch(_){}};
     }

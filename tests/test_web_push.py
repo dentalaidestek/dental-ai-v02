@@ -126,6 +126,13 @@ class WebPushContractTests(unittest.TestCase):
         notice_branch = BASE.split('evt.event_type==="NOTICE_CREATED"', 1)[1].split("else if", 1)[0]
         self.assertNotIn("bumpMessageBadge", notice_branch)
 
+    def test_notification_center_refreshes_are_single_flight_with_trailing_reconcile(self):
+        refresh = BASE.split("async function refreshNotificationCenter()", 1)[1].split("async function markNotificationsSeen()", 1)[0]
+        self.assertIn("if(notificationCenterPromise)", refresh)
+        self.assertIn("notificationCenterQueued=true", refresh)
+        self.assertIn("while(notificationCenterQueued)", refresh)
+        self.assertIn("notificationCenterPromise=null", refresh)
+
     def test_push_copy_never_uses_notice_message_or_clinical_detail(self):
         copy = MAIN.split("def _web_push_copy", 1)[1].split("def _web_push_status_code", 1)[0]
         self.assertNotIn("notice.message", copy)

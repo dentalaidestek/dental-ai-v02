@@ -40,3 +40,13 @@ def test_chat_has_read_receipt_and_inline_upload_error_contract():
     assert "composerInlineError" in CASE_ROOM
     assert "upload_max_mb" in CASE_ROOM
     assert "Ödeme işlemleri yakında kullanılabilir olacak" in CASE_ROOM
+
+
+def test_support_turn_and_status_writes_lock_the_ticket_row():
+    user_reply = MAIN.split("def support_ticket_user_reply", 1)[1].split("@app.post", 1)[0]
+    admin_message = MAIN.split("def admin_center_support_message", 1)[1].split("@app.post", 1)[0]
+    admin_status = MAIN.split("def admin_center_support_update", 1)[1].split("@app.post", 1)[0]
+    lock = "select(SupportTicket).where(SupportTicket.id==ticket_id).with_for_update()"
+    assert lock in user_reply
+    assert lock in admin_message
+    assert lock in admin_status

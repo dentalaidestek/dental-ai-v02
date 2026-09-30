@@ -81,6 +81,7 @@
         }
     </style>
     <link rel="stylesheet" href="/static/design-system.css">
+    <link rel="stylesheet" href="/static/button-theme.css?v=20260930-navy-v1">
 </head>
 <body class="dai-standalone">
     <div class="box">
@@ -96,6 +97,7 @@
         {% endif %}
 
         <form method="post" action="/login">
+            <input type="hidden" name="next_url" value="{{ next_url or '/' }}">
             <label>Kullanıcı adı veya e-posta</label>
             <input
                 type="text"

@@ -40,6 +40,15 @@ function sortMessageRows(){
   }).forEach(row=>list.appendChild(row));
 }
 const conversationCardFetches=new Map();
+let messagesReconcilePromise=null;
+async function reconcileMessagesView(){
+  if(location.pathname!=="/messages"||messagesReconcilePromise)return messagesReconcilePromise;
+  messagesReconcilePromise=(async()=>{try{
+    const url=location.pathname+location.search,res=await fetch(url,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"realtime-resync"}});if(!res.ok)return;
+    const doc=new DOMParser().parseFromString(await res.text(),"text/html"),fresh=doc.querySelector(".messages-list"),current=document.querySelector(".messages-list");
+    if(fresh&&current){current.replaceChildren(...document.importNode(fresh,true).childNodes);ensureMessageCountdown();sortMessageRows();applyMessageFilters();}
+  }catch(_){}finally{messagesReconcilePromise=null;}})();return messagesReconcilePromise;
+}
 async function refreshConversationCard(caseId,replaceExisting=false){
   caseId=Number(caseId||0);if(!caseId)return;if(conversationCardFetches.has(caseId))return conversationCardFetches.get(caseId);
   const request=(async()=>{try{
@@ -66,6 +75,7 @@ function applyIncomingMessage(data){
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMessageCountdown();else ensureMessageCountdown();});
 window.addEventListener("dai:case-read",e=>{const id=Number(e.detail?.case_id||0),row=document.querySelector('.message-row[data-case-id="'+id+'"]');if(!row)return;row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();applyMessageFilters();sortMessageRows();});
 window.addEventListener("dai:messages-view-restored",()=>{ensureMessageCountdown();document.querySelectorAll(".message-row[data-case-id]").forEach(row=>{const id=Number(row.dataset.caseId||0);if(id)refreshConversationCard(id,true);});});
+window.addEventListener("dai:realtime-resync",reconcileMessagesView);
 window.addEventListener("dai:sync-event",e=>{
   const evt=e.detail||{},data=evt.payload||{};
   if(evt.event_type==="MESSAGE_CREATED")applyIncomingMessage(data);

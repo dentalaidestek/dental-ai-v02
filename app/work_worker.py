@@ -60,6 +60,9 @@ def run_one(engine):
             elif job.kind == 'FINAL':
                 (m._run_guest_final_analysis if guest else m._run_final_analysis)(job.resource_id, job.owner_user_id, json.loads(job.payload_json))
             elif job.kind == 'LEGACY_INDEX':
+                from app.study_v2_service import v2_only_enabled
+                if v2_only_enabled():
+                    raise WorkCancelled('ACADEMIC_V2_ONLY')
                 m._index_study_course_background(job.owner_user_id, job.resource_id)
             else:
                 raise WorkCancelled('UNSUPPORTED_JOB')

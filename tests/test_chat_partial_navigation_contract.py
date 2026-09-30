@@ -13,6 +13,7 @@ from app import main
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MAIN = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 BASE = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
 ROOM = (ROOT / "app" / "templates" / "expert_case_room.html").read_text(encoding="utf-8")
 MESSAGES = (ROOT / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
@@ -67,6 +68,34 @@ def test_global_sync_socket_is_singleton_and_stale_safe():
     assert "syncSocket.readyState===WebSocket.OPEN" in BASE
     assert "if(syncSocket!==connection)return" in BASE
     assert "syncSocket=null" in BASE
+
+
+def test_socket_capacity_rejection_closes_once_and_expired_auth_still_cleans_up():
+    user_hub = MAIN.split("class UserRealtimeSocketHub", 1)[1].split(
+        "user_realtime_socket_hub =", 1
+    )[0]
+    room_hub = MAIN.split("class ConsultationSocketHub", 1)[1].split(
+        "consultation_socket_hub =", 1
+    )[0]
+    sync_socket = MAIN.split("async def realtime_sync_socket", 1)[1].split(
+        "class ConsultationSocketHub", 1
+    )[0]
+    single_close = "if not await socket_writes.accept(websocket):\n            return False"
+    assert single_close in user_hub
+    assert single_close in room_hub
+    assert "connected_user_id = user.id" in sync_socket
+    assert "disconnect(connected_user_id,websocket)" in sync_socket
+
+
+def test_replay_reconciles_messages_once_without_per_event_card_fetches():
+    apply_event = BASE.split("function applySyncEvent", 1)[1].split("async function refreshUnreadCount", 1)[0]
+    assert 'if(notify||replayProgramState||replaySupportState)' in apply_event
+    assert 'if(notify){setNotificationUnreadCount' in apply_event
+    assert 'window.dispatchEvent(new Event("dai:realtime-resync"))' in BASE
+    assert 'window.addEventListener("dai:realtime-resync",reconcileMessagesView)' in MESSAGES
+    reconcile = MESSAGES.split("async function reconcileMessagesView", 1)[1].split("async function refreshConversationCard", 1)[0]
+    assert 'fetch(url' in reconcile
+    assert 'querySelector(".messages-list")' in reconcile
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient optional dependency is unavailable")

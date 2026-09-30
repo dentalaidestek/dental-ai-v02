@@ -243,6 +243,105 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
         engine.dispose()
 
 
+def test_patient_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from starlette.datastructures import UploadFile
+    from app import main
+
+    engine = create_engine(f'sqlite:///{tmp_path / "patient-media.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, 'engine', engine)
+    monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username='media-owner', role='DOCTOR', display_name='Media Owner')
+        session.add(user); session.commit()
+        patient = main.Patient(anonymous_id='media-patient', owner_user_id=user.id)
+        session.add(patient); session.commit()
+        user_id, patient_id = user.id, patient.id
+    monkeypatch.setattr(main, 'get_current_user', lambda request: user)
+
+    def persist(path, **kwargs):
+        assert engine.pool.checkedout() == 0
+        assert path.read_bytes().startswith(b'\xff\xd8\xff')
+        return str(path)
+
+    monkeypatch.setattr(main, 'storage_persist_file', persist)
+    try:
+        response = asyncio.run(main.upload_patient_media(
+            None,
+            patient_id,
+            media_type='PHOTO',
+            tooth_number=None,
+            note=None,
+            files=[UploadFile(file=io.BytesIO(b'\xff\xd8\xffsynthetic'), filename='photo.jpg')],
+        ))
+        assert response.status_code == 303
+        with Session(engine) as session:
+            rows = session.exec(select(main.PatientMedia).where(
+                main.PatientMedia.patient_id == patient_id,
+                main.PatientMedia.owner_user_id == user_id,
+            )).all()
+            assert len(rows) == 1
+    finally:
+        engine.dispose()
+
+
+def test_consultation_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from starlette.datastructures import UploadFile
+    from app import main
+
+    engine = create_engine(f'sqlite:///{tmp_path / "consultation-media.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, 'engine', engine)
+    monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
+    monkeypatch.setattr(main, 'on_loop', lambda *args, **kwargs: None)
+    with Session(engine, expire_on_commit=False) as session:
+        requester = main.User(username='requester', role='DOCTOR', display_name='Requester')
+        expert = main.User(username='expert', role='DOCTOR', display_name='Expert')
+        session.add(requester); session.add(expert); session.commit()
+        case = main.ConsultationCase(
+            requester_user_id=requester.id,
+            expert_user_id=expert.id,
+            specialty='Endodonti',
+            clinical_summary='Synthetic',
+            question='Synthetic',
+            status='ACTIVE',
+            expert_response_deadline=main._utcnow_naive() + main.timedelta(hours=1),
+        )
+        session.add(case); session.commit()
+        case_id = case.id
+    monkeypatch.setattr(main, 'get_current_user', lambda request: requester)
+
+    def write(path, content, **kwargs):
+        assert engine.pool.checkedout() == 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return str(path)
+
+    monkeypatch.setattr(main, 'storage_write_bytes', write)
+    try:
+        response = asyncio.run(main.expert_support_media_message(
+            type('Request', (), {'headers': {'x-requested-with': 'fetch'}})(),
+            case_id,
+            UploadFile(
+                file=io.BytesIO(b'\xff\xd8\xffsynthetic'),
+                filename='scan.jpg',
+                headers={'content-type': 'image/jpeg'},
+            ),
+            reply_to_message_id=None,
+            client_message_id='',
+        ))
+        assert response.status_code == 200
+        with Session(engine) as session:
+            rows = session.exec(select(main.ConsultationMessage).where(
+                main.ConsultationMessage.case_id == case_id,
+            )).all()
+            assert len(rows) == 1 and rows[0].message_type == 'IMAGE'
+    finally:
+        engine.dispose()
+
+
 def test_mixed_worker_services_ocr_under_continuous_normal_backlog(monkeypatch):
     from types import SimpleNamespace
     from sqlmodel import create_engine

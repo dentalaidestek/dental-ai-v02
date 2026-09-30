@@ -1,0 +1,96 @@
+:root {
+    --dai-button-navy: #0b2341;
+    --dai-button-navy-hover: #071a31;
+}
+
+/*
+ * Tek buton rengi: mevcut ölçü, radius ve yerleşimleri değiştirmeden yalnız
+ * zemin/yazı/border tonunu birleştirir. Gerçek mesaj gönderme kontrolleri
+ * konuşma içindeki görsel anlamını korumak için kapsam dışında tutulur.
+ */
+body :is(
+    button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    .btn,
+    .button,
+    .primary-button,
+    .profile-button,
+    .result-button,
+    .expert-primary,
+    .expert-secondary,
+    .expert-disabled,
+    .patient-action,
+    .patient-consult-button,
+    .directory-add,
+    .analysis-submit-button,
+    .workspace-btn-primary,
+    .workspace-btn-secondary,
+    .study-primary-button,
+    .study-secondary-button,
+    .study-danger-button,
+    .study-ai-main-button,
+    .study-work-button,
+    .patient-media-link-button
+):not(:where(
+    [aria-label="Gönder"],
+    #studySendButton,
+    .expert-send-circle,
+    .image-editor-send,
+    .expert-composer button,
+    .study-chat-composer button,
+    .study-chat-clean-composer button,
+    .support-reply-actions button,
+    .admin-support-message-form button
+)) {
+    background: var(--dai-button-navy) !important;
+    background-image: none !important;
+    border-color: var(--dai-button-navy) !important;
+    color: #ffffff !important;
+}
+
+body :is(
+    button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    .btn,
+    .button,
+    .primary-button,
+    .profile-button,
+    .result-button,
+    .expert-primary,
+    .expert-secondary,
+    .patient-action,
+    .patient-consult-button,
+    .directory-add,
+    .analysis-submit-button,
+    .workspace-btn-primary,
+    .workspace-btn-secondary,
+    .study-primary-button,
+    .study-secondary-button,
+    .study-danger-button,
+    .study-ai-main-button,
+    .study-work-button,
+    .patient-media-link-button
+):not(:where(
+    [aria-label="Gönder"],
+    #studySendButton,
+    .expert-send-circle,
+    .image-editor-send,
+    .expert-composer button,
+    .study-chat-composer button,
+    .study-chat-clean-composer button,
+    .support-reply-actions button,
+    .admin-support-message-form button
+)):hover {
+    background: var(--dai-button-navy-hover) !important;
+    border-color: var(--dai-button-navy-hover) !important;
+    color: #ffffff !important;
+}
+
+body :is(button, input[type="button"], input[type="submit"], input[type="reset"]):disabled {
+    opacity: .58;
+}
+

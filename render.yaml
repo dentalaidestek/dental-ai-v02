@@ -10,6 +10,14 @@ envVarGroups:
         value: embedded
       - key: STUDY_ACADEMIC_V2_COLOCATED_WORKER
         value: "1"
+      - key: STUDY_ACADEMIC_V2_INDEXING
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_READS
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_STREAMING
+        value: "1"
+      - key: STUDY_ACADEMIC_V2_ONLY
+        value: "1"
       - key: DENTAL_WEB_DB_POOL_SIZE
         value: "2"
       - key: DENTAL_ROUTER_DB_POOL_SIZE

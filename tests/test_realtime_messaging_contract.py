@@ -275,8 +275,12 @@ def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active
     monkeypatch.setattr(main, "engine", engine)
     with TestClient(main.app) as client:
         response = client.post("/account/notifications/read-all", cookies={main.SESSION_COOKIE: token})
+        refreshed = client.get("/account/notifications", cookies={main.SESSION_COOKIE: token})
     assert response.status_code == 200
     assert response.json()["read_count"] == 1
+    assert refreshed.status_code == 200
+    assert refreshed.json()["notifications"] == []
+    assert refreshed.json()["unread_count"] == 0
     with Session(engine) as session:
         notice = session.get(main.AdminNotice, notice_id)
         assert notice.user_id == user_id
