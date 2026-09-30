@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Iterator
 
-from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError
+from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error_for_user
 from app.study_provider import (
     ProviderTarget,
     StudyProviderError,
@@ -100,7 +100,7 @@ def stream_rag_v2(
         except StudyProviderError as exc:
             report_target_failure(target, exc)
             if emitted:
-                raise StudyAIError(str(exc), code=exc.code, retryable=exc.retryable) from exc
+                raise study_provider_error_for_user(exc) from exc
             last_error = exc
             logger.warning(
                 "Academic AI V2 generation target failed before output. provider=%s model=%s code=%s",
@@ -110,10 +110,8 @@ def stream_rag_v2(
             )
 
     if last_error is not None:
-        raise StudyAIError(
-            str(last_error), code=last_error.code, retryable=last_error.retryable
-        ) from last_error
-    raise StudyAIError("Akademik AI için şu anda kullanılabilir model bulunamadı.")
+        raise study_provider_error_for_user(last_error) from last_error
+    raise StudyAIError("Akademik AI şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.")
 
 
 def ask_rag_v2(

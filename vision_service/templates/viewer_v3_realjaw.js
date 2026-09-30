@@ -49,7 +49,7 @@
       const THREE=window.D3.THREE;
       const [mr,br]=await Promise.all([fetch(MANIFEST_URL,{cache:'force-cache'}),fetch(BUFFER_URL,{cache:'force-cache'})]);
       if(!mr.ok)throw new Error('Çene manifesti yüklenemedi: '+mr.status);
-      if(!br.ok)throw new Error('Çene modeli yüklenemedi: '+br.status);
+      if(!br.ok)throw new Error('Çene görünümü yüklenemedi: '+br.status);
       const manifest=await mr.json(),buffer=await br.arrayBuffer();
       const source=(manifest.parts||[]).filter(p=>p.source==='openfulljaw'&&(p.buffer||'')==='open-full-jaw');
       const bones=source.filter(p=>p.group==='bone');

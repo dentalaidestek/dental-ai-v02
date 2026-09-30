@@ -33,7 +33,11 @@ body :is(
     .study-danger-button,
     .study-ai-main-button,
     .study-work-button,
-    .patient-media-link-button
+    .patient-media-link-button,
+    .visual-empty a,
+    .messages-head > a,
+    .messages-filters-compact > a.active,
+    .messages-empty-compact a
 ):not(:where(
     [aria-label="Gönder"],
     #studySendButton,
@@ -75,7 +79,11 @@ body :is(
     .study-danger-button,
     .study-ai-main-button,
     .study-work-button,
-    .patient-media-link-button
+    .patient-media-link-button,
+    .visual-empty a,
+    .messages-head > a,
+    .messages-filters-compact > a.active,
+    .messages-empty-compact a
 ):not(:where(
     [aria-label="Gönder"],
     #studySendButton,
@@ -94,4 +102,24 @@ body :is(
 
 body :is(button, input[type="button"], input[type="submit"], input[type="reset"]):disabled {
     opacity: .58;
+}
+
+/* Metin bağlantıları ve aktif gezinme öğeleri: ölçüleri değiştirmeden lacivert. */
+body :is(
+    #dai-button-theme-specificity,
+    .message-title strong,
+    .visual-section-head a,
+    .visual-time,
+    .visual-mini-ai,
+    .study-back-link,
+    .study-ai-outline-link:not(.disabled),
+    .study-course-chat-entry strong,
+    .mobile-nav-item.active
+) {
+    color: var(--dai-button-navy) !important;
+}
+
+body :is(.message-unread, .messages-empty-icon) {
+    background-color: var(--dai-button-navy) !important;
+    color: #ffffff !important;
 }

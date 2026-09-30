@@ -48,7 +48,7 @@
     if(dataPromise)return dataPromise;
     dataPromise=(async()=>{
       const [mr,br]=await Promise.all([fetch(MANIFEST_URL,{cache:'force-cache'}),fetch(BUFFER_URL,{cache:'force-cache'})]);
-      if(!mr.ok||!br.ok)throw new Error('Sabitlenmiş anatomik çene modeli yüklenemedi');
+      if(!mr.ok||!br.ok)throw new Error('Anatomik çene görünümü yüklenemedi');
       const manifest=await mr.json(),buffer=await br.arrayBuffer();
       const parts=(manifest.parts||[]).filter(p=>p.source==='openfulljaw'&&(p.buffer||'')==='open-full-jaw');
       const bones=parts.filter(p=>p.group==='bone'),teeth=parts.filter(p=>p.group==='tooth'&&validFdi(p.fdi));

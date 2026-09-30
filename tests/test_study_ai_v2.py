@@ -87,7 +87,31 @@ def test_v2_never_switches_provider_after_stream_has_started(monkeypatch):
     try:
         next(stream)
     except ai_v2.StudyAIError as exc:
-        assert "bağlantı koptu" in str(exc)
+        assert "Akademik AI yanıtı" in str(exc)
+        assert "bağlantı koptu" not in str(exc)
     else:  # pragma: no cover
         raise AssertionError("Partial stream must fail without a provider switch")
     assert fallback.model is None
+
+
+def test_v2_provider_failures_do_not_expose_provider_or_raw_error(monkeypatch):
+    monkeypatch.setattr(
+        ai_v2,
+        "_generation_targets",
+        lambda: [ProviderTarget("gemini", "primary")],
+    )
+    monkeypatch.setattr(ai_v2, "target_available", lambda _target: True)
+    monkeypatch.setattr(ai_v2, "get_provider", lambda _name: _FailBeforeOutput())
+    monkeypatch.setattr(ai_v2, "report_target_failure", lambda *_args: None)
+
+    try:
+        list(ai_v2.stream_rag_v2(
+            "Ortodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"])
+        ))
+    except ai_v2.StudyAIError as exc:
+        public_message = str(exc)
+        assert "Gemini" not in public_message
+        assert "503" not in public_message
+        assert "Akademik AI" in public_message
+    else:  # pragma: no cover
+        raise AssertionError("Provider failure must reach the public error boundary")

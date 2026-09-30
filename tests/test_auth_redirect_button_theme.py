@@ -91,3 +91,8 @@ def test_navy_button_theme_is_loaded_last_and_excludes_message_senders():
     assert "#studySendButton" in theme
     assert ".support-reply-actions button" in theme
     assert ".admin-support-message-form button" in theme
+    assert ".message-title strong" in theme
+    assert ".visual-section-head a" in theme
+    assert ".visual-empty a" in theme
+    assert ".study-back-link" in theme
+    assert ".mobile-nav-item.active" in theme

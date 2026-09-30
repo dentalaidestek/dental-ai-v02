@@ -9,7 +9,7 @@ function waitD3(){return new Promise(resolve=>{if(window.D3)return resolve(windo
 function disposeScene(ctx){if(!ctx)return;cancelAnimationFrame(ctx.raf);ctx.ro?.disconnect();ctx.renderer?.dispose();ctx.host.innerHTML=''}
 function findingsFor(t){return DIRECT().filter(f=>String(f.fdi||'')===String(t.fdi))}
 function isUpper(fdi){return ['1','2'].includes(String(fdi)[0])}
-async function analyze(){const file=$('file').files[0];if(!file){showError('Önce panoramik seç.');return}$('status').textContent='Analiz + anatomik 3D hazırlanıyor…';panoImage.src=URL.createObjectURL(file);await panoImage.decode();$('panoImg').src=panoImage.src;$('panoMini').classList.remove('hidden');const fd=new FormData();fd.append('image',file);const r=await fetch('/analyze',{method:'POST',headers:{'X-Vision-Key':$('key').value},body:fd});if(!r.ok){$('status').textContent='Analiz tamamlanamadı';showError(await r.text());return}result=await r.json();$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • anatomik modeller yükleniyor…`;try{await renderJaw();$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • 3D hazır`}catch(e){console.error(e);$('status').textContent='3D oluşturulamadı';showError(String(e))}}
+async function analyze(){const file=$('file').files[0];if(!file){showError('Önce panoramik seç.');return}$('status').textContent='Analiz + anatomik 3D hazırlanıyor…';panoImage.src=URL.createObjectURL(file);await panoImage.decode();$('panoImg').src=panoImage.src;$('panoMini').classList.remove('hidden');const fd=new FormData();fd.append('image',file);const r=await fetch('/analyze',{method:'POST',headers:{'X-Vision-Key':$('key').value},body:fd});if(!r.ok){$('status').textContent='Analiz tamamlanamadı';showError(await r.text());return}result=await r.json();$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • anatomik görünüm hazırlanıyor…`;try{await renderJaw();$('status').textContent=`${result.unique_fdi_count||result.tooth_count||0} diş • 3D hazır`}catch(e){console.error(e);$('status').textContent='3D oluşturulamadı';showError(String(e))}}
 function createBase(host){const {THREE,OrbitControls}=window.D3;host.innerHTML='';const scene=new THREE.Scene();scene.background=new THREE.Color(0x020304);const camera=new THREE.PerspectiveCamera(36,host.clientWidth/host.clientHeight,.01,100);const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(host.clientWidth,host.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;host.appendChild(renderer.domElement);scene.add(new THREE.HemisphereLight(0xe7efff,0x030406,2.6));const k=new THREE.DirectionalLight(0xffffff,4);k.position.set(3,4,5);scene.add(k);const rim=new THREE.DirectionalLight(0x728dff,2.2);rim.position.set(-4,2,-4);scene.add(rim);const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;const ctx={host,scene,camera,renderer,controls,raf:0,ro:null};const loop=()=>{ctx.raf=requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)};loop();ctx.ro=new ResizeObserver(()=>{camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();renderer.setSize(host.clientWidth,host.clientHeight)});ctx.ro.observe(host);return ctx}
 async function loadToothObject(fdi,opacity=.98){const {THREE,OBJLoader}=window.D3;const loader=new OBJLoader();const obj=await new Promise((resolve,reject)=>loader.load(`/anatomy/tooth/${encodeURIComponent(fdi)}.obj`,resolve,undefined,reject));obj.traverse(n=>{if(n.isMesh){n.geometry.computeVertexNormals();n.material=new THREE.MeshPhysicalMaterial({color:0xf4f1e8,roughness:.26,metalness:0,clearcoat:.2,transparent:opacity<1,opacity,side:THREE.DoubleSide})}});return obj}
 function archPosition(t,minX,maxX,minY,maxY){const [x1,y1,x2,y2]=t.bbox.map(Number),cx=(x1+x2)/2,cy=(y1+y2)/2,nx=(cx-minX)/Math.max(1,maxX-minX),ny=(cy-minY)/Math.max(1,maxY-minY),s=(nx-.5)*2;const upper=isUpper(t.fdi);return{x:s*3.18,y:upper?.58:-.58,z:-.18+1.32*(1-s*s)+((ny-.5)*.18),rotY:-s*.50,upper}}
@@ -31,7 +31,7 @@ function renderToothSheet(){
   const body=$('toothSheetBody');if(!body||!selectedTooth)return;
   const fs=findingsFor(selectedTooth);
   if(toothTab==='findings'){
-    body.innerHTML='<div class="sheet-note">Bu dişe ait görüntü motoru bulguları.</div>'+(fs.length?'<div class="finding-list">'+fs.map(f=>'<div class="finding-card"><div class="finding-main"><div class="finding-title">'+esc(f.label||f.finding_code||'Bulgu')+'</div><div class="finding-sub">'+esc(f.description||f.explanation||('Diş '+selectedTooth.fdi+' ile ilişkilendirilen görüntü bulgusu.'))+'</div></div></div>').join('')+'</div>':'<div class="empty-card">Bu diş için gösterilecek bulgu yok.</div>');
+    body.innerHTML='<div class="sheet-note">Bu dişe ait görüntü bulguları.</div>'+(fs.length?'<div class="finding-list">'+fs.map(f=>'<div class="finding-card"><div class="finding-main"><div class="finding-title">'+esc(f.label||f.finding_code||'Bulgu')+'</div><div class="finding-sub">'+esc(f.description||f.explanation||('Diş '+selectedTooth.fdi+' ile ilişkilendirilen görüntü bulgusu.'))+'</div></div></div>').join('')+'</div>':'<div class="empty-card">Bu diş için gösterilecek bulgu yok.</div>');
     return;
   }
   if(toothTab==='treatments'){
@@ -56,16 +56,16 @@ window.addEventListener('message',async ev=>{
       for(let attempt=0;attempt<40;attempt++){
         const vr=await fetch(d.visionUrl,{credentials:'same-origin',cache:'no-store'});
         if(vr.ok&&vr.status!==202){snap=await vr.json();break}
-        if(vr.status!==202){const failed=await vr.json().catch(()=>({}));if(Number.isSafeInteger(failed.job_id))parent.postMessage({type:'dental-ai:job-failed',jobId:failed.job_id},location.origin);throw new Error('Kayıtlı motor sonucu alınamadı');}
-        $('status').textContent='Görüntü motoru çalışıyor…';
+        if(vr.status!==202){const failed=await vr.json().catch(()=>({}));if(Number.isSafeInteger(failed.job_id))parent.postMessage({type:'dental-ai:job-failed',jobId:failed.job_id},location.origin);throw new Error('Görüntü değerlendirmesi tamamlanamadı');}
+        $('status').textContent='Görüntü değerlendirmesi hazırlanıyor…';
         await new Promise(resolve=>setTimeout(resolve,Math.min(15000,2000*Math.pow(1.3,attempt))+Math.random()*500));
       }
-      if(!snap)throw new Error('Görüntü motoru sonucu henüz hazır değil');
+      if(!snap)throw new Error('Görüntü değerlendirmesi henüz hazır değil');
       result=snap.result||snap;
       const pools=['findings','auxiliary_radiographic_findings','image_level_findings'];
       result.findings=pools.flatMap(k=>Array.isArray(result[k])?result[k]:[]);
       $('status').textContent='Anatomik 3D hazırlanıyor…';
-      await renderJaw();const toothN=(result.teeth||[]).filter(t=>t.bbox&&/^\\d{2}$/.test(String(t.fdi))).length;$('status').textContent=toothN?((result.unique_fdi_count||result.tooth_count||toothN)+' diş • '+result.findings.length+' bulgu • 3D hazır'):(result.findings.length+' bulgu • FDI diş modeli oluşturulamadı');
+      await renderJaw();const toothN=(result.teeth||[]).filter(t=>t.bbox&&/^\\d{2}$/.test(String(t.fdi))).length;$('status').textContent=toothN?((result.unique_fdi_count||result.tooth_count||toothN)+' diş • '+result.findings.length+' bulgu • 3D hazır'):(result.findings.length+' bulgu • FDI diş görünümü oluşturulamadı');
     }catch(e){$('status').textContent='Analiz tamamlanamadı';showError(String(e))}
   }
   if(d.type==='dental-ai:tooth-analysis-started'&&!d.ok)showError(d.error||'Klinik analiz başlatılamadı');

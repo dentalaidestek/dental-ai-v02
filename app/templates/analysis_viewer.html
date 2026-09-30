@@ -15,7 +15,7 @@ body.dai-app-shell>main{padding:0!important;margin:0!important}.analysis-viewer-
     {% endfor %}
   </div>
   <iframe id="dentalViewer" class="analysis-viewer-frame" title="Dental AI görüntü değerlendirme"></iframe>
-  <div class="analysis-viewer-note">Bulgular görüntü motorlarından gelir. Film ekrana sığdırılır. Kesin konum varsa bulgu film üzerinde gösterilir; yoksa bulgu yalnız listede kalır. Grad-CAM yalnız dikkat bölgesidir. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
+  <div class="analysis-viewer-note">Bulgular görüntü değerlendirmesinden gelir. Film ekrana sığdırılır. Kesin konum varsa bulgu film üzerinde gösterilir; yoksa bulgu yalnız listede kalır. İşaretli dikkat bölgesi kesin lezyon sınırı değildir. Klinik değerlendirme yalnız siz başlattığınızda çalışır.</div>
   {% else %}
   <div class="card">Bu analizde görüntü bulunamadı.</div>
   {% endif %}

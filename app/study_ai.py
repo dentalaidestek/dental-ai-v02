@@ -66,13 +66,29 @@ BİÇİM:
 - Ham Markdown başlık işaretleri (#, ##, ###) kullanma.
 - LaTeX kullanma. $...$, \\circ, \\rightarrow gibi ham komutlar yazma; ° ve → gibi doğrudan Unicode sembollerini kullan.
 - Gerektiğinde sade madde işaretleri ve numaralı liste kullan; gereksiz biçimlendirme sembolleri üretme.
+- Kullanıcıya altyapı ayrıntısı gösterme. Sağlayıcı, model, motor, backend, API, yönlendirme,
+  fallback, Gemini, OpenAI, Modal veya iç sistem alanlarının adlarını yanıta yazma.
+- Bir işlem sorunu varsa yalnız anlaşılır kullanıcı dili kullan; teknik hata metnini tekrar etme.
 
 Bu alan akademik öğrenme içindir; gerçek hastaya özgü tanı veya tedavi kararı vermek için kullanılmamalıdır.
 """.strip()
 
 
+def study_provider_error_for_user(exc: StudyProviderError) -> StudyAIError:
+    """Preserve diagnostics in logs while exposing only actionable copy."""
+    if exc.code == 429:
+        message = "Akademik AI şu anda yoğun. Kısa süre sonra tekrar deneyin."
+    elif exc.code in {401, 403}:
+        message = "Akademik AI bağlantısı şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin."
+    elif exc.code == 400:
+        message = "Mesajınız şu anda işlenemedi. Lütfen yeniden gönderin."
+    else:
+        message = "Akademik AI yanıtı şu anda hazırlanamadı. Lütfen kısa süre sonra tekrar deneyin."
+    return StudyAIError(message, code=exc.code, retryable=exc.retryable)
+
+
 def _translate_provider_error(exc: StudyProviderError) -> StudyAIError:
-    return StudyAIError(str(exc), code=exc.code, retryable=exc.retryable)
+    return study_provider_error_for_user(exc)
 
 
 def ask_rag(

@@ -940,7 +940,10 @@ class OpenAIStudyProvider(OpenAICompatibleStudyProvider):
             if not text:
                 continue
             role = "assistant" if item.get("role") == "ASSISTANT" else "user"
-            ctype = "input_text"
+            # The Responses API accepts assistant history only as output_text;
+            # sending it back as input_text makes an otherwise valid fallback
+            # request fail with HTTP 400.
+            ctype = "output_text" if role == "assistant" else "input_text"
             input_items.append({"role": role, "content": [{"type": ctype, "text": text}]})
 
         user_content = [{"type": "input_text", "text": prompt}]

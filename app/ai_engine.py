@@ -1,4 +1,5 @@
 import json
+import re
 
 
 SYSTEM_PROMPT = """
@@ -65,6 +66,13 @@ Kanıt yoksa genel/teorik risk uydurma; boş liste dönebilir.
 KLİNİK SINIR:
 Bu sistem hekimin muayenesinin yerini almaz. Hasta hakkında verilmemiş bilgi uydurma.
 Belirsizliği açıkla ama görüntü analizinden veya klinik karar desteğinden kaçınma.
+
+KULLANICIYA SUNUM:
+- Sonuç alanlarında yalnız klinik ve anlaşılır dil kullan.
+- Sağlayıcı, model, motor, backend, API, yönlendirme, fallback, Gemini, OpenAI, Modal,
+  iç alan adı veya altyapı ayrıntısı yazma.
+- Görsel kanıtı anlatırken "görüntü bulguları" veya "mevcut görüntü değerlendirmesi" de.
+- Teknik işlem durumu ya da hata metnini klinik bulgu, olası tanı veya öneriye taşıma.
 """
 
 
@@ -72,6 +80,29 @@ def _clean(text):
     if not text:
         return ""
     return str(text).strip()
+
+
+_PUBLIC_INFRA_TERMS = re.compile(
+    r"\b(?:Gemini|OpenAI|Modal|backend|provider|fallback|routing|API|model)\b",
+    re.IGNORECASE,
+)
+
+
+def _public_clinical_copy(value):
+    """Remove infrastructure vocabulary from user-facing clinical output."""
+    if isinstance(value, str):
+        cleaned = re.sub(
+            r"(?i)(?:Dental AI\s+özel\s+)?görüntü\s+motor(?:u|unun|ları|larının)?",
+            "görüntü değerlendirmesi",
+            value,
+        )
+        cleaned = re.sub(r"(?i)motor\s+(?:çıktısı|bulgusu|bulguları)", "görüntü bulguları", cleaned)
+        return _PUBLIC_INFRA_TERMS.sub("sistem", cleaned)
+    if isinstance(value, list):
+        return [_public_clinical_copy(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _public_clinical_copy(item) for key, item in value.items()}
+    return value
 
 
 def build_preliminary_prompt(
@@ -250,7 +281,7 @@ def parse_ai_result(text):
             if status == "ANALYSIS_COMPLETE":
                 result["status"] = "INITIAL"
 
-            return result
+            return _public_clinical_copy(result)
 
     except json.JSONDecodeError:
         pass
@@ -269,14 +300,14 @@ def parse_ai_result(text):
                 if result.get("status") == "ANALYSIS_COMPLETE":
                     result["status"] = "INITIAL"
 
-                return result
+                return _public_clinical_copy(result)
 
         except json.JSONDecodeError:
             pass
 
     return {
         "status": "RAW",
-        "text": text
+        "text": _public_clinical_copy(text)
     }
 
 
