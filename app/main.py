@@ -433,6 +433,24 @@ class GuestImageAsset(SQLModel, table=True):
     vision_snapshot_json: Optional[str] = None
 
 
+class ExpertTitleChange(SQLModel, table=True):
+    """A pending professional-title credential review; never replaces the active verified profile before approval."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    requested_title: str = Field(index=True)
+    previous_title: Optional[str] = None
+    status: str = Field(default="AWAITING_DOCUMENT", index=True)
+    credential_document_path: Optional[str] = None
+    credential_document_name: Optional[str] = None
+    credential_document_mime: Optional[str] = None
+    submitted_at: Optional[datetime] = Field(default=None, index=True)
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_user_id: Optional[int] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
 class ExpertProfile(SQLModel, table=True):
     """Uzmandan Destek Al için doğrulanabilir profesyonel profil."""
     id: Optional[int] = Field(default=None, primary_key=True)
