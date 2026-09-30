@@ -3023,69 +3023,133 @@ def account_profile_photo(request: Request, profile_photo_data: str = Form(...))
 
 @app.post("/account/professional-title")
 @offload
-def change_professional_title(
-    request: Request,
-    professional_title: str = Form(...),
-    confirm_change: str = Form(""),
-):
+def change_professional_title(request: Request, professional_title: str = Form(...), confirm_change: str = Form("")):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-
     professional_title = professional_title.strip()
     if professional_title not in PROFESSIONAL_TITLES:
         return HTMLResponse("Geçerli bir mesleki durum seçin.", status_code=400)
 
     with Session(engine, expire_on_commit=False) as s:
-        account_meta = s.exec(
-            select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
-        ).first()
+        account_meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         current_title = account_meta.professional_title if account_meta and account_meta.professional_title else None
-
-        # Mesleki durum değişikliği yalnız arayüz önceliklerini değiştirir.
-        # Hasta, Notlarım, Akademik AI, Programım veya diğer kullanıcı verileri burada silinmez.
-        if current_title and current_title != professional_title and confirm_change != "yes":
+        expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        active_verified_expert = bool(
+            expert_profile
+            and expert_profile.application_status == "APPROVED"
+            and expert_profile.verification_status == "VERIFIED"
+            and expert_profile.specialty_verified
+            and expert_profile.credential_document_path
+        )
+        if current_title == professional_title:
+            return RedirectResponse("/account", status_code=303)
+        if current_title and confirm_change != "yes":
             return HTMLResponse("Mesleki durum değişikliği için ikinci onay gereklidir.", status_code=400)
+
+        # A verified expert keeps the currently approved public identity and case
+        # eligibility until the replacement credential is approved.
+        if active_verified_expert and current_title:
+            pending = s.exec(select(ExpertTitleChange).where(
+                ExpertTitleChange.user_id == user.id,
+                ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+            ).order_by(ExpertTitleChange.created_at.desc())).first()
+            if not pending:
+                pending = ExpertTitleChange(
+                    user_id=user.id, requested_title=professional_title,
+                    previous_title=current_title, status="AWAITING_DOCUMENT",
+                )
+            else:
+                pending.requested_title = professional_title
+                pending.previous_title = current_title
+                pending.status = "AWAITING_DOCUMENT"
+                pending.credential_document_path = None
+                pending.credential_document_name = None
+                pending.credential_document_mime = None
+                pending.submitted_at = None
+                pending.reviewed_at = None
+                pending.reviewed_by_user_id = None
+                pending.rejection_reason = None
+                pending.updated_at = _utcnow_naive()
+            s.add(pending)
+            s.commit()
+            return RedirectResponse("/account/professional-title/document", status_code=303)
 
         if not account_meta:
             account_meta = UserAccountMeta(user_id=user.id)
-
         account_meta.professional_title = professional_title
         s.add(account_meta)
-
-        doctor_profile = s.exec(
-            select(DoctorProfile).where(DoctorProfile.user_id == user.id)
-        ).first()
+        doctor_profile = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == user.id)).first()
         if doctor_profile:
-            doctor_profile.graduation_status = (
-                "Öğrenci" if professional_title == "Öğrenci" else "Mezun"
-            )
-            doctor_profile.is_specialist = professional_title in {
-                "Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."
-            }
+            doctor_profile.graduation_status = "Öğrenci" if professional_title == "Öğrenci" else "Mezun"
+            doctor_profile.is_specialist = professional_title in {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
             s.add(doctor_profile)
-
-        if current_title and current_title != professional_title:
-            expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
-            if expert_profile:
-                expert_profile.application_status = "SUBMITTED"
-                expert_profile.verification_status = "PENDING"
-                expert_profile.specialty_verified = False
-                expert_profile.academic_title_verified = False
-                expert_profile.verified_at = None
-                expert_profile.availability = "PASSIVE"
-                expert_profile.updated_at = _utcnow_naive()
-                s.add(expert_profile)
-
-        profile_event=_record_realtime_event(s,user.id,"PROFILE_UPDATED","user",user.id,
-            {"user_id":user.id,"professional_title":professional_title})
-        expert_profile_events = _record_expert_profile_realtime_events(s, expert_profile) if current_title and current_title != professional_title and expert_profile else []
+        profile_event = _record_realtime_event(s, user.id, "PROFILE_UPDATED", "user", user.id,
+            {"user_id": user.id, "professional_title": professional_title})
         s.commit()
-
     on_loop(_publish_realtime_event, profile_event)
-    for expert_profile_event in expert_profile_events:
-        on_loop(_publish_realtime_event, expert_profile_event)
     return RedirectResponse("/account?profile_updated=1", status_code=303)
+
+
+@app.get("/account/professional-title/document", response_class=HTMLResponse)
+def professional_title_document_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    with Session(engine, expire_on_commit=False) as s:
+        pending = s.exec(select(ExpertTitleChange).where(
+            ExpertTitleChange.user_id == user.id,
+            ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+        ).order_by(ExpertTitleChange.created_at.desc())).first()
+    if not pending:
+        return RedirectResponse("/account", status_code=303)
+    return templates.TemplateResponse(request=request, name="professional_title_document.html",
+        context={"user": user, "pending": pending})
+
+
+@app.post("/account/professional-title/document")
+@offload
+def professional_title_document_upload(request: Request, credential_document: UploadFile = File(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    suffix = Path(credential_document.filename or "").suffix.lower()
+    allowed = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+    if suffix not in allowed:
+        return HTMLResponse("Belge PDF, JPG veya PNG olmalıdır.", status_code=400)
+    document_bytes = credential_document.file.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
+    if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
+        return HTMLResponse("Belge boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        pending = s.exec(select(ExpertTitleChange).where(
+            ExpertTitleChange.user_id == user.id,
+            ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "REJECTED"]),
+        ).order_by(ExpertTitleChange.created_at.desc())).first()
+        if not pending:
+            return HTMLResponse("Bekleyen bir unvan değişikliği bulunamadı.", status_code=409)
+        destination = UPLOAD_DIR / "expert_title_changes" / f"user_{user.id}" / f"title_{uuid.uuid4().hex}{suffix}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
+        pending.credential_document_path = str(destination)
+        pending.credential_document_name = Path(credential_document.filename).name[:240]
+        pending.credential_document_mime = allowed[suffix]
+        pending.status = "PENDING_REVIEW"
+        pending.submitted_at = _utcnow_naive()
+        pending.updated_at = _utcnow_naive()
+        s.add(pending)
+        _, notice_event, _ = _notify_user(
+            s, user_id=user.id, actor_user_id=user.id, notice_type="EXPERT_TITLE_CHANGE_SUBMITTED",
+            title="Yeni unvan belgeniz incelemede",
+            message=f"{pending.requested_title} için gönderdiğiniz belge incelemeye alındı. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.",
+            related_type="expert_title_change", related_id=pending.id,
+            dedup_key=f"expert-title-change-submitted:{pending.id}:{pending.submitted_at.isoformat()}",
+            target_url="/expert-support/profile",
+        )
+        s.commit()
+    if notice_event:
+        on_loop(_publish_realtime_event, notice_event)
+    return RedirectResponse("/expert-support/profile?title_change_submitted=1", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
