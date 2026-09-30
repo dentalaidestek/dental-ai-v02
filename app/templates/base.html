@@ -569,6 +569,11 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
                 after=Number(data.last_event_id||after); more=Boolean(data.has_more);
             }
             await refreshUnreadCount();
+            // Reconcile the durable notification center after a silent catch-up.
+            // Replayed NOTICE_CREATED events intentionally do not show historical
+            // popups, but their unread badge/card state must still appear without
+            // requiring a page refresh.
+            if(sawEvents)await refreshNotificationCenter();
             if(sawEvents)window.dispatchEvent(new Event("dai:realtime-resync"));
         })();
         try{return await catchUpEventsPromise}finally{catchUpEventsPromise=null;}
