@@ -83,6 +83,10 @@ def test_navy_button_theme_is_loaded_last_and_excludes_message_senders():
     assert "--dai-button-navy: #0b2341" in theme
     assert "background-color: var(--dai-button-navy) !important" in theme
     assert "background: var(--dai-button-navy)" not in theme
+    # The legacy design-system uses high-specificity !important shorthands.
+    # Keeping an ID alternative inside :is() makes the theme win without
+    # changing any template markup or button dimensions.
+    assert "#dai-button-theme-specificity" in theme
     assert ".expert-send-circle" in theme
     assert "#studySendButton" in theme
     assert ".support-reply-actions button" in theme

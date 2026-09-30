@@ -9,6 +9,7 @@
  * konuşma içindeki görsel anlamını korumak için kapsam dışında tutulur.
  */
 body :is(
+    #dai-button-theme-specificity,
     button,
     input[type="button"],
     input[type="submit"],
@@ -51,6 +52,7 @@ body :is(
 }
 
 body :is(
+    #dai-button-theme-specificity,
     button,
     input[type="button"],
     input[type="submit"],
