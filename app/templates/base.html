@@ -378,7 +378,9 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             const r=await fetch("/account/notifications/read-all",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({seen_before:seenBefore})});
             if(!r.ok)throw new Error("read-all failed");
         }catch(_){}
-        await refreshNotificationCenter();
+        // Keep the cards visible while the user is reading them. The backend
+        // keeps read ACTIVE notices in the center for 24 hours from read_at.
+        document.querySelectorAll("#notificationList .notification-item.unread").forEach(item=>item.classList.remove("unread"));
     }
     function toggleNotificationCenter(force) {
         const panel=document.getElementById("notificationPanel"),button=document.getElementById("notificationBell");
@@ -501,7 +503,7 @@ if (document.getElementById("mobileMessagesBadge") && !window.__daiSyncConnectio
             if(notify&&location.pathname==="/messages") window.dispatchEvent(new CustomEvent("dai:case-created",{detail:data}));
         } else if(evt.event_type==="CASE_STATUS_UPDATED"){
             if(notify)window.dispatchEvent(new CustomEvent("dai:case-status-updated",{detail:data}));
-        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){setNotificationUnreadCount(notificationUnreadCount+1);let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
+        } else if(evt.event_type==="NOTICE_CREATED"){if(notify){setNotificationUnreadCount(notificationUnreadCount+1);refreshNotificationCenter();let sameTarget=false;try{if(data.target_url)sameTarget=new URL(data.target_url,location.origin).pathname===location.pathname;}catch(_){}if(!sameTarget)showAdminNotice(data);}}
         else if(evt.event_type==="NOTICE_RESOLVED"){if(notify)refreshNotificationCenter();}
         else if(evt.event_type==="CASE_READ"){if(notify)refreshUnreadCount();}
         else if(evt.event_type==="NOTIFICATIONS_READ"){if(notify){setNotificationUnreadCount(data.unread_count||0);refreshNotificationCenter();}}
