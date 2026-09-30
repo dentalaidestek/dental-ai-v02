@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.title-doc-wrap{max-width:560px;margin:18px auto 90px;padding:0 14px}.title-doc-card{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px;box-shadow:0 8px 28px rgba(15,23,42,.06)}.title-doc-card h1{margin:0 0 8px;font-size:22px;color:#0f172a}.title-doc-card p{margin:0 0 16px;color:#64748b;line-height:1.5}.title-doc-current{padding:12px;border-radius:12px;background:#f8fafc;margin-bottom:14px;color:#334155}.title-doc-current b{display:block;color:#0f172a}.title-doc-form{display:grid;gap:12px}.title-doc-file{display:grid;gap:7px;font-weight:750;color:#334155}.title-doc-file input{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:12px;background:#fff}.title-doc-form small{color:#64748b}.title-doc-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}.title-doc-actions button,.title-doc-actions a{min-height:45px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:800;text-decoration:none;box-sizing:border-box}.title-doc-actions button{border:0;background:#2563eb;color:#fff}.title-doc-actions a{border:1px solid #cbd5e1;color:#334155;background:#fff}@media(max-width:430px){.title-doc-wrap{margin-top:8px}.title-doc-card{padding:16px}.title-doc-actions{grid-template-columns:1fr}}
+</style>
+<div class="title-doc-wrap"><section class="title-doc-card">
+<h1>{{ pending.requested_title }} unvanını doğrulayın</h1>
+<p>Yeni unvanınız onaylanana kadar mevcut doğrulanmış unvanınız ve vaka kabul durumunuz değişmeyecektir.</p>
+<div class="title-doc-current"><small>Mevcut doğrulanmış unvan</small><b>{{ pending.previous_title or '-' }} ✓</b></div>
+<form class="title-doc-form" method="post" enctype="multipart/form-data">
+<label class="title-doc-file">Doğrulayıcı belge
+<input type="file" name="credential_document" accept="application/pdf,image/jpeg,image/png" required>
+<small>PDF, JPG veya PNG · en fazla 10 MB</small></label>
+<div class="title-doc-actions"><a href="/account">Vazgeç</a><button type="submit">Belgeyi Gönder</button></div>
+</form>
+</section></div>
+{% endblock %}
