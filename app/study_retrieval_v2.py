@@ -159,15 +159,23 @@ def _normalize_dental_notation(query: str) -> str:
         clean = pattern.sub(canonical, clean)
     return clean
 
+def _query_term_present(text: str, term: str) -> bool:
+    clean_term = " ".join((term or "").casefold().split())
+    if not clean_term:
+        return False
+    escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
+    return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.I))
+
+
 def _concept_alternatives(query: str) -> list[str]:
     lowered = re.sub(r"\s+", " ", query or "").strip().casefold()
     extras: list[str] = []
     for group in _DENTAL_CONCEPT_GROUPS:
-        matched = [term for term in group if term.casefold() in lowered]
+        matched = [term for term in group if _query_term_present(lowered, term)]
         if not matched:
             continue
         for term in group:
-            if term.casefold() not in lowered and term not in extras:
+            if not _query_term_present(lowered, term) and term not in extras:
                 extras.append(term)
     return extras
 
