@@ -45,5 +45,15 @@ assert "dental_ocr_words.txt" in ocr
 assert "_split_mcq_blocks" in chunking
 assert '"QUESTION"' in chunking
 assert "c.content_kind = 'QUESTION'" in retrieval
+assert "_expand_dental_query" in retrieval
+assert "embed_text(" not in retrieval
+worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
+ast.parse(worker)
+ast.parse(jobs)
+assert '"retrieval_profile": "fts-local-v1"' in worker
+assert 'return "VERIFY"' in worker
+assert "require_embeddings=False" in worker
+assert "require_embeddings: bool = True" in jobs
 
 print("Academic V2 static invariants: OK")
