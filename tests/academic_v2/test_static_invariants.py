@@ -42,6 +42,8 @@ assert "PSM.SPARSE_TEXT" in ocr
 assert "PSM.SINGLE_BLOCK" in ocr
 assert "STUDY_V2_LOCAL_OCR_RETRY_DPI" in ocr
 assert "dental_ocr_words.txt" in ocr
+assert "pdf_document=None" in ocr
+assert "owned_document = document is None" in ocr
 assert "_split_mcq_blocks" in chunking
 assert "_MCQ_EXPLANATION_RE" in chunking
 assert '"QUESTION"' in chunking
@@ -59,6 +61,9 @@ assert "require_embeddings=False" in worker
 assert 'STUDY_V2_PARSE_BATCH_PAGES", 32' in worker
 assert 'STUDY_V2_CHUNK_BATCH_PAGES", 32' in worker
 assert "session.add_all(pending)" in worker
+assert "retrieval_enrichment_text(semantic_source, features=features)" in worker
+parse_slice = worker[worker.index("def _extract_pdf_slice"):worker.index("def _chunk_slice")]
+assert "session.close()" not in parse_slice
 assert "require_embeddings: bool = True" in jobs
 
 print("Academic V2 static invariants: OK")
