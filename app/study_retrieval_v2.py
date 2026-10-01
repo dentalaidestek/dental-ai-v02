@@ -20,7 +20,6 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.object_storage import ensure_local as storage_ensure_local
-from app.study_provider import StudyProviderError, get_embedding_dimensions, get_embedding_target, get_provider
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
 from app.dental_query_intent import classify_dental_intent
@@ -760,8 +759,12 @@ def retrieve_course_context_v2(
     # New V2 indexes are intentionally local-FTS. Do not spend an external
     # embedding request per user question when the published generation has no
     # semantic vectors to compare against.
-    target = get_embedding_target()
     vector: list[float] | None = None
+    # Current V2 retrieval is provider-free. These identity parameters are
+    # intentionally blank while query_vector is None; _fts_rows keeps its
+    # guarded legacy vector path for old indexed generations only.
+    embedding_provider = ""
+    embedding_model = ""
     continuation_cursor = _continuation_cursor(query, recent_history)
     exhaustive_questions = _is_exhaustive_question_request(query) or continuation_cursor is not None
     if exhaustive_questions:
@@ -770,9 +773,11 @@ def retrieve_course_context_v2(
             session,
             owner_user_id=owner_user_id,
             course_id=course_id,
-            limit=question_limit,
+            limit=question_limit + 1,
             after_cursor=continuation_cursor,
         )
+        # Fetch one sentinel row so continuation is truthful without loading
+        # the rest of a large question bank.
         has_more_questions = len(question_rows) > question_limit
         rows = question_rows[:question_limit]
     else:
@@ -783,8 +788,8 @@ def retrieve_course_context_v2(
             course_id=course_id,
             lexical_query=precise_query,
             query_vector=vector,
-            embedding_provider=target.provider,
-            embedding_model=target.model,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
             limit=max(limit * 3, 18),
         )
         # Collect complementary evidence with a few focused facet queries.
@@ -801,8 +806,8 @@ def retrieve_course_context_v2(
                 course_id=course_id,
                 lexical_query=evidence_query,
                 query_vector=None,
-                embedding_provider=target.provider,
-                embedding_model=target.model,
+                embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
                 limit=max(4, min(8, candidate_target - len(rows))),
             )
             for row in facet_rows:
@@ -821,8 +826,8 @@ def retrieve_course_context_v2(
                     course_id=course_id,
                     lexical_query=broad_query,
                     query_vector=None,
-                    embedding_provider=target.provider,
-                    embedding_model=target.model,
+                    embedding_provider=embedding_provider,
+                    embedding_model=embedding_model,
                     limit=min(8, candidate_target - len(rows)),
                 ):
                     row_id = int(row[0])
@@ -846,8 +851,8 @@ def retrieve_course_context_v2(
                     course_id=course_id,
                     lexical_query=rescue_query,
                     query_vector=None,
-                    embedding_provider=target.provider,
-                    embedding_model=target.model,
+                    embedding_provider=embedding_provider,
+                    embedding_model=embedding_model,
                     limit=min(6, candidate_target - len(rows)),
                 ):
                     row_id = int(row[0])
