@@ -90,3 +90,13 @@ assert '_FAST_INTENTS = {"value", "definition", "measurement"}' in source
 assert "def _needs_multi_evidence" in source
 assert "coverage < 0.34" in source
 assert "At most one extra local DB query" in source
+
+
+# Multi-query reranking must not treat append order as lexical relevance.
+assert "raw_lexical = float(row[9] or 0.0)" in source
+assert "subject_alignment = _subject_alignment_score" in source
+assert "(0.42 * lexical)" in source
+assert "aligned or candidates" in source
+
+# Neighbor rows must keep the same chunk-index/semantic metadata tail as FTS rows.
+assert "hybrid_score, chunk_index, semantic_json" in source
