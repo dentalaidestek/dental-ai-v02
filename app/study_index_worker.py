@@ -696,6 +696,7 @@ def _run_claimed_slice(session, job, resource_class):
                 job_id=job.id,
                 lease_token=job.lease_token,
                 worker_id=job.worker_id,
+                require_embeddings=False,
             )
             return "PUBLISHED" if published else "PUBLISH_REJECTED"
         else:
