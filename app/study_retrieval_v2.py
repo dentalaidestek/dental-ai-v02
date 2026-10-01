@@ -135,6 +135,23 @@ def _pgvector_available(session: Session, dimensions: int) -> bool:
 
 _DENTAL_CONCEPT_GROUPS = DENTAL_ALIAS_GROUPS
 
+_DENTAL_NOTATION_RULES = (
+    (re.compile(r"\bA\s*[-–]?\s*N\s*[-–]?\s*B\b", re.I), "ANB"),
+    (re.compile(r"\bS\s*[-–]?\s*N\s*[-–]?\s*A\b", re.I), "SNA"),
+    (re.compile(r"\bS\s*[-–]?\s*N\s*[-–]?\s*B\b", re.I), "SNB"),
+    (re.compile(r"\bGo\s*[-–]?\s*Gn\b", re.I), "GoGn"),
+    (re.compile(r"\b(?:class|sınıf)\s*2\b", re.I), "Class II"),
+    (re.compile(r"\b(?:class|sınıf)\s*3\b", re.I), "Class III"),
+    (re.compile(r"\b(?:class|sınıf)\s*1\b", re.I), "Class I"),
+)
+
+
+def _normalize_dental_notation(query: str) -> str:
+    clean = re.sub(r"\s+", " ", query or "").strip()
+    for pattern, canonical in _DENTAL_NOTATION_RULES:
+        clean = pattern.sub(canonical, clean)
+    return clean
+
 def _concept_alternatives(query: str) -> list[str]:
     lowered = re.sub(r"\s+", " ", query or "").strip().casefold()
     extras: list[str] = []
@@ -156,7 +173,7 @@ _QUERY_NOISE_RE = re.compile(
 
 def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     """Return precise source terms and bounded dental alternatives."""
-    clean = re.sub(r"\s+", " ", query or "").strip()
+    clean = _normalize_dental_notation(query)
     core = re.sub(_QUERY_NOISE_RE, " ", clean)
     core = re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü+./'-]+", " ", core)
     core = re.sub(r"\s+", " ", core).strip(" ?.,;:")
