@@ -18,6 +18,8 @@ envVarGroups:
         value: "1"
       - key: STUDY_ACADEMIC_V2_ONLY
         value: "1"
+      - key: STUDY_V2_GEMINI_MODEL
+        value: gemini-3.5-flash-lite
       - key: DENTAL_WEB_DB_POOL_SIZE
         value: "2"
       - key: DENTAL_ROUTER_DB_POOL_SIZE
