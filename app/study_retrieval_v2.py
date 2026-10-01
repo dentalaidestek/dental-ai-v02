@@ -253,7 +253,22 @@ def _is_exhaustive_question_request(query: str) -> bool:
     return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
 
 
-def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limit: int = 16) -> list:
+def _continuation_after_chunk_id(query: str, recent_history: list[dict] | None) -> int | None:
+    """Read an internal continuation marker from the prior assistant turn only."""
+    if not recent_history or not re.match(r"^(?:devam|devam et|kalan(?:ları)?|sonraki(?:ler)?)\b", (query or "").strip(), re.I):
+        return None
+    for item in reversed(recent_history):
+        if str(item.get("role") or "").upper() != "ASSISTANT":
+            continue
+        match = re.search(r"<!--ACADEMIC_Q_CURSOR:(\d+)-->", item.get("content") or "")
+        return int(match.group(1)) if match else None
+    return None
+
+
+def _question_rows(
+    session: Session, *, owner_user_id: int, course_id: int,
+    limit: int = 16, after_chunk_id: int | None = None,
+) -> list:
     """Return likely question-bearing chunks in source order, not semantic top-k."""
     return list(session.exec(text(
         """
@@ -268,6 +283,7 @@ def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limi
          AND m.active_index_version=c.index_version
          AND m.index_status='READY' AND m.deleted_at IS NULL
         WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND (:after_chunk_id IS NULL OR c.id > :after_chunk_id)
           AND (
             c.text_content ~* :question_pattern
             OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)'
@@ -278,6 +294,7 @@ def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limi
     ), params={
         "owner": owner_user_id,
         "course": course_id,
+        "after_chunk_id": after_chunk_id,
         "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
         "limit": max(1, min(limit, 32)) + 1,
     }).all())
@@ -352,7 +369,8 @@ def retrieve_course_context_v2(
     resolved = resolve_followup_query(query, recent_history)
     target = get_embedding_target()
     vector: list[float] | None = None
-    exhaustive_questions = _is_exhaustive_question_request(query)
+    continuation_after = _continuation_after_chunk_id(query, recent_history)
+    exhaustive_questions = _is_exhaustive_question_request(query) or continuation_after is not None
     # Exhaustive enumeration is structural and source-ordered; an embedding
     # request adds cost but cannot improve completeness for this intent.
     if not exhaustive_questions:
@@ -371,6 +389,7 @@ def retrieve_course_context_v2(
             owner_user_id=owner_user_id,
             course_id=course_id,
             limit=question_limit,
+            after_chunk_id=continuation_after,
         )
         has_more_questions = len(question_rows) > question_limit
         rows = question_rows[:question_limit]
