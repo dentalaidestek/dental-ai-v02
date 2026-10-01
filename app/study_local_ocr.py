@@ -92,8 +92,74 @@ def _load_image(path: Path) -> Image.Image:
 
 
 def _normalize_ocr_text(value: str) -> str:
-    lines = [" ".join(line.split()) for line in (value or "").splitlines()]
-    return "\n".join(line for line in lines if line).strip()
+    """Normalize OCR without flattening academic structure.
+
+    Preserve line boundaries and meaningful multi-space column gaps so MCQ
+    choices, tables and two-column material remain recoverable downstream.
+    """
+    cleaned: list[str] = []
+    blank = False
+    for raw in (value or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw.replace("\t", "    ").strip()
+        # Collapse extreme OCR spacing but retain 2+ spaces as a table/column cue.
+        line = re.sub(r" {5,}", "    ", line)
+        if line:
+            cleaned.append(line)
+            blank = False
+        elif cleaned and not blank:
+            cleaned.append("")
+            blank = True
+    return "\n".join(cleaned).strip()
+
+
+@dataclass(frozen=True)
+class _PageLayout:
+    psm: int
+    kind: str
+
+
+def _detect_page_layout(image: Image.Image) -> _PageLayout:
+    """Cheap projection-based layout hint; no OCR/provider call required."""
+    import tesserocr
+
+    # Work on a small thumbnail: layout detection should cost milliseconds,
+    # not another full-resolution recognition pass.
+    probe = image.copy()
+    try:
+        probe.thumbnail((900, 1200), Image.Resampling.BILINEAR)
+        # Ink projection after a conservative threshold. We only need rough
+        # occupied regions, not semantic interpretation.
+        binary = probe.point(lambda p: 0 if p < 210 else 255, mode="1")
+        w, h = binary.size
+        if w < 20 or h < 20:
+            return _PageLayout(tesserocr.PSM.AUTO, "unknown")
+        pix = binary.load()
+        col_ink = [sum(1 for y in range(h) if pix[x, y] == 0) for x in range(w)]
+        row_ink = [sum(1 for x in range(w) if pix[x, y] == 0) for y in range(h)]
+        occupied_rows = sum(v > max(2, w * 0.01) for v in row_ink)
+        density = sum(col_ink) / max(1, w * h)
+
+        # A persistent low-ink valley around the middle strongly suggests a
+        # two-column article/thesis page.
+        mid_lo, mid_hi = int(w * 0.42), int(w * 0.58)
+        side = col_ink[int(w * 0.12):int(w * 0.38)] + col_ink[int(w * 0.62):int(w * 0.88)]
+        valley = col_ink[mid_lo:mid_hi]
+        side_mean = sum(side) / max(1, len(side))
+        valley_mean = sum(valley) / max(1, len(valley))
+        if occupied_rows > h * 0.35 and side_mean > 0 and valley_mean < side_mean * 0.38:
+            return _PageLayout(tesserocr.PSM.AUTO, "two_column")
+
+        # Sparse lecture slides/figures benefit from sparse-text segmentation.
+        if density < 0.035 or occupied_rows < h * 0.22:
+            return _PageLayout(tesserocr.PSM.SPARSE_TEXT, "sparse")
+
+        # Dense thesis/article prose is usually one uniform text block.
+        if occupied_rows > h * 0.45 and density > 0.06:
+            return _PageLayout(tesserocr.PSM.SINGLE_BLOCK, "single_block")
+
+        return _PageLayout(tesserocr.PSM.AUTO, "mixed")
+    finally:
+        probe.close()
 
 
 def _recognize(image: Image.Image, *, psm, timeout_ms: int) -> tuple[str, int]:
@@ -149,7 +215,8 @@ def ocr_material_page(
     image = load(fast_dpi)
     try:
         image = ImageOps.autocontrast(image)
-        text, confidence = _recognize(image, psm=tesserocr.PSM.AUTO, timeout_ms=timeout_ms)
+        layout = _detect_page_layout(image)
+        text, confidence = _recognize(image, psm=layout.psm, timeout_ms=timeout_ms)
     except LocalOCRError:
         raise
     except RuntimeError as exc:
@@ -165,8 +232,16 @@ def ocr_material_page(
         retry_image = load(retry_dpi)
         try:
             retry_image = ImageOps.autocontrast(retry_image)
+            retry_layout = _detect_page_layout(retry_image)
+            # AUTO is the safer retry for a page whose specialized first pass
+            # was weak; otherwise retain the detected layout.
+            retry_psm = (
+                tesserocr.PSM.AUTO
+                if retry_layout.kind in {"sparse", "single_block"}
+                else retry_layout.psm
+            )
             retry_text, retry_confidence = _recognize(
-                retry_image, psm=tesserocr.PSM.AUTO, timeout_ms=timeout_ms
+                retry_image, psm=retry_psm, timeout_ms=timeout_ms
             )
             if retry_confidence > confidence or (
                 retry_confidence == confidence and len(retry_text) > len(text)
