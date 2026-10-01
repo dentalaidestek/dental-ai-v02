@@ -7861,6 +7861,9 @@ def _web_push_copy(notice_type: str) -> str:
     if "DEADLINE" in kind or "EXPIRED" in kind: return "Danışmanlık işleminiz için süreyle ilgili yeni bir bildiriminiz var."
     if kind == "EXPERT_CAPACITY_FULL": return "Yeni danışmanlık kabul durumunuz güncellendi."
     if kind == "EXPERT_CAPACITY_AVAILABLE": return "Yeni danışmanlık kabul durumunuz yeniden müsait."
+    if kind == "EXPERT_TITLE_CHANGE_SUBMITTED": return "Yeni unvan belgeniz incelemeye alındı."
+    if kind == "EXPERT_TITLE_CHANGE_APPROVE": return "Yeni unvanınız doğrulandı ve profiliniz güncellendi."
+    if kind == "EXPERT_TITLE_CHANGE_REJECT": return "Yeni unvan belgeniz doğrulanamadı; mevcut unvanınız değişmedi."
     if "COMPLET" in kind: return "Danışmanlık tamamlanma süreciyle ilgili yeni bir bildiriminiz var."
     return "Dental AI'da yeni bir bildiriminiz var."
 
