@@ -132,6 +132,40 @@ def _pgvector_available(session: Session, dimensions: int) -> bool:
     return bool(row[0])
 
 
+_DENTAL_QUERY_SYNONYMS = {
+    "çürük": ("karies", "caries"),
+    "karies": ("çürük", "caries"),
+    "kök ucu": ("apikal", "periapikal"),
+    "periapikal": ("apikal", "kök ucu"),
+    "çene eklemi": ("temporomandibular", "TME", "TMJ"),
+    "tme": ("temporomandibular", "TMJ", "çene eklemi"),
+    "tmj": ("temporomandibular", "TME", "çene eklemi"),
+    "gömülü": ("impakte", "impacted"),
+    "impakte": ("gömülü", "impacted"),
+    "diş eti": ("gingiva", "gingival"),
+    "gingiva": ("diş eti", "gingival"),
+    "kök rezorpsiyonu": ("rezorpsiyon", "resorption"),
+    "radyolüsent": ("radiolucent",),
+    "radyopak": ("radiopaque",),
+}
+
+
+def _expand_dental_query(query: str) -> str:
+    clean = re.sub(r"\s+", " ", query or "").strip()
+    if not clean:
+        return clean
+    lowered = clean.casefold()
+    extras: list[str] = []
+    for phrase, synonyms in _DENTAL_QUERY_SYNONYMS.items():
+        if phrase.casefold() in lowered:
+            for synonym in synonyms:
+                if synonym.casefold() not in lowered and synonym not in extras:
+                    extras.append(synonym)
+    # Keep expansion deliberately small so PostgreSQL websearch semantics stay
+    # precise and common lecture-note terms do not swamp the original query.
+    return clean + (" " + " ".join(extras[:6]) if extras else "")
+
+
 def _hybrid_rows(
     session: Session,
     *,
@@ -396,7 +430,7 @@ def retrieve_course_context_v2(
             session,
             owner_user_id=owner_user_id,
             course_id=course_id,
-            lexical_query=resolved,
+            lexical_query=_expand_dental_query(resolved),
             query_vector=vector,
             embedding_provider=target.provider,
             embedding_model=target.model,
