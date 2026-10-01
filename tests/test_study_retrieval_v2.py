@@ -1,6 +1,6 @@
 import inspect
 
-from app.study_retrieval_v2 import _hybrid_rows, resolve_followup_query
+from app.study_retrieval_v2 import _fts_rows, resolve_followup_query
 
 
 def test_independent_query_is_not_polluted_by_history():
@@ -19,8 +19,12 @@ def test_short_followup_includes_near_conversation_context():
     assert "iskeletsel ilişki" in resolved
 
 
-def test_semantic_candidates_are_bound_to_embedding_identity():
-    source = inspect.getsource(_hybrid_rows)
+def test_optional_legacy_semantic_candidates_are_bound_to_embedding_identity():
+    # New Academic V2 generations are local-FTS and pass no query vector.
+    # If a legacy vector is explicitly supplied, it must still be scoped to
+    # the exact embedding identity so incompatible vectors cannot mix.
+    source = inspect.getsource(_fts_rows)
+    assert "if query_vector:" in source
     assert "c.embedding_provider=:embedding_provider" in source
     assert "c.embedding_model=:embedding_model" in source
     assert "c.embedding_dimensions=:embedding_dimensions" in source
