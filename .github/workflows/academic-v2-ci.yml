@@ -23,6 +23,7 @@ on:
       - "app/study_provider.py"
       - "app/study_local_ocr.py"
       - "app/study_index_worker.py"
+      - "app/study_index_jobs.py"
       - "app/dental_ocr_words.txt"
       - "app/study_router_state.py"
       - "tests/academic_v2/**"
@@ -48,4 +49,6 @@ jobs:
         run: |
           python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py
       - name: Run Academic V2 invariant tests
-        run: python tests/academic_v2/test_static_invariants.py
+        run: |
+          python tests/academic_v2/test_static_invariants.py
+          python tests/academic_v2/test_retrieval_behavior.py
