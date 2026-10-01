@@ -39,6 +39,12 @@ assert "generation target selected" in generation
 assert "classify_dental_intent" in generation
 assert "_INTENT_RESPONSE_RULES" in generation
 assert "Sen arama/retrieval yapma" in generation
+assert "if not retrieval.evidence_sufficient:" in generation
+assert "Eksik başlıklar tamamlama görevi değildir" in generation
+assert "class EvidenceSufficiency" in retrieval
+assert "def _evidence_sufficiency" in retrieval
+assert "result.evidence_sufficient = sufficiency.sufficient" in retrieval
+assert "DentalSemanticFeatures" in retrieval
 
 # OCR stays local/adaptive and preserves academic/dental structure.
 assert "_detect_page_layout" in ocr
