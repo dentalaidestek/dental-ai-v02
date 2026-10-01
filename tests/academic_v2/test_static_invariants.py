@@ -42,10 +42,10 @@ assert "PSM.SPARSE_TEXT" in ocr
 assert "PSM.SINGLE_BLOCK" in ocr
 assert "STUDY_V2_LOCAL_OCR_RETRY_DPI" in ocr
 assert "dental_ocr_words.txt" in ocr
-assert "_split_mcq_blocks" in chunking
+assert "_split_mcq_blocks" in chunking\nassert "_MCQ_EXPLANATION_RE" in chunking
 assert '"QUESTION"' in chunking
 assert "c.content_kind = 'QUESTION'" in retrieval
-assert "_expand_dental_query" in retrieval
+assert "_fts_query" in retrieval\nassert " OR " in retrieval
 assert "embed_text(" not in retrieval
 worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
 jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
