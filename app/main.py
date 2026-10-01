@@ -3049,11 +3049,18 @@ def change_professional_title(request: Request, professional_title: str = Form(.
 
         # A verified expert keeps the currently approved public identity and case
         # eligibility until the replacement credential is approved.
-        if active_verified_expert and current_title and professional_title in {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}:
+        expert_titles = {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}
+        if active_verified_expert and current_title:
+            if professional_title not in expert_titles:
+                return HTMLResponse("Doğrulanmış uzman hesabı bu ekrandan uzman olmayan bir mesleki duruma geçirilemez.", status_code=409)
             pending = s.exec(select(ExpertTitleChange).where(
                 ExpertTitleChange.user_id == user.id,
-                ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+                ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW"]),
             ).order_by(ExpertTitleChange.created_at.desc())).first()
+            if pending and pending.status == "PENDING_REVIEW":
+                if pending.requested_title == professional_title:
+                    return RedirectResponse("/expert-support/profile", status_code=303)
+                return HTMLResponse("İncelenmekte olan unvan değişikliği sonuçlanmadan yeni bir unvan değişikliği başlatılamaz.", status_code=409)
             if not pending:
                 pending = ExpertTitleChange(
                     user_id=user.id, requested_title=professional_title,
@@ -3062,14 +3069,6 @@ def change_professional_title(request: Request, professional_title: str = Form(.
             else:
                 pending.requested_title = professional_title
                 pending.previous_title = current_title
-                pending.status = "AWAITING_DOCUMENT"
-                pending.credential_document_path = None
-                pending.credential_document_name = None
-                pending.credential_document_mime = None
-                pending.submitted_at = None
-                pending.reviewed_at = None
-                pending.reviewed_by_user_id = None
-                pending.rejection_reason = None
                 pending.updated_at = _utcnow_naive()
             s.add(pending)
             s.commit()
