@@ -310,7 +310,8 @@ def _fts_rows(
                c.section_title, c.content_kind, c.text_content,
                l.rank AS lexical_rank, l.raw_score AS lexical_score,
                {semantic_columns}
-               (COALESCE(1.0/(60+l.rank), 0) + {semantic_fusion}) AS hybrid_score
+               (COALESCE(1.0/(60+l.rank), 0) + {semantic_fusion}) AS hybrid_score,
+               c.semantic_json
         FROM candidates x
         JOIN studyindexchunk c ON c.id=x.id
         JOIN studymaterial m ON m.id=c.material_id
@@ -455,6 +456,22 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
         section = row[5] or ""
         body = row[7] or ""
         features = analyze_dental_text(f"{section}\n{body}")
+        # New generations persist the same deterministic fingerprint; legacy
+        # rows safely fall back to local text analysis above.
+        if len(row) > 13 and row[-1]:
+            try:
+                import json
+                meta = json.loads(row[-1])
+                features = type(features)(
+                    node_ids=tuple(meta.get("nodes") or ()),
+                    specialties=tuple(meta.get("specialties") or ()),
+                    kinds=tuple(meta.get("kinds") or ()),
+                    measurements=tuple(meta.get("measurements") or ()),
+                    tooth_numbers=tuple(meta.get("teeth") or ()),
+                    imaging_types=tuple(meta.get("imaging") or ()),
+                )
+            except (TypeError, ValueError, KeyError):
+                pass
         semantic = semantic_overlap_score(query_features, features)
         lexical = 1.0 / (1.0 + position)
         # Lexical retrieval remains authoritative; dental semantics promotes
