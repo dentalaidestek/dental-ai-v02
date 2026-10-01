@@ -47,6 +47,11 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "KANIT KURALI:\n"
         + exhaustive_rule +
+        "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
+        "Görevin yalnız sistemin seçtiği kanıtları kullanıcının sorusuna göre seçmek, "
+        "birleştirmek ve doğal, anlaşılır bir cevaba dönüştürmektir. Aynı bilgiyi gereksiz "
+        "tekrarlama; farklı kanıtlar birbirini tamamlıyorsa anlamını değiştirmeden birleştir. "
+        "Kanıtların desteklemediği boşlukları tahmin ederek doldurma. "
         "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
         "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
         "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
