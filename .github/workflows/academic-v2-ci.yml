@@ -1,0 +1,42 @@
+name: Academic V2 CI
+
+on:
+  pull_request:
+    paths:
+      - "app/study_ai_v2.py"
+      - "app/study_retrieval_v2.py"
+      - "app/study_provider.py"
+      - "app/study_router_state.py"
+      - "tests/academic_v2/**"
+      - ".github/workflows/academic-v2-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/study_ai_v2.py"
+      - "app/study_retrieval_v2.py"
+      - "app/study_provider.py"
+      - "app/study_router_state.py"
+      - "tests/academic_v2/**"
+      - ".github/workflows/academic-v2-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: academic-v2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Academic V2 modules
+        run: |
+          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/study_provider.py app/study_router_state.py
+      - name: Run Academic V2 invariant tests
+        run: python tests/academic_v2/test_static_invariants.py
