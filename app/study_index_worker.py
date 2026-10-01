@@ -282,7 +282,7 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                     extraction_method="PDF_TEXT",
                     content_sha256=digest,
                 )
-            session.commit()
+        session.commit()
 
         remaining = missing_page_numbers(
             session,
@@ -307,8 +307,8 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
 
 
 def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
-    """Create a bounded batch of deterministic, page-addressable chunks."""
-    batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 16, 1, 50)
+    """Create one bounded chunk batch with O(1) DB round-trips per page batch."""
+    batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 32, 1, 100)
     rows = list(session.exec(
         select(StudyIndexPage)
         .where(StudyIndexPage.material_id == job.material_id)
@@ -318,41 +318,54 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
             StudyIndexChunk.material_id == StudyIndexPage.material_id,
             StudyIndexChunk.index_version == StudyIndexPage.index_version,
             StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
-        .order_by(StudyIndexPage.page_number.asc()).limit(batch + 1)
+        .order_by(StudyIndexPage.page_number.asc()).limit(batch)
     ).all())
-    processed = 0
+    if not rows:
+        return "VERIFY"
+    if not _lease_still_owned(session, job):
+        session.rollback()
+        return "LEASE_LOST"
+
+    pending: list[StudyIndexChunk] = []
     for page in rows:
-        existing = session.exec(
-            select(StudyIndexChunk.id)
-            .where(StudyIndexChunk.material_id == job.material_id)
-            .where(StudyIndexChunk.index_version == job.index_version)
-            .where(StudyIndexChunk.page_start == page.page_number)
-        ).first()
-        if existing:
-            continue
-        if processed >= batch:
-            return "CHUNK"
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
         chunks = chunk_dental_page(page.text_content or "")
         if not chunks:
             raise RuntimeError(f"NO_CHUNKS_FOR_PAGE:{page.page_number}")
         if len(chunks) >= 1000:
             raise RuntimeError(f"TOO_MANY_CHUNKS_FOR_PAGE:{page.page_number}")
         for local_index, chunk in enumerate(chunks):
-            _upsert_chunk(
-                session,
-                job=job,
+            pending.append(StudyIndexChunk(
+                owner_user_id=job.owner_user_id,
+                course_id=job.course_id,
+                material_id=job.material_id,
+                index_version=job.index_version,
                 chunk_index=((page.page_number - 1) * 1000) + local_index,
-                page_number=page.page_number,
-                text_content=chunk.text,
+                page_start=page.page_number,
+                page_end=page.page_number,
                 section_title=chunk.section_title,
                 content_kind=chunk.content_kind,
-            )
-        session.commit()
-        processed += 1
-    return "VERIFY"
+                text_content=chunk.text,
+                text_sha256=_sha256_text(chunk.text),
+            ))
+
+    if not _lease_still_owned(session, job):
+        session.rollback()
+        return "LEASE_LOST"
+    session.add_all(pending)
+    session.commit()
+
+    remaining = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
+        .limit(1)
+    ).first()
+    return "CHUNK" if remaining else "VERIFY"
 
 
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
