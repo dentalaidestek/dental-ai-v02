@@ -133,6 +133,10 @@ def stream_rag_v2(
             if not emitted:
                 raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
             report_target_success(target)
+            if retrieval.retrieval_mode == "questions_exhaustive" and retrieval.has_more and retrieval.evidence:
+                # Persisted with the assistant message and consumed only by the
+                # server on an explicit "devam" turn; harmless in rendered HTML.
+                yield f"\n<!--ACADEMIC_Q_CURSOR:{retrieval.evidence[-1].chunk_id}-->"
             return
         except StudyProviderError as exc:
             report_target_failure(target, exc)
