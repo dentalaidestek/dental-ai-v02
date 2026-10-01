@@ -36,9 +36,9 @@ _FOLLOWUP_RE = re.compile(
     re.IGNORECASE,
 )
 _VISUAL_QUERY_RE = re.compile(
-    r"\\b(?:tablo|tablodaki|şekil|grafik|görsel|görüntü|resim|fotoğraf|şema|"
+    r"\b(?:tablo|tablodaki|şekil|grafik|görsel|görüntü|resim|fotoğraf|şema|"
     r"radyografi|radyografide|röntgen|film|panoramik|OPG|CBCT|periapikal|"
-    r"bitewing|sefalometrik|sefalogram)\\b", re.I
+    r"bitewing|sefalometrik|sefalogram)\b", re.I
 )
 _EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
 
