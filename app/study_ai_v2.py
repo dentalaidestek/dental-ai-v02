@@ -63,13 +63,26 @@ def stream_rag_v2(
     prompt = _prompt(course_title, question, retrieval)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
+    candidates = _generation_targets()
+    logger.info(
+        "Academic AI V2 generation plan. candidates=%s attachments=%s evidence=%s semantic=%s",
+        ",".join(f"{item.provider}:{item.model}" for item in candidates),
+        len(retrieval.attachments),
+        len(retrieval.evidence),
+        retrieval.used_semantic_search,
+    )
 
     # One primary call and at most one fallback. A fallback is only safe before
     # the first byte reaches the client; providers are never mixed mid-answer.
-    for target in _generation_targets():
+    for target in candidates:
         if attempted_api_calls >= 2:
             break
         if not target_available(target):
+            logger.info(
+                "Academic AI V2 generation target skipped. provider=%s model=%s reason=unavailable",
+                target.provider,
+                target.model,
+            )
             continue
         emitted = False
         try:
@@ -78,9 +91,20 @@ def stream_rag_v2(
                 provider.supports_generation_attachment(mime_type)
                 for mime_type in required_attachment_types
             ):
+                logger.info(
+                    "Academic AI V2 generation target skipped. provider=%s model=%s reason=attachment_unsupported",
+                    target.provider,
+                    target.model,
+                )
                 continue
 
             attempted_api_calls += 1
+            logger.info(
+                "Academic AI V2 generation target selected. provider=%s model=%s api_call=%s",
+                target.provider,
+                target.model,
+                attempted_api_calls,
+            )
             for chunk in provider.generate_stream(
                 model=target.model,
                 system_prompt=STUDY_SYSTEM_PROMPT,
