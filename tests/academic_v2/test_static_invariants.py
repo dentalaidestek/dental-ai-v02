@@ -22,7 +22,8 @@ assert "dependent = bool(_FOLLOWUP_RE.search(clean))" in retrieval
 assert "_is_exhaustive_question_request" in retrieval
 assert "_question_rows" in retrieval
 assert "question_limit = 16" in retrieval
-assert "if not exhaustive_questions:" in retrieval
+assert "if exhaustive_questions:" in retrieval
+assert "else:" in retrieval[retrieval.index("if exhaustive_questions:"):retrieval.index("precise_query = _fts_query") + 80]
 assert "continuation_cursor" in retrieval
 assert "ACADEMIC_Q_CURSOR" in retrieval
 
