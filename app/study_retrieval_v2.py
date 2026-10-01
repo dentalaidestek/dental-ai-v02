@@ -456,6 +456,7 @@ def _neighbor_rows(
                    NULL::BIGINT AS lexical_rank, NULL::DOUBLE PRECISION AS lexical_score,
                    NULL::BIGINT AS semantic_rank, NULL::DOUBLE PRECISION AS semantic_score,
                    (0.001 / seeds.ord)::DOUBLE PRECISION AS hybrid_score,
+                   c.chunk_index, c.semantic_json,
                    seeds.ord AS seed_order
             FROM seeds
             JOIN studyindexchunk c
@@ -471,7 +472,7 @@ def _neighbor_rows(
         )
         SELECT id, material_id, display_name, page_start, page_end, section_title,
                content_kind, text_content, lexical_rank, lexical_score,
-               semantic_rank, semantic_score, hybrid_score
+               semantic_rank, semantic_score, hybrid_score, chunk_index, semantic_json
         FROM neighbors ORDER BY seed_order, page_start, id LIMIT :limit
         """
     ), params={
