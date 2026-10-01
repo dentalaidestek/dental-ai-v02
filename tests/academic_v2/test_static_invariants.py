@@ -22,6 +22,8 @@ assert "dependent = bool(_FOLLOWUP_RE.search(clean))" in retrieval
 assert "_is_exhaustive_question_request" in retrieval
 assert "_question_rows" in retrieval
 assert "question_limit = 16" in retrieval
+assert "limit=question_limit + 1" in retrieval
+assert "has_more_questions = len(question_rows) > question_limit" in retrieval
 assert "if exhaustive_questions:" in retrieval
 assert "else:" in retrieval[retrieval.index("if exhaustive_questions:"):retrieval.index("precise_query = _fts_query") + 80]
 assert "continuation_cursor" in retrieval
@@ -65,6 +67,7 @@ assert "c.content_kind = 'QUESTION'" in retrieval
 assert "_fts_query" in retrieval
 assert " OR " in retrieval
 assert "embed_text(" not in retrieval
+assert "get_embedding_target" not in retrieval
 worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
 jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
 ast.parse(worker)
