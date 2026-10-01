@@ -6,6 +6,7 @@ CI remains fast and deterministic.
 """
 from pathlib import Path
 import ast
+from app.dental_query_intent import classify_dental_intent
 
 ROOT = Path(__file__).resolve().parents[2]
 source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
@@ -15,7 +16,7 @@ terms_source = (ROOT / "app/dental_retrieval_terms.py").read_text(encoding="utf-
 terms_ns = {}
 exec(compile(terms_source, "<dental-terms>", "exec"), terms_ns)
 wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES"}
-namespace = {"re": __import__("re")}
+namespace = {"re": __import__("re"), "classify_dental_intent": classify_dental_intent}
 namespace["DENTAL_ALIAS_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 namespace["_DENTAL_CONCEPT_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 for node in tree.body:
