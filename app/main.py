@@ -3049,7 +3049,7 @@ def change_professional_title(request: Request, professional_title: str = Form(.
 
         # A verified expert keeps the currently approved public identity and case
         # eligibility until the replacement credential is approved.
-        if active_verified_expert and current_title:
+        if active_verified_expert and current_title and professional_title in {"Uzman Diş Hekimi", "Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."}:
             pending = s.exec(select(ExpertTitleChange).where(
                 ExpertTitleChange.user_id == user.id,
                 ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
@@ -6270,13 +6270,17 @@ def expert_support_profile_page(request: Request):
         meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
         doctor = s.exec(select(DoctorProfile).where(DoctorProfile.user_id == user.id)).first()
         policy_state = _expert_policy_state(s, user.id)
+        pending_title_change = s.exec(select(ExpertTitleChange).where(
+            ExpertTitleChange.user_id == user.id,
+            ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+        ).order_by(ExpertTitleChange.created_at.desc())).first()
         s.commit()
     title = meta.professional_title if meta else "Diş Hekimi"
     return templates.TemplateResponse(request=request, name="expert_profile_edit.html", context={
         "user": user, "profile": profile, "doctor": doctor, "professional_title": title,
         "specialties": EXPERT_SPECIALTIES, "minimum_price": _expert_minimum_price(title),
         "policy_state": policy_state, "rules_version": EXPERT_RULES_VERSION, "now": _utcnow_naive(),
-        "sms_provider_enabled": _sms_provider_enabled(),
+        "sms_provider_enabled": _sms_provider_enabled(), "pending_title_change": pending_title_change,
     })
 
 
