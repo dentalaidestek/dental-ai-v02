@@ -22,6 +22,7 @@ from sqlmodel import Session
 from app.object_storage import ensure_local as storage_ensure_local
 from app.study_provider import StudyProviderError, get_embedding_dimensions, get_embedding_target, get_provider
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
+from app.dental_knowledge_graph import graph_expansion_terms
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,11 @@ _FOLLOWUP_RE = re.compile(
     r"daha (?:basit|detaylı)|açıkla|tekrar|\d+\.? soru)",
     re.IGNORECASE,
 )
-_VISUAL_QUERY_RE = re.compile(r"\b(?:tablo|tablodaki|şekil|grafik|görsel|resim|şema)\b", re.I)
+_VISUAL_QUERY_RE = re.compile(
+    r"\\b(?:tablo|tablodaki|şekil|grafik|görsel|görüntü|resim|fotoğraf|şema|"
+    r"radyografi|radyografide|röntgen|film|panoramik|OPG|CBCT|periapikal|"
+    r"bitewing|sefalometrik|sefalogram)\\b", re.I
+)
 _EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
 
 
@@ -180,7 +185,10 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     original = [token for token in core.split() if len(token) >= 2][:10]
     lowered = clean.casefold()
     extras = _concept_alternatives(clean)
-    return original, extras[:12]
+    for term in graph_expansion_terms(clean):
+        if term.casefold() not in {item.casefold() for item in extras}:
+            extras.append(term)
+    return original, extras[:16]
 
 
 def _fts_query(query: str, *, broad: bool = False) -> str:
