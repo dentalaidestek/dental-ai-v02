@@ -11415,6 +11415,7 @@ def admin_center_user_detail(request: Request, user_id: int):
     return templates.TemplateResponse(request=request,name="admin_user_detail.html",context={
         "user":admin,"target":target,"meta":meta,"profile":profile,"requested":requested,"received":received,
         "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"storage":storage,"admin_path":ADMIN_CENTER_PATH,
+        "expert_specialties":EXPERT_SPECIALTIES,"expert_min_price":EXPERT_MIN_PRICE,
     })
 
 
