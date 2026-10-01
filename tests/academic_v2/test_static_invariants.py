@@ -30,11 +30,12 @@ assert "ACADEMIC_Q_CURSOR" in retrieval
 assert "_PAGE_PDF_CACHE_MAX" in retrieval
 assert "_PAGE_PDF_CACHE.get(cache_key)" in retrieval
 
-# Generation remains bounded: primary plus at most one fallback, never provider mixing after output.
-assert "if attempted_api_calls >= 2:" in generation
+# Academic V2 generation is one Gemini model and one external call, with no fallback chain.
+assert 'ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"' in generation
+assert "get_generation_targets" not in generation
+assert "if attempted_api_calls >= 1:" in generation
 assert "if emitted:" in generation
 assert "generation target selected" in generation
-assert "generation target skipped" in generation
 
 # OCR stays local/adaptive and preserves academic/dental structure.
 assert "_detect_page_layout" in ocr
