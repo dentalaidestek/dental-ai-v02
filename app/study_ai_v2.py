@@ -16,6 +16,7 @@ from app.study_provider import (
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
+from app.dental_query_intent import classify_dental_intent
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,28 @@ ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"
 def _generation_targets() -> list[ProviderTarget]:
     """Academic V2 uses exactly one generation provider/model; no fallback chain."""
     return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
+
+
+_INTENT_RESPONSE_RULES = {
+    "value": "İstenen değeri/ölçümü kanıtta varsa ilk cümlede doğrudan ver; sonra yalnız gerekli bağlamı ekle.",
+    "definition": "Önce kısa ve doğrudan tanımı ver; ardından kanıttaki ayırt edici özellikleri ekle.",
+    "measurement": "Neyin, nasıl ve hangi referansla ölçüldüğünü kanıtın desteklediği sırayla açıkla.",
+    "comparison": "Karşılaştırılan kavramları aynı ölçütler üzerinden yan yana ve tekrar etmeden karşılaştır.",
+    "classification": "Sınıflamayı kaynak yapısını bozmadan düzenli ver; sınıf/evre ölçütlerini birbirine karıştırma.",
+    "diagnosis": "Tanı, bulgu ve ayırıcı tanı ifadelerini kanıtta nasıl ayrılmışsa öyle tut; yeni tanı çıkarımı yapma.",
+    "treatment": "Endikasyon, işlem ve sonuç/izlem bilgisini kanıt destekliyorsa mantıksal sırada birleştir.",
+    "complication": "Komplikasyon ile risk/neden/önleme bilgisini kanıtta desteklenen ilişkilerle eşleştir.",
+    "cause": "Neden, risk faktörü ve mekanizmayı kanıtta desteklenen neden-sonuç yönünü bozmadan açıkla.",
+    "visual": "Yalnız ekli kaynak sayfasında gerçekten görülebilen ve metin kanıtıyla desteklenen özellikleri yorumla.",
+}
+
+
+def _response_contract(question: str) -> str:
+    intent = classify_dental_intent(question)
+    return _INTENT_RESPONSE_RULES.get(
+        intent.name,
+        "Sorunun istediği bilgiye doğrudan cevap ver; kanıt dışı ayrıntıyla cevabı genişletme.",
+    )
 
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
@@ -45,6 +68,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
     return (
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
+        "CEVAP BİÇİMİ:\n" + _response_contract(question) + "\n\n"
         "KANIT KURALI:\n"
         + exhaustive_rule +
         "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
