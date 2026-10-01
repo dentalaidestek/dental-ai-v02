@@ -78,13 +78,17 @@ def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticF
     return min(1.0, score)
 
 
-def retrieval_enrichment_text(text: str, *, max_terms: int = 24) -> str:
+def retrieval_enrichment_text(
+    text: str, *, features: DentalSemanticFeatures | None = None, max_terms: int = 24
+) -> str:
     """Canonical dental terms appended only to the retrieval document.
 
     Original evidence text remains untouched for citations and generation.
+    A precomputed fingerprint avoids re-running semantic analysis while indexing.
     """
-    features = analyze_dental_text(text)
-    nodes = matched_nodes(text)
+    features = features or analyze_dental_text(text)
+    node_by_id = {node.id: node for node in matched_nodes(text)}
+    nodes = [node_by_id[node_id] for node_id in features.node_ids if node_id in node_by_id]
     terms: list[str] = []
     seen: set[str] = set()
     for node in nodes:
