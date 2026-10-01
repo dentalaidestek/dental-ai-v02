@@ -36,6 +36,9 @@ assert "get_generation_targets" not in generation
 assert "if attempted_api_calls >= 1:" in generation
 assert "if emitted:" in generation
 assert "generation target selected" in generation
+assert "classify_dental_intent" in generation
+assert "_INTENT_RESPONSE_RULES" in generation
+assert "Sen arama/retrieval yapma" in generation
 
 # OCR stays local/adaptive and preserves academic/dental structure.
 assert "_detect_page_layout" in ocr
