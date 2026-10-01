@@ -539,13 +539,33 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
 
 
 def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
-    """Cheap evidence sufficiency signal; no provider/model call."""
-    facets = _coverage_terms(classify_dental_intent(query).name)
+    """Cheap local sufficiency signal using lexical and persisted dental semantics."""
+    intent = classify_dental_intent(query)
+    facets = _coverage_terms(intent.name)
     if not facets:
         return (1.0 if rows else 0.0), ()
     corpus = " ".join(f"{row[5] or ''} {row[7] or ''}" for row in rows).casefold()
-    covered = tuple(facet for facet in facets if facet.casefold() in corpus)
-    return len(covered) / max(1, len(facets)), covered
+    semantic_kinds: set[str] = set()
+    for row in rows:
+        if len(row) > 13 and row[-1]:
+            try:
+                import json
+                meta = json.loads(row[-1])
+                semantic_kinds.update(str(item).casefold() for item in (meta.get("kinds") or ()))
+            except (TypeError, ValueError, KeyError):
+                pass
+    covered: list[str] = []
+    for facet in facets:
+        facet_cf = facet.casefold()
+        if facet_cf in corpus or facet_cf in semantic_kinds:
+            covered.append(facet)
+    # A strong intent-kind match is evidence even when the note uses a synonym
+    # such as pulpectomy instead of literally saying "treatment".
+    if intent.preferred_kinds and semantic_kinds.intersection(
+        item.casefold() for item in intent.preferred_kinds
+    ) and facets and facets[0] not in covered:
+        covered.append(facets[0])
+    return len(covered) / max(1, len(facets)), tuple(covered)
 
 
 def _coverage_select(query: str, rows: list, *, limit: int) -> list:
