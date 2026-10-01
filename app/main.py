@@ -64,6 +64,7 @@ from app.xray_trace import (
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
 from app.study_ai_v2 import ask_rag_v2 as ask_study_ai_v2, stream_rag_v2 as stream_study_ai_v2
+from app.dental_academic_scope import should_block_academic_question
 from app.study_index_jobs import (
     StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
     enqueue_material_deletion, tombstone_material,
@@ -4459,6 +4460,13 @@ def study_ai_ask(
                 for row in reversed(history_rows)
             ]
 
+            if should_block_academic_question(clean_message, recent_history=history):
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
+                    "code": "ACADEMIC_SCOPE_OUTSIDE",
+                }, status_code=400)
+
             # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
             trace_event("ask.history.ready", course_id=course_id, history_count=len(history))
             _rag_started = _study_trace_time.perf_counter()
@@ -4659,6 +4667,12 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
+        if should_block_academic_question(clean_message, recent_history=history):
+            return JSONResponse({
+                "ok": False,
+                "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
+                "code": "ACADEMIC_SCOPE_OUTSIDE",
+            }, status_code=400)
         source_versions = _study_source_versions(s, user.id, course_id)
         try:
             retrieval = retrieve_course_context_v2(
