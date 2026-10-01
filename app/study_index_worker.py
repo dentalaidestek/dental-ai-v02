@@ -230,7 +230,7 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
         max_pages = _int_env("STUDY_RAG_MAX_PDF_PAGES", 300, 1, 2000)
         if len(reader.pages) > max_pages:
             raise RuntimeError(f"PDF_PAGE_LIMIT:{len(reader.pages)}>{max_pages}")
-        batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 12, 1, 50)
+        batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 32, 1, 50)
         missing = missing_page_numbers(
             session,
             material_id=job.material_id,
