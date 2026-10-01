@@ -24,6 +24,7 @@ from app.study_provider import StudyProviderError, get_embedding_dimensions, get
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
 from app.dental_query_intent import classify_dental_intent
+from app.dental_semantics import analyze_dental_text, semantic_overlap_score
 
 logger = logging.getLogger(__name__)
 
@@ -444,6 +445,26 @@ def _neighbor_rows(
 
 
 @storage_scoped
+def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
+    """Rerank a bounded lexical candidate pool with local dental semantics."""
+    if not rows:
+        return []
+    query_features = analyze_dental_text(query)
+    scored = []
+    for position, row in enumerate(rows):
+        section = row[5] or ""
+        body = row[7] or ""
+        features = analyze_dental_text(f"{section}\n{body}")
+        semantic = semantic_overlap_score(query_features, features)
+        lexical = 1.0 / (1.0 + position)
+        # Lexical retrieval remains authoritative; dental semantics promotes
+        # conceptually aligned candidates without inventing evidence.
+        score = (0.62 * lexical) + (0.38 * semantic)
+        scored.append((score, position, row))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [row for _, _, row in scored[:limit]]
+
+
 def retrieve_course_context_v2(
     session: Session,
     *,
@@ -485,7 +506,7 @@ def retrieve_course_context_v2(
             query_vector=vector,
             embedding_provider=target.provider,
             embedding_model=target.model,
-            limit=limit,
+            limit=max(limit * 3, 18),
         )
         if not rows:
             broad_query = _fts_query(resolved, broad=True)
@@ -498,8 +519,9 @@ def retrieve_course_context_v2(
                     query_vector=None,
                     embedding_provider=target.provider,
                     embedding_model=target.model,
-                    limit=limit,
+                    limit=max(limit * 3, 18),
                 )
+        rows = _rerank_dental_rows(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
             session,
