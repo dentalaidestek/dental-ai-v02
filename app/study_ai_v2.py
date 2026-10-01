@@ -36,10 +36,23 @@ def _generation_targets() -> list[ProviderTarget]:
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
     context = "\n\n---\n\n".join(retrieval.note_context)
+    exhaustive_rule = ""
+    if retrieval.retrieval_mode == "questions_exhaustive":
+        exhaustive_rule = (
+            "Bu istek kaynak içindeki soruları çözme isteğidir. Verilen soru/şıkları kaynak sırasını "
+            "koruyarak çöz; soru kökü ile A-E seçeneklerini birbirinden ayırma. Kaynakta görünmeyen "
+            "seçenek veya soru uydurma. Her soru için seçtiğin cevabı ve kısa gerekçeyi ver. "
+        )
+        if retrieval.has_more:
+            exhaustive_rule += (
+                "Bu turda güvenli bağlam sınırı nedeniyle kaynaktaki soruların yalnız ilk bölümü "
+                "verildi; yanıtın sonunda daha fazla soru bulunduğunu açıkça belirt. "
+            )
     return (
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "KANIT KURALI:\n"
+        + exhaustive_rule +
         "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
         "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
         "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
