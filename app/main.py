@@ -11418,6 +11418,48 @@ def admin_center_user_detail(request: Request, user_id: int):
     })
 
 
+@app.post(ADMIN_CENTER_PATH + "/users/{user_id}/expert-profile")
+@offload
+def admin_center_expert_profile_update(
+    request: Request,
+    user_id: int,
+    specialty: str = Form(...),
+    institution: str = Form(""),
+    bio: str = Form(""),
+    publications_text: str = Form(""),
+    orcid_url: str = Form(""),
+    consultation_price: int = Form(...),
+):
+    admin=_admin_only(request)
+    if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
+    specialty=specialty.strip()
+    if specialty not in EXPERT_SPECIALTIES:return HTMLResponse("Geçersiz branş.",status_code=400)
+    if consultation_price < EXPERT_MIN_PRICE:return HTMLResponse(f"Danışmanlık ücreti en az {EXPERT_MIN_PRICE} TL olmalıdır.",status_code=400)
+    normalized_orcid=_normalize_orcid_url(orcid_url)
+    if orcid_url.strip() and not normalized_orcid:return HTMLResponse("ORCID iD geçersiz.",status_code=400)
+    profile_events=[]
+    with Session(engine,expire_on_commit=False) as s:
+        profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
+        if not profile:return HTMLResponse("Uzman profili bulunamadı.",status_code=404)
+        old_specialty=profile.specialty
+        profile.specialty=specialty
+        profile.institution=institution.strip()[:180] or None
+        profile.bio=bio.strip()[:3000] or None
+        profile.publications_text=publications_text.strip()[:5000] or None
+        profile.orcid_url=normalized_orcid
+        profile.consultation_price=consultation_price
+        # Admin is editing an already reviewed profile. Do not silently destroy its
+        # verified/availability state; sensitive title/credential changes use their own review flow.
+        profile.updated_at=_utcnow_naive()
+        s.add(profile)
+        profile_events=_record_expert_profile_realtime_events(s,profile)
+        s.add(AdminAuditLog(admin_user_id=admin.id,action="EXPERT_PROFILE_UPDATED",target_user_id=user_id,
+            detail=f"Branş: {old_specialty} -> {profile.specialty}; kurum/profil bilgileri yönetici tarafından güncellendi"))
+        s.commit()
+    for event in profile_events:on_loop(_publish_realtime_event,event)
+    return RedirectResponse(f"{ADMIN_CENTER_PATH}/users/{user_id}",status_code=303)
+
+
 @app.post(ADMIN_CENTER_PATH + "/settings")
 @offload
 def admin_center_settings(request: Request, section: str = Form(...), key: str = Form(...), value: str = Form("")):
