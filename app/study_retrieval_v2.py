@@ -359,25 +359,39 @@ def retrieve_course_context_v2(
     except StudyProviderError as exc:
         logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
 
-    rows = _hybrid_rows(
-        session,
-        owner_user_id=owner_user_id,
-        course_id=course_id,
-        lexical_query=resolved,
-        query_vector=vector,
-        embedding_provider=target.provider,
-        embedding_model=target.model,
-        limit=limit,
+    exhaustive_questions = _is_exhaustive_question_request(query)
+    if exhaustive_questions:
+        rows = _question_rows(
+            session,
+            owner_user_id=owner_user_id,
+            course_id=course_id,
+            limit=40,
+        )
+    else:
+        rows = _hybrid_rows(
+            session,
+            owner_user_id=owner_user_id,
+            course_id=course_id,
+            lexical_query=resolved,
+            query_vector=vector,
+            embedding_provider=target.provider,
+            embedding_model=target.model,
+            limit=limit,
+        )
+        primary_ids = [int(row[0]) for row in rows]
+        rows.extend(_neighbor_rows(
+            session,
+            owner_user_id=owner_user_id,
+            course_id=course_id,
+            seed_ids=primary_ids[:4],
+            exclude_ids=primary_ids,
+            limit=min(4, max(0, 12 - len(rows))),
+        ))
+    logger.info(
+        "Academic V2 retrieval selected. mode=%s evidence_rows=%s",
+        "questions_exhaustive" if exhaustive_questions else "hybrid",
+        len(rows),
     )
-    primary_ids = [int(row[0]) for row in rows]
-    rows.extend(_neighbor_rows(
-        session,
-        owner_user_id=owner_user_id,
-        course_id=course_id,
-        seed_ids=primary_ids[:4],
-        exclude_ids=primary_ids,
-        limit=min(4, max(0, 12 - len(rows))),
-    ))
     result = RetrievalResult(resolved_query=resolved)
     for row in rows:
         evidence = Evidence(
