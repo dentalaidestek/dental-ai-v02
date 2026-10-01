@@ -520,6 +520,43 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
     return [row for _, _, row in scored[:limit]]
 
 
+def _coverage_terms(intent_name: str) -> tuple[str, ...]:
+    return _EVIDENCE_FACETS.get(intent_name, ())
+
+
+def _coverage_select(query: str, rows: list, *, limit: int) -> list:
+    """Preserve evidence diversity after relevance reranking."""
+    if len(rows) <= limit:
+        return rows
+    intent = classify_dental_intent(query)
+    facets = _coverage_terms(intent.name)
+    if not facets:
+        return rows[:limit]
+    selected: list = []
+    selected_ids: set[int] = set()
+    # First reserve at most one high-ranked chunk for each requested facet.
+    for facet in facets:
+        facet_cf = facet.casefold()
+        for row in rows:
+            if int(row[0]) in selected_ids:
+                continue
+            haystack = f"{row[5] or ''} {row[7] or ''}".casefold()
+            if facet_cf in haystack:
+                selected.append(row)
+                selected_ids.add(int(row[0]))
+                break
+        if len(selected) >= limit:
+            return selected
+    # Fill remaining slots by global relevance order.
+    for row in rows:
+        if int(row[0]) not in selected_ids:
+            selected.append(row)
+            selected_ids.add(int(row[0]))
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def retrieve_course_context_v2(
     session: Session,
     *,
@@ -603,7 +640,8 @@ def retrieve_course_context_v2(
                     if row_id not in seen_ids:
                         rows.append(row)
                         seen_ids.add(row_id)
-        rows = _rerank_dental_rows(resolved, rows, limit=limit)
+        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
+        rows = _coverage_select(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
             session,
