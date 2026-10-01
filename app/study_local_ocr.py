@@ -8,6 +8,7 @@ ship self-contained wheels, so the Render native runtime needs no apt package.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -130,7 +131,6 @@ def ocr_material_page(
     page_number: int,
 ) -> LocalOCRResult:
     """Adaptive local OCR: cheap first pass, bounded quality retry only when needed."""
-    import re
     import tesserocr
 
     fast_dpi = _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200)
