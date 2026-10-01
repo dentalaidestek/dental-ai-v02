@@ -56,3 +56,30 @@ def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticF
     if qimg and qimg & cimg:
         score += 0.10
     return min(1.0, score)
+
+
+def retrieval_enrichment_text(text: str, *, max_terms: int = 24) -> str:
+    """Canonical dental terms appended only to the retrieval document.
+
+    Original evidence text remains untouched for citations and generation.
+    """
+    features = analyze_dental_text(text)
+    nodes = matched_nodes(text)
+    terms: list[str] = []
+    seen: set[str] = set()
+    for node in nodes:
+        for value in (node.label, node.specialty, node.kind):
+            key = value.casefold()
+            if key not in seen:
+                seen.add(key)
+                terms.append(value)
+            if len(terms) >= max_terms:
+                return " ".join(terms)
+    for value in (*features.imaging_types, *features.tooth_numbers):
+        key = value.casefold()
+        if key not in seen:
+            seen.add(key)
+            terms.append(value)
+        if len(terms) >= max_terms:
+            break
+    return " ".join(terms)
