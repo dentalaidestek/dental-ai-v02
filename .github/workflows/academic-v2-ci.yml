@@ -14,11 +14,14 @@ on:
       - "app/dental_knowledge_graph.py"
       - "app/dental_query_intent.py"
       - "app/dental_semantics.py"
+      - "app/dental_academic_scope.py"
       - "app/dental_specialty_concepts.py"
       - "app/study_provider.py"
       - "app/study_local_ocr.py"
       - "app/study_index_worker.py"
       - "app/study_index_jobs.py"
+      - "app/study_chunking.py"
+      - "app/migrate.py"
       - "app/dental_ocr_words.txt"
       - "app/study_router_state.py"
       - "tests/academic_v2/**"
@@ -42,7 +45,7 @@ jobs:
           python-version: "3.12"
       - name: Compile Academic V2 modules
         run: |
-          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_query_intent.py app/dental_semantics.py app/dental_specialty_concepts.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
+          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
       - name: Run Academic V2 invariant tests
         run: |
           python tests/academic_v2/test_static_invariants.py
