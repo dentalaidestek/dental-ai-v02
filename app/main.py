@@ -11950,7 +11950,6 @@ def admin_title_change_decision(request: Request, change_id: int, decision: str 
         if decision=="APPROVE":
             if not storage_exists(change.credential_document_path):
                 return HTMLResponse("Onay için yeni unvan belgesi gereklidir.",status_code=409)
-            old_credential=profile.credential_document_path
             meta.professional_title=change.requested_title
             doctor=s.exec(select(DoctorProfile).where(DoctorProfile.user_id==change.user_id)).first()
             if doctor:
