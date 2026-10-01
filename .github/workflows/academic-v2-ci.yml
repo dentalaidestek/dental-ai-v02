@@ -6,6 +6,8 @@ on:
     paths:
       - "app/study_ai_v2.py"
       - "app/study_retrieval_v2.py"
+      - "app/dental_retrieval_terms.py"
+      - "app/dental_knowledge_graph.py"
       - "app/study_provider.py"
       - "app/study_local_ocr.py"
       - "app/study_index_worker.py"
@@ -20,6 +22,8 @@ on:
     paths:
       - "app/study_ai_v2.py"
       - "app/study_retrieval_v2.py"
+      - "app/dental_retrieval_terms.py"
+      - "app/dental_knowledge_graph.py"
       - "app/study_provider.py"
       - "app/study_local_ocr.py"
       - "app/study_index_worker.py"
