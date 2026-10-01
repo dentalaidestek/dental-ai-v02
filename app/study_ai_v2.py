@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Iterator
 
 from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error_for_user
@@ -118,10 +119,17 @@ def stream_rag_v2(
                 target.model,
                 attempted_api_calls,
             )
+            clean_history = [
+                {
+                    **item,
+                    "content": re.sub(r"\n?<!--ACADEMIC_Q_CURSOR:\d+:\d+-->", "", item.get("content") or ""),
+                }
+                for item in history[-8:]
+            ]
             for chunk in provider.generate_stream(
                 model=target.model,
                 system_prompt=STUDY_SYSTEM_PROMPT,
-                history=history[-8:],
+                history=clean_history,
                 prompt=prompt,
                 attachments=retrieval.attachments,
                 temperature=0.22,
