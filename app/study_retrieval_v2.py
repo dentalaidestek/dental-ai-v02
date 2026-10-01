@@ -666,6 +666,31 @@ def retrieve_course_context_v2(
                         rows.append(row)
                         seen_ids.add(row_id)
         rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
+        coverage, covered_facets = _coverage_score(resolved, rows)
+        # At most one extra local DB query, only for complex questions whose
+        # first pass lacks evidence diversity.
+        if evidence_queries and coverage < 0.34 and len(rows) < candidate_target:
+            missing = [
+                facet for facet in _coverage_terms(classify_dental_intent(resolved).name)
+                if facet not in covered_facets
+            ]
+            if missing:
+                rescue_query = f'{_fts_query(resolved, broad=False)} "{missing[0]}"'
+                for row in _fts_rows(
+                    session,
+                    owner_user_id=owner_user_id,
+                    course_id=course_id,
+                    lexical_query=rescue_query,
+                    query_vector=None,
+                    embedding_provider=target.provider,
+                    embedding_model=target.model,
+                    limit=min(6, candidate_target - len(rows)),
+                ):
+                    row_id = int(row[0])
+                    if row_id not in seen_ids:
+                        rows.append(row)
+                        seen_ids.add(row_id)
+                rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
         rows = _coverage_select(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
