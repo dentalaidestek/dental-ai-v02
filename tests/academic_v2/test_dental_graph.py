@@ -11,3 +11,9 @@ assert contains(graph_expansion_terms("inferior alveolar sinir"), "mandibular ka
 assert not contains(graph_expansion_terms("üçüncü molar"), "gömülülük")
 assert graph_expansion_terms("yarın ders saat kaçta") == []
 print("Dental graph checks: OK")
+
+# Short aliases must respect token boundaries as the ontology grows.
+assert not any(n.id == "centric_relation" for n in matched_nodes("screen görüntüsü"))
+assert not any(n.id == "probing_depth" for n in matched_nodes("rapidly ilerleyen"))
+assert any(n.id == "centric_relation" for n in matched_nodes("CR ile kayıt"))
+assert any(n.id == "probing_depth" for n in matched_nodes("PD 6 mm"))
