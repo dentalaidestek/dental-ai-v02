@@ -147,9 +147,6 @@ _DENTAL_NOTATION_RULES = (
     (re.compile(r"\bS\s*[-–]?\s*N\s*[-–]?\s*A\b", re.I), "SNA"),
     (re.compile(r"\bS\s*[-–]?\s*N\s*[-–]?\s*B\b", re.I), "SNB"),
     (re.compile(r"\bGo\s*[-–]?\s*Gn\b", re.I), "GoGn"),
-    (re.compile(r"\b(?:class|sınıf)\s*2\b", re.I), "Class II"),
-    (re.compile(r"\b(?:class|sınıf)\s*3\b", re.I), "Class III"),
-    (re.compile(r"\b(?:class|sınıf)\s*1\b", re.I), "Class I"),
 )
 
 
