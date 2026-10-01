@@ -11201,6 +11201,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             storage_by_user=_admin_user_storage_summaries(s,users)
         if section in {"experts","approvals"}:
             eq=select(ExpertProfile)
+            if section=="experts":eq=eq.where(ExpertProfile.application_status=="APPROVED", ExpertProfile.verification_status=="VERIFIED", ExpertProfile.specialty_verified==True)
             if section=="approvals":eq=eq.where(ExpertProfile.application_status=="SUBMITTED")
             if cursor is not None:eq=eq.where(ExpertProfile.id < cursor)
             expert_profiles=s.exec(eq.order_by(ExpertProfile.id.desc()).limit(page_size+1)).all()
