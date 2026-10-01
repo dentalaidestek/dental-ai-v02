@@ -2,6 +2,7 @@ from app.dental_query_intent import classify_dental_intent
 
 CASES = {
     "ANB normal değeri kaçtır": "value",
+    "ANB değerleri nelerdir": "value",
     "alt çenenin konumunu hangi açıyla değerlendiririz": "measurement",
     "apikal konstriksiyon nedir": "definition",
     "periodontitis sınıflaması": "classification",
