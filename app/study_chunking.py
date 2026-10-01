@@ -157,6 +157,7 @@ def _split_long_block(text: str, max_chars: int, overlap_chars: int) -> list[str
 def chunk_dental_page(
     text: str,
     *,
+    inherited_section_title: str | None = None,
     max_chars: int = 1800,
     min_chars: int = 180,
     overlap_chars: int = 180,
@@ -171,7 +172,7 @@ def chunk_dental_page(
         return []
     lines = normalized.splitlines()
     sections: list[tuple[str | None, list[str]]] = []
-    title: str | None = None
+    title: str | None = inherited_section_title
     body: list[str] = []
     for line in lines:
         if _is_heading(line):
