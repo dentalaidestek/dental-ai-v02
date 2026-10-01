@@ -258,12 +258,11 @@ def _continuation_cursor(query: str, recent_history: list[dict] | None) -> tuple
     """Read an internal continuation marker from the prior assistant turn only."""
     if not recent_history or not re.match(r"^(?:devam|devam et|kalan(?:ları)?|sonraki(?:ler)?)\b", (query or "").strip(), re.I):
         return None
-    for item in reversed(recent_history):
-        if str(item.get("role") or "").upper() != "ASSISTANT":
-            continue
-        match = re.search(r"<!--ACADEMIC_Q_CURSOR:(\d+):(\d+)-->", item.get("content") or "")
-        return (int(match.group(1)), int(match.group(2))) if match else None
-    return None
+    last = recent_history[-1]
+    if str(last.get("role") or "").upper() != "ASSISTANT":
+        return None
+    match = re.search(r"<!--ACADEMIC_Q_CURSOR:(\d+):(\d+)-->", last.get("content") or "")
+    return (int(match.group(1)), int(match.group(2))) if match else None
 
 
 def _question_rows(
