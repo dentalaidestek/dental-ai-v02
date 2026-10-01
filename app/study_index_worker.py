@@ -130,12 +130,12 @@ def _sha256_file(path) -> str:
 
 
 def _index_fingerprint() -> str:
-    target = get_embedding_target()
     payload = {
-        "schema": "academic-v2-dental-structure-2",
-        "embedding_provider": target.provider,
-        "embedding_model": target.model,
-        "embedding_dimensions": get_embedding_dimensions(),
+        "schema": "academic-v2-dental-structure-3",
+        "retrieval_profile": "fts-local-v1",
+        "embedding_provider": None,
+        "embedding_model": None,
+        "embedding_dimensions": None,
         "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower(),
         "ocr_engine": LOCAL_OCR_ENGINE_VERSION,
         "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200),
@@ -352,7 +352,7 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
             )
         session.commit()
         processed += 1
-    return "EMBED"
+    return "VERIFY"
 
 
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
@@ -671,6 +671,7 @@ def _run_claimed_slice(session, job, resource_class):
                 material_id=job.material_id,
                 index_version=job.index_version,
                 expected_page_count=page_count,
+                require_embeddings=False,
             )
             if not ok:
                 raise RuntimeError(reason or "BUILD_INCOMPLETE")
