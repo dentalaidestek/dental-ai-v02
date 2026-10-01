@@ -45,8 +45,9 @@ class WebPushContractTests(unittest.TestCase):
         self.assertIn("daiEnsureWebPush({requestPermission:true})", listener)
         self.assertNotIn("Notification.requestPermission()", ACCOUNT)
         self.assertIn("Notification.requestPermission()", BASE)
-        helper = BASE.split("window.daiEnsureWebPush", 1)[1]
+        helper = BASE.split("async function daiEnsureWebPushOnce", 1)[1].split("window.daiEnsureWebPush", 1)[0]
         self.assertIn("requestPermission", helper)
+        self.assertIn("Notification.requestPermission()", helper)
 
     def test_foreground_suppression_is_process_safe_in_service_worker(self):
         self.assertIn('type:"visibility",visible:!document.hidden', BASE)
