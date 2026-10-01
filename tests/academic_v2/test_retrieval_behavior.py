@@ -73,3 +73,13 @@ assert namespace["_normalize_dental_notation"]("sınıf 2 maloklüzyon") == "sı
 # Short aliases must not match inside unrelated words.
 assert "CR" not in namespace["_concept_alternatives"]("screen görüntüsü")
 assert "PD" not in namespace["_concept_alternatives"]("rapidly ilerleyen")
+
+
+# Multi-evidence planning must stay bounded and intent-aware.
+source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+assert "def _evidence_queries" in source
+assert "max_queries: int = 4" in source
+assert "def _coverage_select" in source
+assert "candidate_target = max(limit * 4, 24)" in source
+assert "if len(rows) < max(limit, 6):" in source
+assert "rows = _coverage_select(resolved, rows, limit=limit)" in source
