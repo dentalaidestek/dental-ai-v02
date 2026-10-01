@@ -83,6 +83,8 @@ class StudyIndexChunk(SQLModel, table=True):
     content_kind: str = Field(default="TEXT", index=True)
     text_content: str
     text_sha256: str = Field(index=True)
+    retrieval_terms: Optional[str] = None
+    semantic_json: Optional[str] = None
     embedding_provider: Optional[str] = Field(default=None, index=True)
     embedding_model: Optional[str] = Field(default=None, index=True)
     embedding_dimensions: Optional[int] = None
