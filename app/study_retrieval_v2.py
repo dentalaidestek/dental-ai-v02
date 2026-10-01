@@ -520,6 +520,20 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
     return [row for _, _, row in scored[:limit]]
 
 
+_FAST_INTENTS = {"value", "definition", "measurement"}
+_MULTI_EVIDENCE_INTENTS = {
+    "diagnosis", "treatment", "complication", "classification",
+    "cause", "comparison", "visual",
+}
+
+
+def _needs_multi_evidence(query: str) -> bool:
+    intent = classify_dental_intent(query)
+    if intent.name in _FAST_INTENTS:
+        return False
+    return intent.name in _MULTI_EVIDENCE_INTENTS
+
+
 def _coverage_terms(intent_name: str) -> tuple[str, ...]:
     return _EVIDENCE_FACETS.get(intent_name, ())
 
@@ -603,7 +617,8 @@ def retrieve_course_context_v2(
         # This reaches distant pages/documents without exploding one giant OR query.
         candidate_target = max(limit * 4, 24)
         seen_ids = {int(row[0]) for row in rows}
-        for evidence_query in _evidence_queries(resolved):
+        evidence_queries = _evidence_queries(resolved) if _needs_multi_evidence(resolved) else []
+        for evidence_query in evidence_queries:
             if len(rows) >= candidate_target:
                 break
             facet_rows = _fts_rows(
