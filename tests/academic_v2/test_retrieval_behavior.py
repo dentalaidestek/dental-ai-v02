@@ -15,9 +15,9 @@ terms_source = (ROOT / "app/dental_retrieval_terms.py").read_text(encoding="utf-
 terms_ns = {}
 exec(compile(terms_source, "<dental-terms>", "exec"), terms_ns)
 wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES"}
+namespace = {"re": __import__("re")}
 namespace["DENTAL_ALIAS_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 namespace["_DENTAL_CONCEPT_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
-namespace = {"re": __import__("re")}
 for node in tree.body:
     if isinstance(node, (ast.Assign, ast.AnnAssign)):
         names = []
@@ -69,4 +69,7 @@ print("Academic V2 dental retrieval behavior: OK")
 
 assert namespace["_normalize_dental_notation"]("A-N-B açısı") == "ANB açısı"
 assert namespace["_normalize_dental_notation"]("Go-Gn düzlemi") == "GoGn düzlemi"
-assert "Class II" in namespace["_normalize_dental_notation"]("sınıf 2 maloklüzyon")
+assert namespace["_normalize_dental_notation"]("sınıf 2 maloklüzyon") == "sınıf 2 maloklüzyon"
+# Short aliases must not match inside unrelated words.
+assert "CR" not in namespace["_concept_alternatives"]("screen görüntüsü")
+assert "PD" not in namespace["_concept_alternatives"]("rapidly ilerleyen")
