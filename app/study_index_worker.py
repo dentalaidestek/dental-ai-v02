@@ -24,6 +24,7 @@ from sqlmodel import Session, select
 
 from app.object_storage import ensure_local as storage_ensure_local
 from app.study_chunking import chunk_dental_page, normalize_extracted_text
+from app.dental_semantics import analyze_dental_text, retrieval_enrichment_text
 from app.study_index_jobs import (
     StudyIndexChunk,
     StudyIndexJob,
@@ -131,7 +132,7 @@ def _sha256_file(path) -> str:
 
 def _index_fingerprint() -> str:
     payload = {
-        "schema": "academic-v2-dental-structure-3",
+        "schema": "academic-v2-dental-semantics-4",
         "retrieval_profile": "fts-local-v1",
         "embedding_provider": None,
         "embedding_model": None,
@@ -334,6 +335,16 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         if len(chunks) >= 1000:
             raise RuntimeError(f"TOO_MANY_CHUNKS_FOR_PAGE:{page.page_number}")
         for local_index, chunk in enumerate(chunks):
+            semantic_source = f"{chunk.section_title or ''}\n{chunk.text}"
+            features = analyze_dental_text(semantic_source)
+            semantic_json = json.dumps({
+                "nodes": features.node_ids,
+                "specialties": features.specialties,
+                "kinds": features.kinds,
+                "measurements": features.measurements,
+                "teeth": features.tooth_numbers,
+                "imaging": features.imaging_types,
+            }, ensure_ascii=False, separators=(",", ":"))
             pending.append(StudyIndexChunk(
                 owner_user_id=job.owner_user_id,
                 course_id=job.course_id,
@@ -346,6 +357,8 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
                 content_kind=chunk.content_kind,
                 text_content=chunk.text,
                 text_sha256=_sha256_text(chunk.text),
+                retrieval_terms=retrieval_enrichment_text(semantic_source),
+                semantic_json=semantic_json,
             ))
 
     if not _lease_still_owned(session, job):
