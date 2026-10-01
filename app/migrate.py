@@ -1,12 +1,12 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
-The existing idempotent baseline DDL is retained; revision 2 adds durable work,
-provider reservations and immutable analysis-result pointers. Web/workers only
+The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
+revision 3 adds isolated expert professional-title change reviews. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 from sqlalchemy import text
 
-REVISION = 2
+REVISION = 3
 
 
 def require_schema(engine):
