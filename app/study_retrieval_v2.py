@@ -60,6 +60,8 @@ class RetrievalResult:
     source_material_ids: list[int] = field(default_factory=list)
     resolved_query: str = ""
     used_semantic_search: bool = False
+    retrieval_mode: str = "hybrid"
+    has_more: bool = False
 
 
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
@@ -251,7 +253,7 @@ def _is_exhaustive_question_request(query: str) -> bool:
     return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
 
 
-def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limit: int = 40) -> list:
+def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limit: int = 16) -> list:
     """Return likely question-bearing chunks in source order, not semantic top-k."""
     return list(session.exec(text(
         """
@@ -277,7 +279,7 @@ def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limi
         "owner": owner_user_id,
         "course": course_id,
         "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
-        "limit": max(1, min(limit, 80)),
+        "limit": max(1, min(limit, 32)) + 1,
     }).all())
 
 
@@ -363,12 +365,15 @@ def retrieve_course_context_v2(
         except StudyProviderError as exc:
             logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
     if exhaustive_questions:
-        rows = _question_rows(
+        question_limit = 16
+        question_rows = _question_rows(
             session,
             owner_user_id=owner_user_id,
             course_id=course_id,
-            limit=40,
+            limit=question_limit,
         )
+        has_more_questions = len(question_rows) > question_limit
+        rows = question_rows[:question_limit]
     else:
         rows = _hybrid_rows(
             session,
@@ -394,7 +399,11 @@ def retrieve_course_context_v2(
         "questions_exhaustive" if exhaustive_questions else "hybrid",
         len(rows),
     )
-    result = RetrievalResult(resolved_query=resolved)
+    result = RetrievalResult(
+        resolved_query=resolved,
+        retrieval_mode="questions_exhaustive" if exhaustive_questions else "hybrid",
+        has_more=bool(exhaustive_questions and has_more_questions),
+    )
     for row in rows:
         evidence = Evidence(
             chunk_id=int(row[0]), material_id=int(row[1]), display_name=row[2],
