@@ -9,6 +9,26 @@ from app.dental_knowledge_graph import matched_nodes
 
 _VALUE_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*(?:°|mm|cm|%|mg|ml|g|µm|μm)\b?", re.I)
 _FDI_RE = re.compile(r"(?<!\d)(?:1[1-8]|2[1-8]|3[1-8]|4[1-8]|5[1-5]|6[1-5]|7[1-5]|8[1-5])(?!\d)")
+_TOOTH_CONTEXT_RE = re.compile(r"\b(?:diş|dis|tooth|numara(?:lı)?|no\.?|#)\b", re.I)
+_DENTAL_NUMBER_CONTEXT_RE = re.compile(
+    r"\b(?:molar|premolar|kanin|kesici|incisor|canine|periodontal|endodont|"
+    r"çekim|implant|kök|apikal|furkasyon|oklüz|mandibul|maxill)\w*\b", re.I
+)
+
+def _fdi_numbers(text: str) -> tuple[str, ...]:
+    matches = list(_FDI_RE.finditer(text))
+    if not matches:
+        return ()
+    # Bare two-digit numbers are common as ages, page numbers and measurements.
+    # Accept FDI notation only when the local sentence/window is dentally anchored.
+    result: list[str] = []
+    for match in matches:
+        left = max(0, match.start() - 42)
+        right = min(len(text), match.end() + 42)
+        window = text[left:right]
+        if _TOOTH_CONTEXT_RE.search(window) or _DENTAL_NUMBER_CONTEXT_RE.search(window):
+            result.append(match.group(0))
+    return tuple(dict.fromkeys(result))
 _IMAGING = (
     ("cbct", re.compile(r"\b(?:CBCT|cone beam|konik ışınlı)\b", re.I)),
     ("panoramic", re.compile(r"\b(?:panoramik|OPG|orthopantomogram)\b", re.I)),
@@ -34,7 +54,7 @@ def analyze_dental_text(text: str) -> DentalSemanticFeatures:
         specialties=tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general")),
         kinds=tuple(dict.fromkeys(node.kind for node in nodes)),
         measurements=tuple(dict.fromkeys(m.group(0).strip() for m in _VALUE_RE.finditer(clean))),
-        tooth_numbers=tuple(dict.fromkeys(m.group(0) for m in _FDI_RE.finditer(clean))),
+        tooth_numbers=_fdi_numbers(clean),
         imaging_types=tuple(name for name, pattern in _IMAGING if pattern.search(clean)),
     )
 
