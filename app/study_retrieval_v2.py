@@ -282,7 +282,7 @@ def _fts_rows(
             SELECT c.id,
                    (
                      ts_rank_cd(
-                       to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
+                       to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
                        websearch_to_tsquery('simple', :lexical_query)
                      )
                      + CASE WHEN lower(coalesce(c.section_title,'')) LIKE lower(:title_like) THEN 0.20 ELSE 0 END
@@ -290,13 +290,13 @@ def _fts_rows(
                    ROW_NUMBER() OVER (ORDER BY
                      (
                        ts_rank_cd(
-                         to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
+                         to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
                          websearch_to_tsquery('simple', :lexical_query)
                        )
                        + CASE WHEN lower(coalesce(c.section_title,'')) LIKE lower(:title_like) THEN 0.20 ELSE 0 END
                      ) DESC, c.id) AS rank
             {common}
-              AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content)
+              AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, ''))
                   @@ websearch_to_tsquery('simple', :lexical_query)
             ORDER BY raw_score DESC, c.id
             LIMIT :candidate_limit
