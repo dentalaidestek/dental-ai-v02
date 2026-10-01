@@ -311,7 +311,7 @@ def _fts_rows(
                l.rank AS lexical_rank, l.raw_score AS lexical_score,
                {semantic_columns}
                (COALESCE(1.0/(60+l.rank), 0) + {semantic_fusion}) AS hybrid_score,
-               c.semantic_json
+               c.chunk_index, c.semantic_json
         FROM candidates x
         JOIN studyindexchunk c ON c.id=x.id
         JOIN studymaterial m ON m.id=c.material_id
