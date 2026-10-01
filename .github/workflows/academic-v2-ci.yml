@@ -2,6 +2,7 @@ name: Academic V2 CI
 
 on:
   workflow_dispatch:
+  # Keep PR validation reliable; job-level change detection can optimize later.
   pull_request:
     paths:
       - "app/study_ai_v2.py"
