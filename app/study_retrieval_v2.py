@@ -11,6 +11,8 @@ from app.object_cache import scoped as storage_scoped
 import io
 import logging
 import re
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from pypdf import PdfReader, PdfWriter
@@ -21,6 +23,10 @@ from app.object_storage import ensure_local as storage_ensure_local
 from app.study_provider import StudyProviderError, get_embedding_dimensions, get_embedding_target, get_provider
 
 logger = logging.getLogger(__name__)
+
+_PAGE_PDF_CACHE_LOCK = threading.Lock()
+_PAGE_PDF_CACHE: "OrderedDict[tuple[str, int], bytes]" = OrderedDict()
+_PAGE_PDF_CACHE_MAX = 24
 
 _FOLLOWUP_RE = re.compile(
     r"^(?:peki|tamam|devam|neden|nasıl|hangisi|bunu|burada|onu|o zaman|"
@@ -60,7 +66,10 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     clean = re.sub(r"\s+", " ", query or "").strip()
     if not clean or not recent_history:
         return clean
-    dependent = len(clean.split()) <= 3 or bool(_FOLLOWUP_RE.search(clean))
+    # Short does not mean dependent: "SNA nedir?" or "ANB kaçtır?" are
+    # self-contained dental questions. Pull history in only when the wording
+    # itself contains a conversational referent.
+    dependent = bool(_FOLLOWUP_RE.search(clean))
     if not dependent:
         return clean
     previous: list[str] = []
@@ -76,15 +85,36 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
 
 def _single_page_pdf(reference: str, page_number: int) -> bytes:
+    # Repeated visual questions often hit the same source page. Avoid reparsing
+    # a large PDF on every request; keep a small process-local byte cache only.
+    cache_key = (str(reference), int(page_number))
+    with _PAGE_PDF_CACHE_LOCK:
+        cached = _PAGE_PDF_CACHE.get(cache_key)
+        if cached is not None:
+            _PAGE_PDF_CACHE.move_to_end(cache_key)
+            return cached
+
     path = storage_ensure_local(reference)
     reader = PdfReader(str(path))
-    if page_number < 1 or page_number > len(reader.pages):
-        raise ValueError("page outside source")
-    writer = PdfWriter()
-    writer.add_page(reader.pages[page_number - 1])
-    output = io.BytesIO()
-    writer.write(output)
-    return output.getvalue()
+    try:
+        if page_number < 1 or page_number > len(reader.pages):
+            raise ValueError("page outside source")
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_number - 1])
+        output = io.BytesIO()
+        writer.write(output)
+        data = output.getvalue()
+    finally:
+        stream = getattr(reader, "stream", None)
+        if stream and hasattr(stream, "close"):
+            stream.close()
+
+    with _PAGE_PDF_CACHE_LOCK:
+        _PAGE_PDF_CACHE[cache_key] = data
+        _PAGE_PDF_CACHE.move_to_end(cache_key)
+        while len(_PAGE_PDF_CACHE) > _PAGE_PDF_CACHE_MAX:
+            _PAGE_PDF_CACHE.popitem(last=False)
+    return data
 
 
 def _pgvector_available(session: Session, dimensions: int) -> bool:
