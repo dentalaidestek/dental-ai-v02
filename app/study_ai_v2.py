@@ -10,7 +10,6 @@ from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error
 from app.study_provider import (
     ProviderTarget,
     StudyProviderError,
-    get_generation_targets,
     get_provider,
     report_target_failure,
     report_target_success,
@@ -21,18 +20,12 @@ from app.study_retrieval_v2 import RetrievalResult
 logger = logging.getLogger(__name__)
 
 
-def _model() -> str:
-    return (os.getenv("STUDY_V2_GEMINI_MODEL") or "gemini-3.8-flash").strip()
+ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"
 
 
 def _generation_targets() -> list[ProviderTarget]:
-    """Keep V2 retrieval fixed while allowing one bounded generation fallback."""
-    primary = ProviderTarget("gemini", _model())
-    targets = [primary]
-    for target in get_generation_targets("complex"):
-        if target not in targets:
-            targets.append(target)
-    return targets
+    """Academic V2 uses exactly one generation provider/model; no fallback chain."""
+    return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
 
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
@@ -86,10 +79,9 @@ def stream_rag_v2(
         retrieval.used_semantic_search,
     )
 
-    # One primary call and at most one fallback. A fallback is only safe before
-    # the first byte reaches the client; providers are never mixed mid-answer.
+    # Exactly one external AI call is allowed for Academic V2.
     for target in candidates:
-        if attempted_api_calls >= 2:
+        if attempted_api_calls >= 1:
             break
         if not target_available(target):
             logger.info(
