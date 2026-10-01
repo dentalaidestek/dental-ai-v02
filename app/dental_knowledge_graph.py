@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from app.dental_specialty_concepts import SPECIALTY_CONCEPTS
+
 
 class Relation(str, Enum):
     ALIAS_OF = "alias_of"
@@ -153,14 +155,20 @@ EDGES = (
     DentalEdge("articular_disc", Relation.PART_OF, "tmj", 1.0),
 )
 
-_NODE_BY_ID = {node.id: node for node in NODES}
+_SPECIALTY_NODES = tuple(
+    DentalNode(concept_id, label, specialty, kind, aliases)
+    for specialty, concepts in SPECIALTY_CONCEPTS.items()
+    for concept_id, label, aliases, kind in concepts
+)
+ALL_NODES = NODES + _SPECIALTY_NODES
+_NODE_BY_ID = {node.id: node for node in ALL_NODES}
 
 
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit dental entities in a query, longest aliases first."""
     lowered = " " + " ".join((query or "").casefold().split()) + " "
     matches: list[tuple[int, DentalNode]] = []
-    for node in NODES:
+    for node in ALL_NODES:
         terms = (node.label, *node.aliases)
         best = max((len(term) for term in terms if term.casefold() in lowered), default=0)
         if best:
