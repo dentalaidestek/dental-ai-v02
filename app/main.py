@@ -11170,7 +11170,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
     section=section if section in ADMIN_SECTIONS else "home"
     page_size=25;has_more=False;next_cursor=None
     # Admin is section-scoped: opening one screen must not hydrate every other screen.
-    users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];title_changes=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
+    users=[];pending_rows=[];notices=[];audits=[];expert_profiles=[];expert_users={};expert_metas={};title_changes=[];cases=[];payments=[];tickets=[];ticket_rows=[];reports=[];report_rows=[];disputes=[];storage_by_user={};admins=[];settings={};report_ticket_by_report={}
     patients_count=0;analyses_count=0;cases_count=0;gross_revenue=0;platform_revenue=0;support_counts={};support_status="ALL" if support_status not in {"ALL","OPEN","WAITING","IN_PROGRESS","ANSWERED","CLOSED"} else support_status
     with Session(engine,expire_on_commit=False) as s:
         # Small navigation/home counters use COUNT, never full-table materialization.
@@ -11205,6 +11205,9 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
             if cursor is not None:eq=eq.where(ExpertProfile.id < cursor)
             expert_profiles=s.exec(eq.order_by(ExpertProfile.id.desc()).limit(page_size+1)).all()
             has_more=len(expert_profiles)>page_size;expert_profiles=expert_profiles[:page_size];next_cursor=expert_profiles[-1].id if has_more and expert_profiles else None
+            expert_user_ids={p.user_id for p in expert_profiles}
+            expert_users={u.id:u for u in s.exec(select(User).where(User.id.in_(expert_user_ids))).all()} if expert_user_ids else {}
+            expert_metas={x.user_id:x for x in s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id.in_(expert_user_ids))).all()} if expert_user_ids else {}
             if section=="approvals":
                 pending_title_changes=s.exec(select(ExpertTitleChange).where(
                     ExpertTitleChange.status=="PENDING_REVIEW"
@@ -11274,7 +11277,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
     return templates.TemplateResponse(request=request,name="admin_center.html",context={
         "user":user,"users":users,"pending_rows":[],"pending_count":pending_count,"notices":notices,"audits":audits,
         "patients_count":patients_count,"analyses_count":analyses_count,"cases_count":cases_count,"q":q,"admin_path":ADMIN_CENTER_PATH,
-        "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"title_changes":title_changes,"cases":cases,"payments":payments,
+        "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"expert_users":expert_users,"expert_metas":expert_metas,"title_changes":title_changes,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
         "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,
