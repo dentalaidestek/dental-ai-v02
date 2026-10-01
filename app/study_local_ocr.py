@@ -39,10 +39,13 @@ def _int_env(name: str, default: int, low: int, high: int) -> int:
     return max(low, min(value, high))
 
 
-def _render_pdf_page(path: Path, page_number: int, *, dpi: int | None = None) -> Image.Image:
+def _render_pdf_page(
+    path: Path, page_number: int, *, dpi: int | None = None, document=None
+) -> Image.Image:
     import pypdfium2 as pdfium
 
-    document = pdfium.PdfDocument(str(path))
+    owned_document = document is None
+    document = document or pdfium.PdfDocument(str(path))
     page = None
     bitmap = None
     try:
@@ -72,7 +75,8 @@ def _render_pdf_page(path: Path, page_number: int, *, dpi: int | None = None) ->
             bitmap.close()
         if page is not None:
             page.close()
-        document.close()
+        if owned_document:
+            document.close()
 
 
 def _load_image(path: Path) -> Image.Image:
@@ -195,6 +199,7 @@ def ocr_material_page(
     *,
     mime_type: str,
     page_number: int,
+    pdf_document=None,
 ) -> LocalOCRResult:
     """Adaptive local OCR: cheap first pass, bounded quality retry only when needed."""
     import tesserocr
@@ -205,7 +210,7 @@ def ocr_material_page(
 
     def load(dpi: int) -> Image.Image:
         if mime_type == "application/pdf":
-            return _render_pdf_page(path, page_number, dpi=dpi)
+            return _render_pdf_page(path, page_number, dpi=dpi, document=pdf_document)
         if mime_type in {"image/jpeg", "image/png", "image/webp"}:
             if page_number != 1:
                 raise LocalOCRError(f"OCR_PAGE_OUT_OF_RANGE:{page_number}")
