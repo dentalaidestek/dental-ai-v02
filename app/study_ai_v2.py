@@ -69,6 +69,10 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "CEVAP BİÇİMİ:\n" + _response_contract(question) + "\n\n"
+        "KANIT DURUMU:\n"
+        f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
+        f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
+        f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}.\n\n"
         "KANIT KURALI:\n"
         + exhaustive_rule +
         "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
@@ -91,6 +95,10 @@ def stream_rag_v2(
 ) -> Iterator[str]:
     if not retrieval.note_context and not retrieval.attachments:
         raise StudyAIError("Bu soruyla ilişkilendirilebilecek ders notu bulunamadı.")
+    if not retrieval.evidence_sufficient:
+        raise StudyAIError(
+            "Ders notlarında bu soruyu güvenilir biçimde yanıtlamak için yeterli kanıt bulunamadı."
+        )
     required_attachment_types = {
         item.get("mime_type")
         for item in retrieval.attachments
