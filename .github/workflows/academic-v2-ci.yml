@@ -47,8 +47,9 @@ jobs:
           python-version: "3.12"
       - name: Compile Academic V2 modules
         run: |
-          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/dental_retrieval_terms.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py
+          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py
       - name: Run Academic V2 invariant tests
         run: |
           python tests/academic_v2/test_static_invariants.py
           python tests/academic_v2/test_retrieval_behavior.py
+          python tests/academic_v2/test_dental_graph.py
