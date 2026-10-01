@@ -327,8 +327,25 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         return "LEASE_LOST"
 
     pending: list[StudyIndexChunk] = []
+    inherited_title: str | None = None
+    if rows and rows[0].page_number > 1:
+        previous = session.exec(
+            select(StudyIndexChunk.section_title)
+            .where(StudyIndexChunk.material_id == job.material_id)
+            .where(StudyIndexChunk.index_version == job.index_version)
+            .where(StudyIndexChunk.page_start < rows[0].page_number)
+            .where(StudyIndexChunk.section_title.is_not(None))
+            .order_by(StudyIndexChunk.page_start.desc(), StudyIndexChunk.chunk_index.desc())
+            .limit(1)
+        ).first()
+        inherited_title = previous
     for page in rows:
-        chunks = chunk_dental_page(page.text_content or "")
+        chunks = chunk_dental_page(
+            page.text_content or "", inherited_section_title=inherited_title
+        )
+        explicit_titles = [chunk.section_title for chunk in chunks if chunk.section_title]
+        if explicit_titles:
+            inherited_title = explicit_titles[-1]
         if not chunks:
             raise RuntimeError(f"NO_CHUNKS_FOR_PAGE:{page.page_number}")
         if len(chunks) >= 1000:
