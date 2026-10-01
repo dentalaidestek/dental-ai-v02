@@ -483,6 +483,28 @@ def _neighbor_rows(
     }).all())
 
 
+
+def _subject_alignment_score(query: str, section: str, body: str) -> float:
+    """Local query-subject coverage independent of generic intent words."""
+    original, _ = _retrieval_terms(query)
+    if not original:
+        return 0.0
+    haystack = f"{section or ''} {body or ''}".casefold()
+    matched = sum(1 for term in original[:6] if _query_term_present(haystack, term))
+    lexical = matched / max(1, min(len(original), 6))
+
+    query_features = analyze_dental_text(query)
+    row_features = analyze_dental_text(f"{section or ''}\n{body or ''}")
+    concept = 0.0
+    if set(query_features.node_ids).intersection(row_features.node_ids):
+        concept += 0.55
+    if set(query_features.tooth_numbers).intersection(row_features.tooth_numbers):
+        concept += 0.25
+    if set(query_features.imaging_types).intersection(row_features.imaging_types):
+        concept += 0.20
+    return min(1.0, max(lexical, concept))
+
+
 @storage_scoped
 def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
     """Rerank a bounded lexical candidate pool with local dental semantics."""
@@ -511,10 +533,26 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
             except (TypeError, ValueError, KeyError):
                 pass
         semantic = semantic_overlap_score(query_features, features)
-        lexical = 1.0 / (1.0 + position)
-        # Lexical retrieval remains authoritative; dental semantics promotes
-        # conceptually aligned candidates without inventing evidence.
-        score = (0.62 * lexical) + (0.38 * semantic)
+        # Rows can come from several focused DB queries. Their append position is
+        # not a relevance signal: a strong complication/diagnosis row may have
+        # been discovered by a later facet query. Prefer PostgreSQL's lexical
+        # score when present and use position only as a bounded tie/fallback.
+        raw_lexical = float(row[9] or 0.0) if len(row) > 9 else 0.0
+        lexical = min(1.0, max(0.0, raw_lexical))
+        positional = 1.0 / (1.0 + position)
+        if lexical <= 0.0:
+            lexical = positional * 0.35
+        subject_alignment = _subject_alignment_score(query, section, body)
+        # Evidence must stay anchored to the user's subject. Dental semantics
+        # helps aliases/graph concepts; subject alignment prevents a same-
+        # specialty but unrelated facet from winning merely for saying
+        # "complication", "treatment", etc.
+        score = (
+            (0.42 * lexical)
+            + (0.33 * semantic)
+            + (0.20 * subject_alignment)
+            + (0.05 * positional)
+        )
         scored.append((score, position, row))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [row for _, _, row in scored[:limit]]
