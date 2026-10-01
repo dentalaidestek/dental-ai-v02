@@ -32,7 +32,7 @@
       <label class="expert-availability-switch"><input id="availabilityToggle" type="checkbox" {% if profile.availability=="AVAILABLE" %}checked{% endif %} {% if profile.application_status!='APPROVED' or profile.verification_status!='VERIFIED' or not profile.specialty_verified %}disabled{% endif %} onchange="syncExpertAvailability(this.checked)"><span></span><b id="availabilityText">{% if profile.availability=="AVAILABLE" %}Müsait{% else %}Meşgul{% endif %}</b></label></div>
       <div class="expert-profile-badges">
         {% if profile.verification_status == 'VERIFIED' and profile.specialty_verified %}<span class="application-approved">✓ Mesleki belgesi doğrulandı</span>{% elif profile.application_status == 'SUBMITTED' %}<span class="verification-pending">Mesleki belge inceleniyor</span>{% endif %}
-        {% if profile.phone_verified %}<span>✓ Telefon doğrulandı</span>{% else %}<span class="verification-pending">Telefon kayıtlı · SMS doğrulaması yakında</span>{% endif %}
+        {% if profile.phone_verified %}<span>✓ Telefon doğrulandı</span>{% endif %}
         {% if profile.academic_title_verified and profile.academic_title %}<span>✓ {{ profile.academic_title }}</span>{% endif %}
       </div>
       {% if profile.bio %}<p class="expert-profile-bio">{{ profile.bio }}</p>{% endif %}
