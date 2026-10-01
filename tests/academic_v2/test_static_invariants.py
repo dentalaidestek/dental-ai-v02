@@ -44,6 +44,8 @@ assert "STUDY_V2_LOCAL_OCR_RETRY_DPI" in ocr
 assert "dental_ocr_words.txt" in ocr
 assert "pdf_document=None" in ocr
 assert "owned_document = document is None" in ocr
+assert "semantic_kinds" in retrieval
+assert 'meta.get("kinds")' in retrieval
 assert "_split_mcq_blocks" in chunking
 assert "_MCQ_EXPLANATION_RE" in chunking
 assert '"QUESTION"' in chunking
