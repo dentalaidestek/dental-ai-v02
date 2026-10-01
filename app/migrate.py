@@ -1,12 +1,12 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 from sqlalchemy import text
 
-REVISION = 3
+REVISION = 4
 
 
 def require_schema(engine):
@@ -38,6 +38,15 @@ def apply():
         for index in WorkJob.__table__.indexes:
             index.create(main.engine, checkfirst=True)
         with main.engine.begin() as connection:
+            if main.engine.dialect.name == "postgresql":
+                connection.execute(text("ALTER TABLE studyindexchunk ADD COLUMN IF NOT EXISTS retrieval_terms TEXT"))
+                connection.execute(text("ALTER TABLE studyindexchunk ADD COLUMN IF NOT EXISTS semantic_json TEXT"))
+                connection.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_studyindexchunk_dental_fts "
+                    "ON studyindexchunk USING GIN "
+                    "(to_tsvector('simple', coalesce(section_title,'') || ' ' || "
+                    "coalesce(text_content,'') || ' ' || coalesce(retrieval_terms,'')))"
+                ))
             for ddl in (
                 "CREATE INDEX IF NOT EXISTS ix_realtimeevent_user_cursor ON realtimeevent(user_id, id)",
                 "CREATE INDEX IF NOT EXISTS ix_consultationmessage_case_cursor ON consultationmessage(case_id, id)",
