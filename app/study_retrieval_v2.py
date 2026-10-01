@@ -50,6 +50,7 @@ class Evidence:
     lexical_rank: int | None
     semantic_rank: int | None
     hybrid_score: float
+    chunk_index: int = 0
 
 
 @dataclass
@@ -276,7 +277,7 @@ def _question_rows(
                c.section_title, c.content_kind, c.text_content,
                NULL::BIGINT AS lexical_rank, NULL::DOUBLE PRECISION AS lexical_score,
                NULL::BIGINT AS semantic_rank, NULL::DOUBLE PRECISION AS semantic_score,
-               1.0::DOUBLE PRECISION AS hybrid_score
+               1.0::DOUBLE PRECISION AS hybrid_score, c.chunk_index
         FROM studyindexchunk c
         JOIN studymaterial m
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
@@ -436,6 +437,7 @@ def retrieve_course_context_v2(
             lexical_rank=int(row[8]) if row[8] is not None else None,
             semantic_rank=int(row[10]) if row[10] is not None else None,
             hybrid_score=float(row[12] or 0),
+            chunk_index=int(row[13]) if len(row) > 13 and row[13] is not None else 0,
         )
         result.evidence.append(evidence)
         if evidence.semantic_rank is not None:
