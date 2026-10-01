@@ -146,12 +146,13 @@ def matched_nodes(query: str) -> list[DentalNode]:
     return [node for _, node in matches]
 
 
-def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 12) -> list[str]:
+def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 12, relation_hints: tuple[str, ...] = ()) -> list[str]:
     """Return bounded high-confidence graph terms for candidate retrieval."""
     seeds = {node.id for node in matched_nodes(query)}
     if not seeds:
         return []
     candidates: list[tuple[float, str]] = []
+    hinted = set(relation_hints)
     for edge in EDGES:
         other = None
         if edge.source in seeds:
@@ -162,8 +163,10 @@ def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 1
             other = edge.source
         if other and edge.weight >= min_weight:
             node = _NODE_BY_ID[other]
-            candidates.append((edge.weight, node.label))
-            candidates.extend((edge.weight - 0.02, alias) for alias in node.aliases[:2])
+            intent_bonus = 0.08 if edge.relation.value in hinted else 0.0
+            score = min(1.0, edge.weight + intent_bonus)
+            candidates.append((score, node.label))
+            candidates.extend((score - 0.02, alias) for alias in node.aliases[:2])
     seen: set[str] = set()
     result: list[str] = []
     for _, term in sorted(candidates, key=lambda item: (-item[0], item[1].casefold())):
