@@ -71,6 +71,10 @@ class RetrievalResult:
     used_semantic_search: bool = False
     retrieval_mode: str = "hybrid"
     has_more: bool = False
+    evidence_sufficient: bool = False
+    evidence_confidence: float = 0.0
+    covered_facets: tuple[str, ...] = ()
+    missing_facets: tuple[str, ...] = ()
 
 
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
@@ -210,6 +214,8 @@ _EVIDENCE_FACETS = {
     "anatomy": ("anatomi", "komşuluk", "ilişki", "konum"),
     "visual": ("radyografik bulgu", "görüntü", "şekil", "tablo"),
     "comparison": ("fark", "avantaj", "dezavantaj", "endikasyon"),
+    "indication": ("endikasyon", "kullanım", "durum"),
+    "contraindication": ("kontrendikasyon", "sakınca", "kullanılmaz"),
 }
 
 
@@ -562,7 +568,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
 _FAST_INTENTS = {"value", "definition", "measurement"}
 _MULTI_EVIDENCE_INTENTS = {
     "diagnosis", "treatment", "complication", "classification",
-    "cause", "comparison", "visual",
+    "cause", "comparison", "visual", "indication", "contraindication",
 }
 
 
@@ -605,6 +611,97 @@ def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
     ) and facets and facets[0] not in covered:
         covered.append(facets[0])
     return len(covered) / max(1, len(facets)), tuple(covered)
+
+
+@dataclass(frozen=True)
+class EvidenceSufficiency:
+    sufficient: bool
+    confidence: float
+    covered_facets: tuple[str, ...]
+    missing_facets: tuple[str, ...]
+
+
+def _row_semantic_features(row) -> DentalSemanticFeatures:
+    section = row[5] or ""
+    body = row[7] or ""
+    features = analyze_dental_text(f"{section}\n{body}")
+    if len(row) > 14 and row[14]:
+        try:
+            import json
+            meta = json.loads(row[14])
+            return DentalSemanticFeatures(
+                node_ids=tuple(meta.get("nodes") or ()),
+                specialties=tuple(meta.get("specialties") or ()),
+                kinds=tuple(meta.get("kinds") or ()),
+                measurements=tuple(meta.get("measurements") or ()),
+                tooth_numbers=tuple(meta.get("teeth") or ()),
+                imaging_types=tuple(meta.get("imaging") or ()),
+            )
+        except (TypeError, ValueError, KeyError):
+            pass
+    return features
+
+
+def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
+    """Decide locally whether evidence is strong enough to spend the one AI call."""
+    if not rows:
+        return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
+
+    intent = classify_dental_intent(query)
+    qf = analyze_dental_text(query)
+    facets = _coverage_terms(intent.name)
+    coverage, covered = _coverage_score(query, rows)
+    missing = tuple(facet for facet in facets if facet not in covered)
+
+    alignments = sorted(
+        (_subject_alignment_score(query, row[5] or "", row[7] or "") for row in rows),
+        reverse=True,
+    )
+    best_alignment = alignments[0] if alignments else 0.0
+    complementary_alignment = alignments[1] if len(alignments) > 1 else 0.0
+
+    row_features = [_row_semantic_features(row) for row in rows]
+    kinds = {item for features in row_features for item in features.kinds}
+    intent_kind = 1.0 if set(intent.preferred_kinds).intersection(kinds) else 0.0
+
+    special_match = 1.0
+    if qf.tooth_numbers:
+        special_match = 1.0 if any(
+            set(qf.tooth_numbers).intersection(features.tooth_numbers) for features in row_features
+        ) else 0.0
+    if qf.imaging_types:
+        special_match = min(special_match, 1.0 if any(
+            set(qf.imaging_types).intersection(features.imaging_types) for features in row_features
+        ) else 0.0)
+    if intent.name in {"value", "measurement"}:
+        has_measurement = any(features.measurements for features in row_features)
+        # Measurement questions can still be answered textually ("SNA açısı")
+        # when no numeric value is requested, so this is a confidence component,
+        # not an unconditional hard failure.
+        special_match = min(special_match, 1.0 if has_measurement else 0.45)
+
+    facet_component = coverage if facets else 1.0
+    confidence = min(1.0, (
+        0.42 * best_alignment
+        + 0.18 * complementary_alignment
+        + 0.18 * intent_kind
+        + 0.14 * facet_component
+        + 0.08 * special_match
+    ))
+
+    # Hard anchors: a query with a known dental concept/tooth/image must have
+    # at least one subject-aligned evidence row. Generic same-specialty text is
+    # not enough to justify generation.
+    has_specific_anchor = bool(qf.node_ids or qf.tooth_numbers or qf.imaging_types)
+    anchored = best_alignment >= (0.34 if has_specific_anchor else 0.24)
+    if intent.name in {"value", "definition", "measurement"}:
+        sufficient = anchored and confidence >= 0.34
+    elif facets:
+        sufficient = anchored and confidence >= 0.38 and (coverage > 0.0 or intent_kind > 0.0)
+    else:
+        sufficient = anchored and confidence >= 0.34
+
+    return EvidenceSufficiency(sufficient, confidence, covered, missing)
 
 
 def _coverage_select(query: str, rows: list, *, limit: int) -> list:
