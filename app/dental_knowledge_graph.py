@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 from app.dental_specialty_concepts import SPECIALTY_CONCEPTS
 
@@ -164,13 +165,22 @@ ALL_NODES = NODES + _SPECIALTY_NODES
 _NODE_BY_ID = {node.id: node for node in ALL_NODES}
 
 
+def _term_present(text: str, term: str) -> bool:
+    """Boundary-aware phrase match; short dental abbreviations must not hit substrings."""
+    clean_term = " ".join((term or "").casefold().split())
+    if not clean_term:
+        return False
+    pattern = r"(?<![\\w])" + re.escape(clean_term).replace(r"\\ ", r"\\s+") + r"(?![\\w])"
+    return bool(re.search(pattern, text, flags=re.IGNORECASE))
+
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit dental entities in a query, longest aliases first."""
-    lowered = " " + " ".join((query or "").casefold().split()) + " "
+    lowered = " ".join((query or "").casefold().split())
     matches: list[tuple[int, DentalNode]] = []
     for node in ALL_NODES:
         terms = (node.label, *node.aliases)
-        best = max((len(term) for term in terms if term.casefold() in lowered), default=0)
+        best = max((len(term) for term in terms if _term_present(lowered, term)), default=0)
         if best:
             matches.append((best, node))
     matches.sort(key=lambda item: (-item[0], item[1].id))
