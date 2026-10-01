@@ -23,3 +23,9 @@ enriched = retrieval_enrichment_text("Alt çene mandibula SNB açısı 80°")
 assert "mandibula" in enriched.casefold()
 assert "orthodontics" in enriched.casefold()
 assert len(enriched.split()) <= 24
+
+
+# FDI numbers need dental context; ordinary ages/pages must not become teeth.
+assert "24" not in analyze_dental_text("24 yaşında hasta, sayfa 36").tooth_numbers
+assert "36" not in analyze_dental_text("24 yaşında hasta, sayfa 36").tooth_numbers
+assert "48" in analyze_dental_text("48 numaralı diş mandibular kanala yakın").tooth_numbers
