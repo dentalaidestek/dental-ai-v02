@@ -466,8 +466,9 @@ def verify_build_complete(
     material_id: int,
     index_version: str,
     expected_page_count: int,
+    require_embeddings: bool = True,
 ) -> tuple[bool, str | None]:
-    """Fail closed: publication requires complete pages and embedded chunks."""
+    """Fail closed: publication requires complete pages/chunks and, when configured, embeddings."""
     page_rows = session.exec(
         select(StudyIndexPage)
         .where(StudyIndexPage.material_id == material_id)
@@ -488,9 +489,9 @@ def verify_build_complete(
     ).all()
     if not chunks:
         return False, "NO_CHUNKS"
-    if any(not row.embedding_json for row in chunks):
+    if require_embeddings and any(not row.embedding_json for row in chunks):
         return False, "EMBEDDINGS_INCOMPLETE"
-    if session.get_bind().dialect.name == "postgresql":
+    if require_embeddings and session.get_bind().dialect.name == "postgresql":
         native_missing = session.exec(
             text(
                 "SELECT COUNT(*) FROM studyindexchunk "
