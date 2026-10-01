@@ -147,13 +147,25 @@ _DENTAL_QUERY_SYNONYMS = {
     "kök rezorpsiyonu": ("rezorpsiyon", "resorption"),
     "radyolüsent": ("radiolucent",),
     "radyopak": ("radiopaque",),
+    "maloklüzyon": ("malocclusion",),
+    "sefalometri": ("cephalometry", "sefalometrik"),
+    "periodontitis": ("periodontal",),
+    "kanal tedavisi": ("endodonti", "endodontik", "root canal"),
 }
+_QUERY_NOISE_RE = re.compile(
+    r"\b(?:nedir|ne demek|açıkla|anlat|kaçtır|hangisi|hangileridir|nelerdir|"
+    r"nedendir|neden|nasıl|göre|hakkında|bilgi|ver|söyle|ders notunda|notlarda)\b",
+    re.I,
+)
 
 
-def _expand_dental_query(query: str) -> str:
+def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
+    """Return precise source terms and bounded dental alternatives."""
     clean = re.sub(r"\s+", " ", query or "").strip()
-    if not clean:
-        return clean
+    core = re.sub(_QUERY_NOISE_RE, " ", clean)
+    core = re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü+./'-]+", " ", core)
+    core = re.sub(r"\s+", " ", core).strip(" ?.,;:")
+    original = [token for token in core.split() if len(token) >= 2][:10]
     lowered = clean.casefold()
     extras: list[str] = []
     for phrase, synonyms in _DENTAL_QUERY_SYNONYMS.items():
@@ -161,12 +173,26 @@ def _expand_dental_query(query: str) -> str:
             for synonym in synonyms:
                 if synonym.casefold() not in lowered and synonym not in extras:
                     extras.append(synonym)
-    # Keep expansion deliberately small so PostgreSQL websearch semantics stay
-    # precise and common lecture-note terms do not swamp the original query.
-    return clean + (" " + " ".join(extras[:6]) if extras else "")
+    return original, extras[:8]
 
 
-def _hybrid_rows(
+def _fts_query(query: str, *, broad: bool = False) -> str:
+    original, extras = _retrieval_terms(query)
+    terms = original + (extras if broad else [])
+    # websearch_to_tsquery supports explicit OR. Quoting keeps multiword dental
+    # alternatives such as "root canal" together.
+    unique: list[str] = []
+    for term in terms:
+        if term.casefold() not in {x.casefold() for x in unique}:
+            unique.append(term)
+    if not unique:
+        return re.sub(r"\s+", " ", query or "").strip()
+    if broad:
+        return " OR ".join(f'"{term}"' if " " in term else term for term in unique)
+    return " ".join(unique)
+
+
+def _fts_rows(
     session: Session,
     *,
     owner_user_id: int,
@@ -236,14 +262,20 @@ def _hybrid_rows(
     sql = f"""
         WITH lexical AS (
             SELECT c.id,
-                   ts_rank_cd(
-                     to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
-                     websearch_to_tsquery('simple', :lexical_query)
-                   ) AS raw_score,
-                   ROW_NUMBER() OVER (ORDER BY
+                   (
                      ts_rank_cd(
                        to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
                        websearch_to_tsquery('simple', :lexical_query)
+                     )
+                     + CASE WHEN lower(coalesce(c.section_title,'')) LIKE lower(:title_like) THEN 0.20 ELSE 0 END
+                   ) AS raw_score,
+                   ROW_NUMBER() OVER (ORDER BY
+                     (
+                       ts_rank_cd(
+                         to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content),
+                         websearch_to_tsquery('simple', :lexical_query)
+                       )
+                       + CASE WHEN lower(coalesce(c.section_title,'')) LIKE lower(:title_like) THEN 0.20 ELSE 0 END
                      ) DESC, c.id) AS rank
             {common}
               AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content)
@@ -273,6 +305,7 @@ def _hybrid_rows(
         "owner": owner_user_id,
         "course": course_id,
         "lexical_query": lexical_query,
+        "title_like": "%" + " ".join(_retrieval_terms(lexical_query)[0][:3]) + "%",
         "candidate_limit": candidate_limit,
         "limit": max(1, min(limit, 20)),
         "embedding_provider": embedding_provider,
@@ -426,16 +459,30 @@ def retrieve_course_context_v2(
         has_more_questions = len(question_rows) > question_limit
         rows = question_rows[:question_limit]
     else:
-        rows = _hybrid_rows(
+        precise_query = _fts_query(resolved, broad=False)
+        rows = _fts_rows(
             session,
             owner_user_id=owner_user_id,
             course_id=course_id,
-            lexical_query=_expand_dental_query(resolved),
+            lexical_query=precise_query,
             query_vector=vector,
             embedding_provider=target.provider,
             embedding_model=target.model,
             limit=limit,
         )
+        if not rows:
+            broad_query = _fts_query(resolved, broad=True)
+            if broad_query and broad_query != precise_query:
+                rows = _fts_rows(
+                    session,
+                    owner_user_id=owner_user_id,
+                    course_id=course_id,
+                    lexical_query=broad_query,
+                    query_vector=None,
+                    embedding_provider=target.provider,
+                    embedding_model=target.model,
+                    limit=limit,
+                )
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
             session,
