@@ -5,10 +5,14 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 retrieval = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
 generation = (ROOT / "app/study_ai_v2.py").read_text(encoding="utf-8")
+ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+chunking = (ROOT / "app/study_chunking.py").read_text(encoding="utf-8")
 
 # Parse first: catches syntax/indentation damage without importing production deps.
 ast.parse(retrieval)
 ast.parse(generation)
+ast.parse(ocr)
+ast.parse(chunking)
 
 # A short standalone dental question must not become a follow-up merely due to length.
 assert "len(clean.split()) <= 3" not in retrieval
@@ -31,5 +35,15 @@ assert "if attempted_api_calls >= 2:" in generation
 assert "if emitted:" in generation
 assert "generation target selected" in generation
 assert "generation target skipped" in generation
+
+# OCR stays local/adaptive and preserves academic/dental structure.
+assert "_detect_page_layout" in ocr
+assert "PSM.SPARSE_TEXT" in ocr
+assert "PSM.SINGLE_BLOCK" in ocr
+assert "STUDY_V2_LOCAL_OCR_RETRY_DPI" in ocr
+assert "dental_ocr_words.txt" in ocr
+assert "_split_mcq_blocks" in chunking
+assert '"QUESTION"' in chunking
+assert "c.content_kind = 'QUESTION'" in retrieval
 
 print("Academic V2 static invariants: OK")
