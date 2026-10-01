@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import re
 from app.dental_knowledge_graph import matched_nodes
 
-_VALUE_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*(?:°|mm|cm|%|mg|ml|g|µm|μm)\b?", re.I)
+_VALUE_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*(?:°|mm|cm|%|mg|ml|g|µm|μm)(?!\w)", re.I)
 _FDI_RE = re.compile(r"(?<!\d)(?:1[1-8]|2[1-8]|3[1-8]|4[1-8]|5[1-5]|6[1-5]|7[1-5]|8[1-5])(?!\d)")
 _TOOTH_CONTEXT_RE = re.compile(r"\b(?:diş|dis|tooth|numara(?:lı)?|no\.?|#)\b", re.I)
 _DENTAL_NUMBER_CONTEXT_RE = re.compile(
