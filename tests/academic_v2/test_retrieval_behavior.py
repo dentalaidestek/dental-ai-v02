@@ -100,3 +100,16 @@ assert "aligned or candidates" in source
 
 # Neighbor rows must keep the same chunk-index/semantic metadata tail as FTS rows.
 assert "hybrid_score, chunk_index, semantic_json" in source
+
+
+# Sufficiency must consume the same persisted dental semantic fingerprint used
+# by indexing/reranking, not only generic facet words.
+assert "class EvidenceSufficiency" in source
+assert "def _row_semantic_features" in source
+assert "meta.get(\"nodes\")" in source
+assert "meta.get(\"specialties\")" in source
+assert "meta.get(\"measurements\")" in source
+assert "meta.get(\"teeth\")" in source
+assert "meta.get(\"imaging\")" in source
+assert '"indication": ("endikasyon", "kullanım", "durum")' in source
+assert '"contraindication": ("kontrendikasyon", "sakınca", "kullanılmaz")' in source
