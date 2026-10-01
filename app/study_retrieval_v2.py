@@ -373,21 +373,13 @@ def retrieve_course_context_v2(
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     session.close()
     resolved = resolve_followup_query(query, recent_history)
+    # New V2 indexes are intentionally local-FTS. Do not spend an external
+    # embedding request per user question when the published generation has no
+    # semantic vectors to compare against.
     target = get_embedding_target()
     vector: list[float] | None = None
     continuation_cursor = _continuation_cursor(query, recent_history)
     exhaustive_questions = _is_exhaustive_question_request(query) or continuation_cursor is not None
-    # Exhaustive enumeration is structural and source-ordered; an embedding
-    # request adds cost but cannot improve completeness for this intent.
-    if not exhaustive_questions:
-        try:
-            vector = get_provider(target.provider).embed_text(
-                model=target.model,
-                text="Diş hekimliği ders notunda bu sorunun kanıtını bul:\n" + resolved,
-                dimensions=get_embedding_dimensions(),
-            )
-        except StudyProviderError as exc:
-            logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
     if exhaustive_questions:
         question_limit = 16
         question_rows = _question_rows(
@@ -421,12 +413,12 @@ def retrieve_course_context_v2(
         ))
     logger.info(
         "Academic V2 retrieval selected. mode=%s evidence_rows=%s",
-        "questions_exhaustive" if exhaustive_questions else "hybrid",
+        "questions_exhaustive" if exhaustive_questions else "fts",
         len(rows),
     )
     result = RetrievalResult(
         resolved_query=resolved,
-        retrieval_mode="questions_exhaustive" if exhaustive_questions else "hybrid",
+        retrieval_mode="questions_exhaustive" if exhaustive_questions else "fts",
         has_more=bool(exhaustive_questions and has_more_questions),
     )
     for row in rows:
