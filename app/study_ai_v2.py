@@ -136,7 +136,8 @@ def stream_rag_v2(
             if retrieval.retrieval_mode == "questions_exhaustive" and retrieval.has_more and retrieval.evidence:
                 # Persisted with the assistant message and consumed only by the
                 # server on an explicit "devam" turn; harmless in rendered HTML.
-                yield f"\n<!--ACADEMIC_Q_CURSOR:{retrieval.evidence[-1].chunk_id}-->"
+                last = retrieval.evidence[-1]
+                yield f"\n<!--ACADEMIC_Q_CURSOR:{last.material_id}:{last.chunk_index}-->"
             return
         except StudyProviderError as exc:
             report_target_failure(target, exc)
