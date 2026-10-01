@@ -616,17 +616,25 @@ def _coverage_select(query: str, rows: list, *, limit: int) -> list:
         return rows[:limit]
     selected: list = []
     selected_ids: set[int] = set()
-    # First reserve at most one high-ranked chunk for each requested facet.
+    # First reserve at most one high-ranked chunk for each requested facet,
+    # preferring evidence that also remains anchored to the query subject.
     for facet in facets:
         facet_cf = facet.casefold()
+        candidates = []
         for row in rows:
             if int(row[0]) in selected_ids:
                 continue
             haystack = f"{row[5] or ''} {row[7] or ''}".casefold()
             if facet_cf in haystack:
-                selected.append(row)
-                selected_ids.add(int(row[0]))
-                break
+                candidates.append(row)
+        if candidates:
+            aligned = [
+                row for row in candidates
+                if _subject_alignment_score(query, row[5] or "", row[7] or "") >= 0.34
+            ]
+            chosen = (aligned or candidates)[0]
+            selected.append(chosen)
+            selected_ids.add(int(chosen[0]))
         if len(selected) >= limit:
             return selected
     # Fill remaining slots by global relevance order.
