@@ -493,7 +493,6 @@ def retrieve_course_context_v2(
 ) -> RetrievalResult:
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
-    session.close()
     resolved = resolve_followup_query(query, recent_history)
     # New V2 indexes are intentionally local-FTS. Do not spend an external
     # embedding request per user question when the published generation has no
@@ -604,7 +603,6 @@ def retrieve_course_context_v2(
             params={"o": owner_user_id, "ids": [item[0] for item in visual_pages]},
         ).all()
         materials = {int(row[0]): row for row in material_rows}
-        session.close()
         for material_id, page in visual_pages:
             material = materials.get(material_id)
             if not material:
@@ -624,5 +622,4 @@ def retrieve_course_context_v2(
                 "data": data,
                 "label": f"INTERNAL_SOURCE: {material[3]}, sayfa {page}",
             })
-    session.close()
     return result
