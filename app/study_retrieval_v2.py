@@ -289,7 +289,8 @@ def _question_rows(
             OR (c.material_id = :after_material_id AND c.chunk_index > :after_chunk_index)
           )
           AND (
-            c.text_content ~* :question_pattern
+            c.content_kind = 'QUESTION'
+            OR c.text_content ~* :question_pattern
             OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)'
           )
         ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
