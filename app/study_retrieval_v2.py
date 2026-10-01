@@ -24,7 +24,7 @@ from app.study_provider import StudyProviderError, get_embedding_dimensions, get
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
 from app.dental_query_intent import classify_dental_intent
-from app.dental_semantics import analyze_dental_text, semantic_overlap_score
+from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
 logger = logging.getLogger(__name__)
 
@@ -896,6 +896,26 @@ def retrieve_course_context_v2(
         )
         if evidence.material_id not in result.source_material_ids:
             result.source_material_ids.append(evidence.material_id)
+
+    if exhaustive_questions:
+        # Source-order question solving has a different completeness contract:
+        # each emitted QUESTION chunk is itself the evidence unit and continuation
+        # handles the remaining source window.
+        result.evidence_sufficient = bool(result.evidence)
+        result.evidence_confidence = 1.0 if result.evidence else 0.0
+    else:
+        sufficiency = _evidence_sufficiency(resolved, rows)
+        result.evidence_sufficient = sufficiency.sufficient
+        result.evidence_confidence = sufficiency.confidence
+        result.covered_facets = sufficiency.covered_facets
+        result.missing_facets = sufficiency.missing_facets
+        logger.info(
+            "Academic V2 evidence sufficiency. sufficient=%s confidence=%.3f covered=%s missing=%s",
+            result.evidence_sufficient,
+            result.evidence_confidence,
+            ",".join(result.covered_facets) or "-",
+            ",".join(result.missing_facets) or "-",
+        )
 
     visual_pages: list[tuple[int, int]] = []
     for item in result.evidence:
