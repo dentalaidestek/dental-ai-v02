@@ -132,26 +132,58 @@ def _pgvector_available(session: Session, dimensions: int) -> bool:
     return bool(row[0])
 
 
-_DENTAL_QUERY_SYNONYMS = {
-    "çürük": ("karies", "caries"),
-    "karies": ("çürük", "caries"),
-    "kök ucu": ("apikal", "periapikal"),
-    "periapikal": ("apikal", "kök ucu"),
-    "çene eklemi": ("temporomandibular", "TME", "TMJ"),
-    "tme": ("temporomandibular", "TMJ", "çene eklemi"),
-    "tmj": ("temporomandibular", "TME", "çene eklemi"),
-    "gömülü": ("impakte", "impacted"),
-    "impakte": ("gömülü", "impacted"),
-    "diş eti": ("gingiva", "gingival"),
-    "gingiva": ("diş eti", "gingival"),
-    "kök rezorpsiyonu": ("rezorpsiyon", "resorption"),
-    "radyolüsent": ("radiolucent",),
-    "radyopak": ("radiopaque",),
-    "maloklüzyon": ("malocclusion",),
-    "sefalometri": ("cephalometry", "sefalometrik"),
-    "periodontitis": ("periodontal",),
-    "kanal tedavisi": ("endodonti", "endodontik", "root canal"),
-}
+_DENTAL_CONCEPT_GROUPS = (
+    ("çürük", "karies", "caries", "dental caries"),
+    ("kök ucu", "apikal", "periapikal", "periapical", "apex", "apeks"),
+    ("çene eklemi", "temporomandibular", "temporomandibular joint", "TME", "TMJ"),
+    ("gömülü diş", "gömülü", "impakte", "impacted tooth", "impacted"),
+    ("diş eti", "gingiva", "gingival"),
+    ("kök rezorpsiyonu", "rezorpsiyon", "root resorption", "resorption"),
+    ("radyolüsent", "radiolucent", "radiolucency"),
+    ("radyopak", "radiopaque", "radiopacity"),
+    ("maloklüzyon", "malocclusion"),
+    ("sefalometri", "sefalometrik", "cephalometry", "cephalometric"),
+    ("periodontitis", "periodontal hastalık", "periodontal disease"),
+    ("kanal tedavisi", "endodonti", "endodontik", "root canal", "root canal treatment"),
+    ("alt çene geriliği", "mandibular retrognati", "mandibular retrognathia", "retrognati"),
+    ("üst çene ileriliği", "maksiller prognati", "maxillary prognathism", "prognati"),
+    ("alt çene ileriliği", "mandibular prognati", "mandibular prognathism"),
+    ("üst çene geriliği", "maksiller retrognati", "maxillary retrognathia"),
+    ("örtülü kapanış", "derin kapanış", "deep bite", "deep overbite"),
+    ("açık kapanış", "open bite"),
+    ("çapraz kapanış", "crossbite", "cross bite"),
+    ("sınıf ii", "class ii", "angle class ii"),
+    ("sınıf iii", "class iii", "angle class iii"),
+    ("sınıf i", "class i", "angle class i"),
+    ("overjet", "horizontal overlap", "yatay örtüşme"),
+    ("overbite", "vertical overlap", "dikey örtüşme"),
+    ("alveol kemiği", "alveolar bone", "alveolar process", "alveolar kret"),
+    ("furkasyon", "furcation", "bifurkasyon"),
+    ("diş taşı", "kalkulus", "calculus", "dental calculus"),
+    ("pulpa iltihabı", "pulpitis", "pulpa inflamasyonu"),
+    ("kök çevresi lezyon", "periapikal lezyon", "periapical lesion"),
+    ("kemik kaybı", "bone loss", "alveolar bone loss"),
+    ("süt dişi", "primer diş", "primary tooth", "deciduous tooth"),
+    ("daimi diş", "permanent tooth", "kalıcı diş"),
+    ("yirmi yaş dişi", "üçüncü molar", "third molar", "wisdom tooth"),
+    ("ölçü maddesi", "impression material"),
+    ("aljinat", "alginate", "irreversible hydrocolloid"),
+    ("çene ilişkisi", "jaw relation", "maksillomandibular ilişki"),
+)
+
+
+def _concept_alternatives(query: str) -> list[str]:
+    lowered = re.sub(r"\s+", " ", query or "").strip().casefold()
+    extras: list[str] = []
+    for group in _DENTAL_CONCEPT_GROUPS:
+        matched = [term for term in group if term.casefold() in lowered]
+        if not matched:
+            continue
+        for term in group:
+            if term.casefold() not in lowered and term not in extras:
+                extras.append(term)
+    return extras
+
 _QUERY_NOISE_RE = re.compile(
     r"\b(?:nedir|ne demek|açıkla|anlat|kaçtır|hangisi|hangileridir|nelerdir|"
     r"nedendir|neden|nasıl|göre|hakkında|bilgi|ver|söyle|ders notunda|notlarda)\b",
@@ -167,13 +199,8 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     core = re.sub(r"\s+", " ", core).strip(" ?.,;:")
     original = [token for token in core.split() if len(token) >= 2][:10]
     lowered = clean.casefold()
-    extras: list[str] = []
-    for phrase, synonyms in _DENTAL_QUERY_SYNONYMS.items():
-        if phrase.casefold() in lowered:
-            for synonym in synonyms:
-                if synonym.casefold() not in lowered and synonym not in extras:
-                    extras.append(synonym)
-    return original, extras[:8]
+    extras = _concept_alternatives(clean)
+    return original, extras[:12]
 
 
 def _fts_query(query: str, *, broad: bool = False) -> str:
