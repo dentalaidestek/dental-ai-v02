@@ -1,4 +1,4 @@
-from app.dental_semantics import analyze_dental_text, semantic_overlap_score
+from app.dental_semantics import analyze_dental_text, semantic_overlap_score, retrieval_enrichment_text
 
 q = analyze_dental_text("48 numaralı diş inferior alveolar kanala yakın mı CBCT'de?")
 c1 = analyze_dental_text("48 mandibular kanal inferior alveolar sinir CBCT kesitleri")
@@ -18,3 +18,8 @@ assert "probing_depth" in q3.node_ids
 assert "6 mm" in q3.measurements
 
 print("Dental semantic feature checks: OK")
+
+enriched = retrieval_enrichment_text("Alt çene mandibula SNB açısı 80°")
+assert "mandibula" in enriched.casefold()
+assert "orthodontics" in enriched.casefold()
+assert len(enriched.split()) <= 24
