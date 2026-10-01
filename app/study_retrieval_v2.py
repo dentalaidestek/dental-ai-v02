@@ -508,10 +508,13 @@ def retrieve_course_context_v2(
             embedding_model=target.model,
             limit=max(limit * 3, 18),
         )
-        if not rows:
+        # A few exact lexical hits are not proof of good semantic coverage.
+        # Let graph-expanded candidates compete when the exact pool is thin.
+        candidate_target = max(limit * 3, 18)
+        if len(rows) < max(limit, 6):
             broad_query = _fts_query(resolved, broad=True)
             if broad_query and broad_query != precise_query:
-                rows = _fts_rows(
+                broad_rows = _fts_rows(
                     session,
                     owner_user_id=owner_user_id,
                     course_id=course_id,
@@ -519,8 +522,15 @@ def retrieve_course_context_v2(
                     query_vector=None,
                     embedding_provider=target.provider,
                     embedding_model=target.model,
-                    limit=max(limit * 3, 18),
+                    limit=candidate_target,
                 )
+                seen_ids = {int(row[0]) for row in rows}
+                for row in broad_rows:
+                    if int(row[0]) not in seen_ids:
+                        rows.append(row)
+                        seen_ids.add(int(row[0]))
+                    if len(rows) >= candidate_target:
+                        break
         rows = _rerank_dental_rows(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
