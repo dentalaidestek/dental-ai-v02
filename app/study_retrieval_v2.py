@@ -34,6 +34,7 @@ _FOLLOWUP_RE = re.compile(
     re.IGNORECASE,
 )
 _VISUAL_QUERY_RE = re.compile(r"\b(?:tablo|tablodaki|şekil|grafik|görsel|resim|şema)\b", re.I)
+_EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
 
 
 @dataclass(frozen=True)
@@ -243,6 +244,41 @@ def _hybrid_rows(
         **vector_params,
     }
     return list(session.exec(text(sql), params=params).all())
+
+
+def _is_exhaustive_question_request(query: str) -> bool:
+    clean = re.sub(r"\\s+", " ", query or "").strip()
+    return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
+
+
+def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limit: int = 40) -> list:
+    """Return likely question-bearing chunks in source order, not semantic top-k."""
+    return list(session.exec(text(
+        """
+        SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+               c.section_title, c.content_kind, c.text_content,
+               NULL::BIGINT AS lexical_rank, NULL::DOUBLE PRECISION AS lexical_score,
+               NULL::BIGINT AS semantic_rank, NULL::DOUBLE PRECISION AS semantic_score,
+               1.0::DOUBLE PRECISION AS hybrid_score
+        FROM studyindexchunk c
+        JOIN studymaterial m
+          ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.active_index_version=c.index_version
+         AND m.index_status='READY' AND m.deleted_at IS NULL
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND (
+            c.text_content ~* :question_pattern
+            OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)'
+          )
+        ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
+        LIMIT :limit
+        """
+    ), params={
+        "owner": owner_user_id,
+        "course": course_id,
+        "question_pattern": r"(^|\\n)\\s*((soru\\s*)?[0-9]{1,3}[.)]|[A-E][.)])\\s+",
+        "limit": max(1, min(limit, 80)),
+    }).all())
 
 
 def _neighbor_rows(
