@@ -72,7 +72,8 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         "KANIT DURUMU:\n"
         f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
         f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
-        f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}.\n\n"
+        f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}. "
+        "Eksik başlıklar tamamlama görevi değildir; kanıtta yoksa onları kendi bilginle doldurma.\n\n"
         "KANIT KURALI:\n"
         + exhaustive_rule +
         "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
