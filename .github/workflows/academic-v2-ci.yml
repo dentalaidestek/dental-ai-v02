@@ -1,4 +1,5 @@
 name: Academic V2 CI
+# PR gate: compile + deterministic Academic V2 behavior checks.
 
 on:
   workflow_dispatch:
