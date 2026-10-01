@@ -170,9 +170,8 @@ def _term_present(text: str, term: str) -> bool:
     clean_term = " ".join((term or "").casefold().split())
     if not clean_term:
         return False
-    pattern = r"(?<![\\w])" + re.escape(clean_term).replace(r"\\ ", r"\\s+") + r"(?![\\w])"
-    return bool(re.search(pattern, text, flags=re.IGNORECASE))
-
+    escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
+    return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.IGNORECASE))
 
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit dental entities in a query, longest aliases first."""
