@@ -14,6 +14,10 @@ _BULLET_RE = re.compile(r"^\s*(?:[-*•◦▪] |\d+[.)]\s+|[A-ZÇĞİÖŞÜ][.)]
 _TABLE_GAP_RE = re.compile(r"\S\s{2,}\S")
 _MCQ_STEM_RE = re.compile(r"^\s*(?:soru\s*)?\d{1,3}[.)]\s+", re.I)
 _MCQ_OPTION_RE = re.compile(r"^\s*[A-E][.)]\s+", re.I)
+_MCQ_EXPLANATION_RE = re.compile(
+    r"^\s*(?:doğru\s+cevap|cevap|yanıt|açıklama|çözüm)\s*[:.\-–]",
+    re.I,
+)
 _DENTAL_HEADING_RE = re.compile(
     r"\b(?:tanı|tanım|etyoloji|patogenez|sınıflama|klinik|radyografik|"
     r"endikasyon|kontrendikasyon|tedavi|komplikasyon|prognoz|ayırıcı tanı|"
@@ -67,7 +71,8 @@ def _content_kind(lines: list[str]) -> str:
         return "TEXT"
     table_rows = sum(bool(_TABLE_GAP_RE.search(line)) or line.count("|") >= 2 for line in nonempty)
     bullets = sum(bool(_BULLET_RE.match(line)) for line in nonempty)
-    figure_terms = sum(bool(re.search(r"\b(?:şekil|resim|grafik|diagram|tablo)\s*\d*", line, re.I)) for line in nonempty)
+    figure_terms = sum(bool(re.search(r"\b(?:şekil|resim|grafik|diagram|tablo|radyografi|röntgen|panoramik|opg|cbct|"
+            r"periapikal|bitewing|sefalogram|sefalometrik|fotoğraf|görüntü)\s*\d*", line, re.I)) for line in nonempty)
     if table_rows >= 2 or (table_rows and len(nonempty) <= 5):
         return "TABLE"
     if figure_terms and len(nonempty) <= 10:
