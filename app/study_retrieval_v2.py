@@ -21,6 +21,7 @@ from sqlmodel import Session
 
 from app.object_storage import ensure_local as storage_ensure_local
 from app.study_provider import StudyProviderError, get_embedding_dimensions, get_embedding_target, get_provider
+from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 
 logger = logging.getLogger(__name__)
 
@@ -132,45 +133,7 @@ def _pgvector_available(session: Session, dimensions: int) -> bool:
     return bool(row[0])
 
 
-_DENTAL_CONCEPT_GROUPS = (
-    ("çürük", "karies", "caries", "dental caries"),
-    ("kök ucu", "apikal", "periapikal", "periapical", "apex", "apeks"),
-    ("çene eklemi", "temporomandibular", "temporomandibular joint", "TME", "TMJ"),
-    ("gömülü diş", "gömülü", "impakte", "impacted tooth", "impacted"),
-    ("diş eti", "gingiva", "gingival"),
-    ("kök rezorpsiyonu", "rezorpsiyon", "root resorption", "resorption"),
-    ("radyolüsent", "radiolucent", "radiolucency"),
-    ("radyopak", "radiopaque", "radiopacity"),
-    ("maloklüzyon", "malocclusion"),
-    ("sefalometri", "sefalometrik", "cephalometry", "cephalometric"),
-    ("periodontitis", "periodontal hastalık", "periodontal disease"),
-    ("kanal tedavisi", "endodonti", "endodontik", "root canal", "root canal treatment"),
-    ("alt çene geriliği", "mandibular retrognati", "mandibular retrognathia", "retrognati"),
-    ("üst çene ileriliği", "maksiller prognati", "maxillary prognathism", "prognati"),
-    ("alt çene ileriliği", "mandibular prognati", "mandibular prognathism"),
-    ("üst çene geriliği", "maksiller retrognati", "maxillary retrognathia"),
-    ("örtülü kapanış", "derin kapanış", "deep bite", "deep overbite"),
-    ("açık kapanış", "open bite"),
-    ("çapraz kapanış", "crossbite", "cross bite"),
-    ("sınıf ii", "class ii", "angle class ii"),
-    ("sınıf iii", "class iii", "angle class iii"),
-    ("sınıf i", "class i", "angle class i"),
-    ("overjet", "horizontal overlap", "yatay örtüşme"),
-    ("overbite", "vertical overlap", "dikey örtüşme"),
-    ("alveol kemiği", "alveolar bone", "alveolar process", "alveolar kret"),
-    ("furkasyon", "furcation", "bifurkasyon"),
-    ("diş taşı", "kalkulus", "calculus", "dental calculus"),
-    ("pulpa iltihabı", "pulpitis", "pulpa inflamasyonu"),
-    ("kök çevresi lezyon", "periapikal lezyon", "periapical lesion"),
-    ("kemik kaybı", "bone loss", "alveolar bone loss"),
-    ("süt dişi", "primer diş", "primary tooth", "deciduous tooth"),
-    ("daimi diş", "permanent tooth", "kalıcı diş"),
-    ("yirmi yaş dişi", "üçüncü molar", "third molar", "wisdom tooth"),
-    ("ölçü maddesi", "impression material"),
-    ("aljinat", "alginate", "irreversible hydrocolloid"),
-    ("çene ilişkisi", "jaw relation", "maksillomandibular ilişki"),
-)
-
+_DENTAL_CONCEPT_GROUPS = DENTAL_ALIAS_GROUPS
 
 def _concept_alternatives(query: str) -> list[str]:
     lowered = re.sub(r"\s+", " ", query or "").strip().casefold()
