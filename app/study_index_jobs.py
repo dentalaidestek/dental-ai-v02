@@ -1020,6 +1020,7 @@ def publish_index_version(
     job_id: int,
     lease_token: str,
     worker_id: str,
+    require_embeddings: bool = True,
 ) -> bool:
     """Atomically publish a verified build.
 
@@ -1088,18 +1089,27 @@ def publish_index_version(
         ),
         params={"material_id": material_id, "index_version": index_version},
     ).first()
-    native_clause = " AND embedding_array IS NOT NULL" if dialect == "postgresql" else ""
-    chunk_stats = session.exec(
-        text(
-            """
-            SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN embedding_json IS NOT NULL""" + native_clause + """ THEN 1 ELSE 0 END) AS embedded
-            FROM studyindexchunk
-            WHERE material_id = :material_id AND index_version = :index_version
-            """
-        ),
-        params={"material_id": material_id, "index_version": index_version},
-    ).first()
+    if require_embeddings:
+        native_clause = " AND embedding_array IS NOT NULL" if dialect == "postgresql" else ""
+        chunk_stats = session.exec(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN embedding_json IS NOT NULL""" + native_clause + """ THEN 1 ELSE 0 END) AS ready
+                FROM studyindexchunk
+                WHERE material_id = :material_id AND index_version = :index_version
+                """
+            ),
+            params={"material_id": material_id, "index_version": index_version},
+        ).first()
+    else:
+        chunk_stats = session.exec(
+            text(
+                "SELECT COUNT(*) AS total, COUNT(*) AS ready FROM studyindexchunk "
+                "WHERE material_id=:material_id AND index_version=:index_version"
+            ),
+            params={"material_id": material_id, "index_version": index_version},
+        ).first()
     page_total = int(page_stats[0] or 0) if page_stats else 0
     page_ready = int(page_stats[1] or 0) if page_stats else 0
     if (
