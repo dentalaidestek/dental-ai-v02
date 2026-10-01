@@ -47,6 +47,7 @@ assert "owned_document = document is None" in ocr
 assert "semantic_kinds" in retrieval
 assert 'meta.get("kinds")' in retrieval
 assert "_split_mcq_blocks" in chunking
+assert "inherited_section_title" in chunking
 assert "_MCQ_EXPLANATION_RE" in chunking
 assert '"QUESTION"' in chunking
 assert "c.content_kind = 'QUESTION'" in retrieval
@@ -63,6 +64,7 @@ assert "require_embeddings=False" in worker
 assert 'STUDY_V2_PARSE_BATCH_PAGES", 32' in worker
 assert 'STUDY_V2_CHUNK_BATCH_PAGES", 32' in worker
 assert "session.add_all(pending)" in worker
+assert "inherited_section_title=inherited_title" in worker
 assert "retrieval_enrichment_text(semantic_source, features=features)" in worker
 parse_slice = worker[worker.index("def _extract_pdf_slice"):worker.index("def _chunk_slice")]
 assert "session.close()" not in parse_slice
