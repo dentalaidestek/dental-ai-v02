@@ -562,13 +562,34 @@ def retrieve_course_context_v2(
             embedding_model=target.model,
             limit=max(limit * 3, 18),
         )
-        # A few exact lexical hits are not proof of good semantic coverage.
-        # Let graph-expanded candidates compete when the exact pool is thin.
-        candidate_target = max(limit * 3, 18)
+        # Collect complementary evidence with a few focused facet queries.
+        # This reaches distant pages/documents without exploding one giant OR query.
+        candidate_target = max(limit * 4, 24)
+        seen_ids = {int(row[0]) for row in rows}
+        for evidence_query in _evidence_queries(resolved):
+            if len(rows) >= candidate_target:
+                break
+            facet_rows = _fts_rows(
+                session,
+                owner_user_id=owner_user_id,
+                course_id=course_id,
+                lexical_query=evidence_query,
+                query_vector=None,
+                embedding_provider=target.provider,
+                embedding_model=target.model,
+                limit=max(4, min(8, candidate_target - len(rows))),
+            )
+            for row in facet_rows:
+                row_id = int(row[0])
+                if row_id not in seen_ids:
+                    rows.append(row)
+                    seen_ids.add(row_id)
+        # If focused plans still found very little, retain one bounded graph/alias
+        # fallback for recall. It is no longer the normal expansion path.
         if len(rows) < max(limit, 6):
             broad_query = _fts_query(resolved, broad=True)
             if broad_query and broad_query != precise_query:
-                broad_rows = _fts_rows(
+                for row in _fts_rows(
                     session,
                     owner_user_id=owner_user_id,
                     course_id=course_id,
@@ -576,15 +597,12 @@ def retrieve_course_context_v2(
                     query_vector=None,
                     embedding_provider=target.provider,
                     embedding_model=target.model,
-                    limit=candidate_target,
-                )
-                seen_ids = {int(row[0]) for row in rows}
-                for row in broad_rows:
-                    if int(row[0]) not in seen_ids:
+                    limit=min(8, candidate_target - len(rows)),
+                ):
+                    row_id = int(row[0])
+                    if row_id not in seen_ids:
                         rows.append(row)
-                        seen_ids.add(int(row[0]))
-                    if len(rows) >= candidate_target:
-                        break
+                        seen_ids.add(row_id)
         rows = _rerank_dental_rows(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         rows.extend(_neighbor_rows(
