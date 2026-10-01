@@ -93,6 +93,27 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     replacement = text.count("\ufffd")
     if replacement / max(1, len(text)) > 0.01:
         return False, "DECODE_REPLACEMENTS"
+
+    # Long PDF text layers can still be unusable when fonts map glyphs to
+    # garbage. Detect that without penalizing normal Turkish/Latin dental terms.
+    tokens = re.findall(r"\\S+", text)
+    if len(tokens) >= 12:
+        singletons = sum(1 for token in tokens if len(token.strip(".,;:!?()[]{}")) == 1)
+        if singletons / len(tokens) > 0.42:
+            return False, "FRAGMENTED_GLYPHS"
+        noisy = sum(
+            1 for token in tokens
+            if len(token) >= 4
+            and sum(ch.isalnum() or ch in "-/'’." for ch in token) / len(token) < 0.65
+        )
+        if noisy / len(tokens) > 0.18:
+            return False, "NOISY_TOKENS"
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 8:
+        repeated = max((lines.count(line) for line in set(lines)), default=0)
+        if repeated / len(lines) > 0.45:
+            return False, "REPEATED_GLYPH_LINES"
     return True, None
 
 
@@ -117,7 +138,8 @@ def _index_fingerprint() -> str:
         "embedding_dimensions": get_embedding_dimensions(),
         "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower(),
         "ocr_engine": LOCAL_OCR_ENGINE_VERSION,
-        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 180, 120, 240),
+        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200),
+        "ocr_retry_dpi": _int_env("STUDY_V2_LOCAL_OCR_RETRY_DPI", 210, 160, 240),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
