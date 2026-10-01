@@ -1,5 +1,13 @@
 {% extends "base.html" %}{% block content %}
 <div class="expert-shell expert-profile-page">
+{% if pending_title_change %}
+<section class="expert-status-banner {{ 'is-rejected' if pending_title_change.status == 'REJECTED' else 'is-review' }}">
+<strong>Yeni unvan: {{ pending_title_change.requested_title }}</strong>
+{% if pending_title_change.status == 'PENDING_REVIEW' %}<span>Belgeniz inceleniyor. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.</span>
+{% elif pending_title_change.status == 'REJECTED' %}<span>Yeni unvan doğrulanamadı. Mevcut unvanınız değişmedi. <a href="/account/professional-title/document">Belgeyi yeniden gönder</a></span>
+{% else %}<span>Doğrulayıcı belge bekleniyor. Mevcut unvanınız değişmedi. <a href="/account/professional-title/document">Belge yükle</a></span>{% endif %}
+</section>
+{% endif %}
 {% if request.query_params.get('saved') and profile and profile.application_status == 'SUBMITTED' %}
 <section class="expert-application-success"><strong>Başvurunuz alındı</strong><span>e-Devlet mesleki belgeniz yönetici tarafından inceleniyor. Başvurunuz en geç 1–3 iş günü içerisinde sonuçlandırılacaktır.</span></section>
 {% endif %}
@@ -24,7 +32,7 @@
       <label class="expert-availability-switch"><input id="availabilityToggle" type="checkbox" {% if profile.availability=="AVAILABLE" %}checked{% endif %} {% if profile.application_status!='APPROVED' or profile.verification_status!='VERIFIED' or not profile.specialty_verified %}disabled{% endif %} onchange="syncExpertAvailability(this.checked)"><span></span><b id="availabilityText">{% if profile.availability=="AVAILABLE" %}Müsait{% else %}Meşgul{% endif %}</b></label></div>
       <div class="expert-profile-badges">
         {% if profile.verification_status == 'VERIFIED' and profile.specialty_verified %}<span class="application-approved">✓ Mesleki belgesi doğrulandı</span>{% elif profile.application_status == 'SUBMITTED' %}<span class="verification-pending">Mesleki belge inceleniyor</span>{% endif %}
-        {% if profile.phone_verified %}<span>✓ Telefon doğrulandı</span>{% else %}<span class="verification-pending">Telefon kayıtlı · SMS doğrulaması yakında</span>{% endif %}
+        {% if profile.phone_verified %}<span>✓ Telefon doğrulandı</span>{% endif %}
         {% if profile.academic_title_verified and profile.academic_title %}<span>✓ {{ profile.academic_title }}</span>{% endif %}
       </div>
       {% if profile.bio %}<p class="expert-profile-bio">{{ profile.bio }}</p>{% endif %}
