@@ -246,7 +246,6 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
-            session.close()
             text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
             if not _lease_still_owned(session, job):
                 session.rollback()
@@ -357,7 +356,7 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
                 content_kind=chunk.content_kind,
                 text_content=chunk.text,
                 text_sha256=_sha256_text(chunk.text),
-                retrieval_terms=retrieval_enrichment_text(semantic_source),
+                retrieval_terms=retrieval_enrichment_text(semantic_source, features=features),
                 semantic_json=semantic_json,
             ))
 
