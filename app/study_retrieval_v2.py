@@ -199,6 +199,39 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     return original, extras[:16]
 
 
+_EVIDENCE_FACETS = {
+    "diagnosis": ("tanı", "klinik bulgu", "radyografik bulgu", "ayırıcı tanı", "test"),
+    "treatment": ("tedavi", "prosedür", "endikasyon", "kontrendikasyon", "komplikasyon"),
+    "complication": ("komplikasyon", "risk", "neden", "önleme"),
+    "classification": ("sınıflama", "evre", "grade", "kriter"),
+    "cause": ("etiyoloji", "risk faktörü", "mekanizma", "patogenez"),
+    "measurement": ("ölçüm", "referans", "normal değer", "değerlendirme"),
+    "value": ("normal değer", "ölçüm", "referans"),
+    "anatomy": ("anatomi", "komşuluk", "ilişki", "konum"),
+    "visual": ("radyografik bulgu", "görüntü", "şekil", "tablo"),
+    "comparison": ("fark", "avantaj", "dezavantaj", "endikasyon"),
+}
+
+
+def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
+    """Build a few focused evidence queries instead of one giant OR expression."""
+    clean = _normalize_dental_notation(query)
+    original, extras = _retrieval_terms(clean)
+    intent = classify_dental_intent(clean)
+    anchors = original[:5]
+    # Prefer canonical multi-word/graph terms, but keep the user's subject words.
+    concept_terms = [term for term in extras if len(term) >= 3][:4]
+    subject = " ".join(dict.fromkeys(anchors + concept_terms[:1])).strip()
+    if not subject:
+        subject = clean
+    queries: list[str] = []
+    for facet in _EVIDENCE_FACETS.get(intent.name, ())[:max_queries]:
+        candidate = f'{subject} "{facet}"' if " " in facet else f"{subject} {facet}"
+        if candidate not in queries:
+            queries.append(candidate)
+    return queries[:max_queries]
+
+
 def _fts_query(query: str, *, broad: bool = False) -> str:
     original, extras = _retrieval_terms(query)
     terms = original + (extras if broad else [])
