@@ -39,10 +39,14 @@ class WebPushContractTests(unittest.TestCase):
         self.assertIn("except IntegrityError:", sender)
 
     def test_permission_is_only_requested_from_account_button_interaction(self):
-        self.assertIn("Notification.requestPermission()", ACCOUNT)
+        # Permission prompting is centralized in the shared push helper. The
+        # account page may request it only from the explicit button gesture.
         listener = ACCOUNT.split("button.addEventListener('click'", 1)[1]
-        self.assertIn("Notification.requestPermission()", listener)
-        self.assertNotIn("Notification.requestPermission()", BASE)
+        self.assertIn("daiEnsureWebPush({requestPermission:true})", listener)
+        self.assertNotIn("Notification.requestPermission()", ACCOUNT)
+        self.assertIn("Notification.requestPermission()", BASE)
+        helper = BASE.split("window.daiEnsureWebPush", 1)[1]
+        self.assertIn("requestPermission", helper)
 
     def test_foreground_suppression_is_process_safe_in_service_worker(self):
         self.assertIn('type:"visibility",visible:!document.hidden', BASE)
