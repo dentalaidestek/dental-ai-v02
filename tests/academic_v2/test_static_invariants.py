@@ -54,6 +54,9 @@ ast.parse(jobs)
 assert '"retrieval_profile": "fts-local-v1"' in worker
 assert 'return "VERIFY"' in worker
 assert "require_embeddings=False" in worker
+assert 'STUDY_V2_PARSE_BATCH_PAGES", 32' in worker
+assert 'STUDY_V2_CHUNK_BATCH_PAGES", 32' in worker
+assert "session.add_all(pending)" in worker
 assert "require_embeddings: bool = True" in jobs
 
 print("Academic V2 static invariants: OK")
