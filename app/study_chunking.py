@@ -77,26 +77,44 @@ def _content_kind(lines: list[str]) -> str:
     return "TEXT"
 
 
-def _split_mcq_blocks(lines: list[str]) -> list[list[str]]:
-    """Keep a question stem and its A-E choices in the same structural block."""
-    blocks: list[list[str]] = []
+def _split_mcq_blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
+    """Keep MCQ stems/options clean; preamble and explanations remain TEXT."""
+    blocks: list[tuple[str, list[str]]] = []
+    preamble: list[str] = []
     current: list[str] = []
     seen_option = False
+
+    def flush_question() -> None:
+        nonlocal current, seen_option
+        if current:
+            blocks.append(("QUESTION" if seen_option else "TEXT", current))
+        current = []
+        seen_option = False
+
     for line in lines:
-        is_stem = bool(_MCQ_STEM_RE.match(line))
-        is_option = bool(_MCQ_OPTION_RE.match(line))
-        if is_stem and current:
-            blocks.append(current)
+        if _MCQ_STEM_RE.match(line):
+            if current:
+                flush_question()
+            elif preamble:
+                blocks.append(("TEXT", preamble))
+                preamble = []
             current = [line]
-            seen_option = False
             continue
-        if is_option:
+        if not current:
+            preamble.append(line)
+            continue
+        if seen_option and _MCQ_EXPLANATION_RE.match(line):
+            flush_question()
+            preamble = [line]
+            continue
+        if _MCQ_OPTION_RE.match(line):
             seen_option = True
         current.append(line)
     if current:
-        blocks.append(current)
-    # Only claim MCQ structure when at least one block actually has options.
-    return blocks if any(any(_MCQ_OPTION_RE.match(x) for x in block) for block in blocks) else []
+        flush_question()
+    if preamble:
+        blocks.append(("TEXT", preamble))
+    return blocks if any(kind == "QUESTION" for kind, _ in blocks) else []
 
 
 def _split_long_block(text: str, max_chars: int, overlap_chars: int) -> list[str]:
@@ -175,14 +193,11 @@ def chunk_dental_page(
     for section_title, section_lines in merged:
         mcq_blocks = _split_mcq_blocks(section_lines)
         if mcq_blocks:
-            for block in mcq_blocks:
+            for block_kind, block in mcq_blocks:
                 block_text = "\n".join(block).strip()
                 if not block_text:
                     continue
-                # Never split choices away from their stem merely to satisfy the
-                # normal prose chunk size; question blocks are bounded upstream
-                # by one source page.
-                chunks.append(DentalChunk(block_text, section_title, "QUESTION"))
+                chunks.append(DentalChunk(block_text, section_title, block_kind))
             continue
         body_text = "\n".join(section_lines).strip()
         complete = f"{section_title}\n{body_text}".strip() if section_title else body_text
