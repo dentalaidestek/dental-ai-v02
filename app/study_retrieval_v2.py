@@ -538,6 +538,16 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
     return _EVIDENCE_FACETS.get(intent_name, ())
 
 
+def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
+    """Cheap evidence sufficiency signal; no provider/model call."""
+    facets = _coverage_terms(classify_dental_intent(query).name)
+    if not facets:
+        return (1.0 if rows else 0.0), ()
+    corpus = " ".join(f"{row[5] or ''} {row[7] or ''}" for row in rows).casefold()
+    covered = tuple(facet for facet in facets if facet.casefold() in corpus)
+    return len(covered) / max(1, len(facets)), covered
+
+
 def _coverage_select(query: str, rows: list, *, limit: int) -> list:
     """Preserve evidence diversity after relevance reranking."""
     if len(rows) <= limit:
