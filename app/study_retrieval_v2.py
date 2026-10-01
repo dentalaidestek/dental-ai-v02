@@ -625,10 +625,10 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
     section = row[5] or ""
     body = row[7] or ""
     features = analyze_dental_text(f"{section}\n{body}")
-    if len(row) > 14 and row[14]:
+    if len(row) > 14 and row[-1]:
         try:
             import json
-            meta = json.loads(row[14])
+            meta = json.loads(row[-1])
             return DentalSemanticFeatures(
                 node_ids=tuple(meta.get("nodes") or ()),
                 specialties=tuple(meta.get("specialties") or ()),
