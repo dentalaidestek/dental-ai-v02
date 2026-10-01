@@ -247,7 +247,7 @@ def _hybrid_rows(
 
 
 def _is_exhaustive_question_request(query: str) -> bool:
-    clean = re.sub(r"\\s+", " ", query or "").strip()
+    clean = re.sub(r"\s+", " ", query or "").strip()
     return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
 
 
@@ -276,7 +276,7 @@ def _question_rows(session: Session, *, owner_user_id: int, course_id: int, limi
     ), params={
         "owner": owner_user_id,
         "course": course_id,
-        "question_pattern": r"(^|\\n)\\s*((soru\\s*)?[0-9]{1,3}[.)]|[A-E][.)])\\s+",
+        "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
         "limit": max(1, min(limit, 80)),
     }).all())
 
