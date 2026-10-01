@@ -42,14 +42,17 @@ def classify_academic_question_scope(
     if features.node_ids or features.specialties or features.tooth_numbers or features.imaging_types:
         return "DENTAL"
 
+    # Conversational referents take precedence over generic study verbs:
+    # "bunu biraz daha açıkla" depends on the preceding turn, while a standalone
+    # "bu notu açıkla" remains a study action.
+    if _FOLLOWUP.search(text) and recent_history:
+        return "FOLLOWUP"
+
     if any(term in text for term in _STUDY_ACTIONS):
         # Explicit study commands belong to the current course unless they also
         # contain a clearly unrelated subject.
         if not any(term in text for term in _CLEAR_NON_DENTAL):
             return "STUDY_ACTION"
-
-    if _FOLLOWUP.search(text) and recent_history:
-        return "FOLLOWUP"
 
     if any(term in text for term in _CLEAR_NON_DENTAL):
         return "NON_DENTAL"
