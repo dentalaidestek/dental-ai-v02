@@ -350,16 +350,18 @@ def retrieve_course_context_v2(
     resolved = resolve_followup_query(query, recent_history)
     target = get_embedding_target()
     vector: list[float] | None = None
-    try:
-        vector = get_provider(target.provider).embed_text(
-            model=target.model,
-            text="Diş hekimliği ders notunda bu sorunun kanıtını bul:\n" + resolved,
-            dimensions=get_embedding_dimensions(),
-        )
-    except StudyProviderError as exc:
-        logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
-
     exhaustive_questions = _is_exhaustive_question_request(query)
+    # Exhaustive enumeration is structural and source-ordered; an embedding
+    # request adds cost but cannot improve completeness for this intent.
+    if not exhaustive_questions:
+        try:
+            vector = get_provider(target.provider).embed_text(
+                model=target.model,
+                text="Diş hekimliği ders notunda bu sorunun kanıtını bul:\n" + resolved,
+                dimensions=get_embedding_dimensions(),
+            )
+        except StudyProviderError as exc:
+            logger.warning("Academic V2 query embedding unavailable; PostgreSQL FTS only: %s", exc)
     if exhaustive_questions:
         rows = _question_rows(
             session,
