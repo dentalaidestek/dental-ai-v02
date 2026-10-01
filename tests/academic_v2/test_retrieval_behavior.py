@@ -28,7 +28,7 @@ for node in tree.body:
         if any(name in wanted for name in names):
             exec(compile(ast.Module(body=[node], type_ignores=[]), "<retrieval-data>", "exec"), namespace)
     elif isinstance(node, ast.FunctionDef) and node.name in {
-        "_normalize_dental_notation", "_concept_alternatives", "_retrieval_terms", "_fts_query"
+        "_normalize_dental_notation", "_query_term_present", "_concept_alternatives", "_retrieval_terms", "_fts_query"
     }:
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<retrieval-fn>", "exec"), namespace)
 
