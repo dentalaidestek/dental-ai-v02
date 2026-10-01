@@ -83,3 +83,10 @@ assert "def _coverage_select" in source
 assert "candidate_target = max(limit * 4, 24)" in source
 assert "if len(rows) < max(limit, 6):" in source
 assert "rows = _coverage_select(resolved, rows, limit=limit)" in source
+
+
+# Latency guard: simple factual questions stay on one-pass retrieval.
+assert '_FAST_INTENTS = {"value", "definition", "measurement"}' in source
+assert "def _needs_multi_evidence" in source
+assert "coverage < 0.34" in source
+assert "At most one extra local DB query" in source
