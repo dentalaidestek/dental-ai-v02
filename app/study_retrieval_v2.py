@@ -1024,14 +1024,20 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     coverage, covered = _coverage_score(query, rows, requirement=requirement, feature_cache=feature_cache)
     missing = tuple(facet for facet in facets if facet not in covered)
 
+    row_features = [_row_semantic_features(row, feature_cache) for row in rows]
     alignments = sorted(
-        (_subject_alignment_score(query, row[5] or "", row[7] or "") for row in rows),
+        (
+            _subject_alignment_score(
+                query, row[5] or "", row[7] or "",
+                query_features=qf, row_features=features,
+            )
+            for row, features in zip(rows, row_features)
+        ),
         reverse=True,
     )
     best_alignment = alignments[0] if alignments else 0.0
     complementary_alignment = alignments[1] if len(alignments) > 1 else 0.0
 
-    row_features = [_row_semantic_features(row, feature_cache) for row in rows]
     evidence_node_ids = {node_id for features in row_features for node_id in features.node_ids}
     multi_subject_complete = all(node_id in evidence_node_ids for node_id in requirement.subject_node_ids)
     # Bound qualifiers are a collective evidence constraint: each subject that
@@ -1348,6 +1354,24 @@ def retrieve_course_context_v2(
         )
         rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement, feature_cache=row_feature_cache)
         primary_ids = [int(row[0]) for row in rows]
+        # Keep neighbor seeds subject-diverse. Coverage selection already
+        # preserves each required subject; do not throw that work away by
+        # seeding adjacency from three rows belonging to the same subject.
+        neighbor_seed_ids: list[int] = []
+        for subject_id in requirement.subject_node_ids:
+            for row in rows:
+                if subject_id in _row_semantic_features(row, row_feature_cache).node_ids:
+                    row_id = int(row[0])
+                    if row_id not in neighbor_seed_ids:
+                        neighbor_seed_ids.append(row_id)
+                    break
+            if len(neighbor_seed_ids) >= 3:
+                break
+        for row_id in primary_ids:
+            if row_id not in neighbor_seed_ids:
+                neighbor_seed_ids.append(row_id)
+            if len(neighbor_seed_ids) >= 3:
+                break
         # Neighbor context is useful for split passages, but it must not be an
         # unconditional extra DB query or cross a section boundary.
         requirement_names = {
@@ -1371,7 +1395,7 @@ def retrieve_course_context_v2(
                 session,
                 owner_user_id=owner_user_id,
                 course_id=course_id,
-                seed_ids=primary_ids[:3],
+                seed_ids=neighbor_seed_ids,
                 exclude_ids=primary_ids,
                 limit=neighbor_limit,
             ))
