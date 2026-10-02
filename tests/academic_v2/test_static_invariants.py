@@ -13,6 +13,14 @@ ast.parse(retrieval)
 ast.parse(generation)
 ast.parse(ocr)
 ast.parse(chunking)
+for extra in (
+    "app/dental_query_intent.py",
+    "app/dental_semantics.py",
+    "app/academic_coverage.py",
+    "app/academic_generation.py",
+    "app/academic_generation_jobs.py",
+):
+    ast.parse((ROOT / extra).read_text(encoding="utf-8"))
 
 # A short standalone dental question must not become a follow-up merely due to length.
 assert "len(clean.split()) <= 3" not in retrieval
