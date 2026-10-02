@@ -90,6 +90,27 @@ class BoundValueEvidence:
     subject_node_id: str | None
     subject_text: str | None
     binding_confidence: float
+    qualifiers: tuple[str, ...] = ()
+    context_text: str | None = None
+
+_VALUE_QUALIFIER_PATTERNS = (
+    ("newborn", re.compile(r"(?iu)\b(?:yeni\s*doğmuş|yenidoğan|newborn)\w*\b")),
+    ("infant", re.compile(r"(?iu)\b(?:bebeklik|bebek)\w*\b")),
+    ("child", re.compile(r"(?iu)\b(?:çocuk|çocukluk)\w*\b")),
+    ("adult", re.compile(r"(?iu)\b(?:erişkin|yetişkin|adult)\w*\b")),
+    ("fetal", re.compile(r"(?iu)\b(?:fetüs|fetus|fetal)\w*\b")),
+    ("growth", re.compile(r"(?iu)\b(?:büyüme|gelişim|yaşın ilerlemesi|yaşa bağlı)\b")),
+)
+_CONTEXT_SIZE_RE = re.compile(r"(?iu)\b\d+(?:[.,]\d+)?\s*mm(?:'lik|lik|lık|luk|lük)?\s+(?:bir\s+)?(?:fetüs|fetus|embriyon)\w*\b")
+
+def _value_context(text: str, evidence: ValueEvidence) -> tuple[tuple[str, ...], str]:
+    left = max(0, evidence.start - 120)
+    right = min(len(text), evidence.end + 120)
+    local = text[left:right]
+    qualifiers = [name for name, pattern in _VALUE_QUALIFIER_PATTERNS if pattern.search(local)]
+    for match in _CONTEXT_SIZE_RE.finditer(local):
+        qualifiers.append("context_size:" + re.sub(r"\s+", " ", match.group(0)).strip())
+    return tuple(dict.fromkeys(qualifiers)), local
 
 def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
     """Bind values to nearby subjects conservatively; ambiguity stays unbound."""
@@ -122,11 +143,14 @@ def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
         chosen = ranked[0] if ranked and ranked[0][0] >= 0.34 else None
         if chosen and len(ranked) > 1 and ranked[1][0] >= chosen[0] - 0.08 and ranked[1][2] != chosen[2]:
             chosen = None
+        qualifiers, context_text = _value_context(clean, value)
         output.append(BoundValueEvidence(
             value=value, assertion=assertion, assertion_confidence=assertion_confidence,
             subject_node_id=chosen[2] if chosen else None,
             subject_text=chosen[3] if chosen else None,
             binding_confidence=round(chosen[0], 4) if chosen else 0.0,
+            qualifiers=qualifiers,
+            context_text=context_text,
         ))
     return tuple(output)
 
