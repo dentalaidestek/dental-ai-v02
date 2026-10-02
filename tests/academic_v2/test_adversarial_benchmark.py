@@ -118,10 +118,15 @@ def test_adversarial_understanding_matrix_has_meaningful_size():
 # common Turkish question endings without creating provider work.
 PARAPHRASE_SUBJECTS = [
     ("irreversible pulpitis", "irreversible_pulpitis"),
+    ("reversible pulpitis", "reversible_pulpitis"),
     ("periodontitis", "periodontitis"),
     ("MRONJ", "mronj"),
     ("üçüncü molar", "third_molar"),
     ("implant", "implant"),
+    ("MIH", "mih"),
+    ("OSCC", "oscc"),
+    ("dry socket", "dry_socket"),
+    ("IANB", "ianb"),
 ]
 PARAPHRASE_FORMS = [
     ("tedavisi nedir?", "treatment"),
@@ -140,9 +145,9 @@ def test_adversarial_generated_paraphrase_matrix():
             assert subject_id in plan.subject_node_ids, (subject_text, ending, plan.subject_node_ids)
             assert facet in plan.requested_facets, (subject_text, ending, facet, plan.requested_facets)
             checked += 1
-    assert checked == 30
+    assert checked == 60
 
 def test_adversarial_matrix_exceeds_eighty_interpretations():
     explicit = len(BASE)+len(MULTI)+len(QUALIFIERS)+len(NEGATIVE)+len(NON_NEGATIVE)+len(VISUAL_TRUE)+len(VISUAL_FALSE)+len(TYPOS)
     generated = len(PARAPHRASE_SUBJECTS)*len(PARAPHRASE_FORMS)
-    assert explicit + generated >= 80
+    assert explicit + generated >= 100
