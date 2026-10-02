@@ -206,11 +206,11 @@ def _value_key(value: str) -> str:
     key = " ".join((value or "").casefold().split())
     # Label candidates include their assertion cue ("normal değeri 82").
     # Reconciliation compares the asserted value, not wording of that cue.
-    key = re.sub(rf"^(?:{_EXPLICIT_VALUE_LABEL})\\s*(?:=|:|ise|olarak)?\\s*", "", key, flags=re.I)
+    key = re.sub(rf"^(?:{_EXPLICIT_VALUE_LABEL})\s*(?:=|:|ise|olarak)?\s*", "", key, flags=re.I)
     key = key.replace("derecedir", "°").replace("derece", "°")
     key = key.replace(",", ".")
     # Turkish prose may leave copula/spacing around the same measurement.
-    key = re.sub(r"\\s+(?:dir|dır|dur|dür|tir|tır|tur|tür)\\b", "", key, flags=re.I)
+    key = re.sub(r"\s+(?:dir|dır|dur|dür|tir|tır|tur|tür)\b", "", key, flags=re.I)
     # Normalize numerically equivalent decimal spellings before whitespace is
     # removed (e.g. "82,0 derece" and "82°" must reconcile as one value).
     key = re.sub(r"([+-]?\d+)\.0+(?=\s*(?:°|mm|cm|%|$))", r"\1", key)
