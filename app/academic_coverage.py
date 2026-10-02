@@ -71,6 +71,51 @@ def build_coverage_plan(rows: list, requested_count: int) -> CoveragePlan:
     )
 
 
+
+class CoverageAccumulator:
+    """Streaming metadata accumulator; stores bucket essentials, not DB rows."""
+    def __init__(self) -> None:
+        self._groups = defaultdict(lambda: {"section": "Bölümsüz", "chunk_ids": []})
+        self.scanned_rows = 0
+
+    def add_rows(self, rows: list) -> None:
+        for row in rows:
+            self.scanned_rows += 1
+            if str(row[6] or "").upper() == "QUESTION":
+                continue
+            material_id = int(row[1])
+            section = str(row[5] or "Bölümsüz").strip() or "Bölümsüz"
+            nodes = ()
+            if len(row) > 14 and row[14]:
+                try:
+                    nodes = tuple(sorted(set(json.loads(row[14]).get("nodes") or ())))
+                except (TypeError, ValueError):
+                    nodes = ()
+            key = (material_id, section.casefold(), nodes)
+            group = self._groups[key]
+            group["section"] = section
+            group["chunk_ids"].append(int(row[0]))
+
+    def build(self, requested_count: int) -> CoveragePlan:
+        items = []
+        for (material_id, _section_key, nodes), group in self._groups.items():
+            chunk_ids = tuple(sorted(set(group["chunk_ids"])))
+            items.append((material_id, group["section"], nodes, chunk_ids, len(chunk_ids)))
+        items.sort(key=lambda x: (x[0], x[1].casefold(), x[3][0] if x[3] else 0))
+        count = max(1, min(int(requested_count or 10), 200))
+        budgets = _largest_remainder([x[4] for x in items], count)
+        buckets = tuple(
+            CoverageBucket(mid, section, nodes, chunk_ids, weight, budget)
+            for (mid, section, nodes, chunk_ids, weight), budget in zip(items, budgets)
+            if budget > 0
+        )
+        return CoveragePlan(
+            requested_count=count,
+            buckets=buckets,
+            covered_chunk_ids=tuple(sorted({cid for b in buckets for cid in b.chunk_ids})),
+            scanned_rows=self.scanned_rows,
+        )
+
 @dataclass(frozen=True)
 class CoverageLedger:
     planned_questions: int
