@@ -1103,7 +1103,20 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     complementary_alignment = alignments[1] if len(alignments) > 1 else 0.0
 
     evidence_node_ids = {node_id for features in row_features for node_id in features.node_ids}
-    multi_subject_complete = all(node_id in evidence_node_ids for node_id in requirement.subject_node_ids)
+    # A required subject is complete only when it appears in a row that is also
+    # materially aligned to the query. A passing mention in an unrelated chunk
+    # must not authorize synthesis for that subject.
+    multi_subject_complete = all(
+        any(
+            node_id in features.node_ids
+            and _subject_alignment_score(
+                query, row[5] or "", row[7] or "",
+                query_features=qf, row_features=features,
+            ) >= 0.34
+            for row, features in zip(rows, row_features)
+        )
+        for node_id in requirement.subject_node_ids
+    )
     # Bound qualifiers are a collective evidence constraint: each subject that
     # owns explicit modifiers should have at least one evidence row containing
     # both that subject and its modifiers. Keep this soft for ordinary questions
