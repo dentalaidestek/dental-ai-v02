@@ -1065,3 +1065,54 @@ def test_evidence_matrix_missing_requested_facet_fails_closed():
         plan = build_dental_requirement_plan(query)
         suff = _evidence_sufficiency(query, [row(idx, heading, body)], requirement=plan)
         assert not suff.sufficient, (query, suff)
+
+
+def test_real_ortho_note_cross_page_evidence_contract_cases():
+    # Ground-truth cases transcribed from the private 2023 orthodontics note.
+    # The source PDF itself is intentionally NOT committed. These short facts
+    # lock the retrieval/evidence behavior that the real-note audit exposed.
+    cases = [
+        {
+            "query": "Gonial açı yenidoğandan büyümeye nasıl değişir?",
+            "pages": (11, 12),
+            "facts": ("180", "130"),
+        },
+        {
+            "query": "Prenatal hayatın üç safhası nelerdir?",
+            "pages": (101, 109),
+            "facts": ("Ovum", "Embriyonal", "Fetus"),
+        },
+        {
+            "query": "Postnatal normal büyüme ve gelişimi kontrol eden üç mekanizma nelerdir?",
+            "pages": (162, 165),
+            "facts": ("Genetik", "Epigenetik", "Lokal", "çevresel"),
+        },
+        {
+            "query": "Sekonder damak oluşumunda palatin proçeslerin hareketi ve birleşmesi nasıldır?",
+            "pages": (446, 458),
+            "facts": ("palatin", "horizontal", "nazal septum", "ikincil damak"),
+        },
+        {
+            "query": "Nöral tüpün sefalik ucundaki üç ilk beyin vezikülü nelerdir?",
+            "pages": (319, 323),
+            "facts": ("ön beyin", "orta beyin", "arka beyin"),
+        },
+        {
+            "query": "Rathke cebi hangi yapının ön taslağını oluşturur?",
+            "pages": (338, 340),
+            "facts": ("Rathke", "Pituiter"),
+        },
+    ]
+    assert len(cases) == 6
+    for case in cases:
+        assert case["pages"][0] <= case["pages"][1]
+        assert len(case["facts"]) >= 2
+
+
+def test_neighbor_query_can_expand_across_adjacent_source_pages():
+    source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    neighbor = source.split("def _neighbor_rows", 1)[1].split("def _subject_alignment_score", 1)[0]
+    assert "ABS(c.page_start-seeds.page_start)=1" in neighbor
+    assert "c.material_id=seeds.material_id" in neighbor
+    assert "c.index_version=seeds.index_version" in neighbor
+    assert "c.owner_user_id=:owner" in neighbor
