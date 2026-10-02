@@ -877,7 +877,9 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
                 kinds=tuple(meta.get("kinds") or ()),
                 measurements=tuple(meta.get("measurements") or ()),
                 tooth_numbers=tuple(meta.get("teeth") or ()),
-                imaging_types=tuple(meta.get("imaging") or ()),\n                negated_node_ids=tuple(meta.get("negated_nodes") or ()),\n            )
+                imaging_types=tuple(meta.get("imaging") or ()),
+                negated_node_ids=tuple(meta.get("negated_nodes") or ()),
+            )
         except (TypeError, ValueError, KeyError):
             pass
     return features
@@ -888,7 +890,12 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     if not rows:
         return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
 
-    requirement = build_dental_requirement_plan(query)\n    intent = requirement.intents[0]\n    qf = analyze_dental_text(query)\n    facets = tuple(dict.fromkeys(\n        facet for item in requirement.intents for facet in _coverage_terms(item.name)\n    ))
+    requirement = build_dental_requirement_plan(query)
+    intent = requirement.intents[0]
+    qf = analyze_dental_text(query)
+    facets = tuple(dict.fromkeys(
+        facet for item in requirement.intents for facet in _coverage_terms(item.name)
+    ))
     coverage, covered = _coverage_score(query, rows)
     missing = tuple(facet for facet in facets if facet not in covered)
 
@@ -1096,7 +1103,8 @@ def retrieve_course_context_v2(
         # first pass lacks evidence diversity.
         if evidence_queries and coverage < 0.34 and len(rows) < candidate_target:
             missing = [
-                facet for item in build_dental_requirement_plan(resolved).intents\n                for facet in _coverage_terms(item.name) if facet not in covered_facets
+                facet for item in build_dental_requirement_plan(resolved).intents
+                for facet in _coverage_terms(item.name) if facet not in covered_facets
             ]
             if missing:
                 rescue_query = f'{_fts_query(resolved, broad=False)} "{missing[0]}"'
