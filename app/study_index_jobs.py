@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import LargeBinary, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -64,6 +64,9 @@ class StudyIndexPage(SQLModel, table=True):
     text_content: Optional[str] = None
     extraction_method: Optional[str] = Field(default=None, index=True)
     content_sha256: Optional[str] = Field(default=None, index=True)
+    # Lazily populated only for pages actually used by visual QA. It belongs to
+    # the generation checkpoint, so reindex/deletion removes it automatically.
+    visual_pdf_bytes: Optional[bytes] = Field(default=None, sa_type=LargeBinary)
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
