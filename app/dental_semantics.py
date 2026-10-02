@@ -198,6 +198,8 @@ def _value_key(value: str) -> str:
     key = " ".join((value or "").casefold().split())
     key = key.replace("derecedir", "°").replace("derece", "°")
     key = key.replace(",", ".")
+    # Normalize numerically equivalent decimal spellings before whitespace is
+    # removed (e.g. "82,0 derece" and "82°" must reconcile as one value).
     key = re.sub(r"(?<=\d)\.0(?=\s*(?:°|mm|cm|%|$))", "", key)
     return re.sub(r"\s+", "", key)
 
