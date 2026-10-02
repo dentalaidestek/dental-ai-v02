@@ -855,3 +855,17 @@ def test_false_insufficient_recovery_is_bounded_to_safe_signals():
     assert 'and "measurement" in qf.kinds' in suff
     assert "requested_nodes.intersection(features.node_ids)" in suff
     assert "bare_value_re" in suff
+
+
+def test_false_insufficient_comparison_does_not_require_literal_difference_word():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert '"comparison": ()' in source
+    suff = source[source.index("def _evidence_sufficiency"):source.index("def _coverage_select")]
+    assert "comparison_side_complete" in suff
+    assert "multi_subject_complete" in suff
+
+def test_indication_facets_accept_explicit_source_polarity_phrasing():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert '"kullanılır", "uygulanır"' in source
+    assert '"kullanılmaz"' in source
+    assert '"önerilmez"' in source
