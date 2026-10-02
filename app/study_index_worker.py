@@ -317,7 +317,10 @@ def _strip_repeated_page_margins(rows: list[StudyIndexPage]) -> dict[int, str]:
     for row in rows:
         lines = (row.text_content or "").splitlines()
         nonempty = [(idx, line.strip()) for idx, line in enumerate(lines) if line.strip()]
-        margin = nonempty[:2] + nonempty[-2:]
+        # Only the outermost non-empty line is page furniture. Treating
+        # the first/last two as margins can delete real body text when a short
+        # page starts immediately below a repeated title.
+        margin = nonempty[:1] + nonempty[-1:]
         margin_indices = {idx for idx, _ in margin}
         per_page[int(row.page_number)] = (lines, margin_indices)
         for _, line in margin:
