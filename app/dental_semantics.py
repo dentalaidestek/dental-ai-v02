@@ -87,7 +87,9 @@ def analyze_dental_text(text: str) -> DentalSemanticFeatures:
 def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticFeatures) -> float:
     score = 0.0
     qnodes, cnodes = set(query.node_ids), set(chunk.node_ids)
-    # Do not reward a chunk as positive evidence when the queried concept is\n    # explicitly negated in that chunk. It may still be useful as contrast.\n    positive_cnodes = cnodes - set(chunk.negated_node_ids)
+    # Do not reward a chunk as positive evidence when the queried concept is
+    # explicitly negated in that chunk. It may still be useful as contrast.
+    positive_cnodes = cnodes - set(chunk.negated_node_ids)
     if qnodes:
         score += 0.55 * (len(qnodes & positive_cnodes) / len(qnodes))
     qspec, cspec = set(query.specialties), set(chunk.specialties)
