@@ -1414,14 +1414,26 @@ def retrieve_course_context_v2(
             else min(2, max(0, context_target - len(rows)))
         )
         if neighbor_limit:
-            rows.extend(_neighbor_rows(
+            neighbor_rows = _neighbor_rows(
                 session,
                 owner_user_id=owner_user_id,
                 course_id=course_id,
                 seed_ids=neighbor_seed_ids,
                 exclude_ids=primary_ids,
                 limit=neighbor_limit,
-            ))
+            )
+            if neighbor_rows:
+                rows.extend(neighbor_rows)
+                # Adjacent context is only a candidate repair. It must re-enter
+                # the same canonical relevance/diversity gates before generation.
+                rows = _rerank_dental_rows(
+                    resolved, rows, limit=max(limit + neighbor_limit, limit),
+                    requirement=requirement, feature_cache=row_feature_cache,
+                )
+                rows = _coverage_select(
+                    resolved, rows, limit=limit, requirement=requirement,
+                    feature_cache=row_feature_cache,
+                )
     intent = classify_dental_intent(resolved)
     logger.info(
         "Academic V2 retrieval selected. mode=%s intent=%s evidence_rows=%s",
