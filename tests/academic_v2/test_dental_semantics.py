@@ -29,3 +29,15 @@ assert len(enriched.split()) <= 24
 assert "24" not in analyze_dental_text("24 yaşında hasta, sayfa 36").tooth_numbers
 assert "36" not in analyze_dental_text("24 yaşında hasta, sayfa 36").tooth_numbers
 assert "48" in analyze_dental_text("48 numaralı diş mandibular kanala yakın").tooth_numbers
+
+
+def test_negation_is_clause_local_and_does_not_erase_positive_mentions():
+    from app.dental_semantics import analyze_dental_text
+    negative = analyze_dental_text("Periapikal lezyon görülmedi.")
+    assert "periapical_lesion" in negative.negated_node_ids
+
+    mixed = analyze_dental_text(
+        "Başlangıçta periapikal lezyon görülmedi; ancak kontrolde periapikal lezyon saptandı."
+    )
+    assert "periapical_lesion" in mixed.node_ids
+    assert "periapical_lesion" not in mixed.negated_node_ids
