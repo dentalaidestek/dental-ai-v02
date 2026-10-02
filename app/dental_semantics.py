@@ -162,21 +162,37 @@ class ValueReconciliation:
     variable_values: tuple[str, ...]
     unknown_values: tuple[str, ...]
 
+def _value_key(value: str) -> str:
+    key = " ".join((value or "").casefold().split())
+    key = key.replace("derecedir", "°").replace("derece", "°")
+    key = key.replace(",", ".")
+    key = re.sub(r"(?<=\d)\.0(?=\s*(?:°|mm|cm|%|$))", "", key)
+    return re.sub(r"\s+", "", key)
+
 def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundValueEvidence]) -> ValueReconciliation:
-    """Summarize evidence without promoting first-seen numbers to truth."""
+    """Reconcile only comparable contexts; conditioned values remain separate."""
     references, observations, variables, unknowns = [], [], [], []
+    reference_groups: dict[tuple[str, ...], dict[str, str]] = {}
     for item in items:
-        target = references if item.assertion == "reference" else observations if item.assertion == "observation" else variables if item.assertion == "variable" else unknowns
-        target.append(item.value.text)
-    references = list(dict.fromkeys(references))
-    observations = list(dict.fromkeys(observations))
-    variables = list(dict.fromkeys(variables))
-    unknowns = list(dict.fromkeys(unknowns))
-    if variables:
+        if item.assertion == "reference":
+            references.append(item.value.text)
+            group = tuple(sorted(item.qualifiers))
+            reference_groups.setdefault(group, {})[_value_key(item.value.text)] = item.value.text
+        elif item.assertion == "observation":
+            observations.append(item.value.text)
+        elif item.assertion == "variable":
+            variables.append(item.value.text)
+        else:
+            unknowns.append(item.value.text)
+    references = list(dict.fromkeys(references)); observations = list(dict.fromkeys(observations))
+    variables = list(dict.fromkeys(variables)); unknowns = list(dict.fromkeys(unknowns))
+    comparable_conflict = any(len(values) > 1 for values in reference_groups.values())
+    conditioned_reference = len(reference_groups) > 1
+    if variables or conditioned_reference:
         status = "conditioned"
-    elif len(references) > 1:
+    elif comparable_conflict:
         status = "conflict"
-    elif len(references) == 1:
+    elif references:
         status = "reference_supported"
     elif observations:
         status = "observations_only"
