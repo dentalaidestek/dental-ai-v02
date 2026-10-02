@@ -117,3 +117,14 @@ def test_local_ocr_retries_only_weak_columns_when_possible():
     assert "any(weak_columns)" in ocr
     assert "if not weak_columns[idx]:" in ocr
     assert "continue" in ocr
+
+
+def test_local_ocr_reuses_engine_and_preserves_academic_structure():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _recognize_many" in ocr
+    assert "api.Clear()" in ocr
+    assert "_recognize_many(" in ocr
+    assert "def _preserve_academic_structure" in ocr
+    assert "_MC_OPTION_RE" in ocr
+    assert "_TABLE_GAP_RE" in ocr
+    assert "text = _preserve_academic_structure(text)" in ocr
