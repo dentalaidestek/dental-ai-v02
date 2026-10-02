@@ -307,10 +307,10 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         intents = tuple((*intents, comparison_intent))[:6]
     comparison_terms = _comparison_terms(clean, intents)
     requires_visual_source = bool(re.search(
-        r"(?iu)(?:\\b(?:bu|şu)\\s+(?:radyografi|röntgen|film|görüntü|fotoğraf|şekil|tablo|grafik|cbct|opg)"
-        r"|\\b(?:radyografideki|filmdeki|görüntüdeki|şekildeki|tablodaki|grafikteki)\\b"
-        r"|\\b(?:gösterilen|işaretli|okla\\s+gösterilen|görülen)\\b"
-        r"|\\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\\s+(?:ne|neyi|hangi|nerede)\\b)",
+        r"(?iu)(?:\b(?:bu|şu)\s+(?:radyografi(?:de|da)?|röntgen(?:de|da)?|film(?:de|da)?|görüntü(?:de|da)?|fotoğraf(?:ta|da)?|şekil(?:de|da)?|tablo(?:da|de)?|grafik(?:te|de)?|cbct(?:de|da)?|opg(?:de|da)?)"
+        r"|\b(?:radyografideki|filmdeki|görüntüdeki|şekildeki|tablodaki|grafikteki)\b"
+        r"|\b(?:gösterilen|işaretli|okla\s+gösterilen|görülen)\b"
+        r"|\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b)",
         clean,
     ))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
