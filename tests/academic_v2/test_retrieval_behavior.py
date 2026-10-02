@@ -767,3 +767,10 @@ def test_contraindicated_topic_is_not_negative_selection_polarity():
     negative = build_dental_requirement_plan("Hangisi kontrendike değildir?")
     assert not topic.asks_negation
     assert negative.asks_negation
+
+
+def test_standalone_wh_question_does_not_inherit_prior_subject():
+    from app.study_retrieval_v2 import resolve_followup_query
+    history = [{"role": "USER", "content": "Pulpitis nedir?"}]
+    current = "Neden dentin hassasiyeti oluşur?"
+    assert resolve_followup_query(current, history) == current
