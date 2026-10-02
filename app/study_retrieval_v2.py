@@ -921,6 +921,7 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
 
     requirement = build_dental_requirement_plan(query)
     intent = requirement.intents[0]
+    intent_names = {item.name for item in requirement.intents if item.name != "general"}
     qf = analyze_dental_text(query)
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
@@ -969,7 +970,7 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     # not enough to justify generation.
     has_specific_anchor = bool(qf.node_ids or qf.tooth_numbers or qf.imaging_types)
     anchored = best_alignment >= (0.34 if has_specific_anchor else 0.24)
-    if intent.name in {"value", "definition", "measurement"}:
+    if intent_names and intent_names.issubset(_FAST_INTENTS):
         sufficient = anchored and confidence >= 0.34
     elif facets:
         # Explicit multi-facet requests are a hard completeness contract.
@@ -1004,7 +1005,8 @@ def _coverage_select(query: str, rows: list, *, limit: int) -> list:
             if int(row[0]) in selected_ids:
                 continue
             haystack = f"{row[5] or ''} {row[7] or ''}".casefold()
-            if facet_cf in haystack:
+            row_kinds = {item.casefold() for item in _row_semantic_features(row).kinds}
+            if _facet_present(facet, haystack, row_kinds):
                 candidates.append(row)
         if candidates:
             aligned = [
@@ -1149,8 +1151,16 @@ def retrieve_course_context_v2(
         primary_ids = [int(row[0]) for row in rows]
         # Neighbor context is useful for split passages, but it must not be an
         # unconditional extra DB query or cross a section boundary.
+        requirement_names = {
+            item.name for item in build_dental_requirement_plan(resolved).intents
+            if item.name != "general"
+        }
+        fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)
         context_target = min(10, limit + 2) if _needs_multi_evidence(resolved) else max(4, limit)
-        neighbor_limit = min(2, max(0, context_target - len(rows)))
+        # A self-contained value/definition/measurement hit should stay on the
+        # one-query fast path. Neighbor hydration is for split context, not a
+        # default tax on every short DIRECT question.
+        neighbor_limit = 0 if fast_direct and rows else min(2, max(0, context_target - len(rows)))
         if neighbor_limit:
             rows.extend(_neighbor_rows(
                 session,
