@@ -257,6 +257,20 @@ _DENTAL_CONTEXT_RE = re.compile(
     r"sondalama|santral ilişki|çalışma boyu|enamel|tooth|root|pulp)\\w*\\b", re.I
 )
 
+def _alias_pattern(term: str) -> str:
+    """Canonical mention pattern shared by graph/semantic subject matching."""
+    clean_term = " ".join((term or "").casefold().split())
+    pieces: list[str] = []
+    for word in clean_term.split():
+        escaped = re.escape(word)
+        # Turkish inflection is useful for substantive concept words but unsafe
+        # for abbreviations/short aliases (PD, CR, CAL, WL, ANB, mine).
+        if len(word) >= 4 and word.isalpha() and word not in _AMBIGUOUS_SHORT_TERMS:
+            escaped += r"[a-zçğıöşü]{0,6}"
+        pieces.append(escaped)
+    return r"\\s+".join(pieces)
+
+
 def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
     if term.casefold() not in _AMBIGUOUS_SHORT_TERMS:
         return True
@@ -276,8 +290,8 @@ def matched_nodes(query: str) -> list[DentalNode]:
             clean_term = " ".join((term or "").casefold().split())
             if not clean_term:
                 continue
-            escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
-            for match in re.finditer(r"(?<!\w)" + escaped + r"(?!\w)", lowered, flags=re.I):
+            escaped = _alias_pattern(clean_term)
+            for match in re.finditer(r"(?<!\\w)" + escaped + r"(?!\\w)", lowered, flags=re.I):
                 if not _term_context_ok(lowered, match.start(), match.end(), clean_term):
                     continue
                 mentions.append((match.start(), match.end(), len(clean_term), node))
