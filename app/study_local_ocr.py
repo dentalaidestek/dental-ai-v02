@@ -120,6 +120,7 @@ def _normalize_ocr_text(value: str) -> str:
 class _PageLayout:
     psm: int
     kind: str
+    split_x: int | None = None
 
 
 def _detect_page_layout(image: Image.Image) -> _PageLayout:
@@ -151,7 +152,7 @@ def _detect_page_layout(image: Image.Image) -> _PageLayout:
         side_mean = sum(side) / max(1, len(side))
         valley_mean = sum(valley) / max(1, len(valley))
         if occupied_rows > h * 0.35 and side_mean > 0 and valley_mean < side_mean * 0.38:
-            return _PageLayout(tesserocr.PSM.AUTO, "two_column")
+            return _PageLayout(tesserocr.PSM.AUTO, "two_column", (mid_lo + mid_hi) // 2)
 
         # Sparse lecture slides/figures benefit from sparse-text segmentation.
         if density < 0.035 or occupied_rows < h * 0.22:
@@ -164,6 +165,68 @@ def _detect_page_layout(image: Image.Image) -> _PageLayout:
         return _PageLayout(tesserocr.PSM.AUTO, "mixed")
     finally:
         probe.close()
+
+
+def _deskew_image(image: Image.Image) -> Image.Image:
+    """Cheap bounded deskew; skip clean pages and never enlarge the canvas."""
+    import tesserocr
+
+    probe = image.copy()
+    try:
+        probe.thumbnail((1200, 1600), Image.Resampling.BILINEAR)
+        try:
+            osd = tesserocr.image_to_osd(probe)
+        except Exception:
+            return image.copy()
+        match = re.search(r"Deskew angle:\s*(-?\d+(?:\.\d+)?)", osd or "", re.I)
+        if not match:
+            return image.copy()
+        angle = float(match.group(1))
+        if abs(angle) < 0.35 or abs(angle) > 8.0:
+            return image.copy()
+        return image.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=255)
+    finally:
+        probe.close()
+
+
+def _recognize_layout(image: Image.Image, *, layout: _PageLayout, timeout_ms: int) -> tuple[str, int]:
+    """Preserve reading order for obvious two-column academic pages."""
+    import tesserocr
+
+    if layout.kind != "two_column" or not layout.split_x:
+        return _recognize(image, psm=layout.psm, timeout_ms=timeout_ms)
+    # split_x was measured on a <=900px layout probe; map it back to source.
+    probe_width = min(image.width, 900)
+    split = int(image.width * (layout.split_x / max(1, probe_width)))
+    margin = max(8, int(image.width * 0.015))
+    split = max(margin * 2, min(image.width - margin * 2, split))
+    regions = [
+        image.crop((0, 0, min(image.width, split + margin), image.height)),
+        image.crop((max(0, split - margin), 0, image.width, image.height)),
+    ]
+    try:
+        results = [
+            _recognize(region, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=timeout_ms)
+            for region in regions
+        ]
+    finally:
+        for region in regions:
+            region.close()
+    texts = [text for text, _ in results if text]
+    confidence = int(sum(conf for _, conf in results) / max(1, len(results)))
+    return _normalize_ocr_text("\n\n".join(texts)), confidence
+
+
+def _ocr_anomaly_score(text: str) -> float:
+    """Local corruption signal used to spend retry cost only on suspicious OCR."""
+    compact = re.sub(r"\s+", "", text or "")
+    if not compact:
+        return 1.0
+    alnum = sum(ch.isalnum() for ch in compact) / len(compact)
+    replacement = sum(ch in "�□■" for ch in compact) / len(compact)
+    noisy_tokens = re.findall(r"(?u)\b[^\W\d_]{1}\b|[^\w\s.,;:!?%°µμ+\-/()]+", text or "")
+    noise = min(1.0, len(noisy_tokens) / max(1, len((text or "").split())))
+    return min(1.0, (1.0 - alnum) * 0.55 + replacement * 3.0 + noise * 0.45)
 
 
 def _recognize(image: Image.Image, *, psm, timeout_ms: int) -> tuple[str, int]:
@@ -190,8 +253,7 @@ def _needs_quality_retry(text: str, confidence: int) -> bool:
     compact = re.sub(r"\\s+", "", text or "")
     if len(compact) < 40:
         return True
-    alnum = sum(ch.isalnum() for ch in compact)
-    return alnum / max(1, len(compact)) < 0.55
+    return _ocr_anomaly_score(text) >= 0.34
 
 
 def ocr_material_page(
@@ -220,8 +282,12 @@ def ocr_material_page(
     image = load(fast_dpi)
     try:
         image = ImageOps.autocontrast(image)
-        layout = _detect_page_layout(image)
-        text, confidence = _recognize(image, psm=layout.psm, timeout_ms=timeout_ms)
+        deskewed = _deskew_image(image)
+        try:
+            layout = _detect_page_layout(deskewed)
+            text, confidence = _recognize_layout(deskewed, layout=layout, timeout_ms=timeout_ms)
+        finally:
+            deskewed.close()
     except LocalOCRError:
         raise
     except RuntimeError as exc:
@@ -237,17 +303,21 @@ def ocr_material_page(
         retry_image = load(retry_dpi)
         try:
             retry_image = ImageOps.autocontrast(retry_image)
-            retry_layout = _detect_page_layout(retry_image)
-            # AUTO is the safer retry for a page whose specialized first pass
-            # was weak; otherwise retain the detected layout.
-            retry_psm = (
-                tesserocr.PSM.AUTO
-                if retry_layout.kind in {"sparse", "single_block"}
-                else retry_layout.psm
-            )
-            retry_text, retry_confidence = _recognize(
-                retry_image, psm=retry_psm, timeout_ms=timeout_ms
-            )
+            retry_deskewed = _deskew_image(retry_image)
+            try:
+                retry_layout = _detect_page_layout(retry_deskewed)
+                # Preserve explicit column order on retry; other weak layouts
+                # use AUTO to avoid repeating a bad specialized segmentation.
+                if retry_layout.kind == "two_column":
+                    retry_text, retry_confidence = _recognize_layout(
+                        retry_deskewed, layout=retry_layout, timeout_ms=timeout_ms
+                    )
+                else:
+                    retry_text, retry_confidence = _recognize(
+                        retry_deskewed, psm=tesserocr.PSM.AUTO, timeout_ms=timeout_ms
+                    )
+            finally:
+                retry_deskewed.close()
             if retry_confidence > confidence or (
                 retry_confidence == confidence and len(retry_text) > len(text)
             ):
