@@ -403,3 +403,30 @@ def test_rescue_path_is_single_bounded_round_trip():
     assert branch.count("_fts_rows(") == 2
     assert "for evidence_query in evidence_queries" not in branch
     assert "broad_query = _fts_query(resolved, broad=True)" not in branch
+
+
+def test_fast_direct_path_skips_neighbor_hydration_structurally():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)" in source
+    assert "neighbor_limit = 0 if fast_direct and rows" in source
+
+
+def test_mixed_fast_and_multifacet_request_does_not_bypass_completeness():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "intent_names and intent_names.issubset(_FAST_INTENTS)" in source
+    assert 'if intent.name in {"value", "definition", "measurement"}:' not in source
+
+
+def test_coverage_selection_uses_same_facet_synonyms_as_coverage_scoring():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    coverage_select = source[source.index("def _coverage_select"):source.index("def retrieve_course_context_v2")]
+    assert "_facet_present(facet, haystack, row_kinds)" in coverage_select
+    assert "if facet_cf in haystack:" not in coverage_select
+
+
+def test_visual_page_artifact_is_generation_and_owner_scoped():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    visual = source[source.index("def _single_page_pdf"):source.index("def _pgvector_available")]
+    assert "owner_user_id=:o AND material_id=:m" in visual
+    assert "index_version=:v AND page_number=:p" in visual
+    assert "visual_pdf_bytes IS NULL" in visual
