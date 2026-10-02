@@ -321,13 +321,22 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
                 if _edit_distance_at_most_one(token, clean):
                     candidates.append((-len(clean), pos, node))
                     break
-    result: list[DentalNode] = []
-    seen = set(already)
-    for _, _, node in sorted(candidates, key=lambda item: (item[0], item[1], item[2].id)):
-        if node.id not in seen:
-            seen.add(node.id)
-            result.append(node)
-    return result
+    # A typo rescue is safe only when the best edit-distance candidate is
+    # unambiguous. Equal-strength candidates mean "unknown", not permission to
+    # guess a dental subject.
+    ordered = sorted(candidates, key=lambda item: (item[0], item[1], item[2].id))
+    if not ordered:
+        return []
+    best_strength = ordered[0][:2]
+    best_nodes = []
+    seen_best: set[str] = set()
+    for strength_len, position, node in ordered:
+        if (strength_len, position) != best_strength:
+            break
+        if node.id not in seen_best:
+            seen_best.add(node.id)
+            best_nodes.append(node)
+    return best_nodes if len(best_nodes) == 1 else []
 
 
 def matched_nodes(query: str) -> list[DentalNode]:
