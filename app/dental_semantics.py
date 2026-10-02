@@ -15,6 +15,8 @@ _DENTAL_NUMBER_CONTEXT_RE = re.compile(
     r"çekim|implant|kök|apikal|furkasyon|oklüz|mandibul|maxill)\w*\b", re.I
 )
 
+_NON_TOOTH_NUMBER_SUFFIX_RE = re.compile(r"^\\s*(?:yaş(?:ında|ındaki)?|sayfa|sf\\.?|page)\\b", re.I)
+
 def _fdi_numbers(text: str) -> tuple[str, ...]:
     matches = list(_FDI_RE.finditer(text))
     if not matches:
@@ -26,6 +28,11 @@ def _fdi_numbers(text: str) -> tuple[str, ...]:
         left = max(0, match.start() - 42)
         right = min(len(text), match.end() + 42)
         window = text[left:right]
+        suffix = text[match.end():min(len(text), match.end() + 18)]
+        # Ages/page references can sit in the same sentence as a real tooth
+        # number. Dental context must not convert them into FDI identities.
+        if _NON_TOOTH_NUMBER_SUFFIX_RE.search(suffix):
+            continue
         if _TOOTH_CONTEXT_RE.search(window) or _DENTAL_NUMBER_CONTEXT_RE.search(window):
             result.append(match.group(0))
     return tuple(dict.fromkeys(result))
