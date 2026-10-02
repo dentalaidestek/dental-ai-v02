@@ -163,7 +163,21 @@ def _query_term_present(text: str, term: str) -> bool:
     clean_term = " ".join((term or "").casefold().split())
     if not clean_term:
         return False
-    escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
+    words = clean_term.split()
+    # Turkish lecture questions naturally inflect long concept words
+    # (çene -> çenenin, geriliği -> geriliğini). For multi-word concepts,
+    # allow a bounded alphabetic suffix on substantial words while keeping
+    # short aliases/abbreviations such as CR, PD, ANB exact.
+    if len(words) > 1:
+        pieces = []
+        for word in words:
+            escaped_word = re.escape(word)
+            if len(word) >= 4 and word.isalpha():
+                escaped_word += r"[a-zçğıöşü]{0,6}"
+            pieces.append(escaped_word)
+        escaped = r"\s+".join(pieces)
+    else:
+        escaped = re.escape(clean_term)
     return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.I))
 
 
