@@ -876,6 +876,23 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         qualifier_hits = sum(1 for item in required_qualifiers if item in row_text_cf)
         qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
         qualifier_penalty = 0.18 * (1.0 - qualifier_score) if required_qualifiers else 0.0
+        # Prefer qualifiers attached to the subject actually present in this
+        # evidence row. This avoids rewarding "alt" elsewhere in a comparison
+        # when the row is evidence for the "üst" subject. It remains a soft
+        # signal because a chunk boundary may separate a modifier from its fact.
+        local_pairs = [
+            (subject_id, qualifiers)
+            for subject_id, qualifiers in requirement.subject_qualifiers
+            if subject_id in features.node_ids
+        ]
+        if local_pairs:
+            local_total = sum(len(qualifiers) for _, qualifiers in local_pairs)
+            local_hits = sum(
+                1 for _, qualifiers in local_pairs for item in qualifiers
+                if item in row_text_cf
+            )
+            local_score = local_hits / max(1, local_total)
+            qualifier_penalty = max(qualifier_penalty, 0.24 * (1.0 - local_score))
         # Negated facts are useful for a negation-seeking question, but can
         # invert an ordinary positive question. Keep this a bounded rerank
         # signal rather than a hard gate: many exam-style negative questions
