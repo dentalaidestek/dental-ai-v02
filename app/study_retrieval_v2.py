@@ -1235,7 +1235,26 @@ def retrieve_course_context_v2(
     study_question_task = bool(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )
-    if exhaustive_questions:
+    if study_task and study_task.requires_coverage and not study_question_task and not exhaustive_questions:
+        # Broad summary/explanation/generation must sample the whole published
+        # course deterministically instead of collapsing back to a normal top-k
+        # lexical query. Metadata scanning is lightweight; only bounded selected
+        # representatives are hydrated.
+        requested_count = 24
+        study_plan = classify_dental_study_plan(query)
+        if study_plan and study_plan.count:
+            requested_count = min(48, max(8, study_plan.count))
+        coverage_plan = get_or_build_coverage_plan(
+            session, owner_user_id=owner_user_id, course_id=course_id,
+            requested_count=requested_count,
+        )
+        rows = _coverage_evidence_rows(
+            session, owner_user_id=owner_user_id, course_id=course_id,
+            chunk_ids=list(coverage_plan.covered_chunk_ids),
+            limit=min(48, max(8, requested_count)),
+        )
+        has_more_questions = False
+    elif exhaustive_questions:
         question_limit = 16
         question_rows = _question_rows(
             session,
@@ -1442,13 +1461,13 @@ def retrieve_course_context_v2(
     intent = classify_dental_intent(resolved)
     logger.info(
         "Academic V2 retrieval selected. mode=%s intent=%s evidence_rows=%s",
-        "questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts"),
+        "coverage" if (study_task and study_task.requires_coverage and not study_question_task and not exhaustive_questions) else ("questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts")),
         intent.name,
         len(rows),
     )
     result = RetrievalResult(
         resolved_query=resolved,
-        retrieval_mode="questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts"),
+        retrieval_mode="coverage" if (study_task and study_task.requires_coverage and not study_question_task and not exhaustive_questions) else ("questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts")),
         has_more=bool(exhaustive_questions and has_more_questions),
     )
     for row in rows:
@@ -1471,7 +1490,10 @@ def retrieve_course_context_v2(
         if evidence.material_id not in result.source_material_ids:
             result.source_material_ids.append(evidence.material_id)
 
-    if exhaustive_questions:
+    if study_task and study_task.requires_coverage and not study_question_task and not exhaustive_questions:
+        result.evidence_sufficient = bool(result.evidence)
+        result.evidence_confidence = 1.0 if result.evidence else 0.0
+    elif exhaustive_questions:
         result.evidence_sufficient = bool(result.evidence)
         result.evidence_confidence = 1.0 if result.evidence else 0.0
     elif study_question_task:
