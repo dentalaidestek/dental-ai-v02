@@ -774,3 +774,11 @@ def test_standalone_wh_question_does_not_inherit_prior_subject():
     history = [{"role": "USER", "content": "Pulpitis nedir?"}]
     current = "Neden dentin hassasiyeti oluşur?"
     assert resolve_followup_query(current, history) == current
+
+
+def test_comparison_sides_keep_qualifiers_for_repeated_same_subject():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("alt sağ üçüncü molar ile üst sol üçüncü moları karşılaştır")
+    assert len(plan.comparison_sides) == 2
+    assert {"alt", "sağ"}.issubset(set(plan.comparison_sides[0][1]))
+    assert {"üst", "sol"}.issubset(set(plan.comparison_sides[1][1]))
