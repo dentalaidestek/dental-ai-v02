@@ -13,13 +13,13 @@ class _FakeGemini:
         yield "parça"
 
 
-def test_v2_generation_is_fixed_to_gemini_38_and_streams(monkeypatch):
+def test_v2_generation_uses_configured_single_model_and_streams(monkeypatch):
     fake = _FakeGemini()
     monkeypatch.delenv("STUDY_V2_GEMINI_MODEL", raising=False)
     monkeypatch.setattr(ai_v2, "get_provider", lambda name: fake if name == "gemini" else None)
     retrieval = RetrievalResult(note_context=["[KANIT sayfa=2]\nMetin"], evidence_sufficient=True)
     assert list(ai_v2.stream_rag_v2("Endodonti", "Nedir?", [], retrieval)) == ["Birinci ", "parça"]
-    assert fake.model == "gemini-3.8-flash"
+    assert fake.model == ai_v2.ACADEMIC_V2_MODEL == "gemini-3.5-flash-lite"
 
 
 def test_v2_nonstreaming_wrapper_joins_stream(monkeypatch):
