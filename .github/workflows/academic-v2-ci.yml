@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install production web dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-web.lock
       - name: Compile Academic V2 modules
         run: |
           python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/academic_coverage.py app/academic_generation.py app/academic_generation_jobs.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_knowledge_relations.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/dental_specialty_concepts_extended.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
