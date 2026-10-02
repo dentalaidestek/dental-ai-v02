@@ -568,18 +568,33 @@ def test_question_understanding_does_not_turn_treatment_subject_into_requested_t
     assert "treatment" not in plan.requested_facets
 
 
-def test_followup_resolution_uses_history_only_for_dependent_language():
+def test_followup_resolution_uses_only_prior_user_subject_identity():
     history = [
         {"role": "USER", "content": "Irreversible pulpitis nedir?"},
-        {"role": "ASSISTANT", "content": "Notlara göre irreversible pulpitis..."},
+        {"role": "ASSISTANT", "content": "Apikal periodontitis ve nekroz da ayırıcı tanıda geçebilir."},
     ]
-    for query in ("peki tedavisi?", "bunun komplikasyonları?", "ya bunun tanısı?", "niye olur?"):
-        resolved = namespace["resolve_followup_query"](query, history)
-        assert "Önceki bağlam:" in resolved, query
-    for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
-        resolved = namespace["resolve_followup_query"](query, history)
-        assert "Önceki bağlam:" not in resolved, query
+    resolved = namespace["resolve_followup_query"]("peki tedavisi?", history)
+    assert "pulpitis" in resolved.casefold()
+    assert "apikal periodontitis" not in resolved.casefold()
+    assert "nekroz" not in resolved.casefold()
 
+    # An explicit new subject must override conversation history.
+    explicit = namespace["resolve_followup_query"]("peki SNB nedir?", history)
+    assert "SNB" in explicit
+    assert "pulpitis" not in explicit.casefold()
+
+    # Chained dependent turns skip the unresolved middle turn and recover the
+    # last self-contained USER subject.
+    chained = history + [
+        {"role": "USER", "content": "peki tedavisi?"},
+        {"role": "ASSISTANT", "content": "Tedavi cevabı..."},
+    ]
+    resolved_chain = namespace["resolve_followup_query"]("bunun komplikasyonları?", chained)
+    assert "pulpitis" in resolved_chain.casefold()
+    assert "tedavisi" not in resolved_chain.casefold()
+
+    for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
+        assert namespace["resolve_followup_query"](query, history) == query
 
 def test_question_understanding_conservative_typo_rescue():
     from app.dental_knowledge_graph import matched_nodes
