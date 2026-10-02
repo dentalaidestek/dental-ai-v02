@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 _PAGE_PDF_CACHE_LOCK = threading.Lock()
 _PAGE_PDF_CACHE: "OrderedDict[tuple[str, int], bytes]" = OrderedDict()
 _PAGE_PDF_CACHE_MAX = 24
+_PAGE_PDF_MAX_BYTES = 8 * 1024 * 1024
 
 _FOLLOWUP_RE = re.compile(
     r"^(?:peki|tamam|devam|neden|niye|nasıl|hangisi|hangileri|bunu|bunun|burada|"
@@ -256,6 +257,8 @@ def _single_page_pdf(
             output = io.BytesIO()
             writer.write(output)
             data = output.getvalue()
+            if len(data) > _PAGE_PDF_MAX_BYTES:
+                raise ValueError("visual page artifact exceeds bounded size")
         finally:
             stream = getattr(reader, "stream", None)
             if stream and hasattr(stream, "close"):
