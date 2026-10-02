@@ -97,7 +97,7 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
 
     # Long PDF text layers can still be unusable when fonts map glyphs to
     # garbage. Detect that without penalizing normal Turkish/Latin dental terms.
-    tokens = re.findall(r"\\S+", text)
+    tokens = re.findall(r"\S+", text)
     if len(tokens) >= 12:
         singletons = sum(1 for token in tokens if len(token.strip(".,;:!?()[]{}")) == 1)
         if singletons / len(tokens) > 0.42:

@@ -982,3 +982,15 @@ def test_reranker_reserves_each_explicit_subject_before_truncation():
         for node_id in analyze_dental_text(f"{row[5]}\n{row[7]}").node_ids
     }
     assert {"sna", "snb"}.issubset(selected_nodes), [row[0] for row in selected]
+
+
+def test_ocr_quality_regexes_use_real_whitespace_tokenization():
+    from app.study_index_worker import _text_quality
+    from app.study_local_ocr import _needs_quality_retry
+
+    fragmented = " ".join(["A"] * 30)
+    ok, reason = _text_quality(fragmented)
+    assert ok is False
+    assert reason == "FRAGMENTED_GLYPHS"
+
+    assert _needs_quality_retry("A" + (" " * 100) + "B", 70) is True

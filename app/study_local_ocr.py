@@ -378,7 +378,7 @@ def _recognize(image: Image.Image, *, psm, timeout_ms: int) -> tuple[str, int]:
 def _needs_quality_retry(text: str, confidence: int) -> bool:
     if confidence < _int_env("STUDY_V2_LOCAL_OCR_RETRY_CONFIDENCE", 58, 20, 90):
         return True
-    compact = re.sub(r"\\s+", "", text or "")
+    compact = re.sub(r"\s+", "", text or "")
     if len(compact) < 40:
         # A short but confidently recognized heading/slide label is not by
         # itself evidence that a second full render will recover more text.
