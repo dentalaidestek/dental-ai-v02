@@ -179,6 +179,14 @@ _NEGATION_REQUEST_RE = re.compile(
     r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\\b",
     re.I,
 )
+def _asks_negation(query: str) -> bool:
+    text = (query or "").casefold()
+    return bool(re.search(
+        r"(?iu)\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
+        r"hariç|yanlıştır|önerilmez|kaçınılmalı|kaçınılmalıdır|kontrendike\s+değildir)\b",
+        text,
+    ))
+
 _COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
 
 
@@ -323,7 +331,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         specialties=specialties,
         qualifiers=_query_qualifiers(clean),
         comparison_terms=comparison_terms,
-        asks_negation=bool(_NEGATION_REQUEST_RE.search(clean)),
+        asks_negation=_asks_negation(clean),
         subject_count=len(subject_ids) if subject_ids else len(comparison_terms),
         unresolved_subject=not bool(subject_ids or subject_terms),
         constraint_node_ids=tuple(dict.fromkeys(node.id for node in constraint_nodes)),
