@@ -845,3 +845,13 @@ def test_coverage_selector_accepts_shared_query_features_contract():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
     assert "def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None, query_features=None)" in source
     assert "query_features=query_features" in source[source.index("def _coverage_select"):source.index("def retrieve_course_context_v2")]
+
+
+def test_false_insufficient_recovery_is_bounded_to_safe_signals():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    suff = source[source.index("def _evidence_sufficiency"):source.index("def _coverage_select")]
+    assert "_FACET_SEMANTIC_KINDS" in source
+    assert '"tedavi": ("procedure",)' in source
+    assert 'and "measurement" in qf.kinds' in suff
+    assert "requested_nodes.intersection(features.node_ids)" in suff
+    assert "bare_value_re" in suff
