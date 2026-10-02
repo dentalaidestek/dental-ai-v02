@@ -94,3 +94,40 @@ def test_value_parser_keeps_offsets_for_future_subject_binding():
     assert text_value[evidence[0].start:evidence[0].end] == "82°"
     assert text_value[evidence[1].start:evidence[1].end] == "80°"
     assert evidence[0].end < evidence[1].start
+
+
+def test_value_assertion_distinguishes_reference_observation_and_variability():
+    from app.dental_semantics import extract_value_evidence, classify_value_assertion
+
+    cases = (
+        ("SNA'nın normal değeri 82°'dir.", "reference"),
+        ("SNA genellikle 82° civarındadır.", "reference"),
+        ("Bu hastada SNA 86° ölçüldü.", "observation"),
+        ("Olgu 3'te SNB 74° saptandı.", "observation"),
+        ("Bu örneklemde ortalama ANB 5° bulundu.", "observation"),
+        ("ANB değeri hastaya göre 2° ile 7° arasında değişebilir.", "variable"),
+        ("SNA kesinlikle 82°'dir.", "asserted"),
+        ("SNA 82°.", "unknown"),
+    )
+    for text_value, expected in cases:
+        values = extract_value_evidence(text_value)
+        assert values, text_value
+        assertion, confidence = classify_value_assertion(text_value, values[0])
+        assert assertion == expected, (text_value, assertion, values)
+        assert 0.0 < confidence <= 1.0
+
+
+def test_case_measurements_cannot_masquerade_as_reference_values():
+    from app.dental_semantics import extract_value_evidence, classify_value_assertion
+
+    passages = (
+        "Hasta A'da SNA 86° ölçüldü.",
+        "Hasta B'de SNA 78° ölçüldü.",
+        "Kontrol olgusunda SNA 84° saptandı.",
+    )
+    roles = []
+    for passage in passages:
+        value = extract_value_evidence(passage)[0]
+        roles.append(classify_value_assertion(passage, value)[0])
+    assert roles == ["observation", "observation", "observation"]
+    assert "reference" not in roles
