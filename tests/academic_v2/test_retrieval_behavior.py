@@ -324,6 +324,13 @@ def test_specific_phrase_does_not_add_overlapping_generic_seed():
     assert ids.count("probing_depth") <= 1
 
 
+def test_semantic_matching_normalizes_turkish_capital_i_for_latin_dental_terms():
+    from app.dental_semantics import analyze_dental_text
+
+    features = analyze_dental_text("İrreversible pulpitis tedavisi ve klinik yaklaşım.")
+    assert "irreversible_pulpitis" in features.node_ids
+
+
 def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
     import json
     from app.dental_semantics import analyze_dental_text
@@ -915,4 +922,4 @@ def test_semantic_facet_fallback_cannot_bypass_safe_allowlist():
 
 def test_semantic_profile_bumped_after_matching_changes():
     source = Path("app/study_index_worker.py").read_text(encoding="utf-8")
-    assert '"schema": "academic-v2-dental-semantics-7"' in source
+    assert '"schema": "academic-v2-dental-semantics-8"' in source
