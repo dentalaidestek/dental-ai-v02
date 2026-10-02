@@ -1084,11 +1084,34 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None) ->
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
-    if not facets:
-        return rows[:limit]
     selected: list = []
     selected_ids: set[int] = set()
-    # First reserve at most one high-ranked chunk for each requested facet,
+    # Multi-subject questions need diversity before truncation. The primary FTS
+    # query may correctly retrieve SNA/SNB/ANB in one DB round-trip, but a pure
+    # relevance cut can keep several chunks for one subject and discard another.
+    # Reserve one best-ranked evidence row per explicit required subject first.
+    for subject_id in requirement.subject_node_ids:
+        candidates = []
+        for row in rows:
+            if int(row[0]) in selected_ids:
+                continue
+            features = _row_semantic_features(row)
+            if subject_id in features.node_ids:
+                candidates.append(row)
+        if candidates:
+            selected.append(candidates[0])
+            selected_ids.add(int(candidates[0][0]))
+        if len(selected) >= limit:
+            return selected
+    if not facets:
+        for row in rows:
+            if int(row[0]) not in selected_ids:
+                selected.append(row)
+                selected_ids.add(int(row[0]))
+            if len(selected) >= limit:
+                break
+        return selected
+    # Then reserve at most one high-ranked chunk for each requested facet,
     # preferring evidence that also remains anchored to the query subject.
     for facet in facets:
         candidates = []
