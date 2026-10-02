@@ -16,7 +16,7 @@ from app.study_provider import (
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
-from app.dental_query_intent import classify_dental_intent
+from app.dental_query_intent import build_dental_requirement_plan
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +44,17 @@ _INTENT_RESPONSE_RULES = {
 
 
 def _response_contract(question: str) -> str:
-    intent = classify_dental_intent(question)
-    return _INTENT_RESPONSE_RULES.get(
-        intent.name,
-        "Sorunun istediği bilgiye doğrudan cevap ver; kanıt dışı ayrıntıyla cevabı genişletme.",
-    )
-
+    plan = build_dental_requirement_plan(question)
+    names = [item.name for item in plan.intents if item.name != "general"]
+    rules = [_INTENT_RESPONSE_RULES[name] for name in names if name in _INTENT_RESPONSE_RULES]
+    if not rules:
+        rules = ["Sorunun istediği bilgiye doğrudan cevap ver; kanıt dışı ayrıntıyla cevabı genişletme."]
+    if len(rules) > 1:
+        return (
+            "Sorudaki her açık isteği ayrı ayrı karşıla ve hiçbirini atlama. "
+            + " ".join(rules)
+        )
+    return rules[0]
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
     context = "\n\n---\n\n".join(retrieval.note_context)
