@@ -302,6 +302,10 @@ def test_ambiguous_short_terms_do_not_seed_graph_without_dental_context():
         ("CAL komutu çalışmadı", "attachment_loss"),
         ("WL bağlantısı", "working_length"),
         ("bu maden benim mine", "enamel"),
+        ("CR değeri CSS ekranında", "centric_relation"),
+        ("PD hızlı şarj standardı", "probing_depth"),
+        ("WL kablosuz bağlantı", "working_length"),
+        ("cep uygulaması güncellendi", "periodontal_pocket"),
     ]
     for query, forbidden in negatives:
         ids = {node.id for node in matched_nodes(query)}
