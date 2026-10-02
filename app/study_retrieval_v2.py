@@ -475,6 +475,17 @@ _FACET_SEARCH_TERMS = {
     "kontrendikasyon": ("kontrendikasyon", "contraindication", "sakınca"),
 }
 
+_FACET_SEMANTIC_KINDS = {
+    "tanı": ("diagnosis", "finding", "imaging"),
+    "tedavi": ("procedure",),
+    "sınıflama": ("classification",),
+    "ölçüm": ("measurement",),
+    "normal değer": ("measurement",),
+    "anatomi": ("anatomy", "relation"),
+    "radyografik bulgu": ("imaging", "finding"),
+}
+
+
 
 def _facet_present(
     facet: str,
@@ -490,8 +501,11 @@ def _facet_present(
     # user intent that owns this facet. This recovers source wording such as a
     # named procedure for a treatment question without treating arbitrary
     # same-specialty text as facet evidence.
+    allowed = {
+        item.casefold() for item in _FACET_SEMANTIC_KINDS.get(facet, ())
+    }
     preferred = {item.casefold() for item in preferred_kinds}
-    return bool(preferred.intersection(semantic_kinds))
+    return bool(allowed.intersection(preferred).intersection(semantic_kinds))
 
 
 def _fts_query(query: str, *, broad: bool = False) -> str:
