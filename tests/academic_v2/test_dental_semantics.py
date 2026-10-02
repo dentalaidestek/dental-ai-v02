@@ -148,3 +148,28 @@ def test_observation_binding_never_becomes_reference_by_proximity():
     assert bound
     assert bound[0].subject_node_id == "sna"
     assert bound[0].assertion == "observation"
+
+def test_real_note_gonial_values_keep_age_context():
+    from app.dental_semantics import bind_value_evidence
+    a = bind_value_evidence("Gonial açı yeni doğmuş bebeklerde oldukça büyüktür (180 dereceye yakın).")
+    b = bind_value_evidence("Bebeklik döneminde normal kabul edilen bu açı değeri yaşın ilerlemesine, büyüme ve gelişime bağlı olarak küçülür ve ortalama 130 dereceye iner.")
+    assert a and b
+    assert "newborn" in a[0].qualifiers
+    assert "infant" in b[0].qualifiers
+    assert "growth" in b[0].qualifiers
+    assert a[0].value.text != b[0].value.text
+
+def test_real_note_fetal_measurements_are_conditioned_observations():
+    from app.dental_semantics import bind_value_evidence
+    source = "49 mm fetüste vertikal çap 1 mm; 160 mm fetüste vertikal çap 3,5 mm; 216 mm fetüste vertikal çap 7,5 mm."
+    values = bind_value_evidence(source)
+    measured = [item for item in values if item.value.text in {'1 mm', '3,5 mm', '7,5 mm'}]
+    assert len(measured) == 3
+    assert all("fetal" in item.qualifiers for item in measured)
+
+def test_chunk_metadata_persists_value_context_not_consensus():
+    from pathlib import Path
+    source = Path("app/study_index_worker.py").read_text(encoding="utf-8")
+    assert '"qualifiers": item.qualifiers' in source
+    assert '"context": item.context_text' in source
+    assert '"consensus"' not in source.split("def _chunk_slice", 1)[1]
