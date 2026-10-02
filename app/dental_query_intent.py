@@ -79,3 +79,55 @@ def combined_relation_hints(intents: tuple[DentalIntent, ...], *, limit: int = 1
             if len(result) >= limit:
                 return tuple(result)
     return tuple(result)
+
+
+_STUDY_GENERATION_RE = re.compile(
+    r"\b(?:soru|test|quiz|flashcard|kart|çalışma sorusu|deneme)\b.{0,48}"
+    r"\b(?:üret|hazırla|oluştur|çıkar|sor)\b|"
+    r"\b(?:üret|hazırla|oluştur|çıkar)\b.{0,48}\b(?:soru|test|quiz|flashcard|kart)\b",
+    re.I,
+)
+_STUDY_COVERAGE_RE = re.compile(
+    r"\b(?:tüm|bütün|tamamı|notun tamamı|dersin tamamı|her konu|bütün konu|"
+    r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
+    re.I,
+)
+_STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
+_STUDY_COUNT_RE = re.compile(r"\b(\d{1,3})\s*(?:adet\s*)?(?:soru|test|quiz|flashcard|kart)\b", re.I)
+
+
+@dataclass(frozen=True)
+class DentalStudyPlan:
+    mode: str
+    count: int | None = None
+    difficulty: str | None = None
+    question_types: tuple[str, ...] = ()
+    coverage_required: bool = False
+
+
+def classify_dental_study_plan(query: str) -> DentalStudyPlan | None:
+    """Detect student study-generation requests without affecting normal QA."""
+    clean = " ".join((query or "").split())
+    if not _STUDY_GENERATION_RE.search(clean):
+        return None
+    count_match = _STUDY_COUNT_RE.search(clean)
+    count = min(200, int(count_match.group(1))) if count_match else None
+    difficulty_match = _STUDY_DIFFICULTY_RE.search(clean)
+    kinds: list[str] = []
+    lowered = clean.casefold()
+    if any(term in lowered for term in ("çoktan seçmeli", "test", "mcq")):
+        kinds.append("mcq")
+    if any(term in lowered for term in ("açık uçlu", "klasik")):
+        kinds.append("open")
+    if any(term in lowered for term in ("doğru yanlış", "doğru/yanlış")):
+        kinds.append("true_false")
+    if any(term in lowered for term in ("flashcard", "kart")):
+        kinds.append("flashcard")
+    coverage = bool(_STUDY_COVERAGE_RE.search(clean))
+    return DentalStudyPlan(
+        mode="coverage" if coverage else "topic",
+        count=count,
+        difficulty=difficulty_match.group(0).casefold() if difficulty_match else None,
+        question_types=tuple(dict.fromkeys(kinds)),
+        coverage_required=coverage,
+    )
