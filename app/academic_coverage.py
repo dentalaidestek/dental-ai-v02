@@ -2,6 +2,7 @@
 from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
+import hashlib
 import json
 import threading
 import time
@@ -100,17 +101,19 @@ class CoverageAccumulator:
             group["count"] += 1
             cid = int(row[0])
             reps = group["representatives"]
-            # Deterministic bounded compaction. Keeping every Nth representative
-            # after overflow preserves coverage across the whole section instead
-            # of biasing hydration toward its first pages.
-            reps.append(cid)
+            # Deterministic min-hash reservoir: bounded memory, stable across
+            # retries and independent of page order/first-page bias.
+            seed = f"{material_id}|{section.casefold()}|{'|'.join(nodes)}|{cid}".encode("utf-8")
+            score = int.from_bytes(hashlib.blake2b(seed, digest_size=8).digest(), "big")
+            reps.append((score, cid))
             if len(reps) > self.representative_limit:
-                reps[:] = reps[::2]
+                reps.sort(key=lambda item: (item[0], item[1]))
+                del reps[self.representative_limit:]
 
     def build(self, requested_count: int) -> CoveragePlan:
         items = []
         for (material_id, _section_key, nodes), group in self._groups.items():
-            chunk_ids = tuple(group["representatives"])
+            chunk_ids = tuple(cid for _score, cid in sorted(group["representatives"]))
             weight = int(group["count"])
             items.append((material_id, group["section"], nodes, chunk_ids, weight))
         items.sort(key=lambda x: (x[0], x[1].casefold(), x[3][0] if x[3] else 0))
