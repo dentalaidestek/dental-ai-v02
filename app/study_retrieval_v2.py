@@ -1185,8 +1185,19 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         # Strong subject evidence for one facet must never authorize synthesis
         # of another requested facet that is absent from the user's notes.
         hard_complete = not missing
+        comparison_side_complete = True
+        if "comparison" in intent_names and requirement.comparison_sides:
+            for side_nodes, side_qualifiers in requirement.comparison_sides:
+                if side_nodes and not any(
+                    bool(set(side_nodes).intersection(features.node_ids))
+                    and all(qualifier_present(item, f"{row[5] or ''} {row[7] or ''}") for item in side_qualifiers)
+                    for row, features in zip(rows, row_features)
+                ):
+                    comparison_side_complete = False
+                    break
         comparison_complete = (
-            subject_qualifier_complete if "comparison" in intent_names else True
+            subject_qualifier_complete and comparison_side_complete
+            if "comparison" in intent_names else True
         )
         sufficient = (
             anchored and hard_complete and multi_subject_complete
