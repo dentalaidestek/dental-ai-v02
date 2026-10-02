@@ -45,24 +45,23 @@ class DentalSemanticFeatures:
     measurements: tuple[str, ...]
     tooth_numbers: tuple[str, ...]
     imaging_types: tuple[str, ...]
+    negated_node_ids: tuple[str, ...] = ()
 
 def analyze_dental_text(text: str) -> DentalSemanticFeatures:
     clean = " ".join((text or "").split())
-    nodes = matched_nodes(clean)
-    return DentalSemanticFeatures(
+    nodes = matched_nodes(clean)\n    negated = []\n    lowered = clean.casefold()\n    for node in nodes:\n        for alias in (node.label, *node.aliases):\n            pos = lowered.find(alias.casefold())\n            if pos < 0:\n                continue\n            window = lowered[max(0, pos - 48):pos]\n            if re.search(r"\\b(?:yok|değil|izlenmedi|saptanmadı|görülmedi|bulunmadı|without|no|not)\\b", window):\n                negated.append(node.id)\n                break\n    return DentalSemanticFeatures(
         node_ids=tuple(dict.fromkeys(node.id for node in nodes)),
         specialties=tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general")),
         kinds=tuple(dict.fromkeys(node.kind for node in nodes)),
         measurements=tuple(dict.fromkeys(m.group(0).strip() for m in _VALUE_RE.finditer(clean))),
         tooth_numbers=_fdi_numbers(clean),
-        imaging_types=tuple(name for name, pattern in _IMAGING if pattern.search(clean)),
-    )
+        imaging_types=tuple(name for name, pattern in _IMAGING if pattern.search(clean)),\n        negated_node_ids=tuple(dict.fromkeys(negated)),\n    )
 
 def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticFeatures) -> float:
     score = 0.0
-    qnodes, cnodes = set(query.node_ids), set(chunk.node_ids)
+    qnodes, cnodes = set(query.node_ids), set(chunk.node_ids)\n    # Do not reward a chunk as positive evidence when the queried concept is\n    # explicitly negated in that chunk. It may still be useful as contrast.\n    positive_cnodes = cnodes - set(chunk.negated_node_ids)
     if qnodes:
-        score += 0.55 * (len(qnodes & cnodes) / len(qnodes))
+        score += 0.55 * (len(qnodes & positive_cnodes) / len(qnodes))
     qspec, cspec = set(query.specialties), set(chunk.specialties)
     if qspec and qspec & cspec:
         score += 0.12
