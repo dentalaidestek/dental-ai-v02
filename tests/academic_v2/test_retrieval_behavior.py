@@ -189,3 +189,13 @@ def test_low_confidence_relation_does_not_pollute_default_expansion():
         relation_hints=("has_treatment", "treats", "has_procedure"),
     )}
     assert "kanal tedavisi" not in terms
+
+
+def test_dental_graph_relations_have_no_dangling_nodes_and_track_coverage():
+    from app.dental_knowledge_graph import dental_graph_coverage
+
+    report = dental_graph_coverage()
+    assert report["dangling_edges"] == ()
+    assert report["node_count"] >= 180
+    # Raise this threshold as curated relation packs connect the vocabulary.
+    assert report["coverage_ratio"] >= 0.50
