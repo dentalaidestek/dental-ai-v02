@@ -949,12 +949,20 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
         special_match = min(special_match, 1.0 if any(
             set(qf.imaging_types).intersection(features.imaging_types) for features in row_features
         ) else 0.0)
-    if intent.name in {"value", "measurement"}:
+    if intent_names.intersection({"value", "measurement"}):
         has_measurement = any(features.measurements for features in row_features)
-        # Measurement questions can still be answered textually ("SNA açısı")
-        # when no numeric value is requested, so this is a confidence component,
-        # not an unconditional hard failure.
-        special_match = min(special_match, 1.0 if has_measurement else 0.45)
+        # A literal value request ("kaç", "değer", numeric/unit wording) must
+        # not authorize generation from a chunk that only names the measure.
+        literal_value_request = bool(re.search(
+            r"\\b(?:kaç(?:tır)?|değer(?:i|leri)?|normal\\s+değer|ortalama|"
+            r"mm|cm|derece|°|yüzde|%)\\b",
+            query,
+            re.I,
+        ))
+        if literal_value_request and not has_measurement:
+            special_match = 0.0
+        else:
+            special_match = min(special_match, 1.0 if has_measurement else 0.45)
 
     facet_component = coverage if facets else 1.0
     confidence = min(1.0, (
@@ -971,7 +979,11 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     has_specific_anchor = bool(qf.node_ids or qf.tooth_numbers or qf.imaging_types)
     anchored = best_alignment >= (0.34 if has_specific_anchor else 0.24)
     if intent_names and intent_names.issubset(_FAST_INTENTS):
-        sufficient = anchored and confidence >= 0.34
+        literal_value_missing = (
+            bool(intent_names.intersection({"value", "measurement"}))
+            and special_match == 0.0
+        )
+        sufficient = anchored and not literal_value_missing and confidence >= 0.34
     elif facets:
         # Explicit multi-facet requests are a hard completeness contract.
         # Strong subject evidence for one facet must never authorize synthesis
