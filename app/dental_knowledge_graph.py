@@ -368,10 +368,18 @@ def matched_nodes(query: str) -> list[DentalNode]:
         if node.id not in seen:
             seen.add(node.id)
             selected.append(node)
-    # Typo rescue runs only when exact matching found no canonical subject.
-    # Exact subjects must never gain extra fuzzy graph seeds.
-    if not selected:
-        selected.extend(_fuzzy_long_alias_nodes(lowered, seen))
+    # Typo rescue normally runs only when exact matching found no canonical
+    # subject. Imaging-only exact matches are constraints, however, so they must
+    # not suppress recovery of one unambiguous long non-imaging subject typo
+    # ("CBCT'de mandbular kanal ..."). Abbreviations remain non-fuzzy.
+    exact_has_subject = any(node.kind != "imaging" for node in selected)
+    if not exact_has_subject:
+        fuzzy = [
+            node for node in _fuzzy_long_alias_nodes(lowered, seen)
+            if node.kind != "imaging"
+        ]
+        if fuzzy:
+            selected.extend(fuzzy)
     return selected
 
 
