@@ -81,7 +81,8 @@ assert "PD" not in namespace["_concept_alternatives"]("rapidly ilerleyen")
 source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
 assert "def _coverage_select" in source
 assert "candidate_target = max(limit * 4, 24)" in source
-assert "if len(rows) < max(limit, 6):" in source
+assert "if provisional.sufficient" in source
+assert "neighbor_limit = (" in source
 assert "rows = _coverage_select(" in source
 
 
