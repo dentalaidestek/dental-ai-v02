@@ -41,3 +41,15 @@ def test_negation_is_clause_local_and_does_not_erase_positive_mentions():
     )
     assert "periapical_lesion" in mixed.node_ids
     assert "periapical_lesion" not in mixed.negated_node_ids
+
+
+def test_fdi_context_does_not_capture_age_or_page_next_to_real_tooth():
+    from app.dental_semantics import analyze_dental_text
+
+    mixed = analyze_dental_text("35 yaşındaki hastanın 36 numaralı dişi endodontik olarak değerlendirildi")
+    assert "36" in mixed.tooth_numbers
+    assert "35" not in mixed.tooth_numbers
+
+    page = analyze_dental_text("46 sayfa referansı; 36 numaralı diş için kök kanal anatomisi")
+    assert "36" in page.tooth_numbers
+    assert "46" not in page.tooth_numbers
