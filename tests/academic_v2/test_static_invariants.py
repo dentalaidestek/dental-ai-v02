@@ -205,3 +205,17 @@ def test_parse_and_ocr_slices_feed_ready_pages_downstream_early():
     assert "return _next_checkpoint_stage(session, job)" in parse_slice
     assert "return _next_checkpoint_stage(session, job)" in ocr_slice
     assert "return _next_checkpoint_stage(session, job)" in chunk_slice
+
+
+def test_streaming_visual_io_happens_after_retrieval_session_closes():
+    main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    endpoint = main_source.split('@app.post("/notes/courses/{course_id}/ai/ask-stream")', 1)[1]
+    endpoint = endpoint.split("# === TEMP_STUDY_TRACE_ENDPOINT_BEGIN ===", 1)[0]
+    with_block = endpoint.index("with Session(engine, expire_on_commit=False) as s:")
+    materialize = endpoint.index("materialize_visual_sources(")
+    owner = endpoint.index("owner_user_id = user.id")
+    # Dedentation before materialization is the contract: storage/PDF work owns
+    # its own short sessions and must not hold the retrieval connection.
+    between = endpoint[with_block:materialize]
+    assert "\n    if retrieval.visual_sources" in between
+    assert materialize < owner
