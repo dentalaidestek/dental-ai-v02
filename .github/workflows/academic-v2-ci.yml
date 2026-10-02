@@ -7,7 +7,9 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - "work/academic-v2-*"
     paths:
       - "app/study_ai_v2.py"
       - "app/study_retrieval_v2.py"
