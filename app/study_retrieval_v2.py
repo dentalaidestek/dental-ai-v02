@@ -1314,13 +1314,21 @@ def retrieve_course_context_v2(
         )
 
     visual_pages: list[tuple[int, int]] = []
-    for item in result.evidence:
-        if item.content_kind in {"TABLE", "VISUAL"} or _VISUAL_QUERY_RE.search(query or ""):
+    # A TABLE/VISUAL chunk can answer an ordinary textual question from its
+    # extracted text; that alone must not trigger PDF/R2 materialization or a
+    # multimodal provider request. Attach source pages only when the user's
+    # current request explicitly requires visual inspection.
+    visual_requested = bool(
+        _VISUAL_QUERY_RE.search(query or "")
+        or any(item.name == "visual" for item in requirement.intents)
+    )
+    if visual_requested:
+        for item in result.evidence:
             key = (item.material_id, item.page_start)
             if key not in visual_pages:
                 visual_pages.append(key)
-        if len(visual_pages) >= 3:
-            break
+            if len(visual_pages) >= 3:
+                break
     if visual_pages:
         material_rows = session.exec(
             text("SELECT id, file_path, mime_type, display_name, active_index_version FROM studymaterial WHERE owner_user_id=:o AND deleted_at IS NULL AND id=ANY(:ids)"),
