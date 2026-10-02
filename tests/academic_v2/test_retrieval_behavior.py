@@ -597,3 +597,14 @@ def test_requirement_plan_exposes_unknown_subject_instead_of_inventing_graph_con
     assert plan.unresolved_subject is False  # lexical subject remains retrievable
     assert not plan.subject_node_ids
     assert plan.subject_terms
+
+
+def test_question_understanding_preserves_multiple_explicit_subjects():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("SNA ve SNB değerleri ile ANB arasındaki ilişki nedir?")
+    assert {"sna", "snb", "anb"}.issubset(set(plan.subject_node_ids))
+    assert plan.subject_count >= 3
+
+    comparison = build_dental_requirement_plan("SNA ile SNB arasındaki fark nedir?")
+    assert comparison.subject_count >= 2
+    assert "comparison" in comparison.requested_facets
