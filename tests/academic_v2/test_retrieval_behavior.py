@@ -1188,3 +1188,16 @@ def test_bound_value_metadata_distinguishes_reference_and_case_observation():
     assert reference.assertion == "reference"
     assert case.assertion == "observation"
     assert reference.value.text != case.value.text
+
+def test_value_gate_prefers_persisted_metadata_and_does_not_use_measurement_kind_as_value():
+    source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    helper = source.split("def _row_value_evidence", 1)[1].split("def _evidence_sufficiency", 1)[0]
+    assert '"value_evidence" in meta' in helper
+    assert 'item.get("assertion") == "reference"' in helper
+    assert "if features.measurements:" not in helper
+
+def test_normal_value_query_requires_reference_assertion():
+    source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    sufficiency = source.split("def _evidence_sufficiency", 1)[1]
+    assert "reference_value_request" in sufficiency
+    assert "require_reference=reference_value_request" in sufficiency
