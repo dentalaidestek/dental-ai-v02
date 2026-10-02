@@ -234,3 +234,44 @@ def test_adversarial_orthodontic_composition_pressure():
 
 def test_adversarial_benchmark_now_exceeds_two_hundred_interpretations():
     assert benchmark_case_count() + 96 + 8 >= 210
+
+
+# Mixed exam/study pressure requested after value-evidence hardening. These cases
+# intentionally exercise composition before any implementation change is made.
+COMPLEX_EXAM_QUERIES = [
+    ("Notun tamamındaki bütün konulardan sınavda çıkabilecek 20 zor soru hazırla.", "study", "generate_questions", True),
+    ("Bütün notu özetle; her konunun sınavda sorulabilecek kritik noktalarını ayrıca belirt.", "study", "summarize", True),
+    ("SNA, SNB ve ANB normal değerlerini karşılaştır ve her birinin neyi değerlendirdiğini açıkla.", "qa", ("value", "comparison", "measurement"), False),
+    ("Yenidoğan ve erişkinde gonial açı değerlerini karşılaştır; büyümeyle değişimini açıkla.", "qa", ("value", "comparison"), False),
+    ("Irreversible ve reversible pulpitisin tanı, bulgu ve tedavi farklarını karşılaştır.", "qa", ("diagnosis", "treatment", "comparison"), False),
+    ("Akut apikal apse ile kronik apikal periodontitisin bulgu ve tedavilerini karşılaştır.", "qa", ("diagnosis", "treatment", "comparison"), False),
+    ("MRONJ için risk faktörleri, klinik bulgular, tanı ve tedaviyi birlikte açıkla.", "qa", ("cause", "diagnosis", "treatment"), False),
+    ("Alt sağ gömülü üçüncü molarda komplikasyonları ve mandibular kanal ilişkisini açıkla.", "qa", ("complication", "anatomy"), False),
+    ("CBCT'de mandibular kanal ile üçüncü molar ilişkisini değerlendir; hangi bulgular riski artırır?", "qa", ("complication", "anatomy"), False),
+    ("Periodontitis sınıflamasını evre ve grade ölçütleriyle özetle.", "qa", ("classification",), False),
+    ("İmplantın endikasyon ve kontrendikasyonlarını karşılaştır.", "qa", ("indication", "contraindication", "comparison"), False),
+    ("NaOCl kazasının nedenleri, bulguları, komplikasyonları ve yönetimini açıkla.", "qa", ("cause", "diagnosis", "complication", "treatment"), False),
+    ("Inferior alveolar sinir bloğunun anatomik hedefini, tekniğini ve komplikasyonlarını anlat.", "qa", ("anatomy", "complication"), False),
+    ("MIH ile dental florozisin klinik bulgularını ve ayırıcı özelliklerini karşılaştır.", "qa", ("diagnosis", "comparison"), False),
+    ("OSCC için risk faktörleri, klinik bulgular ve tanı yaklaşımını özetle.", "qa", ("cause", "diagnosis"), False),
+    ("Kennedy sınıflamasını sınıfları ve ayırt edici özellikleriyle açıkla.", "qa", ("classification",), False),
+    ("ICDAS sınıflamasını başlangıç lezyonundan ileri lezyona doğru sırala ve özetle.", "qa", ("classification",), False),
+    ("Çalışma boyu ile apikal konstriksiyon ilişkisini ve ölçüm mantığını açıkla.", "qa", ("measurement", "anatomy"), False),
+    ("Notta geçen tüm normal değer, yüzde, aralık ve süreleri konu başlıklarına göre özetle.", "study", "summarize", True),
+    ("Notun tamamından 10 çoktan seçmeli, 5 doğru/yanlış ve 5 açık uçlu zor soru hazırla; konuları dengeli dağıt.", "study", "generate_questions", True),
+]
+
+def test_complex_exam_query_matrix_interpretation():
+    from app.dental_query_intent import classify_academic_study_task, build_dental_requirement_plan
+    checked = 0
+    for query, mode, expected, coverage in COMPLEX_EXAM_QUERIES:
+        if mode == "study":
+            task = classify_academic_study_task(query)
+            assert task is not None, query
+            assert task.task == expected, (query, task)
+            assert task.requires_coverage is coverage, (query, task)
+        else:
+            plan = build_dental_requirement_plan(query)
+            assert set(expected).issubset(set(plan.requested_facets)), (query, expected, plan.requested_facets)
+        checked += 1
+    assert checked == 20
