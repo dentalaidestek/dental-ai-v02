@@ -4,6 +4,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 import sys
+import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -40,7 +41,7 @@ def main() -> int:
         try:
             module = _load(path)
         except Exception as exc:
-            failures.append(f"{path.name}::<module>: {type(exc).__name__}: {exc}")
+            failures.append(f"{path.name}::<module>: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
             continue
         for name, fn in inspect.getmembers(module, inspect.isfunction):
             if not name.startswith("test_") or inspect.signature(fn).parameters:
@@ -49,7 +50,7 @@ def main() -> int:
             try:
                 fn()
             except Exception as exc:
-                failures.append(f"{path.name}::{name}: {type(exc).__name__}: {exc}")
+                failures.append(f"{path.name}::{name}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
     print(f"Academic V2 tests executed: {executed}")
     if failures:
         print("FAILURES:")
