@@ -1186,7 +1186,11 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         # of another requested facet that is absent from the user's notes.
         hard_complete = not missing
         comparison_side_complete = True
-        if "comparison" in intent_names and requirement.comparison_sides:
+        repeated_side_subject = bool(
+            len(requirement.comparison_sides) >= 2
+            and set(requirement.comparison_sides[0][0]).intersection(requirement.comparison_sides[1][0])
+        )
+        if "comparison" in intent_names and repeated_side_subject:
             for side_nodes, side_qualifiers in requirement.comparison_sides:
                 if side_nodes and not any(
                     bool(set(side_nodes).intersection(features.node_ids))
