@@ -59,3 +59,17 @@ def test_visual_page_cache_enforces_total_byte_budget(monkeypatch):
         assert ("1:1:v:r", 1) not in retrieval._PAGE_PDF_CACHE
         assert ("1:2:v:r", 1) in retrieval._PAGE_PDF_CACHE
         retrieval._PAGE_PDF_CACHE.clear()
+
+
+def test_account_erasure_evicts_only_erased_owner_visual_cache():
+    import app.study_retrieval_v2 as retrieval
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        retrieval._PAGE_PDF_CACHE.clear()
+        retrieval._PAGE_PDF_CACHE[("31:1:v:r", 1)] = b"erase"
+        retrieval._PAGE_PDF_CACHE[("31:2:v:r", 2)] = b"erase-too"
+        retrieval._PAGE_PDF_CACHE[("32:1:v:r", 1)] = b"keep"
+    retrieval.invalidate_user_retrieval_caches(31)
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        assert all(not key[0].startswith("31:") for key in retrieval._PAGE_PDF_CACHE)
+        assert ("32:1:v:r", 1) in retrieval._PAGE_PDF_CACHE
+        retrieval._PAGE_PDF_CACHE.clear()

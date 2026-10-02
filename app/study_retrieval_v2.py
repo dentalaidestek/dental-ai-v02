@@ -23,7 +23,7 @@ from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms, node_label
 from app.dental_query_intent import query_qualifiers, qualifier_present, build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intents, combined_relation_hints
-from app.academic_coverage import CoverageAccumulator, build_coverage_plan, cache_coverage_plan, cached_coverage_plan, invalidate_coverage_cache
+from app.academic_coverage import CoverageAccumulator, build_coverage_plan, cache_coverage_plan, cached_coverage_plan, invalidate_coverage_cache, invalidate_owner_coverage_cache
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,17 @@ _VISUAL_SOURCE_RE = re.compile(
     r"(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b",
     re.I,
 )
+
+def invalidate_user_retrieval_caches(owner_user_id: int) -> None:
+    """Erase all in-process Academic retrieval caches for one erased account."""
+    owner = int(owner_user_id)
+    invalidate_owner_coverage_cache(owner)
+    prefix = f"{owner}:"
+    with _PAGE_PDF_CACHE_LOCK:
+        for key in list(_PAGE_PDF_CACHE):
+            if key[0].startswith(prefix):
+                _PAGE_PDF_CACHE.pop(key, None)
+
 
 def invalidate_retrieval_caches(
     owner_user_id: int, course_id: int, material_ids: list[int] | tuple[int, ...] = (),

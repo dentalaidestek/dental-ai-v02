@@ -71,7 +71,7 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
-from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches
+from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
@@ -11821,6 +11821,7 @@ def admin_center_delete_user(
             _cancel_user_program_reminders(s, target.id)
             _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
             s.commit()
+            invalidate_user_retrieval_caches(target.id)
         except ValueError as exc:
             s.rollback()
             return HTMLResponse(str(exc), status_code=409)
@@ -11868,6 +11869,7 @@ def delete_own_account(
         _cancel_user_program_reminders(s, target.id)
         _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         s.commit()
+        invalidate_user_retrieval_caches(target.id)
 
     for path in set(storage_paths):
         try:

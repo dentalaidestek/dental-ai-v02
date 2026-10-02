@@ -164,6 +164,15 @@ _PLAN_CACHE: dict[tuple[int, int, str, int], tuple[float, CoveragePlan]] = {}
 _PLAN_CACHE_TTL_SECONDS = 300
 _PLAN_CACHE_MAX = 64
 
+def invalidate_owner_coverage_cache(owner_user_id: int) -> None:
+    """Drop every cached academic coverage plan for an erased account."""
+    owner = int(owner_user_id)
+    with _PLAN_CACHE_LOCK:
+        for key in list(_PLAN_CACHE):
+            if key[0] == owner:
+                _PLAN_CACHE.pop(key, None)
+
+
 def invalidate_coverage_cache(owner_user_id: int, course_id: int) -> None:
     """Drop in-process coverage metadata immediately after source deletion."""
     owner, course = int(owner_user_id), int(course_id)
