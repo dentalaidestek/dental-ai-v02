@@ -1171,7 +1171,7 @@ def retrieve_course_context_v2(
             canonical_query = " OR ".join(
                 f'"{term}"' if " " in term else term for term in canonical_subjects
             )
-            precise_query = f"({precise_query}) OR ({canonical_query})"
+            precise_query = f"{precise_query} OR {canonical_query}"
         rows = _fts_rows(
             session,
             owner_user_id=owner_user_id,
@@ -1211,17 +1211,23 @@ def retrieve_course_context_v2(
                     term for term in dict.fromkeys(original_terms[:7] + alias_terms[:3])
                     if term.casefold() not in facet_noise
                 ][:7]
-                subject_query = " OR ".join(
-                    f'"{term}"' if " " in term else term for term in subject_terms
+                # websearch_to_tsquery does not use parentheses for logical
+                # grouping. Keep the single rescue query strict instead:
+                # strongest subject phrase AND one bounded synonym alternative
+                # for each missing facet. The later rerank/coverage gate can
+                # accept aliases, but the DB rescue must not become a broad OR.
+                subject_query = (
+                    f'"{subject_terms[0]}"' if subject_terms and " " in subject_terms[0]
+                    else (subject_terms[0] if subject_terms else "")
                 )
-                facet_groups = []
+                facet_terms = []
                 for facet in missing:
                     hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
-                    facet_groups.append("(" + " OR ".join(
-                        f'"{term}"' if " " in term else term for term in hints[:4]
-                    ) + ")")
-                if subject_query and facet_groups:
-                    rescue_query = f"({subject_query}) " + " ".join(facet_groups)
+                    if hints:
+                        term = hints[0]
+                        facet_terms.append(f'"{term}"' if " " in term else term)
+                if subject_query and facet_terms:
+                    rescue_query = " ".join([subject_query, *facet_terms])
                     rescue_rows = _fts_rows(
                         session,
                         owner_user_id=owner_user_id,
