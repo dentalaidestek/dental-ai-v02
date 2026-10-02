@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
-from app.dental_query_intent import classify_dental_intent
+from app.dental_query_intent import classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
 logger = logging.getLogger(__name__)
@@ -209,8 +209,8 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     original = [token for token in core.split() if len(token) >= 2][:10]
     lowered = clean.casefold()
     extras = _concept_alternatives(clean)
-    intent = classify_dental_intent(clean)
-    for term in graph_expansion_terms(clean, relation_hints=intent.relation_hints):
+    intents = classify_dental_intents(clean)
+    for term in graph_expansion_terms(clean, relation_hints=combined_relation_hints(intents)):
         if term.casefold() not in {item.casefold() for item in extras}:
             extras.append(term)
     return original, extras[:16]
@@ -236,7 +236,7 @@ def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
     """Build a few focused evidence queries instead of one giant OR expression."""
     clean = _normalize_dental_notation(query)
     original, extras = _retrieval_terms(clean)
-    intent = classify_dental_intent(clean)
+    intents = classify_dental_intents(clean)
     anchors = original[:5]
     # Prefer canonical multi-word/graph terms, but keep the user's subject words.
     concept_terms = [term for term in extras if len(term) >= 3][:4]
@@ -244,11 +244,20 @@ def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
     if not subject:
         subject = clean
     queries: list[str] = []
-    for facet in _EVIDENCE_FACETS.get(intent.name, ())[:max_queries]:
-        candidate = f'{subject} "{facet}"' if " " in facet else f"{subject} {facet}"
-        if candidate not in queries:
-            queries.append(candidate)
-    return queries[:max_queries]
+    # Multi-intent questions share one bounded query budget. Give every explicit
+    # requirement one evidence probe before spending remaining probes on depth.
+    facet_groups = [_EVIDENCE_FACETS.get(intent.name, ()) for intent in intents]
+    for depth in range(max((len(group) for group in facet_groups), default=0)):
+        for group in facet_groups:
+            if depth >= len(group):
+                continue
+            facet = group[depth]
+            candidate = f'{subject} "{facet}"' if " " in facet else f"{subject} {facet}"
+            if candidate not in queries:
+                queries.append(candidate)
+            if len(queries) >= max_queries:
+                return queries
+    return queries
 
 
 def _fts_query(query: str, *, broad: bool = False) -> str:
