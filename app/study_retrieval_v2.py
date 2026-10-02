@@ -150,26 +150,35 @@ class RetrievalResult:
 
 
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
-    """Add conversational referents only for short/clearly dependent turns."""
+    """Resolve dependent turns from prior USER subject identity, never answer prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
-    if not clean or not recent_history:
+    if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):
         return clean
-    # Short does not mean dependent: "SNA nedir?" or "ANB kaçtır?" are
-    # self-contained dental questions. Pull history in only when the wording
-    # itself contains a conversational referent.
-    dependent = bool(_FOLLOWUP_RE.search(clean))
-    if not dependent:
+
+    # A conversational marker can still introduce a new explicit subject
+    # ("peki SNB nedir?"). Explicit current graph identity always wins.
+    current_plan = build_dental_requirement_plan(clean)
+    if current_plan.subject_node_ids:
         return clean
-    previous: list[str] = []
-    for item in reversed(recent_history[-6:]):
+
+    # Inspect only a bounded recent window and only USER turns. Assistant
+    # answers may mention distractor diagnoses, measurements or treatments and
+    # must never become retrieval subject identity.
+    for item in reversed(recent_history[-8:]):
+        if str(item.get("role") or "").casefold() not in {"user", "human"}:
+            continue
         content = re.sub(r"\s+", " ", item.get("content") or "").strip()
-        if content:
-            previous.append(content[:700])
-        if len(previous) >= 2:
-            break
-    if not previous:
-        return clean
-    return clean + "\nÖnceki bağlam: " + " | ".join(reversed(previous))
+        if not content:
+            continue
+        prior = build_dental_requirement_plan(content[:700])
+        if not prior.subject_terms:
+            continue
+        # Inherit subject + its explicit modifiers only. Prior intent/facet is
+        # intentionally discarded; the current turn defines what is requested.
+        inherited = " ".join(dict.fromkeys((*prior.qualifiers, *prior.subject_terms))).strip()
+        if inherited:
+            return f"{inherited} — {clean}"
+    return clean
 
 
 def _single_page_pdf(
