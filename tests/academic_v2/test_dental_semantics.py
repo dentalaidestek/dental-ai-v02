@@ -173,3 +173,23 @@ def test_chunk_metadata_persists_value_context_not_consensus():
     assert '"qualifiers": item.qualifiers' in source
     assert '"context": item.context_text' in source
     assert '"consensus"' not in source.split("def _chunk_slice", 1)[1]
+
+def test_reconciliation_never_promotes_case_values_to_reference():
+    from app.dental_semantics import bind_value_evidence, reconcile_value_evidence
+    items = bind_value_evidence("Bu hastada SNA 86° ölçüldü. Olgu B için SNA 78° saptandı.")
+    result = reconcile_value_evidence(items)
+    assert result.status == "observations_only"
+    assert not result.reference_values
+
+def test_reconciliation_normalizes_equivalent_reference_spellings():
+    from app.dental_semantics import bind_value_evidence, reconcile_value_evidence
+    items = bind_value_evidence("SNA normal değeri 82° dir. SNA referans değeri 82,0 derece olarak kabul edilir.")
+    result = reconcile_value_evidence(items)
+    assert result.status == "reference_supported"
+
+def test_reconciliation_separates_conditioned_reference_values():
+    from app.dental_semantics import bind_value_evidence, reconcile_value_evidence
+    a = bind_value_evidence("Gonial açı yenidoğanda normal olarak 180 dereceye yakındır.")
+    b = bind_value_evidence("Bebeklikte büyüme ile gonial açı ortalama 130 dereceye iner.")
+    result = reconcile_value_evidence(tuple(a) + tuple(b))
+    assert result.status == "conditioned"
