@@ -203,6 +203,18 @@ def _value_key(value: str) -> str:
     key = re.sub(r"([+-]?\d+)\.0+(?=\s*(?:°|mm|cm|%|$))", r"\1", key)
     return re.sub(r"\s+", "", key)
 
+def _subject_key(item: BoundValueEvidence) -> str:
+    if item.subject_node_id:
+        return item.subject_node_id.casefold().strip()
+    subject = (item.subject_text or "").casefold().strip()
+    # Lexical fallback subjects may absorb nearby assertion boilerplate
+    # ("SNA normal", "SNA referans"). Strip only trailing cue words so the
+    # underlying unknown/graph-independent subject still reconciles.
+    words = subject.split()
+    while words and words[-1] in _SUBJECT_STOPWORDS:
+        words.pop()
+    return " ".join(words)
+
 def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundValueEvidence]) -> ValueReconciliation:
     """Reconcile only comparable contexts; conditioned values remain separate."""
     references, observations, variables, unknowns = [], [], [], []
@@ -210,7 +222,7 @@ def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundV
     for item in items:
         if item.assertion == "reference":
             references.append(item.value.text)
-            subject_key = (item.subject_node_id or item.subject_text or "").casefold().strip()
+            subject_key = _subject_key(item)
             group = (subject_key, *tuple(sorted(item.qualifiers)))
             reference_groups.setdefault(group, {})[_value_key(item.value.text)] = item.value.text
         elif item.assertion == "observation":
