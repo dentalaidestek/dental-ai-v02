@@ -18,6 +18,7 @@ class CoveragePlan:
     requested_count: int
     buckets: tuple[CoverageBucket, ...]
     covered_chunk_ids: tuple[int, ...]
+    scanned_rows: int = 0
 
 def _largest_remainder(weights: list[int], total: int) -> list[int]:
     if not weights or total <= 0:
@@ -64,6 +65,7 @@ def build_coverage_plan(rows: list, requested_count: int) -> CoveragePlan:
         requested_count=count,
         buckets=buckets,
         covered_chunk_ids=tuple(sorted({cid for b in buckets for cid in b.chunk_ids})),
+        scanned_rows=len(rows),
     )
 
 
