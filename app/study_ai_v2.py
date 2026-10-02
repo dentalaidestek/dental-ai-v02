@@ -53,6 +53,7 @@ def _response_contract(question: str) -> str:
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
     context = "\n\n---\n\n".join(retrieval.note_context)
+    understood_question = (retrieval.resolved_query or question).strip()
     exhaustive_rule = ""
     if retrieval.retrieval_mode == "questions_exhaustive":
         exhaustive_rule = (
@@ -68,7 +69,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
     return (
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
-        "CEVAP BİÇİMİ:\n" + _response_contract(question) + "\n\n"
+        "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n"
         "KANIT DURUMU:\n"
         f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
         f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
@@ -84,7 +85,8 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
         "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
         "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
-        f"KULLANICI MESAJI:\n{question.strip()}"
+        f"SİSTEMİN ÇÖZÜMLEDiĞİ SORU:\n{understood_question}\n\n"
+        f"KULLANICININ BU TURDAKİ MESAJI:\n{question.strip()}"
     )
 
 
