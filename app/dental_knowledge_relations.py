@@ -65,7 +65,7 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("ianb", Relation.HAS_MATERIAL, "lidocaine", 0.72),
     DentalEdge("ianb", Relation.HAS_MATERIAL, "articaine", 0.72),
     DentalEdge("ianb", Relation.HAS_COMPLICATION, "anesthetic_paresthesia", 0.82),
-    DentalEdge("local_anesthetic_paresthesia", Relation.ASSOCIATED_WITH, "ian", 0.76),
+    DentalEdge("anesthetic_paresthesia", Relation.ASSOCIATED_WITH, "ian", 0.76),
 
     # Oral pathology / imaging
     DentalEdge("odontogenic_keratocyst", Relation.HAS_RADIOGRAPHIC_FEATURE, "radiolucency", 0.82),
@@ -104,11 +104,11 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("gbr", Relation.ASSOCIATED_WITH, "alveolar_bone", 0.82),
 
     # Radiographic descriptors
-    DentalEdge("radiolucent", Relation.ASSOCIATED_WITH, "radiolucency", 0.96),
-    DentalEdge("radiopaque", Relation.ASSOCIATED_WITH, "radiopacity", 0.96),
+    DentalEdge("radiolucency", Relation.ASSOCIATED_WITH, "radiolucency", 0.96),
+    DentalEdge("radiopacity", Relation.ASSOCIATED_WITH, "radiopacity", 0.96),
     DentalEdge("lamina_dura", Relation.ANATOMICAL_RELATION, "pdl_space", 0.90),
     DentalEdge("bitewing", Relation.USED_FOR, "caries", 0.86),
-    DentalEdge("cortication", Relation.HAS_RADIOGRAPHIC_FEATURE, "radiopaque", 0.76),
+    DentalEdge("cortication", Relation.HAS_RADIOGRAPHIC_FEATURE, "radiopacity", 0.76),
     DentalEdge("trabeculation", Relation.ANATOMICAL_RELATION, "alveolar_bone", 0.84),
 
     # Oral pathology
@@ -121,7 +121,7 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("disc_displacement", Relation.ANATOMICAL_RELATION, "articular_disc", 0.94),
     DentalEdge("clicking", Relation.ASSOCIATED_WITH, "disc_displacement", 0.88),
     DentalEdge("crepitation", Relation.ASSOCIATED_WITH, "tmj", 0.82),
-    DentalEdge("crepitus", Relation.ASSOCIATED_WITH, "tmj", 0.82),
+    DentalEdge("crepitation", Relation.ASSOCIATED_WITH, "tmj", 0.82),
 
     # Prosthodontic/restorative materials
     DentalEdge("fpd", Relation.HAS_MATERIAL, "ceramic", 0.78),
