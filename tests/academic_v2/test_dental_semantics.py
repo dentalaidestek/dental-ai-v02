@@ -193,3 +193,20 @@ def test_reconciliation_separates_conditioned_reference_values():
     b = bind_value_evidence("Bebeklikte büyüme ile gonial açı ortalama 130 dereceye iner.")
     result = reconcile_value_evidence(tuple(a) + tuple(b))
     assert result.status == "conditioned"
+
+def test_unknown_lexical_subject_value_binding_is_graph_independent():
+    from app.dental_semantics import bind_value_evidence
+    items = bind_value_evidence("XYZ indeksi normal değeri 42 derecedir.")
+    assert items
+    assert items[0].subject_node_id is None
+    assert items[0].subject_text
+    assert "xyz" in items[0].subject_text.casefold()
+    assert items[0].assertion == "reference"
+
+def test_unknown_subject_case_value_stays_observation():
+    from app.dental_semantics import bind_value_evidence, reconcile_value_evidence
+    items = bind_value_evidence("Bu hastada QRT skoru 17 olarak ölçüldü.")
+    assert items
+    assert items[0].subject_node_id is None
+    assert items[0].assertion == "observation"
+    assert reconcile_value_evidence(items).status == "observations_only"
