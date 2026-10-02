@@ -218,10 +218,9 @@ def _recognize_layout(image: Image.Image, *, layout: _PageLayout, timeout_ms: in
         image.crop((max(0, split - margin), 0, image.width, image.height)),
     ]
     try:
-        results = [
-            _recognize(region, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=timeout_ms)
-            for region in regions
-        ]
+        results = _recognize_many(
+            regions, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=timeout_ms
+        )
     finally:
         for region in regions:
             region.close()
@@ -268,6 +267,31 @@ def _ocr_anomaly_score(text: str) -> float:
     noisy_tokens = re.findall(r"(?u)\b[^\W\d_]{1}\b|[^\w\s.,;:!?%°µμ+\-/()]+", text or "")
     noise = min(1.0, len(noisy_tokens) / max(1, len((text or "").split())))
     return min(1.0, (1.0 - alnum) * 0.55 + replacement * 3.0 + noise * 0.45)
+
+
+def _recognize_many(images: list[Image.Image], *, psm, timeout_ms: int) -> list[tuple[str, int]]:
+    """Reuse one Tesseract language-model session for multiple page regions."""
+    import tesserocr
+
+    results: list[tuple[str, int]] = []
+    with tesserocr.PyTessBaseAPI(
+        path=str(_TESSDATA_PATH) + "/",
+        lang="tur+eng",
+        psm=psm,
+    ) as api:
+        if _DENTAL_WORDS_PATH.exists():
+            api.SetVariable("user_words_file", str(_DENTAL_WORDS_PATH))
+        api.SetVariable("preserve_interword_spaces", "1")
+        for image in images:
+            api.SetImage(image)
+            if not api.Recognize(timeout=timeout_ms):
+                raise LocalOCRError("OCR_RECOGNITION_TIMEOUT")
+            results.append((
+                _normalize_ocr_text(api.GetUTF8Text()),
+                max(0, min(100, int(api.MeanTextConf()))),
+            ))
+            api.Clear()
+    return results
 
 
 def _recognize(image: Image.Image, *, psm, timeout_ms: int) -> tuple[str, int]:
