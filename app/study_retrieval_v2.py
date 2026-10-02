@@ -1076,7 +1076,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     return EvidenceSufficiency(sufficient, confidence, covered, missing)
 
 
-def _coverage_select(query: str, rows: list, *, limit: int, requirement=None) -> list:
+def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None) -> list:
     """Preserve evidence diversity after relevance reranking."""
     if len(rows) <= limit:
         return rows
@@ -1095,7 +1095,7 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None) ->
         for row in rows:
             if int(row[0]) in selected_ids:
                 continue
-            features = _row_semantic_features(row)
+            features = _row_semantic_features(row, feature_cache)
             if subject_id in features.node_ids:
                 candidates.append(row)
         if candidates:
@@ -1119,7 +1119,7 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None) ->
             if int(row[0]) in selected_ids:
                 continue
             haystack = f"{row[5] or ''} {row[7] or ''}".casefold()
-            row_kinds = {item.casefold() for item in _row_semantic_features(row).kinds}
+            row_kinds = {item.casefold() for item in _row_semantic_features(row, feature_cache).kinds}
             if _facet_present(facet, haystack, row_kinds):
                 candidates.append(row)
         if candidates:
@@ -1301,7 +1301,7 @@ def retrieve_course_context_v2(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
             rescue_query_count, coverage, ",".join(covered_facets) or "-",
         )
-        rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)
+        rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement, feature_cache=row_feature_cache)
         primary_ids = [int(row[0]) for row in rows]
         # Neighbor context is useful for split passages, but it must not be an
         # unconditional extra DB query or cross a section boundary.
