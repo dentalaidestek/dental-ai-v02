@@ -111,6 +111,7 @@ class DentalRequirementPlan:
     explicit_relations: tuple[tuple[str, str, str], ...] = ()
     subject_qualifiers: tuple[tuple[str, tuple[str, ...]], ...] = ()
     requires_visual_source: bool = False
+    comparison_sides: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = ()
 
 _SUBJECT_STOP_RE = re.compile(
     r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
@@ -249,6 +250,22 @@ def _comparison_terms(query: str, intents: tuple[DentalIntent, ...]) -> tuple[st
     return tuple(part for part in parts if len(part) >= 2)[:2]
 
 
+def _comparison_sides(query: str, intents: tuple[DentalIntent, ...]) -> tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]:
+    if not any(intent.name == "comparison" for intent in intents):
+        return ()
+    from app.dental_knowledge_graph import matched_nodes
+    parts = [part.strip(" ?.,;:") for part in _COMPARISON_SPLIT_RE.split(query or "") if part.strip()]
+    if len(parts) < 2:
+        return ()
+    sides = []
+    for part in parts[:2]:
+        node_ids = tuple(dict.fromkeys(node.id for node in matched_nodes(part) if node.kind != "imaging"))
+        qualifiers = query_qualifiers(part)
+        if node_ids or qualifiers:
+            sides.append((node_ids, qualifiers))
+    return tuple(sides) if len(sides) >= 2 else ()
+
+
 def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     """Separate what the user asks about from which facts they request."""
     from app.dental_knowledge_graph import matched_nodes
@@ -320,6 +337,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         explicit_relations=tuple(dict.fromkeys(explicit_relations)),
         subject_qualifiers=_subject_qualifier_bindings(clean, subject_nodes),
         requires_visual_source=requires_visual_source,
+        comparison_sides=_comparison_sides(clean, intents),
     )
 
 
