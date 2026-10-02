@@ -10,7 +10,7 @@ class DentalIntent:
     relation_hints: tuple[str, ...] = ()
 
 _RULES = (
-    ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|derece|mm|oran)\b", re.I),
+    ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|mm|oran)\b", re.I),
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|değerlendiril[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
@@ -110,6 +110,7 @@ class DentalRequirementPlan:
     constraint_node_ids: tuple[str, ...] = ()
     explicit_relations: tuple[tuple[str, str, str], ...] = ()
     subject_qualifiers: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    requires_visual_source: bool = False
 
 _SUBJECT_STOP_RE = re.compile(
     r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
@@ -295,6 +296,13 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         comparison_intent = DentalIntent("comparison", (), ("compared_with",))
         intents = tuple((*intents, comparison_intent))[:6]
     comparison_terms = _comparison_terms(clean, intents)
+    requires_visual_source = bool(re.search(
+        r"(?iu)(?:\\b(?:bu|şu)\\s+(?:radyografi|röntgen|film|görüntü|fotoğraf|şekil|tablo|grafik|cbct|opg)"
+        r"|\\b(?:radyografideki|filmdeki|görüntüdeki|şekildeki|tablodaki|grafikteki)\\b"
+        r"|\\b(?:gösterilen|işaretli|okla\\s+gösterilen|görülen)\\b"
+        r"|\\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\\s+(?:ne|neyi|hangi|nerede)\\b)",
+        clean,
+    ))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,
@@ -311,6 +319,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         constraint_node_ids=tuple(dict.fromkeys(node.id for node in constraint_nodes)),
         explicit_relations=tuple(dict.fromkeys(explicit_relations)),
         subject_qualifiers=_subject_qualifier_bindings(clean, subject_nodes),
+        requires_visual_source=requires_visual_source,
     )
 
 
