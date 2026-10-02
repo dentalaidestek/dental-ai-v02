@@ -6,12 +6,16 @@ on:
   # Keep PR validation reliable; job-level change detection can optimize later.
   pull_request:
     branches: [main]
+  # Run on every push to Academic V2 work branches. Keeping a paths filter here
+  # can silently skip the branch gate when a trigger/recovery commit only
+  # touches CI metadata.
   push:
     branches:
       - main
       - "work/academic-v2-*"
-    paths:
-      - "app/study_ai_v2.py"
+  # Path filtering is intentionally not used for push: this workflow is the
+  # branch safety gate and must always produce a visible result.
+
       - "app/academic_coverage.py"
       - "app/academic_generation.py"
       - "app/academic_generation_jobs.py"
