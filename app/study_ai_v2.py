@@ -71,8 +71,14 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n"
         "KANIT DURUMU:\n"
+        f"Retrieval modu: {retrieval.retrieval_mode}. "
         f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
-        f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
+        + (
+            "Bu mod tüm READY ders indeksinden seçilmiş sınırlı temsili kapsam kanıtıdır; "
+            "seçilmeyen bölümleri görmüş gibi davranma. "
+            if retrieval.retrieval_mode == "coverage" else ""
+        )
+        + f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
         f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}. "
         "Eksik başlıklar tamamlama görevi değildir; kanıtta yoksa onları kendi bilginle doldurma.\n\n"
         "KANIT KURALI:\n"
