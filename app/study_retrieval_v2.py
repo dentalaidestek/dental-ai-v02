@@ -1154,7 +1154,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         if count_request and not has_measurement:
             count_value_re = re.compile(
                 r"(?iu)(?:\\b(?:bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on)\\s+"
-                r"(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)(?:ü|ü|ı|i|u|si|sı|su|leri|ları)?\\b"
+                r"(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)(?:ü|ı|i|u|si|sı|su|leri|ları)?\\b"
                 r"|\\b\\d{1,2}\\s*(?:adet\\s+)?(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\\b)"
             )
             has_measurement = any(
