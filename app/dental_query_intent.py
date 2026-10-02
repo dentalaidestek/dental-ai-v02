@@ -100,6 +100,7 @@ class DentalRequirementPlan:
     asks_negation: bool = False
     subject_count: int = 0
     unresolved_subject: bool = False
+    constraint_node_ids: tuple[str, ...] = ()
 
 _SUBJECT_STOP_RE = re.compile(
     r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
@@ -158,10 +159,22 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     clean = " ".join((query or "").split())
     intents = classify_dental_intents(clean, limit=6)
     nodes = matched_nodes(clean)
-    subject_ids = tuple(dict.fromkeys(node.id for node in nodes))
-    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))
+    # Imaging entities constrain how/where evidence is interpreted, but they
+    # are not normally an independent factual subject. Requiring CBCT/OPG as a
+    # second "subject" made otherwise correct evidence fail completeness.
+    subject_nodes = tuple(node for node in nodes if node.kind != "imaging")
+    constraint_nodes = tuple(node for node in nodes if node.kind == "imaging")
+    subject_ids = tuple(dict.fromkeys(node.id for node in subject_nodes))
+    subject_terms = tuple(dict.fromkeys(node.label for node in subject_nodes))
     if not subject_terms:
-        subject_terms = _lexical_subject_terms(clean)
+        # If the query is genuinely about the imaging modality itself ("CBCT
+        # nedir?"), it remains the subject; otherwise imaging stays a constraint.
+        non_visual_intents = {item.name for item in intents if item.name not in {"general", "visual"}}
+        if constraint_nodes and non_visual_intents.intersection({"definition", "comparison", "indication", "contraindication"}):
+            subject_ids = tuple(dict.fromkeys(node.id for node in constraint_nodes))
+            subject_terms = tuple(dict.fromkeys(node.label for node in constraint_nodes))
+        else:
+            subject_terms = _lexical_subject_terms(clean)
     specialties = tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general"))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
@@ -176,6 +189,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         asks_negation=bool(_NEGATION_REQUEST_RE.search(clean)),
         subject_count=len(subject_ids) if subject_ids else len(comparison_terms),
         unresolved_subject=not bool(subject_ids or subject_terms),
+        constraint_node_ids=tuple(dict.fromkeys(node.id for node in constraint_nodes)),
     )
 
 
