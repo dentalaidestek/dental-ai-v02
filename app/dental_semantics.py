@@ -15,7 +15,8 @@ _DENTAL_NUMBER_CONTEXT_RE = re.compile(
     r"çekim|implant|kök|apikal|furkasyon|oklüz|mandibul|maxill)\w*\b", re.I
 )
 
-_NON_TOOTH_NUMBER_SUFFIX_RE = re.compile(r"^\\s*(?:yaş(?:ında|ındaki)?|sayfa|sf\\.?|page)\\b", re.I)\n_NON_TOOTH_NUMBER_PREFIX_RE = re.compile(r"(?:sayfa|sf\\.?|page)\\s*$", re.I)
+_NON_TOOTH_NUMBER_SUFFIX_RE = re.compile(r"^\s*(?:yaş(?:ında|ındaki)?|sayfa|sf\.?|page)\b", re.I)
+_NON_TOOTH_NUMBER_PREFIX_RE = re.compile(r"(?:sayfa|sf\.?|page)\s*$", re.I)
 
 def _fdi_numbers(text: str) -> tuple[str, ...]:
     matches = list(_FDI_RE.finditer(text))
