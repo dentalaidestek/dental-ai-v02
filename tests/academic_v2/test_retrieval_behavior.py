@@ -815,3 +815,19 @@ def test_count_value_questions_have_bounded_nonunit_evidence_support():
     assert "count_request" in suff
     assert "count_value_re" in suff
     assert "kök|kanal|tüberkül|cusp" in suff
+
+
+def test_primary_retrieval_strips_inflected_facet_noise():
+    for query, subject in (
+        ("pulpitis tedavisi nedir", "pulpitis"),
+        ("implant komplikasyonları nelerdir", "implant"),
+        ("implant endikasyonları nelerdir", "implant"),
+        ("implant kontrendikasyonları nelerdir", "implant"),
+        ("periodontitis sınıflaması nedir", "periodontitis"),
+    ):
+        precise = namespace["_fts_query"](query, broad=False).casefold()
+        assert subject in precise, (query, precise)
+        assert not any(
+            word in precise.split()
+            for word in ("tedavisi", "komplikasyonları", "endikasyonları", "kontrendikasyonları", "sınıflaması")
+        ), (query, precise)
