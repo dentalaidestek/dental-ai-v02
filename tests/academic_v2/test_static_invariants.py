@@ -173,3 +173,10 @@ for helper in ("_rerank_dental_rows", "_evidence_sufficiency", "_coverage_select
     kwonly = {arg.arg for arg in node.args.kwonlyargs}
     positional = {arg.arg for arg in node.args.args}
     assert "query_features" in kwonly | positional, helper
+
+
+# Deferred visual-page caching must have a byte budget, not only an entry count.
+retrieval_source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+assert "_PAGE_PDF_CACHE_MAX_BYTES = 32 * 1024 * 1024" in retrieval_source
+assert "retained > _PAGE_PDF_CACHE_MAX_BYTES" in retrieval_source
+assert "_PAGE_PDF_CACHE_MAX = 12" in retrieval_source

@@ -30,8 +30,26 @@ logger = logging.getLogger(__name__)
 
 _PAGE_PDF_CACHE_LOCK = threading.Lock()
 _PAGE_PDF_CACHE: "OrderedDict[tuple[str, int], bytes]" = OrderedDict()
-_PAGE_PDF_CACHE_MAX = 24
+_PAGE_PDF_CACHE_MAX = 12
+_PAGE_PDF_CACHE_MAX_BYTES = 32 * 1024 * 1024
 _PAGE_PDF_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _cache_visual_page(cache_key: tuple[str, int], data: bytes) -> None:
+    """Bound visual-page RAM by both entry count and total retained bytes."""
+    if not data or len(data) > _PAGE_PDF_MAX_BYTES:
+        return
+    with _PAGE_PDF_CACHE_LOCK:
+        previous = _PAGE_PDF_CACHE.pop(cache_key, None)
+        _PAGE_PDF_CACHE[cache_key] = data
+        _PAGE_PDF_CACHE.move_to_end(cache_key)
+        retained = sum(len(value) for value in _PAGE_PDF_CACHE.values())
+        while _PAGE_PDF_CACHE and (
+            len(_PAGE_PDF_CACHE) > _PAGE_PDF_CACHE_MAX
+            or retained > _PAGE_PDF_CACHE_MAX_BYTES
+        ):
+            _old_key, old_data = _PAGE_PDF_CACHE.popitem(last=False)
+            retained -= len(old_data)
 
 _FOLLOWUP_RE = re.compile(
     r"^(?:peki|tamam|devam|bunu|bunun|burada|onu|onun|o zaman|peki ya|"
@@ -312,11 +330,7 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
         except Exception:
             logger.exception("Academic V2 deferred visual source could not be prepared")
             continue
-        with _PAGE_PDF_CACHE_LOCK:
-            _PAGE_PDF_CACHE[cache_key] = data
-            _PAGE_PDF_CACHE.move_to_end(cache_key)
-            while len(_PAGE_PDF_CACHE) > _PAGE_PDF_CACHE_MAX:
-                _PAGE_PDF_CACHE.popitem(last=False)
+        _cache_visual_page(cache_key, data)
         result.attachments.append({
             "mime_type": row[1], "data": data,
             "label": f"INTERNAL_SOURCE: {row[2]}, sayfa {source['page_number']}",
