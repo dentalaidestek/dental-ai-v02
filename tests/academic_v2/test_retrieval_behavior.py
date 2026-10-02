@@ -596,6 +596,16 @@ def test_followup_resolution_uses_only_prior_user_subject_identity():
     for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
         assert namespace["resolve_followup_query"](query, history) == query
 
+def test_requirement_plan_separates_imaging_constraint_from_subject():
+    plan = build_dental_requirement_plan("CBCT'de mandibular kanal ilişkisi nedir?")
+    assert "mandibular_canal" in plan.subject_node_ids
+    assert "cbct" not in plan.subject_node_ids
+    assert "cbct" in plan.constraint_node_ids
+
+    modality = build_dental_requirement_plan("CBCT nedir?")
+    assert "cbct" in modality.subject_node_ids
+
+
 def test_question_understanding_conservative_typo_rescue():
     from app.dental_knowledge_graph import matched_nodes
     assert any(node.id == "pulpitis" for node in matched_nodes("pulptis tedavisi ne"))
