@@ -284,6 +284,17 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
                 continue
             if edge.source in explicit_ids and edge.target in explicit_ids:
                 explicit_relations.append((edge.source, edge.relation.value, edge.target))
+    # Two or more explicit non-imaging subjects plus a comparative operator
+    # is a comparison even when the wording does not contain "fark/karşılaştır".
+    # Do not treat a plain conjunction ("SNA ve SNB değerleri") as comparison.
+    if (
+        len(subject_ids) >= 2
+        and not any(item.name == "comparison" for item in intents)
+        and re.search(r"(?iu)\\b(?:hangisi|hangileri|hangisinde|daha)\\b", clean)
+    ):
+        comparison_intent = DentalIntent("comparison", (), ("compared_with",))
+        intents = tuple((*intents, comparison_intent))[:6]
+    comparison_terms = _comparison_terms(clean, intents)
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,
@@ -293,7 +304,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         relation_hints=combined_relation_hints(intents, limit=16),
         specialties=specialties,
         qualifiers=_query_qualifiers(clean),
-        comparison_terms=_comparison_terms(clean, intents),
+        comparison_terms=comparison_terms,
         asks_negation=bool(_NEGATION_REQUEST_RE.search(clean)),
         subject_count=len(subject_ids) if subject_ids else len(comparison_terms),
         unresolved_subject=not bool(subject_ids or subject_terms),
