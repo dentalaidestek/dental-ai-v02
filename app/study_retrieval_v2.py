@@ -999,7 +999,6 @@ def _coverage_select(query: str, rows: list, *, limit: int) -> list:
     # First reserve at most one high-ranked chunk for each requested facet,
     # preferring evidence that also remains anchored to the query subject.
     for facet in facets:
-        facet_cf = facet.casefold()
         candidates = []
         for row in rows:
             if int(row[0]) in selected_ids:
