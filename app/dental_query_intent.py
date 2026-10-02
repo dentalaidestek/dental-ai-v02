@@ -114,13 +114,13 @@ class DentalRequirementPlan:
     comparison_sides: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = ()
 
 _SUBJECT_STOP_RE = re.compile(
-    r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
+    r"\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
     r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
     r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
     r"sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
     r"klinik|radyografik|ayırt edici|ayırıcı|değil|değildir|olmayan|olmaz|olmamalı(?:dır)?|"
     r"yapılmaz|kullanılmaz|uygulanmaz|önerilmez|tercih edilmez|kaçınılmalı(?:dır)?|"
-    r"hariç|yanlıştır|peki|bunun|onun|bunların|ve|ile|ile birlikte)\\b",
+    r"hariç|yanlıştır|peki|bunun|onun|bunların|ve|ile|ile birlikte)\b",
     re.I,
 )
 _SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
@@ -174,9 +174,9 @@ def qualifier_present(qualifier: str, text: str) -> bool:
     return any(name == qualifier and pattern.search(text or "") for name, pattern in _QUALIFIER_PATTERNS)
 
 _NEGATION_REQUEST_RE = re.compile(
-    r"\\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
+    r"\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
     r"hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
-    r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\\b",
+    r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\b",
     re.I,
 )
 def _asks_negation(query: str) -> bool:
@@ -187,7 +187,7 @@ def _asks_negation(query: str) -> bool:
         text,
     ))
 
-_COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
+_COMPARISON_SPLIT_RE = re.compile(r"\s+(?:ile|ve|vs\.?|versus)\s+", re.I)
 
 
 def _query_qualifiers(query: str) -> tuple[str, ...]:
@@ -246,8 +246,8 @@ def _subject_qualifier_bindings(query: str, subject_nodes) -> tuple[tuple[str, t
 def _comparison_terms(query: str, intents: tuple[DentalIntent, ...]) -> tuple[str, ...]:
     if not any(intent.name == "comparison" for intent in intents):
         return ()
-    clean = re.sub(r"(?i)\\b(?:arasındaki|fark(?:ı|ları)?|karşılaştır[a-zçğıöşü]*|hangisi daha)\\b", " ", query or "")
-    parts = [re.sub(r"\\s+", " ", part).strip(" ?.,;:") for part in _COMPARISON_SPLIT_RE.split(clean)]
+    clean = re.sub(r"(?i)\b(?:arasındaki|fark(?:ı|ları)?|karşılaştır[a-zçğıöşü]*|hangisi daha)\b", " ", query or "")
+    parts = [re.sub(r"\s+", " ", part).strip(" ?.,;:") for part in _COMPARISON_SPLIT_RE.split(clean)]
     return tuple(part for part in parts if len(part) >= 2)[:2]
 
 
@@ -407,9 +407,9 @@ class AcademicStudyTaskPlan:
 
 
 _BROAD_ACADEMIC_RE = re.compile(
-    r"\\b(?:tüm|bütün|tamamı|baştan sona|detaylı|kapsamlı|eksiksiz|genel tekrar|"
+    r"\b(?:tüm|bütün|tamamı|baştan sona|detaylı|kapsamlı|eksiksiz|genel tekrar|"
     r"notu özetle|notları özetle|dersi özetle|konuyu detaylı|bölümü özetle|"
-    r"her şeyi|herşeyi)\\b", re.I,
+    r"her şeyi|herşeyi)\b", re.I,
 )
 
 _ACADEMIC_STUDY_TASK_RULES = (
