@@ -1264,7 +1264,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     return EvidenceSufficiency(sufficient, confidence, covered, missing)
 
 
-def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None) -> list:
+def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None, query_features=None) -> list:
     """Preserve evidence diversity after relevance reranking."""
     if len(rows) <= limit:
         return rows
@@ -1313,7 +1313,11 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, fe
         if candidates:
             aligned = [
                 row for row in candidates
-                if _subject_alignment_score(query, row[5] or "", row[7] or "") >= 0.34
+                if _subject_alignment_score(
+                    query, row[5] or "", row[7] or "",
+                    query_features=query_features,
+                    row_features=_row_semantic_features(row, feature_cache),
+                ) >= 0.34
             ]
             chosen = (aligned or candidates)[0]
             selected.append(chosen)
