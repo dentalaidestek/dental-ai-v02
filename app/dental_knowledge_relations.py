@@ -201,7 +201,7 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("endodontic_failure", Relation.ASSESSED_BY, "cbct", 0.90),
 
     # Oral surgery complications.
-    DentalEdge("extraction", Relation.HAS_COMPLICATION, "alveolar_osteitis", 0.96),
+    DentalEdge("extraction", Relation.HAS_COMPLICATION, "dry_socket", 0.96),
     DentalEdge("oroantral_communication", Relation.LEADS_TO, "oroantral_fistula", 0.82),
 
     # Pharmacology/antibiotic stewardship. Avoid universal drug=treatment edges.
