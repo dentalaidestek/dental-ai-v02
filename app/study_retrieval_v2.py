@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
-from app.dental_query_intent import classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
+from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.academic_coverage import build_coverage_plan, cache_coverage_plan, cached_coverage_plan
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
@@ -827,9 +827,7 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
 
 def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
     """Cheap local sufficiency signal using lexical and persisted dental semantics."""
-    intent = classify_dental_intent(query)
-    facets = _coverage_terms(intent.name)
-    if not facets:
+    requirement = build_dental_requirement_plan(query)\n    facets = tuple(dict.fromkeys(\n        facet for item in requirement.intents for facet in _coverage_terms(item.name)\n    ))\n    if not facets:
         return (1.0 if rows else 0.0), ()
     corpus = " ".join(f"{row[5] or ''} {row[7] or ''}" for row in rows).casefold()
     semantic_kinds: set[str] = set()
@@ -889,9 +887,7 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     if not rows:
         return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
 
-    intent = classify_dental_intent(query)
-    qf = analyze_dental_text(query)
-    facets = _coverage_terms(intent.name)
+    requirement = build_dental_requirement_plan(query)\n    intent = requirement.intents[0]\n    qf = analyze_dental_text(query)\n    facets = tuple(dict.fromkeys(\n        facet for item in requirement.intents for facet in _coverage_terms(item.name)\n    ))
     coverage, covered = _coverage_score(query, rows)
     missing = tuple(facet for facet in facets if facet not in covered)
 
@@ -1099,8 +1095,7 @@ def retrieve_course_context_v2(
         # first pass lacks evidence diversity.
         if evidence_queries and coverage < 0.34 and len(rows) < candidate_target:
             missing = [
-                facet for facet in _coverage_terms(classify_dental_intent(resolved).name)
-                if facet not in covered_facets
+                facet for item in build_dental_requirement_plan(resolved).intents\n                for facet in _coverage_terms(item.name) if facet not in covered_facets
             ]
             if missing:
                 rescue_query = f'{_fts_query(resolved, broad=False)} "{missing[0]}"'
