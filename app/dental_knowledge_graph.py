@@ -278,6 +278,8 @@ def matched_nodes(query: str) -> list[DentalNode]:
                 continue
             escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
             for match in re.finditer(r"(?<!\w)" + escaped + r"(?!\w)", lowered, flags=re.I):
+                if not _term_context_ok(lowered, match.start(), match.end(), clean_term):
+                    continue
                 mentions.append((match.start(), match.end(), len(clean_term), node))
     mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
     occupied: list[tuple[int, int]] = []
