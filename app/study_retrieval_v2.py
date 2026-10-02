@@ -1133,6 +1133,9 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         # score. This prevents a same-subject classification chunk from beating
         # a complication chunk merely because PostgreSQL lexical rank is higher.
         scored.append((exact_subject_hit, facet_coverage, score, position, row))
+    # Once subject identity is equal, an explicitly requested evidence facet is
+    # a gate ahead of raw lexical similarity. This keeps same-subject treatment
+    # prose from outranking a lower-FTS cause chunk for "neden oluşur?".
     scored.sort(key=lambda item: (-int(item[0]), -item[1], -item[2], item[3]))
     ranked = [row for _, _, _, _, row in scored]
     # Do not let a dominant explicit subject consume the whole rerank window.
