@@ -1537,7 +1537,7 @@ def retrieve_course_context_v2(
     # multimodal provider request. Attach source pages only when the user's
     # current request explicitly requires visual inspection.
     visual_requested = _requires_visual_source(query)
-    if visual_requested:
+    if visual_requested and result.evidence_sufficient:
         for item in result.evidence:
             key = (item.material_id, item.page_start)
             if key not in visual_pages:
@@ -1578,4 +1578,9 @@ def retrieve_course_context_v2(
                 "data": data,
                 "label": f"INTERNAL_SOURCE: {material[3]}, sayfa {page}",
             })
+    # A true visual-inspection request is not answerable as if pixels were seen
+    # when the source page/image could not be materialized.
+    if visual_requested and result.evidence_sufficient and not result.attachments:
+        result.evidence_sufficient = False
+        result.evidence_confidence = 0.0
     return result
