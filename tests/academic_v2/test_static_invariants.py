@@ -253,3 +253,15 @@ def test_ocr_required_checkpoint_preserves_native_text_fallback():
     assert "if result.visual_only:" in ocr
     assert "elif fallback_text and len(text) < len(fallback_text):" in ocr
     assert "PDF_TEXT_OCR_FALLBACK" in ocr
+
+
+def test_interleaved_chunking_never_leaps_over_ocr_gap():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    router = worker.split("def _next_checkpoint_stage", 1)[1].split("def _extract_pdf_slice", 1)[0]
+    chunk = worker.split("def _chunk_slice", 1)[1].split("def _prepare_image_checkpoint", 1)[0]
+    assert ".order_by(StudyIndexPage.page_number.asc())" in router
+    assert "first_pending.status in TERMINAL_PAGE_STATES" in router
+    assert 'first_pending.status == "OCR_REQUIRED"' in router
+    assert "if rows[0].page_number != first_pending.page_number:" in chunk
+    assert "candidate.page_number != contiguous[-1].page_number + 1" in chunk
+    assert "rows = contiguous" in chunk
