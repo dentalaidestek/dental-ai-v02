@@ -508,7 +508,7 @@ _FACET_SEARCH_TERMS = {
     "tedavi": ("tedavi", "treatment", "terapi", "therapy", "prosedür"),
     "komplikasyon": ("komplikasyon", "complication", "risk", "advers"),
     "sınıflama": ("sınıflama", "classification", "evre", "grade", "kriter"),
-    "etiyoloji": ("etiyoloji", "etiology", "neden", "cause", "patogenez"),
+    "etiyoloji": ("etiyoloji", "etiology", "neden", "cause", "patogenez", "oluşum", "oluşur", "etken", "pıhtının kaybı"),
     "ölçüm": ("ölçüm", "measurement", "değer", "value", "referans"),
     "normal değer": ("normal değer", "normal value", "referans", "reference"),
     "anatomi": ("anatomi", "anatomy", "komşuluk", "konum"),
