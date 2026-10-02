@@ -1333,14 +1333,14 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     if intent_names.intersection({"value", "measurement"}):
         has_measurement = any(features.measurements for features in row_features)
         count_request = bool(re.search(
-            r"(?iu)\\bkaç\\s+(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\\b",
+            r"(?iu)\bkaç\s+(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\b",
             query,
         ))
         if count_request and not has_measurement:
             count_value_re = re.compile(
-                r"(?iu)(?:\\b(?:bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on)\\s+"
-                r"(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)(?:ü|ı|i|u|si|sı|su|leri|ları)?\\b"
-                r"|\\b\\d{1,2}\\s*(?:adet\\s+)?(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\\b)"
+                r"(?iu)(?:\b(?:bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on)\s+"
+                r"(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)(?:ü|ı|i|u|si|sı|su|leri|ları)?\b"
+                r"|\b\d{1,2}\s*(?:adet\s+)?(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\b)"
             )
             has_measurement = any(
                 count_value_re.search(f"{row[5] or ''} {row[7] or ''}") for row in rows
@@ -1349,7 +1349,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             # Lecture tables often omit units ("SNA 82", "ANB 2"). Accept a
             # bare numeric value only for a measurement-kind query and only
             # when the same row contains the requested canonical subject.
-            bare_value_re = re.compile(r"(?<![\\w.])[+-]?\\d{1,3}(?:[.,]\\d+)?(?![\\w.])")
+            bare_value_re = re.compile(r"(?<![\w.])[+-]?\d{1,3}(?:[.,]\d+)?(?![\w.])")
             requested_nodes = set(qf.node_ids)
             has_measurement = any(
                 bool(requested_nodes.intersection(features.node_ids))
@@ -1359,8 +1359,8 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         # A literal value request ("kaç", "değer", numeric/unit wording) must
         # not authorize generation from a chunk that only names the measure.
         literal_value_request = bool(re.search(
-            r"\\b(?:kaç(?:tır)?|değer(?:i|leri)?|normal\\s+değer|ortalama|"
-            r"mm|cm|derece|°|yüzde|%)\\b",
+            r"\b(?:kaç(?:tır)?|değer(?:i|leri)?|normal\s+değer|ortalama|"
+            r"mm|cm|derece|°|yüzde|%)\b",
             query,
             re.I,
         ))
