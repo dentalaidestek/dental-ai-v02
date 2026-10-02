@@ -112,6 +112,35 @@ def _value_context(text: str, evidence: ValueEvidence) -> tuple[tuple[str, ...],
         qualifiers.append("context_size:" + re.sub(r"\s+", " ", match.group(0)).strip())
     return tuple(dict.fromkeys(qualifiers)), local
 
+_LEXICAL_SUBJECT_RE = re.compile(
+    r"(?iu)([A-Za-zÇĞİÖŞÜçğıöşü][\\wÇĞİÖŞÜçğıöşü-]*(?:\\s+[A-Za-zÇĞİÖŞÜçğıöşü][\\wÇĞİÖŞÜçğıöşü-]*){0,3})"
+)
+_SUBJECT_STOPWORDS = {
+    "normal", "değer", "değeri", "ortalama", "yaklaşık", "oran", "yüzde", "hasta", "olgu", "vaka",
+    "referans", "standart", "ideal", "beklenen", "bulundu", "ölçüldü", "saptandı", "iken", "için",
+}
+
+def _lexical_subject_before_value(text: str, evidence: ValueEvidence) -> tuple[str | None, float]:
+    left = text[max(0, evidence.start - 96):evidence.start]
+    # Prefer the final noun-like phrase before a value, while stripping value/assertion boilerplate.
+    candidates = []
+    for match in _LEXICAL_SUBJECT_RE.finditer(left):
+        phrase = " ".join(match.group(1).split()).strip(" ,;:()")
+        words = phrase.casefold().split()
+        while words and words[-1] in _SUBJECT_STOPWORDS:
+            words.pop()
+        if not words:
+            continue
+        phrase = " ".join(words[-4:])
+        if phrase in _SUBJECT_STOPWORDS or len(phrase) < 2:
+            continue
+        distance = len(left) - match.end()
+        candidates.append((max(0.0, 0.72 - distance / 160.0), phrase))
+    if not candidates:
+        return None, 0.0
+    candidates.sort(reverse=True)
+    return candidates[0][1], round(candidates[0][0], 4)
+
 def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
     """Bind values to nearby subjects conservatively; ambiguity stays unbound."""
     clean = " ".join((text or "").split())
@@ -144,11 +173,12 @@ def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
         if chosen and len(ranked) > 1 and ranked[1][0] >= chosen[0] - 0.08 and ranked[1][2] != chosen[2]:
             chosen = None
         qualifiers, context_text = _value_context(clean, value)
+        lexical_subject, lexical_confidence = _lexical_subject_before_value(clean, value)
         output.append(BoundValueEvidence(
             value=value, assertion=assertion, assertion_confidence=assertion_confidence,
             subject_node_id=chosen[2] if chosen else None,
-            subject_text=chosen[3] if chosen else None,
-            binding_confidence=round(chosen[0], 4) if chosen else 0.0,
+            subject_text=chosen[3] if chosen else lexical_subject,
+            binding_confidence=round(chosen[0], 4) if chosen else lexical_confidence,
             qualifiers=qualifiers,
             context_text=context_text,
         ))
