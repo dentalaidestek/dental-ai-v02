@@ -730,3 +730,32 @@ def test_imaging_constraint_does_not_suppress_long_subject_typo_rescue():
     ids = {node.id for node in matched_nodes("CBCT'de mandbular kanal ilişkisi")}
     assert "cbct" in ids
     assert "mandibular_canal" in ids
+
+
+def test_semantic_overlap_handles_positive_nodes_without_runtime_error():
+    from app.dental_semantics import DentalSemanticFeatures, semantic_overlap_score
+    q = DentalSemanticFeatures(("pulpitis",), (), ("diagnosis",), (), (), ())
+    row = DentalSemanticFeatures(("pulpitis",), (), ("diagnosis",), (), (), (), ())
+    assert semantic_overlap_score(q, row) > 0.0
+
+
+def test_multi_intent_generation_contract_keeps_all_requested_facets():
+    from app.study_ai_v2 import _response_contract
+    contract = _response_contract("Pulpitisin tanısı ve tedavisi nedir?")
+    assert "Tanı" in contract or "tanı" in contract
+    assert "tedavi" in contract.casefold()
+
+
+def test_visual_source_need_is_part_of_canonical_plan():
+    from app.dental_query_intent import build_dental_requirement_plan
+    visual = build_dental_requirement_plan("Bu radyografide lezyonun tanısı nedir?")
+    theory = build_dental_requirement_plan("Panoramik radyografinin endikasyonları nelerdir?")
+    assert visual.requires_visual_source
+    assert not theory.requires_visual_source
+
+
+def test_degree_word_alone_does_not_create_value_intent():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("Angle sınıflamasındaki dereceler nelerdir?")
+    assert "classification" in plan.requested_facets
+    assert "value" not in plan.requested_facets
