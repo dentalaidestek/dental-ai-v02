@@ -987,6 +987,12 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         direct_subject = subject_alignment >= 0.50
         semantic_subject = semantic >= 0.45
         drift_penalty = 0.22 if not direct_subject and not semantic_subject else 0.0
+        required_subjects = set(requirement.subject_node_ids)
+        exact_subject_hit = bool(required_subjects.intersection(features.node_ids))
+        # When the user names a canonical subject, evidence for that exact
+        # subject must outrank a higher-FTS same-specialty neighbour. This is a
+        # bounded identity signal; it does not add graph facts to the answer.
+        subject_identity_adjustment = 0.22 if exact_subject_hit else (-0.08 if required_subjects else 0.0)
         row_text_cf = f"{section} {body}".casefold()
         qualifier_hits = sum(1 for item in required_qualifiers if qualifier_present(item, row_text_cf))
         qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
@@ -1027,6 +1033,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
             - drift_penalty
             - qualifier_penalty
             + negation_adjustment
+            + subject_identity_adjustment
         )
         scored.append((score, position, row))
     scored.sort(key=lambda item: (-item[0], item[1]))
