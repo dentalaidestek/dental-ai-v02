@@ -1258,6 +1258,43 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
         cache[row_id] = features
     return features
 
+
+_VALUE_WORD = (
+    r"(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi|otuz|"
+    r"kırk|elli|altmış|yetmiş|seksen|doksan|yüz)"
+)
+_VALUE_UNIT = r"(?:°|mm|cm|%|mg|ml|g|µm|μm|derece|milimetre|santimetre|mikrometre|yüzde)"
+_VALUE_CONTEXT_RE = re.compile(
+    rf"(?iu)(?:"
+    rf"[+-]?\d+(?:[.,]\d+)?\s*{_VALUE_UNIT}"
+    rf"|yüzde\s+(?:\d+(?:[.,]\d+)?|{_VALUE_WORD}(?:\s+{_VALUE_WORD}){{0,3}})"
+    rf"|{_VALUE_WORD}(?:\s+{_VALUE_WORD}){{0,3}}\s+(?:derece|milimetre|santimetre|mikrometre)"
+    rf"|(?:normal\s+değer(?:i)?|ortalama(?:\s+değer(?:i)?)?|değer(?:i)?|oran(?:ı)?)"
+    rf"\s*(?:=|:|ise|olarak)?\s*(?:[+-]?\d+(?:[.,]\d+)?|{_VALUE_WORD}(?:\s+{_VALUE_WORD}){{0,3}})"
+    rf"|(?:[+-]?\d+(?:[.,]\d+)?|{_VALUE_WORD})\s*(?:[-–—]|ile|ila)\s*"
+    rf"(?:[+-]?\d+(?:[.,]\d+)?|{_VALUE_WORD})(?:\s*{_VALUE_UNIT})?"
+    rf")"
+)
+_NON_VALUE_NUMBER_RE = re.compile(
+    r"(?iu)\b(?:yaş(?:ında|ındaki)?|sayfa|sf\.?|page|hasta|olgu|vaka|katılımcı|örneklem|denek)\b"
+)
+
+def _row_has_value_evidence(row, features: DentalSemanticFeatures) -> bool:
+    """Recognize answer-bearing values without requiring a known graph term."""
+    if features.measurements:
+        return True
+    text_value = f"{row[5] or ''} {row[7] or ''}"
+    for match in _VALUE_CONTEXT_RE.finditer(text_value):
+        left = text_value[max(0, match.start() - 32):match.start()]
+        if _NON_VALUE_NUMBER_RE.search(left) and not re.search(
+            r"(?iu)(?:normal\s+değer|ortalama|değer|oran|%|yüzde|°|derece|mm|milimetre)",
+            match.group(0),
+        ):
+            continue
+        return True
+    return False
+
+
 def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None, query_features=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
     requirement = requirement or build_dental_requirement_plan(query)
@@ -1331,7 +1368,10 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             set(qf.imaging_types).intersection(features.imaging_types) for features in row_features
         ) else 0.0)
     if intent_names.intersection({"value", "measurement"}):
-        has_measurement = any(features.measurements for features in row_features)
+        has_measurement = any(
+            _row_has_value_evidence(row, features)
+            for row, features in zip(rows, row_features)
+        )
         count_request = bool(re.search(
             r"(?iu)\bkaç\s+(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\b",
             query,
