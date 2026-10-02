@@ -1239,44 +1239,46 @@ def retrieve_course_context_v2(
         rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache)
         coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         rescue_query_count = 0
-        if _needs_multi_evidence(resolved, requirement=requirement) and coverage < 1.0 and len(rows) < candidate_target:
-            requested_facets = tuple(dict.fromkeys(
-                facet for item in requirement.intents for facet in _coverage_terms(item.name)
-            ))
-            missing = [facet for facet in requested_facets if facet not in covered_facets]
-            if missing:
-                original_terms, _ = _retrieval_terms(resolved)
-                alias_terms = _concept_alternatives(resolved)
-                # Facet words are requirements, not subject identity. Excluding
-                # them prevents rescue from drifting to any chunk that merely
-                # says "tedavi"/"komplikasyon" while the named disease differs.
-                facet_noise = {
-                    term.casefold()
-                    for values in _FACET_SEARCH_TERMS.values()
-                    for term in values
-                }
-                subject_terms = [
-                    term for term in dict.fromkeys(original_terms[:7] + alias_terms[:3])
-                    if term.casefold() not in facet_noise
-                ][:7]
-                # websearch_to_tsquery does not use parentheses for logical
-                # grouping. Keep the single rescue query strict instead:
-                # strongest subject phrase AND one bounded synonym alternative
-                # for each missing facet. The later rerank/coverage gate can
-                # accept aliases, but the DB rescue must not become a broad OR.
-                subject_query = (
-                    f'"{subject_terms[0]}"' if subject_terms and " " in subject_terms[0]
-                    else (subject_terms[0] if subject_terms else "")
-                )
-                facet_terms = []
-                for facet in missing:
-                    hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
-                    if hints:
-                        term = hints[0]
-                        facet_terms.append(f'"{term}"' if " " in term else term)
-                if subject_query and facet_terms:
-                    rescue_query = " ".join([subject_query, *facet_terms])
-                    rescue_rows = _fts_rows(
+        requested_facets = tuple(dict.fromkeys(
+            facet for item in requirement.intents for facet in _coverage_terms(item.name)
+        ))
+        missing_facets = [facet for facet in requested_facets if facet not in covered_facets]
+        evidence_nodes = {
+            node_id
+            for row in rows
+            for node_id in _row_semantic_features(row, row_feature_cache).node_ids
+        }
+        missing_subject_ids = [
+            node_id for node_id in requirement.subject_node_ids
+            if node_id not in evidence_nodes
+        ]
+        needs_rescue = bool(missing_facets or missing_subject_ids)
+        if (
+            _needs_multi_evidence(resolved, requirement=requirement)
+            and needs_rescue
+            and len(rows) < candidate_target
+        ):
+            # Spend at most one rescue on exactly what primary retrieval missed.
+            # Missing explicit subjects take priority over already-covered ones;
+            # missing facets are appended as strict AND terms when present.
+            missing_subject_terms = [
+                term for node_id, term in zip(requirement.subject_node_ids, requirement.subject_terms)
+                if node_id in missing_subject_ids
+            ]
+            subject_terms = missing_subject_terms or list(requirement.subject_terms[:1])
+            subject_query = " OR ".join(
+                f'"{term}"' if " " in term else term
+                for term in subject_terms[:3] if term
+            )
+            facet_terms = []
+            for facet in missing_facets:
+                hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
+                if hints:
+                    term = hints[0]
+                    facet_terms.append(f'"{term}"' if " " in term else term)
+            if subject_query:
+                rescue_query = " ".join([subject_query, *facet_terms])
+                rescue_rows = _fts_rows(
                         session,
                         owner_user_id=owner_user_id,
                         course_id=course_id,
