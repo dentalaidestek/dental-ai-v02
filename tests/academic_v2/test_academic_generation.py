@@ -25,3 +25,18 @@ def test_generated_question_dedupe_rejects_close_paraphrase_shape():
     kept = dedupe_generated_questions(questions)
     assert len(kept) == 2
     assert kept[-1].startswith("SNA")
+
+
+def test_resume_skips_completed_bucket_work():
+    from app.academic_coverage import bucket_key
+    plan = build_coverage_plan([row(i, "Endo") for i in range(1, 5)] + [row(10, "Perio")], 10)
+    first = plan.buckets[0]
+    batches = plan_generation_batches(plan, generated_by_bucket={bucket_key(first): first.question_budget})
+    assert all(x.bucket_key != bucket_key(first) for x in batches)
+
+def test_resume_only_plans_remaining_questions():
+    from app.academic_coverage import bucket_key
+    plan = build_coverage_plan([row(i, "Endo") for i in range(1, 6)], 10)
+    bucket = plan.buckets[0]
+    batches = plan_generation_batches(plan, generated_by_bucket={bucket_key(bucket): 7})
+    assert sum(x.question_count for x in batches) == 3
