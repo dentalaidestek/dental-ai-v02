@@ -128,3 +128,16 @@ def test_local_ocr_reuses_engine_and_preserves_academic_structure():
     assert "_MC_OPTION_RE" in ocr
     assert "_TABLE_GAP_RE" in ocr
     assert "text = _preserve_academic_structure(text)" in ocr
+
+
+def test_dental_ocr_lexicon_has_broad_specialty_coverage():
+    words = (ROOT / "app/dental_ocr_words.txt").read_text(encoding="utf-8")
+    required = [
+        "apeksifikasyon", "MTA", "klinik ataşman seviyesi", "GTR",
+        "Wits appraisal", "RME", "BSSO", "MRONJ", "CBCT", "OSCC",
+        "Kennedy sınıflaması", "RMGIC", "MIH", "IANB", "FDI",
+        "junctional epithelium",
+    ]
+    assert len({line.strip().casefold() for line in words.splitlines() if line.strip()}) >= 400
+    for term in required:
+        assert term.casefold() in words.casefold()
