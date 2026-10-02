@@ -10,6 +10,7 @@ from enum import Enum
 import re
 
 from app.dental_specialty_concepts import SPECIALTY_CONCEPTS
+from app.dental_specialty_concepts_extended import EXTENDED_SPECIALTY_CONCEPTS
 
 
 class Relation(str, Enum):
@@ -158,7 +159,8 @@ EDGES = (
 
 _SPECIALTY_NODES = tuple(
     DentalNode(concept_id, label, specialty, kind, aliases)
-    for specialty, concepts in SPECIALTY_CONCEPTS.items()
+    for packs in (SPECIALTY_CONCEPTS, EXTENDED_SPECIALTY_CONCEPTS)
+    for specialty, concepts in packs.items()
     for concept_id, label, aliases, kind in concepts
 )
 ALL_NODES = NODES + _SPECIALTY_NODES
