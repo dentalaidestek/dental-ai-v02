@@ -807,3 +807,11 @@ def test_academic_v2_core_python_files_are_syntax_valid():
     )
     for path in core:
         ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+
+
+def test_count_value_questions_have_bounded_nonunit_evidence_support():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    suff = source[source.index("def _evidence_sufficiency"):source.index("def _coverage_select")]
+    assert "count_request" in suff
+    assert "count_value_re" in suff
+    assert "kök|kanal|tüberkül|cusp" in suff
