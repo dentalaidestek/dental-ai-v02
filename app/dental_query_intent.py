@@ -95,6 +95,9 @@ class DentalRequirementPlan:
     requested_facets: tuple[str, ...]
     relation_hints: tuple[str, ...]
     specialties: tuple[str, ...]
+    qualifiers: tuple[str, ...] = ()
+    comparison_terms: tuple[str, ...] = ()
+    asks_negation: bool = False
 
 _SUBJECT_STOP_RE = re.compile(
     r"\\b(?:nedir|nelerdir|kaçtır|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
@@ -121,6 +124,31 @@ def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     return (phrase,) if phrase else ()
 
 
+_QUALIFIER_RE = re.compile(
+    r"\\b(?:maksiller|mandibular|üst|alt|sağ|sol|anterior|posterior|süt|daimi|"
+    r"primer|sekonder|akut|kronik|reversible|irreversible|semptomatik|asemptomatik|"
+    r"lokalize|generalize|erken|geç|çocuk|erişkin)\\b",
+    re.I,
+)
+_NEGATION_REQUEST_RE = re.compile(
+    r"\\b(?:değil|olmayan|olmaz|yapılmaz|kullanılmaz|kontrendike|hariç|yanlıştır|yanlış olan)\\b",
+    re.I,
+)
+_COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
+
+
+def _query_qualifiers(query: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(m.group(0).casefold() for m in _QUALIFIER_RE.finditer(query or "")))
+
+
+def _comparison_terms(query: str, intents: tuple[DentalIntent, ...]) -> tuple[str, ...]:
+    if not any(intent.name == "comparison" for intent in intents):
+        return ()
+    clean = re.sub(r"(?i)\\b(?:arasındaki|fark(?:ı|ları)?|karşılaştır[a-zçğıöşü]*|hangisi daha)\\b", " ", query or "")
+    parts = [re.sub(r"\\s+", " ", part).strip(" ?.,;:") for part in _COMPARISON_SPLIT_RE.split(clean)]
+    return tuple(part for part in parts if len(part) >= 2)[:2]
+
+
 def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     """Separate what the user asks about from which facts they request."""
     from app.dental_knowledge_graph import matched_nodes
@@ -140,6 +168,9 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         requested_facets=facets,
         relation_hints=combined_relation_hints(intents, limit=16),
         specialties=specialties,
+        qualifiers=_query_qualifiers(clean),
+        comparison_terms=_comparison_terms(clean, intents),
+        asks_negation=bool(_NEGATION_REQUEST_RE.search(clean)),
     )
 
 
