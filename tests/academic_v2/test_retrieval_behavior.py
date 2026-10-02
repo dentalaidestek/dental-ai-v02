@@ -119,3 +119,18 @@ assert '"contraindication": ("kontrendikasyon", "sakınca", "kullanılmaz")' in 
 assert "if len(row) > 14 and row[-1]:" in source
 assert "json.loads(row[-1])" in source
 assert "row[14]" not in source
+
+
+def test_extended_dental_semantic_vocabulary_is_query_matchable():
+    from app.dental_knowledge_graph import matched_nodes
+
+    cases = {
+        "MRONJ nedir": "mronj",
+        "NaOCl irrigasyonda": "sodium_hypochlorite",
+        "Kennedy classification": "kennedy_classification",
+        "MIH bulguları": "mih",
+        "IANB tekniği": "ianb",
+        "OSCC özellikleri": "oscc",
+    }
+    for query, expected in cases.items():
+        assert expected in {node.id for node in matched_nodes(query)}
