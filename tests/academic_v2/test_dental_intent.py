@@ -56,3 +56,28 @@ def test_multi_intent_plan_is_bounded():
         "tanısı bulguları tedavisi komplikasyonları sınıflaması ve nedeni"
     )
     assert len(intents) <= 3
+
+
+def test_student_study_generation_plan_separates_topic_and_coverage():
+    from app.dental_query_intent import classify_dental_study_plan
+
+    topic = classify_dental_study_plan("ANB açısından 20 zor çoktan seçmeli soru hazırla")
+    assert topic is not None
+    assert topic.mode == "topic"
+    assert topic.count == 20
+    assert topic.difficulty == "zor"
+    assert "mcq" in topic.question_types
+
+    coverage = classify_dental_study_plan(
+        "Bu notun tamamındaki bütün sınav noktalarından 80 soru üret"
+    )
+    assert coverage is not None
+    assert coverage.mode == "coverage"
+    assert coverage.count == 80
+    assert coverage.coverage_required is True
+
+
+def test_normal_dental_question_is_not_study_generation():
+    from app.dental_query_intent import classify_dental_study_plan
+
+    assert classify_dental_study_plan("ANB açısının normal değeri kaçtır?") is None
