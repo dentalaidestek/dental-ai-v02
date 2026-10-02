@@ -131,3 +131,39 @@ def classify_dental_study_plan(query: str) -> DentalStudyPlan | None:
         question_types=tuple(dict.fromkeys(kinds)),
         coverage_required=coverage,
     )
+
+
+@dataclass(frozen=True)
+class StudentTaskPlan:
+    task: str
+    requires_past_questions: bool = False
+    requires_note_evidence: bool = True
+    requires_coverage: bool = False
+    generate_new_questions: bool = False
+
+
+_STUDENT_TASK_RULES = (
+    ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
+    ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
+    ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
+    ("exam_points", re.compile(r"\b(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)", re.I), False, True, True, False),
+    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)\b.{0,24}\b(?:anlat|açıkla|özetle)|\b(?:anlat|açıkla|özetle)\b.{0,24}\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)", re.I), False, True, False, False),
+)
+
+
+def classify_student_task(query: str) -> StudentTaskPlan | None:
+    """Plan common student workflows while keeping all factual output source-bound."""
+    clean = " ".join((query or "").split())
+    for task, pattern, past, notes, coverage, generate in _STUDENT_TASK_RULES:
+        if pattern.search(clean):
+            return StudentTaskPlan(task, past, notes, coverage, generate)
+    study = classify_dental_study_plan(clean)
+    if study:
+        return StudentTaskPlan(
+            "generate_questions",
+            False,
+            True,
+            study.coverage_required,
+            True,
+        )
+    return None
