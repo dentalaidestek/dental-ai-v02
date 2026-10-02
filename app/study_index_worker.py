@@ -134,6 +134,7 @@ def _index_fingerprint() -> str:
     payload = {
         "schema": "academic-v2-dental-semantics-5",
         "retrieval_profile": "fts-local-v1",
+        "chunk_profile": "dental-page-v2-margin-position-safe",
         "embedding_provider": None,
         "embedding_model": None,
         "embedding_dimensions": None,
@@ -308,35 +309,32 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
 
 
 def _strip_repeated_page_margins(rows: list[StudyIndexPage]) -> dict[int, str]:
-    """Remove only exact repeated short header/footer lines within this page batch.
-
-    Repetition must appear on at least 3 pages and >=60% of the batch. Body text
-    is untouched; this prevents lecture titles/page furniture dominating FTS.
-    """
+    """Remove repeated page furniture only at observed margin line positions."""
     if len(rows) < 3:
         return {int(row.page_number): (row.text_content or "") for row in rows}
     positions: dict[str, set[int]] = {}
-    per_page: dict[int, tuple[list[str], list[str]]] = {}
+    per_page: dict[int, tuple[list[str], set[int]]] = {}
     for row in rows:
         lines = (row.text_content or "").splitlines()
         nonempty = [(idx, line.strip()) for idx, line in enumerate(lines) if line.strip()]
         margin = nonempty[:2] + nonempty[-2:]
-        per_page[int(row.page_number)] = (lines, [line for _, line in margin])
+        margin_indices = {idx for idx, _ in margin}
+        per_page[int(row.page_number)] = (lines, margin_indices)
         for _, line in margin:
-            key = re.sub(r"\\s+", " ", line).casefold()
+            key = re.sub(r"\s+", " ", line).casefold()
             if 3 <= len(key) <= 120:
                 positions.setdefault(key, set()).add(int(row.page_number))
     threshold = max(3, int(len(rows) * 0.60 + 0.999))
     repeated = {key for key, pages in positions.items() if len(pages) >= threshold}
     cleaned: dict[int, str] = {}
-    for page_number, (lines, margin_lines) in per_page.items():
-        margin_keys = {re.sub(r"\\s+", " ", line).casefold() for line in margin_lines}
-        out = [
-            line for line in lines
-            if not (re.sub(r"\\s+", " ", line.strip()).casefold() in repeated
-                    and re.sub(r"\\s+", " ", line.strip()).casefold() in margin_keys)
-        ]
-        cleaned[page_number] = normalize_extracted_text("\\n".join(out))
+    for page_number, (lines, margin_indices) in per_page.items():
+        out: list[str] = []
+        for idx, line in enumerate(lines):
+            key = re.sub(r"\s+", " ", line.strip()).casefold()
+            if idx in margin_indices and key in repeated:
+                continue
+            out.append(line)
+        cleaned[page_number] = normalize_extracted_text("\n".join(out))
     return cleaned
 
 def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
