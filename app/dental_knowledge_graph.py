@@ -251,16 +251,33 @@ def _term_present(text: str, term: str) -> bool:
     return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.IGNORECASE))
 
 def matched_nodes(query: str) -> list[DentalNode]:
-    """Find explicit dental entities in a query, longest aliases first."""
+    """Find explicit entities using longest non-overlapping mentions.
+
+    A shorter alias fully contained by a stronger phrase must not become a
+    second graph seed; that is a common source of retrieval drift.
+    """
     lowered = " ".join((query or "").casefold().split())
-    matches: list[tuple[int, DentalNode]] = []
+    mentions: list[tuple[int, int, int, DentalNode]] = []
     for node in ALL_NODES:
-        terms = (node.label, *node.aliases)
-        best = max((len(term) for term in terms if _term_present(lowered, term)), default=0)
-        if best:
-            matches.append((best, node))
-    matches.sort(key=lambda item: (-item[0], item[1].id))
-    return [node for _, node in matches]
+        for term in (node.label, *node.aliases):
+            clean_term = " ".join((term or "").casefold().split())
+            if not clean_term:
+                continue
+            escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
+            for match in re.finditer(r"(?<!\w)" + escaped + r"(?!\w)", lowered, flags=re.I):
+                mentions.append((match.start(), match.end(), len(clean_term), node))
+    mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
+    occupied: list[tuple[int, int]] = []
+    selected: list[DentalNode] = []
+    seen: set[str] = set()
+    for start, end, _, node in mentions:
+        if any(start < used_end and end > used_start for used_start, used_end in occupied):
+            continue
+        occupied.append((start, end))
+        if node.id not in seen:
+            seen.add(node.id)
+            selected.append(node)
+    return selected
 
 
 def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 12, relation_hints: tuple[str, ...] = ()) -> list[str]:
