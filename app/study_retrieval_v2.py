@@ -1121,10 +1121,16 @@ def retrieve_course_context_v2(
         # This is not graph expansion: only explicitly resolved subject labels
         # are OR-ed with the user's precise lexical form, so typo rescue and
         # curated aliases can recover the right chunk without broadening scope.
-        canonical_subjects = [
-            term for term in requirement.subject_terms[:3]
-            if term and term.casefold() not in precise_query.casefold()
-        ]
+        canonical_subjects = []
+        for term in requirement.subject_terms:
+            normalized = " ".join((term or "").split()).strip()
+            if not normalized or len(normalized) > 80:
+                continue
+            if normalized.casefold() in precise_query.casefold():
+                continue
+            canonical_subjects.append(normalized)
+            if len(canonical_subjects) >= 3:
+                break
         if canonical_subjects:
             canonical_query = " OR ".join(
                 f'"{term}"' if " " in term else term for term in canonical_subjects
