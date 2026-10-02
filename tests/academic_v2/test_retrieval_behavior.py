@@ -790,3 +790,20 @@ def test_comparison_sides_keep_qualifiers_for_repeated_same_subject():
     assert len(plan.comparison_sides) == 2
     assert {"alt", "sağ"}.issubset(set(plan.comparison_sides[0][1]))
     assert {"üst", "sol"}.issubset(set(plan.comparison_sides[1][1]))
+
+
+def test_academic_v2_core_python_files_are_syntax_valid():
+    import ast
+    core = (
+        "app/dental_query_intent.py",
+        "app/dental_knowledge_graph.py",
+        "app/dental_semantics.py",
+        "app/study_retrieval_v2.py",
+        "app/study_ai_v2.py",
+        "app/study_index_worker.py",
+        "app/study_local_ocr.py",
+        "app/academic_generation.py",
+        "app/academic_coverage.py",
+    )
+    for path in core:
+        ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
