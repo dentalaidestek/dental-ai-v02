@@ -4693,8 +4693,6 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 s, owner_user_id=user.id, course_id=course_id,
                 query=clean_message, recent_history=history,
             )
-            if retrieval.visual_sources and retrieval.evidence_sufficient:
-                materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), retrieval)
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
@@ -4711,6 +4709,21 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             }
             for item in retrieval.evidence
         ], ensure_ascii=False)
+
+    # Retrieval has finished, so release its request Session before any
+    # potentially slow R2/PDF visual materialization. materialize_visual_sources
+    # owns short read/write Sessions itself; normal text questions skip this.
+    if retrieval.visual_sources and retrieval.evidence_sufficient:
+        try:
+            materialize_visual_sources(
+                lambda: Session(engine, expire_on_commit=False), retrieval,
+            )
+        except Exception:
+            logger.exception("Academic V2 visual materialization failed")
+            return JSONResponse(
+                {"ok": False, "error": "Görsel kaynak hazırlanamadı."},
+                status_code=502,
+            )
 
     owner_user_id = user.id
 
