@@ -4481,27 +4481,30 @@ def study_ai_ask(
                     "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
                     "code": "ACADEMIC_V2_INDEX_NOT_READY",
                 }, status_code=409)
-            # Release the read transaction before embedding/provider I/O.
+            # Snapshot authorization/source state, then end the initial read
+            # transaction. Retrieval gets its own short-lived session instead of
+            # silently reopening this closed request session.
             source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
             s.close()
-            if use_v2:
-                rag_result = retrieve_course_context_v2(
-                    s,
-                    owner_user_id=user.id,
-                    course_id=course_id,
-                    query=clean_message,
-                    recent_history=history,
-                )
-            else:
-                rag_result = retrieve_course_context(
-                    s,
-                    owner_user_id=user.id,
-                    course_id=course_id,
-                    query=clean_message,
-                    materials=materials,
-                    recent_history=history,
-                )
+            with Session(engine, expire_on_commit=False) as retrieval_session:
+                if use_v2:
+                    rag_result = retrieve_course_context_v2(
+                        retrieval_session,
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        query=clean_message,
+                        recent_history=history,
+                    )
+                else:
+                    rag_result = retrieve_course_context(
+                        retrieval_session,
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        query=clean_message,
+                        materials=materials,
+                        recent_history=history,
+                    )
 
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
