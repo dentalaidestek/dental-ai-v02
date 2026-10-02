@@ -1763,8 +1763,21 @@ def retrieve_course_context_v2(
             result.source_material_ids.append(evidence.material_id)
 
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
-        result.evidence_sufficient = bool(result.evidence)
-        result.evidence_confidence = 1.0 if result.evidence else 0.0
+        hydrated_ids = {item.chunk_id for item in result.evidence}
+        planned_budget = sum(max(0, int(bucket.question_budget)) for bucket in coverage_plan.buckets)
+        hydrated_budget = sum(
+            max(0, int(bucket.question_budget))
+            for bucket in coverage_plan.buckets
+            if any(int(chunk_id) in hydrated_ids for chunk_id in bucket.chunk_ids)
+        )
+        result.evidence_confidence = (
+            min(1.0, hydrated_budget / planned_budget)
+            if planned_budget > 0 else 0.0
+        )
+        # A whole-course task may claim complete coverage only when every
+        # budgeted bucket actually survived hydration. Missing/stale chunks
+        # therefore fail closed instead of turning one surviving row into 1.0.
+        result.evidence_sufficient = bool(result.evidence) and hydrated_budget == planned_budget
     elif exhaustive_questions:
         result.evidence_sufficient = bool(result.evidence)
         result.evidence_confidence = 1.0 if result.evidence else 0.0

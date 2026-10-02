@@ -131,3 +131,12 @@ def test_coverage_hydration_sql_preserves_planner_order():
     assert "WITH ORDINALITY AS selected(id, ord)" in block
     assert "ORDER BY selected.ord" in block
     assert "ORDER BY c.material_id, c.page_start, c.chunk_index, c.id" not in block
+
+
+def test_course_wide_confidence_requires_all_planned_buckets():
+    from pathlib import Path
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    block = source[source.index("if course_wide_coverage and not study_question_task and not exhaustive_questions:", source.index("result = RetrievalResult")):]
+    assert "hydrated_budget / planned_budget" in block
+    assert "hydrated_budget == planned_budget" in block
+    assert "result.evidence_confidence = 1.0 if result.evidence else 0.0" not in block.split("elif exhaustive_questions:", 1)[0]
