@@ -247,9 +247,14 @@ def dental_graph_coverage() -> dict[str, object]:
     }
 
 
+def _match_text(text: str) -> str:
+    """Casefold while neutralizing Turkish capital İ's combining dot."""
+    return " ".join((text or "").casefold().replace("\u0307", "").split())
+
+
 def _term_present(text: str, term: str) -> bool:
     """Boundary-aware phrase match; short dental abbreviations must not hit substrings."""
-    clean_term = " ".join((term or "").casefold().split())
+    clean_term = _match_text(term)
     if not clean_term:
         return False
     escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
@@ -264,7 +269,7 @@ _DENTAL_CONTEXT_RE = re.compile(
 
 def _alias_pattern(term: str) -> str:
     """Canonical mention pattern shared by graph/semantic subject matching."""
-    clean_term = " ".join((term or "").casefold().split())
+    clean_term = _match_text(term)
     pieces: list[str] = []
     for word in clean_term.split():
         escaped = re.escape(word)
@@ -311,7 +316,7 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     # Never fuzzy-match abbreviations or multiword aliases: one-edit fuzziness
     # there creates dangerous cross-concept seeds. This is only a typo rescue
     # for distinctive alphabetic dental terms such as "pulptis".
-    tokens = re.findall(r"[a-zçğıöşü]{7,}", (query or "").casefold(), flags=re.I)
+    tokens = re.findall(r"[a-zçğıöşü]{7,}", _match_text(query), flags=re.I)
     if not tokens:
         return []
     candidates: list[tuple[int, int, DentalNode]] = []
@@ -319,7 +324,7 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
         if node.id in already:
             continue
         for term in (node.label, *node.aliases):
-            clean = " ".join((term or "").casefold().split())
+            clean = _match_text(term)
             if " " in clean or len(clean) < 7 or not clean.isalpha():
                 continue
             for pos, token in enumerate(tokens):
@@ -329,12 +334,12 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     # Also allow one typo inside a multiword canonical phrase when every
     # other word matches exactly. This keeps "mandbular kanal" recoverable
     # without enabling fuzzy abbreviations or broad phrase guessing.
-    query_words = re.findall(r"[a-zçğıöşü]{3,}", (query or "").casefold(), flags=re.I)
+    query_words = re.findall(r"[a-zçğıöşü]{3,}", _match_text(query), flags=re.I)
     for node in ALL_NODES:
         if node.id in already:
             continue
         for term in (node.label, *node.aliases):
-            words = re.findall(r"[a-zçğıöşü]{3,}", (term or "").casefold(), flags=re.I)
+            words = re.findall(r"[a-zçğıöşü]{3,}", _match_text(term), flags=re.I)
             if len(words) < 2 or len(words) > 4:
                 continue
             for start in range(0, max(0, len(query_words) - len(words) + 1)):
@@ -374,11 +379,11 @@ def matched_nodes(query: str) -> list[DentalNode]:
     A shorter alias fully contained by a stronger phrase must not become a
     second graph seed; that is a common source of retrieval drift.
     """
-    lowered = " ".join((query or "").casefold().split())
+    lowered = _match_text(query)
     mentions: list[tuple[int, int, int, DentalNode]] = []
     for node in ALL_NODES:
         for term in (node.label, *node.aliases):
-            clean_term = " ".join((term or "").casefold().split())
+            clean_term = _match_text(term)
             if not clean_term:
                 continue
             escaped = _alias_pattern(clean_term)
