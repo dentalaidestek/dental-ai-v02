@@ -106,3 +106,12 @@ def test_local_ocr_preserves_layout_and_bounds_quality_retry():
     assert "def _ocr_anomaly_score" in ocr
     assert "_ocr_anomaly_score(text) >= 0.34" in ocr
     assert "retry_layout.kind == \"two_column\"" in ocr
+
+
+def test_local_ocr_retries_only_weak_columns_when_possible():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _recognize_two_columns_selective" in ocr
+    assert "weak_columns = (False, False)" in ocr
+    assert "any(weak_columns)" in ocr
+    assert "if not weak_columns[idx]:" in ocr
+    assert "continue" in ocr
