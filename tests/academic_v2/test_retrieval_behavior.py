@@ -501,3 +501,13 @@ def test_literal_value_question_requires_measurement_evidence_before_generation(
     assert "literal_value_missing" in suff
     assert "special_match = 0.0" in suff
     assert "not literal_value_missing" in suff
+
+
+def test_primary_fts_does_not_require_generic_facet_word_in_same_chunk():
+    # "irreversible pulpitis tedavisi" must still retrieve a subject chunk even
+    # when the word "tedavi" lives in an adjacent chunk; coverage/rescue handles
+    # the missing facet afterward.
+    precise = namespace["_fts_query"]("irreversible pulpitis tedavisi nedir?", broad=False)
+    assert "irreversible" in precise.casefold()
+    assert "pulpitis" in precise.casefold()
+    assert "tedavi" not in precise.casefold()
