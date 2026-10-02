@@ -389,7 +389,8 @@ def _concept_alternatives(query: str) -> list[str]:
 
 _QUERY_NOISE_RE = re.compile(
     r"\b(?:nedir|ne demek|açıkla|anlat|kaçtır|hangisi|hangileridir|nelerdir|"
-    r"nedendir|neden|nasıl|göre|hakkında|bilgi|ver|söyle|ders notunda|notlarda)\b",
+    r"nedendir|neden|niçin|nasıl|nerede|ne zaman|hangi durumda|kimlerde|"
+    r"ne yapılır|neye bağlı|göre|hakkında|bilgi|ver|söyle|ders notunda|notlarda)\b",
     re.I,
 )
 
