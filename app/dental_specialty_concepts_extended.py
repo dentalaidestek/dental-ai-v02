@@ -128,7 +128,6 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("perio_grade", "periodontitis derecesi", ("periodontitis grade", "grading"), "classification"),
         ("asa_classification", "ASA sınıflaması", ("ASA physical status", "ASA classification"), "classification"),
         ("mallampati", "Mallampati sınıflaması", ("Mallampati score", "Mallampati classification"), "classification"),
-        ("kennedy", "Kennedy sınıflaması", ("Kennedy classification",), "classification"),
         ("black_classification", "Black kavite sınıflaması", ("G.V. Black classification", "Black classification"), "classification"),
         ("icdas", "ICDAS", ("International Caries Detection and Assessment System",), "classification"),
         ("periapical_index", "periapikal indeks", ("periapical index", "PAI"), "index"),
