@@ -1583,7 +1583,7 @@ def retrieve_course_context_v2(
     visual_pages: list[tuple[int, int]] = []
     # Keep retrieval DB-only. True visual source bytes are materialized later,
     # after this retrieval transaction has closed.
-    visual_requested = _requires_visual_source(query)
+    visual_requested = requirement.requires_visual_source
     if visual_requested and result.evidence_sufficient:
         for item in result.evidence:
             key = (item.material_id, item.page_start)
