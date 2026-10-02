@@ -1213,15 +1213,14 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             has_measurement = any(
                 count_value_re.search(f"{row[5] or ''} {row[7] or ''}") for row in rows
             )
-        if not has_measurement and qf.node_ids:
+        if not has_measurement and qf.node_ids and "measurement" in qf.kinds:
             # Lecture tables often omit units ("SNA 82", "ANB 2"). Accept a
-            # bare numeric value only when the same row contains the requested
-            # canonical subject and that subject is a measurement-kind concept.
+            # bare numeric value only for a measurement-kind query and only
+            # when the same row contains the requested canonical subject.
             bare_value_re = re.compile(r"(?<![\\w.])[+-]?\\d{1,3}(?:[.,]\\d+)?(?![\\w.])")
             requested_nodes = set(qf.node_ids)
             has_measurement = any(
                 bool(requested_nodes.intersection(features.node_ids))
-                and "measurement" in features.kinds
                 and bool(bare_value_re.search(f"{row[5] or ''} {row[7] or ''}"))
                 for row, features in zip(rows, row_features)
             )
