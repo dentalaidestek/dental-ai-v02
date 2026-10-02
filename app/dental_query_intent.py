@@ -181,7 +181,7 @@ def qualifier_present(qualifier: str, text: str) -> bool:
 
 _NEGATION_REQUEST_RE = re.compile(
     r"\\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
-    r"kontrendike|hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
+    r"hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
     r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\\b",
     re.I,
 )
