@@ -822,10 +822,13 @@ _MULTI_EVIDENCE_INTENTS = {
 
 
 def _needs_multi_evidence(query: str) -> bool:
-    intent = classify_dental_intent(query)
-    if intent.name in _FAST_INTENTS:
+    intents = build_dental_requirement_plan(query).intents
+    names = {item.name for item in intents}
+    if len(names - {"general"}) > 1:
+        return True
+    if names and names.issubset(_FAST_INTENTS | {"general"}):
         return False
-    return intent.name in _MULTI_EVIDENCE_INTENTS
+    return bool(names.intersection(_MULTI_EVIDENCE_INTENTS))
 
 
 def _coverage_terms(intent_name: str) -> tuple[str, ...]:
@@ -961,8 +964,10 @@ def _coverage_select(query: str, rows: list, *, limit: int) -> list:
     """Preserve evidence diversity after relevance reranking."""
     if len(rows) <= limit:
         return rows
-    intent = classify_dental_intent(query)
-    facets = _coverage_terms(intent.name)
+    requirement = build_dental_requirement_plan(query)
+    facets = tuple(dict.fromkeys(
+        facet for item in requirement.intents for facet in _coverage_terms(item.name)
+    ))
     if not facets:
         return rows[:limit]
     selected: list = []
