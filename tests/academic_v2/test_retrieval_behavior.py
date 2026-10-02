@@ -1201,3 +1201,17 @@ def test_normal_value_query_requires_reference_assertion():
     sufficiency = source.split("def _evidence_sufficiency", 1)[1]
     assert "reference_value_request" in sufficiency
     assert "require_reference=reference_value_request" in sufficiency
+
+def test_value_sufficiency_reconciles_across_chunks_before_generation():
+    source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "def _value_evidence_state" in source
+    assert 'return "conflict"' in source
+    assert 'return "conditioned"' in source
+    assert 'value_state = _value_evidence_state(rows' in source
+    assert 'value_state == "conflict"' in source
+
+def test_reference_request_does_not_accept_observation_only_evidence():
+    source = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    helper = source.split("def _value_evidence_state", 1)[1].split("def _evidence_sufficiency", 1)[0]
+    assert 'return "observations_only"' in helper
+    assert 'item.get("assertion") == "reference"' in helper
