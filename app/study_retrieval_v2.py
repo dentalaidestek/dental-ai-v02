@@ -149,6 +149,9 @@ class RetrievalResult:
     evidence: list[Evidence] = field(default_factory=list)
     note_context: list[str] = field(default_factory=list)
     attachments: list[dict] = field(default_factory=list)
+    # Deferred visual sources keep retrieval DB-only. Endpoint/generation
+    # materializes these after the retrieval transaction is closed.
+    visual_sources: list[dict] = field(default_factory=list)
     source_material_ids: list[int] = field(default_factory=list)
     resolved_query: str = ""
     used_semantic_search: bool = False
@@ -1535,10 +1538,8 @@ def retrieve_course_context_v2(
         )
 
     visual_pages: list[tuple[int, int]] = []
-    # A TABLE/VISUAL chunk can answer an ordinary textual question from its
-    # extracted text; that alone must not trigger PDF/R2 materialization or a
-    # multimodal provider request. Attach source pages only when the user's
-    # current request explicitly requires visual inspection.
+    # Keep retrieval DB-only. True visual source bytes are materialized later,
+    # after this retrieval transaction has closed.
     visual_requested = _requires_visual_source(query)
     if visual_requested and result.evidence_sufficient:
         for item in result.evidence:
@@ -1557,33 +1558,16 @@ def retrieve_course_context_v2(
             material = materials.get(material_id)
             if not material:
                 continue
-            try:
-                if material[2] == "application/pdf":
-                    if not material[4]:
-                        continue
-                    data = _single_page_pdf(
-                        session,
-                        owner_user_id=owner_user_id,
-                        material_id=material_id,
-                        index_version=str(material[4]),
-                        reference=material[1],
-                        page_number=page,
-                    )
-                elif str(material[2]).startswith("image/"):
-                    data = storage_ensure_local(material[1]).read_bytes()
-                else:
-                    continue
-            except Exception:
-                logger.exception("Academic V2 visual page could not be prepared")
-                continue
-            result.attachments.append({
+            result.visual_sources.append({
+                "owner_user_id": owner_user_id,
+                "material_id": material_id,
+                "reference": material[1],
                 "mime_type": material[2],
-                "data": data,
-                "label": f"INTERNAL_SOURCE: {material[3]}, sayfa {page}",
+                "display_name": material[3],
+                "index_version": str(material[4]) if material[4] else None,
+                "page_number": page,
             })
-    # A true visual-inspection request is not answerable as if pixels were seen
-    # when the source page/image could not be materialized.
-    if visual_requested and result.evidence_sufficient and not result.attachments:
+    if visual_requested and result.evidence_sufficient and not result.visual_sources:
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
     return result
