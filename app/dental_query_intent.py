@@ -166,13 +166,6 @@ _QUALIFIER_PATTERNS = (
     ("çocuk", re.compile(r"\bçocuk(?:ta|tan|larda|larda)?\b", re.I)),
     ("erişkin", re.compile(r"\berişkin(?:de|den|lerde)?\b", re.I)),
 )
-_QUALIFIER_RE = re.compile(
-    r"\b(?:maksiller|mandibular|maksilla|mandibula|üst|alt|sağ|sol|anterior|posterior|"
-    r"süt|daimi|primer|sekonder|akut|kronik|reversible|irreversible|semptomatik|"
-    r"asemptomatik|lokalize|generalize|erken|geç|çocuk|erişkin)[a-zçğıöşü]{0,5}\b",
-    re.I,
-)
-
 def query_qualifiers(query: str) -> tuple[str, ...]:
     text = query or ""
     return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(text))
