@@ -566,3 +566,16 @@ def test_question_understanding_does_not_turn_treatment_subject_into_requested_t
     plan = build_dental_requirement_plan("kanal tedavisi komplikasyonları nelerdir?")
     assert "complication" in plan.requested_facets
     assert "treatment" not in plan.requested_facets
+
+
+def test_followup_resolution_uses_history_only_for_dependent_language():
+    history = [
+        {"role": "USER", "content": "Irreversible pulpitis nedir?"},
+        {"role": "ASSISTANT", "content": "Notlara göre irreversible pulpitis..."},
+    ]
+    for query in ("peki tedavisi?", "bunun komplikasyonları?", "ya bunun tanısı?", "niye olur?"):
+        resolved = namespace["resolve_followup_query"](query, history)
+        assert "Önceki bağlam:" in resolved, query
+    for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
+        resolved = namespace["resolve_followup_query"](query, history)
+        assert "Önceki bağlam:" not in resolved, query
