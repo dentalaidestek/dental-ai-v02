@@ -994,3 +994,74 @@ def test_ocr_quality_regexes_use_real_whitespace_tokenization():
     assert reason == "FRAGMENTED_GLYPHS"
 
     assert _needs_quality_retry("A" + (" " * 100) + "B", 70) is True
+
+
+def test_evidence_matrix_rejects_near_topic_distractors_across_subjects():
+    import json
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _rerank_dental_rows, _evidence_sufficiency
+
+    def row(cid, heading, body, lexical):
+        features = analyze_dental_text(f"{heading}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids, "specialties": features.specialties,
+            "kinds": features.kinds, "measurements": features.measurements,
+            "teeth": features.tooth_numbers, "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "notes.pdf", 1, 1, heading, "TEXT", body,
+                None, lexical, None, lexical, cid, meta)
+
+    cases = [
+        ("SNA normal değeri kaçtır?", "SNA", "SNA normal değeri 82 derecedir.", "SNB", "SNB normal değeri 80 derecedir."),
+        ("SNB normal değeri kaçtır?", "SNB", "SNB normal değeri 80 derecedir.", "SNA", "SNA normal değeri 82 derecedir."),
+        ("ANB normal değeri kaçtır?", "ANB", "ANB normal değeri 2 derecedir.", "SNA", "SNA normal değeri 82 derecedir."),
+        ("irreversible pulpitis tedavisi nedir?", "Irreversible pulpitis", "Irreversible pulpitis tedavisi kök kanal tedavisidir.", "Reversible pulpitis", "Reversible pulpitis tedavisi konservatif yaklaşımı içerir."),
+        ("implant komplikasyonları nelerdir?", "İmplant", "İmplant komplikasyonları peri-implant sorunları içerir.", "Periodontitis", "Periodontitis komplikasyonları ilerleyebilir."),
+        ("üçüncü molar komplikasyonları nelerdir?", "Üçüncü molar", "Üçüncü molar komplikasyonları enfeksiyon içerebilir.", "İkinci molar", "İkinci molar komplikasyonları farklıdır."),
+    ]
+    checked = 0
+    for query, good_h, good_b, bad_h, bad_b in cases:
+        plan = build_dental_requirement_plan(query)
+        rows = [
+            row(1, bad_h, bad_b, 0.99),
+            row(2, good_h, good_b, 0.55),
+            row(3, bad_h, bad_b + " Ek yakın konu.", 0.95),
+        ]
+        ranked = _rerank_dental_rows(query, rows, limit=3, requirement=plan)
+        assert ranked[0][0] == 2, (query, [r[0] for r in ranked])
+        suff = _evidence_sufficiency(query, ranked[:1], requirement=plan)
+        assert suff.sufficient, (query, suff)
+        checked += 1
+    assert checked == 6
+
+
+def test_evidence_matrix_missing_requested_facet_fails_closed():
+    import json
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _evidence_sufficiency
+
+    def row(cid, heading, body):
+        features = analyze_dental_text(f"{heading}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids, "specialties": features.specialties,
+            "kinds": features.kinds, "measurements": features.measurements,
+            "teeth": features.tooth_numbers, "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "notes.pdf", 1, 1, heading, "TEXT", body,
+                None, 0.9, None, 0.9, cid, meta)
+
+    cases = [
+        ("SNA normal değeri kaçtır?", "SNA", "SNA maksillanın sagittal konumunu değerlendirir."),
+        ("SNB normal değeri kaçtır?", "SNB", "SNB mandibulanın sagittal konumunu değerlendirir."),
+        ("implant komplikasyonları nelerdir?", "İmplant", "İmplant osseointegrasyon ile ilişkilidir."),
+        ("irreversible pulpitis tedavisi nedir?", "Irreversible pulpitis", "Irreversible pulpitis spontan ağrı ile karakterizedir."),
+        ("periodontitis sınıflaması nedir?", "Periodontitis", "Periodontitis periodontal dokuları etkiler."),
+    ]
+    for idx, (query, heading, body) in enumerate(cases, 1):
+        plan = build_dental_requirement_plan(query)
+        suff = _evidence_sufficiency(query, [row(idx, heading, body)], requirement=plan)
+        assert not suff.sufficient, (query, suff)
