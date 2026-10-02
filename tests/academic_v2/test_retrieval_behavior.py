@@ -579,3 +579,21 @@ def test_followup_resolution_uses_history_only_for_dependent_language():
     for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
         resolved = namespace["resolve_followup_query"](query, history)
         assert "Önceki bağlam:" not in resolved, query
+
+
+def test_question_understanding_conservative_typo_rescue():
+    from app.dental_knowledge_graph import matched_nodes
+    assert any(node.id == "pulpitis" for node in matched_nodes("pulptis tedavisi ne"))
+    assert any(node.id == "malocclusion" for node in matched_nodes("maloccluson sınıflaması"))
+    # Short abbreviations and ordinary words must never be fuzzy-seeded.
+    assert not any(node.id == "probing_depth" for node in matched_nodes("PC hızlı şarj standardı"))
+    assert not any(node.id == "centric_relation" for node in matched_nodes("AR değeri CSS ekranında"))
+    assert not matched_nodes("telefon ekran dosya bağlantısı")
+
+
+def test_requirement_plan_exposes_unknown_subject_instead_of_inventing_graph_concept():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("xyzqv lezyonunun tedavisi nedir?")
+    assert plan.unresolved_subject is False  # lexical subject remains retrievable
+    assert not plan.subject_node_ids
+    assert plan.subject_terms
