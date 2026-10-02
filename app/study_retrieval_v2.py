@@ -1279,20 +1279,36 @@ _NON_VALUE_NUMBER_RE = re.compile(
     r"(?iu)\b(?:yaş(?:ında|ındaki)?|sayfa|sf\.?|page|hasta|olgu|vaka|katılımcı|örneklem|denek)\b"
 )
 
-def _row_has_value_evidence(row, features: DentalSemanticFeatures) -> bool:
-    """Recognize answer-bearing values without requiring a known graph term."""
-    if features.measurements:
-        return True
-    text_value = f"{row[5] or ''} {row[7] or ''}"
-    for match in _VALUE_CONTEXT_RE.finditer(text_value):
-        left = text_value[max(0, match.start() - 32):match.start()]
-        if _NON_VALUE_NUMBER_RE.search(left) and not re.search(
-            r"(?iu)(?:normal\s+değer|ortalama|değer|oran|%|yüzde|°|derece|mm|milimetre)",
-            match.group(0),
-        ):
-            continue
-        return True
-    return False
+def _row_value_evidence(row) -> tuple[dict, ...]:
+    """Prefer immutable index-time value metadata; old indexes fall back locally."""
+    if len(row) > 14 and row[-1]:
+        try:
+            import json
+            meta = json.loads(row[-1])
+            if "value_evidence" in meta:
+                return tuple(item for item in (meta.get("value_evidence") or ()) if isinstance(item, dict))
+        except (TypeError, ValueError, KeyError):
+            pass
+    # Backward compatibility only. New indexes persist this during chunking.
+    from app.dental_semantics import bind_value_evidence
+    text_value = f"{row[5] or ''}\n{row[7] or ''}"
+    return tuple({
+        "text": item.value.text,
+        "kind": item.value.kind,
+        "assertion": item.assertion,
+        "subject_node": item.subject_node_id,
+        "subject_text": item.subject_text,
+        "binding_confidence": item.binding_confidence,
+        "qualifiers": item.qualifiers,
+    } for item in bind_value_evidence(text_value))
+
+
+def _row_has_value_evidence(row, features: DentalSemanticFeatures, *, require_reference: bool = False) -> bool:
+    """Require actual persisted value evidence, not merely a measurement concept."""
+    evidence = _row_value_evidence(row)
+    if require_reference:
+        return any(item.get("assertion") == "reference" for item in evidence)
+    return bool(evidence)
 
 
 def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None, query_features=None) -> EvidenceSufficiency:
@@ -1368,8 +1384,12 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             set(qf.imaging_types).intersection(features.imaging_types) for features in row_features
         ) else 0.0)
     if intent_names.intersection({"value", "measurement"}):
+        reference_value_request = bool(re.search(
+            r"(?iu)\b(?:normal|referans|standart|ideal|beklenen|ortalama)\b",
+            query,
+        ))
         has_measurement = any(
-            _row_has_value_evidence(row, features)
+            _row_has_value_evidence(row, features, require_reference=reference_value_request)
             for row, features in zip(rows, row_features)
         )
         count_request = bool(re.search(
