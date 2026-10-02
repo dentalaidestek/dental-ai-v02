@@ -50,6 +50,6 @@ def test_fdi_context_does_not_capture_age_or_page_next_to_real_tooth():
     assert "36" in mixed.tooth_numbers
     assert "35" not in mixed.tooth_numbers
 
-    page = analyze_dental_text("46 sayfa referansı; 36 numaralı diş için kök kanal anatomisi")
+    page = analyze_dental_text("sayfa 46: 36 numaralı diş için kök kanal anatomisi")
     assert "36" in page.tooth_numbers
     assert "46" not in page.tooth_numbers
