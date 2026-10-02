@@ -92,7 +92,9 @@ assert "def _needs_multi_evidence" in source
 assert "names and names.issubset(_FAST_INTENTS | {\"general\"})" in source
 assert "rescue_query_count = 0" in source
 assert "rescue_query_count = 1" in source
-assert "alias_terms = _concept_alternatives(resolved)" in source
+assert "missing_subject_terms = [" in source
+assert "label := node_label(node_id)" in source
+assert "rescue_query = (" in source
 assert "graph_expansion_terms(resolved" not in source
 
 
