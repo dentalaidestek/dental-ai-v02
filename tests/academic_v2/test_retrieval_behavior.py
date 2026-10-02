@@ -369,6 +369,37 @@ def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
             ],
         ),
     ]
+    # Cross-specialty hard negatives: generic facet overlap and even a higher
+    # lexical score must not beat the explicitly named dental subject.
+    cases.extend([
+        (
+            "ANB normal değeri kaçtır?",
+            7,
+            [
+                row(7, "ANB", "ANB normal değer ve sefalometrik değerlendirme.", 0.58),
+                row(8, "SNA", "SNA normal değer ve sefalometrik değerlendirme.", 0.86),
+                row(9, "SNB", "SNB normal değer ve sefalometrik değerlendirme.", 0.82),
+            ],
+        ),
+        (
+            "çalışma boyu nasıl belirlenir?",
+            10,
+            [
+                row(10, "Çalışma boyu", "Working length belirleme ve apikal konstriksiyon.", 0.60),
+                row(11, "Apikal foramen", "Apikal foramen ölçümü ve endodontik değerlendirme.", 0.84),
+                row(12, "Kanal tedavisi", "Kanal tedavisi aşamaları.", 0.80),
+            ],
+        ),
+        (
+            "sondalama derinliği nedir?",
+            13,
+            [
+                row(13, "Sondalama derinliği", "Probing depth periodontal ölçümdür.", 0.59),
+                row(14, "Klinik ataşman kaybı", "Clinical attachment loss periodontal ölçümdür.", 0.88),
+                row(15, "Sondalamada kanama", "BOP periodontal bulgudur.", 0.83),
+            ],
+        ),
+    ])
     for query, expected_id, rows in cases:
         ranked = ns["_rerank_dental_rows"](query, rows, limit=3)
         assert ranked[0][0] == expected_id, (query, [r[0] for r in ranked])
