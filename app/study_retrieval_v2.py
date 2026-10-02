@@ -34,8 +34,8 @@ _PAGE_PDF_CACHE_MAX = 24
 _PAGE_PDF_MAX_BYTES = 8 * 1024 * 1024
 
 _FOLLOWUP_RE = re.compile(
-    r"^(?:peki|tamam|devam|neden|niye|nasıl|hangisi|hangileri|bunu|bunun|burada|"
-    r"onu|onun|o zaman|peki ya|ya bunda|ya bunun|bunlarda|bunların|"
+    r"^(?:peki|tamam|devam|bunu|bunun|burada|onu|onun|o zaman|peki ya|"
+    r"ya bunda|ya bunun|bunlarda|bunların|"
     r"daha (?:basit|detaylı)|açıkla|tekrar|\d+\.? soru)",
     re.IGNORECASE,
 )
