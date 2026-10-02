@@ -98,7 +98,15 @@ def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
             "unit": "measurement", "percent": "percentage",
             "wordunit": "measurement", "label": "value", "range": "range",
         }.get(match.lastgroup or "", "value")
-        output.append(ValueEvidence(value, kind, match.start(), match.end(), 0.96 if strong else 0.78))
+        candidate = ValueEvidence(value, kind, match.start(), match.end(), 0.96 if strong else 0.78)
+        overlaps = [item for item in output if not (candidate.end <= item.start or candidate.start >= item.end)]
+        if overlaps:
+            best = max(tuple(overlaps) + (candidate,), key=lambda item: (item.end - item.start, item.confidence))
+            output = [item for item in output if item not in overlaps]
+            output.append(best)
+        else:
+            output.append(candidate)
+    output.sort(key=lambda item: (item.start, item.end))
     return tuple(output)
 
 _FDI_RE = re.compile(r"(?<!\d)(?:1[1-8]|2[1-8]|3[1-8]|4[1-8]|5[1-5]|6[1-5]|7[1-5]|8[1-5])(?!\d)")
