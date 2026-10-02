@@ -409,8 +409,24 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
         term.casefold()
         for values in _FACET_SEARCH_TERMS.values()
         for term in values
+        if " " not in term
     } if "_FACET_SEARCH_TERMS" in globals() else set()
-    subject_only = [term for term in original if term.casefold() not in facet_noise]
+
+    def _is_facet_noise(token: str) -> bool:
+        value = token.casefold()
+        if value in facet_noise:
+            return True
+        # Turkish lecture questions inflect facet nouns heavily
+        # (tedavisi, komplikasyonları, endikasyonları). Keep this bounded to
+        # known facet stems so subject terms are never stemmed generically.
+        return any(
+            len(stem) >= 4
+            and value.startswith(stem)
+            and len(value) - len(stem) <= 7
+            for stem in facet_noise
+        )
+
+    subject_only = [term for term in original if not _is_facet_noise(term)]
     if subject_only:
         original = subject_only
     lowered = clean.casefold()
