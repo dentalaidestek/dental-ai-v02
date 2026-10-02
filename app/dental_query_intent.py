@@ -183,7 +183,7 @@ def _asks_negation(query: str) -> bool:
     text = (query or "").casefold()
     return bool(re.search(
         r"(?iu)\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
-        r"hariç|yanlıştır|önerilmez|kaçınılmalı|kaçınılmalıdır|kontrendike\s+değildir)\b",
+        r"hariç|yanlıştır|önerilmez|tercih\s+edilmez|olmamalıdır|kaçınılmalı|kaçınılmalıdır|kontrendike\s+değildir)\b",
         text,
     ))
 
