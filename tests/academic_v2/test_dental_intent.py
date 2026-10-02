@@ -146,3 +146,11 @@ def test_many_explicit_facets_are_not_truncated_to_three():
         "Lezyonun tanımı, etyolojisi, tanısı, sınıflaması, tedavisi ve komplikasyonları nelerdir?"
     )
     assert len(plan.requested_facets) >= 4
+
+
+def test_generic_nedir_does_not_create_fake_definition_facet():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("irreversible pulpitisin tanısı ve tedavisi nedir?")
+    assert "diagnosis" in plan.requested_facets
+    assert "treatment" in plan.requested_facets
+    assert "definition" not in plan.requested_facets
