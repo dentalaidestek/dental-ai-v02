@@ -1109,7 +1109,18 @@ def retrieve_course_context_v2(
             if missing:
                 original_terms, _ = _retrieval_terms(resolved)
                 alias_terms = _concept_alternatives(resolved)
-                subject_terms = list(dict.fromkeys(original_terms[:5] + alias_terms[:2]))
+                # Facet words are requirements, not subject identity. Excluding
+                # them prevents rescue from drifting to any chunk that merely
+                # says "tedavi"/"komplikasyon" while the named disease differs.
+                facet_noise = {
+                    term.casefold()
+                    for values in _FACET_SEARCH_TERMS.values()
+                    for term in values
+                }
+                subject_terms = [
+                    term for term in dict.fromkeys(original_terms[:7] + alias_terms[:3])
+                    if term.casefold() not in facet_noise
+                ][:7]
                 subject_query = " OR ".join(
                     f'"{term}"' if " " in term else term for term in subject_terms
                 )
