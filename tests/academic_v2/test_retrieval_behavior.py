@@ -736,8 +736,14 @@ def test_imaging_constraint_does_not_suppress_long_subject_typo_rescue():
 
 def test_semantic_overlap_handles_positive_nodes_without_runtime_error():
     from app.dental_semantics import DentalSemanticFeatures, semantic_overlap_score
-    q = DentalSemanticFeatures(("pulpitis",), (), ("diagnosis",), (), (), ())
-    row = DentalSemanticFeatures(("pulpitis",), (), ("diagnosis",), (), (), (), ())
+    q = DentalSemanticFeatures(
+        node_ids=("pulpitis",), specialties=(), kinds=("diagnosis",),
+        measurements=(), tooth_numbers=(), imaging_types=(),
+    )
+    row = DentalSemanticFeatures(
+        node_ids=("pulpitis",), specialties=(), kinds=("diagnosis",),
+        measurements=(), tooth_numbers=(), imaging_types=(), negated_node_ids=(),
+    )
     assert semantic_overlap_score(q, row) > 0.0
 
 
