@@ -157,13 +157,41 @@ EDGES = (
     DentalEdge("articular_disc", Relation.PART_OF, "tmj", 1.0),
 )
 
-_SPECIALTY_NODES = tuple(
-    DentalNode(concept_id, label, specialty, kind, aliases)
-    for packs in (SPECIALTY_CONCEPTS, EXTENDED_SPECIALTY_CONCEPTS)
-    for specialty, concepts in packs.items()
-    for concept_id, label, aliases, kind in concepts
-)
+def _merge_specialty_nodes() -> tuple[DentalNode, ...]:
+    """Merge repeated concept ids deterministically instead of silent overwrite."""
+    merged: dict[str, DentalNode] = {}
+    order: list[str] = []
+    for packs in (SPECIALTY_CONCEPTS, EXTENDED_SPECIALTY_CONCEPTS):
+        for specialty, concepts in packs.items():
+            for concept_id, label, aliases, kind in concepts:
+                current = merged.get(concept_id)
+                if current is None:
+                    merged[concept_id] = DentalNode(concept_id, label, specialty, kind, tuple(aliases))
+                    order.append(concept_id)
+                    continue
+                # Same canonical concept may be enriched by later vocabulary packs,
+                # but conflicting specialty/kind definitions are programming errors.
+                if current.specialty != specialty or current.kind != kind:
+                    raise ValueError(
+                        f"Conflicting dental concept {concept_id}: "
+                        f"{current.specialty}/{current.kind} vs {specialty}/{kind}"
+                    )
+                aliases_seen = {current.label.casefold(), *(a.casefold() for a in current.aliases)}
+                extra = tuple(
+                    term for term in (label, *aliases)
+                    if term.casefold() not in aliases_seen
+                )
+                merged[concept_id] = DentalNode(
+                    current.id, current.label, current.specialty, current.kind,
+                    current.aliases + extra,
+                )
+    return tuple(merged[concept_id] for concept_id in order)
+
+
+_SPECIALTY_NODES = _merge_specialty_nodes()
 ALL_NODES = NODES + _SPECIALTY_NODES
+if len({node.id for node in ALL_NODES}) != len(ALL_NODES):
+    raise ValueError("Duplicate canonical dental node id")
 _NODE_BY_ID = {node.id: node for node in ALL_NODES}
 
 
