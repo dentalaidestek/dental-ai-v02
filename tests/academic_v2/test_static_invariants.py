@@ -49,7 +49,7 @@ assert "get_generation_targets" not in generation
 assert "if attempted_api_calls >= 1:" in generation
 assert "if emitted:" in generation
 assert "generation target selected" in generation
-assert "classify_dental_intent" in generation
+assert "build_dental_requirement_plan" in generation
 assert "_INTENT_RESPONSE_RULES" in generation
 assert "Sen arama/retrieval yapma" in generation
 assert "if not retrieval.evidence_sufficient:" in generation
