@@ -277,6 +277,59 @@ def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
     window = text[max(0, start - 56):min(len(text), end + 56)]
     return bool(_DENTAL_CONTEXT_RE.search(window))
 
+def _edit_distance_at_most_one(left: str, right: str) -> bool:
+    """Cheap typo guard for long single-token dental aliases only."""
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > 1:
+        return False
+    i = j = edits = 0
+    while i < len(left) and j < len(right):
+        if left[i] == right[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(left) > len(right):
+            i += 1
+        elif len(right) > len(left):
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return edits + (i < len(left) or j < len(right)) <= 1
+
+
+def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
+    # Never fuzzy-match abbreviations or multiword aliases: one-edit fuzziness
+    # there creates dangerous cross-concept seeds. This is only a typo rescue
+    # for distinctive alphabetic dental terms such as "pulptis".
+    tokens = re.findall(r"[a-zçğıöşü]{7,}", (query or "").casefold(), flags=re.I)
+    if not tokens:
+        return []
+    candidates: list[tuple[int, int, DentalNode]] = []
+    for node in ALL_NODES:
+        if node.id in already:
+            continue
+        for term in (node.label, *node.aliases):
+            clean = " ".join((term or "").casefold().split())
+            if " " in clean or len(clean) < 7 or not clean.isalpha():
+                continue
+            for pos, token in enumerate(tokens):
+                if _edit_distance_at_most_one(token, clean):
+                    candidates.append((-len(clean), pos, node))
+                    break
+    result: list[DentalNode] = []
+    seen = set(already)
+    for _, _, node in sorted(candidates, key=lambda item: (item[0], item[1], item[2].id)):
+        if node.id not in seen:
+            seen.add(node.id)
+            result.append(node)
+    return result
+
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
 
@@ -306,6 +359,10 @@ def matched_nodes(query: str) -> list[DentalNode]:
         if node.id not in seen:
             seen.add(node.id)
             selected.append(node)
+    # Typo rescue runs only when exact matching found no canonical subject.
+    # Exact subjects must never gain extra fuzzy graph seeds.
+    if not selected:
+        selected.extend(_fuzzy_long_alias_nodes(lowered, seen))
     return selected
 
 
