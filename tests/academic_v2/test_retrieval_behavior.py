@@ -723,3 +723,10 @@ def test_compositional_comparison_without_fark_word():
     assert {"sna", "snb"}.issubset(set(plan.subject_node_ids))
     assert "comparison" in plan.requested_facets
     assert plan.subject_count >= 2
+
+
+def test_imaging_constraint_does_not_suppress_long_subject_typo_rescue():
+    from app.dental_knowledge_graph import matched_nodes
+    ids = {node.id for node in matched_nodes("CBCT'de mandbular kanal ilişkisi")}
+    assert "cbct" in ids
+    assert "mandibular_canal" in ids
