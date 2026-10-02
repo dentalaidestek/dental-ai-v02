@@ -308,6 +308,18 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     core = re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü+./'-]+", " ", core)
     core = re.sub(r"\s+", " ", core).strip(" ?.,;:")
     original = [token for token in core.split() if len(token) >= 2][:10]
+    # websearch_to_tsquery joins bare terms with AND. Generic facet words in the
+    # primary query can therefore hide the correct subject chunk when the answer
+    # is split across adjacent chunks. Subject retrieval stays precise; facets
+    # are enforced by coverage and, if needed, the single bounded rescue.
+    facet_noise = {
+        term.casefold()
+        for values in _FACET_SEARCH_TERMS.values()
+        for term in values
+    } if "_FACET_SEARCH_TERMS" in globals() else set()
+    subject_only = [term for term in original if term.casefold() not in facet_noise]
+    if subject_only:
+        original = subject_only
     lowered = clean.casefold()
     extras = _concept_alternatives(clean)
     intents = classify_dental_intents(clean)
