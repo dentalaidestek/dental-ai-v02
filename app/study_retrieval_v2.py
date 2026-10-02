@@ -455,7 +455,10 @@ _EVIDENCE_FACETS = {
     "value": ("normal değer",),
     "anatomy": ("anatomi",),
     "visual": ("radyografik bulgu",),
-    "comparison": ("fark",),
+    # Comparison is a synthesis operation over subject-bound evidence, not a
+    # phrase that must literally occur in the notes. Subject completeness and
+    # comparison-side qualifier gates enforce its safety separately.
+    "comparison": (),
     "indication": ("endikasyon",),
     "contraindication": ("kontrendikasyon",),
 }
