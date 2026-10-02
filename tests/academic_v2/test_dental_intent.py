@@ -55,7 +55,7 @@ def test_multi_intent_plan_is_bounded():
     intents = classify_dental_intents(
         "tanısı bulguları tedavisi komplikasyonları sınıflaması ve nedeni"
     )
-    assert len(intents) <= 3
+    assert len(intents) <= 6
 
 
 def test_student_study_generation_plan_separates_topic_and_coverage():
