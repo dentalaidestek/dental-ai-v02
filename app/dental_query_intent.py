@@ -32,7 +32,7 @@ _RULES = (
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
     ("visual", re.compile(r"\b(?:radyografi|röntgen|film|görüntü|fotoğraf|panoramik|opg|cbct|periapikal|bitewing|sefalogram|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
-    ("comparison", re.compile(r"\b(?:fark|karşılaştır|versus|vs\.?|hangisi daha)\b", re.I),
+    ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
     ("cause", re.compile(r"\b(?:neden|niçin|sebep|etyoloji|etiyoloji|patogenez)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
