@@ -13,12 +13,14 @@ _NUMBER_WORD = r"(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yi
 _NUMBER_PHRASE = rf"{_NUMBER_WORD}(?:\s+{_NUMBER_WORD}){{0,3}}"
 _NUMERIC = r"[+-]?\d+(?:[.,]\d+)?"
 _VALUE_UNIT = r"(?:°|mm|cm|%|mg|ml|g|µm|μm|derece|milimetre|santimetre|mikrometre|miligram|mililitre|gram)"
+_DURATION_UNIT = r"(?:saniye|dakika|saat|gün|hafta|ay)"
 _EXPLICIT_VALUE_LABEL = r"(?:normal\s+değer(?:i)?|referans\s+değer(?:i)?|ortalama(?:\s+değer(?:i)?)?|değer(?:i)?|oran(?:ı)?|skor(?:u)?)"
 _VALUE_CANDIDATE_RE = re.compile(
     rf"(?iu)(?:"
     rf"(?P<unit>{_NUMERIC}\s*{_VALUE_UNIT})"
     rf"|(?P<percent>(?:yüzde\s+(?:{_NUMERIC}|{_NUMBER_PHRASE})|%\s*{_NUMERIC}))"
     rf"|(?P<wordunit>{_NUMBER_PHRASE}\s+(?:derece|milimetre|santimetre|mikrometre))"
+    rf"|(?P<duration>(?:{_NUMERIC}|{_NUMBER_PHRASE})\s*{_DURATION_UNIT})"
     rf"|(?P<label>{_EXPLICIT_VALUE_LABEL}\s*(?:=|:|ise|olarak)?\s*(?:{_NUMERIC}|(?!yüzde\b){_NUMBER_PHRASE}))"
     rf"|(?P<range>(?:{_NUMERIC}|{_NUMBER_PHRASE})\s*(?:[-–—]|ile|ila)\s*(?:{_NUMERIC}|{_NUMBER_PHRASE})(?:\s*{_VALUE_UNIT})?)"
     rf")"
@@ -240,12 +242,12 @@ def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
         left = clean[max(0, match.start() - 32):match.start()]
         # Bare ranges beside age/page/sample language are metadata, not a
         # clinical value. Explicit labels/units remain strong evidence.
-        strong = match.lastgroup in {"unit", "percent", "wordunit", "label"}
+        strong = match.lastgroup in {"unit", "percent", "wordunit", "duration", "label"}
         if not strong and _NON_VALUE_CONTEXT_RE.search(left):
             continue
         kind = {
             "unit": "measurement", "percent": "percentage",
-            "wordunit": "measurement", "label": "value", "range": "range",
+            "wordunit": "measurement", "duration": "duration", "label": "value", "range": "range",
         }.get(match.lastgroup or "", "value")
         candidate = ValueEvidence(value, kind, match.start(), match.end(), 0.96 if strong else 0.78)
         overlaps = [item for item in output if not (candidate.end <= item.start or candidate.start >= item.end)]
