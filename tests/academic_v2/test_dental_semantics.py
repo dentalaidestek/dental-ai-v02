@@ -181,6 +181,15 @@ def test_reconciliation_never_promotes_case_values_to_reference():
     assert result.status == "observations_only"
     assert not result.reference_values
 
+def test_equivalent_reference_pipeline_components_are_identical():
+    from app.dental_semantics import bind_value_evidence, _subject_key, _value_key
+    items = bind_value_evidence("SNA normal değeri 82° dir. SNA referans değeri 82,0 derece olarak kabul edilir.")
+    assert len(items) == 2, [(i.value.text, i.assertion, i.subject_text, i.qualifiers) for i in items]
+    assert [i.assertion for i in items] == ["reference", "reference"], [(i.value.text, i.assertion) for i in items]
+    assert len({_subject_key(i) for i in items}) == 1, [(_subject_key(i), i.subject_text, i.subject_node_id) for i in items]
+    assert len({tuple(sorted(i.qualifiers)) for i in items}) == 1, [(i.value.text, i.qualifiers) for i in items]
+    assert len({_value_key(i.value.text) for i in items}) == 1, [(i.value.text, _value_key(i.value.text)) for i in items]
+
 def test_reconciliation_normalizes_equivalent_reference_spellings():
     from app.dental_semantics import bind_value_evidence, reconcile_value_evidence
     items = bind_value_evidence("SNA normal değeri 82° dir. SNA referans değeri 82,0 derece olarak kabul edilir.")
