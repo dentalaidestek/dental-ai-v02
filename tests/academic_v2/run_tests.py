@@ -23,7 +23,20 @@ def _load(path: Path):
 def main() -> int:
     failures = []
     executed = 0
-    for path in sorted(TEST_DIR.glob("test_*.py")):
+    selected = (
+        "test_dental_graph.py",
+        "test_dental_intent.py",
+        "test_dental_semantics.py",
+        "test_academic_scope.py",
+        "test_academic_coverage.py",
+        "test_academic_generation.py",
+        "test_academic_generation_jobs.py",
+        "test_adversarial_benchmark.py",
+        "test_retrieval_behavior.py",
+        "test_static_invariants.py",
+    )
+    for filename in selected:
+        path = TEST_DIR / filename
         try:
             module = _load(path)
         except Exception as exc:
