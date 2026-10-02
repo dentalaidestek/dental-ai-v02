@@ -1116,3 +1116,54 @@ def test_neighbor_query_can_expand_across_adjacent_source_pages():
     assert "c.material_id=seeds.material_id" in neighbor
     assert "c.index_version=seeds.index_version" in neighbor
     assert "c.owner_user_id=:owner" in neighbor
+
+
+def test_generic_value_evidence_does_not_require_known_graph_term():
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _row_has_value_evidence
+
+    def row(body):
+        return (1, 1, "notes.pdf", 1, 1, "ABC açısı", "TEXT", body,
+                None, 0.9, None, 0.9, 1, None)
+
+    positives = (
+        "ABC açısının normal değeri 82'dir.",
+        "ABC açısı 82° olarak ölçülür.",
+        "ABC açısının normal değeri seksen ikidir.",
+        "ABC açısı seksen iki derecedir.",
+        "ABC oranı yüzde yirmidir.",
+        "ABC değeri 2 ile 4 mm arasındadır.",
+    )
+    for body in positives:
+        item = row(body)
+        features = analyze_dental_text(f"{item[5]} {item[7]}")
+        assert _row_has_value_evidence(item, features), body
+
+
+def test_generic_value_evidence_rejects_unrelated_numbers():
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _row_has_value_evidence
+
+    def has_value(body):
+        item = (1, 1, "notes.pdf", 1, 1, "ABC açısı", "TEXT", body,
+                None, 0.9, None, 0.9, 1, None)
+        return _row_has_value_evidence(item, analyze_dental_text(f"{item[5]} {item[7]}"))
+
+    assert not has_value("ABC açısı 20 hastada değerlendirildi.")
+    assert not has_value("ABC açısı 20 yaşındaki bireylerde incelendi.")
+    assert not has_value("ABC açısı için sayfa 82'ye bakınız.")
+    assert not has_value("ABC açısı 36 numaralı dişle aynı slaytta anlatılmıştır.")
+
+
+def test_generic_written_value_is_not_confused_with_measurement_identity():
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _row_has_value_evidence
+
+    no_value = (1, 1, "notes.pdf", 1, 1, "SNA", "TEXT",
+                "SNA maksillanın sagittal konumunu değerlendirir.",
+                None, 0.9, None, 0.9, 1, None)
+    written = (2, 1, "notes.pdf", 1, 1, "SNA", "TEXT",
+               "SNA'nın normal değeri seksen iki derecedir.",
+               None, 0.9, None, 0.9, 2, None)
+    assert not _row_has_value_evidence(no_value, analyze_dental_text("SNA " + no_value[7]))
+    assert _row_has_value_evidence(written, analyze_dental_text("SNA " + written[7]))
