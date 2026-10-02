@@ -154,6 +154,36 @@ def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
         ))
     return tuple(output)
 
+@dataclass(frozen=True)
+class ValueReconciliation:
+    status: str
+    reference_values: tuple[str, ...]
+    observation_values: tuple[str, ...]
+    variable_values: tuple[str, ...]
+    unknown_values: tuple[str, ...]
+
+def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundValueEvidence]) -> ValueReconciliation:
+    """Summarize evidence without promoting first-seen numbers to truth."""
+    references, observations, variables, unknowns = [], [], [], []
+    for item in items:
+        target = references if item.assertion == "reference" else observations if item.assertion == "observation" else variables if item.assertion == "variable" else unknowns
+        target.append(item.value.text)
+    references = list(dict.fromkeys(references))
+    observations = list(dict.fromkeys(observations))
+    variables = list(dict.fromkeys(variables))
+    unknowns = list(dict.fromkeys(unknowns))
+    if variables:
+        status = "conditioned"
+    elif len(references) > 1:
+        status = "conflict"
+    elif len(references) == 1:
+        status = "reference_supported"
+    elif observations:
+        status = "observations_only"
+    else:
+        status = "insufficient"
+    return ValueReconciliation(status, tuple(references), tuple(observations), tuple(variables), tuple(unknowns))
+
 def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
     """Find answer-bearing values without requiring a pre-known dental term."""
     clean = " ".join((text or "").split())
