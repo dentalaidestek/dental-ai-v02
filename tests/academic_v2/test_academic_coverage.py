@@ -30,3 +30,25 @@ def test_large_requested_count_is_bounded():
     plan = build_coverage_plan([row(1, 1, "A", ("x",))], 999)
     assert plan.requested_count == 200
     assert sum(b.question_budget for b in plan.buckets) == 200
+
+
+def test_coverage_ledger_tracks_only_bucket_budget():
+    from app.academic_coverage import build_coverage_ledger, bucket_key
+    plan = build_coverage_plan([
+        row(1, 1, "Endodonti", ("pulpitis",)),
+        row(2, 1, "Periodontoloji", ("probing_depth",)),
+    ], 10)
+    first = plan.buckets[0]
+    ledger = build_coverage_ledger(plan, {bucket_key(first): first.question_budget + 50})
+    assert ledger.generated_questions == first.question_budget
+    assert ledger.remaining_questions == 10 - first.question_budget
+    assert bucket_key(first) in ledger.completed_bucket_keys
+
+def test_retrieval_coverage_scan_is_metadata_only_and_hydration_is_owner_scoped():
+    from pathlib import Path
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "def _coverage_metadata_page" in source
+    assert "'' AS text_content" in source
+    assert "def _coverage_evidence_rows" in source
+    assert "c.owner_user_id=:owner AND c.course_id=:course" in source
+    assert "c.id = ANY(CAST(:chunk_ids AS BIGINT[]))" in source
