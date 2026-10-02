@@ -606,6 +606,25 @@ def test_requirement_plan_separates_imaging_constraint_from_subject():
     assert "cbct" in modality.subject_node_ids
 
 
+def test_requirement_plan_relations_only_connect_explicit_nodes():
+    linked = build_dental_requirement_plan(
+        "SNA maksillanın sagittal konumunu nasıl değerlendirir?"
+    )
+    assert ("sna", "measures", "maxilla") in linked.explicit_relations
+
+    # Graph neighbours must not appear merely because one endpoint was named.
+    single = build_dental_requirement_plan("SNA nedir?")
+    assert single.explicit_relations == ()
+
+    imaging = build_dental_requirement_plan(
+        "panoramik radyografide üçüncü molar değerlendirmesi"
+    )
+    assert any(
+        {source, target} == {"third_molar", "panoramic"}
+        for source, _, target in imaging.explicit_relations
+    )
+
+
 def test_requirement_plan_preserves_negation_qualifier_comparison_and_modality():
     combined = build_dental_requirement_plan(
         "CBCT'de alt üçüncü molar için hangisi kontrendike değildir?"
