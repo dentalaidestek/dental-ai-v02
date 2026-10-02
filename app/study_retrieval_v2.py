@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
-from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
+from app.dental_query_intent import _query_qualifiers, build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.academic_coverage import CoverageAccumulator, build_coverage_plan, cache_coverage_plan, cached_coverage_plan
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
@@ -182,7 +182,27 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             continue
         # Inherit subject + its explicit modifiers only. Prior intent/facet is
         # intentionally discarded; the current turn defines what is requested.
-        inherited = " ".join(dict.fromkeys((*prior.qualifiers, *prior.subject_terms))).strip()
+        # Current-turn qualifiers override incompatible inherited axes:
+        # "alt sağ ... -> peki üstte?" must not become "alt sağ üst ...".
+        current_qualifiers = set(_query_qualifiers(clean))
+        inherited_qualifiers = list(prior.qualifiers)
+        qualifier_axes = (
+            {"üst", "alt", "maksiller", "mandibular"},
+            {"sağ", "sol"},
+            {"anterior", "posterior"},
+            {"süt", "daimi"},
+            {"akut", "kronik"},
+            {"reversible", "irreversible"},
+            {"semptomatik", "asemptomatik"},
+            {"lokalize", "generalize"},
+            {"çocuk", "erişkin"},
+        )
+        blocked: set[str] = set()
+        for axis in qualifier_axes:
+            if current_qualifiers.intersection(axis):
+                blocked.update(axis)
+        inherited_qualifiers = [q for q in inherited_qualifiers if q not in blocked]
+        inherited = " ".join(dict.fromkeys((*inherited_qualifiers, *prior.subject_terms))).strip()
         if inherited:
             return f"{inherited} — {clean}"
     return clean
