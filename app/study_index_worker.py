@@ -223,6 +223,46 @@ def _upsert_chunk(
     session.flush()
 
 
+def _next_checkpoint_stage(session: Session, job: StudyIndexJob) -> str:
+    """Route only from durable checkpoints; VERIFY is allowed only when complete.
+
+    The resource-class seam is intentional: today's MIXED worker executes
+    bounded slices serially, while a future dedicated Academic/OCR worker can
+    consume the same checkpoints without changing publication semantics.
+    """
+    ready = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number,
+        ).exists())
+        .limit(1)
+    ).first()
+    if ready:
+        return "CHUNK"
+    ocr = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status == "OCR_REQUIRED")
+        .limit(1)
+    ).first()
+    if ocr:
+        return "OCR"
+    checkpoint_count = len(session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+    ).all())
+    if job.expected_page_count and checkpoint_count < int(job.expected_page_count):
+        return "PARSE"
+    return "VERIFY"
+
+
 def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
     # PdfReader keeps cyclic page/xref graphs. Reclaim the previous bounded
     # slice before opening the document again on memory-limited workers.
