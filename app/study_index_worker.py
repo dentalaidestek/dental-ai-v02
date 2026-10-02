@@ -306,6 +306,39 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             stream.close()
 
 
+
+def _strip_repeated_page_margins(rows: list[StudyIndexPage]) -> dict[int, str]:
+    """Remove only exact repeated short header/footer lines within this page batch.
+
+    Repetition must appear on at least 3 pages and >=60% of the batch. Body text
+    is untouched; this prevents lecture titles/page furniture dominating FTS.
+    """
+    if len(rows) < 3:
+        return {int(row.page_number): (row.text_content or "") for row in rows}
+    positions: dict[str, set[int]] = {}
+    per_page: dict[int, tuple[list[str], list[str]]] = {}
+    for row in rows:
+        lines = (row.text_content or "").splitlines()
+        nonempty = [(idx, line.strip()) for idx, line in enumerate(lines) if line.strip()]
+        margin = nonempty[:2] + nonempty[-2:]
+        per_page[int(row.page_number)] = (lines, [line for _, line in margin])
+        for _, line in margin:
+            key = re.sub(r"\\s+", " ", line).casefold()
+            if 3 <= len(key) <= 120:
+                positions.setdefault(key, set()).add(int(row.page_number))
+    threshold = max(3, int(len(rows) * 0.60 + 0.999))
+    repeated = {key for key, pages in positions.items() if len(pages) >= threshold}
+    cleaned: dict[int, str] = {}
+    for page_number, (lines, margin_lines) in per_page.items():
+        margin_keys = {re.sub(r"\\s+", " ", line).casefold() for line in margin_lines}
+        out = [
+            line for line in lines
+            if not (re.sub(r"\\s+", " ", line.strip()).casefold() in repeated
+                    and re.sub(r"\\s+", " ", line.strip()).casefold() in margin_keys)
+        ]
+        cleaned[page_number] = normalize_extracted_text("\\n".join(out))
+    return cleaned
+
 def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
     """Create one bounded chunk batch with O(1) DB round-trips per page batch."""
     batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 32, 1, 100)
@@ -327,6 +360,7 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         return "LEASE_LOST"
 
     pending: list[StudyIndexChunk] = []
+    cleaned_page_text = _strip_repeated_page_margins(rows)
     inherited_title: str | None = None
     if rows and rows[0].page_number > 1:
         previous = session.exec(
@@ -341,7 +375,8 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         inherited_title = previous
     for page in rows:
         chunks = chunk_dental_page(
-            page.text_content or "", inherited_section_title=inherited_title
+            cleaned_page_text.get(int(page.page_number), page.text_content or ""),
+            inherited_section_title=inherited_title,
         )
         explicit_titles = [chunk.section_title for chunk in chunks if chunk.section_title]
         if explicit_titles:
