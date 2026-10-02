@@ -170,6 +170,13 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         content = re.sub(r"\s+", " ", item.get("content") or "").strip()
         if not content:
             continue
+        # A prior dependent USER turn ("peki tedavisi?") does not carry
+        # trustworthy standalone subject identity; keep scanning to the last
+        # self-contained user turn instead of inheriting its lexical residue.
+        if _FOLLOWUP_RE.search(content):
+            prior_current = build_dental_requirement_plan(content[:700])
+            if not prior_current.subject_node_ids:
+                continue
         prior = build_dental_requirement_plan(content[:700])
         if not prior.subject_terms:
             continue
