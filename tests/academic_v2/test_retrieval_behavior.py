@@ -212,3 +212,26 @@ def test_core_and_specialty_concepts_merge_without_duplicate_ids():
         by_id["cbct"].label.casefold(),
         *(alias.casefold() for alias in by_id["cbct"].aliases),
     }
+
+
+def test_deep_oral_radiology_pathology_pharmacology_relations_are_selective():
+    from app.dental_knowledge_graph import graph_expansion_terms
+
+    vrf = {x.casefold() for x in graph_expansion_terms(
+        "vertikal kök kırığı görüntüleme",
+        relation_hints=("assessed_by", "used_for"),
+    )}
+    assert "cbct" in vrf or "konik ışınlı bilgisayarlı tomografi" in vrf
+
+    leukoplakia = {x.casefold() for x in graph_expansion_terms(
+        "lökoplaki nasıl değerlendirilir",
+        relation_hints=("assessed_by",),
+    )}
+    assert "klinikopatolojik korelasyon" in leukoplakia
+
+    antibiotics = {x.casefold() for x in graph_expansion_terms(
+        "irreversible pulpitis tedavisi",
+        relation_hints=("has_treatment", "has_procedure"),
+    )}
+    assert "amoksisilin" not in antibiotics
+    assert "clindamycin" not in antibiotics
