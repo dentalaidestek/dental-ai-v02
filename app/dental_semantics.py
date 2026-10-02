@@ -166,7 +166,7 @@ def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
                 continue
             between = clean[min(end, value.end):max(start, value.start)]
             clause_break = bool(re.search(r"[.;!?]", between))
-            score = max(0.0, 1.0 - (distance / 96.0)) - (0.45 if clause_break else 0.0)
+            score = max(0.0, 1.0 - (distance / 96.0)) - (0.45 if clause_break else 0.0) - (0.14 if start >= value.end else 0.0)
             ranked.append((score, distance, node_id, subject_text))
         ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
         chosen = ranked[0] if ranked and ranked[0][0] >= 0.34 else None
