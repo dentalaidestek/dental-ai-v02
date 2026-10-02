@@ -486,12 +486,13 @@ def test_graph_and_retrieval_share_inflection_policy_without_relaxing_abbreviati
     assert not any(node.id == "centric_relation" for node in matched_nodes("CR değeri CSS ekranında"))
 
 
-def test_rescue_subject_excludes_generic_facet_vocabulary():
+def test_rescue_subject_uses_only_canonical_missing_subject_labels():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
     branch = source[source.index("missing_subject_ids = ["):source.index("rescue_rows = _fts_rows")]
-    assert "facet_noise" in branch
-    assert "term.casefold() not in facet_noise" in branch
+    assert "node_label(node_id)" in branch
+    assert "missing_subject_terms" in branch
     assert "graph_expansion_terms" not in branch
+    assert "requirement.subject_terms[:1]" in branch
 
 
 def test_literal_value_question_requires_measurement_evidence_before_generation():
