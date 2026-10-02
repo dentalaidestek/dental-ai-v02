@@ -438,54 +438,67 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         return "CHUNK"
     if provider_name != "local":
         raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
-    for page in pages:
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        from app.study_index_jobs import renew_index_lease
-        if not renew_index_lease(
-            session,
-            job_id=job.id,
-            lease_token=job.lease_token,
-            worker_id=job.worker_id,
-            lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
-        ):
-            session.rollback()
-            return "LEASE_LOST"
-        session.close()
-        result = ocr_material_page(
-            path,
-            mime_type=mime_type,
-            page_number=page.page_number,
-        )
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        text = normalize_extracted_text(result.text)
-        method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-        if result.visual_only:
-            # A diagram/blank page can legitimately contain no dependable text.
-            # Account for it without inventing clinical content; the immutable
-            # source PDF remains the visual evidence for page-aware fallback.
-            text = (
-                f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
-                "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+
+    # PDFium document parsing is non-trivial on long scanned lecture notes.
+    # Reuse one document for the whole bounded OCR slice; ocr_material_page
+    # already accepts this handle and will reuse it for a quality retry too.
+    pdf_document = None
+    if mime_type == "application/pdf":
+        import pypdfium2 as pdfium
+        pdf_document = pdfium.PdfDocument(str(path))
+    try:
+        for page in pages:
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
+            from app.study_index_jobs import renew_index_lease
+            if not renew_index_lease(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
+            ):
+                session.rollback()
+                return "LEASE_LOST"
+            session.close()
+            result = ocr_material_page(
+                path,
+                mime_type=mime_type,
+                page_number=page.page_number,
+                pdf_document=pdf_document,
             )
-            method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-        upsert_page_checkpoint(
-            session,
-            owner_user_id=job.owner_user_id,
-            course_id=job.course_id,
-            material_id=job.material_id,
-            index_version=job.index_version,
-            page_number=page.page_number,
-            status="OCR_DONE",
-            text_content=text,
-            extraction_method=method,
-            content_sha256=_sha256_text(text),
-            error=None,
-        )
-        session.commit()
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
+            text = normalize_extracted_text(result.text)
+            method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            if result.visual_only:
+                # A diagram/blank page can legitimately contain no dependable text.
+                # Account for it without inventing clinical content; the immutable
+                # source PDF remains the visual evidence for page-aware fallback.
+                text = (
+                    f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
+                    "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+                )
+                method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            upsert_page_checkpoint(
+                session,
+                owner_user_id=job.owner_user_id,
+                course_id=job.course_id,
+                material_id=job.material_id,
+                index_version=job.index_version,
+                page_number=page.page_number,
+                status="OCR_DONE",
+                text_content=text,
+                extraction_method=method,
+                content_sha256=_sha256_text(text),
+                error=None,
+            )
+            session.commit()
+    finally:
+        if pdf_document is not None:
+            pdf_document.close()
     remaining = session.exec(
         select(StudyIndexPage.id)
         .where(StudyIndexPage.material_id == job.material_id)
