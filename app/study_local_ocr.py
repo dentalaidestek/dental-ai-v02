@@ -168,23 +168,36 @@ def _detect_page_layout(image: Image.Image) -> _PageLayout:
 
 
 def _deskew_image(image: Image.Image) -> Image.Image:
-    """Cheap bounded deskew; skip clean pages and never enlarge the canvas."""
-    import tesserocr
-
+    """Estimate small skew from a tiny projection probe; no extra OCR pass."""
     probe = image.copy()
     try:
-        probe.thumbnail((1200, 1600), Image.Resampling.BILINEAR)
-        try:
-            osd = tesserocr.image_to_osd(probe)
-        except Exception:
+        probe.thumbnail((700, 900), Image.Resampling.BILINEAR)
+        binary = probe.point(lambda p: 0 if p < 205 else 255, mode="1")
+
+        def score(angle: float) -> float:
+            rotated = binary if angle == 0 else binary.rotate(
+                angle, resample=Image.Resampling.NEAREST, expand=False, fillcolor=255
+            )
+            try:
+                w, h = rotated.size
+                pix = rotated.load()
+                rows = [sum(1 for x in range(w) if pix[x, y] == 0) for y in range(h)]
+                if not rows:
+                    return 0.0
+                mean = sum(rows) / len(rows)
+                return sum((v - mean) ** 2 for v in rows) / len(rows)
+            finally:
+                if rotated is not binary:
+                    rotated.close()
+
+        base = score(0.0)
+        candidates = [(-3.0, score(-3.0)), (-1.5, score(-1.5)), (1.5, score(1.5)), (3.0, score(3.0))]
+        angle, best = max(candidates, key=lambda item: item[1])
+        # Require a meaningful projection improvement; otherwise avoid a
+        # needless full-resolution rotate on already straight pages.
+        if base <= 0 or best < base * 1.10:
             return image.copy()
-        match = re.search(r"Deskew angle:\s*(-?\d+(?:\.\d+)?)", osd or "", re.I)
-        if not match:
-            return image.copy()
-        angle = float(match.group(1))
-        if abs(angle) < 0.35 or abs(angle) > 8.0:
-            return image.copy()
-        return image.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=255)
+        return image.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=255)
     finally:
         probe.close()
 
