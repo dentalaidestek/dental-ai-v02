@@ -97,7 +97,7 @@ assert "At most one extra local DB query" in source
 # Multi-query reranking must not treat append order as lexical relevance.
 assert "raw_lexical = float(row[9] or 0.0)" in source
 assert "subject_alignment = _subject_alignment_score" in source
-assert "(0.42 * lexical)" in source
+assert "(0.40 * lexical)" in source\nassert "(0.30 * subject_alignment)" in source\nassert "drift_penalty" in source
 assert "aligned or candidates" in source
 
 # Neighbor rows must keep the same chunk-index/semantic metadata tail as FTS rows.
@@ -264,3 +264,49 @@ assert "c.owner_user_id=:owner AND c.course_id=:course" in source
 assert "c.content_kind <> 'QUESTION'" in source
 assert "needs_factual_generation" in source
 assert "bool(factual_note_evidence) or not needs_factual_generation" in source
+
+
+def test_real_language_entity_benchmark_across_specialties():
+    from app.dental_knowledge_graph import matched_nodes
+    cases = [
+        ("geri dönüşümsüz pulpitis tedavisi", "irreversible_pulpitis"),
+        ("NaOCl taşarsa ne olur", "sodium_hypochlorite"),
+        ("dişeti çekilmesinde ne yaparız", "gingival_recession"),
+        ("çekimden sonra dry socket", "dry_socket"),
+        ("interproximal radiograph ne zaman", "bitewing"),
+        ("addition silicone ölçü", "pvs"),
+        ("bonding agent ne işe yarar", "adhesive"),
+        ("molar incisor hypomineralization", "mih"),
+        ("odontogenic keratocyst bulguları", "odontogenic_keratocyst"),
+        ("disc displacement belirtileri", "disc_displacement"),
+        ("inferior alveolar nerve block tekniği", "ianb"),
+        ("acetaminophen dental ağrıda", "paracetamol"),
+        ("lithium disilicate özellikleri", "lithium_disilicate"),
+        ("Hertwig epithelial root sheath", "hertwig_root_sheath"),
+        ("community periodontal index", "cpi"),
+    ]
+    for query, expected in cases:
+        ids = {node.id for node in matched_nodes(query)}
+        assert expected in ids, (query, expected, ids)
+
+
+def test_ambiguous_short_terms_do_not_seed_graph_without_dental_context():
+    from app.dental_knowledge_graph import matched_nodes
+    negatives = [
+        ("cep telefonu bozuldu", "periodontal_pocket"),
+        ("PD dosyasını aç", "probing_depth"),
+        ("CR ekran ayarı", "centric_relation"),
+        ("CAL komutu çalışmadı", "attachment_loss"),
+        ("WL bağlantısı", "working_length"),
+        ("bu maden benim mine", "enamel"),
+    ]
+    for query, forbidden in negatives:
+        ids = {node.id for node in matched_nodes(query)}
+        assert forbidden not in ids, (query, forbidden, ids)
+
+
+def test_specific_phrase_does_not_add_overlapping_generic_seed():
+    from app.dental_knowledge_graph import matched_nodes
+    ids = [node.id for node in matched_nodes("periodontal cep sondalama derinliği")]
+    assert ids.count("periodontal_pocket") <= 1
+    assert ids.count("probing_depth") <= 1
