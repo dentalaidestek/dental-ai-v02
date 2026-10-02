@@ -134,3 +134,19 @@ def test_extended_dental_semantic_vocabulary_is_query_matchable():
     }
     for query, expected in cases.items():
         assert expected in {node.id for node in matched_nodes(query)}
+
+
+def test_extended_cross_discipline_dental_terms_are_matchable():
+    from app.dental_knowledge_graph import matched_nodes
+
+    cases = {
+        "Hertwig epitel kök kını ne yapar": "hertwig_root_sheath",
+        "DMFT indeksi": "dmft",
+        "ICDAS sınıflaması": "icdas",
+        "lityum disilikat özellikleri": "lithium_disilicate",
+        "bisfosfonat kullanan hasta": "bisphosphonate",
+        "Miller mobility sınıflaması": "mobility_grade",
+        "PAI nedir": "periapical_index",
+    }
+    for query, expected in cases.items():
+        assert expected in {node.id for node in matched_nodes(query)}
