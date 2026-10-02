@@ -150,3 +150,15 @@ def test_extended_cross_discipline_dental_terms_are_matchable():
     }
     for query, expected in cases.items():
         assert expected in {node.id for node in matched_nodes(query)}
+
+
+def test_dental_graph_has_unique_canonical_ids_and_merged_aliases():
+    from app.dental_knowledge_graph import ALL_NODES
+
+    ids = [node.id for node in ALL_NODES]
+    assert len(ids) == len(set(ids))
+    by_id = {node.id: node for node in ALL_NODES}
+    # Existing canonical nodes survive vocabulary enrichment; aliases are merged.
+    assert "bitewing" in by_id
+    assert "interproximal radiograph" in by_id["bitewing"].aliases
+    assert "biodentine" in by_id
