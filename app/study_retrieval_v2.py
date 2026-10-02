@@ -329,31 +329,6 @@ def _facet_present(facet: str, corpus: str, semantic_kinds: set[str]) -> bool:
     return any(term.casefold() in semantic_kinds for term in terms)
 
 
-def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
-    """Build at most one focused probe per explicit requirement."""
-    clean = _normalize_dental_notation(query)
-    original, extras = _retrieval_terms(clean)
-    requirement = build_dental_requirement_plan(clean)
-    anchors = original[:5]
-    concept_terms = [term for term in extras if len(term) >= 3][:4]
-    subject = " ".join(dict.fromkeys(anchors + concept_terms[:1])).strip() or clean
-    queries: list[str] = []
-    for item in requirement.intents:
-        for facet in _coverage_terms(item.name):
-            hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
-            # One compact OR group per requested facet; synonyms improve recall
-            # without multiplying DB round-trips.
-            hint_query = " OR ".join(
-                f'"{term}"' if " " in term else term for term in hints[:4]
-            )
-            candidate = f"{subject} ({hint_query})"
-            if candidate not in queries:
-                queries.append(candidate)
-            if len(queries) >= max_queries:
-                return queries
-    return queries
-
-
 def _fts_query(query: str, *, broad: bool = False) -> str:
     original, extras = _retrieval_terms(query)
     terms = original + (extras if broad else [])
