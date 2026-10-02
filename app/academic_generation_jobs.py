@@ -68,9 +68,12 @@ def enqueue_generation_job(
     existing = session.exec(text("""
         SELECT id FROM academicgenerationjob
         WHERE owner_user_id=:owner AND course_id=:course
+          AND request_key=:request_key
           AND status IN ('QUEUED','RUNNING')
         ORDER BY id DESC LIMIT 1
-    """), params={"owner": owner_user_id, "course": course_id}).first()
+    """), params={
+        "owner": owner_user_id, "course": course_id, "request_key": request_key,
+    }).first()
     if existing:
         return session.get(AcademicGenerationJob, int(existing[0]))
     job = AcademicGenerationJob(
