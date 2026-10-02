@@ -19,7 +19,7 @@ _VALUE_CANDIDATE_RE = re.compile(
     rf"(?P<unit>{_NUMERIC}\s*{_VALUE_UNIT})"
     rf"|(?P<percent>yüzde\s+(?:{_NUMERIC}|{_NUMBER_PHRASE}))"
     rf"|(?P<wordunit>{_NUMBER_PHRASE}\s+(?:derece|milimetre|santimetre|mikrometre))"
-    rf"|(?P<label>{_EXPLICIT_VALUE_LABEL}\s*(?:=|:|ise|olarak)?\s*(?:{_NUMERIC}|{_NUMBER_PHRASE}))"
+    rf"|(?P<label>{_EXPLICIT_VALUE_LABEL}\s*(?:=|:|ise|olarak)?\s*(?:{_NUMERIC}|(?!yüzde\b){_NUMBER_PHRASE}))"
     rf"|(?P<range>(?:{_NUMERIC}|{_NUMBER_PHRASE})\s*(?:[-–—]|ile|ila)\s*(?:{_NUMERIC}|{_NUMBER_PHRASE})(?:\s*{_VALUE_UNIT})?)"
     rf")"
 )
@@ -113,7 +113,7 @@ def _value_context(text: str, evidence: ValueEvidence) -> tuple[tuple[str, ...],
     return tuple(dict.fromkeys(qualifiers)), local
 
 _LEXICAL_SUBJECT_RE = re.compile(
-    r"(?iu)([A-Za-zÇĞİÖŞÜçğıöşü][\\wÇĞİÖŞÜçğıöşü-]*(?:\\s+[A-Za-zÇĞİÖŞÜçğıöşü][\\wÇĞİÖŞÜçğıöşü-]*){0,3})"
+    r"(?iu)([A-Za-zÇĞİÖŞÜçğıöşü][\wÇĞİÖŞÜçğıöşü-]*(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü][\wÇĞİÖŞÜçğıöşü-]*){0,3})"
 )
 _SUBJECT_STOPWORDS = {
     "normal", "değer", "değeri", "ortalama", "yaklaşık", "oran", "yüzde", "hasta", "olgu", "vaka",
@@ -206,7 +206,8 @@ def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundV
     for item in items:
         if item.assertion == "reference":
             references.append(item.value.text)
-            group = tuple(sorted(item.qualifiers))
+            subject_key = (item.subject_node_id or item.subject_text or "").casefold().strip()
+            group = (subject_key, *tuple(sorted(item.qualifiers)))
             reference_groups.setdefault(group, {})[_value_key(item.value.text)] = item.value.text
         elif item.assertion == "observation":
             observations.append(item.value.text)
