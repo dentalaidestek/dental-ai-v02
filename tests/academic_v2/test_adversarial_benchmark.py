@@ -170,3 +170,13 @@ def test_adversarial_semantic_distractor_matrix():
     for query, positive, distractor in cases:
         q = analyze_dental_text(query)
         assert semantic_overlap_score(q, analyze_dental_text(positive)) > semantic_overlap_score(q, analyze_dental_text(distractor)), query
+
+
+def benchmark_case_count() -> int:
+    explicit = len(BASE)+len(MULTI)+len(QUALIFIERS)+len(NEGATIVE)+len(NON_NEGATIVE)+len(VISUAL_TRUE)+len(VISUAL_FALSE)+len(TYPOS)
+    paraphrases = len(PARAPHRASE_SUBJECTS)*len(PARAPHRASE_FORMS)
+    distractors = 10
+    return explicit + paraphrases + distractors
+
+def test_adversarial_benchmark_case_count_is_stable():
+    assert benchmark_case_count() >= 110
