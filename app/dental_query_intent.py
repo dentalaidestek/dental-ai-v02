@@ -138,12 +138,46 @@ def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     return (phrase,) if phrase else ()
 
 
+_QUALIFIER_PATTERNS = (
+    ("maksiller", re.compile(r"\b(?:maksiller|maksilla(?:da|dan|daki|nın|nin)?)\b", re.I)),
+    ("mandibular", re.compile(r"\b(?:mandibular|mandibula(?:da|dan|daki|nın|nin)?)\b", re.I)),
+    ("üst", re.compile(r"\büst(?:te|ten|teki)?\b", re.I)),
+    ("alt", re.compile(r"\balt(?:ta|tan|taki)?\b", re.I)),
+    ("sağ", re.compile(r"\bsağ(?:da|dan|daki)?\b", re.I)),
+    ("sol", re.compile(r"\bsol(?:da|dan|daki)?\b", re.I)),
+    ("anterior", re.compile(r"\banterior(?:da|dan|daki)?\b", re.I)),
+    ("posterior", re.compile(r"\bposterior(?:da|dan|daki)?\b", re.I)),
+    ("süt", re.compile(r"\bsüt(?:te|ten|teki)?\b", re.I)),
+    ("daimi", re.compile(r"\bdaimi\b", re.I)),
+    ("primer", re.compile(r"\bprimer\b", re.I)),
+    ("sekonder", re.compile(r"\bsekonder\b", re.I)),
+    ("akut", re.compile(r"\bakut(?:ta|tan)?\b", re.I)),
+    ("kronik", re.compile(r"\bkronik(?:te|ten)?\b", re.I)),
+    ("reversible", re.compile(r"\breversible\b", re.I)),
+    ("irreversible", re.compile(r"\birreversible\b", re.I)),
+    ("semptomatik", re.compile(r"\bsemptomatik\b", re.I)),
+    ("asemptomatik", re.compile(r"\basemptomatik\b", re.I)),
+    ("lokalize", re.compile(r"\blokalize\b", re.I)),
+    ("generalize", re.compile(r"\bgeneralize\b", re.I)),
+    ("erken", re.compile(r"\berken\b", re.I)),
+    ("geç", re.compile(r"\bgeç\b", re.I)),
+    ("çocuk", re.compile(r"\bçocuk(?:ta|tan|larda|larda)?\b", re.I)),
+    ("erişkin", re.compile(r"\berişkin(?:de|den|lerde)?\b", re.I)),
+)
 _QUALIFIER_RE = re.compile(
-    r"\\b(?:maksiller|mandibular|üst|alt|sağ|sol|anterior|posterior|süt|daimi|"
-    r"primer|sekonder|akut|kronik|reversible|irreversible|semptomatik|asemptomatik|"
-    r"lokalize|generalize|erken|geç|çocuk|erişkin)\\b",
+    r"\b(?:maksiller|mandibular|maksilla|mandibula|üst|alt|sağ|sol|anterior|posterior|"
+    r"süt|daimi|primer|sekonder|akut|kronik|reversible|irreversible|semptomatik|"
+    r"asemptomatik|lokalize|generalize|erken|geç|çocuk|erişkin)[a-zçğıöşü]{0,5}\b",
     re.I,
 )
+
+def query_qualifiers(query: str) -> tuple[str, ...]:
+    text = query or ""
+    return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(text))
+
+def qualifier_present(qualifier: str, text: str) -> bool:
+    return any(name == qualifier and pattern.search(text or "") for name, pattern in _QUALIFIER_PATTERNS)
+
 _NEGATION_REQUEST_RE = re.compile(
     r"\\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
     r"kontrendike|hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
@@ -154,7 +188,7 @@ _COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
 
 
 def _query_qualifiers(query: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(m.group(0).casefold() for m in _QUALIFIER_RE.finditer(query or "")))
+    return query_qualifiers(query)
 
 
 
@@ -176,8 +210,10 @@ def _subject_qualifier_bindings(query: str, subject_nodes) -> tuple[tuple[str, t
     if not mentions:
         return ()
     bound: dict[str, list[str]] = {}
-    for qmatch in _QUALIFIER_RE.finditer(text):
-        qualifier = qmatch.group(0).casefold()
+    for qualifier, pattern in _QUALIFIER_PATTERNS:
+        qmatch = pattern.search(text)
+        if not qmatch:
+            continue
         candidates: list[tuple[int, str]] = []
         for start, end, node_id in mentions:
             if qmatch.end() <= start:
