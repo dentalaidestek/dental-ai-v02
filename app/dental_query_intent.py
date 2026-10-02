@@ -90,6 +90,31 @@ class DentalRequirementPlan:
     relation_hints: tuple[str, ...]
     specialties: tuple[str, ...]
 
+_SUBJECT_STOP_RE = re.compile(
+    r"\\b(?:nedir|nelerdir|kaçtır|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
+    r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
+    r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
+    r"sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
+    r"klinik|radyografik|ayırt edici|ayırıcı|ve|ile|ile birlikte)\\b",
+    re.I,
+)
+_SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
+
+def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
+    """Keep unknown dental subjects searchable without inventing graph nodes."""
+    clean = re.sub(r"[?,;:()]+", " ", query or "")
+    clean = _SUBJECT_STOP_RE.sub(" ", clean)
+    tokens = [t.strip(".-") for t in clean.split() if len(t.strip(".-")) >= 2]
+    tokens = [_SUBJECT_SUFFIX_RE.sub("", t) for t in tokens]
+    tokens = [t for t in tokens if len(t) >= 2]
+    if not tokens:
+        return ()
+    # Preserve phrase order; FTS can still tokenize it. Bounded to avoid turning
+    # the entire question into a broad lexical query.
+    phrase = " ".join(tokens[:8]).strip()
+    return (phrase,) if phrase else ()
+
+
 def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     """Separate what the user asks about from which facts they request."""
     from app.dental_knowledge_graph import matched_nodes
@@ -97,7 +122,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     intents = classify_dental_intents(clean, limit=6)
     nodes = matched_nodes(clean)
     subject_ids = tuple(dict.fromkeys(node.id for node in nodes))
-    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))
+    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))\n    if not subject_terms:\n        subject_terms = _lexical_subject_terms(clean)
     specialties = tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general"))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
