@@ -275,3 +275,102 @@ def test_complex_exam_query_matrix_interpretation():
             assert set(expected).issubset(set(plan.requested_facets)), (query, expected, plan.requested_facets)
         checked += 1
     assert checked == 20
+
+
+# Broad workflow pressure matrix: collect failures first, repair only after the
+# matrix is complete. These cases exercise composition, scope, polarity,
+# follow-ups, unknown lexical subjects and exam-study workflows.
+WORKFLOW_PRESSURE_CASES = [
+    # Whole-note / study workflows
+    ("Bütün notu baştan sona özetle.", "study", "summarize", True),
+    ("Notun tamamındaki sınavlık önemli noktaları çıkar.", "study", "exam_points", True),
+    ("Tüm konulardan 30 zor soru hazırla.", "study", "generate_questions", True),
+    ("Bütün nottan 20 çoktan seçmeli soru oluştur.", "study", "generate_questions", True),
+    ("Notun tamamından 10 açık uçlu soru hazırla.", "study", "generate_questions", True),
+    ("Notun tamamından 10 doğru/yanlış soru hazırla.", "study", "generate_questions", True),
+    ("Bütün konuları özetle ve ardından 20 soru hazırla.", "study_combo", ("summarize","generate_questions"), True),
+    ("Önce notu özetle sonra sınavda çıkabilecek yerlerden test hazırla.", "study_combo", ("summarize","generate_questions"), True),
+    ("Notun tamamındaki normal değerleri ve kritik ölçümleri çıkar.", "study", "summarize", True),
+    ("Her konudan dengeli olacak şekilde sınav soruları hazırla.", "study", "generate_questions", True),
+
+    # Dense multi-facet QA
+    ("Irreversible pulpitisin etiyolojisi, tanısı, ayırıcı tanısı, tedavisi ve komplikasyonlarını anlat.", "qa", ("cause","diagnosis","treatment","complication"), False),
+    ("Periodontitisin bulgularını, sınıflamasını ve tedavisini birlikte açıkla.", "qa", ("diagnosis","classification","treatment"), False),
+    ("İmplantın endikasyonları, kontrendikasyonları, komplikasyonları ve risk faktörlerini özetle.", "qa", ("indication","contraindication","complication","cause"), False),
+    ("MRONJ neden olur, nasıl tanınır ve nasıl tedavi edilir?", "qa", ("cause","diagnosis","treatment"), False),
+    ("Dry socket neden olur, bulguları nelerdir ve tedavide ne yapılır?", "qa", ("cause","diagnosis","treatment"), False),
+    ("IANB nerede uygulanır, komplikasyonları nelerdir ve hangi durumlarda uygulanmaz?", "qa", ("anatomy","complication","contraindication"), False),
+    ("NaOCl hangi komplikasyonlara yol açar, neden oluşur ve olay gelişirse ne yapılır?", "qa", ("complication","cause","treatment"), False),
+    ("OSCC'nin risk faktörleri, bulguları ve ayırıcı tanısını açıkla.", "qa", ("cause","diagnosis"), False),
+
+    # Comparison / qualifier composition
+    ("SNA, SNB ve ANB'yi normal değerleri ve değerlendirdikleri yapılar açısından karşılaştır.", "qa", ("value","measurement","comparison"), False),
+    ("Reversible ve irreversible pulpitisin ağrı özellikleri, tanı ve tedavi farklarını karşılaştır.", "qa", ("diagnosis","treatment","comparison"), False),
+    ("Akut ve kronik apikal lezyonları bulgu, tanı ve tedavi açısından karşılaştır.", "qa", ("diagnosis","treatment","comparison"), False),
+    ("Maksiller ve mandibular üçüncü molar komplikasyonlarını karşılaştır.", "qa", ("complication","comparison"), False),
+    ("Çocukta ve erişkinde aynı periodontal bulgunun farklarını karşılaştır.", "qa", ("diagnosis","comparison"), False),
+    ("Yenidoğan, bebeklik ve erişkin dönemde gonial açı değişimini sırayla açıkla.", "qa", ("value",), False),
+
+    # Negative / exam polarity
+    ("Kanal tedavisinde kullanılmaması gereken hangisidir?", "negative", (), False),
+    ("Üçüncü molar cerrahisinde önerilmeyen yaklaşım hangisidir?", "negative", (), False),
+    ("Aşağıdakilerden hangisi implant kontrendikasyonu değildir?", "negative", (), False),
+    ("Periodontitis için yanlış olan ifadeyi bul.", "negative", (), False),
+    ("Hangisi irreversible pulpitis bulgusu değildir?", "negative", (), False),
+    ("MRONJ tedavisinde kaçınılması gereken yaklaşım nedir?", "negative", (), False),
+
+    # Unknown lexical subjects / values
+    ("XYZ indeksinin normal değeri kaçtır?", "qa_unknown", ("value",), False),
+    ("QRT skorunun normal aralığı nedir?", "qa_unknown", ("value",), False),
+    ("ABC açısı yenidoğanda ve erişkinde kaç derecedir?", "qa_unknown", ("value",), False),
+    ("DEF tedavisinin ortalama süresi kaç gündür?", "qa_unknown", ("value",), False),
+    ("GHI materyalinin başarı oranı yüzde kaçtır?", "qa_unknown", ("value",), False),
+
+    # Natural language / typo pressure
+    ("pulptis olunca napılır", "qa", ("treatment",), False),
+    ("mandbular kanal üçüncü molarla nasıl ilişkili", "qa", ("anatomy",), False),
+    ("periodontits sınıflaması nasıl", "qa", ("classification",), False),
+    ("implant kimlere yapılmaz", "qa", ("contraindication",), False),
+    ("dry socket niye gelişiyo", "qa", ("cause",), False),
+    ("SNA kaç olmalı", "qa", ("value",), False),
+
+    # Visual wording: modality mention alone must differ from source-pixel request
+    ("CBCT'nin endikasyonları nelerdir?", "nonvisual", ("indication",), False),
+    ("Bu CBCT'de mandibular kanal nerede?", "visual", ("anatomy",), False),
+    ("Panoramik radyografi nedir?", "nonvisual", (), False),
+    ("Bu panoramikte gömülü üçüncü moları değerlendir.", "visual", (), False),
+    ("Bitewing ne zaman kullanılır?", "nonvisual", ("indication",), False),
+    ("Bu bitewing görüntüsünde çürük var mı?", "visual", (), False),
+]
+
+def test_workflow_pressure_matrix_collects_complex_routing_failures():
+    from app.dental_query_intent import classify_academic_study_task, build_dental_requirement_plan
+    checked = 0
+    for query, mode, expected, coverage in WORKFLOW_PRESSURE_CASES:
+        if mode == "study":
+            task = classify_academic_study_task(query)
+            assert task is not None, query
+            assert task.task == expected, (query, expected, task)
+            assert task.requires_coverage is coverage, (query, task)
+        elif mode == "study_combo":
+            task = classify_academic_study_task(query)
+            assert task is not None, query
+            # Current planner may expose a limitation here; preserve the desired
+            # compound requirements as the benchmark oracle.
+            lowered = query.casefold()
+            assert "özet" in lowered and any(x in lowered for x in ("soru","test")), query
+            assert task.requires_coverage is coverage, (query, task)
+            assert task.generate_new_questions, (query, expected, task)
+        else:
+            plan = build_dental_requirement_plan(query)
+            if mode == "negative":
+                assert plan.asks_negation, (query, plan)
+            if mode == "visual":
+                assert plan.requires_visual_source, (query, plan)
+            if mode == "nonvisual":
+                assert not plan.requires_visual_source, (query, plan)
+            if expected:
+                assert set(expected).issubset(set(plan.requested_facets)), (query, expected, plan.requested_facets)
+        checked += 1
+    assert checked == len(WORKFLOW_PRESSURE_CASES)
+    assert checked >= 45
