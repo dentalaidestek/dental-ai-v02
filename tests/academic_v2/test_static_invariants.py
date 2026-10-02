@@ -128,6 +128,9 @@ def test_local_ocr_retries_only_weak_columns_when_possible():
     assert "any(weak_columns)" in ocr
     assert "if not weak_columns[idx]:" in ocr
     assert "continue" in ocr
+    assert "column_confidences" in ocr
+    assert "confidences = list(column_confidences)" in ocr
+    assert "return confidence < 78" in ocr
 
 
 def test_local_ocr_reuses_engine_and_preserves_academic_structure():
