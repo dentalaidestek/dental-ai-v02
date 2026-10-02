@@ -40,3 +40,16 @@ def test_resume_only_plans_remaining_questions():
     bucket = plan.buckets[0]
     batches = plan_generation_batches(plan, generated_by_bucket={bucket_key(bucket): 7})
     assert sum(x.question_count for x in batches) == 3
+
+
+def test_hydration_windows_dedupe_chunks_and_stay_bounded():
+    from app.academic_generation import hydration_windows, GenerationBatch
+    batches = (
+        GenerationBatch("a", 1, "A", (), (1, 2, 3), 3),
+        GenerationBatch("b", 1, "B", (), (3, 4, 5), 3),
+        GenerationBatch("c", 1, "C", (), (6, 7), 2),
+    )
+    windows = hydration_windows(batches, max_unique_chunks=5)
+    assert windows[0] == (1, 2, 3, 4, 5)
+    assert windows[1] == (6, 7)
+    assert all(len(x) <= 5 for x in windows)
