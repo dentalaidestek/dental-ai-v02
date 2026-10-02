@@ -1094,9 +1094,24 @@ def retrieve_course_context_v2(
         candidate_target = max(limit * 4, 24)
         seen_ids = {int(row[0]) for row in rows}
         evidence_queries = _evidence_queries(resolved) if _needs_multi_evidence(resolved) else []
+        initial_coverage, initial_covered = _coverage_score(resolved, rows)
+        missing_initial = {
+            facet for item in build_dental_requirement_plan(resolved).intents
+            for facet in _coverage_terms(item.name) if facet not in initial_covered
+        }
+        if initial_coverage >= 1.0:
+            evidence_queries = []
         for evidence_query in evidence_queries:
             if len(rows) >= candidate_target:
                 break
+            # Focused queries contain one canonical facet's synonym group.
+            # Skip probes for requirements already satisfied by the first pass.
+            if missing_initial and not any(
+                any(term.casefold() in evidence_query.casefold()
+                    for term in _FACET_SEARCH_TERMS.get(facet, (facet,)))
+                for facet in missing_initial
+            ):
+                continue
             facet_rows = _fts_rows(
                 session,
                 owner_user_id=owner_user_id,
