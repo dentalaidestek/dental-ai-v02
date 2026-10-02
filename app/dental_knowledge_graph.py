@@ -257,9 +257,9 @@ def _term_present(text: str, term: str) -> bool:
 
 _AMBIGUOUS_SHORT_TERMS = {"cep", "pd", "cr", "cal", "wl", "mine"}
 _DENTAL_CONTEXT_RE = re.compile(
-    r"\\b(?:diş|dental|periodontal|periodont|endodont|kanal|pulpa|oklüz|protez|"
+    r"\b(?:diş|dental|periodontal|periodont|endodont|kanal|pulpa|oklüz|protez|"
     r"restoratif|dentin|çene|sefalometr|implant|radyograf|klinik|ataşman|"
-    r"sondalama|santral ilişki|çalışma boyu|enamel|tooth|root|pulp)\\w*\\b", re.I
+    r"sondalama|santral ilişki|çalışma boyu|enamel|tooth|root|pulp)\w*\b", re.I
 )
 
 def _alias_pattern(term: str) -> str:
@@ -405,7 +405,12 @@ def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 1
         }:
             other = edge.source
         if other and edge.weight >= min_weight:
-            node = _NODE_BY_ID[other]
+            # Relation packs may be deployed ahead of their terminology pack.
+            # A dangling expansion edge must never crash retrieval; structural
+            # coverage reports still expose it for ontology repair.
+            node = _NODE_BY_ID.get(other)
+            if node is None:
+                continue
             relation_matches = edge.relation.value in hinted
             # When the question names a relation (complication, treatment,
             # assessment, etc.), keep unrelated neighbours available only when
