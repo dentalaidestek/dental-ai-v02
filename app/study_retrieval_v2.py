@@ -476,11 +476,22 @@ _FACET_SEARCH_TERMS = {
 }
 
 
-def _facet_present(facet: str, corpus: str, semantic_kinds: set[str]) -> bool:
+def _facet_present(
+    facet: str,
+    corpus: str,
+    semantic_kinds: set[str],
+    *,
+    preferred_kinds: tuple[str, ...] = (),
+) -> bool:
     terms = _FACET_SEARCH_TERMS.get(facet, (facet,))
     if any(term.casefold() in corpus for term in terms):
         return True
-    return any(term.casefold() in semantic_kinds for term in terms)
+    # Semantic kinds are useful only when they are explicitly preferred by the
+    # user intent that owns this facet. This recovers source wording such as a
+    # named procedure for a treatment question without treating arbitrary
+    # same-specialty text as facet evidence.
+    preferred = {item.casefold() for item in preferred_kinds}
+    return bool(preferred.intersection(semantic_kinds))
 
 
 def _fts_query(query: str, *, broad: bool = False) -> str:
@@ -1038,8 +1049,16 @@ def _coverage_score(query: str, rows: list, requirement=None, feature_cache=None
         features = _row_semantic_features(row, feature_cache)
         semantic_kinds.update(item.casefold() for item in features.kinds)
     covered: list[str] = []
+    facet_kinds = {
+        facet: intent.preferred_kinds
+        for intent in requirement.intents
+        for facet in _coverage_terms(intent.name)
+    }
     for facet in facets:
-        if _facet_present(facet, corpus, semantic_kinds):
+        if _facet_present(
+            facet, corpus, semantic_kinds,
+            preferred_kinds=facet_kinds.get(facet, ()),
+        ):
             covered.append(facet)
     # Kind evidence is only a fallback for the matching intent's own first facet;
     # never let one generic kind satisfy all requirements in a multi-facet query.
@@ -1231,6 +1250,14 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
                         facet,
                         f"{row[5] or ''} {row[7] or ''}".casefold(),
                         {item.casefold() for item in features.kinds},
+                        preferred_kinds=next(
+                            (
+                                intent.preferred_kinds
+                                for intent in requirement.intents
+                                if facet in _coverage_terms(intent.name)
+                            ),
+                            (),
+                        ),
                     )
                     for row, features in zip(rows, row_features)
                 ):
