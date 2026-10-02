@@ -108,6 +108,7 @@ class DentalRequirementPlan:
     subject_count: int = 0
     unresolved_subject: bool = False
     constraint_node_ids: tuple[str, ...] = ()
+    explicit_relations: tuple[tuple[str, str, str], ...] = ()
 
 _SUBJECT_STOP_RE = re.compile(
     r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
@@ -186,6 +187,19 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         else:
             subject_terms = _lexical_subject_terms(clean)
     specialties = tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general"))
+    # Preserve only relations whose two endpoints were explicitly mentioned by
+    # the user. The graph may explain the connection, but it must never invent
+    # an unstated subject/fact for retrieval or generation.
+    explicit_ids = {node.id for node in nodes}
+    explicit_relations: list[tuple[str, str, str]] = []
+    if len(explicit_ids) >= 2:
+        from app.dental_knowledge_graph import EDGES
+        from app.dental_knowledge_relations import DENTAL_RELATION_EDGES
+        for edge in (*EDGES, *DENTAL_RELATION_EDGES):
+            if edge.weight < 0.80:
+                continue
+            if edge.source in explicit_ids and edge.target in explicit_ids:
+                explicit_relations.append((edge.source, edge.relation.value, edge.target))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,
@@ -200,6 +214,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         subject_count=len(subject_ids) if subject_ids else len(comparison_terms),
         unresolved_subject=not bool(subject_ids or subject_terms),
         constraint_node_ids=tuple(dict.fromkeys(node.id for node in constraint_nodes)),
+        explicit_relations=tuple(dict.fromkeys(explicit_relations)),
     )
 
 
