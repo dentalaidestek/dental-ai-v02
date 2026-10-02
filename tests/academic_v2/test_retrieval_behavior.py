@@ -1167,3 +1167,24 @@ def test_generic_written_value_is_not_confused_with_measurement_identity():
                None, 0.9, None, 0.9, 2, None)
     assert not _row_has_value_evidence(no_value, analyze_dental_text("SNA " + no_value[7]))
     assert _row_has_value_evidence(written, analyze_dental_text("SNA " + written[7]))
+
+def test_index_worker_persists_chunk_local_value_evidence_without_global_truth():
+    source = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    chunker = source.split("def _chunk_slice", 1)[1]
+    assert "bind_value_evidence(semantic_source)" in chunker
+    assert '"value_evidence"' in chunker
+    assert '"assertion": item.assertion' in chunker
+    assert '"subject_node": item.subject_node_id' in chunker
+    assert '"binding_confidence": item.binding_confidence' in chunker
+    # Chunking records evidence; it must not manufacture course-wide consensus.
+    assert '"consensus"' not in chunker
+    assert '"reference_value"' not in chunker
+
+def test_bound_value_metadata_distinguishes_reference_and_case_observation():
+    from app.dental_semantics import bind_value_evidence
+    reference = bind_value_evidence("SNA normal değeri 82°'dir.")[0]
+    case = bind_value_evidence("Bu hastada SNA 86° ölçüldü.")[0]
+    assert reference.subject_node_id == case.subject_node_id == "sna"
+    assert reference.assertion == "reference"
+    assert case.assertion == "observation"
+    assert reference.value.text != case.value.text
