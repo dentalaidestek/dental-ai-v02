@@ -434,3 +434,14 @@ def test_visual_page_artifact_is_generation_and_owner_scoped():
     assert "owner_user_id=:o AND material_id=:m" in visual
     assert "index_version=:v AND page_number=:p" in visual
     assert "visual_pdf_bytes IS NULL" in visual
+
+
+def test_ocr_profile_tracks_rotation_behavior_and_chunker_strips_repeated_margins():
+    ocr = Path("app/study_local_ocr.py").read_text(encoding="utf-8")
+    worker = Path("app/study_index_worker.py").read_text(encoding="utf-8")
+    assert "adaptive-dental-tur-eng-v3" in ocr
+    assert "def _orientation_candidate" in ocr
+    assert "projection_strength(rotated90) > base * 1.8" in ocr
+    assert "def _strip_repeated_page_margins" in worker
+    assert "len(pages) >= threshold" in worker
+    assert "cleaned_page_text.get(int(page.page_number)" in worker
