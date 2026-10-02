@@ -180,3 +180,57 @@ def benchmark_case_count() -> int:
 
 def test_adversarial_benchmark_case_count_is_stable():
     assert benchmark_case_count() >= 110
+
+
+# Cross-product pressure: these are intentionally heterogeneous combinations,
+# not duplicate paraphrases. They exercise subject identity + facet + qualifier
+# + polarity together without provider calls.
+CROSS_SUBJECTS = [
+    ("irreversible pulpitis", "irreversible_pulpitis"),
+    ("periodontitis", "periodontitis"),
+    ("implant", "implant"),
+    ("üçüncü molar", "third_molar"),
+    ("MRONJ", "mronj"),
+    ("IANB", "ianb"),
+    ("SNA", "sna"),
+    ("SNB", "snb"),
+]
+CROSS_FACETS = [
+    ("tedavisi nedir?", "treatment"),
+    ("komplikasyonları nelerdir?", "complication"),
+    ("tanısı nasıl konur?", "diagnosis"),
+    ("nedir?", "definition"),
+]
+CROSS_PREFIXES = ["", "erişkinde ", "akut durumda "]
+
+def test_adversarial_cross_product_subject_facet_pressure():
+    checked = 0
+    for subject_text, subject_id in CROSS_SUBJECTS:
+        for ending, facet in CROSS_FACETS:
+            for prefix in CROSS_PREFIXES:
+                plan = build_dental_requirement_plan(f"{prefix}{subject_text} {ending}")
+                assert subject_id in plan.subject_node_ids, (prefix, subject_text, ending, plan.subject_node_ids)
+                assert facet in plan.requested_facets, (prefix, subject_text, ending, facet, plan.requested_facets)
+                checked += 1
+    assert checked == 96
+
+
+def test_adversarial_orthodontic_composition_pressure():
+    cases = [
+        ("SNA ve SNB normal değerleri kaçtır?", {"sna", "snb"}, {"value"}),
+        ("SNA, SNB ve ANB normal değerlerini karşılaştır", {"sna", "snb", "anb"}, {"value", "comparison"}),
+        ("SNA ile SNB arasındaki fark nedir?", {"sna", "snb"}, {"comparison"}),
+        ("ANB açısı neyi değerlendirir?", {"anb"}, {"measurement"}),
+        ("Wits analizi neyi değerlendirir?", {"wits"}, {"measurement"}),
+        ("maloklüzyon sınıflaması nedir?", {"malocclusion"}, {"classification"}),
+        ("CBCT'de mandibular kanal ilişkisi nedir?", {"mandibular_canal"}, set()),
+        ("Bu panoramikte üçüncü moların konumunu değerlendir", {"third_molar"}, set()),
+    ]
+    for query, subjects, facets in cases:
+        plan = build_dental_requirement_plan(query)
+        assert subjects.issubset(set(plan.subject_node_ids)), (query, plan.subject_node_ids)
+        assert facets.issubset(set(plan.requested_facets)), (query, plan.requested_facets)
+
+
+def test_adversarial_benchmark_now_exceeds_two_hundred_interpretations():
+    assert benchmark_case_count() + 96 + 8 >= 210
