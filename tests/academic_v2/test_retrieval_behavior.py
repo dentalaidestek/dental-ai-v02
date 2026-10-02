@@ -875,7 +875,7 @@ def test_primary_retrieval_strips_question_form_noise_for_unknown_subjects():
     cases = (
         ("pterygomandibular raphe nerede?", ("pterygomandibular", "raphe"), ("nerede",)),
         ("Nance holding arch ne zaman kullanılır?", ("Nance", "holding", "arch"), ("ne", "zaman")),
-        ("X materyali hangi durumda uygulanır?", ("X", "materyali"), ("hangi", "durumda")),
+        ("ABC materyali hangi durumda uygulanır?", ("ABC", "materyali"), ("hangi", "durumda")),
     )
     for query, expected, forbidden in cases:
         precise = namespace["_fts_query"](query, broad=False).casefold().split()
