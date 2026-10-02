@@ -483,6 +483,8 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
                     "subject_node": item.subject_node_id,
                     "subject_text": item.subject_text,
                     "binding_confidence": item.binding_confidence,
+                    "qualifiers": item.qualifiers,
+                    "context": item.context_text,
                 } for item in bound_values[:24]],
             }, ensure_ascii=False, separators=(",", ":"))
             pending.append(StudyIndexChunk(
