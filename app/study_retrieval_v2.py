@@ -958,6 +958,8 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceS
     complementary_alignment = alignments[1] if len(alignments) > 1 else 0.0
 
     row_features = [_row_semantic_features(row) for row in rows]
+    evidence_node_ids = {node_id for features in row_features for node_id in features.node_ids}
+    multi_subject_complete = all(node_id in evidence_node_ids for node_id in requirement.subject_node_ids)
     kinds = {item for features in row_features for item in features.kinds}
     intent_kind = 1.0 if set(intent.preferred_kinds).intersection(kinds) else 0.0
 
@@ -1004,15 +1006,15 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceS
             bool(intent_names.intersection({"value", "measurement"}))
             and special_match == 0.0
         )
-        sufficient = anchored and not literal_value_missing and confidence >= 0.34
+        sufficient = anchored and multi_subject_complete and not literal_value_missing and confidence >= 0.34
     elif facets:
         # Explicit multi-facet requests are a hard completeness contract.
         # Strong subject evidence for one facet must never authorize synthesis
         # of another requested facet that is absent from the user's notes.
         hard_complete = not missing
-        sufficient = anchored and hard_complete and confidence >= 0.38
+        sufficient = anchored and hard_complete and multi_subject_complete and confidence >= 0.38
     else:
-        sufficient = anchored and confidence >= 0.34
+        sufficient = anchored and multi_subject_complete and confidence >= 0.34
 
     return EvidenceSufficiency(sufficient, confidence, covered, missing)
 
