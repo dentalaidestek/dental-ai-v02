@@ -1311,6 +1311,27 @@ def _row_has_value_evidence(row, features: DentalSemanticFeatures, *, require_re
     return bool(evidence)
 
 
+def _value_evidence_state(rows: list, *, require_reference: bool = False) -> str:
+    """Reconcile persisted evidence across retrieved chunks before generation."""
+    evidence = [item for row in rows for item in _row_value_evidence(row)]
+    if not evidence:
+        return "insufficient"
+    relevant = [item for item in evidence if item.get("assertion") == "reference"] if require_reference else evidence
+    if not relevant:
+        return "observations_only" if evidence else "insufficient"
+    groups: dict[tuple[str, tuple[str, ...]], set[str]] = {}
+    for item in relevant:
+        subject = (item.get("subject_node") or item.get("subject_text") or "").casefold().strip()
+        qualifiers = tuple(sorted(str(q).casefold() for q in (item.get("qualifiers") or ())))
+        value = re.sub(r"\s+", "", str(item.get("text") or "").casefold().replace(",", ".").replace("derece", "°"))
+        groups.setdefault((subject, qualifiers), set()).add(value)
+    if any(len(values) > 1 for values in groups.values()):
+        return "conflict"
+    qualifier_sets = {key[1] for key in groups}
+    if len(qualifier_sets) > 1:
+        return "conditioned"
+    return "reference_supported" if require_reference else "supported"
+
 def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None, query_features=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
     requirement = requirement or build_dental_requirement_plan(query)
@@ -1388,10 +1409,8 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             r"(?iu)\b(?:normal|referans|standart|ideal|beklenen|ortalama)\b",
             query,
         ))
-        has_measurement = any(
-            _row_has_value_evidence(row, features, require_reference=reference_value_request)
-            for row, features in zip(rows, row_features)
-        )
+        value_state = _value_evidence_state(rows, require_reference=reference_value_request)
+        has_measurement = value_state in {"reference_supported", "supported", "conditioned"}
         count_request = bool(re.search(
             r"(?iu)\bkaç\s+(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\b",
             query,
@@ -1424,7 +1443,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
             query,
             re.I,
         ))
-        if literal_value_request and not has_measurement:
+        if literal_value_request and (not has_measurement or value_state == "conflict"):
             special_match = 0.0
             # Semantic kind "measurement" says what SNA/SNB *is*, not that
             # this evidence contains the requested numeric/reference value.
