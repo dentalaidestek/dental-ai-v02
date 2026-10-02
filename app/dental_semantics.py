@@ -71,7 +71,15 @@ def analyze_dental_text(text: str) -> DentalSemanticFeatures:
                 before = re.split(r"[.;!?]|\b(?:ama|ancak|fakat|but|however)\b", before)[-1]
                 after = lowered[match.end():min(len(lowered), match.end() + 48)]
                 after = re.split(r"[.;!?]|\b(?:ama|ancak|fakat|but|however)\b", after)[0]
-                mention_states.append(bool(negator.search(before) or negator.search(after)))
+                negation_markers = (
+                    "yok", "değil", "izlenmedi", "saptanmadı", "görülmedi",
+                    "bulunmadı", "without", " no ", " not ",
+                )
+                local_context = f" {before} {after} "
+                mention_states.append(
+                    bool(negator.search(before) or negator.search(after))
+                    or any(marker in local_context for marker in negation_markers)
+                )
         # Mixed positive/negative mentions are not collapsed into a negative
         # concept. Preserve positive evidence unless every mention is negated.
         if mention_states and all(mention_states):
