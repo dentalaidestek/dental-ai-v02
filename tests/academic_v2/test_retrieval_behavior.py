@@ -325,18 +325,9 @@ def test_specific_phrase_does_not_add_overlapping_generic_seed():
 
 
 def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
-    # Extract the production reranker and its local helpers without a DB.
     import json
-    from app.dental_semantics import analyze_dental_text, semantic_overlap_score
-    ns = dict(namespace)
-    ns.update({
-        "analyze_dental_text": analyze_dental_text,
-        "semantic_overlap_score": semantic_overlap_score,
-    })
-    wanted_fns = {"_subject_alignment_score", "_rerank_dental_rows"}
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name in wanted_fns:
-            exec(compile(ast.Module(body=[node], type_ignores=[]), "<reranker>", "exec"), ns)
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _rerank_dental_rows
 
     def row(cid, section, body, lexical):
         # Retrieval row shape: id/material/title/page/page_end/section/kind/text/
@@ -406,7 +397,7 @@ def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
         ),
     ])
     for query, expected_id, rows in cases:
-        ranked = ns["_rerank_dental_rows"](query, rows, limit=3)
+        ranked = _rerank_dental_rows(query, rows, limit=3)
         assert ranked[0][0] == expected_id, (query, [r[0] for r in ranked])
 
 
