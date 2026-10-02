@@ -831,3 +831,11 @@ def test_primary_retrieval_strips_inflected_facet_noise():
             word in precise.split()
             for word in ("tedavisi", "komplikasyonları", "endikasyonları", "kontrendikasyonları", "sınıflaması")
         ), (query, precise)
+
+
+def test_sufficiency_requires_subject_and_facet_in_same_evidence_row():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    suff = source[source.index("def _evidence_sufficiency"):source.index("def _coverage_select")]
+    assert "subject_ids.intersection(features.node_ids)" in suff
+    assert "_facet_present(" in suff
+    assert "hard_complete = False" in suff
