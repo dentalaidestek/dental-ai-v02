@@ -77,7 +77,7 @@ NODES = (
     DentalNode("malocclusion", "maloklüzyon", "orthodontics", "finding", ("malocclusion",)),
 
     # Endodontics
-    DentalNode("root_canal", "kök kanal sistemi", "endodontics", "anatomy", ("root canal system", "kanal")),
+    DentalNode("root_canal", "kök kanal sistemi", "endodontics", "anatomy", ("root canal system",)),
     DentalNode("working_length", "çalışma boyu", "endodontics", "measurement", ("working length", "WL")),
     DentalNode("apical_constriction", "apikal konstriksiyon", "endodontics", "anatomy", ("apical constriction", "minor diameter")),
     DentalNode("apical_foramen", "apikal foramen", "endodontics", "anatomy", ("apical foramen", "major diameter")),
