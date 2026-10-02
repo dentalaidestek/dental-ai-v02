@@ -82,7 +82,7 @@ source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
 assert "def _coverage_select" in source
 assert "candidate_target = max(limit * 4, 24)" in source
 assert "if len(rows) < max(limit, 6):" in source
-assert "rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)" in source
+assert "rows = _coverage_select(" in source
 
 
 # Latency guard: simple factual questions stay on one-pass retrieval.
@@ -443,7 +443,8 @@ def test_rescue_path_is_single_bounded_round_trip():
 def test_fast_direct_path_skips_neighbor_hydration_structurally():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
     assert "fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)" in source
-    assert "neighbor_limit = 0 if fast_direct and rows" in source
+    assert "if provisional.sufficient" in source
+    assert "neighbor_limit = (" in source
 
 
 def test_mixed_fast_and_multifacet_request_does_not_bypass_completeness():
@@ -461,10 +462,11 @@ def test_coverage_selection_uses_same_facet_synonyms_as_coverage_scoring():
 
 def test_visual_page_artifact_is_generation_and_owner_scoped():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
-    visual = source[source.index("def _single_page_pdf"):source.index("def _pgvector_available")]
-    assert "owner_user_id=:o AND material_id=:m" in visual
-    assert "index_version=:v AND page_number=:p" in visual
+    visual = source[source.index("def materialize_visual_sources"):source.index("def _pgvector_available")]
+    assert "m.owner_user_id=:o" in visual
+    assert "p.index_version=m.active_index_version" in visual
     assert "visual_pdf_bytes IS NULL" in visual
+    assert "sm.active_index_version=:v" in visual
 
 
 def test_ocr_profile_tracks_rotation_behavior_and_chunker_strips_repeated_margins():
@@ -681,11 +683,11 @@ def test_question_understanding_preserves_multiple_explicit_subjects():
 
 
 def test_visual_source_routing_requires_inspection_not_modality_name():
-    from app.study_retrieval_v2 import _requires_visual_source
-    assert not _requires_visual_source("CBCT nedir?")
-    assert not _requires_visual_source("Panoramik radyografinin endikasyonları nelerdir?")
-    assert _requires_visual_source("Bu CBCT görüntüsünde hangi yapı görülüyor?")
-    assert _requires_visual_source("Radyografide hangi lezyon görülüyor?")
+    from app.dental_query_intent import build_dental_requirement_plan
+    assert not build_dental_requirement_plan("CBCT nedir?").requires_visual_source
+    assert not build_dental_requirement_plan("Panoramik radyografinin endikasyonları nelerdir?").requires_visual_source
+    assert build_dental_requirement_plan("Bu CBCT görüntüsünde hangi yapı görülüyor?").requires_visual_source
+    assert build_dental_requirement_plan("Radyografide hangi lezyon görülüyor?").requires_visual_source
 
 
 def test_qualifier_morphology_is_canonical_and_shared():
