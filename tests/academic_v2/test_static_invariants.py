@@ -9,7 +9,7 @@ ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
 chunking = (ROOT / "app/study_chunking.py").read_text(encoding="utf-8")
 
 # Parse first: catches syntax/indentation damage without importing production deps.
-ast.parse(retrieval)
+tree = ast.parse(retrieval)
 ast.parse(generation)
 ast.parse(ocr)
 ast.parse(chunking)
@@ -159,3 +159,15 @@ def test_dental_ocr_lexicon_has_broad_specialty_coverage():
     assert len({line.strip().casefold() for line in words.splitlines() if line.strip()}) >= 400
     for term in required:
         assert term.casefold() in words.casefold()
+
+
+# Shared request-local semantic features must be accepted by every hot-path
+# helper that callers invoke with query_features=; protects caller/callee drift.
+for helper in ("_rerank_dental_rows", "_evidence_sufficiency", "_coverage_select"):
+    node = next(
+        n for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == helper
+    )
+    kwonly = {arg.arg for arg in node.args.kwonlyargs}
+    positional = {arg.arg for arg in node.args.args}
+    assert "query_features" in kwonly | positional, helper
