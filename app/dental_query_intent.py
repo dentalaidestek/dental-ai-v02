@@ -13,7 +13,7 @@ _RULES = (
     ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|derece|mm|oran)\b", re.I),
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|neyle ölç|nasıl ölç|ölçülür|değerlendirilir)\b", re.I),
-     ("measurement",), ("measures", "used_for")),
+     ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
     ("classification", re.compile(r"\b(?:sınıflam[a-zçğıöşü]*|sınıflandır[a-zçğıöşü]*|class|sınıf[a-zçğıöşü]*|evre[a-zçğıöşü]*|stage|grade|derece)\b", re.I),
