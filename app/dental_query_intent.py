@@ -12,7 +12,7 @@ class DentalIntent:
 _RULES = (
     ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|mm|oran)\b", re.I),
      ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|değerlendiril[a-zçğıöşü]*)\b", re.I),
+    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
@@ -341,12 +341,15 @@ _STUDY_GENERATION_RE = re.compile(
     re.I,
 )
 _STUDY_COVERAGE_RE = re.compile(
-    r"\b(?:tüm|bütün|tamamı|notun tamamı|dersin tamamı|her konu|bütün konu|"
+    r"\b(?:tüm|bütün|tamamı|tamamındaki|notun tamamı|notun tamamındaki|dersin tamamı|her konu|bütün konu|"
     r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
     re.I,
 )
 _STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
-_STUDY_COUNT_RE = re.compile(r"\b(\d{1,3})\s*(?:adet\s*)?(?:soru|test|quiz|flashcard|kart)\b", re.I)
+_STUDY_COUNT_RE = re.compile(
+    r"\b(\d{1,3})(?:\s+(?:adet|kolay|orta|zor|çok zor|ayırt edici|klinik|vaka|çoktan seçmeli|açık uçlu|doğru/?yanlış)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -413,9 +416,10 @@ _ACADEMIC_STUDY_TASK_RULES = (
 def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     """Plan role-neutral academic workflows while keeping factual output source-bound."""
     clean = " ".join((query or "").split())
+    broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     for task, pattern, past, notes, coverage, generate in _ACADEMIC_STUDY_TASK_RULES:
         if pattern.search(clean):
-            return AcademicStudyTaskPlan(task, past, notes, coverage, generate)
+            return AcademicStudyTaskPlan(task, past, notes, coverage or broad, generate)
     study = classify_dental_study_plan(clean)
     if study:
         return AcademicStudyTaskPlan(
