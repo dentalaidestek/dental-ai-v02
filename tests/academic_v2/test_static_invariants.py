@@ -85,3 +85,11 @@ assert "session.close()" not in parse_slice
 assert "require_embeddings: bool = True" in jobs
 
 print("Academic V2 static invariants: OK")
+
+
+def test_ocr_worker_reuses_pdfium_document_per_bounded_slice():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    ocr_slice = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    assert 'pdf_document = pdfium.PdfDocument(str(path))' in ocr_slice
+    assert "pdf_document=pdf_document" in ocr_slice
+    assert "pdf_document.close()" in ocr_slice
