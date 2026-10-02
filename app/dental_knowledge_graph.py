@@ -219,6 +219,11 @@ if len({node.id for node in ALL_NODES}) != len(ALL_NODES):
 _NODE_BY_ID = {node.id: node for node in ALL_NODES}
 
 
+def node_label(node_id: str) -> str | None:
+    node = _NODE_BY_ID.get(node_id)
+    return node.label if node else None
+
+
 def dental_graph_coverage() -> dict[str, object]:
     """Cheap structural coverage report for every canonical vocabulary node."""
     from app.dental_knowledge_relations import DENTAL_RELATION_EDGES
