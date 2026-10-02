@@ -151,3 +151,22 @@ def test_adversarial_matrix_exceeds_eighty_interpretations():
     explicit = len(BASE)+len(MULTI)+len(QUALIFIERS)+len(NEGATIVE)+len(NON_NEGATIVE)+len(VISUAL_TRUE)+len(VISUAL_FALSE)+len(TYPOS)
     generated = len(PARAPHRASE_SUBJECTS)*len(PARAPHRASE_FORMS)
     assert explicit + generated >= 100
+
+
+def test_adversarial_semantic_distractor_matrix():
+    from app.dental_semantics import analyze_dental_text, semantic_overlap_score
+    cases = [
+        ("ANB normal değeri", "ANB açısı normal değer", "SNA açısı normal değer"),
+        ("SNB normal değeri", "SNB açısı normal değer", "ANB açısı normal değer"),
+        ("sondalama derinliği", "probing depth periodontal ölçüm", "clinical attachment loss periodontal ölçüm"),
+        ("çalışma boyu", "working length apikal konstriksiyon", "apikal foramen endodontik ölçüm"),
+        ("irreversible pulpitis", "irreversible pulpitis pulpa", "reversible pulpitis pulpa"),
+        ("reversible pulpitis", "reversible pulpitis pulpa", "irreversible pulpitis pulpa"),
+        ("third molar", "üçüncü molar yirmi yaş dişi", "ikinci molar diş"),
+        ("MRONJ", "MRONJ çene osteonekrozu", "osteoradionekroz çene"),
+        ("MIH", "molar incisor hypomineralization", "dental fluorosis"),
+        ("IANB", "inferior alveolar nerve block", "mental nerve block"),
+    ]
+    for query, positive, distractor in cases:
+        q = analyze_dental_text(query)
+        assert semantic_overlap_score(q, analyze_dental_text(positive)) > semantic_overlap_score(q, analyze_dental_text(distractor)), query
