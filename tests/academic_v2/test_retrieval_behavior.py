@@ -759,3 +759,11 @@ def test_degree_word_alone_does_not_create_value_intent():
     plan = build_dental_requirement_plan("Angle sınıflamasındaki dereceler nelerdir?")
     assert "classification" in plan.requested_facets
     assert "value" not in plan.requested_facets
+
+
+def test_contraindicated_topic_is_not_negative_selection_polarity():
+    from app.dental_query_intent import build_dental_requirement_plan
+    topic = build_dental_requirement_plan("Bu işlem gebelikte kontrendike midir?")
+    negative = build_dental_requirement_plan("Hangisi kontrendike değildir?")
+    assert not topic.asks_negation
+    assert negative.asks_negation
