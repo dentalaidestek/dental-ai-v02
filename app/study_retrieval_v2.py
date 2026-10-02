@@ -1072,6 +1072,7 @@ def retrieve_course_context_v2(
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     resolved = resolve_followup_query(query, recent_history)
+    requirement = build_dental_requirement_plan(resolved)
     # New V2 indexes are intentionally local-FTS. Do not spend an external
     # embedding request per user question when the published generation has no
     # semantic vectors to compare against.
@@ -1130,11 +1131,10 @@ def retrieve_course_context_v2(
         # subject identity comes from the user's lexical subject plus curated
         # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
-        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
-        coverage, covered_facets = _coverage_score(resolved, rows)
+        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
+        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement)
         rescue_query_count = 0
-        if _needs_multi_evidence(resolved) and coverage < 1.0 and len(rows) < candidate_target:
-            requirement = build_dental_requirement_plan(resolved)
+        if _needs_multi_evidence(resolved, requirement=requirement) and coverage < 1.0 and len(rows) < candidate_target:
             requested_facets = tuple(dict.fromkeys(
                 facet for item in requirement.intents for facet in _coverage_terms(item.name)
             ))
@@ -1184,22 +1184,22 @@ def retrieve_course_context_v2(
                             seen_ids.add(row_id)
                     # Rescue evidence re-enters the same relevance and coverage
                     # gates; it never bypasses subject alignment or sufficiency.
-                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
-                    coverage, covered_facets = _coverage_score(resolved, rows)
+                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
+                    coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement)
         logger.info(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
             rescue_query_count, coverage, ",".join(covered_facets) or "-",
         )
-        rows = _coverage_select(resolved, rows, limit=limit)
+        rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)
         primary_ids = [int(row[0]) for row in rows]
         # Neighbor context is useful for split passages, but it must not be an
         # unconditional extra DB query or cross a section boundary.
         requirement_names = {
-            item.name for item in build_dental_requirement_plan(resolved).intents
+            item.name for item in requirement.intents
             if item.name != "general"
         }
         fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)
-        context_target = min(10, limit + 2) if _needs_multi_evidence(resolved) else max(4, limit)
+        context_target = min(10, limit + 2) if _needs_multi_evidence(resolved, requirement=requirement) else max(4, limit)
         # A self-contained value/definition/measurement hit should stay on the
         # one-query fast path. Neighbor hydration is for split context, not a
         # default tax on every short DIRECT question.
@@ -1263,7 +1263,7 @@ def retrieve_course_context_v2(
             else 0.0
         )
     else:
-        sufficiency = _evidence_sufficiency(resolved, rows)
+        sufficiency = _evidence_sufficiency(resolved, rows, requirement=requirement)
         result.evidence_sufficient = sufficiency.sufficient
         result.evidence_confidence = sufficiency.confidence
         result.covered_facets = sufficiency.covered_facets
