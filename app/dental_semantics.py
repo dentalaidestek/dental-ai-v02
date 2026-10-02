@@ -29,10 +29,12 @@ def _fdi_numbers(text: str) -> tuple[str, ...]:
         left = max(0, match.start() - 42)
         right = min(len(text), match.end() + 42)
         window = text[left:right]
+        prefix = text[max(0, match.start() - 14):match.start()]
         suffix = text[match.end():min(len(text), match.end() + 18)]
         # Ages/page references can sit in the same sentence as a real tooth
         # number. Dental context must not convert them into FDI identities.
-        if _NON_TOOTH_NUMBER_SUFFIX_RE.search(suffix):
+        if (_NON_TOOTH_NUMBER_PREFIX_RE.search(prefix)
+                or _NON_TOOTH_NUMBER_SUFFIX_RE.search(suffix)):
             continue
         if _TOOTH_CONTEXT_RE.search(window) or _DENTAL_NUMBER_CONTEXT_RE.search(window):
             result.append(match.group(0))
