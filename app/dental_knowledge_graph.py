@@ -189,7 +189,31 @@ def _merge_specialty_nodes() -> tuple[DentalNode, ...]:
 
 
 _SPECIALTY_NODES = _merge_specialty_nodes()
-ALL_NODES = NODES + _SPECIALTY_NODES
+
+
+def _merge_all_nodes() -> tuple[DentalNode, ...]:
+    """Core graph ids are canonical; specialty packs may only enrich aliases."""
+    merged: dict[str, DentalNode] = {node.id: node for node in NODES}
+    order = [node.id for node in NODES]
+    for node in _SPECIALTY_NODES:
+        current = merged.get(node.id)
+        if current is None:
+            merged[node.id] = node
+            order.append(node.id)
+            continue
+        aliases_seen = {current.label.casefold(), *(a.casefold() for a in current.aliases)}
+        extra = tuple(
+            term for term in (node.label, *node.aliases)
+            if term.casefold() not in aliases_seen
+        )
+        merged[node.id] = DentalNode(
+            current.id, current.label, current.specialty, current.kind,
+            current.aliases + extra,
+        )
+    return tuple(merged[node_id] for node_id in order)
+
+
+ALL_NODES = _merge_all_nodes()
 if len({node.id for node in ALL_NODES}) != len(ALL_NODES):
     raise ValueError("Duplicate canonical dental node id")
 _NODE_BY_ID = {node.id: node for node in ALL_NODES}
