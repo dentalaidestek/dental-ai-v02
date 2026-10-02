@@ -180,3 +180,28 @@ retrieval_source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
 assert "_PAGE_PDF_CACHE_MAX_BYTES = 32 * 1024 * 1024" in retrieval_source
 assert "retained > _PAGE_PDF_CACHE_MAX_BYTES" in retrieval_source
 assert "_PAGE_PDF_CACHE_MAX = 12" in retrieval_source
+
+
+def test_index_pipeline_is_checkpoint_routed_and_future_worker_ready():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    assert "def _next_checkpoint_stage" in worker
+    router = worker.split("def _next_checkpoint_stage", 1)[1].split("def _extract_pdf_slice", 1)[0]
+    assert 'return "CHUNK"' in router
+    assert 'StudyIndexPage.status == "OCR_REQUIRED"' in router
+    assert 'return "OCR"' in router
+    assert 'checkpoint_count < int(job.expected_page_count)' in router
+    assert 'return "PARSE"' in router
+    assert router.rstrip().endswith('return "VERIFY"')
+    assert "future dedicated Academic/OCR worker" in worker
+    assert 'job.resource_class == "OCR_HEAVY"' in worker
+    assert 'resource_class="NORMAL"' in worker
+
+
+def test_parse_and_ocr_slices_feed_ready_pages_downstream_early():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    parse_slice = worker.split("def _extract_pdf_slice", 1)[1].split("def _strip_repeated_page_margins", 1)[0]
+    ocr_slice = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    chunk_slice = worker.split("def _chunk_slice", 1)[1].split("def _prepare_image_checkpoint", 1)[0]
+    assert "return _next_checkpoint_stage(session, job)" in parse_slice
+    assert "return _next_checkpoint_stage(session, job)" in ocr_slice
+    assert "return _next_checkpoint_stage(session, job)" in chunk_slice
