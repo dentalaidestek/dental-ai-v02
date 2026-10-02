@@ -1084,15 +1084,6 @@ def _coverage_score(query: str, rows: list, requirement=None, feature_cache=None
             preferred_kinds=facet_kinds.get(facet, ()),
         ):
             covered.append(facet)
-    # Kind evidence is only a fallback for the matching intent's own first facet;
-    # never let one generic kind satisfy all requirements in a multi-facet query.
-    for item in requirement.intents:
-        item_facets = _coverage_terms(item.name)
-        if not item_facets:
-            continue
-        if set(k.casefold() for k in item.preferred_kinds).intersection(semantic_kinds):
-            if item_facets[0] not in covered:
-                covered.append(item_facets[0])
     return len(set(covered)) / max(1, len(facets)), tuple(dict.fromkeys(covered))
 
 
@@ -1370,7 +1361,18 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, fe
                 continue
             haystack = f"{row[5] or ''} {row[7] or ''}".casefold()
             row_kinds = {item.casefold() for item in _row_semantic_features(row, feature_cache).kinds}
-            if _facet_present(facet, haystack, row_kinds):
+            preferred_kinds = next(
+                (
+                    intent.preferred_kinds
+                    for intent in requirement.intents
+                    if facet in _coverage_terms(intent.name)
+                ),
+                (),
+            )
+            if _facet_present(
+                facet, haystack, row_kinds,
+                preferred_kinds=preferred_kinds,
+            ):
                 candidates.append(row)
         if candidates:
             aligned = [
