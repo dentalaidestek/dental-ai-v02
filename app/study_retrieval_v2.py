@@ -1237,10 +1237,16 @@ def retrieve_course_context_v2(
         }
         fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)
         context_target = min(10, limit + 2) if _needs_multi_evidence(resolved, requirement=requirement) else max(4, limit)
-        # A self-contained value/definition/measurement hit should stay on the
-        # one-query fast path. Neighbor hydration is for split context, not a
-        # default tax on every short DIRECT question.
-        neighbor_limit = 0 if fast_direct and rows else min(2, max(0, context_target - len(rows)))
+        # Fast questions skip the neighbor query only when the selected evidence
+        # already passes the same local sufficiency gate used before generation.
+        # A hit at a chunk boundary therefore gets bounded adjacent context,
+        # while a self-contained definition/value keeps the one-query path.
+        provisional = _evidence_sufficiency(resolved, rows, requirement=requirement)
+        neighbor_limit = (
+            0
+            if fast_direct and provisional.sufficient
+            else min(2, max(0, context_target - len(rows)))
+        )
         if neighbor_limit:
             rows.extend(_neighbor_rows(
                 session,
