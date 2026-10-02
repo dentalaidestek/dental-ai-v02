@@ -707,3 +707,19 @@ def test_margin_stripping_does_not_delete_same_body_line():
     cleaned = _strip_repeated_page_margins(rows)
     assert "özgün gövde" in cleaned[1]
     assert cleaned[1].count("Ders Başlığı") == 1
+
+
+def test_multi_subject_fast_intent_still_requires_multi_evidence():
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.study_retrieval_v2 import _needs_multi_evidence
+    plan = build_dental_requirement_plan("SNA, SNB ve ANB normal değerleri kaçtır?")
+    assert len(plan.subject_node_ids) >= 3
+    assert _needs_multi_evidence("SNA, SNB ve ANB normal değerleri kaçtır?", requirement=plan)
+
+
+def test_compositional_comparison_without_fark_word():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("SNA ile SNB'den hangisi mandibulanın sagittal konumunu gösterir?")
+    assert {"sna", "snb"}.issubset(set(plan.subject_node_ids))
+    assert "comparison" in plan.requested_facets
+    assert plan.subject_count >= 2
