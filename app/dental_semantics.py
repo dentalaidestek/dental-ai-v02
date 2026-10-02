@@ -67,9 +67,11 @@ def analyze_dental_text(text: str) -> DentalSemanticFeatures:
             for match in re.finditer(r"(?<!\\w)" + escaped + r"(?!\\w)", lowered, flags=re.I):
                 # Clause-local preceding context: punctuation/conjunctions stop a
                 # negator from leaking across unrelated statements.
-                window = lowered[max(0, match.start() - 56):match.start()]
-                window = re.split(r"[.;!?]|\\b(?:ama|ancak|fakat|but|however)\\b", window)[-1]
-                mention_states.append(bool(negator.search(window)))
+                before = lowered[max(0, match.start() - 56):match.start()]
+                before = re.split(r"[.;!?]|\b(?:ama|ancak|fakat|but|however)\b", before)[-1]
+                after = lowered[match.end():min(len(lowered), match.end() + 48)]
+                after = re.split(r"[.;!?]|\b(?:ama|ancak|fakat|but|however)\b", after)[0]
+                mention_states.append(bool(negator.search(before) or negator.search(after)))
         # Mixed positive/negative mentions are not collapsed into a negative
         # concept. Preserve positive evidence unless every mention is negated.
         if mention_states and all(mention_states):
