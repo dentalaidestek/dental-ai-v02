@@ -81,6 +81,9 @@ jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
 ast.parse(worker)
 ast.parse(jobs)
 assert '"retrieval_profile": "fts-local-v1"' in worker
+assert '_int_env("STUDY_RAG_MAX_PDF_PAGES", 800, 1, 2000)' in worker
+main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+assert "from app.academic_generation_jobs import AcademicGenerationJob" in main_source
 assert 'return "VERIFY"' in worker
 assert "require_embeddings=False" in worker
 assert 'STUDY_V2_PARSE_BATCH_PAGES", 32' in worker
