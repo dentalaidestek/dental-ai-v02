@@ -1279,26 +1279,32 @@ def retrieve_course_context_v2(
             if subject_query:
                 rescue_query = " ".join([subject_query, *facet_terms])
                 rescue_rows = _fts_rows(
-                        session,
-                        owner_user_id=owner_user_id,
-                        course_id=course_id,
-                        lexical_query=rescue_query,
-                        query_vector=None,
-                        embedding_provider=embedding_provider,
-                        embedding_model=embedding_model,
-                        limit=min(6, max(1, candidate_target - len(rows))),
-                    )
-                    rescue_query_count = 1
-                    seen_ids = {int(row[0]) for row in rows}
-                    for row in rescue_rows:
-                        row_id = int(row[0])
-                        if row_id not in seen_ids:
-                            rows.append(row)
-                            seen_ids.add(row_id)
-                    # Rescue evidence re-enters the same relevance and coverage
-                    # gates; it never bypasses subject alignment or sufficiency.
-                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache)
-                    coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
+                    session,
+                    owner_user_id=owner_user_id,
+                    course_id=course_id,
+                    lexical_query=rescue_query,
+                    query_vector=None,
+                    embedding_provider=embedding_provider,
+                    embedding_model=embedding_model,
+                    limit=min(6, max(1, candidate_target - len(rows))),
+                )
+                rescue_query_count = 1
+                seen_ids = {int(row[0]) for row in rows}
+                for row in rescue_rows:
+                    row_id = int(row[0])
+                    if row_id not in seen_ids:
+                        rows.append(row)
+                        seen_ids.add(row_id)
+                # Rescue evidence re-enters the same relevance and coverage
+                # gates; it never bypasses subject alignment or sufficiency.
+                rows = _rerank_dental_rows(
+                    resolved, rows, limit=max(limit * 2, 12),
+                    requirement=requirement, feature_cache=row_feature_cache,
+                )
+                coverage, covered_facets = _coverage_score(
+                    resolved, rows, requirement=requirement,
+                    feature_cache=row_feature_cache,
+                )
         logger.info(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
             rescue_query_count, coverage, ",".join(covered_facets) or "-",
