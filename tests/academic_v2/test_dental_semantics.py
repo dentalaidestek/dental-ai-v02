@@ -131,3 +131,20 @@ def test_case_measurements_cannot_masquerade_as_reference_values():
         roles.append(classify_value_assertion(passage, value)[0])
     assert roles == ["observation", "observation", "observation"]
     assert "reference" not in roles
+
+def test_value_binding_keeps_subjects_separate_and_ambiguity_unbound():
+    from app.dental_semantics import bind_value_evidence
+    bound = bind_value_evidence("SNA 82° iken SNB 80° olarak ölçülür.")
+    assert len(bound) == 2
+    assert bound[0].subject_node_id == "sna"
+    assert bound[1].subject_node_id == "snb"
+    ambiguous = bind_value_evidence("SNA ve SNB için değer 81° olarak verildi.")
+    assert ambiguous
+    assert ambiguous[0].subject_node_id is None
+
+def test_observation_binding_never_becomes_reference_by_proximity():
+    from app.dental_semantics import bind_value_evidence
+    bound = bind_value_evidence("Bu hastada SNA 86° ölçüldü.")
+    assert bound
+    assert bound[0].subject_node_id == "sna"
+    assert bound[0].assertion == "observation"
