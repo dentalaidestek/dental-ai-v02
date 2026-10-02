@@ -1147,6 +1147,19 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         ) else 0.0)
     if intent_names.intersection({"value", "measurement"}):
         has_measurement = any(features.measurements for features in row_features)
+        count_request = bool(re.search(
+            r"(?iu)\\bkaç\\s+(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\\b",
+            query,
+        ))
+        if count_request and not has_measurement:
+            count_value_re = re.compile(
+                r"(?iu)(?:\\b(?:bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on)\\s+"
+                r"(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)(?:ü|ü|ı|i|si|sı|leri|ları)?\\b"
+                r"|\\b\\d{1,2}\\s*(?:adet\\s+)?(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\\b)"
+            )
+            has_measurement = any(
+                count_value_re.search(f"{row[5] or ''} {row[7] or ''}") for row in rows
+            )
         # A literal value request ("kaç", "değer", numeric/unit wording) must
         # not authorize generation from a chunk that only names the measure.
         literal_value_request = bool(re.search(
