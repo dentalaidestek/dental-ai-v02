@@ -93,3 +93,16 @@ def test_ocr_worker_reuses_pdfium_document_per_bounded_slice():
     assert 'pdf_document = pdfium.PdfDocument(str(path))' in ocr_slice
     assert "pdf_document=pdf_document" in ocr_slice
     assert "pdf_document.close()" in ocr_slice
+
+
+def test_local_ocr_preserves_layout_and_bounds_quality_retry():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _deskew_image" in ocr
+    assert "abs(angle) < 0.35 or abs(angle) > 8.0" in ocr
+    assert "def _recognize_layout" in ocr
+    assert 'layout.kind != "two_column"' in ocr
+    assert "image.crop" in ocr
+    assert 'join(texts)' in ocr
+    assert "def _ocr_anomaly_score" in ocr
+    assert "_ocr_anomaly_score(text) >= 0.34" in ocr
+    assert "retry_layout.kind == \"two_column\"" in ocr
