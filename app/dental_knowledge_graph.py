@@ -234,7 +234,13 @@ def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 1
             other = edge.source
         if other and edge.weight >= min_weight:
             node = _NODE_BY_ID[other]
-            intent_bonus = 0.08 if edge.relation.value in hinted else 0.0
+            relation_matches = edge.relation.value in hinted
+            # When the question names a relation (complication, treatment,
+            # assessment, etc.), keep unrelated neighbours available only when
+            # exceptionally strong; otherwise they dilute the retrieval query.
+            if hinted and not relation_matches and edge.weight < 0.95:
+                continue
+            intent_bonus = 0.12 if relation_matches else 0.0
             score = min(1.0, edge.weight + intent_bonus)
             candidates.append((score, node.label))
             candidates.extend((score - 0.02, alias) for alias in node.aliases[:2])
