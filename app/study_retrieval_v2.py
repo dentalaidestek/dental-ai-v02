@@ -837,6 +837,7 @@ def _coverage_evidence_rows(
         JOIN unnest(CAST(:chunk_ids AS BIGINT[])) WITH ORDINALITY AS selected(id, ord)
           ON selected.id=c.id
         WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND c.id = ANY(CAST(:chunk_ids AS BIGINT[]))
           AND c.content_kind <> 'QUESTION'
         ORDER BY selected.ord
         LIMIT :limit
