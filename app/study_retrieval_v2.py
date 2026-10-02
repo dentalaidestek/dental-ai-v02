@@ -1075,10 +1075,12 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
 
 def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None, query_features=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
-    if not rows:
-        return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
-
     requirement = requirement or build_dental_requirement_plan(query)
+    if not rows:
+        missing = tuple(dict.fromkeys(
+            facet for item in requirement.intents for facet in _coverage_terms(item.name)
+        ))
+        return EvidenceSufficiency(False, 0.0, (), missing)
     intent = requirement.intents[0]
     intent_names = {item.name for item in requirement.intents if item.name != "general"}
     qf = query_features or analyze_dental_text(query)
@@ -1527,11 +1529,11 @@ def retrieve_course_context_v2(
                     resolved, rows, limit=limit, requirement=requirement,
                     feature_cache=row_feature_cache,
                 )
-    intent = classify_dental_intent(resolved)
+    intent_label = "+".join(item.name for item in requirement.intents) or "general"
     logger.info(
         "Academic V2 retrieval selected. mode=%s intent=%s evidence_rows=%s",
         "coverage" if (course_wide_coverage and not study_question_task and not exhaustive_questions) else ("questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts")),
-        intent.name,
+        intent_label,
         len(rows),
     )
     result = RetrievalResult(
