@@ -6,7 +6,7 @@ CI remains fast and deterministic.
 """
 from pathlib import Path
 import ast
-from app.dental_query_intent import classify_dental_intent
+from app.dental_query_intent import classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.dental_knowledge_graph import graph_expansion_terms
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +17,7 @@ terms_source = (ROOT / "app/dental_retrieval_terms.py").read_text(encoding="utf-
 terms_ns = {}
 exec(compile(terms_source, "<dental-terms>", "exec"), terms_ns)
 wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES"}
-namespace = {"re": __import__("re"), "classify_dental_intent": classify_dental_intent, "graph_expansion_terms": graph_expansion_terms}
+namespace = {"re": __import__("re"), "classify_dental_intent": classify_dental_intent, "classify_dental_intents": classify_dental_intents, "combined_relation_hints": combined_relation_hints, "graph_expansion_terms": graph_expansion_terms}
 namespace["DENTAL_ALIAS_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 namespace["_DENTAL_CONCEPT_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 for node in tree.body:
@@ -256,3 +256,11 @@ def test_single_past_question_is_not_called_repeated():
     row = (1, 10, "exam.pdf", 1, 1, "Sefalometri", "QUESTION",
            "ANB açısının normal değeri kaçtır?", None, 1.0, None, 0.0, 1.0, 1, None)
     assert repeated_question_patterns([row]) == []
+
+
+# Past-question evidence must remain user/course scoped and cannot substitute for factual notes.
+assert "def _note_rows_for_question_patterns" in source
+assert "c.owner_user_id=:owner AND c.course_id=:course" in source
+assert "c.content_kind <> 'QUESTION'" in source
+assert "needs_factual_generation" in source
+assert "bool(factual_note_evidence) or not needs_factual_generation" in source
