@@ -4,6 +4,10 @@ Static data only: no model/provider calls and no clinical answer facts.
 """
 EXTENDED_SPECIALTY_CONCEPTS = {
     "endodontics": (
+        ("endodontics", "endodonti", ("endodontics", "endodontik"), "specialty"),
+        ("root_canal_preparation", "kök kanal preparasyonu", ("root canal preparation", "kanal preparasyonu"), "procedure"),
+        ("root_canal_obturation", "kök kanal obturasyonu", ("root canal obturation", "kanal dolgusu"), "procedure"),
+        ("endodontic_failure", "endodontik başarısızlık", ("endodontic failure",), "diagnosis"),
         ("acute_apical_abscess", "akut apikal apse", ("acute apical abscess", "akut apikal abse"), "diagnosis"),
         ("apical_periodontitis", "apikal periodontitis", ("apical periodontitis", "periapikal periodontitis"), "diagnosis"),
         ("apexification", "apeksifikasyon", ("apexification",), "procedure"),
@@ -46,6 +50,7 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("c_factor", "C-faktörü", ("C-factor", "configuration factor"), "measurement"),
     ),
     "pediatric_dentistry": (
+        ("immature_permanent_tooth", "immatür daimi diş", ("immature permanent tooth", "immatür diş"), "anatomy"),
         ("mih", "molar insizor hipomineralizasyonu", ("MIH", "molar incisor hypomineralization"), "diagnosis"),
         ("ssc", "paslanmaz çelik kron", ("stainless steel crown", "SSC"), "appliance"),
         ("mixed_dentition", "karışık dişlenme", ("mixed dentition",), "classification"),
@@ -57,6 +62,7 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("mucocele", "mukosel", ("mucocele",), "diagnosis"),
     ),
     "dental_anesthesia": (
+        ("local_anesthesia", "lokal anestezi", ("local anesthesia",), "procedure"),
         ("lidocaine", "lidokain", ("lidocaine",), "material"),
         ("articaine", "artikain", ("articaine",), "material"),
         ("mepivacaine", "mepivakain", ("mepivacaine",), "material"),
@@ -69,6 +75,9 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("anesthetic_paresthesia", "lokal anestezi parestezisi", ("paresthesia", "parestezi"), "complication"),
     ),
     "oral_anatomy_histology": (
+        ("tooth", "diş", ("tooth",), "anatomy"),
+        ("gingiva", "diş eti", ("gingiva", "gingival tissue"), "anatomy"),
+        ("oral_mucosa", "oral mukoza", ("oral mucosa", "ağız mukozası"), "anatomy"),
         ("enamel", "mine", ("enamel", "enamel tissue"), "tissue"),
         ("dentin", "dentin", ("dentine",), "tissue"),
         ("cementum", "sement", ("cementum", "dental cementum"), "tissue"),
@@ -99,6 +108,7 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("antiplatelet", "antiplatelet", ("antiplatelet agent", "antiaggregant"), "drug_class"),
     ),
     "dental_materials": (
+        ("dental_material", "dental materyal", ("dental material", "diş hekimliği materyali"), "material"),
         ("amalgam", "dental amalgam", ("amalgam",), "material"),
         ("resin_composite", "kompozit rezin", ("resin composite", "composite resin"), "material"),
         ("calcium_hydroxide", "kalsiyum hidroksit", ("calcium hydroxide", "CaOH2"), "material"),
