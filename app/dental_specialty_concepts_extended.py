@@ -5,6 +5,7 @@ Static data only: no model/provider calls and no clinical answer facts.
 EXTENDED_SPECIALTY_CONCEPTS = {
     "endodontics": (
         ("acute_apical_abscess", "akut apikal apse", ("acute apical abscess", "akut apikal abse"), "diagnosis"),
+        ("apical_periodontitis", "apikal periodontitis", ("apical periodontitis", "periapikal periodontitis"), "diagnosis"),
         ("apexification", "apeksifikasyon", ("apexification",), "procedure"),
         ("apexogenesis", "apeksogenez", ("apexogenesis",), "procedure"),
         ("regenerative_endodontics", "rejeneratif endodonti", ("regenerative endodontics", "revascularization"), "procedure"),
@@ -133,7 +134,7 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("periapical_index", "periapikal indeks", ("periapical index", "PAI"), "index"),
     ),
     "oral_surgery_pathology_radiology": (
-        ("alveolar_osteitis", "alveolar osteit", ("dry socket", "alveolitis sicca"), "complication"),
+        ("dry_socket", "alveolit", ("dry socket", "alveolar osteitis", "alveolitis sicca"), "complication"),
         ("oroantral_fistula", "oroantral fistül", ("oroantral fistula", "OAF"), "complication"),
         ("vertical_root_fracture", "vertikal kök kırığı", ("vertical root fracture", "VRF"), "diagnosis"),
         ("external_cervical_resorption", "eksternal servikal rezorpsiyon", ("external cervical resorption", "ECR"), "diagnosis"),
