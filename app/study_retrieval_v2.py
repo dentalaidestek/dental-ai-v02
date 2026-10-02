@@ -539,6 +539,47 @@ def _academic_question_rows(
     )
 
 
+def _note_rows_for_question_patterns(
+    session: Session, *, owner_user_id: int, course_id: int,
+    question_rows: list, limit: int = 12,
+) -> list:
+    """Find factual note evidence for past-question patterns.
+
+    QUESTION chunks define exam style/topic only. They are deliberately excluded
+    from this evidence lookup so a past question cannot become its own answer
+    source.
+    """
+    fingerprints = [fingerprint_past_question(row) for row in question_rows]
+    node_ids = sorted({node for fp in fingerprints for node in fp.node_ids})
+    if not node_ids:
+        return []
+    # Canonical node ids are persisted in semantic_json. JSON text matching is
+    # bounded here and remains owner/course scoped; this avoids provider calls.
+    clauses = " OR ".join(f"c.semantic_json LIKE :n{i}" for i in range(len(node_ids[:12])))
+    params = {
+        "owner": owner_user_id, "course": course_id,
+        "limit": max(1, min(limit, 20)),
+        **{f"n{i}": f'%"{node}"%' for i, node in enumerate(node_ids[:12])},
+    }
+    return list(session.exec(text(f"""
+        SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+               c.section_title, c.content_kind, c.text_content,
+               NULL::BIGINT, NULL::DOUBLE PRECISION, NULL::BIGINT, NULL::DOUBLE PRECISION,
+               1.0::DOUBLE PRECISION, c.chunk_index, c.semantic_json
+        FROM studyindexchunk c
+        JOIN studymaterial m
+          ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.active_index_version=c.index_version
+         AND m.index_status='READY' AND m.deleted_at IS NULL
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND c.content_kind <> 'QUESTION'
+          AND c.semantic_json IS NOT NULL
+          AND ({clauses})
+        ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
+        LIMIT :limit
+    """), params=params).all())
+
+
 def _neighbor_rows(
     session: Session,
     *,
