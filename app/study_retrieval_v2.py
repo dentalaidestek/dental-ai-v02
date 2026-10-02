@@ -38,11 +38,21 @@ _FOLLOWUP_RE = re.compile(
     r"daha (?:basit|detaylı)|açıkla|tekrar|\d+\.? soru)",
     re.IGNORECASE,
 )
-_VISUAL_QUERY_RE = re.compile(
-    r"\b(?:tablo|tablodaki|şekil|grafik|görsel|görüntü|resim|fotoğraf|şema|"
-    r"radyografi|radyografide|röntgen|film|panoramik|OPG|CBCT|periapikal|"
-    r"bitewing|sefalometrik|sefalogram)\b", re.I
+_VISUAL_SOURCE_RE = re.compile(
+    r"\b(?:bu|şu)\s+(?:tablo|şekil|grafik|görsel|görüntü|resim|fotoğraf|şema|"
+    r"radyografi|röntgen|film|panoramik|OPG|CBCT|periapikal|bitewing|sefalogram)"
+    r"|\b(?:tablodaki|şekildeki|grafikteki|görseldeki|görüntüdeki|resimdeki|"
+    r"fotoğraftaki|radyografideki|filmdeki)\b"
+    r"|\b(?:gösterilen|işaretli|okla\s+gösterilen|görülen)\b"
+    r"|\b(?:tablo|şekil|grafik|görsel|görüntü|resim|fotoğraf|radyografi|film)"
+    r"(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b",
+    re.I,
 )
+
+def _requires_visual_source(query: str) -> bool:
+    """True only when answering requires inspecting source pixels/layout."""
+    return bool(_VISUAL_SOURCE_RE.search(query or ""))
+
 _EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
 
 
@@ -1467,10 +1477,7 @@ def retrieve_course_context_v2(
     # extracted text; that alone must not trigger PDF/R2 materialization or a
     # multimodal provider request. Attach source pages only when the user's
     # current request explicitly requires visual inspection.
-    visual_requested = bool(
-        _VISUAL_QUERY_RE.search(query or "")
-        or any(item.name == "visual" for item in requirement.intents)
-    )
+    visual_requested = _requires_visual_source(query)
     if visual_requested:
         for item in result.evidence:
             key = (item.material_id, item.page_start)
