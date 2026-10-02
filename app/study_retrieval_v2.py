@@ -289,19 +289,44 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
 
 
 _EVIDENCE_FACETS = {
-    "diagnosis": ("tanı", "klinik bulgu", "radyografik bulgu", "ayırıcı tanı", "test"),
-    "treatment": ("tedavi", "prosedür", "endikasyon", "kontrendikasyon", "komplikasyon"),
-    "complication": ("komplikasyon", "risk", "neden", "önleme"),
-    "classification": ("sınıflama", "evre", "grade", "kriter"),
-    "cause": ("etiyoloji", "risk faktörü", "mekanizma", "patogenez"),
-    "measurement": ("ölçüm", "referans", "normal değer", "değerlendirme"),
-    "value": ("normal değer", "ölçüm", "referans"),
-    "anatomy": ("anatomi", "komşuluk", "ilişki", "konum"),
-    "visual": ("radyografik bulgu", "görüntü", "şekil", "tablo"),
-    "comparison": ("fark", "avantaj", "dezavantaj", "endikasyon"),
-    "indication": ("endikasyon", "kullanım", "durum"),
-    "contraindication": ("kontrendikasyon", "sakınca", "kullanılmaz"),
+    # These are requirements, not synonym lists. One explicit user intent maps
+    # to one canonical coverage facet; related concepts must not become hidden
+    # requirements or extra DB probes.
+    "diagnosis": ("tanı",),
+    "treatment": ("tedavi",),
+    "complication": ("komplikasyon",),
+    "classification": ("sınıflama",),
+    "cause": ("etiyoloji",),
+    "measurement": ("ölçüm",),
+    "value": ("normal değer",),
+    "anatomy": ("anatomi",),
+    "visual": ("radyografik bulgu",),
+    "comparison": ("fark",),
+    "indication": ("endikasyon",),
+    "contraindication": ("kontrendikasyon",),
 }
+
+_FACET_SEARCH_TERMS = {
+    "tanı": ("tanı", "teşhis", "diagnosis", "diagnostic", "test"),
+    "tedavi": ("tedavi", "treatment", "terapi", "therapy", "prosedür"),
+    "komplikasyon": ("komplikasyon", "complication", "risk", "advers"),
+    "sınıflama": ("sınıflama", "classification", "evre", "grade", "kriter"),
+    "etiyoloji": ("etiyoloji", "etiology", "neden", "cause", "patogenez"),
+    "ölçüm": ("ölçüm", "measurement", "değer", "value", "referans"),
+    "normal değer": ("normal değer", "normal value", "referans", "reference"),
+    "anatomi": ("anatomi", "anatomy", "komşuluk", "konum"),
+    "radyografik bulgu": ("radyografik", "radiographic", "görüntü", "imaging"),
+    "fark": ("fark", "difference", "karşılaştır", "compare"),
+    "endikasyon": ("endikasyon", "indication", "kullanım"),
+    "kontrendikasyon": ("kontrendikasyon", "contraindication", "sakınca"),
+}
+
+
+def _facet_present(facet: str, corpus: str, semantic_kinds: set[str]) -> bool:
+    terms = _FACET_SEARCH_TERMS.get(facet, (facet,))
+    if any(term.casefold() in corpus for term in terms):
+        return True
+    return any(term.casefold() in semantic_kinds for term in terms)
 
 
 def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
@@ -850,8 +875,7 @@ def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
         semantic_kinds.update(item.casefold() for item in features.kinds)
     covered: list[str] = []
     for facet in facets:
-        facet_cf = facet.casefold()
-        if facet_cf in corpus or facet_cf in semantic_kinds:
+        if _facet_present(facet, corpus, semantic_kinds):
             covered.append(facet)
     # Kind evidence is only a fallback for the matching intent's own first facet;
     # never let one generic kind satisfy all requirements in a multi-facet query.
