@@ -34,7 +34,7 @@ _RULES = (
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
     ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(r"\b(?:neden|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk faktör(?:ü|leri)?|niye|neden olur|neye bağlı)\b", re.I),
+    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk faktör(?:ü|leri)?|niye|neden olur|neye bağlı)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
@@ -424,7 +424,7 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(r"\b(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)", re.I), False, True, True, False),
-    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
+    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
 
@@ -453,10 +453,11 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
             study.coverage_required,
             True,
         )
-    # Broad academic requests share the durable coverage engine regardless of
-    # output form; the response contract decides summary/explanation/etc.
+    # Broad extraction requests are summary/condensation workflows even when
+    # the student says "çıkar" rather than the literal verb "özetle".
     if _BROAD_ACADEMIC_RE.search(clean):
         lowered = clean.casefold()
-        task = "summarize" if any(x in lowered for x in ("özet", "özetle")) else "explain"
+        extractive = any(x in lowered for x in ("çıkar", "listele", "sırala", "değer", "ölçüm"))
+        task = "summarize" if any(x in lowered for x in ("özet", "özetle")) or extractive else "explain"
         return AcademicStudyTaskPlan(task, False, True, True, False)
     return None
