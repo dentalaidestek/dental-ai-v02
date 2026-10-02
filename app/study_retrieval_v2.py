@@ -458,6 +458,16 @@ def _question_rows(
     }).all())
 
 
+def _academic_question_rows(
+    session: Session, *, owner_user_id: int, course_id: int, limit: int = 32,
+) -> list:
+    """Bounded QUESTION evidence for academic study tasks; always owner/course scoped."""
+    return _question_rows(
+        session, owner_user_id=owner_user_id, course_id=course_id,
+        limit=max(1, min(limit, 32)), after_cursor=None,
+    )
+
+
 def _neighbor_rows(
     session: Session,
     *,
@@ -789,7 +799,11 @@ def retrieve_course_context_v2(
     embedding_provider = ""
     embedding_model = ""
     continuation_cursor = _continuation_cursor(query, recent_history)
+    study_task = classify_academic_study_task(query)
     exhaustive_questions = _is_exhaustive_question_request(query) or continuation_cursor is not None
+    study_question_task = bool(
+        study_task and study_task.requires_past_questions and not exhaustive_questions
+    )
     if exhaustive_questions:
         question_limit = 16
         question_rows = _question_rows(
@@ -803,6 +817,14 @@ def retrieve_course_context_v2(
         # the rest of a large question bank.
         has_more_questions = len(question_rows) > question_limit
         rows = question_rows[:question_limit]
+    elif study_question_task:
+        # Past-question pattern tasks intentionally inspect QUESTION evidence
+        # from this user's course only. They are not the exhaustive solve path
+        # and never widen into another user's material.
+        rows = _academic_question_rows(
+            session, owner_user_id=owner_user_id, course_id=course_id, limit=32,
+        )
+        has_more_questions = False
     else:
         precise_query = _fts_query(resolved, broad=False)
         rows = _fts_rows(
@@ -896,13 +918,13 @@ def retrieve_course_context_v2(
     intent = classify_dental_intent(resolved)
     logger.info(
         "Academic V2 retrieval selected. mode=%s intent=%s evidence_rows=%s",
-        "questions_exhaustive" if exhaustive_questions else "fts",
+        "questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts"),
         intent.name,
         len(rows),
     )
     result = RetrievalResult(
         resolved_query=resolved,
-        retrieval_mode="questions_exhaustive" if exhaustive_questions else "fts",
+        retrieval_mode="questions_exhaustive" if exhaustive_questions else ("academic_question_patterns" if study_question_task else "fts"),
         has_more=bool(exhaustive_questions and has_more_questions),
     )
     for row in rows:
@@ -925,10 +947,10 @@ def retrieve_course_context_v2(
         if evidence.material_id not in result.source_material_ids:
             result.source_material_ids.append(evidence.material_id)
 
-    if exhaustive_questions:
-        # Source-order question solving has a different completeness contract:
-        # each emitted QUESTION chunk is itself the evidence unit and continuation
-        # handles the remaining source window.
+    if exhaustive_questions or study_question_task:
+        # Question-source study tasks use actual QUESTION evidence. Source-order
+        # solving has continuation; pattern analysis is bounded separately.
+        # Each emitted QUESTION chunk is itself an evidence unit.
         result.evidence_sufficient = bool(result.evidence)
         result.evidence_confidence = 1.0 if result.evidence else 0.0
     else:
