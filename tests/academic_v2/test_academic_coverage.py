@@ -61,3 +61,36 @@ def test_coverage_builder_uses_keyset_pagination_and_version_cache():
     assert "OFFSET" not in source[source.index("def _coverage_metadata_page"):source.index("def _coverage_evidence_rows")]
     assert "cached_coverage_plan(owner_user_id, course_id, fingerprint, requested_count)" in source
     assert "active_index_version" in source[source.index("def _course_index_fingerprint"):source.index("def get_or_build_coverage_plan")]
+
+
+def test_streaming_accumulator_is_bounded_but_preserves_true_weight():
+    from app.academic_coverage import CoverageAccumulator
+    rows = []
+    for cid in range(1, 1001):
+        rows.append((cid, 7, "large.pdf", cid, cid, "Endodonti", "TEXT", "",
+                     None, None, None, None, 1.0, cid, '{"nodes":["pulpitis"]}'))
+    acc = CoverageAccumulator(representative_limit=12)
+    for start in range(0, len(rows), 37):
+        acc.add_rows(rows[start:start + 37])
+    plan = acc.build(40)
+    assert plan.scanned_rows == 1000
+    assert len(plan.buckets) == 1
+    assert plan.buckets[0].weight == 1000
+    assert len(plan.buckets[0].chunk_ids) <= 12
+    assert len(plan.covered_chunk_ids) <= 12
+
+
+def test_streaming_representatives_are_stable_across_page_sizes():
+    from app.academic_coverage import CoverageAccumulator
+    rows = [
+        (cid, 8, "large.pdf", cid, cid, "Cerrahi", "TEXT", "",
+         None, None, None, None, 1.0, cid, '{"nodes":["dry_socket"]}')
+        for cid in range(1, 401)
+    ]
+    a = CoverageAccumulator(representative_limit=16)
+    b = CoverageAccumulator(representative_limit=16)
+    for start in range(0, 400, 31):
+        a.add_rows(rows[start:start + 31])
+    for start in range(0, 400, 97):
+        b.add_rows(rows[start:start + 97])
+    assert a.build(20).covered_chunk_ids == b.build(20).covered_chunk_ids
