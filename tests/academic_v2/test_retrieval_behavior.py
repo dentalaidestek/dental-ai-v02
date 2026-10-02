@@ -79,8 +79,6 @@ assert "PD" not in namespace["_concept_alternatives"]("rapidly ilerleyen")
 
 # Multi-evidence planning must stay bounded and intent-aware.
 source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
-assert "def _evidence_queries" in source
-assert "max_queries: int = 4" in source
 assert "def _coverage_select" in source
 assert "candidate_target = max(limit * 4, 24)" in source
 assert "if len(rows) < max(limit, 6):" in source
@@ -91,13 +89,18 @@ assert "rows = _coverage_select(resolved, rows, limit=limit)" in source
 assert '_FAST_INTENTS = {"value", "definition", "measurement"}' in source
 assert "def _needs_multi_evidence" in source
 assert "coverage < 0.34" in source
-assert "At most one extra local DB query" in source
+assert "rescue_query_count = 0" in source
+assert "rescue_query_count = 1" in source
+assert "alias_terms = _concept_alternatives(resolved)" in source
+assert "graph_expansion_terms(resolved" not in source
 
 
 # Multi-query reranking must not treat append order as lexical relevance.
 assert "raw_lexical = float(row[9] or 0.0)" in source
 assert "subject_alignment = _subject_alignment_score" in source
-assert "(0.40 * lexical)" in source\nassert "(0.30 * subject_alignment)" in source\nassert "drift_penalty" in source
+assert "(0.40 * lexical)" in source
+assert "(0.30 * subject_alignment)" in source
+assert "drift_penalty" in source
 assert "aligned or candidates" in source
 
 # Neighbor rows must keep the same chunk-index/semantic metadata tail as FTS rows.
@@ -383,3 +386,20 @@ def test_multi_facet_queries_trigger_multi_evidence_and_keep_all_intents():
     plan = build_dental_requirement_plan(query)
     assert {"diagnosis", "treatment", "complication"}.issubset(set(plan.requested_facets))
     assert ns["_needs_multi_evidence"](query) is True
+
+
+def test_multi_facet_sufficiency_is_hard_complete():
+    # Missing an explicitly requested facet must block synthesis even when the
+    # subject itself is strongly aligned.
+    assert "hard_complete = not missing" in source
+    assert "sufficient = anchored and hard_complete and confidence >= 0.38" in source
+
+
+def test_rescue_path_is_single_bounded_round_trip():
+    # The normal retrieval branch must contain one primary FTS call and at most
+    # one rescue FTS call; old per-facet probe loops/broad fallback are gone.
+    branch = source.split("precise_query = _fts_query(resolved, broad=False)", 1)[1]
+    branch = branch.split("rows = _coverage_select(resolved, rows, limit=limit)", 1)[0]
+    assert branch.count("_fts_rows(") == 2
+    assert "for evidence_query in evidence_queries" not in branch
+    assert "broad_query = _fts_query(resolved, broad=True)" not in branch
