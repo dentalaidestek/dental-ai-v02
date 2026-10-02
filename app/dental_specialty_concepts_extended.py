@@ -130,4 +130,17 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("icdas", "ICDAS", ("International Caries Detection and Assessment System",), "classification"),
         ("periapical_index", "periapikal indeks", ("periapical index", "PAI"), "index"),
     ),
+    "oral_surgery_pathology_radiology": (
+        ("alveolar_osteitis", "alveolar osteit", ("dry socket", "alveolitis sicca"), "complication"),
+        ("oroantral_fistula", "oroantral fistül", ("oroantral fistula", "OAF"), "complication"),
+        ("vertical_root_fracture", "vertikal kök kırığı", ("vertical root fracture", "VRF"), "diagnosis"),
+        ("external_cervical_resorption", "eksternal servikal rezorpsiyon", ("external cervical resorption", "ECR"), "diagnosis"),
+        ("perforation", "kök perforasyonu", ("root perforation", "perforation"), "complication"),
+        ("separated_instrument", "kırık alet", ("separated instrument", "instrument separation"), "complication"),
+        ("oral_erythroplakia", "eritroplaki", ("erythroplakia",), "diagnosis"),
+        ("oral_potentially_malignant_disorder", "oral potansiyel malign bozukluk", ("oral potentially malignant disorder", "OPMD"), "classification"),
+        ("clinicopathologic_correlation", "klinikopatolojik korelasyon", ("clinicopathologic correlation",), "assessment"),
+        ("antibiotic_stewardship", "antibiyotik yönetimi", ("antibiotic stewardship",), "principle"),
+        ("systemic_involvement", "sistemik tutulum", ("systemic involvement", "fever malaise"), "finding"),
+    ),
 }
