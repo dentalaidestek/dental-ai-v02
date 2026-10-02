@@ -134,7 +134,6 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("periapical_index", "periapikal indeks", ("periapical index", "PAI"), "index"),
     ),
     "oral_surgery_pathology_radiology": (
-        ("dry_socket", "alveolit", ("dry socket", "alveolar osteitis", "alveolitis sicca"), "complication"),
         ("oroantral_fistula", "oroantral fistül", ("oroantral fistula", "OAF"), "complication"),
         ("vertical_root_fracture", "vertikal kök kırığı", ("vertical root fracture", "VRF"), "diagnosis"),
         ("external_cervical_resorption", "eksternal servikal rezorpsiyon", ("external cervical resorption", "ECR"), "diagnosis"),
