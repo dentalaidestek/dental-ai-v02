@@ -484,3 +484,11 @@ def test_graph_and_retrieval_share_inflection_policy_without_relaxing_abbreviati
     assert matched_nodes("çalışma boyunun belirlenmesi")
     assert not any(node.id == "probing_depth" for node in matched_nodes("PD hızlı şarj standardı"))
     assert not any(node.id == "centric_relation" for node in matched_nodes("CR değeri CSS ekranında"))
+
+
+def test_rescue_subject_excludes_generic_facet_vocabulary():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    branch = source.split("if missing:", 1)[1].split("if subject_query and facet_groups:", 1)[0]
+    assert "facet_noise" in branch
+    assert "term.casefold() not in facet_noise" in branch
+    assert "graph_expansion_terms" not in branch
