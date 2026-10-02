@@ -3,19 +3,36 @@ name: Academic V2 CI
 
 on:
   workflow_dispatch:
-  # Keep PR validation reliable; job-level change detection can optimize later.
+  # Always validate pull requests to main. Required checks must not disappear
+  # because a path filter evaluated differently on the base branch.
   pull_request:
     branches: [main]
-  # Run on every push to Academic V2 work branches. Keeping a paths filter here
-  # can silently skip the branch gate when a trigger/recovery commit only
-  # touches CI metadata.
   push:
-    branches:
-      - main
-      - "work/academic-v2-*"
-  # Path filtering is intentionally not used for push: this workflow is the
-  # branch safety gate and must always produce a visible result.
-
+    branches: [main]
+    paths:
+      - "app/study_ai_v2.py"
+      - "app/academic_coverage.py"
+      - "app/academic_generation.py"
+      - "app/academic_generation_jobs.py"
+      - "app/study_retrieval_v2.py"
+      - "app/dental_retrieval_terms.py"
+      - "app/dental_knowledge_graph.py"
+      - "app/dental_knowledge_relations.py"
+      - "app/dental_query_intent.py"
+      - "app/dental_semantics.py"
+      - "app/dental_academic_scope.py"
+      - "app/dental_specialty_concepts.py"
+      - "app/dental_specialty_concepts_extended.py"
+      - "app/study_provider.py"
+      - "app/study_local_ocr.py"
+      - "app/study_index_worker.py"
+      - "app/study_index_jobs.py"
+      - "app/study_chunking.py"
+      - "app/migrate.py"
+      - "app/dental_ocr_words.txt"
+      - "app/study_router_state.py"
+      - "tests/academic_v2/**"
+      - ".github/workflows/academic-v2-ci.yml"
 
 permissions:
   contents: read
