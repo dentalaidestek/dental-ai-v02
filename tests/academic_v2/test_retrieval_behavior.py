@@ -922,7 +922,7 @@ def test_semantic_facet_fallback_cannot_bypass_safe_allowlist():
 
 def test_semantic_profile_bumped_after_matching_changes():
     source = Path("app/study_index_worker.py").read_text(encoding="utf-8")
-    assert '"schema": "academic-v2-dental-semantics-9"' in source
+    assert '"schema": "academic-v2-dental-semantics-10"' in source
 
 
 def test_reranker_reserves_each_explicit_subject_before_truncation():
