@@ -803,6 +803,8 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
     if not rows:
         return []
     query_features = analyze_dental_text(query)
+    requirement = build_dental_requirement_plan(query)
+    required_qualifiers = set(requirement.qualifiers)
     scored = []
     for position, row in enumerate(rows):
         section = row[5] or ""
@@ -833,12 +835,17 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
         direct_subject = subject_alignment >= 0.50
         semantic_subject = semantic >= 0.45
         drift_penalty = 0.22 if not direct_subject and not semantic_subject else 0.0
+        row_text_cf = f"{section} {body}".casefold()
+        qualifier_hits = sum(1 for item in required_qualifiers if item in row_text_cf)
+        qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
+        qualifier_penalty = 0.18 * (1.0 - qualifier_score) if required_qualifiers else 0.0
         score = (
             (0.40 * lexical)
             + (0.25 * semantic)
             + (0.30 * subject_alignment)
             + (0.05 * positional)
             - drift_penalty
+            - qualifier_penalty
         )
         scored.append((score, position, row))
     scored.sort(key=lambda item: (-item[0], item[1]))
