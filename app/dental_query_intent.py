@@ -100,11 +100,11 @@ class DentalRequirementPlan:
     asks_negation: bool = False
 
 _SUBJECT_STOP_RE = re.compile(
-    r"\\b(?:nedir|nelerdir|kaçtır|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
+    r"\\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
     r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
     r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
     r"sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
-    r"klinik|radyografik|ayırt edici|ayırıcı|ve|ile|ile birlikte)\\b",
+    r"klinik|radyografik|ayırt edici|ayırıcı|değil|olmayan|olmaz|yapılmaz|kullanılmaz|hariç|yanlıştır|ve|ile|ile birlikte)\\b",
     re.I,
 )
 _SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
