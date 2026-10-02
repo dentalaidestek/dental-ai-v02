@@ -52,3 +52,53 @@ def claim_generation_job(session: Session, worker_id: str, lease_seconds: int = 
     """), params={"token": token, "until": until, "worker": worker_id, "now": now, "id": int(row[0])})
     session.commit()
     return session.get(AcademicGenerationJob, int(row[0]))
+
+
+def enqueue_generation_job(
+    session: Session, *, owner_user_id: int, course_id: int,
+    request_key: str, request_json: str, target_count: int,
+) -> AcademicGenerationJob:
+    # Serialize enqueue for one user/course so double taps cannot create a
+    # provider-call burst. PostgreSQL advisory lock is transaction scoped.
+    if session.get_bind().dialect.name == "postgresql":
+        session.exec(text("SELECT pg_advisory_xact_lock(:k1, :k2)"), params={
+            "k1": int(owner_user_id) & 2147483647,
+            "k2": int(course_id) & 2147483647,
+        })
+    existing = session.exec(text("""
+        SELECT id FROM academicgenerationjob
+        WHERE owner_user_id=:owner AND course_id=:course
+          AND status IN ('QUEUED','RUNNING')
+        ORDER BY id DESC LIMIT 1
+    """), params={"owner": owner_user_id, "course": course_id}).first()
+    if existing:
+        return session.get(AcademicGenerationJob, int(existing[0]))
+    job = AcademicGenerationJob(
+        owner_user_id=owner_user_id, course_id=course_id,
+        request_key=request_key, request_json=request_json,
+        target_count=max(1, min(int(target_count), 200)),
+    )
+    session.add(job)
+    session.flush()
+    return job
+
+def checkpoint_generation_job(
+    session: Session, *, job_id: int, lease_token: str,
+    generated_count: int, done: bool = False,
+) -> bool:
+    now = _now()
+    result = session.exec(text("""
+        UPDATE academicgenerationjob
+        SET generated_count=GREATEST(generated_count, :count),
+            status=CASE WHEN :done THEN 'DONE' ELSE 'QUEUED' END,
+            lease_token=NULL, lease_until=NULL, worker_id=NULL,
+            completed_at=CASE WHEN :done THEN :now ELSE completed_at END,
+            updated_at=:now
+        WHERE id=:id AND status='RUNNING' AND lease_token=:token
+        RETURNING id
+    """), params={
+        "count": max(0, int(generated_count)), "done": bool(done),
+        "now": now, "id": job_id, "token": lease_token,
+    }).first()
+    session.commit()
+    return bool(result)
