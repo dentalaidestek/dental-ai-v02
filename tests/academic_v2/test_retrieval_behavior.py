@@ -199,3 +199,16 @@ def test_dental_graph_relations_have_no_dangling_nodes_and_track_coverage():
     assert report["node_count"] >= 180
     # Raise this threshold as curated relation packs connect the vocabulary.
     assert report["coverage_ratio"] >= 0.50
+
+
+def test_core_and_specialty_concepts_merge_without_duplicate_ids():
+    from app.dental_knowledge_graph import ALL_NODES
+
+    ids = [node.id for node in ALL_NODES]
+    assert len(ids) == len(set(ids))
+    by_id = {node.id: node for node in ALL_NODES}
+    assert "cbct" in by_id
+    assert "cone beam computed tomography" in {
+        by_id["cbct"].label.casefold(),
+        *(alias.casefold() for alias in by_id["cbct"].aliases),
+    }
