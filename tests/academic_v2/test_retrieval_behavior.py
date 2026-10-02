@@ -540,3 +540,29 @@ def test_reranker_penalizes_same_subject_when_explicit_qualifier_is_missing():
     ]
     ranked = ns["_rerank_dental_rows"](query, rows, limit=2)
     assert ranked[0][0] == 102
+
+
+def test_question_understanding_benchmark_natural_turkish_forms():
+    from app.dental_query_intent import build_dental_requirement_plan
+    cases = [
+        ("irreversible pulpitis nasıl tedavi edilir", {"treatment"}),
+        ("irreversible pulpitis olunca ne yapılır", {"treatment"}),
+        ("bu lezyona nasıl tanı konur", {"diagnosis"}),
+        ("SNA nasıl ölçülüyor", {"measurement"}),
+        ("bu materyal kimlerde uygulanmaz", {"contraindication"}),
+        ("flor vernik ne zaman uygulanır", {"indication"}),
+        ("dry socket niye olur", {"cause"}),
+        ("alveolit neye bağlı gelişir", {"cause"}),
+        ("MRONJ bulguları ve tedavisi nelerdir", {"diagnosis", "treatment"}),
+        ("IANB komplikasyonları ve kontrendikasyonları", {"complication", "contraindication"}),
+    ]
+    for query, expected in cases:
+        plan = build_dental_requirement_plan(query)
+        assert expected.issubset(set(plan.requested_facets)), (query, plan.requested_facets)
+
+
+def test_question_understanding_does_not_turn_treatment_subject_into_requested_treatment():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("kanal tedavisi komplikasyonları nelerdir?")
+    assert "complication" in plan.requested_facets
+    assert "treatment" not in plan.requested_facets
