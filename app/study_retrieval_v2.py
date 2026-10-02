@@ -930,12 +930,16 @@ def retrieve_course_context_v2(
         has_more_questions = len(question_rows) > question_limit
         rows = question_rows[:question_limit]
     elif study_question_task:
-        # Past-question pattern tasks intentionally inspect QUESTION evidence
-        # from this user's course only. They are not the exhaustive solve path
-        # and never widen into another user's material.
-        rows = _academic_question_rows(
+        # Past questions establish recurrence/style; ordinary note chunks remain
+        # the factual source for explanations and newly generated answers.
+        question_rows = _academic_question_rows(
             session, owner_user_id=owner_user_id, course_id=course_id, limit=32,
         )
+        note_rows = _note_rows_for_question_patterns(
+            session, owner_user_id=owner_user_id, course_id=course_id,
+            question_rows=question_rows, limit=12,
+        )
+        rows = question_rows + note_rows
         has_more_questions = False
     else:
         precise_query = _fts_query(resolved, broad=False)
@@ -1059,12 +1063,23 @@ def retrieve_course_context_v2(
         if evidence.material_id not in result.source_material_ids:
             result.source_material_ids.append(evidence.material_id)
 
-    if exhaustive_questions or study_question_task:
-        # Question-source study tasks use actual QUESTION evidence. Source-order
-        # solving has continuation; pattern analysis is bounded separately.
-        # Each emitted QUESTION chunk is itself an evidence unit.
+    if exhaustive_questions:
         result.evidence_sufficient = bool(result.evidence)
         result.evidence_confidence = 1.0 if result.evidence else 0.0
+    elif study_question_task:
+        question_evidence = [e for e in result.evidence if e.content_kind == "QUESTION"]
+        factual_note_evidence = [e for e in result.evidence if e.content_kind != "QUESTION"]
+        # Pattern-only analysis may describe actual past questions, but any task
+        # that generates a new factual question/answer must also have note evidence.
+        needs_factual_generation = bool(study_task and study_task.generate_new_questions)
+        result.evidence_sufficient = bool(question_evidence) and (
+            bool(factual_note_evidence) or not needs_factual_generation
+        )
+        result.evidence_confidence = (
+            1.0 if question_evidence and factual_note_evidence
+            else 0.72 if question_evidence and not needs_factual_generation
+            else 0.0
+        )
     else:
         sufficiency = _evidence_sufficiency(resolved, rows)
         result.evidence_sufficient = sufficiency.sufficient
