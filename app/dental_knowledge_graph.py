@@ -223,7 +223,8 @@ def graph_expansion_terms(query: str, *, min_weight: float = 0.8, limit: int = 1
         return []
     candidates: list[tuple[float, str]] = []
     hinted = set(relation_hints)
-    for edge in EDGES:
+    from app.dental_knowledge_relations import DENTAL_RELATION_EDGES
+    for edge in (*EDGES, *DENTAL_RELATION_EDGES):
         other = None
         if edge.source in seeds:
             other = edge.target
