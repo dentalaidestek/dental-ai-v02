@@ -895,11 +895,11 @@ def _subject_alignment_score(
 
 
 @storage_scoped
-def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None) -> list:
+def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None, query_features=None) -> list:
     """Rerank a bounded lexical candidate pool with local dental semantics."""
     if not rows:
         return []
-    query_features = analyze_dental_text(query)
+    query_features = query_features or analyze_dental_text(query)
     requirement = requirement or build_dental_requirement_plan(query)
     required_qualifiers = set(requirement.qualifiers)
     scored = []
@@ -1073,7 +1073,7 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
         cache[row_id] = features
     return features
 
-def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None) -> EvidenceSufficiency:
+def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None, query_features=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
     if not rows:
         return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
@@ -1081,7 +1081,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     requirement = requirement or build_dental_requirement_plan(query)
     intent = requirement.intents[0]
     intent_names = {item.name for item in requirement.intents if item.name != "general"}
-    qf = analyze_dental_text(query)
+    qf = query_features or analyze_dental_text(query)
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
@@ -1262,6 +1262,7 @@ def retrieve_course_context_v2(
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     resolved = resolve_followup_query(query, recent_history)
     requirement = build_dental_requirement_plan(resolved)
+    query_features = analyze_dental_text(resolved)
     # Request-local semantic memo: bounded by this retrieval's candidate rows,
     # discarded immediately after the request. Avoid repeated JSON parsing/text
     # analysis across rerank, coverage and sufficiency without global RAM state.
@@ -1370,8 +1371,8 @@ def retrieve_course_context_v2(
         # subject identity comes from the user's lexical subject plus curated
         # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
-        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache)
-        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
+        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
+        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         rescue_query_count = 0
         requested_facets = tuple(dict.fromkeys(
             facet for item in requirement.intents for facet in _coverage_terms(item.name)
@@ -1452,7 +1453,7 @@ def retrieve_course_context_v2(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
             rescue_query_count, coverage, ",".join(covered_facets) or "-",
         )
-        rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement, feature_cache=row_feature_cache)
+        rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         primary_ids = [int(row[0]) for row in rows]
         # Keep neighbor seeds subject-diverse. Coverage selection already
         # preserves each required subject; do not throw that work away by
@@ -1484,7 +1485,7 @@ def retrieve_course_context_v2(
         # already passes the same local sufficiency gate used before generation.
         # A hit at a chunk boundary therefore gets bounded adjacent context,
         # while a self-contained definition/value keeps the one-query path.
-        provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
+        provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         neighbor_limit = (
             0
             if provisional.sufficient
@@ -1564,7 +1565,7 @@ def retrieve_course_context_v2(
             else 0.0
         )
     else:
-        sufficiency = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
+        sufficiency = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         result.evidence_sufficient = sufficiency.sufficient
         result.evidence_confidence = sufficiency.confidence
         result.covered_facets = sufficiency.covered_facets
