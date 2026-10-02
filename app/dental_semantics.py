@@ -49,7 +49,18 @@ class DentalSemanticFeatures:
 
 def analyze_dental_text(text: str) -> DentalSemanticFeatures:
     clean = " ".join((text or "").split())
-    nodes = matched_nodes(clean)\n    negated = []\n    lowered = clean.casefold()\n    for node in nodes:\n        for alias in (node.label, *node.aliases):\n            pos = lowered.find(alias.casefold())\n            if pos < 0:\n                continue\n            window = lowered[max(0, pos - 48):pos]\n            if re.search(r"\\b(?:yok|değil|izlenmedi|saptanmadı|görülmedi|bulunmadı|without|no|not)\\b", window):\n                negated.append(node.id)\n                break\n    return DentalSemanticFeatures(
+    nodes = matched_nodes(clean)
+    negated = []
+    lowered = clean.casefold()
+    for node in nodes:
+        for alias in (node.label, *node.aliases):
+            pos = lowered.find(alias.casefold())
+            if pos < 0:
+                continue\n            window = lowered[max(0, pos - 48):pos]
+            if re.search(r"\\b(?:yok|değil|izlenmedi|saptanmadı|görülmedi|bulunmadı|without|no|not)\\b", window):
+                negated.append(node.id)
+                break
+    return DentalSemanticFeatures(
         node_ids=tuple(dict.fromkeys(node.id for node in nodes)),
         specialties=tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general")),
         kinds=tuple(dict.fromkeys(node.kind for node in nodes)),
@@ -59,7 +70,8 @@ def analyze_dental_text(text: str) -> DentalSemanticFeatures:
 
 def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticFeatures) -> float:
     score = 0.0
-    qnodes, cnodes = set(query.node_ids), set(chunk.node_ids)\n    # Do not reward a chunk as positive evidence when the queried concept is\n    # explicitly negated in that chunk. It may still be useful as contrast.\n    positive_cnodes = cnodes - set(chunk.negated_node_ids)
+    qnodes, cnodes = set(query.node_ids), set(chunk.node_ids)
+    # Do not reward a chunk as positive evidence when the queried concept is\n    # explicitly negated in that chunk. It may still be useful as contrast.\n    positive_cnodes = cnodes - set(chunk.negated_node_ids)
     if qnodes:
         score += 0.55 * (len(qnodes & positive_cnodes) / len(qnodes))
     qspec, cspec = set(query.specialties), set(chunk.specialties)
