@@ -20,7 +20,7 @@ _RULES = (
      ("classification", "diagnosis", "finding"), ("classified_by", "has_stage", "has_grade")),
     ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|ne zaman (?:kullan|uygula|yap)[a-zçğıöşü]*|hangi durumda (?:kullan|uygula|yap)[a-zçğıöşü]*|kim(?:ler)?de (?:kullan|uygula|yap)[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material", "imaging"), ("used_for", "has_indication")),
-    ("contraindication", re.compile(r"\b(?:kontrendikasyon[a-zçğıöşü]*|kullanılmaz|uygulanmaz|yapılmaz|sakınca|kim(?:ler)?de (?:kullanılmaz|uygulanmaz|yapılmaz)|hangi durumda (?:kullanılmaz|uygulanmaz|yapılmaz))\b", re.I),
+    ("contraindication", re.compile(r"\b(?:kontrendikasyon[a-zçğıöşü]*|kontrendike|kullanılmaz|uygulanmaz|yapılmaz|sakınca|kim(?:ler)?de (?:kullanılmaz|uygulanmaz|yapılmaz)|hangi durumda (?:kullanılmaz|uygulanmaz|yapılmaz))\b", re.I),
      ("procedure", "material"), ("has_contraindication",)),
     ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki)\b", re.I),
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
