@@ -13,6 +13,10 @@ class GenerationBatch:
     chunk_ids: tuple[int, ...]
     question_count: int
 
+    @property
+    def work_units(self) -> int:
+        return self.question_count
+
 def plan_generation_batches(plan: CoveragePlan, max_questions_per_batch: int = 10, max_chunks_per_batch: int = 10, generated_by_bucket: dict[str, int] | None = None) -> tuple[GenerationBatch, ...]:
     """Split coverage budgets into bounded batches without touching normal QA."""
     qcap = max(1, min(int(max_questions_per_batch), 12))\n    generated_by_bucket = generated_by_bucket or {}
@@ -134,7 +138,7 @@ def academic_batch_contract(task: str, batch: GenerationBatch) -> str:
     )
     concepts = ", ".join(batch.node_ids) if batch.node_ids else "bölümdeki kaynak kavramları"
     return (
-        f"Görev: {task}\nBölüm: {batch.section_title}\n"
+        f"Görev: {task}\\nBölüm: {batch.section_title}\\n"
         f"Kanıt kapsamı: {concepts}\n{rule}\n"
         "Bu yalnız bir coverage parçasıdır. Diğer bölümlerde ele alınacak bilgileri "
         "uydurup bu parçaya ekleme; bu parçanın kanıtını eksiksiz ve tekrar etmeden işle."
