@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
-from app.dental_query_intent import _query_qualifiers, build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
+from app.dental_query_intent import query_qualifiers, qualifier_present, build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.academic_coverage import CoverageAccumulator, build_coverage_plan, cache_coverage_plan, cached_coverage_plan
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
@@ -184,7 +184,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         # intentionally discarded; the current turn defines what is requested.
         # Current-turn qualifiers override incompatible inherited axes:
         # "alt sağ ... -> peki üstte?" must not become "alt sağ üst ...".
-        current_qualifiers = set(_query_qualifiers(clean))
+        current_qualifiers = set(query_qualifiers(clean))
         inherited_qualifiers = list(prior.qualifiers)
         qualifier_axes = (
             {"üst", "alt", "maksiller", "mandibular"},
@@ -873,7 +873,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         semantic_subject = semantic >= 0.45
         drift_penalty = 0.22 if not direct_subject and not semantic_subject else 0.0
         row_text_cf = f"{section} {body}".casefold()
-        qualifier_hits = sum(1 for item in required_qualifiers if item in row_text_cf)
+        qualifier_hits = sum(1 for item in required_qualifiers if qualifier_present(item, row_text_cf))
         qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
         qualifier_penalty = 0.18 * (1.0 - qualifier_score) if required_qualifiers else 0.0
         # Prefer qualifiers attached to the subject actually present in this
@@ -889,7 +889,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
             local_total = sum(len(qualifiers) for _, qualifiers in local_pairs)
             local_hits = sum(
                 1 for _, qualifiers in local_pairs for item in qualifiers
-                if item in row_text_cf
+                if qualifier_present(item, row_text_cf)
             )
             local_score = local_hits / max(1, local_total)
             qualifier_penalty = max(qualifier_penalty, 0.24 * (1.0 - local_score))
@@ -1043,7 +1043,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     for subject_id, qualifiers in requirement.subject_qualifiers:
         if qualifiers and not any(
             subject_id in features.node_ids
-            and all(item in f"{row[5] or ''} {row[7] or ''}".casefold() for item in qualifiers)
+            and all(qualifier_present(item, f"{row[5] or ''} {row[7] or ''}") for item in qualifiers)
             for row, features in zip(rows, row_features)
         ):
             subject_qualifier_complete = False
