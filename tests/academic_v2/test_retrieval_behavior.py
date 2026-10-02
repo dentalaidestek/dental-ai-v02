@@ -397,8 +397,12 @@ def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
         ),
     ])
     for query, expected_id, rows in cases:
-        ranked = _rerank_dental_rows(query, rows, limit=3)
-        assert ranked[0][0] == expected_id, (query, [r[0] for r in ranked])
+        plan = build_dental_requirement_plan(query)
+        assert plan.subject_node_ids, (query, plan)
+        ranked = _rerank_dental_rows(query, rows, limit=3, requirement=plan)
+        assert ranked[0][0] == expected_id, (
+            query, plan.subject_node_ids, [r[0] for r in ranked]
+        )
 
 
 def test_multi_facet_queries_trigger_multi_evidence_and_keep_all_intents():
