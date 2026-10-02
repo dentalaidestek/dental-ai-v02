@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 
-LOCAL_OCR_ENGINE_VERSION = "tesseract-5.5-adaptive-dental-tur-eng-v2"
+LOCAL_OCR_ENGINE_VERSION = "tesseract-5.5-adaptive-dental-tur-eng-v3"
 _DENTAL_WORDS_PATH = Path(__file__).with_name("dental_ocr_words.txt")
 _TESSDATA_PATH = Path(__file__).with_name("tessdata")
 
@@ -195,6 +195,42 @@ def _detect_page_layout(image: Image.Image) -> _PageLayout:
     finally:
         probe.close()
 
+
+
+def _orientation_candidate(image: Image.Image) -> Image.Image:
+    """Correct obvious quarter/half-turn scans without another OCR pass.
+
+    We compare cheap horizontal-vs-vertical ink projections on a thumbnail.
+    This is intentionally conservative: uncertain pages stay untouched.
+    """
+    probe = image.copy()
+    try:
+        probe.thumbnail((700, 900), Image.Resampling.BILINEAR)
+        binary = probe.point(lambda p: 0 if p < 205 else 255, mode="1")
+
+        def projection_strength(candidate: Image.Image) -> float:
+            w, h = candidate.size
+            pix = candidate.load()
+            rows = [sum(1 for x in range(w) if pix[x, y] == 0) for y in range(h)]
+            cols = [sum(1 for y in range(h) if pix[x, y] == 0) for x in range(w)]
+            def variance(values):
+                mean = sum(values) / max(1, len(values))
+                return sum((v - mean) ** 2 for v in values) / max(1, len(values))
+            return variance(rows) / max(1.0, variance(cols))
+
+        base = projection_strength(binary)
+        rotated90 = binary.rotate(90, expand=True, fillcolor=255)
+        try:
+            turn = 90 if projection_strength(rotated90) > base * 1.8 else 0
+        finally:
+            rotated90.close()
+        if not turn:
+            return image.copy()
+        # Projection can identify portrait-vs-landscape, not upside-down text.
+        # Preserve direction here rather than guessing 180 degrees without OCR.
+        return image.rotate(turn, expand=True, fillcolor=255)
+    finally:
+        probe.close()
 
 def _deskew_image(image: Image.Image) -> Image.Image:
     """Estimate small skew from a tiny projection probe; no extra OCR pass."""
@@ -376,7 +412,9 @@ def ocr_material_page(
     image = load(fast_dpi)
     try:
         image = ImageOps.autocontrast(image)
-        deskewed = _deskew_image(image)
+        oriented = _orientation_candidate(image)
+        deskewed = _deskew_image(oriented)
+        oriented.close()
         try:
             layout = _detect_page_layout(deskewed)
             weak_columns = (False, False)
@@ -404,7 +442,9 @@ def ocr_material_page(
         retry_image = load(retry_dpi)
         try:
             retry_image = ImageOps.autocontrast(retry_image)
-            retry_deskewed = _deskew_image(retry_image)
+            retry_oriented = _orientation_candidate(retry_image)
+            retry_deskewed = _deskew_image(retry_oriented)
+            retry_oriented.close()
             try:
                 retry_layout = _detect_page_layout(retry_deskewed)
                 # Preserve explicit column order on retry; other weak layouts
