@@ -799,12 +799,12 @@ def _subject_alignment_score(
 
 
 @storage_scoped
-def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
+def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None) -> list:
     """Rerank a bounded lexical candidate pool with local dental semantics."""
     if not rows:
         return []
     query_features = analyze_dental_text(query)
-    requirement = build_dental_requirement_plan(query)
+    requirement = requirement or build_dental_requirement_plan(query)
     required_qualifiers = set(requirement.qualifiers)
     scored = []
     for position, row in enumerate(rows):
@@ -860,8 +860,9 @@ _MULTI_EVIDENCE_INTENTS = {
 }
 
 
-def _needs_multi_evidence(query: str) -> bool:
-    intents = build_dental_requirement_plan(query).intents
+def _needs_multi_evidence(query: str, requirement=None) -> bool:
+    requirement = requirement or build_dental_requirement_plan(query)
+    intents = requirement.intents
     names = {item.name for item in intents}
     if len(names - {"general"}) > 1:
         return True
@@ -874,9 +875,9 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
     return _EVIDENCE_FACETS.get(intent_name, ())
 
 
-def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
+def _coverage_score(query: str, rows: list, requirement=None) -> tuple[float, tuple[str, ...]]:
     """Cheap local coverage signal across every explicitly requested facet."""
-    requirement = build_dental_requirement_plan(query)
+    requirement = requirement or build_dental_requirement_plan(query)
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
@@ -934,19 +935,19 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
     body = row[7] or ""
     return analyze_dental_text(f"{section}\\n{body}")
 
-def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
+def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
     if not rows:
         return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
 
-    requirement = build_dental_requirement_plan(query)
+    requirement = requirement or build_dental_requirement_plan(query)
     intent = requirement.intents[0]
     intent_names = {item.name for item in requirement.intents if item.name != "general"}
     qf = analyze_dental_text(query)
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
-    coverage, covered = _coverage_score(query, rows)
+    coverage, covered = _coverage_score(query, rows, requirement=requirement)
     missing = tuple(facet for facet in facets if facet not in covered)
 
     alignments = sorted(
@@ -1016,11 +1017,11 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     return EvidenceSufficiency(sufficient, confidence, covered, missing)
 
 
-def _coverage_select(query: str, rows: list, *, limit: int) -> list:
+def _coverage_select(query: str, rows: list, *, limit: int, requirement=None) -> list:
     """Preserve evidence diversity after relevance reranking."""
     if len(rows) <= limit:
         return rows
-    requirement = build_dental_requirement_plan(query)
+    requirement = requirement or build_dental_requirement_plan(query)
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
