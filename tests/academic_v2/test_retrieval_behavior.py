@@ -511,3 +511,32 @@ def test_primary_fts_does_not_require_generic_facet_word_in_same_chunk():
     assert "irreversible" in precise.casefold()
     assert "pulpitis" in precise.casefold()
     assert "tedavi" not in precise.casefold()
+
+
+def test_requirement_plan_preserves_subject_modifiers_comparison_and_negation():
+    from app.dental_query_intent import build_dental_requirement_plan
+
+    irreversible = build_dental_requirement_plan("irreversible pulpitisin tedavisi nedir?")
+    assert "irreversible" in irreversible.qualifiers
+    assert "treatment" in irreversible.requested_facets
+
+    location = build_dental_requirement_plan("alt sağ üçüncü moların komplikasyonları")
+    assert {"alt", "sağ"}.issubset(set(location.qualifiers))
+    assert "complication" in location.requested_facets
+
+    comparison = build_dental_requirement_plan("SNA ile SNB arasındaki fark nedir?")
+    assert "comparison" in comparison.requested_facets
+    assert len(comparison.comparison_terms) == 2
+
+    negative = build_dental_requirement_plan("hangisi kanal tedavisinde kullanılmaz?")
+    assert negative.asks_negation is True
+
+
+def test_reranker_penalizes_same_subject_when_explicit_qualifier_is_missing():
+    query = "irreversible pulpitis tedavisi"
+    rows = [
+        row(101, "Pulpitis", "Pulpitis tedavisi ve klinik yaklaşım.", 0.88),
+        row(102, "Irreversible pulpitis", "Irreversible pulpitis tedavisi ve klinik yaklaşım.", 0.64),
+    ]
+    ranked = ns["_rerank_dental_rows"](query, rows, limit=2)
+    assert ranked[0][0] == 102
