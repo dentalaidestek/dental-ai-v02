@@ -4,6 +4,7 @@ Static data only: no model/provider calls and no clinical answer facts.
 """
 EXTENDED_SPECIALTY_CONCEPTS = {
     "endodontics": (
+        ("acute_apical_abscess", "akut apikal apse", ("acute apical abscess", "akut apikal abse"), "diagnosis"),
         ("apexification", "apeksifikasyon", ("apexification",), "procedure"),
         ("apexogenesis", "apeksogenez", ("apexogenesis",), "procedure"),
         ("regenerative_endodontics", "rejeneratif endodonti", ("regenerative endodontics", "revascularization"), "procedure"),
@@ -18,6 +19,7 @@ EXTENDED_SPECIALTY_CONCEPTS = {
         ("root_planing", "kök yüzeyi düzleştirme", ("root planing",), "procedure"),
     ),
     "oral_surgery": (
+        ("implant", "dental implant", ("implant", "diş implantı", "dental implant"), "appliance"),
         ("mronj", "ilaç ilişkili çene osteonekrozu", ("MRONJ", "medication-related osteonecrosis of the jaw"), "diagnosis"),
         ("sinus_lift", "sinüs tabanı yükseltme", ("sinus lift", "sinus floor augmentation"), "procedure"),
         ("ian_injury", "inferior alveolar sinir yaralanması", ("inferior alveolar nerve injury", "IAN injury"), "complication"),
