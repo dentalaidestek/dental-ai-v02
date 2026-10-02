@@ -53,3 +53,44 @@ def test_fdi_context_does_not_capture_age_or_page_next_to_real_tooth():
     page = analyze_dental_text("sayfa 46: 36 numaralı diş için kök kanal anatomisi")
     assert "36" in page.tooth_numbers
     assert "46" not in page.tooth_numbers
+
+
+def test_generic_value_parser_positive_and_negative_matrix():
+    from app.dental_semantics import extract_value_evidence
+
+    positives = {
+        "SNA 82°": "measurement",
+        "uzunluk -2.5 mm": "measurement",
+        "uzunluk 2,5 mm": "measurement",
+        "oran yüzde 20": "percentage",
+        "oran yüzde yirmi": "percentage",
+        "gonial açı yüz otuz derece": "measurement",
+        "normal değeri 82": "value",
+        "referans değeri seksen iki": "value",
+        "değeri 2 ile 4 mm": "value",
+        "yaklaşık 80–84°": "range",
+    }
+    for text_value, expected_kind in positives.items():
+        evidence = extract_value_evidence(text_value)
+        assert evidence, text_value
+        assert any(item.kind == expected_kind for item in evidence), (text_value, evidence)
+
+    for text_value in (
+        "20 hasta incelendi",
+        "20 yaşındaki bireyler",
+        "sayfa 82",
+        "page 36",
+        "örneklem 40 kişiden oluştu",
+        "36 numaralı diş",
+    ):
+        assert not extract_value_evidence(text_value), (text_value, extract_value_evidence(text_value))
+
+
+def test_value_parser_keeps_offsets_for_future_subject_binding():
+    from app.dental_semantics import extract_value_evidence
+    text_value = "SNA 82° iken SNB 80° olarak ölçülür."
+    evidence = extract_value_evidence(text_value)
+    assert [item.text for item in evidence] == ["82°", "80°"]
+    assert text_value[evidence[0].start:evidence[0].end] == "82°"
+    assert text_value[evidence[1].start:evidence[1].end] == "80°"
+    assert evidence[0].end < evidence[1].start
