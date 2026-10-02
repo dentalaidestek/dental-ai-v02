@@ -1117,6 +1117,19 @@ def retrieve_course_context_v2(
         has_more_questions = False
     else:
         precise_query = _fts_query(resolved, broad=False)
+        # Canonical subject understanding must reach the first DB lookup.
+        # This is not graph expansion: only explicitly resolved subject labels
+        # are OR-ed with the user's precise lexical form, so typo rescue and
+        # curated aliases can recover the right chunk without broadening scope.
+        canonical_subjects = [
+            term for term in requirement.subject_terms[:3]
+            if term and term.casefold() not in precise_query.casefold()
+        ]
+        if canonical_subjects:
+            canonical_query = " OR ".join(
+                f'"{term}"' if " " in term else term for term in canonical_subjects
+            )
+            precise_query = f"({precise_query}) OR ({canonical_query})"
         rows = _fts_rows(
             session,
             owner_user_id=owner_user_id,
