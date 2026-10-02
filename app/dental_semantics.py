@@ -82,6 +82,54 @@ def classify_value_assertion(text: str, evidence: ValueEvidence) -> tuple[str, f
         return "asserted", 0.86
     return "unknown", min(0.70, evidence.confidence)
 
+@dataclass(frozen=True)
+class BoundValueEvidence:
+    value: ValueEvidence
+    assertion: str
+    assertion_confidence: float
+    subject_node_id: str | None
+    subject_text: str | None
+    binding_confidence: float
+
+def bind_value_evidence(text: str) -> tuple[BoundValueEvidence, ...]:
+    """Bind values to nearby subjects conservatively; ambiguity stays unbound."""
+    clean = " ".join((text or "").split())
+    nodes = matched_nodes(clean)
+    mentions: list[tuple[int, int, str, str]] = []
+    lowered = clean.casefold()
+    for node in nodes:
+        aliases = tuple(dict.fromkeys((node.label, *node.aliases)))
+        for alias in aliases:
+            term = " ".join((alias or "").casefold().split())
+            if not term:
+                continue
+            pattern = re.compile(r"(?<!\w)" + re.escape(term).replace(r"\ ", r"\s+") + r"(?!\w)", re.I)
+            for match in pattern.finditer(lowered):
+                mentions.append((match.start(), match.end(), node.id, clean[match.start():match.end()]))
+    output: list[BoundValueEvidence] = []
+    for value in extract_value_evidence(clean):
+        assertion, assertion_confidence = classify_value_assertion(clean, value)
+        ranked = []
+        for start, end, node_id, subject_text in mentions:
+            distance = value.start - end if end <= value.start else start - value.end if start >= value.end else 0
+            if distance < 0 or distance > 96:
+                continue
+            between = clean[min(end, value.end):max(start, value.start)]
+            clause_break = bool(re.search(r"[.;!?]", between))
+            score = max(0.0, 1.0 - (distance / 96.0)) - (0.45 if clause_break else 0.0)
+            ranked.append((score, distance, node_id, subject_text))
+        ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+        chosen = ranked[0] if ranked and ranked[0][0] >= 0.34 else None
+        if chosen and len(ranked) > 1 and ranked[1][0] >= chosen[0] - 0.08 and ranked[1][2] != chosen[2]:
+            chosen = None
+        output.append(BoundValueEvidence(
+            value=value, assertion=assertion, assertion_confidence=assertion_confidence,
+            subject_node_id=chosen[2] if chosen else None,
+            subject_text=chosen[3] if chosen else None,
+            binding_confidence=round(chosen[0], 4) if chosen else 0.0,
+        ))
+    return tuple(output)
+
 def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
     """Find answer-bearing values without requiring a pre-known dental term."""
     clean = " ".join((text or "").split())
