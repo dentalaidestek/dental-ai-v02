@@ -332,15 +332,9 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             page_count=len(reader.pages),
             limit=1,
         )
-        if remaining:
-            return "PARSE"
-        unresolved = session.exec(
-            select(StudyIndexPage)
-            .where(StudyIndexPage.material_id == job.material_id)
-            .where(StudyIndexPage.index_version == job.index_version)
-            .where(StudyIndexPage.status == "OCR_REQUIRED")
-        ).first()
-        return "OCR" if unresolved else "CHUNK"
+        # Interleave bounded work: make freshly extracted pages available to
+        # chunking before the rest of a long PDF has finished parsing.
+        return _next_checkpoint_stage(session, job)
     finally:
         stream = getattr(reader, "stream", None)
         if stream and hasattr(stream, "close"):
@@ -471,7 +465,9 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
             StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
         .limit(1)
     ).first()
-    return "CHUNK" if remaining else "VERIFY"
+    if remaining:
+        return "CHUNK"
+    return _next_checkpoint_stage(session, job)
 
 
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
@@ -582,7 +578,8 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         .where(StudyIndexPage.index_version == job.index_version)
         .where(StudyIndexPage.status == "OCR_REQUIRED")
     ).first()
-    return "OCR" if remaining else "CHUNK"
+    # One bounded OCR slice is enough before downstream chunking gets a turn.
+    return _next_checkpoint_stage(session, job)
 
 
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
