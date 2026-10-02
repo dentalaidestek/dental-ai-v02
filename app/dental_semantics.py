@@ -200,7 +200,7 @@ def _value_key(value: str) -> str:
     key = key.replace(",", ".")
     # Normalize numerically equivalent decimal spellings before whitespace is
     # removed (e.g. "82,0 derece" and "82°" must reconcile as one value).
-    key = re.sub(r"(?<=\d)\.0(?=\s*(?:°|mm|cm|%|$))", "", key)
+    key = re.sub(r"([+-]?\d+)\.0+(?=\s*(?:°|mm|cm|%|$))", r"\1", key)
     return re.sub(r"\s+", "", key)
 
 def reconcile_value_evidence(items: tuple[BoundValueEvidence, ...] | list[BoundValueEvidence]) -> ValueReconciliation:
