@@ -6,7 +6,7 @@ CI remains fast and deterministic.
 """
 from pathlib import Path
 import ast
-from app.dental_query_intent import classify_dental_intent, classify_dental_intents, combined_relation_hints
+from app.dental_query_intent import classify_dental_intent, classify_dental_intents, combined_relation_hints, build_dental_requirement_plan
 from app.dental_knowledge_graph import graph_expansion_terms
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -432,7 +432,8 @@ def test_multi_facet_sufficiency_is_hard_complete():
     # Missing an explicitly requested facet must block synthesis even when the
     # subject itself is strongly aligned.
     assert "hard_complete = not missing" in source
-    assert "sufficient = anchored and hard_complete and multi_subject_complete and confidence >= 0.38" in source
+    assert "anchored and hard_complete and multi_subject_complete" in source
+    assert "comparison_complete and confidence >= 0.38" in source
 
 
 def test_rescue_path_is_single_bounded_round_trip():
@@ -461,7 +462,8 @@ def test_mixed_fast_and_multifacet_request_does_not_bypass_completeness():
 def test_coverage_selection_uses_same_facet_synonyms_as_coverage_scoring():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
     coverage_select = source[source.index("def _coverage_select"):source.index("def retrieve_course_context_v2")]
-    assert "_facet_present(facet, haystack, row_kinds)" in coverage_select
+    assert "_facet_present(" in coverage_select
+    assert "preferred_kinds=preferred_kinds" in coverage_select
     assert "if facet_cf in haystack:" not in coverage_select
 
 
@@ -495,7 +497,7 @@ def test_graph_and_retrieval_share_inflection_policy_without_relaxing_abbreviati
 
 def test_rescue_subject_excludes_generic_facet_vocabulary():
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
-    branch = source.split("if missing:", 1)[1].split("if subject_query and facet_groups:", 1)[0]
+    branch = source[source.index("missing_subject_ids = ["):source.index("rescue_rows = _fts_rows")]
     assert "facet_noise" in branch
     assert "term.casefold() not in facet_noise" in branch
     assert "graph_expansion_terms" not in branch
@@ -580,13 +582,14 @@ def test_followup_resolution_uses_only_prior_user_subject_identity():
         {"role": "USER", "content": "Irreversible pulpitis nedir?"},
         {"role": "ASSISTANT", "content": "Apikal periodontitis ve nekroz da ayırıcı tanıda geçebilir."},
     ]
-    resolved = namespace["resolve_followup_query"]("peki tedavisi?", history)
+    from app.study_retrieval_v2 import resolve_followup_query
+    resolved = resolve_followup_query("peki tedavisi?", history)
     assert "pulpitis" in resolved.casefold()
     assert "apikal periodontitis" not in resolved.casefold()
     assert "nekroz" not in resolved.casefold()
 
     # An explicit new subject must override conversation history.
-    explicit = namespace["resolve_followup_query"]("peki SNB nedir?", history)
+    explicit = resolve_followup_query("peki SNB nedir?", history)
     assert "SNB" in explicit
     assert "pulpitis" not in explicit.casefold()
 
@@ -596,12 +599,12 @@ def test_followup_resolution_uses_only_prior_user_subject_identity():
         {"role": "USER", "content": "peki tedavisi?"},
         {"role": "ASSISTANT", "content": "Tedavi cevabı..."},
     ]
-    resolved_chain = namespace["resolve_followup_query"]("bunun komplikasyonları?", chained)
+    resolved_chain = resolve_followup_query("bunun komplikasyonları?", chained)
     assert "pulpitis" in resolved_chain.casefold()
     assert "tedavisi" not in resolved_chain.casefold()
 
     for query in ("SNA nedir?", "ANB kaçtır?", "MRONJ tedavisi?"):
-        assert namespace["resolve_followup_query"](query, history) == query
+        assert resolve_followup_query(query, history) == query
 
 def test_requirement_plan_separates_imaging_constraint_from_subject():
     plan = build_dental_requirement_plan("CBCT'de mandibular kanal ilişkisi nedir?")
