@@ -258,8 +258,8 @@ def _recognize_layout(image: Image.Image, *, layout: _PageLayout, timeout_ms: in
 
 def _recognize_two_columns_selective(
     image: Image.Image, *, layout: _PageLayout, timeout_ms: int
-) -> tuple[str, int, tuple[bool, bool]]:
-    """OCR columns independently and expose which side actually needs retry."""
+) -> tuple[str, int, tuple[bool, bool], tuple[int, int]]:
+    """OCR columns independently and preserve per-column retry quality."""
     import tesserocr
 
     split = int(image.width * ((layout.split_x or 5000) / 10000.0))
@@ -278,9 +278,10 @@ def _recognize_two_columns_selective(
         for region in regions:
             region.close()
     weak = tuple(_needs_quality_retry(text, conf) for text, conf in results)
+    column_confidences = tuple(int(conf) for _, conf in results)
     texts = [text for text, _ in results if text]
-    confidence = int(sum(conf for _, conf in results) / max(1, len(results)))
-    return _normalize_ocr_text("\n\n".join(texts)), confidence, weak
+    confidence = int(sum(column_confidences) / max(1, len(column_confidences)))
+    return _normalize_ocr_text("\n\n".join(texts)), confidence, weak, column_confidences
 
 
 def _ocr_anomaly_score(text: str) -> float:
@@ -343,7 +344,9 @@ def _needs_quality_retry(text: str, confidence: int) -> bool:
         return True
     compact = re.sub(r"\\s+", "", text or "")
     if len(compact) < 40:
-        return True
+        # A short but confidently recognized heading/slide label is not by
+        # itself evidence that a second full render will recover more text.
+        return confidence < 78
     return _ocr_anomaly_score(text) >= 0.34
 
 
@@ -377,8 +380,9 @@ def ocr_material_page(
         try:
             layout = _detect_page_layout(deskewed)
             weak_columns = (False, False)
+            column_confidences = (0, 0)
             if layout.kind == "two_column":
-                text, confidence, weak_columns = _recognize_two_columns_selective(
+                text, confidence, weak_columns, column_confidences = _recognize_two_columns_selective(
                     deskewed, layout=layout, timeout_ms=timeout_ms
                 )
             else:
@@ -419,7 +423,7 @@ def ocr_material_page(
                         fast_parts = text.split("\n\n", 1)
                         while len(fast_parts) < 2:
                             fast_parts.append("")
-                        confidences = [confidence, confidence]
+                        confidences = list(column_confidences)
                         for idx, region in enumerate(retry_regions):
                             if not weak_columns[idx]:
                                 continue
