@@ -580,7 +580,7 @@ def get_or_build_coverage_plan(
     if cached is not None:
         return cached
 
-    rows = []
+    accumulator = CoverageAccumulator()
     after_id = 0
     bounded_page_size = max(40, min(int(page_size), 400))
     while True:
@@ -590,11 +590,11 @@ def get_or_build_coverage_plan(
         )
         if not page:
             break
-        rows.extend(page)
+        accumulator.add_rows(page)
         after_id = int(page[-1][0])
         if len(page) < bounded_page_size:
             break
-    plan = build_coverage_plan(rows, requested_count)
+    plan = accumulator.build(requested_count)
     cache_coverage_plan(owner_user_id, course_id, fingerprint, plan)
     return plan
 
