@@ -1366,6 +1366,13 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         ))
         if literal_value_request and not has_measurement:
             special_match = 0.0
+            # Semantic kind "measurement" says what SNA/SNB *is*, not that
+            # this evidence contains the requested numeric/reference value.
+            # Keep coverage reporting consistent with the hard value gate.
+            value_facets = {"normal değer", "ölçüm"}
+            covered = tuple(facet for facet in covered if facet not in value_facets)
+            missing = tuple(dict.fromkeys((*missing, *(facet for facet in facets if facet in value_facets))))
+            coverage = len(set(covered)) / max(1, len(facets))
         else:
             special_match = min(special_match, 1.0 if has_measurement else 0.45)
 
