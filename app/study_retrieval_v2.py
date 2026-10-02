@@ -1034,6 +1034,20 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
     row_features = [_row_semantic_features(row, feature_cache) for row in rows]
     evidence_node_ids = {node_id for features in row_features for node_id in features.node_ids}
     multi_subject_complete = all(node_id in evidence_node_ids for node_id in requirement.subject_node_ids)
+    # Bound qualifiers are a collective evidence constraint: each subject that
+    # owns explicit modifiers should have at least one evidence row containing
+    # both that subject and its modifiers. Keep this soft for ordinary questions
+    # but require it for comparisons, where cross-side qualifier leakage changes
+    # the meaning of the answer.
+    subject_qualifier_complete = True
+    for subject_id, qualifiers in requirement.subject_qualifiers:
+        if qualifiers and not any(
+            subject_id in features.node_ids
+            and all(item in f"{row[5] or ''} {row[7] or ''}".casefold() for item in qualifiers)
+            for row, features in zip(rows, row_features)
+        ):
+            subject_qualifier_complete = False
+            break
     kinds = {item for features in row_features for item in features.kinds}
     intent_kind = 1.0 if set(intent.preferred_kinds).intersection(kinds) else 0.0
 
@@ -1086,7 +1100,13 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         # Strong subject evidence for one facet must never authorize synthesis
         # of another requested facet that is absent from the user's notes.
         hard_complete = not missing
-        sufficient = anchored and hard_complete and multi_subject_complete and confidence >= 0.38
+        comparison_complete = (
+            subject_qualifier_complete if "comparison" in intent_names else True
+        )
+        sufficient = (
+            anchored and hard_complete and multi_subject_complete
+            and comparison_complete and confidence >= 0.38
+        )
     else:
         sufficient = anchored and multi_subject_complete and confidence >= 0.34
 
