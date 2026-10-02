@@ -881,3 +881,16 @@ def test_primary_retrieval_strips_question_form_noise_for_unknown_subjects():
         precise = namespace["_fts_query"](query, broad=False).casefold().split()
         assert all(term.casefold() in precise for term in expected), (query, precise)
         assert all(term.casefold() not in precise for term in forbidden), (query, precise)
+
+
+def test_semantic_facet_fallback_cannot_bypass_safe_allowlist():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    coverage = source[source.index("def _coverage_score"):source.index("def _subject_alignment_score")]
+    assert "_FACET_SEMANTIC_KINDS" in source
+    assert "item_facets[0]" not in coverage
+    selector = source[source.index("def _coverage_select"):source.index("def retrieve_course_context_v2")]
+    assert "preferred_kinds=preferred_kinds" in selector
+
+def test_semantic_profile_bumped_after_matching_changes():
+    source = Path("app/study_index_worker.py").read_text(encoding="utf-8")
+    assert '"schema": "academic-v2-dental-semantics-6"' in source
