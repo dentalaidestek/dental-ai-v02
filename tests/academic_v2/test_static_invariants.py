@@ -241,3 +241,15 @@ def test_text_quality_still_rejects_real_control_character_noise():
     ok, reason = _text_quality(noisy)
     assert ok is False
     assert reason == "LOW_PRINTABLE_RATIO"
+
+
+def test_ocr_required_checkpoint_preserves_native_text_fallback():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    extract = worker.split("def _extract_pdf_slice", 1)[1].split("def _strip_repeated_page_margins", 1)[0]
+    ocr = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    assert "text_content=text or None" in extract
+    assert "content_sha256=_sha256_text(text) if text else None" in extract
+    assert 'fallback_text = normalize_extracted_text(page.text_content or "")' in ocr
+    assert "if result.visual_only:" in ocr
+    assert "elif fallback_text and len(text) < len(fallback_text):" in ocr
+    assert "PDF_TEXT_OCR_FALLBACK" in ocr
