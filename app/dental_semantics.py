@@ -36,6 +36,52 @@ class ValueEvidence:
     end: int
     confidence: float
 
+
+_REFERENCE_CUE_RE = re.compile(
+    r"(?iu)\b(?:normal|referans|ortalama|genellikle|çoğunlukla|tipik(?: olarak)?|"
+    r"beklenen|fizyolojik|standart|ideal|kabul edilen)\b"
+)
+_OBSERVATION_CUE_RE = re.compile(
+    r"(?iu)\b(?:hasta|olgu|vaka|birey|örnek|örneklem|denek|katılımcı|"
+    r"ölçüldü|ölçülen|saptandı|bulundu|gözlendi|tespit edildi|bu hastada|bu olguda)\b"
+)
+_VARIABILITY_CUE_RE = re.compile(
+    r"(?iu)\b(?:değişebilir|değişken|arasında değişir|kişiden kişiye|bireysel|"
+    r"yaşa göre|cinsiyete göre|vakaya göre|hastaya göre)\b"
+)
+_STRONG_ASSERTION_RE = re.compile(
+    r"(?iu)\b(?:kesinlikle|daima|her zaman|zorunlu olarak|mutlaka)\b"
+)
+
+def classify_value_assertion(text: str, evidence: ValueEvidence) -> tuple[str, float]:
+    """Classify what a numeric expression claims, not merely that it exists.
+
+    reference: normative/general teaching statement
+    observation: patient/sample/example-specific result
+    variable: explicitly context-dependent value
+    asserted: strong universal wording without a reference cue
+    unknown: numeric evidence whose role is not safely inferable locally
+    """
+    clean = " ".join((text or "").split())
+    left = clean[max(0, evidence.start - 96):evidence.start]
+    right = clean[evidence.end:min(len(clean), evidence.end + 96)]
+    local = f"{left} {evidence.text} {right}"
+    if _VARIABILITY_CUE_RE.search(local):
+        return "variable", 0.96
+    reference = bool(_REFERENCE_CUE_RE.search(local))
+    observation = bool(_OBSERVATION_CUE_RE.search(local))
+    if reference and not observation:
+        return "reference", 0.95
+    if observation and not reference:
+        return "observation", 0.94
+    if reference and observation:
+        # "Hastalarda ortalama 4 mm" is population/sample evidence, not a
+        # universal reference value unless another passage establishes that.
+        return "observation", 0.82
+    if _STRONG_ASSERTION_RE.search(local):
+        return "asserted", 0.86
+    return "unknown", min(0.70, evidence.confidence)
+
 def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
     """Find answer-bearing values without requiring a pre-known dental term."""
     clean = " ".join((text or "").split())
