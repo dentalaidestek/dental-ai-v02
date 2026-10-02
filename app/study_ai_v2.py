@@ -85,6 +85,10 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
         "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
         "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
+        "SORU YÖNÜ KURALI:\n"
+        "- 'değildir', 'yanlış', 'hariç', 'önerilmez', 'tercih edilmez' gibi negatif yönleri tersine çevirme.\n"
+        "- Karşılaştırmada adı geçen her tarafı ayrı ayrı kanıta bağla; bir tarafın bilgisini diğerine genelleme.\n"
+        "- Çene/yön/diş/akut-kronik gibi niteleyicileri cevap boyunca koru.\n\n"
         f"SİSTEMİN ÇÖZÜMLEDiĞİ SORU:\n{understood_question}\n\n"
         f"KULLANICININ BU TURDAKİ MESAJI:\n{question.strip()}"
     )
