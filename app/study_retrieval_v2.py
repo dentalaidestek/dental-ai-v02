@@ -21,7 +21,7 @@ from sqlmodel import Session
 
 from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
-from app.dental_knowledge_graph import graph_expansion_terms
+from app.dental_knowledge_graph import graph_expansion_terms, node_label
 from app.dental_query_intent import query_qualifiers, qualifier_present, build_dental_requirement_plan, classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
 from app.academic_coverage import CoverageAccumulator, build_coverage_plan, cache_coverage_plan, cached_coverage_plan
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
@@ -1410,8 +1410,8 @@ def retrieve_course_context_v2(
             # Missing explicit subjects take priority over already-covered ones;
             # missing facets are appended as strict AND terms when present.
             missing_subject_terms = [
-                term for node_id, term in zip(requirement.subject_node_ids, requirement.subject_terms)
-                if node_id in missing_subject_ids
+                label for node_id in missing_subject_ids
+                if (label := node_label(node_id))
             ]
             subject_terms = missing_subject_terms or list(requirement.subject_terms[:1])
             subject_query = " OR ".join(
