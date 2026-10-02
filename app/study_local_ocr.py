@@ -149,7 +149,7 @@ def _preserve_academic_structure(text: str) -> str:
 class _PageLayout:
     psm: int
     kind: str
-    split_x: int | None = None
+    split_x: int | None = None  # normalized 0..10000, independent of probe size
 
 
 def _detect_page_layout(image: Image.Image) -> _PageLayout:
@@ -181,7 +181,7 @@ def _detect_page_layout(image: Image.Image) -> _PageLayout:
         side_mean = sum(side) / max(1, len(side))
         valley_mean = sum(valley) / max(1, len(valley))
         if occupied_rows > h * 0.35 and side_mean > 0 and valley_mean < side_mean * 0.38:
-            return _PageLayout(tesserocr.PSM.AUTO, "two_column", (mid_lo + mid_hi) // 2)
+            return _PageLayout(tesserocr.PSM.AUTO, "two_column", int(((mid_lo + mid_hi) / 2) * 10000 / max(1, w)))
 
         # Sparse lecture slides/figures benefit from sparse-text segmentation.
         if density < 0.035 or occupied_rows < h * 0.22:
@@ -237,9 +237,7 @@ def _recognize_layout(image: Image.Image, *, layout: _PageLayout, timeout_ms: in
 
     if layout.kind != "two_column" or not layout.split_x:
         return _recognize(image, psm=layout.psm, timeout_ms=timeout_ms)
-    # split_x was measured on a <=900px layout probe; map it back to source.
-    probe_width = min(image.width, 900)
-    split = int(image.width * (layout.split_x / max(1, probe_width)))
+    split = int(image.width * (layout.split_x / 10000.0))
     margin = max(8, int(image.width * 0.015))
     split = max(margin * 2, min(image.width - margin * 2, split))
     regions = [
@@ -264,8 +262,7 @@ def _recognize_two_columns_selective(
     """OCR columns independently and expose which side actually needs retry."""
     import tesserocr
 
-    probe_width = min(image.width, 900)
-    split = int(image.width * ((layout.split_x or probe_width // 2) / max(1, probe_width)))
+    split = int(image.width * ((layout.split_x or 5000) / 10000.0))
     margin = max(8, int(image.width * 0.015))
     split = max(margin * 2, min(image.width - margin * 2, split))
     regions = [
@@ -411,8 +408,7 @@ def ocr_material_page(
                 if retry_layout.kind == "two_column" and layout.kind == "two_column" and any(weak_columns):
                     # Re-run only weak columns at high DPI; preserve strong fast-pass
                     # text instead of paying for and potentially degrading both sides.
-                    probe_width = min(retry_deskewed.width, 900)
-                    split = int(retry_deskewed.width * ((retry_layout.split_x or probe_width // 2) / max(1, probe_width)))
+                    split = int(retry_deskewed.width * ((retry_layout.split_x or 5000) / 10000.0))
                     margin = max(8, int(retry_deskewed.width * 0.015))
                     split = max(margin * 2, min(retry_deskewed.width - margin * 2, split))
                     retry_regions = [
