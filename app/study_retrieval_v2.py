@@ -717,7 +717,7 @@ def _neighbor_rows(
             SELECT id, ord FROM unnest(CAST(:seed_ids AS BIGINT[])) WITH ORDINALITY AS x(id, ord)
         ), seeds AS (
             SELECT c.id, c.material_id, c.index_version, c.chunk_index,
-                   c.page_start, s.ord
+                   c.page_start, c.section_title, s.ord
             FROM seed_order s JOIN studyindexchunk c ON c.id=s.id
         ), neighbors AS (
             SELECT DISTINCT ON (c.id)
@@ -731,6 +731,7 @@ def _neighbor_rows(
             FROM seeds
             JOIN studyindexchunk c
               ON c.material_id=seeds.material_id AND c.index_version=seeds.index_version
+             AND c.section_title IS NOT DISTINCT FROM seeds.section_title
              AND (ABS(c.chunk_index-seeds.chunk_index)=1 OR ABS(c.page_start-seeds.page_start)=1)
             JOIN studymaterial m
               ON m.id=c.material_id AND m.owner_user_id=:owner
@@ -1170,14 +1171,19 @@ def retrieve_course_context_v2(
                 rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
         rows = _coverage_select(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
-        rows.extend(_neighbor_rows(
-            session,
-            owner_user_id=owner_user_id,
-            course_id=course_id,
-            seed_ids=primary_ids[:4],
-            exclude_ids=primary_ids,
-            limit=min(4, max(0, 12 - len(rows))),
-        ))
+        # Neighbor context is useful for split passages, but it must not be an
+        # unconditional extra DB query or cross a section boundary.
+        context_target = min(10, limit + 2) if _needs_multi_evidence(resolved) else max(4, limit)
+        neighbor_limit = min(2, max(0, context_target - len(rows)))
+        if neighbor_limit:
+            rows.extend(_neighbor_rows(
+                session,
+                owner_user_id=owner_user_id,
+                course_id=course_id,
+                seed_ids=primary_ids[:3],
+                exclude_ids=primary_ids,
+                limit=neighbor_limit,
+            ))
     intent = classify_dental_intent(resolved)
     logger.info(
         "Academic V2 retrieval selected. mode=%s intent=%s evidence_rows=%s",
