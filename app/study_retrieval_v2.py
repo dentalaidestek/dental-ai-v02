@@ -1218,6 +1218,24 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cach
         # Strong subject evidence for one facet must never authorize synthesis
         # of another requested facet that is absent from the user's notes.
         hard_complete = not missing
+        # For explicit canonical subjects, a requested facet must occur in at
+        # least one row that also carries one of those subjects. Global corpus
+        # coverage can otherwise combine "pulpitis" from one distractor row
+        # with an unrelated "tedavi" row and incorrectly authorize synthesis.
+        if hard_complete and requirement.subject_node_ids:
+            subject_ids = set(requirement.subject_node_ids)
+            for facet in facets:
+                if not any(
+                    bool(subject_ids.intersection(features.node_ids))
+                    and _facet_present(
+                        facet,
+                        f"{row[5] or ''} {row[7] or ''}".casefold(),
+                        {item.casefold() for item in features.kinds},
+                    )
+                    for row, features in zip(rows, row_features)
+                ):
+                    hard_complete = False
+                    break
         comparison_side_complete = True
         repeated_side_subject = bool(
             len(requirement.comparison_sides) >= 2
