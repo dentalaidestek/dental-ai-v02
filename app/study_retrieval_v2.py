@@ -1372,7 +1372,7 @@ def retrieve_course_context_v2(
         # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
         rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
-        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
+        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         rescue_query_count = 0
         requested_facets = tuple(dict.fromkeys(
             facet for item in requirement.intents for facet in _coverage_terms(item.name)
@@ -1444,6 +1444,7 @@ def retrieve_course_context_v2(
                 rows = _rerank_dental_rows(
                     resolved, rows, limit=max(limit * 2, 12),
                     requirement=requirement, feature_cache=row_feature_cache,
+                    query_features=query_features,
                 )
                 coverage, covered_facets = _coverage_score(
                     resolved, rows, requirement=requirement,
@@ -1507,6 +1508,7 @@ def retrieve_course_context_v2(
                 rows = _rerank_dental_rows(
                     resolved, rows, limit=max(limit + neighbor_limit, limit),
                     requirement=requirement, feature_cache=row_feature_cache,
+                    query_features=query_features,
                 )
                 rows = _coverage_select(
                     resolved, rows, limit=limit, requirement=requirement,
