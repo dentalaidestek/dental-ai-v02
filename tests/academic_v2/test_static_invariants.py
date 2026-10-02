@@ -87,7 +87,7 @@ assert '_int_env("STUDY_RAG_MAX_PDF_PAGES", 800, 1, 2000)' in worker
 main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
 assert "from app.academic_generation_jobs import AcademicGenerationJob" in main_source
 assert "from app.academic_coverage import CoverageAccumulator" in retrieval
-assert "features = _row_semantic_features(row)" in retrieval
+assert "features = _row_semantic_features(row, feature_cache)" in retrieval
 assert "c.section_title IS NOT DISTINCT FROM seeds.section_title" in retrieval
 assert "if neighbor_limit:" in retrieval
 assert 'return "VERIFY"' in worker
