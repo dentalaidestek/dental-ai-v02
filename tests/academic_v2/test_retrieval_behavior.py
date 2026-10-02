@@ -88,7 +88,7 @@ assert "rows = _coverage_select(resolved, rows, limit=limit, requirement=require
 # Latency guard: simple factual questions stay on one-pass retrieval.
 assert '_FAST_INTENTS = {"value", "definition", "measurement"}' in source
 assert "def _needs_multi_evidence" in source
-assert "coverage < 0.34" in source
+assert "names and names.issubset(_FAST_INTENTS | {\"general\"})" in source
 assert "rescue_query_count = 0" in source
 assert "rescue_query_count = 1" in source
 assert "alias_terms = _concept_alternatives(resolved)" in source
