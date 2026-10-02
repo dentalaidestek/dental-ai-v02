@@ -222,99 +222,87 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     return clean
 
 
-def _single_page_pdf(
-    session: Session,
-    *,
-    owner_user_id: int,
-    material_id: int,
-    index_version: str,
-    reference: str,
-    page_number: int,
-) -> bytes:
-    """Return a generation-scoped one-page PDF, materializing it at most once."""
-    cache_key = (f"{owner_user_id}:{material_id}:{index_version}:{reference}", int(page_number))
-    with _PAGE_PDF_CACHE_LOCK:
-        cached = _PAGE_PDF_CACHE.get(cache_key)
-        if cached is not None:
-            _PAGE_PDF_CACHE.move_to_end(cache_key)
-            return cached
+def _extract_single_page_pdf(*, reference: str, page_number: int) -> bytes:
+    """Pure storage/PDF phase: no database access and no open DB transaction."""
+    path = storage_ensure_local(reference)
+    reader = PdfReader(str(path))
+    try:
+        if page_number < 1 or page_number > len(reader.pages):
+            raise ValueError("page outside source")
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_number - 1])
+        output = io.BytesIO()
+        writer.write(output)
+        data = output.getvalue()
+        if len(data) > _PAGE_PDF_MAX_BYTES:
+            raise ValueError("visual page artifact exceeds bounded size")
+        return data
+    finally:
+        stream = getattr(reader, "stream", None)
+        if stream and hasattr(stream, "close"):
+            stream.close()
 
-    checkpoint = session.exec(
-        text(
-            "SELECT visual_pdf_bytes FROM studyindexpage "
-            "WHERE owner_user_id=:o AND material_id=:m "
-            "AND index_version=:v AND page_number=:p"
-        ),
-        params={"o": owner_user_id, "m": material_id, "v": index_version, "p": page_number},
-    ).first()
-    if checkpoint and checkpoint[0]:
-        data = bytes(checkpoint[0])
-    else:
-        path = storage_ensure_local(reference)
-        reader = PdfReader(str(path))
-        try:
-            if page_number < 1 or page_number > len(reader.pages):
-                raise ValueError("page outside source")
-            writer = PdfWriter()
-            writer.add_page(reader.pages[page_number - 1])
-            output = io.BytesIO()
-            writer.write(output)
-            data = output.getvalue()
-            if len(data) > _PAGE_PDF_MAX_BYTES:
-                raise ValueError("visual page artifact exceeds bounded size")
-        finally:
-            stream = getattr(reader, "stream", None)
-            if stream and hasattr(stream, "close"):
-                stream.close()
-        updated = session.exec(
-            text(
-                "UPDATE studyindexpage SET visual_pdf_bytes=:data "
-                "WHERE owner_user_id=:o AND material_id=:m "
-                "AND index_version=:v AND page_number=:p "
-                "AND visual_pdf_bytes IS NULL"
-            ),
-            params={"data": data, "o": owner_user_id, "m": material_id,
-                    "v": index_version, "p": page_number},
-        )
-        if getattr(updated, "rowcount", 0):
-            session.commit()
 
-    with _PAGE_PDF_CACHE_LOCK:
-        _PAGE_PDF_CACHE[cache_key] = data
-        _PAGE_PDF_CACHE.move_to_end(cache_key)
-        while len(_PAGE_PDF_CACHE) > _PAGE_PDF_CACHE_MAX:
-            _PAGE_PDF_CACHE.popitem(last=False)
-    return data
-
-def materialize_visual_sources(session: Session, result: RetrievalResult) -> None:
-    """Materialize deferred visual bytes only after retrieval has finished."""
+def materialize_visual_sources(session_factory, result: RetrievalResult) -> None:
+    """DB read -> no-DB storage I/O -> short compare-and-set DB write."""
     if not result.visual_sources or not result.evidence_sufficient:
         return
     for source in result.visual_sources[:3]:
-        row = session.exec(
-            text(
-                "SELECT file_path, mime_type, display_name, active_index_version "
-                "FROM studymaterial WHERE id=:m AND owner_user_id=:o AND deleted_at IS NULL"
-            ),
-            params={"m": source["material_id"], "o": source["owner_user_id"]},
-        ).first()
+        cache_key = (
+            f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
+            int(source["page_number"]),
+        )
+        with _PAGE_PDF_CACHE_LOCK:
+            cached = _PAGE_PDF_CACHE.get(cache_key)
+            if cached is not None:
+                _PAGE_PDF_CACHE.move_to_end(cache_key)
+        if cached is not None:
+            result.attachments.append({
+                "mime_type": source["mime_type"], "data": cached,
+                "label": f"INTERNAL_SOURCE: {source['display_name']}, sayfa {source['page_number']}",
+            })
+            continue
+
+        with session_factory() as read_session:
+            row = read_session.exec(
+                text(
+                    "SELECT m.file_path, m.mime_type, m.display_name, m.active_index_version, p.visual_pdf_bytes "
+                    "FROM studymaterial m LEFT JOIN studyindexpage p ON "
+                    "p.owner_user_id=m.owner_user_id AND p.material_id=m.id "
+                    "AND p.index_version=m.active_index_version AND p.page_number=:p "
+                    "WHERE m.id=:m AND m.owner_user_id=:o AND m.deleted_at IS NULL"
+                ),
+                params={"m": source["material_id"], "o": source["owner_user_id"], "p": source["page_number"]},
+            ).first()
         if not row:
             continue
         live_version = str(row[3]) if row[3] else None
         if live_version != source.get("index_version"):
             continue
         try:
-            if row[1] == "application/pdf":
+            if row[4]:
+                data = bytes(row[4])
+            elif row[1] == "application/pdf":
                 if not live_version:
                     continue
-                data = _single_page_pdf(
-                    session,
-                    owner_user_id=source["owner_user_id"],
-                    material_id=source["material_id"],
-                    index_version=live_version,
-                    reference=row[0],
-                    page_number=source["page_number"],
-                )
+                data = _extract_single_page_pdf(reference=row[0], page_number=source["page_number"])
+                with session_factory() as write_session:
+                    updated = write_session.exec(
+                        text(
+                            "UPDATE studyindexpage SET visual_pdf_bytes=:data "
+                            "WHERE owner_user_id=:o AND material_id=:m AND index_version=:v "
+                            "AND page_number=:p AND visual_pdf_bytes IS NULL "
+                            "AND EXISTS (SELECT 1 FROM studymaterial sm WHERE sm.id=:m "
+                            "AND sm.owner_user_id=:o AND sm.deleted_at IS NULL "
+                            "AND sm.active_index_version=:v)"
+                        ),
+                        params={"data": data, "o": source["owner_user_id"], "m": source["material_id"],
+                                "v": live_version, "p": source["page_number"]},
+                    )
+                    if getattr(updated, "rowcount", 0):
+                        write_session.commit()
+                    else:
+                        write_session.rollback()
             elif str(row[1]).startswith("image/"):
                 data = storage_ensure_local(row[0]).read_bytes()
                 if len(data) > _PAGE_PDF_MAX_BYTES:
@@ -324,9 +312,13 @@ def materialize_visual_sources(session: Session, result: RetrievalResult) -> Non
         except Exception:
             logger.exception("Academic V2 deferred visual source could not be prepared")
             continue
+        with _PAGE_PDF_CACHE_LOCK:
+            _PAGE_PDF_CACHE[cache_key] = data
+            _PAGE_PDF_CACHE.move_to_end(cache_key)
+            while len(_PAGE_PDF_CACHE) > _PAGE_PDF_CACHE_MAX:
+                _PAGE_PDF_CACHE.popitem(last=False)
         result.attachments.append({
-            "mime_type": row[1],
-            "data": data,
+            "mime_type": row[1], "data": data,
             "label": f"INTERNAL_SOURCE: {row[2]}, sayfa {source['page_number']}",
         })
     if not result.attachments:
