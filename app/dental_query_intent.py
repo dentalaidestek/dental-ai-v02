@@ -18,7 +18,7 @@ _RULES = (
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
     ("classification", re.compile(r"\b(?:sınıflam[a-zçğıöşü]*|sınıflandır[a-zçğıöşü]*|class|sınıf[a-zçğıöşü]*|evre[a-zçğıöşü]*|stage|grade|derece)\b", re.I),
      ("classification", "diagnosis", "finding"), ("classified_by", "has_stage", "has_grade")),
-    ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|ne zaman kullan|hangi durumda kullan)\b", re.I),
+    ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|ne zaman kullan[a-zçğıöşü]*|hangi durumda kullan[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material", "imaging"), ("used_for", "has_indication")),
     ("contraindication", re.compile(r"\b(?:kontrendikasyon[a-zçğıöşü]*|kullanılmaz|yapılmaz|sakınca)\b", re.I),
      ("procedure", "material"), ("has_contraindication",)),
