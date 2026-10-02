@@ -36,7 +36,7 @@ _INTENT_RESPONSE_RULES = {
     "comparison": "Karşılaştırılan kavramları aynı ölçütler üzerinden yan yana ve tekrar etmeden karşılaştır.",
     "classification": "Sınıflamayı kaynak yapısını bozmadan düzenli ver; sınıf/evre ölçütlerini birbirine karıştırma.",
     "diagnosis": "Tanı, bulgu ve ayırıcı tanı ifadelerini kanıtta nasıl ayrılmışsa öyle tut; yeni tanı çıkarımı yapma.",
-    "treatment": "Endikasyon, işlem ve sonuç/izlem bilgisini kanıt destekliyorsa mantıksal sırada birleştir.",
+    "treatment": "Tedaviyi; endikasyon, işlem ve sonuç/izlem bilgisini kanıt destekliyorsa mantıksal sırada birleştir.",
     "complication": "Komplikasyon ile risk/neden/önleme bilgisini kanıtta desteklenen ilişkilerle eşleştir.",
     "cause": "Neden, risk faktörü ve mekanizmayı kanıtta desteklenen neden-sonuç yönünü bozmadan açıkla.",
     "visual": "Yalnız ekli kaynak sayfasında gerçekten görülebilen ve metin kanıtıyla desteklenen özellikleri yorumla.",
