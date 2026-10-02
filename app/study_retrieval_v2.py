@@ -835,7 +835,7 @@ def _subject_alignment_score(
 
 
 @storage_scoped
-def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None) -> list:
+def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None) -> list:
     """Rerank a bounded lexical candidate pool with local dental semantics."""
     if not rows:
         return []
@@ -848,7 +848,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None)
         body = row[7] or ""
         # READY chunks normally carry persisted semantic metadata. Parse it
         # once; only legacy/corrupt rows fall back to text analysis.
-        features = _row_semantic_features(row)
+        features = _row_semantic_features(row, feature_cache)
         semantic = semantic_overlap_score(query_features, features)
         # Rows can come from several focused DB queries. Their append position is
         # not a relevance signal: a strong complication/diagnosis row may have
@@ -876,6 +876,17 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None)
         qualifier_hits = sum(1 for item in required_qualifiers if item in row_text_cf)
         qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
         qualifier_penalty = 0.18 * (1.0 - qualifier_score) if required_qualifiers else 0.0
+        # Negated facts are useful for a negation-seeking question, but can
+        # invert an ordinary positive question. Keep this a bounded rerank
+        # signal rather than a hard gate: many exam-style negative questions
+        # are answerable from positive source statements.
+        query_nodes = set(requirement.subject_node_ids)
+        row_negated = set(features.negated_node_ids)
+        negation_overlap = bool(query_nodes.intersection(row_negated))
+        negation_adjustment = (
+            0.06 if requirement.asks_negation and negation_overlap
+            else (-0.12 if (not requirement.asks_negation and negation_overlap) else 0.0)
+        )
         score = (
             (0.40 * lexical)
             + (0.25 * semantic)
@@ -883,6 +894,7 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None)
             + (0.05 * positional)
             - drift_penalty
             - qualifier_penalty
+            + negation_adjustment
         )
         scored.append((score, position, row))
     scored.sort(key=lambda item: (-item[0], item[1]))
@@ -1201,7 +1213,7 @@ def retrieve_course_context_v2(
         # subject identity comes from the user's lexical subject plus curated
         # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
-        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
+        rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache)
         coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         rescue_query_count = 0
         if _needs_multi_evidence(resolved, requirement=requirement) and coverage < 1.0 and len(rows) < candidate_target:
@@ -1260,7 +1272,7 @@ def retrieve_course_context_v2(
                             seen_ids.add(row_id)
                     # Rescue evidence re-enters the same relevance and coverage
                     # gates; it never bypasses subject alignment or sufficiency.
-                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
+                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement, feature_cache=row_feature_cache)
                     coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         logger.info(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
