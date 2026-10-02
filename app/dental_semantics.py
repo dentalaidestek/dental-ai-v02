@@ -50,23 +50,39 @@ class DentalSemanticFeatures:
 def analyze_dental_text(text: str) -> DentalSemanticFeatures:
     clean = " ".join((text or "").split())
     nodes = matched_nodes(clean)
-    negated = []
+    negated: list[str] = []
     lowered = clean.casefold()
+    negator = re.compile(
+        r"\\b(?:yok|değil|izlenmedi|saptanmadı|görülmedi|bulunmadı|"
+        r"without|no|not)\\b",
+        re.I,
+    )
     for node in nodes:
+        mention_states: list[bool] = []
         for alias in (node.label, *node.aliases):
-            pos = lowered.find(alias.casefold())
-            if pos < 0:
-                continue\n            window = lowered[max(0, pos - 48):pos]
-            if re.search(r"\\b(?:yok|değil|izlenmedi|saptanmadı|görülmedi|bulunmadı|without|no|not)\\b", window):
-                negated.append(node.id)
-                break
+            term = " ".join((alias or "").casefold().split())
+            if not term:
+                continue
+            escaped = re.escape(term).replace(r"\\ ", r"\\s+")
+            for match in re.finditer(r"(?<!\\w)" + escaped + r"(?!\\w)", lowered, flags=re.I):
+                # Clause-local preceding context: punctuation/conjunctions stop a
+                # negator from leaking across unrelated statements.
+                window = lowered[max(0, match.start() - 56):match.start()]
+                window = re.split(r"[.;!?]|\\b(?:ama|ancak|fakat|but|however)\\b", window)[-1]
+                mention_states.append(bool(negator.search(window)))
+        # Mixed positive/negative mentions are not collapsed into a negative
+        # concept. Preserve positive evidence unless every mention is negated.
+        if mention_states and all(mention_states):
+            negated.append(node.id)
     return DentalSemanticFeatures(
         node_ids=tuple(dict.fromkeys(node.id for node in nodes)),
         specialties=tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general")),
         kinds=tuple(dict.fromkeys(node.kind for node in nodes)),
         measurements=tuple(dict.fromkeys(m.group(0).strip() for m in _VALUE_RE.finditer(clean))),
         tooth_numbers=_fdi_numbers(clean),
-        imaging_types=tuple(name for name, pattern in _IMAGING if pattern.search(clean)),\n        negated_node_ids=tuple(dict.fromkeys(negated)),\n    )
+        imaging_types=tuple(name for name, pattern in _IMAGING if pattern.search(clean)),
+        negated_node_ids=tuple(dict.fromkeys(negated)),
+    )
 
 def semantic_overlap_score(query: DentalSemanticFeatures, chunk: DentalSemanticFeatures) -> float:
     score = 0.0
