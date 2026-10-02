@@ -132,7 +132,7 @@ def _sha256_file(path) -> str:
 
 def _index_fingerprint() -> str:
     payload = {
-        "schema": "academic-v2-dental-semantics-5",
+        "schema": "academic-v2-dental-semantics-6",
         "retrieval_profile": "fts-local-v1",
         "chunk_profile": "dental-page-v2-margin-position-safe",
         "embedding_provider": None,
