@@ -253,7 +253,7 @@ def _term_present(text: str, term: str) -> bool:
 _AMBIGUOUS_SHORT_TERMS = {"cep", "pd", "cr", "cal", "wl", "mine"}
 _DENTAL_CONTEXT_RE = re.compile(
     r"\\b(?:diş|dental|periodontal|periodont|endodont|kanal|pulpa|oklüz|protez|"
-    r"restoratif|mine|dentin|çene|sefalometr|implant|radyograf|klinik|ataşman|"
+    r"restoratif|dentin|çene|sefalometr|implant|radyograf|klinik|ataşman|"
     r"sondalama|santral ilişki|çalışma boyu|enamel|tooth|root|pulp)\\w*\\b", re.I
 )
 
