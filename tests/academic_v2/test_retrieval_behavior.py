@@ -82,7 +82,7 @@ source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
 assert "def _coverage_select" in source
 assert "candidate_target = max(limit * 4, 24)" in source
 assert "if len(rows) < max(limit, 6):" in source
-assert "rows = _coverage_select(resolved, rows, limit=limit)" in source
+assert "rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)" in source
 
 
 # Latency guard: simple factual questions stay on one-pass retrieval.
@@ -427,14 +427,14 @@ def test_multi_facet_sufficiency_is_hard_complete():
     # Missing an explicitly requested facet must block synthesis even when the
     # subject itself is strongly aligned.
     assert "hard_complete = not missing" in source
-    assert "sufficient = anchored and hard_complete and confidence >= 0.38" in source
+    assert "sufficient = anchored and hard_complete and multi_subject_complete and confidence >= 0.38" in source
 
 
 def test_rescue_path_is_single_bounded_round_trip():
     # The normal retrieval branch must contain one primary FTS call and at most
     # one rescue FTS call; old per-facet probe loops/broad fallback are gone.
     branch = source.split("precise_query = _fts_query(resolved, broad=False)", 1)[1]
-    branch = branch.split("rows = _coverage_select(resolved, rows, limit=limit)", 1)[0]
+    branch = branch.split("rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)", 1)[0]
     assert branch.count("_fts_rows(") == 2
     assert "for evidence_query in evidence_queries" not in branch
     assert "broad_query = _fts_query(resolved, broad=True)" not in branch
