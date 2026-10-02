@@ -4497,7 +4497,7 @@ def study_ai_ask(
                         recent_history=history,
                     )
                     if rag_result.visual_sources and rag_result.evidence_sufficient:
-                        materialize_visual_sources(retrieval_session, rag_result)
+                        materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
                 else:
                     rag_result = retrieve_course_context(
                         retrieval_session,
@@ -4690,7 +4690,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 query=clean_message, recent_history=history,
             )
             if retrieval.visual_sources and retrieval.evidence_sufficient:
-                materialize_visual_sources(s, retrieval)
+                materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), retrieval)
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
