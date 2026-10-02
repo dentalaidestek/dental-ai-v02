@@ -755,7 +755,11 @@ def _neighbor_rows(
 
 
 
-def _subject_alignment_score(query: str, section: str, body: str) -> float:
+def _subject_alignment_score(
+    query: str, section: str, body: str, *,
+    query_features: DentalSemanticFeatures | None = None,
+    row_features: DentalSemanticFeatures | None = None,
+) -> float:
     """Local query-subject coverage independent of generic intent words."""
     original, _ = _retrieval_terms(query)
     if not original:
@@ -764,8 +768,8 @@ def _subject_alignment_score(query: str, section: str, body: str) -> float:
     matched = sum(1 for term in original[:6] if _query_term_present(haystack, term))
     lexical = matched / max(1, min(len(original), 6))
 
-    query_features = analyze_dental_text(query)
-    row_features = analyze_dental_text(f"{section or ''}\n{body or ''}")
+    query_features = query_features or analyze_dental_text(query)
+    row_features = row_features or analyze_dental_text(f"{section or ''}\n{body or ''}")
     concept = 0.0
     if set(query_features.node_ids).intersection(row_features.node_ids):
         concept += 0.55
@@ -786,23 +790,9 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
     for position, row in enumerate(rows):
         section = row[5] or ""
         body = row[7] or ""
-        features = analyze_dental_text(f"{section}\n{body}")
-        # New generations persist the same deterministic fingerprint; legacy
-        # rows safely fall back to local text analysis above.
-        if len(row) > 13 and row[-1]:
-            try:
-                import json
-                meta = json.loads(row[-1])
-                features = type(features)(
-                    node_ids=tuple(meta.get("nodes") or ()),
-                    specialties=tuple(meta.get("specialties") or ()),
-                    kinds=tuple(meta.get("kinds") or ()),
-                    measurements=tuple(meta.get("measurements") or ()),
-                    tooth_numbers=tuple(meta.get("teeth") or ()),
-                    imaging_types=tuple(meta.get("imaging") or ()),
-                )
-            except (TypeError, ValueError, KeyError):
-                pass
+        # READY chunks normally carry persisted semantic metadata. Parse it
+        # once; only legacy/corrupt rows fall back to text analysis.
+        features = _row_semantic_features(row)
         semantic = semantic_overlap_score(query_features, features)
         # Rows can come from several focused DB queries. Their append position is
         # not a relevance signal: a strong complication/diagnosis row may have
@@ -813,7 +803,9 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
         positional = 1.0 / (1.0 + position)
         if lexical <= 0.0:
             lexical = positional * 0.35
-        subject_alignment = _subject_alignment_score(query, section, body)
+        subject_alignment = _subject_alignment_score(
+            query, section, body, query_features=query_features, row_features=features,
+        )
         # Evidence must stay anchored to the user's subject. Dental semantics
         # helps aliases/graph concepts; subject alignment prevents a same-
         # specialty but unrelated facet from winning merely for saying
