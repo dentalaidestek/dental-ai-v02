@@ -309,7 +309,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     if (
         len(subject_ids) >= 2
         and not any(item.name == "comparison" for item in intents)
-        and re.search(r"(?iu)\\b(?:hangisi|hangileri|hangisinde|daha)\\b", clean)
+        and re.search(r"(?iu)\b(?:hangisi|hangileri|hangisinde|daha)\b", clean)
     ):
         comparison_intent = DentalIntent("comparison", (), ("compared_with",))
         intents = tuple((*intents, comparison_intent))[:6]
