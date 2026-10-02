@@ -235,3 +235,24 @@ def test_deep_oral_radiology_pathology_pharmacology_relations_are_selective():
     )}
     assert "amoksisilin" not in antibiotics
     assert "clindamycin" not in antibiotics
+
+
+def test_repeated_question_patterns_require_distinct_semantic_question_evidence():
+    from app.study_retrieval_v2 import repeated_question_patterns
+    def row(cid, mid, body):
+        return (cid, mid, "exam.pdf", 1, 1, "Sefalometri", "QUESTION", body, None, 1.0, None, 0.0, 1.0, cid, None)
+    rows = [
+        row(1, 10, "ANB açısının normal değeri kaçtır?\nA) 0 B) 2 C) 6 D) 10"),
+        row(2, 11, "Normal ANB değeri nedir?\nA) 2° ± 2° B) 8° C) 12° D) 20°"),
+    ]
+    patterns = repeated_question_patterns(rows)
+    assert patterns
+    assert patterns[0]["question_count"] == 2
+    assert patterns[0]["material_count"] == 2
+
+
+def test_single_past_question_is_not_called_repeated():
+    from app.study_retrieval_v2 import repeated_question_patterns
+    row = (1, 10, "exam.pdf", 1, 1, "Sefalometri", "QUESTION",
+           "ANB açısının normal değeri kaçtır?", None, 1.0, None, 0.0, 1.0, 1, None)
+    assert repeated_question_patterns([row]) == []
