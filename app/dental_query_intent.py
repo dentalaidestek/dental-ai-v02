@@ -114,7 +114,9 @@ _SUBJECT_STOP_RE = re.compile(
     r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
     r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
     r"sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
-    r"klinik|radyografik|ayırt edici|ayırıcı|değil|olmayan|olmaz|yapılmaz|kullanılmaz|hariç|yanlıştır|ve|ile|ile birlikte)\\b",
+    r"klinik|radyografik|ayırt edici|ayırıcı|değil|değildir|olmayan|olmaz|olmamalı(?:dır)?|"
+    r"yapılmaz|kullanılmaz|uygulanmaz|önerilmez|tercih edilmez|kaçınılmalı(?:dır)?|"
+    r"hariç|yanlıştır|peki|bunun|onun|bunların|ve|ile|ile birlikte)\\b",
     re.I,
 )
 _SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
@@ -142,7 +144,8 @@ _QUALIFIER_RE = re.compile(
 )
 _NEGATION_REQUEST_RE = re.compile(
     r"\\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
-    r"kontrendike|hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış)\\b",
+    r"kontrendike|hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
+    r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\\b",
     re.I,
 )
 _COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
