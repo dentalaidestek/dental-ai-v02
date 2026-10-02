@@ -4562,37 +4562,40 @@ def study_ai_ask(
                 if use_v2 else None
             )
 
-            # Re-authorize after the provider call; never reattach a deleted course.
-            course = s.exec(select(StudyCourse).where(
-                StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
-            ).with_for_update()).first()
-            live_user = s.get(User, user.id)
-            if course is None or not live_user or not live_user.is_active:
-                return JSONResponse({"ok": False, "error": "Ders artık mevcut değil veya erişim değişti."}, status_code=409)
+            # Re-authorize and persist in a fresh short transaction after the
+            # provider call. Never rely on a previously closed request Session
+            # silently reopening a connection.
+            with Session(engine, expire_on_commit=False) as save_session:
+                live_course = save_session.exec(select(StudyCourse).where(
+                    StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
+                ).with_for_update()).first()
+                live_user = save_session.get(User, user.id)
+                if live_course is None or not live_user or not live_user.is_active:
+                    return JSONResponse({"ok": False, "error": "Ders artık mevcut değil veya erişim değişti."}, status_code=409)
 
-            if _study_source_versions(s, user.id, course_id, lock=True) != source_versions:
-                return JSONResponse({"ok": False, "error": "Ders kaynakları değişti. Lütfen yeniden sorun."}, status_code=409)
-            s.add(StudyChatMessage(
-                course_id=course_id,
-                owner_user_id=user.id,
-                role="USER",
-                content=clean_message,
-                source_ids_json=source_json,
-                source_evidence_json=evidence_json,
-                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
-            ))
-            s.add(StudyChatMessage(
-                course_id=course_id,
-                owner_user_id=user.id,
-                role="ASSISTANT",
-                content=answer,
-                source_ids_json=source_json,
-                source_evidence_json=evidence_json,
-                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
-            ))
-            course.updated_at = _utcnow_naive()
-            s.add(course)
-            s.commit()
+                if _study_source_versions(save_session, user.id, course_id, lock=True) != source_versions:
+                    return JSONResponse({"ok": False, "error": "Ders kaynakları değişti. Lütfen yeniden sorun."}, status_code=409)
+                save_session.add(StudyChatMessage(
+                    course_id=course_id,
+                    owner_user_id=user.id,
+                    role="USER",
+                    content=clean_message,
+                    source_ids_json=source_json,
+                    source_evidence_json=evidence_json,
+                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                ))
+                save_session.add(StudyChatMessage(
+                    course_id=course_id,
+                    owner_user_id=user.id,
+                    role="ASSISTANT",
+                    content=answer,
+                    source_ids_json=source_json,
+                    source_evidence_json=evidence_json,
+                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                ))
+                live_course.updated_at = _utcnow_naive()
+                save_session.add(live_course)
+                save_session.commit()
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
