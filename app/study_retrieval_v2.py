@@ -826,31 +826,33 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
 
 
 def _coverage_score(query: str, rows: list) -> tuple[float, tuple[str, ...]]:
-    """Cheap local sufficiency signal using lexical and persisted dental semantics."""
-    requirement = build_dental_requirement_plan(query)\n    facets = tuple(dict.fromkeys(\n        facet for item in requirement.intents for facet in _coverage_terms(item.name)\n    ))\n    if not facets:
+    """Cheap local coverage signal across every explicitly requested facet."""
+    requirement = build_dental_requirement_plan(query)
+    facets = tuple(dict.fromkeys(
+        facet for item in requirement.intents for facet in _coverage_terms(item.name)
+    ))
+    if not facets:
         return (1.0 if rows else 0.0), ()
     corpus = " ".join(f"{row[5] or ''} {row[7] or ''}" for row in rows).casefold()
     semantic_kinds: set[str] = set()
     for row in rows:
-        if len(row) > 13 and row[-1]:
-            try:
-                import json
-                meta = json.loads(row[-1])
-                semantic_kinds.update(str(item).casefold() for item in (meta.get("kinds") or ()))
-            except (TypeError, ValueError, KeyError):
-                pass
+        features = _row_semantic_features(row)
+        semantic_kinds.update(item.casefold() for item in features.kinds)
     covered: list[str] = []
     for facet in facets:
         facet_cf = facet.casefold()
         if facet_cf in corpus or facet_cf in semantic_kinds:
             covered.append(facet)
-    # A strong intent-kind match is evidence even when the note uses a synonym
-    # such as pulpectomy instead of literally saying "treatment".
-    if intent.preferred_kinds and semantic_kinds.intersection(
-        item.casefold() for item in intent.preferred_kinds
-    ) and facets and facets[0] not in covered:
-        covered.append(facets[0])
-    return len(covered) / max(1, len(facets)), tuple(covered)
+    # Kind evidence is only a fallback for the matching intent's own first facet;
+    # never let one generic kind satisfy all requirements in a multi-facet query.
+    for item in requirement.intents:
+        item_facets = _coverage_terms(item.name)
+        if not item_facets:
+            continue
+        if set(k.casefold() for k in item.preferred_kinds).intersection(semantic_kinds):
+            if item_facets[0] not in covered:
+                covered.append(item_facets[0])
+    return len(set(covered)) / max(1, len(facets)), tuple(dict.fromkeys(covered))
 
 
 @dataclass(frozen=True)
@@ -875,8 +877,7 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
                 kinds=tuple(meta.get("kinds") or ()),
                 measurements=tuple(meta.get("measurements") or ()),
                 tooth_numbers=tuple(meta.get("teeth") or ()),
-                imaging_types=tuple(meta.get("imaging") or ()),
-            )
+                imaging_types=tuple(meta.get("imaging") or ()),\n                negated_node_ids=tuple(meta.get("negated_nodes") or ()),\n            )
         except (TypeError, ValueError, KeyError):
             pass
     return features
