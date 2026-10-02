@@ -12,7 +12,7 @@ class DentalIntent:
 _RULES = (
     ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|mm|oran)\b", re.I),
      ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*)\b", re.I),
+    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
@@ -350,9 +350,9 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
 
 
 _STUDY_GENERATION_RE = re.compile(
-    r"\b(?:soru|test|quiz|flashcard|kart|çalışma sorusu|deneme)\b.{0,48}"
+    r"\b(?:soru[a-zçğıöşü]*|test|quiz|flashcard|kart|çalışma sorusu|deneme)\b.{0,48}"
     r"\b(?:üret|hazırla|oluştur|çıkar|sor)\b|"
-    r"\b(?:üret|hazırla|oluştur|çıkar)\b.{0,48}\b(?:soru|test|quiz|flashcard|kart)\b",
+    r"\b(?:üret|hazırla|oluştur|çıkar)\b.{0,48}\b(?:soru[a-zçğıöşü]*|test|quiz|flashcard|kart)\b",
     re.I,
 )
 _STUDY_COVERAGE_RE = re.compile(
