@@ -939,6 +939,10 @@ def _needs_multi_evidence(query: str, requirement=None) -> bool:
     requirement = requirement or build_dental_requirement_plan(query)
     intents = requirement.intents
     names = {item.name for item in intents}
+    # Multiple explicit subjects always require completeness across subjects,
+    # even when each requested fact is individually "fast" (e.g. SNA/SNB/ANB values).
+    if requirement.subject_count > 1 or len(requirement.subject_node_ids) > 1:
+        return True
     if len(names - {"general"}) > 1:
         return True
     if names and names.issubset(_FAST_INTENTS | {"general"}):
@@ -1330,7 +1334,16 @@ def retrieve_course_context_v2(
                     term = hints[0]
                     facet_terms.append(f'"{term}"' if " " in term else term)
             if subject_query:
-                rescue_query = " ".join([subject_query, *facet_terms])
+                # websearch_to_tsquery does not provide reliable parenthesized
+                # grouping. When a required subject is missing, dedicate the one
+                # rescue to subject recovery; final local gates still enforce
+                # facets. Facet-only rescue has one subject, so AND semantics are
+                # unambiguous.
+                rescue_query = (
+                    subject_query
+                    if missing_subject_ids
+                    else " ".join([subject_query, *facet_terms])
+                )
                 rescue_rows = _fts_rows(
                     session,
                     owner_user_id=owner_user_id,
@@ -1397,7 +1410,7 @@ def retrieve_course_context_v2(
         provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         neighbor_limit = (
             0
-            if fast_direct and provisional.sufficient
+            if provisional.sufficient
             else min(2, max(0, context_target - len(rows)))
         )
         if neighbor_limit:
