@@ -286,6 +286,54 @@ def _single_page_pdf(
             _PAGE_PDF_CACHE.popitem(last=False)
     return data
 
+def materialize_visual_sources(session: Session, result: RetrievalResult) -> None:
+    """Materialize deferred visual bytes only after retrieval has finished."""
+    if not result.visual_sources or not result.evidence_sufficient:
+        return
+    for source in result.visual_sources[:3]:
+        row = session.exec(
+            text(
+                "SELECT file_path, mime_type, display_name, active_index_version "
+                "FROM studymaterial WHERE id=:m AND owner_user_id=:o AND deleted_at IS NULL"
+            ),
+            params={"m": source["material_id"], "o": source["owner_user_id"]},
+        ).first()
+        if not row:
+            continue
+        live_version = str(row[3]) if row[3] else None
+        if live_version != source.get("index_version"):
+            continue
+        try:
+            if row[1] == "application/pdf":
+                if not live_version:
+                    continue
+                data = _single_page_pdf(
+                    session,
+                    owner_user_id=source["owner_user_id"],
+                    material_id=source["material_id"],
+                    index_version=live_version,
+                    reference=row[0],
+                    page_number=source["page_number"],
+                )
+            elif str(row[1]).startswith("image/"):
+                data = storage_ensure_local(row[0]).read_bytes()
+                if len(data) > _PAGE_PDF_MAX_BYTES:
+                    continue
+            else:
+                continue
+        except Exception:
+            logger.exception("Academic V2 deferred visual source could not be prepared")
+            continue
+        result.attachments.append({
+            "mime_type": row[1],
+            "data": data,
+            "label": f"INTERNAL_SOURCE: {row[2]}, sayfa {source['page_number']}",
+        })
+    if not result.attachments:
+        result.evidence_sufficient = False
+        result.evidence_confidence = 0.0
+
+
 def _pgvector_available(session: Session, dimensions: int) -> bool:
     if dimensions != 768:
         return False
