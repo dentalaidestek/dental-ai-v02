@@ -310,3 +310,76 @@ def test_specific_phrase_does_not_add_overlapping_generic_seed():
     ids = [node.id for node in matched_nodes("periodontal cep sondalama derinliği")]
     assert ids.count("periodontal_pocket") <= 1
     assert ids.count("probing_depth") <= 1
+
+
+def test_reranker_keeps_exact_subject_above_nearby_dental_distractors():
+    # Extract the production reranker and its local helpers without a DB.
+    import json
+    from app.dental_semantics import analyze_dental_text, semantic_overlap_score
+    ns = dict(namespace)
+    ns.update({
+        "analyze_dental_text": analyze_dental_text,
+        "semantic_overlap_score": semantic_overlap_score,
+    })
+    wanted_fns = {"_subject_alignment_score", "_rerank_dental_rows"}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted_fns:
+            exec(compile(ast.Module(body=[node], type_ignores=[]), "<reranker>", "exec"), ns)
+
+    def row(cid, section, body, lexical):
+        # Retrieval row shape: id/material/title/page/page_end/section/kind/text/
+        # embedding/lexical/vector/hybrid/chunk_index/semantic_json.
+        features = analyze_dental_text(f"{section}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids,
+            "specialties": features.specialties,
+            "kinds": features.kinds,
+            "measurements": features.measurements,
+            "teeth": features.tooth_numbers,
+            "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "endo.pdf", 1, 1, section, "TEXT", body, None,
+                lexical, None, lexical, cid, meta)
+
+    cases = [
+        (
+            "irreversible pulpitisin tedavisi nedir?",
+            1,
+            [
+                row(1, "İrreversible pulpitis", "İrreversible pulpitis tedavisi ve klinik yaklaşım.", 0.62),
+                row(2, "Reversible pulpitis", "Reversible pulpitis tedavisi ve takip.", 0.78),
+                row(3, "Pulpa nekrozu", "Pulpa nekrozu tedavisi ve endodontik yaklaşım.", 0.74),
+            ],
+        ),
+        (
+            "periodontitis komplikasyonları nelerdir?",
+            4,
+            [
+                row(4, "Periodontitis", "Periodontitis komplikasyonları ve sonuçları.", 0.60),
+                row(5, "Gingivitis", "Gingivitis komplikasyonları ve klinik bulguları.", 0.82),
+                row(6, "Periodontitis", "Periodontitis sınıflaması ve evreleri.", 0.70),
+            ],
+        ),
+    ]
+    for query, expected_id, rows in cases:
+        ranked = ns["_rerank_dental_rows"](query, rows, limit=3)
+        assert ranked[0][0] == expected_id, (query, [r[0] for r in ranked])
+
+
+def test_multi_facet_queries_trigger_multi_evidence_and_keep_all_intents():
+    ns = dict(namespace)
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "_needs_multi_evidence":
+            exec(compile(ast.Module(body=[node], type_ignores=[]), "<multi>", "exec"), ns)
+    from app.dental_query_intent import build_dental_requirement_plan
+    ns["build_dental_requirement_plan"] = build_dental_requirement_plan
+    ns["_FAST_INTENTS"] = {"value", "definition", "measurement"}
+    ns["_MULTI_EVIDENCE_INTENTS"] = {
+        "diagnosis", "treatment", "complication", "classification",
+        "cause", "comparison", "visual", "indication", "contraindication",
+    }
+    query = "irreversible pulpitisin tanısı, tedavisi ve komplikasyonları nelerdir?"
+    plan = build_dental_requirement_plan(query)
+    assert {"diagnosis", "treatment", "complication"}.issubset(set(plan.requested_facets))
+    assert ns["_needs_multi_evidence"](query) is True
