@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,9 @@ class LocalOCRResult:
     text: str
     confidence: int
     visual_only: bool
+    elapsed_ms: int = 0
+    retried: bool = False
+    layout_kind: str | None = None
 
 
 def _int_env(name: str, default: int, low: int, high: int) -> int:
@@ -396,6 +400,9 @@ def ocr_material_page(
     """Adaptive local OCR: cheap first pass, bounded quality retry only when needed."""
     import tesserocr
 
+    started_at = time.perf_counter()
+    retried = False
+    layout_kind: str | None = None
     fast_dpi = _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200)
     retry_dpi = _int_env("STUDY_V2_LOCAL_OCR_RETRY_DPI", 210, 160, 240)
     timeout_ms = _int_env("STUDY_V2_LOCAL_OCR_PAGE_TIMEOUT_MS", 45_000, 5_000, 90_000)
@@ -417,6 +424,7 @@ def ocr_material_page(
         oriented.close()
         try:
             layout = _detect_page_layout(deskewed)
+            layout_kind = layout.kind
             weak_columns = (False, False)
             column_confidences = (0, 0)
             if layout.kind == "two_column":
@@ -439,6 +447,7 @@ def ocr_material_page(
 
     # Most clean scans finish above. Spend extra pixels only on weak pages.
     if _needs_quality_retry(text, confidence) and retry_dpi > fast_dpi:
+        retried = True
         retry_image = load(retry_dpi)
         try:
             retry_image = ImageOps.autocontrast(retry_image)
@@ -497,4 +506,4 @@ def ocr_material_page(
     text = _preserve_academic_structure(text)
     minimum_confidence = _int_env("STUDY_V2_LOCAL_OCR_MIN_CONFIDENCE", 35, 0, 90)
     visual_only = not text or confidence < minimum_confidence
-    return LocalOCRResult(text=text, confidence=confidence, visual_only=visual_only)
+    return LocalOCRResult(text=text, confidence=confidence, visual_only=visual_only, elapsed_ms=int((time.perf_counter() - started_at) * 1000), retried=retried, layout_kind=layout_kind)
