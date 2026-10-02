@@ -210,3 +210,55 @@ def test_unknown_subject_case_value_stays_observation():
     assert items[0].subject_node_id is None
     assert items[0].assertion == "observation"
     assert reconcile_value_evidence(items).status == "observations_only"
+
+
+def test_value_pipeline_scenario_family_matrix():
+    from app.dental_semantics import bind_value_evidence, extract_value_evidence, reconcile_value_evidence
+
+    positive_values = (
+        "X normal değeri 82° dir.",
+        "X normal değeri 82,0 derece olarak kabul edilir.",
+        "X oranı yüzde 20 dir.",
+        "X oranı %20 dir.",
+        "X yaklaşık 2–4 mm arasındadır.",
+        "X tedavi süresi 7 gün olarak verilir.",
+    )
+    for source in positive_values:
+        assert extract_value_evidence(source), source
+
+    false_numeric_contexts = (
+        "5 yaşındaki hasta değerlendirildi.",
+        "Çalışmada 90 hasta vardı.",
+        "sayfa 36",
+        "page 82",
+        "36 numaralı diş değerlendirildi.",
+    )
+    for source in false_numeric_contexts:
+        assert not extract_value_evidence(source), source
+
+    known = bind_value_evidence("SNA 82° iken SNB 80° olarak ölçülür.")
+    assert [item.subject_node_id for item in known] == ["sna", "snb"]
+
+    unknown = bind_value_evidence("XYZ indeksi normal değeri 42 derecedir.")
+    assert unknown and unknown[0].subject_node_id is None
+    assert "xyz" in (unknown[0].subject_text or "").casefold()
+
+    observation = bind_value_evidence("Bu hastada QRT skoru 17 olarak ölçüldü.")
+    assert observation and observation[0].assertion == "observation"
+    assert reconcile_value_evidence(observation).status == "observations_only"
+
+    equivalent = bind_value_evidence(
+        "XYZ indeksi normal değeri 82° dir. XYZ indeksi referans değeri 82,0 derece olarak kabul edilir."
+    )
+    assert reconcile_value_evidence(equivalent).status == "reference_supported"
+
+    conflict = bind_value_evidence(
+        "XYZ indeksi normal değeri 82° dir. XYZ indeksi referans değeri 83 derece olarak kabul edilir."
+    )
+    assert reconcile_value_evidence(conflict).status == "conflict"
+
+    conditioned = (
+        bind_value_evidence("Y açısı yenidoğanda normal 180 derecedir.")
+        + bind_value_evidence("Y açısı erişkinde normal 130 derecedir.")
+    )
+    assert reconcile_value_evidence(conditioned).status == "conditioned"
