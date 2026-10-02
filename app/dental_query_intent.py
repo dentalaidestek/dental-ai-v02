@@ -46,7 +46,7 @@ def classify_dental_intent(query: str) -> DentalIntent:
     return DentalIntent("general", (), ())
 
 
-def classify_dental_intents(query: str, *, limit: int = 3) -> tuple[DentalIntent, ...]:
+def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent, ...]:
     """Return explicit question requirements without turning subject words into intents."""
     clean = " ".join((query or "").split())
     found: list[DentalIntent] = []
@@ -62,7 +62,7 @@ def classify_dental_intents(query: str, *, limit: int = 3) -> tuple[DentalIntent
             if re.search(r"^\s+(?:komplikasyon|risk|yan etki|endikasyon|kontrendikasyon)", tail, re.I):
                 continue
         found.append(DentalIntent(name, kinds, relations))
-        if len(found) >= max(1, min(limit, 3)):
+        if len(found) >= max(1, min(limit, 6)):
             break
     if found:
         return tuple(found)
@@ -79,6 +79,35 @@ def combined_relation_hints(intents: tuple[DentalIntent, ...], *, limit: int = 1
             if len(result) >= limit:
                 return tuple(result)
     return tuple(result)
+
+
+@dataclass(frozen=True)
+class DentalRequirementPlan:
+    subject_node_ids: tuple[str, ...]
+    subject_terms: tuple[str, ...]
+    intents: tuple[DentalIntent, ...]
+    requested_facets: tuple[str, ...]
+    relation_hints: tuple[str, ...]
+    specialties: tuple[str, ...]
+
+def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
+    """Separate what the user asks about from which facts they request."""
+    from app.dental_knowledge_graph import matched_nodes
+    clean = " ".join((query or "").split())
+    intents = classify_dental_intents(clean, limit=6)
+    nodes = matched_nodes(clean)
+    subject_ids = tuple(dict.fromkeys(node.id for node in nodes))
+    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))
+    specialties = tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general"))
+    facets = tuple(intent.name for intent in intents if intent.name != "general")
+    return DentalRequirementPlan(
+        subject_node_ids=subject_ids,
+        subject_terms=subject_terms,
+        intents=intents,
+        requested_facets=facets,
+        relation_hints=combined_relation_hints(intents, limit=16),
+        specialties=specialties,
+    )
 
 
 _STUDY_GENERATION_RE = re.compile(
