@@ -24,7 +24,9 @@ for extra in (
 
 # A short standalone dental question must not become a follow-up merely due to length.
 assert "len(clean.split()) <= 3" not in retrieval
-assert "dependent = bool(_FOLLOWUP_RE.search(clean))" in retrieval
+assert "if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):" in retrieval
+assert "current_plan = build_dental_requirement_plan(clean)" in retrieval
+assert "if current_plan.subject_node_ids:" in retrieval
 
 # Exhaustive question requests must bypass semantic top-k and support bounded continuation.
 assert "_is_exhaustive_question_request" in retrieval
