@@ -52,3 +52,12 @@ def test_retrieval_coverage_scan_is_metadata_only_and_hydration_is_owner_scoped(
     assert "def _coverage_evidence_rows" in source
     assert "c.owner_user_id=:owner AND c.course_id=:course" in source
     assert "c.id = ANY(CAST(:chunk_ids AS BIGINT[]))" in source
+
+
+def test_coverage_builder_uses_keyset_pagination_and_version_cache():
+    from pathlib import Path
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "c.id > :after_id" in source
+    assert "OFFSET" not in source[source.index("def _coverage_metadata_page"):source.index("def _coverage_evidence_rows")]
+    assert "cached_coverage_plan(owner_user_id, course_id, fingerprint, requested_count)" in source
+    assert "active_index_version" in source[source.index("def _course_index_fingerprint"):source.index("def get_or_build_coverage_plan")]
