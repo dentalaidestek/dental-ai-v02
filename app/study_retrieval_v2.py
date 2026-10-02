@@ -33,7 +33,8 @@ _PAGE_PDF_CACHE: "OrderedDict[tuple[str, int], bytes]" = OrderedDict()
 _PAGE_PDF_CACHE_MAX = 24
 
 _FOLLOWUP_RE = re.compile(
-    r"^(?:peki|tamam|devam|neden|nasıl|hangisi|bunu|burada|onu|o zaman|"
+    r"^(?:peki|tamam|devam|neden|niye|nasıl|hangisi|hangileri|bunu|bunun|burada|"
+    r"onu|onun|o zaman|peki ya|ya bunda|ya bunun|bunlarda|bunların|"
     r"daha (?:basit|detaylı)|açıkla|tekrar|\d+\.? soru)",
     re.IGNORECASE,
 )
