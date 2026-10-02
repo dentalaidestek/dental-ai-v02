@@ -98,6 +98,7 @@ class DentalRequirementPlan:
     qualifiers: tuple[str, ...] = ()
     comparison_terms: tuple[str, ...] = ()
     asks_negation: bool = False
+    subject_count: int = 0
     unresolved_subject: bool = False
 
 _SUBJECT_STOP_RE = re.compile(
@@ -173,6 +174,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         qualifiers=_query_qualifiers(clean),
         comparison_terms=_comparison_terms(clean, intents),
         asks_negation=bool(_NEGATION_REQUEST_RE.search(clean)),
+        subject_count=len(subject_ids) if subject_ids else len(comparison_terms),
         unresolved_subject=not bool(subject_ids or subject_terms),
     )
 
