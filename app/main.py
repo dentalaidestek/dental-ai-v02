@@ -69,6 +69,8 @@ from app.study_index_jobs import (
     StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
     enqueue_material_deletion, tombstone_material,
 )
+# Register durable broad-academic job metadata before init_db/create_all.
+from app.academic_generation_jobs import AcademicGenerationJob
 from app.study_retrieval_v2 import retrieve_course_context_v2
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
