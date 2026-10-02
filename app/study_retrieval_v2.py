@@ -419,11 +419,15 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
         # Turkish lecture questions inflect facet nouns heavily
         # (tedavisi, komplikasyonları, endikasyonları). Keep this bounded to
         # known facet stems so subject terms are never stemmed generically.
+        turkish_facet_stems = (
+            "tanı", "tedavi", "komplikasyon", "sınıflama", "etiyoloji",
+            "ölçüm", "değer", "anatomi", "görüntü", "fark",
+            "endikasyon", "kontrendikasyon", "kullanım", "sakınca",
+        )
         return any(
-            len(stem) >= 4
-            and value.startswith(stem)
-            and len(value) - len(stem) <= 7
-            for stem in facet_noise
+            value.startswith(stem)
+            and 0 < len(value) - len(stem) <= 7
+            for stem in turkish_facet_stems
         )
 
     subject_only = [term for term in original if not _is_facet_noise(term)]
