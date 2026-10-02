@@ -725,6 +725,7 @@ def _academic_question_rows(
 def _note_rows_for_question_patterns(
     session: Session, *, owner_user_id: int, course_id: int,
     question_rows: list, limit: int = 12,
+    required_subject_ids: tuple[str, ...] = (),
 ) -> list:
     """Find factual note evidence for past-question patterns.
 
@@ -734,6 +735,9 @@ def _note_rows_for_question_patterns(
     """
     fingerprints = [fingerprint_past_question(row) for row in question_rows]
     node_ids = sorted({node for fp in fingerprints for node in fp.node_ids})
+    if required_subject_ids:
+        required = set(required_subject_ids)
+        node_ids = [node for node in node_ids if node in required]
     if not node_ids:
         return []
     # Canonical node ids are persisted in semantic_json. JSON text matching is
@@ -1253,6 +1257,7 @@ def retrieve_course_context_v2(
         note_rows = _note_rows_for_question_patterns(
             session, owner_user_id=owner_user_id, course_id=course_id,
             question_rows=question_rows, limit=12,
+            required_subject_ids=requirement.subject_node_ids,
         )
         rows = question_rows + note_rows
         has_more_questions = False
