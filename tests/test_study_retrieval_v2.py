@@ -29,3 +29,33 @@ def test_optional_legacy_semantic_candidates_are_bound_to_embedding_identity():
     assert "c.embedding_provider=:embedding_provider" in source
     assert "c.embedding_model=:embedding_model" in source
     assert "c.embedding_dimensions=:embedding_dimensions" in source
+
+
+def test_deleted_material_visual_cache_is_evicted_without_touching_other_owner():
+    import app.study_retrieval_v2 as retrieval
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        retrieval._PAGE_PDF_CACHE.clear()
+        retrieval._PAGE_PDF_CACHE[("10:20:v1:ref", 1)] = b"secret"
+        retrieval._PAGE_PDF_CACHE[("10:21:v1:ref", 1)] = b"keep"
+        retrieval._PAGE_PDF_CACHE[("11:20:v1:ref", 1)] = b"other-owner"
+    retrieval.invalidate_retrieval_caches(10, 7, (20,))
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        assert ("10:20:v1:ref", 1) not in retrieval._PAGE_PDF_CACHE
+        assert ("10:21:v1:ref", 1) in retrieval._PAGE_PDF_CACHE
+        assert ("11:20:v1:ref", 1) in retrieval._PAGE_PDF_CACHE
+        retrieval._PAGE_PDF_CACHE.clear()
+
+
+def test_visual_page_cache_enforces_total_byte_budget(monkeypatch):
+    import app.study_retrieval_v2 as retrieval
+    monkeypatch.setattr(retrieval, "_PAGE_PDF_CACHE_MAX", 10)
+    monkeypatch.setattr(retrieval, "_PAGE_PDF_CACHE_MAX_BYTES", 5)
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        retrieval._PAGE_PDF_CACHE.clear()
+    retrieval._cache_visual_page(("1:1:v:r", 1), b"abc")
+    retrieval._cache_visual_page(("1:2:v:r", 1), b"def")
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        assert sum(len(v) for v in retrieval._PAGE_PDF_CACHE.values()) <= 5
+        assert ("1:1:v:r", 1) not in retrieval._PAGE_PDF_CACHE
+        assert ("1:2:v:r", 1) in retrieval._PAGE_PDF_CACHE
+        retrieval._PAGE_PDF_CACHE.clear()

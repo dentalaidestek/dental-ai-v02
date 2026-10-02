@@ -71,7 +71,7 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
-from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources
+from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
@@ -4026,6 +4026,9 @@ def delete_study_course(request: Request, course_id: int):
         delete_course_rag_index(s, owner_user_id=user.id, course_id=course_id)
         s.delete(course)
         s.commit()
+        invalidate_retrieval_caches(
+            user.id, course_id, tuple(int(material.id) for material in materials),
+        )
 
     return RedirectResponse("/notes?deleted=1", status_code=303)
 
@@ -4278,6 +4281,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             course.updated_at = _utcnow_naive()
             s.add(course)
         s.commit()
+        invalidate_retrieval_caches(user.id, course_id, (material_id,))
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
 
 

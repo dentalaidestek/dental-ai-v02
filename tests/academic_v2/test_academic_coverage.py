@@ -140,3 +140,14 @@ def test_course_wide_confidence_requires_all_planned_buckets():
     assert "hydrated_budget / planned_budget" in block
     assert "hydrated_budget == planned_budget" in block
     assert "result.evidence_confidence = 1.0 if result.evidence else 0.0" not in block.split("elif exhaustive_questions:", 1)[0]
+
+
+def test_coverage_cache_can_be_invalidated_immediately_after_deletion():
+    from app.academic_coverage import (
+        CoveragePlan, cache_coverage_plan, cached_coverage_plan, invalidate_coverage_cache,
+    )
+    plan = CoveragePlan(requested_count=1, buckets=(), covered_chunk_ids=(), scanned_rows=0)
+    cache_coverage_plan(77, 88, "v1", plan)
+    assert cached_coverage_plan(77, 88, "v1", 1) is plan
+    invalidate_coverage_cache(77, 88)
+    assert cached_coverage_plan(77, 88, "v1", 1) is None
