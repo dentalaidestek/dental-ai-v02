@@ -119,7 +119,7 @@ _LEXICAL_SUBJECT_RE = re.compile(
 )
 _SUBJECT_STOPWORDS = {
     "normal", "değer", "değeri", "ortalama", "yaklaşık", "oran", "yüzde", "hasta", "olgu", "vaka",
-    "referans", "standart", "ideal", "beklenen", "bulundu", "ölçüldü", "saptandı", "iken", "için",
+    "referans", "referans değeri", "normal", "normal değeri", "standart", "ideal", "beklenen", "bulundu", "ölçüldü", "saptandı", "iken", "için",
 }
 
 def _lexical_subject_before_value(text: str, evidence: ValueEvidence) -> tuple[str | None, float]:
@@ -211,7 +211,12 @@ def _subject_key(item: BoundValueEvidence) -> str:
     # ("SNA normal", "SNA referans"). Strip only trailing cue words so the
     # underlying unknown/graph-independent subject still reconciles.
     words = subject.split()
-    while words and words[-1] in _SUBJECT_STOPWORDS:
+    # Remove trailing assertion boilerplate as words; multi-word labels such as
+    # "normal değeri" and "referans değeri" otherwise create false subjects.
+    cue_words = set()
+    for cue in _SUBJECT_STOPWORDS:
+        cue_words.update(cue.split())
+    while words and words[-1] in cue_words:
         words.pop()
     return " ".join(words)
 
