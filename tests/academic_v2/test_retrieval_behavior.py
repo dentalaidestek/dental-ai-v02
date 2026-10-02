@@ -1215,3 +1215,99 @@ def test_reference_request_does_not_accept_observation_only_evidence():
     helper = source.split("def _value_evidence_state", 1)[1].split("def _evidence_sufficiency", 1)[0]
     assert 'return "observations_only"' in helper
     assert 'item.get("assertion") == "reference"' in helper
+
+
+def test_chunk_selection_pressure_matrix_prefers_complete_evidence_over_high_score_distractors():
+    import json
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _rerank_dental_rows, _evidence_sufficiency
+
+    def row(cid, heading, body, lexical):
+        features = analyze_dental_text(f"{heading}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids, "specialties": features.specialties,
+            "kinds": features.kinds, "measurements": features.measurements,
+            "teeth": features.tooth_numbers, "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "pressure-notes.pdf", cid, cid, heading, "TEXT", body,
+                None, lexical, None, lexical, cid, meta)
+
+    cases = [
+        ("SNA normal değeri kaçtır?", ("SNA", "SNA normal değeri 82 derecedir."), ("SNB", "SNB normal değeri 80 derecedir.")),
+        ("SNB normal değeri kaçtır?", ("SNB", "SNB normal değeri 80 derecedir."), ("SNA", "SNA normal değeri 82 derecedir.")),
+        ("ANB normal değeri kaçtır?", ("ANB", "ANB normal değeri 2 derecedir."), ("SNA", "SNA normal değeri 82 derecedir.")),
+        ("irreversible pulpitis tedavisi nedir?", ("Irreversible pulpitis", "Irreversible pulpitis tedavisinde kök kanal tedavisi uygulanır."), ("Reversible pulpitis", "Reversible pulpitis tedavisinde konservatif yaklaşım uygulanır.")),
+        ("reversible pulpitis tanısı nasıl konur?", ("Reversible pulpitis", "Reversible pulpitis tanısı klinik bulgular ve pulpa testleriyle değerlendirilir."), ("Irreversible pulpitis", "Irreversible pulpitis tanısı spontan ağrı bulgularıyla değerlendirilir.")),
+        ("implant kontrendikasyonları nelerdir?", ("İmplant", "İmplant kontrendikasyonları sistemik ve lokal koşullara göre değerlendirilir."), ("İmplant", "İmplant endikasyonları eksik dişlerin rehabilitasyonunu içerir.")),
+        ("implant komplikasyonları nelerdir?", ("İmplant", "İmplant komplikasyonları peri-implant enfeksiyon ve mekanik sorunları içerebilir."), ("İmplant", "İmplant endikasyonları eksik diş rehabilitasyonudur.")),
+        ("periodontitis sınıflaması nedir?", ("Periodontitis", "Periodontitis sınıflaması evre ve grade ölçütleriyle yapılır."), ("Gingivitis", "Gingivitis periodontal bir hastalıktır.")),
+        ("dry socket neden oluşur?", ("Dry socket", "Dry socket oluşumunda pıhtının kaybı ve ilişkili etkenler rol oynar."), ("Dry socket", "Dry socket tedavisinde lokal yaklaşım uygulanır.")),
+        ("MRONJ tedavisi nedir?", ("MRONJ", "MRONJ tedavisi hastalığın durumuna göre konservatif veya cerrahi yaklaşım içerebilir."), ("Osteoradyonekroz", "Osteoradyonekroz tedavisi farklı klinik yaklaşımlar içerir.")),
+        ("NaOCl komplikasyonları nelerdir?", ("NaOCl", "NaOCl taşması ağrı, ödem ve doku hasarı gibi komplikasyonlara yol açabilir."), ("Klorheksidin", "Klorheksidin endodontide irrigasyon amacıyla kullanılabilir.")),
+        ("IANB komplikasyonları nelerdir?", ("IANB", "IANB komplikasyonları hematom, trismus ve geçici sinir etkilerini içerebilir."), ("Mental sinir bloğu", "Mental sinir bloğu farklı anatomik hedefe uygulanır.")),
+        ("MIH bulguları nelerdir?", ("MIH", "MIH klinik bulguları sınırları belirgin opasiteler ve mine kırılmasını içerebilir."), ("Dental florozis", "Dental florozis yaygın opasite görünümü gösterebilir.")),
+        ("OSCC tanısı nasıl konur?", ("OSCC", "OSCC tanısı klinik değerlendirme ve histopatolojik incelemeyle konur."), ("Lökoplaki", "Lökoplaki klinik olarak beyaz plak şeklinde görülebilir.")),
+        ("Kennedy sınıflaması nedir?", ("Kennedy sınıflaması", "Kennedy sınıflaması parsiyel dişsizlik durumlarını sınıflara ayırır."), ("Angle sınıflaması", "Angle sınıflaması oklüzal ilişkileri sınıflandırır.")),
+        ("ICDAS sınıflaması nedir?", ("ICDAS", "ICDAS sınıflaması çürük lezyonlarını görsel kriterlerle derecelendirir."), ("PAI", "PAI periapikal durumu skorlamak için kullanılır.")),
+        ("inferior alveolar sinir nerede seyreder?", ("Inferior alveolar sinir", "Inferior alveolar sinir mandibular kanal içinde seyreder."), ("Mental sinir", "Mental sinir mental foramen bölgesinden çıkar.")),
+        ("alt sağ üçüncü moların komplikasyonları", ("Alt sağ üçüncü molar", "Alt sağ üçüncü molar komplikasyonları enfeksiyon ve komşu yapılara ilişkin sorunları içerebilir."), ("Üst sol üçüncü molar", "Üst sol üçüncü molar komplikasyonları farklı anatomik ilişkiler gösterebilir.")),
+    ]
+    for idx, (query, good, bad) in enumerate(cases, 1):
+        plan = build_dental_requirement_plan(query)
+        rows = [
+            row(idx*10+1, bad[0], bad[1], 0.99),
+            row(idx*10+2, good[0], good[1], 0.56),
+            row(idx*10+3, bad[0], bad[1] + " Yakın konu ayrıntısı.", 0.94),
+        ]
+        ranked = _rerank_dental_rows(query, rows, limit=3, requirement=plan)
+        assert ranked[0][0] == idx*10+2, (query, [(r[0], r[5]) for r in ranked])
+        assert _evidence_sufficiency(query, ranked[:1], requirement=plan).sufficient, query
+
+
+def test_chunk_selection_multi_facet_matrix_requires_each_requested_evidence_family():
+    import json
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _coverage_select, _evidence_sufficiency
+
+    def row(cid, heading, body, lexical=0.8):
+        features = analyze_dental_text(f"{heading}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids, "specialties": features.specialties,
+            "kinds": features.kinds, "measurements": features.measurements,
+            "teeth": features.tooth_numbers, "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "multi-notes.pdf", cid, cid, heading, "TEXT", body,
+                None, lexical, None, lexical, cid, meta)
+
+    cases = [
+        ("irreversible pulpitisin tanısı ve tedavisi nedir?", [
+            row(501, "Irreversible pulpitis tanı", "Irreversible pulpitis tanısı spontan ağrı ve pulpa testleriyle değerlendirilir."),
+            row(502, "Irreversible pulpitis tedavi", "Irreversible pulpitis tedavisinde kök kanal tedavisi uygulanır."),
+            row(503, "Reversible pulpitis", "Reversible pulpitis tedavisi konservatif olabilir.", 0.99),
+        ]),
+        ("implant endikasyonları ve kontrendikasyonları nelerdir?", [
+            row(511, "İmplant endikasyon", "İmplant endikasyonları eksik diş rehabilitasyonunu içerir."),
+            row(512, "İmplant kontrendikasyon", "İmplant kontrendikasyonları sistemik ve lokal koşulları içerir."),
+            row(513, "Periodontitis", "Periodontitis tedavisi periodontal yaklaşımları içerir.", 0.99),
+        ]),
+        ("MRONJ bulguları ve tedavisi nelerdir?", [
+            row(521, "MRONJ bulgular", "MRONJ klinik bulguları ekspoze kemik ve ilişkili belirtileri içerebilir."),
+            row(522, "MRONJ tedavi", "MRONJ tedavisi konservatif ve uygun olguda cerrahi yaklaşımı içerebilir."),
+            row(523, "Osteoradyonekroz", "Osteoradyonekroz benzer çene bulguları gösterebilir.", 0.99),
+        ]),
+        ("IANB komplikasyonları ve kontrendikasyonları nelerdir?", [
+            row(531, "IANB komplikasyon", "IANB komplikasyonları hematom ve trismus içerebilir."),
+            row(532, "IANB kontrendikasyon", "IANB kontrendikasyonları enjeksiyon bölgesindeki koşullarla ilişkili olabilir."),
+            row(533, "Mental blok", "Mental sinir bloğu farklı bir tekniktir.", 0.99),
+        ]),
+    ]
+    for query, rows in cases:
+        plan = build_dental_requirement_plan(query)
+        selected = _coverage_select(query, rows, limit=4, requirement=plan)
+        assert _evidence_sufficiency(query, selected, requirement=plan).sufficient, (
+            query, [(r[0], r[5]) for r in selected]
+        )
