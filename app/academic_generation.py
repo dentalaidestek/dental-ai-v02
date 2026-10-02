@@ -80,3 +80,25 @@ def generation_batch_contract(batch: GenerationBatch, difficulty: str | None = N
         "olarak üretme. Çıkmış soru örnekleri verilmişse yalnız konu, beceri, zorluk "
         "ve biçim örüntüsünü kullan; onların cevabını factual kaynak kabul etme."
     )
+
+
+def hydration_windows(batches: tuple[GenerationBatch, ...], max_unique_chunks: int = 32) -> tuple[tuple[int, ...], ...]:
+    """Coalesce adjacent batch evidence into bounded DB hydration windows."""
+    cap = max(1, min(int(max_unique_chunks), 48))
+    windows = []
+    current = []
+    seen = set()
+    for batch in batches:
+        needed = [cid for cid in batch.chunk_ids if cid not in seen]
+        if current and len(current) + len(needed) > cap:
+            windows.append(tuple(current))
+            current = []
+            seen = set()
+            needed = list(batch.chunk_ids)
+        for cid in needed:
+            if cid not in seen and len(current) < cap:
+                current.append(cid)
+                seen.add(cid)
+    if current:
+        windows.append(tuple(current))
+    return tuple(windows)
