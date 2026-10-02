@@ -44,3 +44,38 @@ def classify_dental_intent(query: str) -> DentalIntent:
         if pattern.search(clean):
             return DentalIntent(name, kinds, relations)
     return DentalIntent("general", (), ())
+
+
+def classify_dental_intents(query: str, *, limit: int = 3) -> tuple[DentalIntent, ...]:
+    """Return explicit question requirements without turning subject words into intents."""
+    clean = " ".join((query or "").split())
+    found: list[DentalIntent] = []
+    for name, pattern, kinds, relations in _RULES:
+        match = pattern.search(clean)
+        if not match:
+            continue
+        # "kanal tedavisi komplikasyonları" names a treatment as the subject;
+        # it does not ask for treatment itself. Require treatment wording to
+        # behave like a requested facet, unless no stronger requested facet exists.
+        if name == "treatment":
+            tail = clean[match.end():]
+            if re.search(r"^\s+(?:komplikasyon|risk|yan etki|endikasyon|kontrendikasyon)", tail, re.I):
+                continue
+        found.append(DentalIntent(name, kinds, relations))
+        if len(found) >= max(1, min(limit, 3)):
+            break
+    if found:
+        return tuple(found)
+    return (DentalIntent("general", (), ()),)
+
+
+def combined_relation_hints(intents: tuple[DentalIntent, ...], *, limit: int = 10) -> tuple[str, ...]:
+    """Bounded union preserving intent priority."""
+    result: list[str] = []
+    for intent in intents:
+        for relation in intent.relation_hints:
+            if relation not in result:
+                result.append(relation)
+            if len(result) >= limit:
+                return tuple(result)
+    return tuple(result)
