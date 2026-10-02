@@ -98,7 +98,9 @@ def test_ocr_worker_reuses_pdfium_document_per_bounded_slice():
 def test_local_ocr_preserves_layout_and_bounds_quality_retry():
     ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
     assert "def _deskew_image" in ocr
-    assert "abs(angle) < 0.35 or abs(angle) > 8.0" in ocr
+    assert 'probe.thumbnail((700, 900)' in ocr
+    assert 'best < base * 1.10' in ocr
+    assert 'image_to_osd' not in ocr
     assert "def _recognize_layout" in ocr
     assert 'layout.kind != "two_column"' in ocr
     assert "image.crop" in ocr
