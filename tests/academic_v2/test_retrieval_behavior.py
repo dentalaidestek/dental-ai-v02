@@ -119,8 +119,10 @@ assert "meta.get(\"specialties\")" in source
 assert "meta.get(\"measurements\")" in source
 assert "meta.get(\"teeth\")" in source
 assert "meta.get(\"imaging\")" in source
-assert '"indication": ("endikasyon", "kullanım", "durum")' in source
-assert '"contraindication": ("kontrendikasyon", "sakınca", "kullanılmaz")' in source
+assert '"endikasyon": (' in source
+assert '"kontrendikasyon": (' in source
+assert '"kullanılır"' in source
+assert '"kullanılmaz"' in source
 
 assert "if len(row) > 14 and row[-1]:" in source
 assert "json.loads(row[-1])" in source
