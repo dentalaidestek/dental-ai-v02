@@ -71,7 +71,7 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
-from app.study_retrieval_v2 import retrieve_course_context_v2
+from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
@@ -4496,6 +4496,8 @@ def study_ai_ask(
                         query=clean_message,
                         recent_history=history,
                     )
+                    if rag_result.visual_sources and rag_result.evidence_sufficient:
+                        materialize_visual_sources(retrieval_session, rag_result)
                 else:
                     rag_result = retrieve_course_context(
                         retrieval_session,
@@ -4687,6 +4689,8 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 s, owner_user_id=user.id, course_id=course_id,
                 query=clean_message, recent_history=history,
             )
+            if retrieval.visual_sources and retrieval.evidence_sufficient:
+                materialize_visual_sources(s, retrieval)
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
