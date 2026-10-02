@@ -140,7 +140,7 @@ def academic_batch_contract(task: str, batch: GenerationBatch) -> str:
     )
     concepts = ", ".join(batch.node_ids) if batch.node_ids else "bölümdeki kaynak kavramları"
     return (
-        f"Görev: {task}\\nBölüm: {batch.section_title}\\n"
+        f"Görev: {task}\nBölüm: {batch.section_title}\n"
         f"Kanıt kapsamı: {concepts}\n{rule}\n"
         "Bu yalnız bir coverage parçasıdır. Diğer bölümlerde ele alınacak bilgileri "
         "uydurup bu parçaya ekleme; bu parçanın kanıtını eksiksiz ve tekrar etmeden işle."
