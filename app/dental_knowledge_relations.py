@@ -76,4 +76,85 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("amelogenesis", Relation.ASSOCIATED_WITH, "ameloblast", 0.96),
     DentalEdge("dentinogenesis", Relation.ASSOCIATED_WITH, "odontoblast", 0.96),
     DentalEdge("hertwig_root_sheath", Relation.USED_FOR, "odontogenesis", 0.76),
+    # Orthodontic measurements/findings
+    DentalEdge("cephalometry", Relation.ASSESSED_BY, "sna", 0.90),
+    DentalEdge("cephalometry", Relation.ASSESSED_BY, "snb", 0.90),
+    DentalEdge("cephalometry", Relation.ASSESSED_BY, "anb", 0.90),
+    DentalEdge("skeletal_class_ii", Relation.ASSOCIATED_WITH, "skeletal_relation", 0.90),
+    DentalEdge("skeletal_class_iii", Relation.ASSOCIATED_WITH, "skeletal_relation", 0.90),
+    DentalEdge("overjet", Relation.ASSOCIATED_WITH, "malocclusion", 0.84),
+    DentalEdge("overbite", Relation.ASSOCIATED_WITH, "malocclusion", 0.84),
+    DentalEdge("open_bite", Relation.ASSOCIATED_WITH, "malocclusion", 0.86),
+    DentalEdge("crossbite", Relation.ASSOCIATED_WITH, "malocclusion", 0.86),
+
+    # Endodontic procedures/materials/findings
+    DentalEdge("pulpitis", Relation.ASSOCIATED_WITH, "reversible_pulpitis", 0.88),
+    DentalEdge("pulpitis", Relation.ASSOCIATED_WITH, "irreversible_pulpitis", 0.88),
+    DentalEdge("pulpotomy", Relation.HAS_MATERIAL, "mta_material", 0.82),
+    DentalEdge("pulpectomy", Relation.ASSOCIATED_WITH, "root_canal_treatment", 0.84),
+    DentalEdge("apexification", Relation.HAS_MATERIAL, "mta_material", 0.86),
+    DentalEdge("smear_layer", Relation.ASSOCIATED_WITH, "edta", 0.86),
+    DentalEdge("root_resorption", Relation.ASSESSED_BY, "periapical_radiograph", 0.82),
+
+    # Periodontal findings/procedures
+    DentalEdge("furcation", Relation.ASSOCIATED_WITH, "furcation_classification", 0.94),
+    DentalEdge("calculus", Relation.ASSOCIATED_WITH, "periodontitis", 0.80),
+    DentalEdge("gingival_recession", Relation.ASSOCIATED_WITH, "periodontitis", 0.76),
+    DentalEdge("gtr", Relation.ASSOCIATED_WITH, "periodontitis", 0.82),
+    DentalEdge("gbr", Relation.ASSOCIATED_WITH, "alveolar_bone", 0.82),
+
+    # Radiographic descriptors
+    DentalEdge("radiolucent", Relation.ASSOCIATED_WITH, "radiolucency", 0.96),
+    DentalEdge("radiopaque", Relation.ASSOCIATED_WITH, "radiopacity", 0.96),
+    DentalEdge("lamina_dura", Relation.ANATOMICAL_RELATION, "pdl_space", 0.90),
+    DentalEdge("bitewing", Relation.USED_FOR, "caries", 0.86),
+    DentalEdge("cortication", Relation.HAS_RADIOGRAPHIC_FEATURE, "radiopaque", 0.76),
+    DentalEdge("trabeculation", Relation.ANATOMICAL_RELATION, "alveolar_bone", 0.84),
+
+    # Oral pathology
+    DentalEdge("cyst", Relation.ASSOCIATED_WITH, "odontogenic_keratocyst", 0.76),
+    DentalEdge("odontogenic_tumor", Relation.ASSOCIATED_WITH, "ameloblastoma_ext", 0.82),
+    DentalEdge("leukoplakia", Relation.DIFFERENTIAL_WITH, "oscc", 0.78),
+    DentalEdge("mucocele", Relation.ASSOCIATED_WITH, "oral_mucosa", 0.76),
+
+    # TMD
+    DentalEdge("disc_displacement", Relation.ANATOMICAL_RELATION, "articular_disc", 0.94),
+    DentalEdge("clicking", Relation.ASSOCIATED_WITH, "disc_displacement", 0.88),
+    DentalEdge("crepitation", Relation.ASSOCIATED_WITH, "tmj", 0.82),
+    DentalEdge("crepitus", Relation.ASSOCIATED_WITH, "tmj", 0.82),
+
+    # Prosthodontic/restorative materials
+    DentalEdge("fpd", Relation.HAS_MATERIAL, "ceramic", 0.78),
+    DentalEdge("rmgic", Relation.ASSOCIATED_WITH, "gic", 0.92),
+    DentalEdge("resin_composite", Relation.ASSOCIATED_WITH, "composite", 0.96),
+    DentalEdge("calcium_hydroxide", Relation.ASSOCIATED_WITH, "dental_pulp", 0.78),
+    DentalEdge("biodentine", Relation.ASSOCIATED_WITH, "dental_pulp", 0.80),
+    DentalEdge("zirconia", Relation.ASSOCIATED_WITH, "ceramic", 0.88),
+    DentalEdge("lithium_disilicate", Relation.ASSOCIATED_WITH, "ceramic", 0.88),
+    DentalEdge("pmma", Relation.ASSOCIATED_WITH, "complete_denture", 0.82),
+    DentalEdge("zinc_oxide_eugenol", Relation.ASSOCIATED_WITH, "impression", 0.74),
+
+    # Pediatric dentistry / indices
+    DentalEdge("ssc", Relation.ASSOCIATED_WITH, "primary_tooth", 0.88),
+    DentalEdge("mixed_dentition", Relation.ASSOCIATED_WITH, "primary_tooth", 0.82),
+    DentalEdge("deft", Relation.ASSESSED_BY, "caries", 0.88),
+    DentalEdge("psr", Relation.ASSESSED_BY, "periodontitis", 0.86),
+    DentalEdge("papilla_bleeding_index", Relation.ASSESSED_BY, "gingivitis", 0.84),
+    DentalEdge("mobility_grade", Relation.ASSOCIATED_WITH, "periodontitis", 0.78),
+    DentalEdge("black_classification", Relation.CLASSIFIED_BY, "caries", 0.76),
+
+    # Anatomy/histology/development
+    DentalEdge("dental_pulp", Relation.PART_OF, "tooth", 0.96),
+    DentalEdge("periodontal_ligament", Relation.ANATOMICAL_RELATION, "cementum", 0.92),
+    DentalEdge("junctional_epithelium", Relation.ASSOCIATED_WITH, "gingiva", 0.92),
+    DentalEdge("dental_lamina", Relation.ASSOCIATED_WITH, "odontogenesis", 0.94),
+    DentalEdge("cementoblast", Relation.ASSOCIATED_WITH, "cementum", 0.94),
+
+    # Anesthesia/pharmacology: conservative retrieval-only associations
+    DentalEdge("mepivacaine", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.88),
+    DentalEdge("prilocaine", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.88),
+    DentalEdge("epinephrine", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.84),
+    DentalEdge("infiltration_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
+    DentalEdge("intraligamentary_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
+    DentalEdge("intrapulpal_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
 )
