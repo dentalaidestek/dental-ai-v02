@@ -186,4 +186,28 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("primary_tooth", Relation.ASSOCIATED_WITH, "pulpectomy", 0.90),
     DentalEdge("immature_permanent_tooth", Relation.ASSOCIATED_WITH, "apexification", 0.92),
     DentalEdge("immature_permanent_tooth", Relation.ASSOCIATED_WITH, "regenerative_endodontics", 0.92),
+    # Oral medicine/pathology: AAOM-supported retrieval relations.
+    DentalEdge("leukoplakia", Relation.CLASSIFIED_BY, "oral_potentially_malignant_disorder", 0.92),
+    DentalEdge("oral_erythroplakia", Relation.CLASSIFIED_BY, "oral_potentially_malignant_disorder", 0.92),
+    DentalEdge("leukoplakia", Relation.ASSESSED_BY, "clinicopathologic_correlation", 0.94),
+    DentalEdge("leukoplakia", Relation.ASSOCIATED_WITH, "oscc", 0.88),
+
+    # Endodontic imaging: AAE/AAOMR selective-CBCT situations.
+    DentalEdge("vertical_root_fracture", Relation.ASSESSED_BY, "cbct", 0.90),
+    DentalEdge("external_cervical_resorption", Relation.ASSESSED_BY, "cbct", 0.92),
+    DentalEdge("root_resorption", Relation.ASSESSED_BY, "cbct", 0.88),
+    DentalEdge("perforation", Relation.ASSESSED_BY, "cbct", 0.86),
+    DentalEdge("separated_instrument", Relation.ASSESSED_BY, "cbct", 0.84),
+    DentalEdge("endodontic_failure", Relation.ASSESSED_BY, "cbct", 0.90),
+
+    # Oral surgery complications.
+    DentalEdge("extraction", Relation.HAS_COMPLICATION, "alveolar_osteitis", 0.96),
+    DentalEdge("oroantral_communication", Relation.LEADS_TO, "oroantral_fistula", 0.82),
+
+    # Pharmacology/antibiotic stewardship. Avoid universal drug=treatment edges.
+    DentalEdge("antibiotic_stewardship", Relation.ASSOCIATED_WITH, "amoxicillin", 0.72),
+    DentalEdge("antibiotic_stewardship", Relation.ASSOCIATED_WITH, "amoxicillin_clavulanate", 0.70),
+    DentalEdge("antibiotic_stewardship", Relation.ASSOCIATED_WITH, "metronidazole", 0.70),
+    DentalEdge("antibiotic_stewardship", Relation.ASSOCIATED_WITH, "clindamycin", 0.66),
+    DentalEdge("systemic_involvement", Relation.ASSOCIATED_WITH, "antibiotic_stewardship", 0.88),
 )
