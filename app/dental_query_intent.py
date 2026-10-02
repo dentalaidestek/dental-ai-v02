@@ -142,6 +142,12 @@ class AcademicStudyTaskPlan:
     generate_new_questions: bool = False
 
 
+_BROAD_ACADEMIC_RE = re.compile(
+    r"\\b(?:tüm|bütün|tamamı|baştan sona|detaylı|kapsamlı|eksiksiz|genel tekrar|"
+    r"notu özetle|notları özetle|dersi özetle|konuyu detaylı|bölümü özetle|"
+    r"her şeyi|herşeyi)\\b", re.I,
+)
+
 _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
@@ -152,7 +158,7 @@ _ACADEMIC_STUDY_TASK_RULES = (
 
 
 def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
-    """Plan common student workflows while keeping all factual output source-bound."""
+    """Plan role-neutral academic workflows while keeping factual output source-bound."""
     clean = " ".join((query or "").split())
     for task, pattern, past, notes, coverage, generate in _ACADEMIC_STUDY_TASK_RULES:
         if pattern.search(clean):
@@ -166,4 +172,10 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
             study.coverage_required,
             True,
         )
+    # Broad academic requests share the durable coverage engine regardless of
+    # output form; the response contract decides summary/explanation/etc.
+    if _BROAD_ACADEMIC_RE.search(clean):
+        lowered = clean.casefold()
+        task = "summarize" if any(x in lowered for x in ("özet", "özetle")) else "explain"
+        return AcademicStudyTaskPlan(task, False, True, True, False)
     return None
