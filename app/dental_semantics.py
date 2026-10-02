@@ -13,11 +13,11 @@ _NUMBER_WORD = r"(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yi
 _NUMBER_PHRASE = rf"{_NUMBER_WORD}(?:\s+{_NUMBER_WORD}){{0,3}}"
 _NUMERIC = r"[+-]?\d+(?:[.,]\d+)?"
 _VALUE_UNIT = r"(?:°|mm|cm|%|mg|ml|g|µm|μm|derece|milimetre|santimetre|mikrometre|miligram|mililitre|gram)"
-_EXPLICIT_VALUE_LABEL = r"(?:normal\s+değer(?:i)?|referans\s+değer(?:i)?|ortalama(?:\s+değer(?:i)?)?|değer(?:i)?|oran(?:ı)?)"
+_EXPLICIT_VALUE_LABEL = r"(?:normal\s+değer(?:i)?|referans\s+değer(?:i)?|ortalama(?:\s+değer(?:i)?)?|değer(?:i)?|oran(?:ı)?|skor(?:u)?)"
 _VALUE_CANDIDATE_RE = re.compile(
     rf"(?iu)(?:"
     rf"(?P<unit>{_NUMERIC}\s*{_VALUE_UNIT})"
-    rf"|(?P<percent>yüzde\s+(?:{_NUMERIC}|{_NUMBER_PHRASE}))"
+    rf"|(?P<percent>(?:yüzde\s+(?:{_NUMERIC}|{_NUMBER_PHRASE})|%\s*{_NUMERIC}))"
     rf"|(?P<wordunit>{_NUMBER_PHRASE}\s+(?:derece|milimetre|santimetre|mikrometre))"
     rf"|(?P<label>{_EXPLICIT_VALUE_LABEL}\s*(?:=|:|ise|olarak)?\s*(?:{_NUMERIC}|(?!yüzde\b){_NUMBER_PHRASE}))"
     rf"|(?P<range>(?:{_NUMERIC}|{_NUMBER_PHRASE})\s*(?:[-–—]|ile|ila)\s*(?:{_NUMERIC}|{_NUMBER_PHRASE})(?:\s*{_VALUE_UNIT})?)"
