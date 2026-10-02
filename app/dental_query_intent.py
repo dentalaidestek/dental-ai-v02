@@ -272,7 +272,14 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     from app.dental_knowledge_graph import matched_nodes
     clean = " ".join((query or "").split())
     intents = classify_dental_intents(clean, limit=6)
-    nodes = matched_nodes(clean)
+    # Normalize common Turkish genitive suffixes attached directly to Latin
+    # dental terms (e.g. "pulpitisin") for entity recognition only.
+    entity_query = re.sub(
+        r"(?iu)(?<=[a-zçğıöşü])(?:nin|nın|nun|nün|in|ın|un|ün)(?=\s|$)",
+        "",
+        clean,
+    )
+    nodes = matched_nodes(entity_query)
     # Imaging entities constrain how/where evidence is interpreted, but they
     # are not normally an independent factual subject. Requiring CBCT/OPG as a
     # second "subject" made otherwise correct evidence fail completeness.
