@@ -957,6 +957,14 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
     query_features = query_features or analyze_dental_text(query)
     requirement = requirement or build_dental_requirement_plan(query)
     required_qualifiers = set(requirement.qualifiers)
+    requested_row_facets = tuple(dict.fromkeys(
+        facet for intent in requirement.intents for facet in _coverage_terms(intent.name)
+    ))
+    facet_preferred_kinds = {
+        facet: intent.preferred_kinds
+        for intent in requirement.intents
+        for facet in _coverage_terms(intent.name)
+    }
     scored = []
     for position, row in enumerate(rows):
         section = row[5] or ""
@@ -994,6 +1002,18 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         # bounded identity signal; it does not add graph facts to the answer.
         subject_identity_adjustment = 0.22 if exact_subject_hit else (-0.08 if required_subjects else 0.0)
         row_text_cf = f"{section} {body}".casefold()
+        row_semantic_kinds = {item.casefold() for item in features.kinds}
+        facet_hits = sum(
+            1 for facet in requested_row_facets
+            if _facet_present(
+                facet, row_text_cf, row_semantic_kinds,
+                preferred_kinds=facet_preferred_kinds.get(facet, ()),
+            )
+        )
+        facet_coverage = (
+            facet_hits / len(requested_row_facets)
+            if requested_row_facets else 0.0
+        )
         qualifier_hits = sum(1 for item in required_qualifiers if qualifier_present(item, row_text_cf))
         qualifier_score = qualifier_hits / len(required_qualifiers) if required_qualifiers else 1.0
         qualifier_penalty = 0.18 * (1.0 - qualifier_score) if required_qualifiers else 0.0
@@ -1035,9 +1055,13 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
             + negation_adjustment
             + subject_identity_adjustment
         )
-        scored.append((score, position, row))
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return [row for _, _, row in scored[:limit]]
+        # Canonical ordering: exact subject identity first, then the facet
+        # explicitly requested for that subject, then the blended relevance
+        # score. This prevents a same-subject classification chunk from beating
+        # a complication chunk merely because PostgreSQL lexical rank is higher.
+        scored.append((exact_subject_hit, facet_coverage, score, position, row))
+    scored.sort(key=lambda item: (-int(item[0]), -item[1], -item[2], item[3]))
+    return [row for _, _, _, _, row in scored[:limit]]
 
 
 _FAST_INTENTS = {"value", "definition", "measurement"}
