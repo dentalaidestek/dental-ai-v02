@@ -62,3 +62,21 @@ def dedupe_generated_questions(questions: list[str]) -> list[str]:
             kept.append(question)
             signatures.append(sig)
     return kept
+
+
+def generation_batch_contract(batch: GenerationBatch, difficulty: str | None = None, question_types: tuple[str, ...] = ()) -> str:
+    kinds = ", ".join(question_types) if question_types else "kaynağa uygun karışık"
+    level = difficulty or "kaynağın düzeyine uygun"
+    concepts = ", ".join(batch.node_ids) if batch.node_ids else "bu bölümdeki kanıtlanabilir kavramlar"
+    return (
+        f"Bölüm: {batch.section_title}\n"
+        f"Hedef soru sayısı: {batch.question_count}\n"
+        f"Zorluk: {level}\n"
+        f"Soru türü: {kinds}\n"
+        f"Öncelikli kavramlar: {concepts}\n"
+        "Yalnız verilen ders notu kanıtlarından soru üret. Her sorunun cevabı verilen "
+        "kanıtta doğrulanabilir olmalı. Kaynakta bulunmayan akademik bilgiyi genel "
+        "bilginden ekleme. Aynı bilgiyi yalnız kelimelerini değiştirerek ikinci soru "
+        "olarak üretme. Çıkmış soru örnekleri verilmişse yalnız konu, beceri, zorluk "
+        "ve biçim örüntüsünü kullan; onların cevabını factual kaynak kabul etme."
+    )
