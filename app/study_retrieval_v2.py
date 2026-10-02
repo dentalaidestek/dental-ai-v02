@@ -1134,7 +1134,34 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int, requirement=None,
         # a complication chunk merely because PostgreSQL lexical rank is higher.
         scored.append((exact_subject_hit, facet_coverage, score, position, row))
     scored.sort(key=lambda item: (-int(item[0]), -item[1], -item[2], item[3]))
-    return [row for _, _, _, _, row in scored[:limit]]
+    ranked = [row for _, _, _, _, row in scored]
+    # Do not let a dominant explicit subject consume the whole rerank window.
+    # Rescue can recover a second/third requested subject after the primary
+    # query; truncating here before _coverage_select would silently discard it.
+    # Reserve the best-ranked row for every explicit subject, then fill the
+    # remaining slots in global relevance order.
+    if len(requirement.subject_node_ids) > 1 and len(ranked) > limit:
+        reserved: list = []
+        reserved_ids: set[int] = set()
+        for subject_id in requirement.subject_node_ids:
+            for row in ranked:
+                if int(row[0]) in reserved_ids:
+                    continue
+                if subject_id in _row_semantic_features(row, feature_cache).node_ids:
+                    reserved.append(row)
+                    reserved_ids.add(int(row[0]))
+                    break
+            if len(reserved) >= limit:
+                return reserved[:limit]
+        selected = list(reserved)
+        for row in ranked:
+            if int(row[0]) not in reserved_ids:
+                selected.append(row)
+                reserved_ids.add(int(row[0]))
+            if len(selected) >= limit:
+                break
+        return selected
+    return ranked[:limit]
 
 
 _FAST_INTENTS = {"value", "definition", "measurement"}

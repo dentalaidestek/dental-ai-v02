@@ -923,3 +923,62 @@ def test_semantic_facet_fallback_cannot_bypass_safe_allowlist():
 def test_semantic_profile_bumped_after_matching_changes():
     source = Path("app/study_index_worker.py").read_text(encoding="utf-8")
     assert '"schema": "academic-v2-dental-semantics-9"' in source
+
+
+def test_reranker_reserves_each_explicit_subject_before_truncation():
+    import json
+    from app.dental_query_intent import build_dental_requirement_plan
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _rerank_dental_rows, _coverage_select
+
+    def make_row(cid, section, body, lexical):
+        features = analyze_dental_text(f"{section}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids,
+            "specialties": features.specialties,
+            "kinds": features.kinds,
+            "measurements": features.measurements,
+            "teeth": features.tooth_numbers,
+            "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "ortodonti.pdf", cid, cid, section, "TEXT", body,
+                None, lexical, None, lexical, cid, meta)
+
+    query = "SNA ve SNB normal değerlerini karşılaştır"
+    plan = build_dental_requirement_plan(query)
+    assert {"sna", "snb"}.issubset(set(plan.subject_node_ids))
+
+    # Simulate a primary retrieval flooded by strong SNA chunks and a bounded
+    # rescue that appends the only SNB evidence at the end of the candidate pool.
+    rows = [
+        make_row(
+            cid,
+            "SNA",
+            f"SNA sefalometrik ölçümü ve normal değer değerlendirmesi. Kayıt {cid}.",
+            0.99 - (cid * 0.01),
+        )
+        for cid in range(1, 15)
+    ]
+    rows.append(make_row(
+        99,
+        "SNB",
+        "SNB sefalometrik ölçümü ve normal değer değerlendirmesi.",
+        0.31,
+    ))
+
+    ranked = _rerank_dental_rows(query, rows, limit=12, requirement=plan)
+    ranked_nodes = {
+        node_id
+        for row in ranked
+        for node_id in analyze_dental_text(f"{row[5]}\n{row[7]}").node_ids
+    }
+    assert {"sna", "snb"}.issubset(ranked_nodes), [row[0] for row in ranked]
+
+    selected = _coverage_select(query, ranked, limit=8, requirement=plan)
+    selected_nodes = {
+        node_id
+        for row in selected
+        for node_id in analyze_dental_text(f"{row[5]}\n{row[7]}").node_ids
+    }
+    assert {"sna", "snb"}.issubset(selected_nodes), [row[0] for row in selected]
