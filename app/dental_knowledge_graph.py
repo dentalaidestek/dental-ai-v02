@@ -268,7 +268,7 @@ def _alias_pattern(term: str) -> str:
         if len(word) >= 4 and word.isalpha() and word not in _AMBIGUOUS_SHORT_TERMS:
             escaped += r"[a-zçğıöşü]{0,6}"
         pieces.append(escaped)
-    return r"\\s+".join(pieces)
+    return r"\s+".join(pieces)
 
 
 def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
@@ -291,7 +291,7 @@ def matched_nodes(query: str) -> list[DentalNode]:
             if not clean_term:
                 continue
             escaped = _alias_pattern(clean_term)
-            for match in re.finditer(r"(?<!\\w)" + escaped + r"(?!\\w)", lowered, flags=re.I):
+            for match in re.finditer(r"(?<!\w)" + escaped + r"(?!\w)", lowered, flags=re.I):
                 if not _term_context_ok(lowered, match.start(), match.end(), clean_term):
                     continue
                 mentions.append((match.start(), match.end(), len(clean_term), node))
