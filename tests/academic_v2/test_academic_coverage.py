@@ -94,3 +94,40 @@ def test_streaming_representatives_are_stable_across_page_sizes():
     for start in range(0, 400, 97):
         b.add_rows(rows[start:start + 97])
     assert a.build(20).covered_chunk_ids == b.build(20).covered_chunk_ids
+
+
+def test_coverage_hydration_ids_round_robin_across_buckets():
+    from app.academic_coverage import CoverageBucket, CoveragePlan
+    from app.study_retrieval_v2 import _coverage_hydration_ids
+
+    buckets = tuple(
+        CoverageBucket(
+            material_id=1,
+            section_title=f"Section {i}",
+            node_ids=(f"n{i}",),
+            chunk_ids=tuple(i * 100 + j for j in range(1, 5)),
+            weight=4,
+            question_budget=1,
+        )
+        for i in range(1, 7)
+    )
+    plan = CoveragePlan(
+        requested_count=6,
+        buckets=buckets,
+        covered_chunk_ids=tuple(sorted(cid for b in buckets for cid in b.chunk_ids)),
+        scanned_rows=24,
+    )
+    selected = _coverage_hydration_ids(plan, limit=8)
+    assert selected[:6] == [101, 201, 301, 401, 501, 601]
+    assert selected[6:] == [102, 202]
+    assert len(selected) == 8
+    assert len(set(selected)) == len(selected)
+
+
+def test_coverage_hydration_sql_preserves_planner_order():
+    from pathlib import Path
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    block = source[source.index("def _coverage_evidence_rows"):source.index("def _academic_question_rows")]
+    assert "WITH ORDINALITY AS selected(id, ord)" in block
+    assert "ORDER BY selected.ord" in block
+    assert "ORDER BY c.material_id, c.page_start, c.chunk_index, c.id" not in block

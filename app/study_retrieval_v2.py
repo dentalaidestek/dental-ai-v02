@@ -785,6 +785,38 @@ def get_or_build_coverage_plan(
     return plan
 
 
+def _coverage_hydration_ids(coverage_plan, *, limit: int = 48) -> list[int]:
+    """Choose bounded representatives fairly across coverage buckets.
+
+    Coverage planning may retain several representatives per section/concept.
+    Hydration must not sort those ids back into document order before LIMIT,
+    otherwise early pages can consume the whole evidence budget and silently
+    drop later buckets. Round-robin keeps the bounded read spread across the
+    plan without increasing DB/provider work.
+    """
+    cap = max(1, min(int(limit), 48))
+    buckets = tuple(coverage_plan.buckets or ())
+    chosen: list[int] = []
+    seen: set[int] = set()
+    depth = 0
+    while len(chosen) < cap:
+        added = False
+        for bucket in buckets:
+            if depth >= len(bucket.chunk_ids):
+                continue
+            cid = int(bucket.chunk_ids[depth])
+            if cid not in seen:
+                seen.add(cid)
+                chosen.append(cid)
+                added = True
+                if len(chosen) >= cap:
+                    break
+        if not added:
+            break
+        depth += 1
+    return chosen
+
+
 def _coverage_evidence_rows(
     session: Session, *, owner_user_id: int, course_id: int,
     chunk_ids: list[int], limit: int = 24,
@@ -802,10 +834,11 @@ def _coverage_evidence_rows(
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
          AND m.active_index_version=c.index_version
          AND m.index_status='READY' AND m.deleted_at IS NULL
+        JOIN unnest(CAST(:chunk_ids AS BIGINT[])) WITH ORDINALITY AS selected(id, ord)
+          ON selected.id=c.id
         WHERE c.owner_user_id=:owner AND c.course_id=:course
-          AND c.id = ANY(CAST(:chunk_ids AS BIGINT[]))
           AND c.content_kind <> 'QUESTION'
-        ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
+        ORDER BY selected.ord
         LIMIT :limit
     """), params={
         "owner": owner_user_id, "course": course_id,
@@ -1484,7 +1517,9 @@ def retrieve_course_context_v2(
         )
         rows = _coverage_evidence_rows(
             session, owner_user_id=owner_user_id, course_id=course_id,
-            chunk_ids=list(coverage_plan.covered_chunk_ids),
+            chunk_ids=_coverage_hydration_ids(
+                coverage_plan, limit=min(48, max(8, requested_count)),
+            ),
             limit=min(48, max(8, requested_count)),
         )
         has_more_questions = False
