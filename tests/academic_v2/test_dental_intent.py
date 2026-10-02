@@ -81,3 +81,25 @@ def test_normal_dental_question_is_not_study_generation():
     from app.dental_query_intent import classify_dental_study_plan
 
     assert classify_dental_study_plan("ANB açısının normal değeri kaçtır?") is None
+
+
+def test_student_workflows_are_source_bound_and_distinct():
+    from app.dental_query_intent import classify_student_task
+
+    repeated = classify_student_task("Hocanın sürekli sorduğu soruları ve konuları ayır")
+    assert repeated and repeated.task == "repeated_patterns"
+    assert repeated.requires_past_questions and repeated.requires_note_evidence
+    assert not repeated.generate_new_questions
+
+    similar = classify_student_task("Çıkmış sorulara benzer 15 soru üret")
+    assert similar and similar.task == "similar_questions"
+    assert similar.requires_past_questions and similar.requires_note_evidence
+    assert similar.generate_new_questions
+
+    explain = classify_student_task("Bu konuyu bana anlat")
+    assert explain and explain.task == "explain"
+    assert explain.requires_note_evidence and not explain.requires_past_questions
+
+    exam = classify_student_task("Hocanın sorabileceği önemli yerleri çıkar")
+    assert exam and exam.task == "exam_points"
+    assert exam.requires_note_evidence and exam.requires_coverage
