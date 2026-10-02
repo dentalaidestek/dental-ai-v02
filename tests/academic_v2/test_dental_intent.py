@@ -103,3 +103,15 @@ def test_academic_study_workflows_are_source_bound_and_distinct():
     exam = classify_academic_study_task("Hocanın sorabileceği önemli yerleri çıkar")
     assert exam and exam.task == "exam_points"
     assert exam.requires_note_evidence and exam.requires_coverage
+
+
+def test_broad_non_question_academic_tasks_require_coverage():
+    from app.dental_query_intent import classify_academic_study_task
+    summary = classify_academic_study_task("Bu notun tamamını detaylı özetle")
+    assert summary and summary.task == "summarize"
+    assert summary.requires_coverage and summary.requires_note_evidence
+    assert not summary.generate_new_questions
+
+    explain = classify_academic_study_task("Bu konuyu baştan sona detaylı anlat")
+    assert explain and explain.task == "explain"
+    assert explain.requires_coverage and explain.requires_note_evidence
