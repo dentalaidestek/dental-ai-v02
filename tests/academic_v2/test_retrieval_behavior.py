@@ -839,3 +839,9 @@ def test_sufficiency_requires_subject_and_facet_in_same_evidence_row():
     assert "subject_ids.intersection(features.node_ids)" in suff
     assert "_facet_present(" in suff
     assert "hard_complete = False" in suff
+
+
+def test_coverage_selector_accepts_shared_query_features_contract():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    assert "def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, feature_cache=None, query_features=None)" in source
+    assert "query_features=query_features" in source[source.index("def _coverage_select"):source.index("def retrieve_course_context_v2")]
