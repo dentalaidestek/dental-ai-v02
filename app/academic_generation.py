@@ -44,9 +44,13 @@ def plan_generation_batches(plan: CoveragePlan, max_questions_per_batch: int = 1
 
 def question_signature(text: str) -> str:
     clean = re.sub(r"(?mi)^\s*[A-E][.)].*$", " ", text or "")
-    clean = re.sub(r"\b\d+[.,]?\d*\b", " # ", clean.casefold())
-    clean = re.sub(r"[^a-zçğıöşü#]+", " ", clean)
-    return " ".join(clean.split())
+    clean = re.sub(r"\b\d+[.,]?\d*\b", " ", clean.casefold())
+    clean = re.sub(r"[^a-zçğıöşü]+", " ", clean)
+    # Remove answer-shape/question-shell words while preserving factual facets
+    # such as tanı/tedavi/komplikasyon. This catches near-duplicate generated
+    # questions whose only change is inserting a candidate numeric answer.
+    shell = {"kaçtır", "midir", "mıdır", "mudur", "müdür", "kaç", "derece"}
+    return " ".join(token for token in clean.split() if token not in shell)
 
 def dedupe_generated_questions(questions: list[str]) -> list[str]:
     """Exact/near-lexical guard; semantic grounding remains evidence-driven."""
