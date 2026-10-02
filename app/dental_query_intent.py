@@ -131,7 +131,8 @@ _QUALIFIER_RE = re.compile(
     re.I,
 )
 _NEGATION_REQUEST_RE = re.compile(
-    r"\\b(?:değil|olmayan|olmaz|yapılmaz|kullanılmaz|kontrendike|hariç|yanlıştır|yanlış olan)\\b",
+    r"\\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
+    r"kontrendike|hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış)\\b",
     re.I,
 )
 _COMPARISON_SPLIT_RE = re.compile(r"\\s+(?:ile|ve|vs\\.?|versus)\\s+", re.I)
