@@ -227,26 +227,40 @@ def _upsert_chunk(
 
 
 def _next_checkpoint_stage(session: Session, job: StudyIndexJob) -> str:
-    """Route only from durable checkpoints; VERIFY is allowed only when complete.
+    """Route from the earliest unchunked checkpoint, preserving page order.
 
     The resource-class seam is intentional: today's MIXED worker executes
     bounded slices serially, while a future dedicated Academic/OCR worker can
     consume the same checkpoints without changing publication semantics.
     """
-    ready = session.exec(
-        select(StudyIndexPage.id)
+    first_pending = session.exec(
+        select(StudyIndexPage)
         .where(StudyIndexPage.material_id == job.material_id)
         .where(StudyIndexPage.index_version == job.index_version)
-        .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
         .where(~select(StudyIndexChunk.id).where(
             StudyIndexChunk.material_id == StudyIndexPage.material_id,
             StudyIndexChunk.index_version == StudyIndexPage.index_version,
             StudyIndexChunk.page_start == StudyIndexPage.page_number,
         ).exists())
+        .order_by(StudyIndexPage.page_number.asc())
         .limit(1)
     ).first()
-    if ready:
-        return "CHUNK"
+    if first_pending is not None:
+        if first_pending.status in TERMINAL_PAGE_STATES:
+            return "CHUNK"
+        if first_pending.status == "OCR_REQUIRED":
+            return "OCR"
+
+    checkpoint_count = len(session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+    ).all())
+    if job.expected_page_count and checkpoint_count < int(job.expected_page_count):
+        return "PARSE"
+
+    # Defensive fallback for legacy/unexpected checkpoint states. Never VERIFY
+    # while a recoverable OCR checkpoint still exists.
     ocr = session.exec(
         select(StudyIndexPage.id)
         .where(StudyIndexPage.material_id == job.material_id)
@@ -256,15 +270,7 @@ def _next_checkpoint_stage(session: Session, job: StudyIndexJob) -> str:
     ).first()
     if ocr:
         return "OCR"
-    checkpoint_count = len(session.exec(
-        select(StudyIndexPage.id)
-        .where(StudyIndexPage.material_id == job.material_id)
-        .where(StudyIndexPage.index_version == job.index_version)
-    ).all())
-    if job.expected_page_count and checkpoint_count < int(job.expected_page_count):
-        return "PARSE"
     return "VERIFY"
-
 
 def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
     # PdfReader keeps cyclic page/xref graphs. Reclaim the previous bounded
@@ -395,7 +401,35 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         .order_by(StudyIndexPage.page_number.asc()).limit(batch)
     ).all())
     if not rows:
-        return "VERIFY"
+        return _next_checkpoint_stage(session, job)
+
+    # Never leap over an OCR/missing-page gap. Section-title inheritance and
+    # neighboring-page retrieval depend on chunks being published in source
+    # page order.
+    first_pending = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number,
+        ).exists())
+        .order_by(StudyIndexPage.page_number.asc())
+        .limit(1)
+    ).first()
+    if first_pending is None or first_pending.status not in TERMINAL_PAGE_STATES:
+        return _next_checkpoint_stage(session, job)
+    if rows[0].page_number != first_pending.page_number:
+        return _next_checkpoint_stage(session, job)
+
+    contiguous = [rows[0]]
+    for candidate in rows[1:]:
+        if candidate.page_number != contiguous[-1].page_number + 1:
+            break
+        contiguous.append(candidate)
+    rows = contiguous
+
     if not _lease_still_owned(session, job):
         session.rollback()
         return "LEASE_LOST"
