@@ -219,3 +219,25 @@ def test_streaming_visual_io_happens_after_retrieval_session_closes():
     between = endpoint[with_block:materialize]
     assert "\n    if retrieval.visual_sources" in between
     assert materialize < owner
+
+
+def test_text_quality_accepts_clean_multiline_pdf_text():
+    from app.study_index_worker import _text_quality
+
+    clean_slide = "\n".join([
+        "Bebeklik döneminde normal kabul edilen bu açı değeri,",
+        "yaşın ilerlemesine yani büyüme ve gelişime bağlı olarak",
+        "küçülür ve ortalama 130 dereceye iner.",
+    ])
+    ok, reason = _text_quality(clean_slide)
+    assert ok is True
+    assert reason is None
+
+
+def test_text_quality_still_rejects_real_control_character_noise():
+    from app.study_index_worker import _text_quality
+
+    noisy = ("Ortodontik büyüme ve gelişim " * 8) + ("\x00\x01\x02" * 20)
+    ok, reason = _text_quality(noisy)
+    assert ok is False
+    assert reason == "LOW_PRINTABLE_RATIO"
