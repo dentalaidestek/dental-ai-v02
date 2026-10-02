@@ -54,4 +54,7 @@ jobs:
           python tests/academic_v2/test_dental_graph.py
           python tests/academic_v2/test_dental_intent.py
           python tests/academic_v2/test_dental_semantics.py
-          python tests/academic_v2/test_academic_scope.py\n          python tests/academic_v2/test_academic_coverage.py\n          python tests/academic_v2/test_academic_generation.py\n          python tests/academic_v2/test_academic_generation_jobs.py
+          python tests/academic_v2/test_academic_scope.py
+          python tests/academic_v2/test_academic_coverage.py
+          python tests/academic_v2/test_academic_generation.py
+          python tests/academic_v2/test_academic_generation_jobs.py
