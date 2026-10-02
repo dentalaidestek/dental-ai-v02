@@ -65,6 +65,12 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if len(found) >= max(1, min(limit, 6)):
             break
     if found:
+        # Generic "nedir/nelerdir" often closes a multi-facet Turkish question
+        # ("tanısı ve tedavisi nedir?"). It must not create a fake definition
+        # requirement when stronger explicit facets are already present.
+        explicit = [item for item in found if item.name != "definition"]
+        if explicit:
+            found = explicit
         return tuple(found)
     return (DentalIntent("general", (), ()),)
 
@@ -122,7 +128,9 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     intents = classify_dental_intents(clean, limit=6)
     nodes = matched_nodes(clean)
     subject_ids = tuple(dict.fromkeys(node.id for node in nodes))
-    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))\n    if not subject_terms:\n        subject_terms = _lexical_subject_terms(clean)
+    subject_terms = tuple(dict.fromkeys(node.label for node in nodes))
+    if not subject_terms:
+        subject_terms = _lexical_subject_terms(clean)
     specialties = tuple(dict.fromkeys(node.specialty for node in nodes if node.specialty != "general"))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
@@ -160,7 +168,7 @@ class DentalStudyPlan:
 
 
 def classify_dental_study_plan(query: str) -> DentalStudyPlan | None:
-    """Detect student study-generation requests without affecting normal QA."""
+    """Detect role-neutral academic generation requests without affecting normal QA."""
     clean = " ".join((query or "").split())
     if not _STUDY_GENERATION_RE.search(clean):
         return None
