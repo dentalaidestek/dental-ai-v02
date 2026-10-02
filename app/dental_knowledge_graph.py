@@ -250,6 +250,19 @@ def _term_present(text: str, term: str) -> bool:
     escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
     return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.IGNORECASE))
 
+_AMBIGUOUS_SHORT_TERMS = {"cep", "pd", "cr", "cal", "wl", "mine"}
+_DENTAL_CONTEXT_RE = re.compile(
+    r"\\b(?:diş|dental|periodontal|periodont|endodont|kanal|pulpa|oklüz|protez|"
+    r"restoratif|mine|dentin|çene|sefalometr|implant|radyograf|klinik|ataşman|"
+    r"sondalama|santral ilişki|çalışma boyu|enamel|tooth|root|pulp)\\w*\\b", re.I
+)
+
+def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
+    if term.casefold() not in _AMBIGUOUS_SHORT_TERMS:
+        return True
+    window = text[max(0, start - 56):min(len(text), end + 56)]
+    return bool(_DENTAL_CONTEXT_RE.search(window))
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
 
