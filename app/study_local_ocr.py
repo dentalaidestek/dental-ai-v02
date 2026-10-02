@@ -217,6 +217,34 @@ def _recognize_layout(image: Image.Image, *, layout: _PageLayout, timeout_ms: in
     return _normalize_ocr_text("\n\n".join(texts)), confidence
 
 
+def _recognize_two_columns_selective(
+    image: Image.Image, *, layout: _PageLayout, timeout_ms: int
+) -> tuple[str, int, tuple[bool, bool]]:
+    """OCR columns independently and expose which side actually needs retry."""
+    import tesserocr
+
+    probe_width = min(image.width, 900)
+    split = int(image.width * ((layout.split_x or probe_width // 2) / max(1, probe_width)))
+    margin = max(8, int(image.width * 0.015))
+    split = max(margin * 2, min(image.width - margin * 2, split))
+    regions = [
+        image.crop((0, 0, min(image.width, split + margin), image.height)),
+        image.crop((max(0, split - margin), 0, image.width, image.height)),
+    ]
+    try:
+        results = [
+            _recognize(region, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=timeout_ms)
+            for region in regions
+        ]
+    finally:
+        for region in regions:
+            region.close()
+    weak = tuple(_needs_quality_retry(text, conf) for text, conf in results)
+    texts = [text for text, _ in results if text]
+    confidence = int(sum(conf for _, conf in results) / max(1, len(results)))
+    return _normalize_ocr_text("\n\n".join(texts)), confidence, weak
+
+
 def _ocr_anomaly_score(text: str) -> float:
     """Local corruption signal used to spend retry cost only on suspicious OCR."""
     compact = re.sub(r"\s+", "", text or "")
@@ -285,7 +313,13 @@ def ocr_material_page(
         deskewed = _deskew_image(image)
         try:
             layout = _detect_page_layout(deskewed)
-            text, confidence = _recognize_layout(deskewed, layout=layout, timeout_ms=timeout_ms)
+            weak_columns = (False, False)
+            if layout.kind == "two_column":
+                text, confidence, weak_columns = _recognize_two_columns_selective(
+                    deskewed, layout=layout, timeout_ms=timeout_ms
+                )
+            else:
+                text, confidence = _recognize_layout(deskewed, layout=layout, timeout_ms=timeout_ms)
         finally:
             deskewed.close()
     except LocalOCRError:
@@ -308,7 +342,36 @@ def ocr_material_page(
                 retry_layout = _detect_page_layout(retry_deskewed)
                 # Preserve explicit column order on retry; other weak layouts
                 # use AUTO to avoid repeating a bad specialized segmentation.
-                if retry_layout.kind == "two_column":
+                if retry_layout.kind == "two_column" and layout.kind == "two_column" and any(weak_columns):
+                    # Re-run only weak columns at high DPI; preserve strong fast-pass
+                    # text instead of paying for and potentially degrading both sides.
+                    probe_width = min(retry_deskewed.width, 900)
+                    split = int(retry_deskewed.width * ((retry_layout.split_x or probe_width // 2) / max(1, probe_width)))
+                    margin = max(8, int(retry_deskewed.width * 0.015))
+                    split = max(margin * 2, min(retry_deskewed.width - margin * 2, split))
+                    retry_regions = [
+                        retry_deskewed.crop((0, 0, min(retry_deskewed.width, split + margin), retry_deskewed.height)),
+                        retry_deskewed.crop((max(0, split - margin), 0, retry_deskewed.width, retry_deskewed.height)),
+                    ]
+                    try:
+                        fast_parts = text.split("\n\n", 1)
+                        while len(fast_parts) < 2:
+                            fast_parts.append("")
+                        confidences = [confidence, confidence]
+                        for idx, region in enumerate(retry_regions):
+                            if not weak_columns[idx]:
+                                continue
+                            part_text, part_conf = _recognize(
+                                region, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=timeout_ms
+                            )
+                            if part_conf >= confidences[idx] or len(part_text) > len(fast_parts[idx]):
+                                fast_parts[idx], confidences[idx] = part_text, part_conf
+                        retry_text = _normalize_ocr_text("\n\n".join(fast_parts))
+                        retry_confidence = int(sum(confidences) / len(confidences))
+                    finally:
+                        for region in retry_regions:
+                            region.close()
+                elif retry_layout.kind == "two_column":
                     retry_text, retry_confidence = _recognize_layout(
                         retry_deskewed, layout=retry_layout, timeout_ms=timeout_ms
                     )
