@@ -678,3 +678,32 @@ def test_question_understanding_preserves_multiple_explicit_subjects():
     comparison = build_dental_requirement_plan("SNA ile SNB arasındaki fark nedir?")
     assert comparison.subject_count >= 2
     assert "comparison" in comparison.requested_facets
+
+
+def test_visual_source_routing_requires_inspection_not_modality_name():
+    from app.study_retrieval_v2 import _requires_visual_source
+    assert not _requires_visual_source("CBCT nedir?")
+    assert not _requires_visual_source("Panoramik radyografinin endikasyonları nelerdir?")
+    assert _requires_visual_source("Bu CBCT görüntüsünde hangi yapı görülüyor?")
+    assert _requires_visual_source("Radyografide hangi lezyon görülüyor?")
+
+
+def test_qualifier_morphology_is_canonical_and_shared():
+    from app.dental_query_intent import query_qualifiers, qualifier_present
+    assert {"üst", "sol"}.issubset(set(query_qualifiers("üstte solda üçüncü molar")))
+    assert "mandibular" in query_qualifiers("mandibulada gömülü diş")
+    assert "erişkin" in query_qualifiers("erişkinde görülen bulgu")
+    assert qualifier_present("alt", "altındaki üçüncü molar") is False
+    assert qualifier_present("alt", "altta üçüncü molar")
+
+
+def test_margin_stripping_does_not_delete_same_body_line():
+    from types import SimpleNamespace
+    from app.study_index_worker import _strip_repeated_page_margins
+    rows = [
+        SimpleNamespace(page_number=i, text_content="Ders Başlığı\nüst bilgi\nDers Başlığı\nözgün gövde\nsayfa")
+        for i in range(1, 4)
+    ]
+    cleaned = _strip_repeated_page_margins(rows)
+    assert "özgün gövde" in cleaned[1]
+    assert cleaned[1].count("Ders Başlığı") == 1
