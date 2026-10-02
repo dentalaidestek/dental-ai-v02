@@ -606,6 +606,32 @@ def test_requirement_plan_separates_imaging_constraint_from_subject():
     assert "cbct" in modality.subject_node_ids
 
 
+def test_requirement_plan_preserves_negation_qualifier_comparison_and_modality():
+    combined = build_dental_requirement_plan(
+        "CBCT'de alt üçüncü molar için hangisi kontrendike değildir?"
+    )
+    assert combined.asks_negation is True
+    assert "alt" in combined.qualifiers
+    assert "third_molar" in combined.subject_node_ids
+    assert "cbct" in combined.constraint_node_ids
+    assert "cbct" not in combined.subject_node_ids
+    assert "contraindication" in combined.requested_facets
+
+    comparison = build_dental_requirement_plan(
+        "SNA ile SNB'den hangisi mandibulanın sagittal konumunu gösterir?"
+    )
+    assert {"sna", "snb"}.issubset(set(comparison.subject_node_ids))
+    assert comparison.subject_count >= 2
+    assert "comparison" in comparison.requested_facets
+
+    for wording in (
+        "önerilmez", "tercih edilmez", "olmamalıdır", "kaçınılmalıdır"
+    ):
+        assert build_dental_requirement_plan(
+            f"üçüncü molarda hangisi {wording}?"
+        ).asks_negation is True
+
+
 def test_question_understanding_conservative_typo_rescue():
     from app.dental_knowledge_graph import matched_nodes
     assert any(node.id == "pulpitis" for node in matched_nodes("pulptis tedavisi ne"))
