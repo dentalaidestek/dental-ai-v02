@@ -73,9 +73,12 @@ def build_coverage_plan(rows: list, requested_count: int) -> CoveragePlan:
 
 
 class CoverageAccumulator:
-    """Streaming metadata accumulator; stores bucket essentials, not DB rows."""
-    def __init__(self) -> None:
-        self._groups = defaultdict(lambda: {"section": "Bölümsüz", "chunk_ids": []})
+    """Streaming coverage with bounded, deterministic representatives per bucket."""
+    def __init__(self, representative_limit: int = 24) -> None:
+        self.representative_limit = max(4, min(int(representative_limit), 64))
+        self._groups = defaultdict(
+            lambda: {"section": "Bölümsüz", "count": 0, "representatives": []}
+        )
         self.scanned_rows = 0
 
     def add_rows(self, rows: list) -> None:
@@ -94,13 +97,22 @@ class CoverageAccumulator:
             key = (material_id, section.casefold(), nodes)
             group = self._groups[key]
             group["section"] = section
-            group["chunk_ids"].append(int(row[0]))
+            group["count"] += 1
+            cid = int(row[0])
+            reps = group["representatives"]
+            # Deterministic bounded compaction. Keeping every Nth representative
+            # after overflow preserves coverage across the whole section instead
+            # of biasing hydration toward its first pages.
+            reps.append(cid)
+            if len(reps) > self.representative_limit:
+                reps[:] = reps[::2]
 
     def build(self, requested_count: int) -> CoveragePlan:
         items = []
         for (material_id, _section_key, nodes), group in self._groups.items():
-            chunk_ids = tuple(sorted(set(group["chunk_ids"])))
-            items.append((material_id, group["section"], nodes, chunk_ids, len(chunk_ids)))
+            chunk_ids = tuple(group["representatives"])
+            weight = int(group["count"])
+            items.append((material_id, group["section"], nodes, chunk_ids, weight))
         items.sort(key=lambda x: (x[0], x[1].casefold(), x[3][0] if x[3] else 0))
         count = max(1, min(int(requested_count or 10), 200))
         budgets = _largest_remainder([x[4] for x in items], count)
