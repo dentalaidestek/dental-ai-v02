@@ -23,7 +23,7 @@ from app.object_storage import ensure_local as storage_ensure_local
 from app.dental_retrieval_terms import DENTAL_ALIAS_GROUPS
 from app.dental_knowledge_graph import graph_expansion_terms
 from app.dental_query_intent import classify_academic_study_task, classify_dental_study_plan, classify_dental_intent, classify_dental_intents, combined_relation_hints
-from app.academic_coverage import build_coverage_plan
+from app.academic_coverage import build_coverage_plan, cache_coverage_plan, cached_coverage_plan
 from app.dental_semantics import DentalSemanticFeatures, analyze_dental_text, semantic_overlap_score
 
 logger = logging.getLogger(__name__)
@@ -553,6 +553,50 @@ def _coverage_metadata_page(
         "owner": owner_user_id, "course": course_id, "after_id": after_id,
         "limit": max(1, min(limit, 400)),
     }).all())
+
+
+def _course_index_fingerprint(session: Session, *, owner_user_id: int, course_id: int) -> str:
+    """Cheap invalidation token from the course's published material generations."""
+    row = session.exec(text("""
+        SELECT COALESCE(string_agg(
+            m.id::text || ':' || COALESCE(m.active_index_version::text, '0'),
+            ',' ORDER BY m.id
+        ), '')
+        FROM studymaterial m
+        WHERE m.owner_user_id=:owner AND m.course_id=:course
+          AND m.index_status='READY' AND m.deleted_at IS NULL
+    """), params={"owner": owner_user_id, "course": course_id}).one()
+    return str(row[0] or "")
+
+
+def get_or_build_coverage_plan(
+    session: Session, *, owner_user_id: int, course_id: int,
+    requested_count: int, page_size: int = 240,
+):
+    fingerprint = _course_index_fingerprint(
+        session, owner_user_id=owner_user_id, course_id=course_id,
+    )
+    cached = cached_coverage_plan(owner_user_id, course_id, fingerprint, requested_count)
+    if cached is not None:
+        return cached
+
+    rows = []
+    after_id = 0
+    bounded_page_size = max(40, min(int(page_size), 400))
+    while True:
+        page = _coverage_metadata_page(
+            session, owner_user_id=owner_user_id, course_id=course_id,
+            after_id=after_id, limit=bounded_page_size,
+        )
+        if not page:
+            break
+        rows.extend(page)
+        after_id = int(page[-1][0])
+        if len(page) < bounded_page_size:
+            break
+    plan = build_coverage_plan(rows, requested_count)
+    cache_coverage_plan(owner_user_id, course_id, fingerprint, plan)
+    return plan
 
 
 def _coverage_evidence_rows(
