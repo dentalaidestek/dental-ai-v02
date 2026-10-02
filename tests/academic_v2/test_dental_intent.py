@@ -115,3 +115,19 @@ def test_broad_non_question_academic_tasks_require_coverage():
     explain = classify_academic_study_task("Bu konuyu baştan sona detaylı anlat")
     assert explain and explain.task == "explain"
     assert explain.requires_coverage and explain.requires_note_evidence
+
+
+def test_requirement_plan_separates_subject_from_multiple_facets():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan(
+        "İrreversible pulpitisin tanısı, klinik bulguları, ayırıcı tanısı ve tedavisi nedir?"
+    )
+    assert "diagnosis" in plan.requested_facets
+    assert "treatment" in plan.requested_facets
+    assert "has_treatment" in plan.relation_hints
+    assert len(plan.requested_facets) >= 2
+
+def test_requirement_plan_keeps_treatment_subject_from_becoming_requested_treatment():
+    from app.dental_query_intent import build_dental_requirement_plan
+    plan = build_dental_requirement_plan("Kanal tedavisinin komplikasyonları nelerdir?")
+    assert "complication" in plan.requested_facets
