@@ -13,6 +13,9 @@ from pathlib import Path
 import modal
 from pypdf import PdfReader
 
+volume = modal.Volume.from_name("dental-ai-models", create_if_missing=False)
+PDF_ROOT = Path("/academic-input")
+
 app = modal.App("dental-academic-index")
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -20,30 +23,27 @@ image = (
     .add_local_python_source("app")
 )
 
+
 OCR_CONCURRENCY = int(os.getenv("STUDY_MODAL_OCR_CONCURRENCY", "16"))
 
 
-@app.function(image=image, cpu=1.0, memory=1024, timeout=300)
-def extract_page(pdf_bytes: bytes, page_number: int) -> dict:
-    from io import BytesIO
+@app.function(image=image, cpu=1.0, memory=1024, timeout=300, volumes={"/academic-input": volume})
+def extract_page(pdf_name: str, page_number: int) -> dict:
     from app.study_chunking import normalize_extracted_text
     from app.study_index_worker import _text_quality
     started = time.perf_counter()
-    reader = PdfReader(BytesIO(pdf_bytes))
+    reader = PdfReader(str(PDF_ROOT / pdf_name))
     text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
     ok, reason = _text_quality(text)
     return {"page": page_number, "text": text, "quality_ok": ok, "reason": reason,
             "elapsed_ms": int((time.perf_counter() - started) * 1000)}
 
 
-@app.function(image=image, cpu=2.0, memory=2048, timeout=300, max_containers=OCR_CONCURRENCY)
-def ocr_page(pdf_bytes: bytes, page_number: int) -> dict:
-    import tempfile
+@app.function(image=image, cpu=2.0, memory=2048, timeout=300, max_containers=OCR_CONCURRENCY, volumes={"/academic-input": volume})
+def ocr_page(pdf_name: str, page_number: int) -> dict:
     from app.study_local_ocr import ocr_material_page
     started = time.perf_counter()
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as fh:
-        fh.write(pdf_bytes); fh.flush()
-        result = ocr_material_page(Path(fh.name), mime_type="application/pdf", page_number=page_number)
+    result = ocr_material_page(PDF_ROOT / pdf_name, mime_type="application/pdf", page_number=page_number)
     return {"page": page_number, "text": result.text, "confidence": result.confidence,
             "visual_only": result.visual_only, "retried": result.retried,
             "layout": result.layout_kind, "ocr_ms": result.elapsed_ms,
@@ -53,11 +53,15 @@ def ocr_page(pdf_bytes: bytes, page_number: int) -> dict:
 @app.local_entrypoint()
 def benchmark(pdf: str):
     started = time.perf_counter()
-    data = Path(pdf).read_bytes()
+    source = Path(pdf)
+    pdf_name = source.name
+    remote_path = PDF_ROOT / pdf_name
+    with volume.batch_upload(force=True) as batch:
+        batch.put_file(source, str(remote_path))
     page_count = len(PdfReader(pdf).pages)
-    extracted = list(extract_page.map([data] * page_count, range(1, page_count + 1)))
+    extracted = list(extract_page.map([pdf_name] * page_count, range(1, page_count + 1)))
     need_ocr = [x["page"] for x in extracted if not x["quality_ok"]]
-    ocr = list(ocr_page.map([data] * len(need_ocr), need_ocr)) if need_ocr else []
+    ocr = list(ocr_page.map([pdf_name] * len(need_ocr), need_ocr)) if need_ocr else []
     by_page = {x["page"]: x for x in extracted}
     for item in ocr:
         fallback = by_page[item["page"]]["text"]
