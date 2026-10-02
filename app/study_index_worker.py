@@ -24,7 +24,7 @@ from sqlmodel import Session, select
 
 from app.object_storage import ensure_local as storage_ensure_local
 from app.study_chunking import chunk_dental_page, normalize_extracted_text
-from app.dental_semantics import analyze_dental_text, retrieval_enrichment_text
+from app.dental_semantics import analyze_dental_text, bind_value_evidence, retrieval_enrichment_text
 from app.study_index_jobs import (
     StudyIndexChunk,
     StudyIndexJob,
@@ -463,6 +463,7 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
         for local_index, chunk in enumerate(chunks):
             semantic_source = f"{chunk.section_title or ''}\n{chunk.text}"
             features = analyze_dental_text(semantic_source)
+            bound_values = bind_value_evidence(semantic_source)
             semantic_json = json.dumps({
                 "nodes": features.node_ids,
                 "specialties": features.specialties,
@@ -471,6 +472,18 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
                 "teeth": features.tooth_numbers,
                 "imaging": features.imaging_types,
                 "negated_nodes": features.negated_node_ids,
+                # Chunk-local evidence only. Never promote the first observed
+                # number to a course-wide/reference truth here; reconciliation
+                # happens after all relevant evidence is available.
+                "value_evidence": [{
+                    "text": item.value.text,
+                    "kind": item.value.kind,
+                    "assertion": item.assertion,
+                    "assertion_confidence": item.assertion_confidence,
+                    "subject_node": item.subject_node_id,
+                    "subject_text": item.subject_text,
+                    "binding_confidence": item.binding_confidence,
+                } for item in bound_values[:24]],
             }, ensure_ascii=False, separators=(",", ":"))
             pending.append(StudyIndexChunk(
                 owner_user_id=job.owner_user_id,
