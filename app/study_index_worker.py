@@ -307,9 +307,12 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                     index_version=job.index_version,
                     page_number=page_number,
                     status="OCR_REQUIRED",
-                    text_content=None,
+                    # Preserve a usable short/suspicious text layer as a
+                    # fallback. OCR may recover much more, but it can also be
+                    # worse on title-only or highly graphical slides.
+                    text_content=text or None,
                     extraction_method="PDF_TEXT",
-                    content_sha256=None,
+                    content_sha256=_sha256_text(text) if text else None,
                     error=f"OCR_REQUIRED:{quality_reason}",
                 )
             else:
@@ -548,16 +551,28 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
                 session.rollback()
                 return "LEASE_LOST"
             text = normalize_extracted_text(result.text)
+            fallback_text = normalize_extracted_text(page.text_content or "")
             method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
             if result.visual_only:
-                # A diagram/blank page can legitimately contain no dependable text.
-                # Account for it without inventing clinical content; the immutable
-                # source PDF remains the visual evidence for page-aware fallback.
-                text = (
-                    f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
-                    "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
-                )
-                method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+                # OCR must not erase a clean short text layer (for example a
+                # section heading) merely because the slide is mostly visual.
+                if fallback_text:
+                    text = fallback_text
+                    method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+                else:
+                    # A diagram/blank page can legitimately contain no dependable text.
+                    # Account for it without inventing clinical content; the immutable
+                    # source PDF remains the visual evidence for page-aware fallback.
+                    text = (
+                        f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
+                        "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+                    )
+                    method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            elif fallback_text and len(text) < len(fallback_text):
+                # A confident OCR pass can still truncate a title. Keep the
+                # longer native layer rather than replacing known source text.
+                text = fallback_text
+                method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
             upsert_page_checkpoint(
                 session,
                 owner_user_id=job.owner_user_id,
