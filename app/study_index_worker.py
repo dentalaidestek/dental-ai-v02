@@ -392,7 +392,9 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
                 "kinds": features.kinds,
                 "measurements": features.measurements,
                 "teeth": features.tooth_numbers,
-                "imaging": features.imaging_types,\n                "negated_nodes": features.negated_node_ids,\n            }, ensure_ascii=False, separators=(",", ":"))
+                "imaging": features.imaging_types,
+                "negated_nodes": features.negated_node_ids,
+            }, ensure_ascii=False, separators=(",", ":"))
             pending.append(StudyIndexChunk(
                 owner_user_id=job.owner_user_id,
                 course_id=job.course_id,
