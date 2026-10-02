@@ -330,26 +330,23 @@ def _facet_present(facet: str, corpus: str, semantic_kinds: set[str]) -> bool:
 
 
 def _evidence_queries(query: str, *, max_queries: int = 4) -> list[str]:
-    """Build a few focused evidence queries instead of one giant OR expression."""
+    """Build at most one focused probe per explicit requirement."""
     clean = _normalize_dental_notation(query)
     original, extras = _retrieval_terms(clean)
-    intents = classify_dental_intents(clean)
+    requirement = build_dental_requirement_plan(clean)
     anchors = original[:5]
-    # Prefer canonical multi-word/graph terms, but keep the user's subject words.
     concept_terms = [term for term in extras if len(term) >= 3][:4]
-    subject = " ".join(dict.fromkeys(anchors + concept_terms[:1])).strip()
-    if not subject:
-        subject = clean
+    subject = " ".join(dict.fromkeys(anchors + concept_terms[:1])).strip() or clean
     queries: list[str] = []
-    # Multi-intent questions share one bounded query budget. Give every explicit
-    # requirement one evidence probe before spending remaining probes on depth.
-    facet_groups = [_EVIDENCE_FACETS.get(intent.name, ()) for intent in intents]
-    for depth in range(max((len(group) for group in facet_groups), default=0)):
-        for group in facet_groups:
-            if depth >= len(group):
-                continue
-            facet = group[depth]
-            candidate = f'{subject} "{facet}"' if " " in facet else f"{subject} {facet}"
+    for item in requirement.intents:
+        for facet in _coverage_terms(item.name):
+            hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
+            # One compact OR group per requested facet; synonyms improve recall
+            # without multiplying DB round-trips.
+            hint_query = " OR ".join(
+                f'"{term}"' if " " in term else term for term in hints[:4]
+            )
+            candidate = f"{subject} ({hint_query})"
             if candidate not in queries:
                 queries.append(candidate)
             if len(queries) >= max_queries:
@@ -1138,13 +1135,17 @@ def retrieve_course_context_v2(
         coverage, covered_facets = _coverage_score(resolved, rows)
         # At most one extra local DB query, only for complex questions whose
         # first pass lacks evidence diversity.
-        if evidence_queries and coverage < 0.34 and len(rows) < candidate_target:
+        if evidence_queries and coverage < 1.0 and len(rows) < candidate_target:
             missing = [
                 facet for item in build_dental_requirement_plan(resolved).intents
                 for facet in _coverage_terms(item.name) if facet not in covered_facets
             ]
             if missing:
-                rescue_query = f'{_fts_query(resolved, broad=False)} "{missing[0]}"'
+                hints = _FACET_SEARCH_TERMS.get(missing[0], (missing[0],))
+                rescue_hint = " OR ".join(
+                    f'"{term}"' if " " in term else term for term in hints[:4]
+                )
+                rescue_query = f"{_fts_query(resolved, broad=False)} ({rescue_hint})"
                 for row in _fts_rows(
                     session,
                     owner_user_id=owner_user_id,
