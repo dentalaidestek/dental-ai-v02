@@ -195,6 +195,29 @@ if len({node.id for node in ALL_NODES}) != len(ALL_NODES):
 _NODE_BY_ID = {node.id: node for node in ALL_NODES}
 
 
+def dental_graph_coverage() -> dict[str, object]:
+    """Cheap structural coverage report for every canonical vocabulary node."""
+    from app.dental_knowledge_relations import DENTAL_RELATION_EDGES
+
+    all_edges = (*EDGES, *DENTAL_RELATION_EDGES)
+    degree = {node.id: 0 for node in ALL_NODES}
+    dangling_edges: list[tuple[str, str, str]] = []
+    for edge in all_edges:
+        if edge.source not in _NODE_BY_ID or edge.target not in _NODE_BY_ID:
+            dangling_edges.append((edge.source, edge.relation.value, edge.target))
+            continue
+        degree[edge.source] += 1
+        degree[edge.target] += 1
+    orphan_ids = tuple(node_id for node_id, count in degree.items() if count == 0)
+    return {
+        "node_count": len(ALL_NODES),
+        "edge_count": len(all_edges),
+        "orphan_ids": orphan_ids,
+        "dangling_edges": tuple(dangling_edges),
+        "coverage_ratio": (len(ALL_NODES) - len(orphan_ids)) / max(1, len(ALL_NODES)),
+    }
+
+
 def _term_present(text: str, term: str) -> bool:
     """Boundary-aware phrase match; short dental abbreviations must not hit substrings."""
     clean_term = " ".join((term or "").casefold().split())
