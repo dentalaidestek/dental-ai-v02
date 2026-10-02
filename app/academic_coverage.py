@@ -65,3 +65,31 @@ def build_coverage_plan(rows: list, requested_count: int) -> CoveragePlan:
         buckets=buckets,
         covered_chunk_ids=tuple(sorted({cid for b in buckets for cid in b.chunk_ids})),
     )
+
+
+@dataclass(frozen=True)
+class CoverageLedger:
+    planned_questions: int
+    generated_questions: int
+    remaining_questions: int
+    completed_bucket_keys: tuple[str, ...]
+
+def bucket_key(bucket: CoverageBucket) -> str:
+    return f"{bucket.material_id}:{bucket.section_title.casefold()}:{'|'.join(bucket.node_ids) or '-'}"
+
+def build_coverage_ledger(plan: CoveragePlan, generated_by_bucket: dict[str, int] | None = None) -> CoverageLedger:
+    generated_by_bucket = generated_by_bucket or {}
+    completed = []
+    generated = 0
+    for bucket in plan.buckets:
+        key = bucket_key(bucket)
+        made = max(0, min(int(generated_by_bucket.get(key, 0)), bucket.question_budget))
+        generated += made
+        if made >= bucket.question_budget:
+            completed.append(key)
+    return CoverageLedger(
+        planned_questions=plan.requested_count,
+        generated_questions=generated,
+        remaining_questions=max(0, plan.requested_count - generated),
+        completed_bucket_keys=tuple(completed),
+    )
