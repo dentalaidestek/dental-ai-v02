@@ -102,3 +102,40 @@ def hydration_windows(batches: tuple[GenerationBatch, ...], max_unique_chunks: i
     if current:
         windows.append(tuple(current))
     return tuple(windows)
+
+
+_ACADEMIC_OUTPUT_CONTRACTS = {
+    "summarize": (
+        "Kanıtları bölüm ve alt konu bütünlüğünü koruyarak özetle. Temel tanım, ölçüm, "
+        "sınıflama, bulgu, endikasyon, tedavi ve komplikasyonlardan kaynakta bulunanları "
+        "atlama; aynı bilgiyi tekrar etme."
+    ),
+    "explain": (
+        "Konuyu öğretici sırayla açıkla: temel kavramdan ilişkilere ilerle. Yalnız kanıtta "
+        "bulunan neden-sonuç, anatomi, ölçüm, sınıflama, tanı ve tedavi ilişkilerini kur."
+    ),
+    "exam_points": (
+        "Yalnız not kanıtından sınav değeri taşıyan noktaları çıkar; sayı, sınıflama, "
+        "ayırt edici bulgu ve ilişkileri kaynak desteği olmadan önem sırasına koyma."
+    ),
+    "comparison": (
+        "Karşılaştırılan kavramları ortak ölçütler altında düzenle; bir tarafta kanıt "
+        "olmayan özelliği diğer taraftan tahmin ederek tamamlama."
+    ),
+    "generate_questions": (
+        "Yalnız verilen kanıttan doğrulanabilir sorular ve cevaplar üret; tekrar etme."
+    ),
+}
+
+def academic_batch_contract(task: str, batch: GenerationBatch) -> str:
+    rule = _ACADEMIC_OUTPUT_CONTRACTS.get(
+        task,
+        "Kullanıcının akademik görevini yalnız verilen kanıtlarla yerine getir; kanıt dışı bilgi ekleme.",
+    )
+    concepts = ", ".join(batch.node_ids) if batch.node_ids else "bölümdeki kaynak kavramları"
+    return (
+        f"Görev: {task}\nBölüm: {batch.section_title}\n"
+        f"Kanıt kapsamı: {concepts}\n{rule}\n"
+        "Bu yalnız bir coverage parçasıdır. Diğer bölümlerde ele alınacak bilgileri "
+        "uydurup bu parçaya ekleme; bu parçanın kanıtını eksiksiz ve tekrar etmeden işle."
+    )
