@@ -542,12 +542,30 @@ def test_requirement_plan_preserves_subject_modifiers_comparison_and_negation():
 
 
 def test_reranker_penalizes_same_subject_when_explicit_qualifier_is_missing():
+    import json
+    from app.dental_semantics import analyze_dental_text
+    from app.study_retrieval_v2 import _rerank_dental_rows
+
+    def make_row(cid, section, body, lexical):
+        features = analyze_dental_text(f"{section}\n{body}")
+        meta = json.dumps({
+            "nodes": features.node_ids,
+            "specialties": features.specialties,
+            "kinds": features.kinds,
+            "measurements": features.measurements,
+            "teeth": features.tooth_numbers,
+            "imaging": features.imaging_types,
+            "negated_nodes": features.negated_node_ids,
+        })
+        return (cid, 1, "endo.pdf", 1, 1, section, "TEXT", body, None,
+                lexical, None, lexical, cid, meta)
+
     query = "irreversible pulpitis tedavisi"
     rows = [
-        row(101, "Pulpitis", "Pulpitis tedavisi ve klinik yaklaşım.", 0.88),
-        row(102, "Irreversible pulpitis", "Irreversible pulpitis tedavisi ve klinik yaklaşım.", 0.64),
+        make_row(101, "Pulpitis", "Pulpitis tedavisi ve klinik yaklaşım.", 0.88),
+        make_row(102, "Irreversible pulpitis", "Irreversible pulpitis tedavisi ve klinik yaklaşım.", 0.64),
     ]
-    ranked = ns["_rerank_dental_rows"](query, rows, limit=2)
+    ranked = _rerank_dental_rows(query, rows, limit=2)
     assert ranked[0][0] == 102
 
 
