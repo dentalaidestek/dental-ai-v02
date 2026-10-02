@@ -869,3 +869,15 @@ def test_indication_facets_accept_explicit_source_polarity_phrasing():
     assert '"kullanılır", "uygulanır"' in source
     assert '"kullanılmaz"' in source
     assert '"önerilmez"' in source
+
+
+def test_primary_retrieval_strips_question_form_noise_for_unknown_subjects():
+    cases = (
+        ("pterygomandibular raphe nerede?", ("pterygomandibular", "raphe"), ("nerede",)),
+        ("Nance holding arch ne zaman kullanılır?", ("Nance", "holding", "arch"), ("ne", "zaman")),
+        ("X materyali hangi durumda uygulanır?", ("X", "materyali"), ("hangi", "durumda")),
+    )
+    for query, expected, forbidden in cases:
+        precise = namespace["_fts_query"](query, broad=False).casefold().split()
+        assert all(term.casefold() in precise for term in expected), (query, precise)
+        assert all(term.casefold() not in precise for term in forbidden), (query, precise)
