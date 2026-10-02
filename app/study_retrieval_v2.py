@@ -796,11 +796,18 @@ def _rerank_dental_rows(query: str, rows: list, *, limit: int) -> list:
         # helps aliases/graph concepts; subject alignment prevents a same-
         # specialty but unrelated facet from winning merely for saying
         # "complication", "treatment", etc.
+        # Subject identity is a gate, not merely another weak bonus. A row
+        # reached through an alias/graph neighbour must not outrank a direct
+        # subject hit just because it shares specialty or facet vocabulary.
+        direct_subject = subject_alignment >= 0.50
+        semantic_subject = semantic >= 0.45
+        drift_penalty = 0.22 if not direct_subject and not semantic_subject else 0.0
         score = (
-            (0.42 * lexical)
-            + (0.33 * semantic)
-            + (0.20 * subject_alignment)
+            (0.40 * lexical)
+            + (0.25 * semantic)
+            + (0.30 * subject_alignment)
             + (0.05 * positional)
+            - drift_penalty
         )
         scored.append((score, position, row))
     scored.sort(key=lambda item: (-item[0], item[1]))
