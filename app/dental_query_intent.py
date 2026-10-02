@@ -28,7 +28,7 @@ _RULES = (
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-zçğıöşü]*|müdahale[a-zçğıöşü]*|yaklaşım[a-zçğıöşü]*|yönetim[a-zçğıöşü]*|ne yapıl[a-zçğıöşü]*|nasıl tedavi[a-zçğıöşü]*)\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
-    ("anatomy", re.compile(r"\b(?:nerede|konum|komşu|ilişki|yakın|geçer|seyreder|anatom)\b", re.I),
+    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|ilişki[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
     ("visual", re.compile(r"\b(?:radyografi|röntgen|film|görüntü|fotoğraf|panoramik|opg|cbct|periapikal|bitewing|sefalogram|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
@@ -435,8 +435,12 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     lowered = clean.casefold()
     # A broad summary request remains a summary even when the user also asks
     # which parts are exam-important; exam-point wording is an output facet.
-    if broad and any(x in lowered for x in ("özet", "özetle")):
-        return AcademicStudyTaskPlan("summarize", False, True, True, False)
+    if any(x in lowered for x in ("özet", "özetle")):
+        generate = bool(_STUDY_GENERATION_RE.search(clean))
+        # Summary wording is an explicit study task even for a selected topic.
+        # Coverage is independent: whole-note language broadens retrieval;
+        # compound "summarize then make questions" preserves both operations.
+        return AcademicStudyTaskPlan("summarize", False, True, broad, generate)
     for task, pattern, past, notes, coverage, generate in _ACADEMIC_STUDY_TASK_RULES:
         if pattern.search(clean):
             return AcademicStudyTaskPlan(task, past, notes, coverage or broad, generate)
