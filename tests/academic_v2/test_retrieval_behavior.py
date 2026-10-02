@@ -476,3 +476,11 @@ def test_ocr_profile_tracks_rotation_behavior_and_chunker_strips_repeated_margin
     assert "def _strip_repeated_page_margins" in worker
     assert "len(pages) >= threshold" in worker
     assert "cleaned_page_text.get(int(page.page_number)" in worker
+
+
+def test_graph_and_retrieval_share_inflection_policy_without_relaxing_abbreviations():
+    from app.dental_knowledge_graph import matched_nodes
+    assert matched_nodes("mandibular retrognatinin tedavisi")
+    assert matched_nodes("çalışma boyunun belirlenmesi")
+    assert not any(node.id == "probing_depth" for node in matched_nodes("PD hızlı şarj standardı"))
+    assert not any(node.id == "centric_relation" for node in matched_nodes("CR değeri CSS ekranında"))
