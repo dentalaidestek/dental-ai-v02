@@ -116,6 +116,35 @@ def _normalize_ocr_text(value: str) -> str:
     return "\n".join(cleaned).strip()
 
 
+
+_MC_OPTION_RE = re.compile(r"^\s*(?:[A-Ea-e][\)\].:-]|[1-9][\)\].:-])\s+")
+_LIST_RE = re.compile(r"^\s*(?:[-•▪◦]|\d+[\).])\s+")
+_TABLE_GAP_RE = re.compile(r"\S\s{2,}\S")
+
+
+def _preserve_academic_structure(text: str) -> str:
+    """Cheap text-only structure pass; no OCR/model call and no content invention."""
+    lines = (text or "").splitlines()
+    if not lines:
+        return ""
+    out: list[str] = []
+    for raw in lines:
+        line = raw.rstrip()
+        if not line:
+            if out and out[-1] != "":
+                out.append("")
+            continue
+        if _MC_OPTION_RE.match(line) or _LIST_RE.match(line) or _TABLE_GAP_RE.search(line):
+            out.append(line)
+            continue
+        # Repair only obvious word hyphenation. Do not merge headings,
+        # measurements, options, lists or table-like rows.
+        if out and out[-1].endswith("-") and re.match(r"^[a-zçğıöşü]", line):
+            out[-1] = out[-1][:-1] + line.lstrip()
+        else:
+            out.append(line)
+    return "\n".join(out).strip()
+
 @dataclass(frozen=True)
 class _PageLayout:
     psm: int
@@ -425,6 +454,7 @@ def ocr_material_page(
         finally:
             retry_image.close()
 
+    text = _preserve_academic_structure(text)
     minimum_confidence = _int_env("STUDY_V2_LOCAL_OCR_MIN_CONFIDENCE", 35, 0, 90)
     visual_only = not text or confidence < minimum_confidence
     return LocalOCRResult(text=text, confidence=confidence, visual_only=visual_only)
