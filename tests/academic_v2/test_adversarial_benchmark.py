@@ -374,3 +374,157 @@ def test_workflow_pressure_matrix_collects_complex_routing_failures():
         checked += 1
     assert checked == len(WORKFLOW_PRESSURE_CASES)
     assert checked >= 45
+
+
+# Student-note capability census. Keep this deliberately broad: it represents
+# what a student can reasonably ask from uploaded course notes. The benchmark
+# records unsupported/misrouted workflows before implementation is changed.
+STUDENT_NOTE_REQUEST_CENSUS = [
+    # Learn / explain / summarize
+    ("Bütün notu özetle.", "summarize", True),
+    ("Bu konuyu bana sıfırdan öğret.", "explain", False),
+    ("Bu kısmı çok basit anlat.", "explain", False),
+    ("Bu bölümü detaylı açıkla.", "explain", False),
+    ("Bu konunun mantığını anlat.", "explain", False),
+    ("Notu baştan sona genel tekrar şeklinde anlat.", "explain", True),
+    ("Sadece bilmem gereken yerleri özetle.", "summarize", False),
+    ("Her başlığın altındaki ana fikri çıkar.", "outline", True),
+    ("Konuyu adım adım anlat.", "explain", False),
+    ("Bu konuyu klinik örneklerle açıkla.", "explain", False),
+
+    # Exam preparation / generation
+    ("Notun tamamından 50 soru hazırla.", "generate_questions", True),
+    ("Bu konudan 20 çoktan seçmeli soru hazırla.", "generate_questions", False),
+    ("Bu konudan 10 açık uçlu soru hazırla.", "generate_questions", False),
+    ("Bu konudan doğru yanlış soruları hazırla.", "generate_questions", False),
+    ("Bütün konulardan flashcard hazırla.", "generate_questions", True),
+    ("Kolaydan zora 30 soru oluştur.", "generate_questions", False),
+    ("Klinik vaka şeklinde 10 soru hazırla.", "generate_questions", False),
+    ("Hoca bu nottan ne sorabilir?", "exam_points", True),
+    ("Sınavda çıkma ihtimali yüksek yerleri çıkar.", "exam_points", True),
+    ("En önemli sınav noktalarını sırala.", "exam_points", True),
+    ("Çıkmış sorulara benzeyen yeni sorular üret.", "similar_questions", False),
+    ("Hocanın daha önce sorduğu konuları bul.", "past_exam_patterns", True),
+    ("En sık tekrar eden soru konularını çıkar.", "repeated_patterns", True),
+
+    # Combined workflows
+    ("Önce konuyu özetle sonra 20 soru sor.", "compound", False),
+    ("Bütün notu özetle ve her bölümden 5 soru hazırla.", "compound", True),
+    ("Kritik noktaları çıkar sonra flashcard hazırla.", "compound", False),
+    ("Konuyu anlat sonra beni test et.", "compound", False),
+    ("Yanlış yaptığım konuları açıkla ve benzer soru sor.", "compound", False),
+    ("Özet, tablo ve 20 soruluk test hazırla.", "compound", False),
+
+    # Study artifacts
+    ("Bu konudan flashcard oluştur.", "artifact", False),
+    ("Ezberlemem gerekenleri listele.", "artifact", False),
+    ("Karşılaştırma tablosu hazırla.", "artifact", False),
+    ("Kavram haritası çıkar.", "artifact", False),
+    ("Konu başlıklarını hiyerarşik şekilde çıkar.", "artifact", False),
+    ("Bir sayfalık hızlı tekrar kağıdı hazırla.", "artifact", False),
+    ("Mnemonic oluştur.", "artifact", False),
+    ("Tanım ve karşılıklarını tablo yap.", "artifact", False),
+    ("Bütün normal değerleri tek tabloda topla.", "artifact", True),
+    ("Tüm sınıflamaları tek yerde topla.", "artifact", True),
+
+    # Locate / extract / enumerate
+    ("SNA notun neresinde geçiyor?", "locate", False),
+    ("Bu kavram hangi sayfalarda anlatılmış?", "locate", False),
+    ("Notta geçen bütün normal değerleri çıkar.", "extract", True),
+    ("Notta geçen bütün yüzdeleri çıkar.", "extract", True),
+    ("Notta geçen bütün süreleri çıkar.", "extract", True),
+    ("Notta geçen tüm sınıflamaları çıkar.", "extract", True),
+    ("Notta geçen bütün ilaç isimlerini çıkar.", "extract", True),
+    ("Notta geçen tüm komplikasyonları listele.", "extract", True),
+    ("Bu başlık altında kaç alt konu var?", "extract", False),
+    ("Bu konuyla ilgili bütün tanımları bul.", "extract", False),
+
+    # Compare / organize / relationships
+    ("Bu iki kavramın farkı nedir?", "compare", False),
+    ("Benzer ve farklı yönlerini tabloyla karşılaştır.", "compare", False),
+    ("Bunları en sık görülenden en aza sırala.", "order", False),
+    ("Bu süreci oluş sırasına göre sırala.", "order", False),
+    ("Neden sonuç ilişkilerini çıkar.", "relations", False),
+    ("Hangi bulgu hangi hastalıkla ilişkili?", "relations", False),
+    ("Bu sınıflamaları birbirinden nasıl ayırırım?", "compare", False),
+    ("Bu değerleri çocuk ve erişkin için karşılaştır.", "compare", False),
+
+    # Verify / correct / challenge
+    ("Benim yazdığım bu bilgi doğru mu: SNA 82 derecedir?", "verify", False),
+    ("Bu cümledeki hatayı bul.", "verify", False),
+    ("Bu cevabımı notlara göre değerlendir.", "verify", False),
+    ("Eksik yazdığım yerleri tamamla.", "verify", False),
+    ("Bu iki ifade birbiriyle çelişiyor mu?", "verify", False),
+    ("Notta bu bilgi gerçekten var mı?", "verify", False),
+    ("Notta birbiriyle çelişen değerleri bul.", "verify", True),
+    ("Yanlış öğrenmiş olabileceğim kritik noktaları göster.", "verify", True),
+
+    # Active recall / tutoring
+    ("Bana tek tek soru sor, ben cevaplayayım.", "interactive", False),
+    ("Cevabı hemen söyleme, önce beni düşündür.", "interactive", False),
+    ("Yanlış cevap verirsem neden yanlış olduğunu açıkla.", "interactive", False),
+    ("Beni sözlüye hazırla.", "interactive", False),
+    ("Bu konuyu Socratic şekilde çalıştır.", "interactive", False),
+    ("5 soruluk mini quiz yap ve sonunda puanla.", "interactive", False),
+    ("Sadece yanlış yaptığım soruları tekrar sor.", "interactive", False),
+
+    # Scenario / application
+    ("Bu bilgiyle ilgili klinik vaka oluştur.", "scenario", False),
+    ("Bu konudan ayırıcı tanı vakası hazırla.", "scenario", False),
+    ("Bir hasta senaryosu ver ve tanıyı bana sor.", "scenario", False),
+    ("Tedavi planlaması gerektiren vaka sorusu oluştur.", "scenario", False),
+    ("Bu kavramın gerçek klinikte nasıl kullanıldığını anlat.", "scenario", False),
+
+    # Follow-up / context dependent language
+    ("Peki bunun tedavisi?", "followup", False),
+    ("Bunun komplikasyonları ne?", "followup", False),
+    ("İkincisini biraz daha açıkla.", "followup", False),
+    ("Az önceki değeri neden öyle söyledin?", "followup", False),
+    ("Bunu çocuklarda nasıl değerlendiririz?", "followup", False),
+    ("Aynı şeyi erişkin için söyle.", "followup", False),
+
+    # Ambiguity / informal language / typo
+    ("bu konu ne anlatıyo", "informal", False),
+    ("burda asıl ezberlemem gereken ne", "informal", False),
+    ("hoca burdan ne sorar", "informal", False),
+    ("bunu anlamadım daha kolay anlatsana", "informal", False),
+    ("pulptis tedavisi neydi", "informal", False),
+    ("periodontits evreleri ne", "informal", False),
+
+    # Source discipline
+    ("Sadece bu nota göre cevap ver.", "source_control", False),
+    ("Notta yoksa bilmiyorum de, ek bilgi kullanma.", "source_control", False),
+    ("Cevabın hangi bölümden geldiğini belirt.", "source_control", False),
+    ("Cevabını nottaki kanıtlarla destekle.", "source_control", False),
+    ("Notta cevabı yoksa uydurma.", "source_control", False),
+]
+
+def test_student_note_request_census_routes_core_supported_workflows():
+    from app.dental_query_intent import classify_academic_study_task, classify_dental_study_plan
+    # This is a capability census, not a claim that every workflow is already
+    # implemented. Core supported academic workflows must route; the remaining
+    # categories stay explicit so future support is measured instead of guessed.
+    core = {
+        "summarize", "explain", "generate_questions", "exam_points",
+        "similar_questions", "past_exam_patterns", "repeated_patterns",
+    }
+    checked = 0
+    unsupported = []
+    for query, family, coverage in STUDENT_NOTE_REQUEST_CENSUS:
+        task = classify_academic_study_task(query)
+        generation = classify_dental_study_plan(query)
+        if family in core:
+            assert task is not None, (family, query)
+            if family != "generate_questions":
+                assert task.task == family, (family, query, task)
+            else:
+                assert task.generate_new_questions or generation is not None, (query, task, generation)
+            if coverage:
+                assert task.requires_coverage, (family, query, task)
+        elif task is None and generation is None:
+            unsupported.append((family, query))
+        checked += 1
+    assert checked >= 90
+    # Preserve the census as a diagnostic signal: unsupported workflows are
+    # expected today, but the benchmark must actually exercise them.
+    assert unsupported
