@@ -874,9 +874,9 @@ class EvidenceSufficiency:
 
 
 def _row_semantic_features(row) -> DentalSemanticFeatures:
-    section = row[5] or ""
-    body = row[7] or ""
-    features = analyze_dental_text(f"{section}\n{body}")
+    # Indexed semantic metadata is the normal hot path. Re-running the dental
+    # matcher for every retrieved chunk wastes CPU and can also make old chunks
+    # change meaning after a vocabulary deployment.
     if len(row) > 14 and row[-1]:
         try:
             import json
@@ -892,8 +892,9 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
             )
         except (TypeError, ValueError, KeyError):
             pass
-    return features
-
+    section = row[5] or ""
+    body = row[7] or ""
+    return analyze_dental_text(f"{section}\\n{body}")
 
 def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
