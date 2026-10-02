@@ -911,7 +911,7 @@ def _coverage_terms(intent_name: str) -> tuple[str, ...]:
     return _EVIDENCE_FACETS.get(intent_name, ())
 
 
-def _coverage_score(query: str, rows: list, requirement=None) -> tuple[float, tuple[str, ...]]:
+def _coverage_score(query: str, rows: list, requirement=None, feature_cache=None) -> tuple[float, tuple[str, ...]]:
     """Cheap local coverage signal across every explicitly requested facet."""
     requirement = requirement or build_dental_requirement_plan(query)
     facets = tuple(dict.fromkeys(
@@ -922,7 +922,7 @@ def _coverage_score(query: str, rows: list, requirement=None) -> tuple[float, tu
     corpus = " ".join(f"{row[5] or ''} {row[7] or ''}" for row in rows).casefold()
     semantic_kinds: set[str] = set()
     for row in rows:
-        features = _row_semantic_features(row)
+        features = _row_semantic_features(row, feature_cache)
         semantic_kinds.update(item.casefold() for item in features.kinds)
     covered: list[str] = []
     for facet in facets:
@@ -948,7 +948,10 @@ class EvidenceSufficiency:
     missing_facets: tuple[str, ...]
 
 
-def _row_semantic_features(row) -> DentalSemanticFeatures:
+def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None = None) -> DentalSemanticFeatures:
+    row_id = int(row[0]) if row and row[0] is not None else -1
+    if cache is not None and row_id in cache:
+        return cache[row_id]
     # Indexed semantic metadata is the normal hot path. Re-running the dental
     # matcher for every retrieved chunk wastes CPU and can also make old chunks
     # change meaning after a vocabulary deployment.
@@ -956,7 +959,7 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
         try:
             import json
             meta = json.loads(row[-1])
-            return DentalSemanticFeatures(
+            features = DentalSemanticFeatures(
                 node_ids=tuple(meta.get("nodes") or ()),
                 specialties=tuple(meta.get("specialties") or ()),
                 kinds=tuple(meta.get("kinds") or ()),
@@ -965,13 +968,19 @@ def _row_semantic_features(row) -> DentalSemanticFeatures:
                 imaging_types=tuple(meta.get("imaging") or ()),
                 negated_node_ids=tuple(meta.get("negated_nodes") or ()),
             )
+            if cache is not None:
+                cache[row_id] = features
+            return features
         except (TypeError, ValueError, KeyError):
             pass
     section = row[5] or ""
     body = row[7] or ""
-    return analyze_dental_text(f"{section}\\n{body}")
+    features = analyze_dental_text(f"{section}\\n{body}")
+    if cache is not None:
+        cache[row_id] = features
+    return features
 
-def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceSufficiency:
+def _evidence_sufficiency(query: str, rows: list, requirement=None, feature_cache=None) -> EvidenceSufficiency:
     """Decide locally whether evidence is strong enough to spend the one AI call."""
     if not rows:
         return EvidenceSufficiency(False, 0.0, (), _coverage_terms(classify_dental_intent(query).name))
@@ -983,7 +992,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceS
     facets = tuple(dict.fromkeys(
         facet for item in requirement.intents for facet in _coverage_terms(item.name)
     ))
-    coverage, covered = _coverage_score(query, rows, requirement=requirement)
+    coverage, covered = _coverage_score(query, rows, requirement=requirement, feature_cache=feature_cache)
     missing = tuple(facet for facet in facets if facet not in covered)
 
     alignments = sorted(
@@ -993,7 +1002,7 @@ def _evidence_sufficiency(query: str, rows: list, requirement=None) -> EvidenceS
     best_alignment = alignments[0] if alignments else 0.0
     complementary_alignment = alignments[1] if len(alignments) > 1 else 0.0
 
-    row_features = [_row_semantic_features(row) for row in rows]
+    row_features = [_row_semantic_features(row, feature_cache) for row in rows]
     evidence_node_ids = {node_id for features in row_features for node_id in features.node_ids}
     multi_subject_complete = all(node_id in evidence_node_ids for node_id in requirement.subject_node_ids)
     kinds = {item for features in row_features for item in features.kinds}
@@ -1111,6 +1120,10 @@ def retrieve_course_context_v2(
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     resolved = resolve_followup_query(query, recent_history)
     requirement = build_dental_requirement_plan(resolved)
+    # Request-local semantic memo: bounded by this retrieval's candidate rows,
+    # discarded immediately after the request. Avoid repeated JSON parsing/text
+    # analysis across rerank, coverage and sufficiency without global RAM state.
+    row_feature_cache: dict[int, DentalSemanticFeatures] = {}
     # New V2 indexes are intentionally local-FTS. Do not spend an external
     # embedding request per user question when the published generation has no
     # semantic vectors to compare against.
@@ -1189,7 +1202,7 @@ def retrieve_course_context_v2(
         # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
         rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
-        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement)
+        coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         rescue_query_count = 0
         if _needs_multi_evidence(resolved, requirement=requirement) and coverage < 1.0 and len(rows) < candidate_target:
             requested_facets = tuple(dict.fromkeys(
@@ -1248,7 +1261,7 @@ def retrieve_course_context_v2(
                     # Rescue evidence re-enters the same relevance and coverage
                     # gates; it never bypasses subject alignment or sufficiency.
                     rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12), requirement=requirement)
-                    coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement)
+                    coverage, covered_facets = _coverage_score(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         logger.info(
             "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
             rescue_query_count, coverage, ",".join(covered_facets) or "-",
@@ -1267,7 +1280,7 @@ def retrieve_course_context_v2(
         # already passes the same local sufficiency gate used before generation.
         # A hit at a chunk boundary therefore gets bounded adjacent context,
         # while a self-contained definition/value keeps the one-query path.
-        provisional = _evidence_sufficiency(resolved, rows, requirement=requirement)
+        provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         neighbor_limit = (
             0
             if fast_direct and provisional.sufficient
@@ -1332,7 +1345,7 @@ def retrieve_course_context_v2(
             else 0.0
         )
     else:
-        sufficiency = _evidence_sufficiency(resolved, rows, requirement=requirement)
+        sufficiency = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache)
         result.evidence_sufficient = sufficiency.sufficient
         result.evidence_confidence = sufficiency.confidence
         result.covered_facets = sufficiency.covered_facets
