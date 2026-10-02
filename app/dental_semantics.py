@@ -109,7 +109,15 @@ def _value_context(text: str, evidence: ValueEvidence) -> tuple[tuple[str, ...],
     left = max(0, evidence.start - 120)
     right = min(len(text), evidence.end + 120)
     local = text[left:right]
-    qualifiers = [name for name, pattern in _VALUE_QUALIFIER_PATTERNS if pattern.search(local)]
+    # Qualifiers bind to the value's own clause. A wide evidence window is kept
+    # for diagnostics, but must not make two adjacent reference statements look
+    # conditionally different merely because the next sentence is nearby.
+    clause_left = max(text.rfind(".", left, evidence.start), text.rfind(";", left, evidence.start), text.rfind("?", left, evidence.start), text.rfind("!", left, evidence.start))
+    clause_right_candidates = [p for p in (text.find(".", evidence.end, right), text.find(";", evidence.end, right), text.find("?", evidence.end, right), text.find("!", evidence.end, right)) if p >= 0]
+    clause_start = max(left, clause_left + 1)
+    clause_end = min(right, min(clause_right_candidates) + 1) if clause_right_candidates else right
+    qualifier_local = text[clause_start:clause_end]
+    qualifiers = [name for name, pattern in _VALUE_QUALIFIER_PATTERNS if pattern.search(qualifier_local)]
     for match in _CONTEXT_SIZE_RE.finditer(local):
         qualifiers.append("context_size:" + re.sub(r"\s+", " ", match.group(0)).strip())
     return tuple(dict.fromkeys(qualifiers)), local
