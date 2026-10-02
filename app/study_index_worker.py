@@ -85,8 +85,11 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     compact = re.sub(r"\s+", "", text)
     if len(compact) < 24:
         return False, "TOO_SHORT"
-    printable = sum(1 for ch in text if ch.isprintable())
-    if printable / max(1, len(text)) < 0.97:
+    # Newlines/tabs are legitimate PDF layout separators. str.isprintable()
+    # returns False for them, so counting them as corrupt glyphs sends clean,
+    # line-rich lecture slides through expensive OCR unnecessarily.
+    visible = sum(1 for ch in text if ch.isprintable() or ch.isspace())
+    if visible / max(1, len(text)) < 0.97:
         return False, "LOW_PRINTABLE_RATIO"
     alnum = sum(1 for ch in text if ch.isalnum())
     if alnum / max(1, len(compact)) < 0.35:
