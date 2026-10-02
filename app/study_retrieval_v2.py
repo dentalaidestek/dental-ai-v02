@@ -968,7 +968,11 @@ def _evidence_sufficiency(query: str, rows: list) -> EvidenceSufficiency:
     if intent.name in {"value", "definition", "measurement"}:
         sufficient = anchored and confidence >= 0.34
     elif facets:
-        sufficient = anchored and confidence >= 0.38 and (coverage > 0.0 or intent_kind > 0.0)
+        # Explicit multi-facet requests are a hard completeness contract.
+        # Strong subject evidence for one facet must never authorize synthesis
+        # of another requested facet that is absent from the user's notes.
+        hard_complete = not missing
+        sufficient = anchored and hard_complete and confidence >= 0.38
     else:
         sufficient = anchored and confidence >= 0.34
 
@@ -1082,93 +1086,61 @@ def retrieve_course_context_v2(
             embedding_model=embedding_model,
             limit=max(limit * 3, 18),
         )
-        # Collect complementary evidence with a few focused facet queries.
-        # This reaches distant pages/documents without exploding one giant OR query.
+        # Normal QA has one primary retrieval round-trip. Only a complex query
+        # with an explicitly missing facet may spend one bounded rescue query.
+        # Do not replay the whole question or use graph expansion for rescue:
+        # subject identity comes from the user's lexical subject plus curated
+        # aliases, while the missing facet contributes only its synonym group.
         candidate_target = max(limit * 4, 24)
-        seen_ids = {int(row[0]) for row in rows}
-        evidence_queries = _evidence_queries(resolved) if _needs_multi_evidence(resolved) else []
-        initial_coverage, initial_covered = _coverage_score(resolved, rows)
-        missing_initial = {
-            facet for item in build_dental_requirement_plan(resolved).intents
-            for facet in _coverage_terms(item.name) if facet not in initial_covered
-        }
-        if initial_coverage >= 1.0:
-            evidence_queries = []
-        for evidence_query in evidence_queries:
-            if len(rows) >= candidate_target:
-                break
-            # Focused queries contain one canonical facet's synonym group.
-            # Skip probes for requirements already satisfied by the first pass.
-            if missing_initial and not any(
-                any(term.casefold() in evidence_query.casefold()
-                    for term in _FACET_SEARCH_TERMS.get(facet, (facet,)))
-                for facet in missing_initial
-            ):
-                continue
-            facet_rows = _fts_rows(
-                session,
-                owner_user_id=owner_user_id,
-                course_id=course_id,
-                lexical_query=evidence_query,
-                query_vector=None,
-                embedding_provider=embedding_provider,
-                embedding_model=embedding_model,
-                limit=max(4, min(8, candidate_target - len(rows))),
-            )
-            for row in facet_rows:
-                row_id = int(row[0])
-                if row_id not in seen_ids:
-                    rows.append(row)
-                    seen_ids.add(row_id)
-        # If focused plans still found very little, retain one bounded graph/alias
-        # fallback for recall. It is no longer the normal expansion path.
-        if len(rows) < max(limit, 6):
-            broad_query = _fts_query(resolved, broad=True)
-            if broad_query and broad_query != precise_query:
-                for row in _fts_rows(
-                    session,
-                    owner_user_id=owner_user_id,
-                    course_id=course_id,
-                    lexical_query=broad_query,
-                    query_vector=None,
-                    embedding_provider=embedding_provider,
-                    embedding_model=embedding_model,
-                    limit=min(8, candidate_target - len(rows)),
-                ):
-                    row_id = int(row[0])
-                    if row_id not in seen_ids:
-                        rows.append(row)
-                        seen_ids.add(row_id)
         rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
         coverage, covered_facets = _coverage_score(resolved, rows)
-        # At most one extra local DB query, only for complex questions whose
-        # first pass lacks evidence diversity.
-        if evidence_queries and coverage < 1.0 and len(rows) < candidate_target:
-            missing = [
-                facet for item in build_dental_requirement_plan(resolved).intents
-                for facet in _coverage_terms(item.name) if facet not in covered_facets
-            ]
+        rescue_query_count = 0
+        if _needs_multi_evidence(resolved) and coverage < 1.0 and len(rows) < candidate_target:
+            requirement = build_dental_requirement_plan(resolved)
+            requested_facets = tuple(dict.fromkeys(
+                facet for item in requirement.intents for facet in _coverage_terms(item.name)
+            ))
+            missing = [facet for facet in requested_facets if facet not in covered_facets]
             if missing:
-                hints = _FACET_SEARCH_TERMS.get(missing[0], (missing[0],))
-                rescue_hint = " OR ".join(
-                    f'"{term}"' if " " in term else term for term in hints[:4]
+                original_terms, _ = _retrieval_terms(resolved)
+                alias_terms = _concept_alternatives(resolved)
+                subject_terms = list(dict.fromkeys(original_terms[:5] + alias_terms[:2]))
+                subject_query = " OR ".join(
+                    f'"{term}"' if " " in term else term for term in subject_terms
                 )
-                rescue_query = f"{_fts_query(resolved, broad=False)} ({rescue_hint})"
-                for row in _fts_rows(
-                    session,
-                    owner_user_id=owner_user_id,
-                    course_id=course_id,
-                    lexical_query=rescue_query,
-                    query_vector=None,
-                    embedding_provider=embedding_provider,
-                    embedding_model=embedding_model,
-                    limit=min(6, candidate_target - len(rows)),
-                ):
-                    row_id = int(row[0])
-                    if row_id not in seen_ids:
-                        rows.append(row)
-                        seen_ids.add(row_id)
-                rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
+                facet_groups = []
+                for facet in missing:
+                    hints = _FACET_SEARCH_TERMS.get(facet, (facet,))
+                    facet_groups.append("(" + " OR ".join(
+                        f'"{term}"' if " " in term else term for term in hints[:4]
+                    ) + ")")
+                if subject_query and facet_groups:
+                    rescue_query = f"({subject_query}) " + " ".join(facet_groups)
+                    rescue_rows = _fts_rows(
+                        session,
+                        owner_user_id=owner_user_id,
+                        course_id=course_id,
+                        lexical_query=rescue_query,
+                        query_vector=None,
+                        embedding_provider=embedding_provider,
+                        embedding_model=embedding_model,
+                        limit=min(6, max(1, candidate_target - len(rows))),
+                    )
+                    rescue_query_count = 1
+                    seen_ids = {int(row[0]) for row in rows}
+                    for row in rescue_rows:
+                        row_id = int(row[0])
+                        if row_id not in seen_ids:
+                            rows.append(row)
+                            seen_ids.add(row_id)
+                    # Rescue evidence re-enters the same relevance and coverage
+                    # gates; it never bypasses subject alignment or sufficiency.
+                    rows = _rerank_dental_rows(resolved, rows, limit=max(limit * 2, 12))
+                    coverage, covered_facets = _coverage_score(resolved, rows)
+        logger.info(
+            "Academic V2 retrieval DB plan. rescue_queries=%s coverage=%.3f facets=%s",
+            rescue_query_count, coverage, ",".join(covered_facets) or "-",
+        )
         rows = _coverage_select(resolved, rows, limit=limit)
         primary_ids = [int(row[0]) for row in rows]
         # Neighbor context is useful for split passages, but it must not be an
