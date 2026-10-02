@@ -15,8 +15,9 @@ def test_short_followup_includes_near_conversation_context():
         {"role": "ASSISTANT", "content": "Bölüm 1 iskeletsel ilişkiyi açıklar."},
     ]
     resolved = resolve_followup_query("Peki neden?", history)
-    assert resolved.startswith("Peki neden?")
-    assert "iskeletsel ilişki" in resolved
+    assert resolved.endswith("Peki neden?")
+    assert "Angle Sınıf II bölüm 1'i" in resolved
+    assert "iskeletsel ilişki" not in resolved
 
 
 def test_optional_legacy_semantic_candidates_are_bound_to_embedding_identity():
