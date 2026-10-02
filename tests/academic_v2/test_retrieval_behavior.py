@@ -492,3 +492,12 @@ def test_rescue_subject_excludes_generic_facet_vocabulary():
     assert "facet_noise" in branch
     assert "term.casefold() not in facet_noise" in branch
     assert "graph_expansion_terms" not in branch
+
+
+def test_literal_value_question_requires_measurement_evidence_before_generation():
+    source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+    suff = source[source.index("def _evidence_sufficiency"):source.index("def _coverage_select")]
+    assert "literal_value_request" in suff
+    assert "literal_value_missing" in suff
+    assert "special_match = 0.0" in suff
+    assert "not literal_value_missing" in suff
