@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 import json
+import threading
+import time
 
 @dataclass(frozen=True)
 class CoverageBucket:
@@ -95,3 +97,31 @@ def build_coverage_ledger(plan: CoveragePlan, generated_by_bucket: dict[str, int
         remaining_questions=max(0, plan.requested_count - generated),
         completed_bucket_keys=tuple(completed),
     )
+
+
+_PLAN_CACHE_LOCK = threading.Lock()
+_PLAN_CACHE: dict[tuple[int, int, str, int], tuple[float, CoveragePlan]] = {}
+_PLAN_CACHE_TTL_SECONDS = 300
+_PLAN_CACHE_MAX = 64
+
+def cached_coverage_plan(owner_user_id: int, course_id: int, index_fingerprint: str, requested_count: int) -> CoveragePlan | None:
+    key = (int(owner_user_id), int(course_id), str(index_fingerprint), int(requested_count))
+    now = time.monotonic()
+    with _PLAN_CACHE_LOCK:
+        item = _PLAN_CACHE.get(key)
+        if not item:
+            return None
+        created, plan = item
+        if now - created > _PLAN_CACHE_TTL_SECONDS:
+            _PLAN_CACHE.pop(key, None)
+            return None
+        return plan
+
+def cache_coverage_plan(owner_user_id: int, course_id: int, index_fingerprint: str, plan: CoveragePlan) -> None:
+    key = (int(owner_user_id), int(course_id), str(index_fingerprint), int(plan.requested_count))
+    now = time.monotonic()
+    with _PLAN_CACHE_LOCK:
+        _PLAN_CACHE[key] = (now, plan)
+        if len(_PLAN_CACHE) > _PLAN_CACHE_MAX:
+            oldest = min(_PLAN_CACHE, key=lambda x: _PLAN_CACHE[x][0])
+            _PLAN_CACHE.pop(oldest, None)
