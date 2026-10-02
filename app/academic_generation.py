@@ -19,11 +19,13 @@ class GenerationBatch:
 
 def plan_generation_batches(plan: CoveragePlan, max_questions_per_batch: int = 10, max_chunks_per_batch: int = 10, generated_by_bucket: dict[str, int] | None = None) -> tuple[GenerationBatch, ...]:
     """Split coverage budgets into bounded batches without touching normal QA."""
-    qcap = max(1, min(int(max_questions_per_batch), 12))\n    generated_by_bucket = generated_by_bucket or {}
+    qcap = max(1, min(int(max_questions_per_batch), 12))
+    generated_by_bucket = generated_by_bucket or {}
     ccap = max(1, min(int(max_chunks_per_batch), 20))
     batches = []
     for bucket in plan.buckets:
-        already = max(0, min(int(generated_by_bucket.get(bucket_key(bucket), 0)), bucket.question_budget))\n        remaining = bucket.question_budget - already
+        already = max(0, min(int(generated_by_bucket.get(bucket_key(bucket), 0)), bucket.question_budget))
+        remaining = bucket.question_budget - already
         chunks = bucket.chunk_ids or ()
         offset = already % max(1, len(chunks))
         while remaining > 0:
