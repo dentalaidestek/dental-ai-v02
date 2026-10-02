@@ -17,7 +17,7 @@ BASE = [
     ("implant kontrendikasyonları nelerdir?", ("implant",), ("contraindication",)),
     ("gömülü üçüncü molar komplikasyonları", ("third_molar",), ("complication",)),
     ("dry socket neden oluşur?", ("dry_socket",), ("cause",)),
-    ("inferior alveolar sinir nerede seyreder?", ("inferior_alveolar_nerve",), ("anatomy",)),
+    ("inferior alveolar sinir nerede seyreder?", ("ian",), ("anatomy",)),
     ("MRONJ tedavisi nedir?", ("mronj",), ("treatment",)),
     ("NaOCl komplikasyonları nelerdir?", ("sodium_hypochlorite",), ("complication",)),
     ("MIH bulguları nelerdir?", ("mih",), ("diagnosis",)),
