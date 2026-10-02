@@ -65,6 +65,13 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if len(found) >= max(1, min(limit, 6)):
             break
     if found:
+        # Imaging words describe a modality/constraint surprisingly often
+        # ("CBCT'de mandibular kanal ilişkisi"). When another explicit intent
+        # states what is actually asked, visual must not become a second facet
+        # that forces unnecessary multi-evidence retrieval or attachments.
+        non_visual = [item for item in found if item.name != "visual"]
+        if non_visual:
+            found = non_visual
         # Generic "nedir/nelerdir" often closes a multi-facet Turkish question
         # ("tanısı ve tedavisi nedir?"). It must not create a fake definition
         # requirement when stronger explicit facets are already present.
