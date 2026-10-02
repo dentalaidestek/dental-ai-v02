@@ -530,6 +530,59 @@ def _question_rows(
     }).all())
 
 
+def _coverage_metadata_page(
+    session: Session, *, owner_user_id: int, course_id: int,
+    after_id: int = 0, limit: int = 240,
+) -> list:
+    """Read only lightweight coverage metadata; never chunk text."""
+    return list(session.exec(text("""
+        SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+               c.section_title, c.content_kind, '' AS text_content,
+               NULL::BIGINT, NULL::DOUBLE PRECISION, NULL::BIGINT, NULL::DOUBLE PRECISION,
+               1.0::DOUBLE PRECISION, c.chunk_index, c.semantic_json
+        FROM studyindexchunk c
+        JOIN studymaterial m
+          ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.active_index_version=c.index_version
+         AND m.index_status='READY' AND m.deleted_at IS NULL
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND c.id > :after_id AND c.content_kind <> 'QUESTION'
+        ORDER BY c.id
+        LIMIT :limit
+    """), params={
+        "owner": owner_user_id, "course": course_id, "after_id": after_id,
+        "limit": max(1, min(limit, 400)),
+    }).all())
+
+
+def _coverage_evidence_rows(
+    session: Session, *, owner_user_id: int, course_id: int,
+    chunk_ids: list[int], limit: int = 24,
+) -> list:
+    """Hydrate text only for planner-selected chunks."""
+    if not chunk_ids:
+        return []
+    return list(session.exec(text("""
+        SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
+               c.section_title, c.content_kind, c.text_content,
+               NULL::BIGINT, NULL::DOUBLE PRECISION, NULL::BIGINT, NULL::DOUBLE PRECISION,
+               1.0::DOUBLE PRECISION, c.chunk_index, c.semantic_json
+        FROM studyindexchunk c
+        JOIN studymaterial m
+          ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.active_index_version=c.index_version
+         AND m.index_status='READY' AND m.deleted_at IS NULL
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND c.id = ANY(CAST(:chunk_ids AS BIGINT[]))
+          AND c.content_kind <> 'QUESTION'
+        ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
+        LIMIT :limit
+    """), params={
+        "owner": owner_user_id, "course": course_id,
+        "chunk_ids": chunk_ids, "limit": max(1, min(limit, 48)),
+    }).all())
+
+
 def _academic_question_rows(
     session: Session, *, owner_user_id: int, course_id: int, limit: int = 32,
 ) -> list:
