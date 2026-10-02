@@ -34,7 +34,7 @@ _RULES = (
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
     ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(r"\b(?:neden|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
+    ("cause", re.compile(r"\b(?:neden|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk faktör(?:ü|leri)?|niye|neden olur|neye bağlı)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
@@ -356,7 +356,7 @@ _STUDY_GENERATION_RE = re.compile(
     re.I,
 )
 _STUDY_COVERAGE_RE = re.compile(
-    r"\b(?:tüm|bütün|tamamı|tamamını|tamamındaki|notun tamamı|notun tamamını|notun tamamındaki|dersin tamamı|her konu|bütün konu|"
+    r"\b(?:tüm|bütün|tamamı|tamamını|tamamındaki|notun tamamı|notun tamamını|notun tamamından|notun tamamındaki|dersin tamamı|her konu|bütün konu|"
     r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
     re.I,
 )
@@ -424,7 +424,7 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(r"\b(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)", re.I), False, True, True, False),
-    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)", re.I), False, True, False, False),
+    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
 
