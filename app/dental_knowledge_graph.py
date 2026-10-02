@@ -326,6 +326,30 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
                 if _edit_distance_at_most_one(token, clean):
                     candidates.append((-len(clean), pos, node))
                     break
+    # Also allow one typo inside a multiword canonical phrase when every
+    # other word matches exactly. This keeps "mandbular kanal" recoverable
+    # without enabling fuzzy abbreviations or broad phrase guessing.
+    query_words = re.findall(r"[a-zçğıöşü]{3,}", (query or "").casefold(), flags=re.I)
+    for node in ALL_NODES:
+        if node.id in already:
+            continue
+        for term in (node.label, *node.aliases):
+            words = re.findall(r"[a-zçğıöşü]{3,}", (term or "").casefold(), flags=re.I)
+            if len(words) < 2 or len(words) > 4:
+                continue
+            for start in range(0, max(0, len(query_words) - len(words) + 1)):
+                window = query_words[start:start + len(words)]
+                diffs = [
+                    i for i, (left, right) in enumerate(zip(window, words))
+                    if left != right
+                ]
+                if len(diffs) != 1:
+                    continue
+                i = diffs[0]
+                if len(words[i]) >= 7 and _edit_distance_at_most_one(window[i], words[i]):
+                    candidates.append((-sum(map(len, words)), start, node))
+                    break
+
     # A typo rescue is safe only when the best edit-distance candidate is
     # unambiguous. Equal-strength candidates mean "unknown", not permission to
     # guess a dental subject.
