@@ -415,7 +415,7 @@ class AcademicStudyTaskPlan:
 
 _BROAD_ACADEMIC_RE = re.compile(
     r"\b(?:tüm|bütün|tamamı|baştan sona|detaylı|kapsamlı|eksiksiz|genel tekrar|"
-    r"notu özetle|notları özetle|dersi özetle|konuyu detaylı|bölümü özetle|"
+    r"notu özetle|notları özetle|dersi özetle|konuyu detaylı|bölümü özetle|notun tamamı|notun tamamından|notun tamamındaki|"
     r"her şeyi|herşeyi)\b", re.I,
 )
 
@@ -424,7 +424,7 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(r"\b(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)", re.I), False, True, True, False),
-    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)\b.{0,24}\b(?:anlat|açıkla|özetle)|\b(?:anlat|açıkla|özetle)\b.{0,24}\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)", re.I), False, True, False, False),
+    ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)", re.I), False, True, False, False),
 )
 
 
@@ -432,6 +432,11 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     """Plan role-neutral academic workflows while keeping factual output source-bound."""
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
+    lowered = clean.casefold()
+    # A broad summary request remains a summary even when the user also asks
+    # which parts are exam-important; exam-point wording is an output facet.
+    if broad and any(x in lowered for x in ("özet", "özetle")):
+        return AcademicStudyTaskPlan("summarize", False, True, True, False)
     for task, pattern, past, notes, coverage, generate in _ACADEMIC_STUDY_TASK_RULES:
         if pattern.search(clean):
             return AcademicStudyTaskPlan(task, past, notes, coverage or broad, generate)
