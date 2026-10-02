@@ -474,8 +474,14 @@ _FACET_SEARCH_TERMS = {
     "anatomi": ("anatomi", "anatomy", "komşuluk", "konum"),
     "radyografik bulgu": ("radyografik", "radiographic", "görüntü", "imaging"),
     "fark": ("fark", "difference", "karşılaştır", "compare"),
-    "endikasyon": ("endikasyon", "indication", "kullanım"),
-    "kontrendikasyon": ("kontrendikasyon", "contraindication", "sakınca"),
+    "endikasyon": (
+        "endikasyon", "indication", "kullanım", "kullanılır", "uygulanır",
+        "tercih edilir", "önerilir",
+    ),
+    "kontrendikasyon": (
+        "kontrendikasyon", "contraindication", "sakınca", "kullanılmaz",
+        "uygulanmaz", "önerilmez", "tercih edilmez", "kaçınılır",
+    ),
 }
 
 _FACET_SEMANTIC_KINDS = {
