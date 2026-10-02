@@ -162,3 +162,30 @@ def test_dental_graph_has_unique_canonical_ids_and_merged_aliases():
     assert "bitewing" in by_id
     assert "interproximal radiograph" in by_id["bitewing"].aliases
     assert "biodentine" in by_id
+
+
+def test_relation_hints_focus_graph_expansion_on_requested_evidence():
+    from app.dental_knowledge_graph import graph_expansion_terms
+
+    complication = {x.casefold() for x in graph_expansion_terms(
+        "diş çekimi komplikasyonları",
+        relation_hints=("has_complication", "leads_to", "associated_with"),
+    )}
+    assert "alveolit" in complication or "dry socket" in complication
+
+    assessment = {x.casefold() for x in graph_expansion_terms(
+        "periodontitis nasıl değerlendirilir",
+        relation_hints=("assessed_by", "measures"),
+    )}
+    assert "sondalama derinliği" in assessment or "probing depth" in assessment
+    assert "klinik ataşman kaybı" in assessment or "clinical attachment loss" in assessment
+
+
+def test_low_confidence_relation_does_not_pollute_default_expansion():
+    from app.dental_knowledge_graph import graph_expansion_terms
+
+    terms = {x.casefold() for x in graph_expansion_terms(
+        "reversible pulpitis tedavisi",
+        relation_hints=("has_treatment", "treats", "has_procedure"),
+    )}
+    assert "kanal tedavisi" not in terms
