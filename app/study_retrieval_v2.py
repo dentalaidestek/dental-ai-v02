@@ -60,6 +60,77 @@ class Evidence:
     chunk_index: int = 0
 
 
+@dataclass(frozen=True)
+class PastQuestionFingerprint:
+    chunk_id: int
+    material_id: int
+    node_ids: tuple[str, ...]
+    intents: tuple[str, ...]
+    relation_hints: tuple[str, ...]
+    question_format: str
+
+    @property
+    def canonical_key(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        # Wording is deliberately excluded: paraphrases of the same dental
+        # concept + requested facet should land in the same exam pattern.
+        return (self.node_ids, self.intents)
+
+
+def _question_format(text_value: str) -> str:
+    clean = text_value or ""
+    if re.search(r"(?mi)^\s*[A-E][.)]\s+", clean):
+        return "mcq"
+    if re.search(r"(?i)\b(?:doğru|yanlış|true|false)\b", clean):
+        return "true_false"
+    return "open"
+
+
+def fingerprint_past_question(row) -> PastQuestionFingerprint:
+    body = str(row[7] or "")
+    features = analyze_dental_text(body)
+    intents = classify_dental_intents(body)
+    intent_names = tuple(i.name for i in intents if i.name != "general") or ("general",)
+    return PastQuestionFingerprint(
+        chunk_id=int(row[0]),
+        material_id=int(row[1]),
+        node_ids=tuple(sorted(set(features.node_ids))),
+        intents=intent_names,
+        relation_hints=combined_relation_hints(intents),
+        question_format=_question_format(body),
+    )
+
+
+def repeated_question_patterns(rows: list, *, minimum_distinct_questions: int = 2) -> list[dict]:
+    """Group paraphrased QUESTION chunks by canonical dental concept + intent.
+
+    A pattern is never called repeated from one question. Distinct chunk ids are
+    required; material diversity is reported separately instead of fabricated.
+    """
+    groups: dict[tuple, list[PastQuestionFingerprint]] = {}
+    for row in rows:
+        fp = fingerprint_past_question(row)
+        # Generic questions without a recognized dental concept are too weak to
+        # support a "repeated topic" claim.
+        if not fp.node_ids:
+            continue
+        groups.setdefault(fp.canonical_key, []).append(fp)
+    output: list[dict] = []
+    for key, items in groups.items():
+        chunk_ids = sorted({x.chunk_id for x in items})
+        if len(chunk_ids) < max(2, minimum_distinct_questions):
+            continue
+        output.append({
+            "node_ids": key[0],
+            "intents": key[1],
+            "question_count": len(chunk_ids),
+            "material_count": len({x.material_id for x in items}),
+            "formats": tuple(sorted({x.question_format for x in items})),
+            "chunk_ids": tuple(chunk_ids),
+        })
+    output.sort(key=lambda x: (-x["question_count"], -x["material_count"], x["node_ids"]))
+    return output
+
+
 @dataclass
 class RetrievalResult:
     evidence: list[Evidence] = field(default_factory=list)
