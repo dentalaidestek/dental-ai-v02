@@ -316,7 +316,7 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     comparison_terms = _comparison_terms(clean, intents)
     requires_visual_source = bool(re.search(
         r"(?iu)(?:\b(?:bu|şu)\s+(?:radyografi(?:de|da)?|röntgen(?:de|da)?|film(?:de|da)?|görüntü(?:de|da)?|fotoğraf(?:ta|da)?|şekil(?:de|da)?|tablo(?:da|de)?|grafik(?:te|de)?|cbct(?:de|da)?|opg(?:de|da)?)"
-        r"|\b(?:radyografideki|filmdeki|görüntüdeki|şekildeki|tablodaki|grafikteki)\b"
+        r"|\b(?:radyografideki|radyografide|filmdeki|filmde|görüntüdeki|görüntüde|şekildeki|şekilde|tablodaki|tabloda|grafikteki|grafikte)\b"
         r"|\b(?:gösterilen|işaretli|okla\s+gösterilen|görülen)\b"
         r"|\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b)",
         clean,
@@ -349,7 +349,7 @@ _STUDY_GENERATION_RE = re.compile(
     re.I,
 )
 _STUDY_COVERAGE_RE = re.compile(
-    r"\b(?:tüm|bütün|tamamı|tamamındaki|notun tamamı|notun tamamındaki|dersin tamamı|her konu|bütün konu|"
+    r"\b(?:tüm|bütün|tamamı|tamamını|tamamındaki|notun tamamı|notun tamamını|notun tamamındaki|dersin tamamı|her konu|bütün konu|"
     r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
     re.I,
 )
@@ -414,8 +414,8 @@ _BROAD_ACADEMIC_RE = re.compile(
 
 _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
-    ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
+    ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(r"\b(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)", re.I), False, True, True, False),
     ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)\b.{0,24}\b(?:anlat|açıkla|özetle)|\b(?:anlat|açıkla|özetle)\b.{0,24}\b(?:bu kısmı|şu kısmı|bu konuyu|şu konuyu|burayı)", re.I), False, True, False, False),
 )
