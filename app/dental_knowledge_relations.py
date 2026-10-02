@@ -157,4 +157,33 @@ DENTAL_RELATION_EDGES = (
     DentalEdge("infiltration_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
     DentalEdge("intraligamentary_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
     DentalEdge("intrapulpal_anesthesia", Relation.ASSOCIATED_WITH, "local_anesthesia", 0.92),
+    # Cross-validated terminology/procedure families (MeSH/ADA/AAO/AAPD).
+    DentalEdge("endodontics", Relation.HAS_PROCEDURE, "pulpotomy", 0.96),
+    DentalEdge("endodontics", Relation.HAS_PROCEDURE, "pulpectomy", 0.96),
+    DentalEdge("endodontics", Relation.HAS_PROCEDURE, "apexification", 0.96),
+    DentalEdge("endodontics", Relation.HAS_PROCEDURE, "regenerative_endodontics", 0.96),
+    DentalEdge("root_canal_treatment", Relation.HAS_PROCEDURE, "root_canal_preparation", 0.94),
+    DentalEdge("root_canal_treatment", Relation.HAS_PROCEDURE, "root_canal_obturation", 0.94),
+    DentalEdge("root_canal_obturation", Relation.HAS_MATERIAL, "gutta_percha", 0.96),
+
+    DentalEdge("malocclusion", Relation.CLASSIFIED_BY, "skeletal_class_ii", 0.86),
+    DentalEdge("malocclusion", Relation.CLASSIFIED_BY, "skeletal_class_iii", 0.86),
+    DentalEdge("malocclusion", Relation.HAS_CLINICAL_FEATURE, "overjet", 0.88),
+    DentalEdge("malocclusion", Relation.HAS_CLINICAL_FEATURE, "overbite", 0.88),
+    DentalEdge("malocclusion", Relation.HAS_CLINICAL_FEATURE, "open_bite", 0.90),
+    DentalEdge("malocclusion", Relation.HAS_CLINICAL_FEATURE, "crossbite", 0.90),
+
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "amalgam", 0.88),
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "resin_composite", 0.92),
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "gic", 0.92),
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "rmgic", 0.90),
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "zinc_oxide_eugenol", 0.88),
+    DentalEdge("dental_material", Relation.ASSOCIATED_WITH, "resin_cement", 0.88),
+
+    # Pediatric pulp therapy context. Keep these associations contextual rather
+    # than universal treatment rules; final clinical claims still require notes.
+    DentalEdge("primary_tooth", Relation.ASSOCIATED_WITH, "pulpotomy", 0.90),
+    DentalEdge("primary_tooth", Relation.ASSOCIATED_WITH, "pulpectomy", 0.90),
+    DentalEdge("immature_permanent_tooth", Relation.ASSOCIATED_WITH, "apexification", 0.92),
+    DentalEdge("immature_permanent_tooth", Relation.ASSOCIATED_WITH, "regenerative_endodontics", 0.92),
 )
