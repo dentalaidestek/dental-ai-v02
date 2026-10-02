@@ -8,6 +8,53 @@ import re
 from app.dental_knowledge_graph import matched_nodes
 
 _VALUE_RE = re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*(?:°|mm|cm|%|mg|ml|g|µm|μm)(?!\w)", re.I)
+
+_NUMBER_WORD = r"(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kırk|elli|altmış|yetmiş|seksen|doksan|yüz)"
+_NUMBER_PHRASE = rf"{_NUMBER_WORD}(?:\s+{_NUMBER_WORD}){{0,3}}"
+_NUMERIC = r"[+-]?\d+(?:[.,]\d+)?"
+_VALUE_UNIT = r"(?:°|mm|cm|%|mg|ml|g|µm|μm|derece|milimetre|santimetre|mikrometre|miligram|mililitre|gram)"
+_EXPLICIT_VALUE_LABEL = r"(?:normal\s+değer(?:i)?|referans\s+değer(?:i)?|ortalama(?:\s+değer(?:i)?)?|değer(?:i)?|oran(?:ı)?)"
+_VALUE_CANDIDATE_RE = re.compile(
+    rf"(?iu)(?:"
+    rf"(?P<unit>{_NUMERIC}\s*{_VALUE_UNIT})"
+    rf"|(?P<percent>yüzde\s+(?:{_NUMERIC}|{_NUMBER_PHRASE}))"
+    rf"|(?P<wordunit>{_NUMBER_PHRASE}\s+(?:derece|milimetre|santimetre|mikrometre))"
+    rf"|(?P<label>{_EXPLICIT_VALUE_LABEL}\s*(?:=|:|ise|olarak)?\s*(?:{_NUMERIC}|{_NUMBER_PHRASE}))"
+    rf"|(?P<range>(?:{_NUMERIC}|{_NUMBER_PHRASE})\s*(?:[-–—]|ile|ila)\s*(?:{_NUMERIC}|{_NUMBER_PHRASE})(?:\s*{_VALUE_UNIT})?)"
+    rf")"
+)
+_COUNT_UNIT_RE = re.compile(r"(?iu)\b(?:adet\s+)?(?:kök|kanal|tüberkül|cusp|kuspit|diş|yüzey)\b")
+_NON_VALUE_CONTEXT_RE = re.compile(
+    r"(?iu)\b(?:yaş(?:ında|ındaki)?|sayfa|sf\.?|page|hasta|olgu|vaka|katılımcı|örneklem|denek)\b"
+)
+
+@dataclass(frozen=True)
+class ValueEvidence:
+    text: str
+    kind: str
+    start: int
+    end: int
+    confidence: float
+
+def extract_value_evidence(text: str) -> tuple[ValueEvidence, ...]:
+    """Find answer-bearing values without requiring a pre-known dental term."""
+    clean = " ".join((text or "").split())
+    output: list[ValueEvidence] = []
+    for match in _VALUE_CANDIDATE_RE.finditer(clean):
+        value = match.group(0).strip()
+        left = clean[max(0, match.start() - 32):match.start()]
+        # Bare ranges beside age/page/sample language are metadata, not a
+        # clinical value. Explicit labels/units remain strong evidence.
+        strong = match.lastgroup in {"unit", "percent", "wordunit", "label"}
+        if not strong and _NON_VALUE_CONTEXT_RE.search(left):
+            continue
+        kind = {
+            "unit": "measurement", "percent": "percentage",
+            "wordunit": "measurement", "label": "value", "range": "range",
+        }.get(match.lastgroup or "", "value")
+        output.append(ValueEvidence(value, kind, match.start(), match.end(), 0.96 if strong else 0.78))
+    return tuple(output)
+
 _FDI_RE = re.compile(r"(?<!\d)(?:1[1-8]|2[1-8]|3[1-8]|4[1-8]|5[1-5]|6[1-5]|7[1-5]|8[1-5])(?!\d)")
 _TOOTH_CONTEXT_RE = re.compile(r"\b(?:diş|dis|tooth|numara(?:lı)?|no\.?|#)\b", re.I)
 _DENTAL_NUMBER_CONTEXT_RE = re.compile(
