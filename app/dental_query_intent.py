@@ -41,6 +41,12 @@ _RULES = (
 _CAUSAL_RISK_ROLE_RE = re.compile(
     r"(?iu)\b(?:risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*)\b"
 )
+_EXPLICIT_ADVERSE_OUTCOME_RE = re.compile(
+    r"(?iu)\b(?:komplikasyon[a-zçğıöşü]*|yan\s+etki[a-zçğıöşü]*|istenmeyen\s+(?:etki|olay|sonuç)[a-zçğıöşü]*|zarar[a-zçğıöşü]*)\b"
+)
+_ADVERSE_RISK_RE = re.compile(
+    r"(?iu)\b(?:komplikasyon|yan\s+etki|istenmeyen\s+(?:etki|olay|sonuç))[a-zçğıöşü]*\s+risk[a-zçğıöşü]*\b"
+)
 
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
@@ -73,10 +79,18 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if len(found) >= max(1, min(limit, 6)):
             break
     if found:
-        # A causal-risk phrase names antecedent factors.  The bare word "risk"
-        # must not simultaneously turn that request into an adverse-outcome facet.
+        # Risk language has two different semantic roles:
+        #   antecedent factor ("risk faktörü", "riski artıran neden") -> cause
+        #   adverse outcome ("komplikasyon", "yan etki", "komplikasyon riski") -> complication
+        # A causal-risk phrase must suppress only the complication inferred from
+        # the ambiguous word "risk"; it must never erase an independently explicit
+        # adverse-outcome request in the same coordinated question.
         if _CAUSAL_RISK_ROLE_RE.search(clean) and any(item.name == "cause" for item in found):
-            found = [item for item in found if item.name != "complication"]
+            explicit_adverse = bool(
+                _EXPLICIT_ADVERSE_OUTCOME_RE.search(clean) or _ADVERSE_RISK_RE.search(clean)
+            )
+            if not explicit_adverse:
+                found = [item for item in found if item.name != "complication"]
         # Negative applicability overrides a coincident positive applicability cue.
         # An explicit "endikasyon" word (not the one inside "kontrendikasyon") is
         # a separate request: "endikasyonları ve kontrendikasyonları".
