@@ -25,7 +25,11 @@ def main() -> int:
     failures = []
     executed = 0
     selected = (
-        "test_academic_retrieval_plan.py",\n        "test_academic_retrieval_adapter.py",\n        "test_academic_query_decomposer.py",\n        "test_retrieval_training_corpus.py",\n        "test_dental_graph.py",
+        "test_academic_retrieval_plan.py",
+        "test_academic_retrieval_adapter.py",
+        "test_academic_query_decomposer.py",
+        "test_retrieval_training_corpus.py",
+        "test_dental_graph.py",
         "test_dental_intent.py",
         "test_intent_benchmark_15k.py",
     "test_intent_holdout_20k.py",
@@ -45,7 +49,8 @@ def main() -> int:
         try:
             module = _load(path)
         except Exception as exc:
-            failures.append(f"{path.name}::<module>: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+            failures.append(f"{path.name}::<module>: {type(exc).__name__}: {exc}
+{traceback.format_exc()}")
             continue
         for name, fn in inspect.getmembers(module, inspect.isfunction):
             if not name.startswith("test_") or inspect.signature(fn).parameters:
@@ -54,7 +59,8 @@ def main() -> int:
             try:
                 fn()
             except Exception as exc:
-                failures.append(f"{path.name}::{name}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                failures.append(f"{path.name}::{name}: {type(exc).__name__}: {exc}
+{traceback.format_exc()}")
     print(f"Academic V2 tests executed: {executed}")
     if failures:
         print("FAILURES:")
