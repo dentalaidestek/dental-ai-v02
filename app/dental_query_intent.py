@@ -91,7 +91,7 @@ _RULES = (
      ("procedure", "material"), ("has_contraindication",)),
     ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki[a-zçğıöşü]*)\b", re.I),
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
-    ("diagnosis", re.compile(r"\b(?:tanı(?!m|M)[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı(?!m)[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
+    ("diagnosis", re.compile(r"\b(?:tanı(?:sı|si|sal|salı|salini|salını|ya|yı|yi|dan|danı|ları|larini|larını)?|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı(?!m)[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
@@ -119,7 +119,7 @@ _ADVERSE_RISK_RE = re.compile(
 # Natural academic/clinical discourse roles. These patterns describe what the
 # speaker asks the notes to provide; they are independent of any dental subject.
 _NATURAL_ROLE_PATTERNS = (
-    ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak\s+ne\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
+    ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak(?:\s+ne)?\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
     ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
     ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap|olcerken|hangi\s+olcum\s+esas)\b")),
     ("classification", re.compile(r"(?i)\b(?:grup[a-z]*|evre[a-z]*|hangi\s+kategorilere\s+ayril[a-z]*|evreleme\s+sistemi|hangi\s+basliklari\s+(?:ver|say)|kategorilere\s+ayril)\b")),
