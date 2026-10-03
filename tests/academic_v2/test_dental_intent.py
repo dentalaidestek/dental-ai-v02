@@ -154,3 +154,20 @@ def test_generic_nedir_does_not_create_fake_definition_facet():
     assert "diagnosis" in plan.requested_facets
     assert "treatment" in plan.requested_facets
     assert "definition" not in plan.requested_facets
+
+
+def test_exam_salience_intent_generalizes_across_unseen_phrasings():
+    from app.dental_query_intent import classify_academic_study_task
+    cases = (
+        "Değerlendirmede önemli olabilecek başlıkları belirle.",
+        "Kritik bilgileri bul ve listele.",
+        "Sınavda sorulma olasılığı yüksek konuları göster.",
+        "Öncelikli noktaları çıkar.",
+        "Hocanın sorabileceği kısımları belirle.",
+        "Soru gelme ihtimali yüksek bölümleri bul.",
+    )
+    for query in cases:
+        plan = classify_academic_study_task(query)
+        assert plan is not None, query
+        assert plan.task == "exam_points", (query, plan)
+        assert plan.requires_note_evidence, (query, plan)
