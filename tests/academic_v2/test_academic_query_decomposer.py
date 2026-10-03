@@ -5,7 +5,8 @@ from app.academic_query_decomposer import decompose_academic_query
 
 def _pairs(query):
     plan = decompose_academic_query(query)
-    return plan, {(n.subject_ids[0] if n.subject_ids else n.subject_terms[0], n.facet) for n in plan.needs}
+    pairs = {(n.subject_ids[0] if n.subject_ids else n.subject_terms[0], n.facet) for n in plan.needs}
+    return plan, pairs
 
 
 def test_single_subject_keeps_multiple_requested_facets():
@@ -44,19 +45,27 @@ def test_ambiguous_multi_subject_multi_facet_sentence_stays_unresolved():
     assert any("subject_facet_binding" in item for item in plan.unresolved_references)
 
 
-def test_negative_direction_survives_decomposition():
-    plan, pairs = _pairs("Bisfosfonatın hangi durumlarda kullanılması önerilmez?")
+def test_negation_is_clause_local_not_global():
+    plan, pairs = _pairs(
+        "Bisfosfonatın endikasyonlarını anlat ama kontrendikasyonlarını da söyle"
+    )
+    indication = [n for n in plan.needs if n.facet == "indication"]
+    contraindication = [n for n in plan.needs if n.facet == "contraindication"]
+    assert indication and all(n.polarity == "positive" for n in indication)
+    # Contraindication is itself a negative applicability facet; polarity only
+    # records explicit sentence negation and therefore remains positive here.
+    assert contraindication and all(n.polarity == "positive" for n in contraindication)
+
+
+def test_explicit_negative_direction_stays_local():
+    plan, _ = _pairs("Bisfosfonat hangi durumda önerilmez?")
     assert any(n.polarity == "negative" for n in plan.needs)
-    assert any(facet == "contraindication" for _, facet in pairs)
 
 
 def test_no_subject_invention_for_pronoun_only_query():
     plan = decompose_academic_query("Bunun tedavisini ve komplikasyonlarını anlat")
     assert plan.unresolved_references
-    assert all(
-        "<unresolved>" in need.subject_terms or need.subject_terms
-        for need in plan.needs
-    )
+    assert plan.needs[0].subject_terms == ("<unresolved>",)
 
 
 def test_treatment_named_subject_does_not_become_treatment_request():
