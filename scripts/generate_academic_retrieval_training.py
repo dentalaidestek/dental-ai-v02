@@ -12,7 +12,7 @@ import json
 import random
 from typing import Iterable
 
-from app.academic_retrieval_plan import AcademicRetrievalPlan, ComparisonRequirement, RetrievalNeed
+from app.academic_retrieval_plan import (\n    AcademicRetrievalPlan, ComparisonRequirement, NeedGroup, RetrievalNeed, ValueConstraint,\n)
 
 
 @dataclass(frozen=True)
@@ -168,6 +168,79 @@ def _historical_dependency_examples() -> Iterable[TrainingExample]:
                 metadata=(("student_marking_is_truth", "false"),),
             )
             yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
+
+
+def _negative_examples() -> Iterable[TrainingExample]:
+    family = "negative_fact"
+    split = _split_for_family(family)
+    for subject_id, subject in _SUBJECTS[:4]:
+        utterance = f"{subject} için hangisi tanısal bulgu değildir, nottan göster"
+        plan = AcademicRetrievalPlan(
+            original_query=utterance,
+            needs=(_need("negative", subject_id, subject, "diagnosis", polarity="negative"),),
+        )
+        yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
+
+
+def _exclusion_examples() -> Iterable[TrainingExample]:
+    family = "explicit_exclusion"
+    split = _split_for_family(family)
+    for subject_id, subject in _SUBJECTS[:4]:
+        utterance = f"{subject} tanısını anlat ama tedaviye girme"
+        plan = AcademicRetrievalPlan(
+            original_query=utterance,
+            needs=(_need("diagnosis", subject_id, subject, "diagnosis"),),
+            excluded_facets=("treatment",),
+        )
+        yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
+
+
+def _qualified_examples() -> Iterable[TrainingExample]:
+    family = "qualified_subject"
+    split = _split_for_family(family)
+    cases = (
+        ("pulpitis", "pulpitis", "akut", "diagnosis", "Akut pulpitisin tanısal bulgularını nottan çıkar"),
+        ("third_molar", "üçüncü molar", "mandibular", "complication", "Mandibular üçüncü moların komplikasyonlarını anlat"),
+    )
+    for subject_id, subject, qualifier, facet, utterance in cases:
+        plan = AcademicRetrievalPlan(
+            original_query=utterance,
+            needs=(_need("qualified", subject_id, subject, facet, qualifiers=(qualifier,)),),
+        )
+        yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
+
+
+def _numeric_examples() -> Iterable[TrainingExample]:
+    family = "numeric_threshold"
+    split = _split_for_family(family)
+    cases = (
+        ("probing_depth", "sondalama derinliği", "gte", 4.0, None, "Sondalama derinliği 4 mm ve üzerindeki eşik bilgisini nottan bul"),
+        ("vdo", "dikey boyut", "range", 2.0, 4.0, "Dikey boyut için 2 ile 4 mm arasındaki değer aralığını nottan bul"),
+    )
+    for subject_id, subject, operator, value, upper, utterance in cases:
+        constraint = ValueConstraint(
+            name=subject_id, unit="mm", operator=operator, value=value, upper_value=upper,
+        )
+        plan = AcademicRetrievalPlan(
+            original_query=utterance,
+            needs=(_need("numeric", subject_id, subject, "value", value_constraints=(constraint,)),),
+        )
+        yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
+
+
+def _logical_alternative_examples() -> Iterable[TrainingExample]:
+    family = "logical_alternative"
+    split = _split_for_family(family)
+    utterance = "SNA veya SNB normal değerlerinden notta bulunanı getir"
+    plan = AcademicRetrievalPlan(
+        original_query=utterance,
+        needs=(
+            _need("sna", "sna", "SNA", "value"),
+            _need("snb", "snb", "SNB", "value"),
+        ),
+        need_groups=(NeedGroup("ceph-value", ("sna", "snb"), mode="any"),),
+    )
+    yield TrainingExample(_example_id(family, utterance), family, split, utterance, plan)
 
 
 def build_training_examples(seed: int = 20261004) -> tuple[TrainingExample, ...]:
