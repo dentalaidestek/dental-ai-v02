@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 TEST_DIR = ROOT / "tests" / "academic_v2"
 
+
 def _load(path: Path):
     name = f"_academic_v2_{path.stem}"
     spec = importlib.util.spec_from_file_location(name, path)
@@ -20,6 +21,7 @@ def _load(path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
 
 def main() -> int:
     failures = []
@@ -32,7 +34,7 @@ def main() -> int:
         "test_dental_graph.py",
         "test_dental_intent.py",
         "test_intent_benchmark_15k.py",
-    "test_intent_holdout_20k.py",
+        "test_intent_holdout_20k.py",
         "test_intent_combined_35k.py",
         "test_utility_holdout_50k.py",
         "test_dental_semantics.py",
@@ -49,8 +51,10 @@ def main() -> int:
         try:
             module = _load(path)
         except Exception as exc:
-            failures.append(f"{path.name}::<module>: {type(exc).__name__}: {exc}
-{traceback.format_exc()}")
+            failures.append(
+                f"{path.name}::<module>: {type(exc).__name__}: {exc}\\n"
+                f"{traceback.format_exc()}"
+            )
             continue
         for name, fn in inspect.getmembers(module, inspect.isfunction):
             if not name.startswith("test_") or inspect.signature(fn).parameters:
@@ -59,8 +63,10 @@ def main() -> int:
             try:
                 fn()
             except Exception as exc:
-                failures.append(f"{path.name}::{name}: {type(exc).__name__}: {exc}
-{traceback.format_exc()}")
+                failures.append(
+                    f"{path.name}::{name}: {type(exc).__name__}: {exc}\\n"
+                    f"{traceback.format_exc()}"
+                )
     print(f"Academic V2 tests executed: {executed}")
     if failures:
         print("FAILURES:")
@@ -69,6 +75,7 @@ def main() -> int:
         return 1
     print("Academic V2 function tests: OK")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
