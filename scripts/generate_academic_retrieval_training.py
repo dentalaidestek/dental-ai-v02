@@ -54,6 +54,11 @@ _FAMILY_SPLITS = {
     "two_subject_asymmetric_facets": "train",
     "symmetric_comparison": "validation",
     "past_question_to_note_dependency": "test",
+    "negative_fact": "train",
+    "explicit_exclusion": "validation",
+    "qualified_subject": "train",
+    "numeric_threshold": "test",
+    "logical_alternative": "validation",
 }
 
 
@@ -249,6 +254,11 @@ def build_training_examples(seed: int = 20261004) -> tuple[TrainingExample, ...]
         *_asymmetric_examples(),
         *_comparison_examples(),
         *_historical_dependency_examples(),
+        *_negative_examples(),
+        *_exclusion_examples(),
+        *_qualified_examples(),
+        *_numeric_examples(),
+        *_logical_alternative_examples(),
     ]
     random.Random(seed).shuffle(examples)
     ids = [item.example_id for item in examples]
