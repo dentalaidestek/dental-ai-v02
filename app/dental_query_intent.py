@@ -157,7 +157,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
         # it does not ask for treatment itself. Require treatment wording to
         # behave like a requested facet, unless no stronger requested facet exists.
-        if name == "treatment":
+        if name == "treatment" and match is not None:
             # Match offsets belong to whichever orthographic view matched.
             # ASCII-normalized matches must never slice the raw string by a
             # different match object's offsets.
