@@ -279,7 +279,10 @@ def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active
     assert response.status_code == 200
     assert response.json()["read_count"] == 1
     assert refreshed.status_code == 200
-    assert refreshed.json()["notifications"] == []
+    notifications = refreshed.json()["notifications"]
+    assert len(notifications) == 1
+    assert notifications[0]["id"] == notice_id
+    assert notifications[0]["is_read"] is True
     assert refreshed.json()["unread_count"] == 0
     with Session(engine) as session:
         notice = session.get(main.AdminNotice, notice_id)
