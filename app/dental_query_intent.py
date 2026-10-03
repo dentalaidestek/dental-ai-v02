@@ -320,6 +320,15 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     ):
         comparison_intent = DentalIntent("comparison", (), ("compared_with",))
         intents = tuple((*intents, comparison_intent))[:6]
+    # A request for how a known measurement changes across stages/time
+    # requires its observed values even when the user does not literally say
+    # "değer". This is derived from the subject kind, not a named example.
+    if (
+        any(node.kind == "measurement" for node in subject_nodes)
+        and not any(item.name == "value" for item in intents)
+        and re.search(r"(?iu)\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|seyir[a-zçğıöşü]*|dönem[a-zçğıöşü]*)\b", clean)
+    ):
+        intents = tuple((DentalIntent("value", ("measurement",), ("measures", "assessed_by")), *intents))[:6]
     comparison_terms = _comparison_terms(clean, intents)
     requires_visual_source = bool(re.search(
         r"(?iu)(?:\b(?:bu|şu)\s+(?:radyografi(?:de|da)?|röntgen(?:de|da)?|film(?:de|da)?|görüntü(?:de|da)?|fotoğraf(?:ta|da)?|panoramik(?:te|ta)?|şekil(?:de|da)?|tablo(?:da|de)?|grafik(?:te|de)?|cbct(?:de|da)?|opg(?:de|da)?)"
