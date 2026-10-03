@@ -10,7 +10,7 @@ class DentalIntent:
     relation_hints: tuple[str, ...] = ()
 
 _RULES = (
-    ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|mm|oran)\b", re.I),
+    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer[a-zçğıöşü]*|normal\s+değer[a-zçğıöşü]*|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
