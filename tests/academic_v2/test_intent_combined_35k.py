@@ -59,7 +59,8 @@ def test_combined_35k_query_understanding_consistency():
     weighted_exact=round((split["15k"][3]+split["20k"][3])/n,4)
     weighted_recall=round((split["15k"][2]+split["20k"][2])/n,4)
     print("ACADEMIC_COMBINED_35K_REPORT",report)
-    print("ACADEMIC_COMBINED_35K_FAILURES", [(k,v,samples[k]) for k,v in sorted(failures.items(),key=lambda x:(-x[1],x[0]))[:80]])\n    print("ACADEMIC_COMBINED_35K_WEIGHTED_CHECK",{
+    print("ACADEMIC_COMBINED_35K_FAILURES", [(k,v,samples[k]) for k,v in sorted(failures.items(),key=lambda x:(-x[1],x[0]))[:80]])
+    print("ACADEMIC_COMBINED_35K_WEIGHTED_CHECK",{
         "exact_from_counts":weighted_exact,
         "recall_from_counts":weighted_recall,
         "exact_delta":round(report["intent_exact"]-weighted_exact,6),
