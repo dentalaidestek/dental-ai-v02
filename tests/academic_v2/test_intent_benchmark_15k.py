@@ -131,6 +131,7 @@ def test_deterministic_15k_query_understanding_benchmark():
     rows = _rows()
     failures = []
     subject_ok = exact_ok = recall_ok = 0
+    failure_buckets = {}
     leak_count = 0
     timings = []
     by_style = {}
@@ -158,8 +159,20 @@ def test_deterministic_15k_query_understanding_benchmark():
         kind[0] += 1
         kind[1] += int(s_ok)
         kind[2] += int(e_ok)
-        if (not s_ok or not e_ok) and len(failures) < 120:
-            failures.append((query, expected_node, sorted(expected_facets), sorted(got_nodes), sorted(got_facets)))
+        if not s_ok or not e_ok:
+            missing = expected_facets - got_facets
+            qfold = query.casefold()
+            if not s_ok:
+                reason = "subject_typo" if style == "typo" else ("subject_ascii" if style == "ascii" else "subject_other")
+            elif missing:
+                reason = "intent_missing:" + "+".join(sorted(missing))
+            elif leak:
+                reason = "intent_leak:" + "+".join(sorted(leak))
+            else:
+                reason = "other"
+            failure_buckets[reason] = failure_buckets.get(reason, 0) + 1
+            if len(failures) < 120:
+                failures.append((reason, query, expected_node, sorted(expected_facets), sorted(got_nodes), sorted(got_facets)))
 
     n = len(rows)
     report = {
@@ -172,6 +185,7 @@ def test_deterministic_15k_query_understanding_benchmark():
         "ms_p95": round(sorted(timings)[int(n * .95) - 1], 3),
         "styles": {k: {"n": v[0], "subject": round(v[1]/v[0],4), "exact": round(v[2]/v[0],4)} for k,v in sorted(by_style.items())},
         "kinds": {k: {"n": v[0], "subject": round(v[1]/v[0],4), "exact": round(v[2]/v[0],4)} for k,v in sorted(by_kind.items())},
+        "failure_buckets": dict(sorted(failure_buckets.items(), key=lambda item: (-item[1], item[0]))),
     }
     print("ACADEMIC_15K_REPORT", report)
     if failures:
