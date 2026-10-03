@@ -423,7 +423,14 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
-    ("exam_points", re.compile(r"\b(?:(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)|hoca\b.{0,48}\b(?:ne|neler)\s+sorabilir)\b", re.I), False, True, True, False),
+    ("exam_points", re.compile(
+        r"\b(?:"
+        r"hoca(?:nın|nin|nın|nun|nün)?\b.{0,64}\b(?:sorabileceğ\w*|sorulabilecek\w*|(?:ne|neler)\s+sorabilir)"
+        r"|(?:sınav(?:da|lık)?|sorulabilecek\w*|sorabileceğ\w*|önemli|çıkma\s+ihtimali\s+yüksek)"
+        r".{0,56}\b(?:yer\w*|nokta\w*|konu\w*|bilgi\w*|kısım\w*)"
+        r")",
+        re.I,
+    ), False, True, True, False),
     ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
