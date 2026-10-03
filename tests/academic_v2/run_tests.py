@@ -25,7 +25,7 @@ def main() -> int:
     failures = []
     executed = 0
     selected = (
-        "test_dental_graph.py",
+        "test_academic_retrieval_plan.py",\n        "test_academic_retrieval_adapter.py",\n        "test_academic_query_decomposer.py",\n        "test_retrieval_training_corpus.py",\n        "test_dental_graph.py",
         "test_dental_intent.py",
         "test_intent_benchmark_15k.py",
     "test_intent_holdout_20k.py",
