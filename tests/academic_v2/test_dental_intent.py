@@ -230,3 +230,16 @@ def test_value_noun_does_not_confuse_degerlendirmek_and_negation_inflects():
         "Hangi uygulamadan kaçınılması gerekir?",
     ):
         assert build_dental_requirement_plan(query).asks_negation, query
+
+
+def test_measurement_intent_tracks_assessment_semantics_across_morphology():
+    from app.dental_query_intent import build_dental_requirement_plan
+    cases = (
+        "Bu ölçümlerin değerlendirdiği yapıları karşılaştır.",
+        "Bu açı hangi yapısal ilişkiyi değerlendiriyor?",
+        "Ölçümlerin temsil ettiği anatomik ilişkileri açıkla.",
+        "Hangi parametre neyi değerlendirir?",
+    )
+    for query in cases:
+        plan = build_dental_requirement_plan(query)
+        assert "measurement" in plan.requested_facets, (query, plan.requested_facets)
