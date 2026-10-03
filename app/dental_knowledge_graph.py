@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import functools
 import re
 
 from app.dental_specialty_concepts import SPECIALTY_CONCEPTS
@@ -373,6 +374,81 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     return best_nodes if len(best_nodes) == 1 else []
 
 
+@functools.lru_cache(maxsize=1)
+def _compiled_mention_patterns() -> tuple:
+    """Compile every node/alias mention pattern once per process.
+
+    The graph has more patterns than Python's 512-entry re cache, so compiling
+    inside matched_nodes() recompiled hundreds of patterns on every query
+    (~97% of query-understanding time). Patterns and flags are unchanged.
+    """
+    compiled = []
+    for node in ALL_NODES:
+        for term in (node.label, *node.aliases):
+            clean_term = _match_text(term)
+            if not clean_term:
+                continue
+            compiled.append((
+                node, clean_term,
+                re.compile(r"(?<!\w)" + _alias_pattern(clean_term) + r"(?!\w)", flags=re.I),
+            ))
+    return tuple(compiled)
+
+
+_ASCII_FOLD = str.maketrans("çğıöşü", "cgiosu")
+
+
+@functools.lru_cache(maxsize=1)
+def _compiled_folded_patterns() -> tuple:
+    """Same patterns as _compiled_mention_patterns, built from ASCII-folded terms."""
+    compiled = []
+    for node in ALL_NODES:
+        for term in (node.label, *node.aliases):
+            clean_term = _match_text(term)
+            folded = clean_term.translate(_ASCII_FOLD)
+            if not clean_term or folded == clean_term:
+                continue  # nothing to fold: the exact pass already covered it
+            pieces = []
+            for word in folded.split():
+                escaped = re.escape(word)
+                if len(word) >= 4 and word.isalpha() and word not in _AMBIGUOUS_SHORT_TERMS:
+                    escaped += r"[a-z]{0,6}"
+                pieces.append(escaped)
+            compiled.append((node, clean_term, re.compile(
+                r"(?<!\w)" + r"\s+".join(pieces) + r"(?!\w)", flags=re.I)))
+    return tuple(compiled)
+
+
+def _ascii_fallback_nodes(lowered: str, already: set[str]) -> list[DentalNode]:
+    """Users often type without Turkish letters (\"pulpitis tanisi\", \"cene\").
+
+    Runs only when exact matching found no subject. Offsets are identical because
+    the fold is one character to one character.
+    """
+    folded_text = lowered.translate(_ASCII_FOLD)
+    if folded_text == lowered:
+        return []
+    mentions = []
+    for node, clean_term, pattern in _compiled_folded_patterns():
+        if node.id in already:
+            continue
+        for match in pattern.finditer(folded_text):
+            if _term_context_ok(lowered, match.start(), match.end(), clean_term):
+                mentions.append((match.start(), match.end(), len(clean_term), node))
+    mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
+    occupied: list[tuple[int, int]] = []
+    out: list[DentalNode] = []
+    seen: set[str] = set()
+    for start, end, _, node in mentions:
+        if any(start < used_end and end > used_start for used_start, used_end in occupied):
+            continue
+        occupied.append((start, end))
+        if node.id not in seen:
+            seen.add(node.id)
+            out.append(node)
+    return out
+
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
 
@@ -381,16 +457,11 @@ def matched_nodes(query: str) -> list[DentalNode]:
     """
     lowered = _match_text(query)
     mentions: list[tuple[int, int, int, DentalNode]] = []
-    for node in ALL_NODES:
-        for term in (node.label, *node.aliases):
-            clean_term = _match_text(term)
-            if not clean_term:
+    for node, clean_term, pattern in _compiled_mention_patterns():
+        for match in pattern.finditer(lowered):
+            if not _term_context_ok(lowered, match.start(), match.end(), clean_term):
                 continue
-            escaped = _alias_pattern(clean_term)
-            for match in re.finditer(r"(?<!\w)" + escaped + r"(?!\w)", lowered, flags=re.I):
-                if not _term_context_ok(lowered, match.start(), match.end(), clean_term):
-                    continue
-                mentions.append((match.start(), match.end(), len(clean_term), node))
+            mentions.append((match.start(), match.end(), len(clean_term), node))
     mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
     occupied: list[tuple[int, int]] = []
     selected: list[DentalNode] = []
@@ -407,6 +478,12 @@ def matched_nodes(query: str) -> list[DentalNode]:
     # not suppress recovery of one unambiguous long non-imaging subject typo
     # ("CBCT'de mandbular kanal ..."). Abbreviations remain non-fuzzy.
     exact_has_subject = any(node.kind != "imaging" for node in selected)
+    if not exact_has_subject:
+        folded_hits = _ascii_fallback_nodes(lowered, seen)
+        if folded_hits:
+            selected.extend(folded_hits)
+            seen.update(node.id for node in folded_hits)
+            exact_has_subject = any(node.kind != "imaging" for node in selected)
     if not exact_has_subject:
         fuzzy = [
             node for node in _fuzzy_long_alias_nodes(lowered, seen)
