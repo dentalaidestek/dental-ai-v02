@@ -27,7 +27,8 @@ _INTENT_OPERATOR_WORDS = (
     "tanimlamali", "kavramsal", "aciklamayi", "senaryolarini", "kacinmam",
     "ardindan", "problemler", "olumsuz", "sonuclar", "zemin", "hazirlayan",
     "predispozan", "kategorilere", "basliklari",
-    "secimini", "kullanimini", "tercihine", "yonelmeli",
+    "secimini", "kullanimini", "kullanim", "tercihine", "yonelmeli",
+    "durumda", "durumlar", "durumlarda", "uygun",
     "gelismesini", "kolaylastiran", "kosullar", "etiyolojik",
 )
 
@@ -126,7 +127,7 @@ _ADVERSE_RISK_RE = re.compile(
 # Natural academic/clinical discourse roles. These patterns describe what the
 # speaker asks the notes to provide; they are independent of any dental subject.
 def _has_role_pair(text: str, left_words: tuple[str, ...], right_words: tuple[str, ...], *, window: int = 7) -> bool:
-    words = re.findall(r"[a-z]+", text or "", flags=re.I)
+    words = [word.casefold() for word in re.findall(r"[a-z]+", text or "", flags=re.I)]
     left_pos = [i for i, token in enumerate(words) if token in left_words]
     right_pos = [i for i, token in enumerate(words) if token in right_words]
     return any(abs(i - j) <= window for i in left_pos for j in right_pos)
@@ -174,7 +175,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # Applicability is a semantic role, not a literal surface form.
         # Keep the vocabulary bounded to positive selection/use operators so
         # negative applicability remains owned by contraindication handling.
-        ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
+        ("indication", ("durum", "durumda", "durumlar", "durumlarda", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
          ("uygulanir", "kullanilir", "tercih", "tercihine", "onerilir", "yapilir",
           "secimini", "secim", "yonelmeli")),
         ("cause", ("predispozan", "risk", "etiyolojik", "yatkinlastiran"),
@@ -193,12 +194,19 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # it does not ask for treatment itself. Require treatment wording to
         # behave like a requested facet, unless no stronger requested facet exists.
         if name == "treatment" and match is not None:
-            # Match offsets belong to whichever orthographic view matched.
-            # ASCII-normalized matches must never slice the raw string by a
-            # different match object's offsets.
+            # A treatment word can be part of a multiword dental subject
+            # ("kanal tedavisi", "endodontik tedavi").  When a different
+            # explicit semantic role is requested after that subject, do not
+            # turn the subject token itself into an extra treatment facet.
             source_text = clean if raw_match is not None else intent_clean
             tail = source_text[match.end():]
-            if re.search(r"^\s+(?:komplikasyon|risk|yan etki|endikasyon|kontrendikasyon)", tail, re.I):
+            other_roles = natural_roles - {"treatment"}
+            if other_roles and re.search(
+                r"(?i)\b(?:komplikasyon|risk|yan\s+etki|endikasyon|kontrendikasyon|"
+                r"secim|tercih|kullanim|durum|kosul|sart|tanim|olcum|sinif|evre|"
+                r"tani|teshis|neden|etken|faktor|anatom|komsu|iliski)",
+                tail,
+            ):
                 continue
         found.append(DentalIntent(name, kinds, relations))
         if len(found) >= max(1, min(limit, 6)):
