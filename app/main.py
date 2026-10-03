@@ -64,11 +64,14 @@ from app.xray_trace import (
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
 from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
 from app.study_ai_v2 import ask_rag_v2 as ask_study_ai_v2, stream_rag_v2 as stream_study_ai_v2
+from app.dental_academic_scope import should_block_academic_question
 from app.study_index_jobs import (
     StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
     enqueue_material_deletion, tombstone_material,
 )
-from app.study_retrieval_v2 import retrieve_course_context_v2
+# Register durable broad-academic job metadata before init_db/create_all.
+from app.academic_generation_jobs import AcademicGenerationJob
+from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
@@ -4023,6 +4026,9 @@ def delete_study_course(request: Request, course_id: int):
         delete_course_rag_index(s, owner_user_id=user.id, course_id=course_id)
         s.delete(course)
         s.commit()
+        invalidate_retrieval_caches(
+            user.id, course_id, tuple(int(material.id) for material in materials),
+        )
 
     return RedirectResponse("/notes?deleted=1", status_code=303)
 
@@ -4275,6 +4281,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
             course.updated_at = _utcnow_naive()
             s.add(course)
         s.commit()
+        invalidate_retrieval_caches(user.id, course_id, (material_id,))
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
 
 
@@ -4459,6 +4466,13 @@ def study_ai_ask(
                 for row in reversed(history_rows)
             ]
 
+            if should_block_academic_question(clean_message, recent_history=history):
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
+                    "code": "ACADEMIC_SCOPE_OUTSIDE",
+                }, status_code=400)
+
             # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
             trace_event("ask.history.ready", course_id=course_id, history_count=len(history))
             _rag_started = _study_trace_time.perf_counter()
@@ -4471,27 +4485,32 @@ def study_ai_ask(
                     "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
                     "code": "ACADEMIC_V2_INDEX_NOT_READY",
                 }, status_code=409)
-            # Release the read transaction before embedding/provider I/O.
+            # Snapshot authorization/source state, then end the initial read
+            # transaction. Retrieval gets its own short-lived session instead of
+            # silently reopening this closed request session.
             source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
             s.close()
-            if use_v2:
-                rag_result = retrieve_course_context_v2(
-                    s,
-                    owner_user_id=user.id,
-                    course_id=course_id,
-                    query=clean_message,
-                    recent_history=history,
-                )
-            else:
-                rag_result = retrieve_course_context(
-                    s,
-                    owner_user_id=user.id,
-                    course_id=course_id,
-                    query=clean_message,
-                    materials=materials,
-                    recent_history=history,
-                )
+            with Session(engine, expire_on_commit=False) as retrieval_session:
+                if use_v2:
+                    rag_result = retrieve_course_context_v2(
+                        retrieval_session,
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        query=clean_message,
+                        recent_history=history,
+                    )
+                    if rag_result.visual_sources and rag_result.evidence_sufficient:
+                        materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
+                else:
+                    rag_result = retrieve_course_context(
+                        retrieval_session,
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        query=clean_message,
+                        materials=materials,
+                        recent_history=history,
+                    )
 
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
@@ -4549,37 +4568,40 @@ def study_ai_ask(
                 if use_v2 else None
             )
 
-            # Re-authorize after the provider call; never reattach a deleted course.
-            course = s.exec(select(StudyCourse).where(
-                StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
-            ).with_for_update()).first()
-            live_user = s.get(User, user.id)
-            if course is None or not live_user or not live_user.is_active:
-                return JSONResponse({"ok": False, "error": "Ders artık mevcut değil veya erişim değişti."}, status_code=409)
+            # Re-authorize and persist in a fresh short transaction after the
+            # provider call. Never rely on a previously closed request Session
+            # silently reopening a connection.
+            with Session(engine, expire_on_commit=False) as save_session:
+                live_course = save_session.exec(select(StudyCourse).where(
+                    StudyCourse.id == course_id, StudyCourse.owner_user_id == user.id,
+                ).with_for_update()).first()
+                live_user = save_session.get(User, user.id)
+                if live_course is None or not live_user or not live_user.is_active:
+                    return JSONResponse({"ok": False, "error": "Ders artık mevcut değil veya erişim değişti."}, status_code=409)
 
-            if _study_source_versions(s, user.id, course_id, lock=True) != source_versions:
-                return JSONResponse({"ok": False, "error": "Ders kaynakları değişti. Lütfen yeniden sorun."}, status_code=409)
-            s.add(StudyChatMessage(
-                course_id=course_id,
-                owner_user_id=user.id,
-                role="USER",
-                content=clean_message,
-                source_ids_json=source_json,
-                source_evidence_json=evidence_json,
-                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
-            ))
-            s.add(StudyChatMessage(
-                course_id=course_id,
-                owner_user_id=user.id,
-                role="ASSISTANT",
-                content=answer,
-                source_ids_json=source_json,
-                source_evidence_json=evidence_json,
-                mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
-            ))
-            course.updated_at = _utcnow_naive()
-            s.add(course)
-            s.commit()
+                if _study_source_versions(save_session, user.id, course_id, lock=True) != source_versions:
+                    return JSONResponse({"ok": False, "error": "Ders kaynakları değişti. Lütfen yeniden sorun."}, status_code=409)
+                save_session.add(StudyChatMessage(
+                    course_id=course_id,
+                    owner_user_id=user.id,
+                    role="USER",
+                    content=clean_message,
+                    source_ids_json=source_json,
+                    source_evidence_json=evidence_json,
+                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                ))
+                save_session.add(StudyChatMessage(
+                    course_id=course_id,
+                    owner_user_id=user.id,
+                    role="ASSISTANT",
+                    content=answer,
+                    source_ids_json=source_json,
+                    source_evidence_json=evidence_json,
+                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                ))
+                live_course.updated_at = _utcnow_naive()
+                save_session.add(live_course)
+                save_session.commit()
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
@@ -4659,6 +4681,12 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
+        if should_block_academic_question(clean_message, recent_history=history):
+            return JSONResponse({
+                "ok": False,
+                "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
+                "code": "ACADEMIC_SCOPE_OUTSIDE",
+            }, status_code=400)
         source_versions = _study_source_versions(s, user.id, course_id)
         try:
             retrieval = retrieve_course_context_v2(
@@ -4681,6 +4709,21 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             }
             for item in retrieval.evidence
         ], ensure_ascii=False)
+
+    # Retrieval has finished, so release its request Session before any
+    # potentially slow R2/PDF visual materialization. materialize_visual_sources
+    # owns short read/write Sessions itself; normal text questions skip this.
+    if retrieval.visual_sources and retrieval.evidence_sufficient:
+        try:
+            materialize_visual_sources(
+                lambda: Session(engine, expire_on_commit=False), retrieval,
+            )
+        except Exception:
+            logger.exception("Academic V2 visual materialization failed")
+            return JSONResponse(
+                {"ok": False, "error": "Görsel kaynak hazırlanamadı."},
+                status_code=502,
+            )
 
     owner_user_id = user.id
 
@@ -11791,6 +11834,7 @@ def admin_center_delete_user(
             _cancel_user_program_reminders(s, target.id)
             _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
             s.commit()
+            invalidate_user_retrieval_caches(target.id)
         except ValueError as exc:
             s.rollback()
             return HTMLResponse(str(exc), status_code=409)
@@ -11838,6 +11882,7 @@ def delete_own_account(
         _cancel_user_program_reminders(s, target.id)
         _resolve_notifications(s, user_id=target.id, notice_type="PROGRAM_REMINDER")
         s.commit()
+        invalidate_user_retrieval_caches(target.id)
 
     for path in set(storage_paths):
         try:
