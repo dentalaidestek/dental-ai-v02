@@ -24,6 +24,9 @@ _INTENT_OPERATOR_WORDS = (
     "neden", "faktorleri", "yatkinlastiran", "etkenleri",
     "endikasyonlari", "kontrendikasyonlari", "uygulanir", "uygulanmamalidir",
     "tercih", "edilmez", "anatomik", "iliskileri", "komsudur",
+    "tanimlamali", "kavramsal", "aciklamayi", "senaryolarini", "kacinmam",
+    "ardindan", "problemler", "olumsuz", "sonuclar", "zemin", "hazirlayan",
+    "predispozan", "kategorilere", "basliklari",
 )
 
 
@@ -88,7 +91,7 @@ _RULES = (
      ("procedure", "material"), ("has_contraindication",)),
     ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki[a-zçğıöşü]*)\b", re.I),
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
-    ("diagnosis", re.compile(r"\b(?:tanı(?!m)[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı(?!m)[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
+    ("diagnosis", re.compile(r"\b(?:tanı(?!m|M)[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı(?!m)[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
@@ -119,13 +122,13 @@ _NATURAL_ROLE_PATTERNS = (
     ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak\s+ne\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
     ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
     ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap|olcerken|hangi\s+olcum\s+esas)\b")),
-    ("classification", re.compile(r"(?i)\b(?:grup[a-z]*|evre[a-z]*|hangi\s+kategorilere\s+ayril|evreleme\s+sistemi|hangi\s+basliklari\s+(?:ver|say)|kategorilere\s+ayril)\b")),
+    ("classification", re.compile(r"(?i)\b(?:grup[a-z]*|evre[a-z]*|hangi\s+kategorilere\s+ayril[a-z]*|evreleme\s+sistemi|hangi\s+basliklari\s+(?:ver|say)|kategorilere\s+ayril)\b")),
     ("diagnosis", re.compile(r"(?i)\b(?:dusunmek\s+icin.*bulgu|suphesini\s+destekleyen\s+tanisal|tanisina\s+giderken|tanisini\s+gerekcelendirmek)\b")),
     ("treatment", re.compile(r"(?i)\b(?:yonetim\s+sirasi|onerilen\s+yaklasim|vakasinin\s+yonetimi|durumunda\s+ne\s+yapmam)\b")),
-    ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+(?:sorun|komplikasyon)|olumsuz\s+sonuc|ardindan\s+hangi\s+problem|sonrasinda\s+karsilasilabilecek|uygulama[a-z]*\s+ardindan.{0,28}problem)\b")),
-    ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*\s+kolaylastiran|ortaya\s+cikma[a-z]*\s+zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor|kolaylastiran\s+(?:kosul|etken))\b")),
-    ("indication", re.compile(r"(?i)\b(?:secim[a-z]*\s+hangi\s+klinik\s+kosul|kullanim[a-z]*\s+uygun\s+kilan|tercih[a-z]*\s+hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo|kullanim\s+senaryo)\b")),
-    ("contraindication", re.compile(r"(?i)\b(?:secenek[a-z]*.{0,32}kacinmam|kullanim[a-z]*\s+uygun\s+gormeyen|tercih\s+etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
+    ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+(?:sorun|komplikasyon)|olumsuz\s+sonuc[a-z]*|ardindan\s+hangi\s+problem[a-z]*|sonrasinda\s+karsilasilabilecek|uygulama[a-z]*\s+ardindan.{0,28}problem)\b")),
+    ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*\s+kolaylastiran|ortaya\s+cikma[a-z]*\s+zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor[a-z]*|kolaylastiran\s+(?:kosul|etken))\b")),
+    ("indication", re.compile(r"(?i)\b(?:secim[a-z]*\s+hangi\s+klinik\s+kosul|kullanim[a-z]*\s+uygun\s+kilan|tercih[a-z]*\s+hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo[a-z]*|kullanim\s+senaryo[a-z]*|uygun.{0,16}kullanim.{0,16}senaryo[a-z]*)\b")),
+    ("contraindication", re.compile(r"(?i)\b(?:secenek[a-z]*.{0,40}kacin[a-z]*|kullanim[a-z]*\s+uygun\s+gormeyen|tercih\s+etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
     ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa)\b")),
 )
 
