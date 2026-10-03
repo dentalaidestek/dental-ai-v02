@@ -72,3 +72,28 @@ def test_treatment_named_subject_does_not_become_treatment_request():
     plan, pairs = _pairs("Kanal tedavisi komplikasyonlarını anlat")
     assert any(facet == "complication" for _, facet in pairs)
     assert all(facet != "treatment" for _, facet in pairs)
+
+
+def test_explicit_anatomical_relation_keeps_both_query_endpoints():
+    plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
+    relation_needs = [n for n in plan.needs if n.relation]
+    assert relation_needs
+    assert all(n.target_subject_ids for n in relation_needs)
+    explicit = {sid for n in plan.needs for sid in n.subject_ids}
+    assert all(n.target_subject_ids[0] in explicit for n in relation_needs)
+
+
+def test_graph_does_not_invent_unasked_relation_target():
+    plan = decompose_academic_query("Üçüncü moların komplikasyonlarını anlat")
+    assert all(not n.relation for n in plan.needs)
+
+
+def test_qualifier_does_not_jump_between_separate_clauses():
+    plan = decompose_academic_query(
+        "Akut apikal apse bulgularını anlat ama kronik periodontitis tedavisini söyle"
+    )
+    for need in plan.needs:
+        if "periodontitis" in need.subject_ids:
+            assert "akut" not in need.qualifiers
+        if "apical_abscess" in need.subject_ids:
+            assert "kronik" not in need.qualifiers
