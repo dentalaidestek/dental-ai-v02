@@ -69,3 +69,24 @@ def test_every_declared_split_has_examples():
     assert report["by_split"]["train"] > 0
     assert report["by_split"]["validation"] > 0
     assert report["by_split"]["test"] > 0
+
+
+def test_training_surface_does_not_overlap_frozen_85k_benchmarks():
+    from app.dental_knowledge_graph import ALL_NODES
+    from tests.academic_v2.test_intent_benchmark_15k import _rows as rows15
+    from tests.academic_v2.test_intent_holdout_20k import _rows as rows20, _norm
+    from tests.academic_v2.test_utility_holdout_50k import _rows as rows50, _skeleton
+
+    old15 = rows15()
+    old20, _ = rows20()
+    old50, _, _ = rows50()
+    old = (*old15, *old20, *old50)
+    old_norm = {_norm(row[0]) for row in old}
+    labels = tuple(dict.fromkeys(node.label for node in ALL_NODES))
+    old_skeletons = {_skeleton(row[0], labels) for row in old}
+
+    for example in build_training_examples():
+        assert _norm(example.utterance) not in old_norm
+        # Use every canonical label, not only the example subject, so this test
+        # cannot hide overlap by choosing a convenient replacement vocabulary.
+        assert _skeleton(example.utterance, labels) not in old_skeletons
