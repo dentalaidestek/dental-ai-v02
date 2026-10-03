@@ -102,7 +102,7 @@ _RULES = (
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
-    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*|(?:hangi\s+)?yapı[a-zçğıöşü]*.{0,28}ilişki[a-zçğıöşü]*|anatomik\s+ilişki[a-zçğıöşü]*)\b", re.I),
+    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*|(?:hangi\s+)?yapı[a-zçğıöşü]*.{0,28}ilişki[a-zçğıöşü]*|anatomik\s+ilişki[a-zçğıöşü]*|(?:kanal|sinir|arter|ven|foramen|sinus|kök|kemik|kas|eklem)[a-zçğıöşü]*\s+ilişki[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
     ("visual", re.compile(r"\b(?:radyografi(?!k)[a-zçğıöşü]{0,8}|röntgen[a-zçğıöşü]{0,6}|görüntü(?:de|den|ler|lerde|lerden|sü|sünde)?|fotoğraf(?:ta|tan|lar|larda)?|panoramik(?:te|ten|ler|lerde)?|periapikal(?:de|den|ler|lerde)?|sefalogram[a-zçğıöşü]{0,5}|opg|cbct|film|bitewing|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
