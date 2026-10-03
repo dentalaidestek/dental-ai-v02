@@ -34,7 +34,7 @@ _RULES = (
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
     ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk faktör(?:ü|leri)?|niye|neden olur|neye bağlı)\b", re.I),
+    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk\s+faktör[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
@@ -420,7 +420,13 @@ _BROAD_ACADEMIC_RE = re.compile(
 )
 
 _ACADEMIC_STUDY_TASK_RULES = (
-    ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
+    ("repeated_patterns", re.compile(
+        r"(?iu)(?:"
+        r"\b(?:sürekli|tekrar\s+tekrar|en\s+çok|en\s+sık|sık\s+sık|sıkça|tekrarlanan|yinelenen)\b"
+        r".{0,64}\b(?:sor[a-zçğıöşü]*|çıkmış|soru[a-zçğıöşü]*|konu[a-zçğıöşü]*)\b"
+        r"|\b(?:soru|konu)[a-zçğıöşü]*\b.{0,48}\b(?:tekrar[a-zçğıöşü]*|yinelen[a-zçğıöşü]*|sık)\b"
+        r")"
+    ), True, True, True, False),
     ("similar_questions", re.compile(r"\b(?:benzer|benzeyen|benzeri|benzerini|aynı tarz|aynı tip)\b.{0,64}\b(?:soru|test|üret|hazırla|oluştur|sor)|\b(?:soru|test|çıkmış)[a-zçğıöşü]*\b.{0,48}\b(?:benzer|benzeyen|benzeri|aynı tarz|aynı tip)\b.{0,48}\b(?:üret|hazırla|oluştur|sor)[a-zçğıöşü]*\b", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(
