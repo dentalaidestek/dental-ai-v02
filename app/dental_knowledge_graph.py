@@ -288,29 +288,32 @@ def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
     window = text[max(0, start - 56):min(len(text), end + 56)]
     return bool(_DENTAL_CONTEXT_RE.search(window))
 
-def _edit_distance_at_most_one(left: str, right: str) -> bool:
-    """Cheap typo guard for long single-token dental aliases only."""
+def _bounded_edit_distance(left: str, right: str, max_edits: int) -> int | None:
+    """Return bounded Levenshtein distance; None means outside the safe radius."""
     if left == right:
-        return True
-    if abs(len(left) - len(right)) > 1:
-        return False
-    i = j = edits = 0
-    while i < len(left) and j < len(right):
-        if left[i] == right[j]:
-            i += 1
-            j += 1
-            continue
-        edits += 1
-        if edits > 1:
-            return False
-        if len(left) > len(right):
-            i += 1
-        elif len(right) > len(left):
-            j += 1
-        else:
-            i += 1
-            j += 1
-    return edits + (i < len(left) or j < len(right)) <= 1
+        return 0
+    if abs(len(left) - len(right)) > max_edits:
+        return None
+    previous = list(range(len(right) + 1))
+    for i, lch in enumerate(left, 1):
+        current = [i]
+        for j, rch in enumerate(right, 1):
+            cost = 0 if lch == rch else 1
+            current.append(min(current[-1] + 1, previous[j] + 1, previous[j - 1] + cost))
+        previous = current
+    distance = previous[-1]
+    return distance if distance <= max_edits else None
+
+
+def _edit_distance_at_most_one(left: str, right: str) -> bool:
+    return _bounded_edit_distance(left, right, 1) is not None
+
+
+def _safe_token_typo_distance(left: str, right: str) -> int | None:
+    # Two edits are allowed only on long, distinctive dental words.  The caller
+    # still requires a unique best node, so ambiguity fails closed.
+    radius = 2 if min(len(left), len(right)) >= 10 else 1
+    return _bounded_edit_distance(left, right, radius)
 
 
 def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
@@ -320,7 +323,7 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     tokens = re.findall(r"[a-zçğıöşü]{7,}", _match_text(query), flags=re.I)
     if not tokens:
         return []
-    candidates: list[tuple[int, int, DentalNode]] = []
+    candidates: list[tuple[int, int, int, DentalNode]] = []
     for node in ALL_NODES:
         if node.id in already:
             continue
@@ -329,8 +332,9 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
             if " " in clean or len(clean) < 7 or not clean.isalpha():
                 continue
             for pos, token in enumerate(tokens):
-                if _edit_distance_at_most_one(token, clean):
-                    candidates.append((-len(clean), pos, node))
+                distance = _safe_token_typo_distance(token, clean)
+                if distance is not None:
+                    candidates.append((distance, -len(clean), pos, node))
                     break
     # Also allow one typo inside a multiword canonical phrase when every
     # other word matches exactly. This keeps "mandbular kanal" recoverable
@@ -353,20 +357,20 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
                     continue
                 i = diffs[0]
                 if len(words[i]) >= 7 and _edit_distance_at_most_one(window[i], words[i]):
-                    candidates.append((-sum(map(len, words)), start, node))
+                    candidates.append((1, -sum(map(len, words)), start, node))
                     break
 
     # A typo rescue is safe only when the best edit-distance candidate is
     # unambiguous. Equal-strength candidates mean "unknown", not permission to
     # guess a dental subject.
-    ordered = sorted(candidates, key=lambda item: (item[0], item[1], item[2].id))
+    ordered = sorted(candidates, key=lambda item: (item[0], item[1], item[2], item[3].id))
     if not ordered:
         return []
-    best_strength = ordered[0][:2]
+    best_strength = ordered[0][:3]
     best_nodes = []
     seen_best: set[str] = set()
-    for strength_len, position, node in ordered:
-        if (strength_len, position) != best_strength:
+    for distance, strength_len, position, node in ordered:
+        if (distance, strength_len, position) != best_strength:
             break
         if node.id not in seen_best:
             seen_best.add(node.id)
