@@ -218,12 +218,12 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # a separate request: "endikasyonları ve kontrendikasyonları".
         paired_positive_applicability = bool(
             re.search(
-                r"(?i)\\b(?:once|ilk olarak|oncelikle)\\b.{0,180}"
-                r"(?:secim[a-z]*.{0,40}hangi\\s+klinik\\s+kosul[a-z]*|"
-                r"kullanim[a-z]*.{0,20}uygun\\s+kilan|"
-                r"tercih[a-z]*.{0,20}hangi\\s+durumda|"
+                r"(?i)\b(?:once|ilk olarak|oncelikle)\b.{0,180}"
+                r"(?:secim[a-z]*.{0,40}hangi\s+klinik\s+kosul[a-z]*|"
+                r"kullanim[a-z]*.{0,20}uygun\s+kilan|"
+                r"tercih[a-z]*.{0,20}hangi\s+durumda|"
                 r"uygun.{0,20}kullanim.{0,20}senaryo[a-z]*)"
-                r".{0,220}\\b(?:ardindan|sonra|devaminda)\\b",
+                r".{0,220}\b(?:ardindan|sonra|devaminda)\b",
                 intent_clean,
             )
         )
