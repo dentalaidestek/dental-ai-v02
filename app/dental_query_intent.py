@@ -39,7 +39,7 @@ _RULES = (
 )
 
 _CAUSAL_RISK_ROLE_RE = re.compile(
-    r"(?iu)\\b(?:risk\\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\\s+(?:etken|faktör|neden)[a-zçğıöşü]*)\\b"
+    r"(?iu)\b(?:risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*)\b"
 )
 
 def classify_dental_intent(query: str) -> DentalIntent:
