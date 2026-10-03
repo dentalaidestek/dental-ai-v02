@@ -13,7 +13,11 @@ on:
       - "work/academic-v2-*"
       - "release/academic-v2-clean-*"
     paths:
-      - "app/study_ai_v2.py"\n      - "app/academic_retrieval_plan.py"\n      - "app/academic_retrieval_adapter.py"\n      - "app/academic_query_decomposer.py"\n      - "scripts/generate_academic_retrieval_training.py"
+      - "app/study_ai_v2.py"
+      - "app/academic_retrieval_plan.py"
+      - "app/academic_retrieval_adapter.py"
+      - "app/academic_query_decomposer.py"
+      - "scripts/generate_academic_retrieval_training.py"
       - "app/academic_coverage.py"
       - "app/academic_generation.py"
       - "app/academic_generation_jobs.py"
