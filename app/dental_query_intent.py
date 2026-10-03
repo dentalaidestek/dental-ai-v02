@@ -655,11 +655,102 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
+_STUDY_WORKFLOW_WORDS = (
+    "cikmis", "cikmislarda", "gecmis", "soru", "sorular", "sorulari", "sorusunu",
+    "sorusunda", "sorusunun", "sik", "siklari", "secenek", "secenekleri", "oncullerini",
+    "dogru", "yanlis", "degerlendir", "gerekcelendir", "kontrol", "eslestir", "karsilik",
+    "dayandigi", "bolumu", "bagla", "coz", "celdiricilerin", "elendigini", "mantigini",
+    "ozetle", "toparla", "basliklari", "oruntusunu", "yinelenen", "tekrar", "surekli",
+    "benzer", "benzeyen", "uret", "hazirla", "olustur", "yoklamis", "dagilimini",
+    "odaklarini", "grupla",
+)
+
+def _study_workflow_text(query: str) -> str:
+    """Normalize only study-workflow operators; dental subject text is not rewritten."""
+    text = _intent_text(query).casefold()
+    tokens = re.findall(r"[a-z0-9]+|[^a-z0-9]+", text, flags=re.I)
+    out: list[str] = []
+    for token in tokens:
+        if not token.isalpha() or len(token) < 5 or token in _STUDY_WORKFLOW_WORDS:
+            out.append(token)
+            continue
+        matches = [word for word in _STUDY_WORKFLOW_WORDS if _intent_edit_distance_at_most_one(token, word)]
+        out.append(matches[0] if len(matches) == 1 else token)
+    return "".join(out)
+
+def _classify_past_question_workflow(query: str, broad: bool) -> AcademicStudyTaskPlan | None:
+    """Classify source-bound past-question operations before generic study verbs.
+
+    Source (past questions), requested operation, and note evidence are separate
+    dimensions.  This prevents generic summary/generation wording from erasing
+    the user's historical-question workflow.
+    """
+    text = _study_workflow_text(query)
+    past = bool(re.search(r"\b(?:cikmis\w*|gecmis\w*)\b", text))
+    historical = past or bool(re.search(r"\bhoca\b.{0,48}\b(?:sormus|sordugu)\b", text))
+    if not historical:
+        return None
+
+    option_terms = bool(re.search(r"\b(?:sik\w*|secenek\w*|oncul\w*)\b", text))
+    option_judgment = bool(re.search(r"\b(?:dogru|yanlis|degerlendir\w*|gerekce\w*|kontrol\w*)\b", text))
+    if option_terms and option_judgment:
+        return AcademicStudyTaskPlan("past_option_review", True, True, broad, False)
+
+    generation = bool(re.search(r"\b(?:uret\w*|hazirla\w*|olustur\w*)\b", text))
+    similarity = bool(re.search(r"\b(?:benzer\w*|ayni\s+(?:mantik|tarz|tip))\b", text))
+    if generation and similarity:
+        return AcademicStudyTaskPlan("similar_questions", True, True, broad, True)
+
+    repeated = bool(re.search(
+        r"\b(?:tekrar\s+tekrar|tekrarlanan\w*|yinelenen\w*|surekli|en\s+sik|sik\s+sik|sikca)\b", text
+    ))
+    if repeated:
+        return AcademicStudyTaskPlan("repeated_patterns", True, True, True, False)
+
+    solve = bool(re.search(
+        r"\b(?:coz\w*|celdirici\w*|dogru\s+cevap\w*|dogru\s+sonuc\w*|adim\s+adim)\b", text
+    ))
+    if solve:
+        return AcademicStudyTaskPlan("past_question_explain", True, True, broad, False)
+
+    alignment = bool(re.search(
+        r"(?:hangi\s+konuya\s+karsilik|eslestir\w*|dayandigi\s+(?:bolum|baslik)|"
+        r"baslik.{0,24}kanitla\s+bagla|hangi\s+bilgiyi\s+yokluyor)", text
+    ))
+    if alignment:
+        return AcademicStudyTaskPlan("past_note_alignment", True, True, broad, False)
+
+    topic_from_past = bool(re.search(
+        r"(?:sorular\w*.{0,40}bagli\s+oldugu\s+konu|"
+        r"gecmis\s+sorular\w*.{0,40}yoklanan\s+baslik|"
+        r"cikmislarda\s+gecen.{0,64}baslig\w*|"
+        r"cikmis\s+sorular\w*.{0,32}hareketle.{0,32}konu\s+baslig\w*)", text
+    ))
+    if topic_from_past:
+        return AcademicStudyTaskPlan("past_topic_summary", True, True, True, False)
+
+    exam_pattern = bool(re.search(
+        r"(?:hangi\s+bilgi\s+tur\w*.{0,24}yoklam\w*|"
+        r"hoca.{0,32}(?:ne\s+)?sormus|soru\s+dagilim\w*|"
+        r"gecmis\s+sinav\w*.{0,32}nasil\s+sorul\w*|"
+        r"(?:soru|sinav)\s+oruntu\w*|odaklar\w*.{0,16}goster|"
+        r"(?:soru|cikmis)\w*.{0,32}konu\s+baslik\w*.{0,16}ayir|"
+        r"sorular\w*.{0,32}not\s+konular\w*.{0,16}grupla)", text
+    ))
+    if exam_pattern:
+        return AcademicStudyTaskPlan("past_exam_patterns", True, True, True, False)
+
+    return None
+
+
 def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     """Plan role-neutral academic workflows while keeping factual output source-bound."""
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     lowered = clean.casefold()
+    source_bound = _classify_past_question_workflow(clean, broad)
+    if source_bound is not None:
+        return source_bound
     # Explicit summary is the primary workflow even when the user also asks
     # for exam-important points; those points are an output facet of the summary.
     if any(x in lowered for x in ("özet", "özetle")):
