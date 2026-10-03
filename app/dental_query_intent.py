@@ -606,6 +606,23 @@ _BROAD_ACADEMIC_RE = re.compile(
 )
 
 _ACADEMIC_STUDY_TASK_RULES = (
+    # Past-question workflows are distinct operations.  Keep question evidence
+    # and note evidence together; a student's marked option is not ground truth.
+    ("past_option_review", re.compile(
+        r"(?iu)(?:\b(?:cikmis|çıkmış|gecmis|geçmiş)\b.{0,72}\b(?:sik|şık|secenek|seçenek|oncul|öncül)[a-zçğıöşü]*\b.{0,72}\b(?:dogru|doğru|yanlis|yanlış|degerlendir|değerlendir|gerekce|gerekçe)|"
+        r"\b(?:sik|şık|secenek|seçenek|oncul|öncül)[a-zçğıöşü]*\b.{0,64}\b(?:dogru|doğru|yanlis|yanlış)\b.{0,72}\b(?:not|cikmis|çıkmış))"
+    ), True, True, False, False),
+    ("past_note_alignment", re.compile(
+        r"(?iu)(?:\b(?:cikmis|çıkmış|gecmis|geçmiş)\s+(?:soru|sinav|sınav)[a-zçğıöşü]*\b.{0,96}\b(?:notta|notlarda|ders\s+not[a-zçğıöşü]*|hangi\s+konu|karsilik|karşılık|bagla|bağla|eslestir|eşleştir)|"
+        r"\b(?:not|konu)[a-zçğıöşü]*\b.{0,72}\b(?:cikmis|çıkmış)\s+soru[a-zçğıöşü]*\b.{0,64}\b(?:eslestir|eşleştir|bagla|bağla|karsilik|karşılık))"
+    ), True, True, False, False),
+    ("past_question_explain", re.compile(
+        r"(?iu)\b(?:cikmis|çıkmış|gecmis|geçmiş)\s+soru[a-zçğıöşü]*\b.{0,96}\b(?:coz|çöz|acikla|açıkla|mantig|mantığ|neden|gerekce|gerekçe)[a-zçğıöşü]*\b"
+    ), True, True, False, False),
+    ("past_topic_summary", re.compile(
+        r"(?iu)(?:\b(?:cikmis|çıkmış|gecmis|geçmiş)\s+soru[a-zçğıöşü]*\b.{0,96}\b(?:konu|baslik|başlık)[a-zçğıöşü]*\b.{0,48}\b(?:ozet|özet|toparla|anlat)|"
+        r"\b(?:konu|baslik|başlık)[a-zçğıöşü]*\b.{0,48}\b(?:cikmis|çıkmış)\s+soru[a-zçğıöşü]*\b.{0,48}\b(?:ozet|özet|toparla))"
+    ), True, True, True, False),
     ("repeated_patterns", re.compile(
         r"(?iu)(?:"
         r"\b(?:sürekli|tekrar\s+tekrar|en\s+çok|en\s+sık|sık\s+sık|sıkça|tekrarlanan|yinelenen)\b"
