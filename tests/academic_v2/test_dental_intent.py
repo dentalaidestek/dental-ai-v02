@@ -254,3 +254,49 @@ def test_negative_polarity_understands_wrong_and_not_true_forms():
         "Bu konuda doğru değildir denebilecek ifade hangisi?",
     ):
         assert build_dental_requirement_plan(query).asks_negation, query
+
+
+def test_second_hundred_unseen_academic_questions_route_by_concept():
+    """100 fresh phrasings, deliberately separate from the original census."""
+    from app.dental_query_intent import classify_academic_study_task, build_dental_requirement_plan
+
+    facet_templates = [
+        ("{s} neden gelişir?", "cause"),
+        ("{s} için risk oluşturan etkenler nelerdir?", "cause"),
+        ("{s} nasıl tedavi edilir?", "treatment"),
+        ("{s} yönetiminde ne yapılır?", "treatment"),
+        ("{s} hangi komplikasyonlara yol açabilir?", "complication"),
+        ("{s} hangi durumlarda uygulanmamalıdır?", "contraindication"),
+        ("{s} hangi durumlarda endikedir?", "indication"),
+        ("{s} nasıl sınıflandırılır?", "classification"),
+        ("{s} tanısında hangi bulgular kullanılır?", "diagnosis"),
+        ("{s} anatomik olarak hangi yapılarla ilişkilidir?", "anatomy"),
+    ]
+    subjects = [
+        "perikoronitis", "alveolit", "irreversible pulpitis", "periodontitis",
+        "MRONJ", "dental florozis", "MIH", "apikal periodontitis",
+        "gömülü üçüncü molar", "inferior alveolar sinir bloğu",
+    ]
+    cases = []
+    for subject, (template, facet) in zip(
+        (subjects * 10),
+        (facet_templates * 10),
+    ):
+        cases.append((template.format(s=subject), facet))
+
+    # Make the cross-product deterministic and actually broad rather than
+    # pairing the same ten subjects with the same ten intents repeatedly.
+    cases = []
+    for si, subject in enumerate(subjects):
+        for ti, (template, facet) in enumerate(facet_templates):
+            rotated_subject = subjects[(si + ti) % len(subjects)]
+            cases.append((template.format(s=rotated_subject), facet))
+
+    assert len(cases) == 100
+    assert len({q.casefold() for q, _ in cases}) == 100
+    failures = []
+    for query, expected in cases:
+        plan = build_dental_requirement_plan(query)
+        if expected not in plan.requested_facets:
+            failures.append((query, expected, plan.requested_facets))
+    assert not failures, failures
