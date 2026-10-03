@@ -453,7 +453,7 @@ def _ascii_fallback_nodes(lowered: str, already: set[str]) -> list[DentalNode]:
     the fold is one character to one character.
     """
     folded_text = lowered.translate(_ASCII_FOLD)
-    if folded_text == lowered:
+    if not folded_text:
         return []
     mentions = []
     for node, clean_term, pattern in _compiled_folded_patterns():
