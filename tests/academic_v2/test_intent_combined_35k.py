@@ -18,7 +18,7 @@ def test_combined_35k_query_understanding_consistency():
     rows = [("15k", *r) for r in a] + [("20k", *r) for r in b]
     subject = recall = exact = leaks = 0
     timings = []
-    split = {"15k": [0,0,0,0,0], "20k": [0,0,0,0,0]}
+    split = {"15k": [0,0,0,0,0], "20k": [0,0,0,0,0]}\n    failures = {}\n    samples = {}
     for source, query, node, facets, style, kind in rows:
         t=time.perf_counter()
         plan=build_dental_requirement_plan(query)
@@ -27,6 +27,18 @@ def test_combined_35k_query_understanding_consistency():
         s=node in nodes; r=facets.issubset(got); leak=got-facets; e=r and not leak
         subject += s; recall += r; exact += e; leaks += bool(leak)
         z=split[source]; z[0]+=1; z[1]+=s; z[2]+=r; z[3]+=e; z[4]+=bool(leak)
+        for facet in sorted(facets-got):
+            key=(source,"missing",facet,style)
+            failures[key]=failures.get(key,0)+1
+            samples.setdefault(key,query)
+        for facet in sorted(leak):
+            key=(source,"leak",facet,style)
+            failures[key]=failures.get(key,0)+1
+            samples.setdefault(key,query)
+        if not s:
+            key=(source,"subject",kind,style)
+            failures[key]=failures.get(key,0)+1
+            samples.setdefault(key,query)
 
     n=len(rows)
     report={
@@ -45,7 +57,7 @@ def test_combined_35k_query_understanding_consistency():
     weighted_exact=round((split["15k"][3]+split["20k"][3])/n,4)
     weighted_recall=round((split["15k"][2]+split["20k"][2])/n,4)
     print("ACADEMIC_COMBINED_35K_REPORT",report)
-    print("ACADEMIC_COMBINED_35K_WEIGHTED_CHECK",{
+    print("ACADEMIC_COMBINED_35K_FAILURES", [(k,v,samples[k]) for k,v in sorted(failures.items(),key=lambda x:(-x[1],x[0]))[:80]])\n    print("ACADEMIC_COMBINED_35K_WEIGHTED_CHECK",{
         "exact_from_counts":weighted_exact,
         "recall_from_counts":weighted_recall,
         "exact_delta":round(report["intent_exact"]-weighted_exact,6),
