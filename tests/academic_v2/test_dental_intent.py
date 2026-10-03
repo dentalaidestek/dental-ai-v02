@@ -431,3 +431,33 @@ def test_ascii_subject_fallback_is_positive_and_fail_closed():
         "genel olarak ne yapilir?",
     ):
         assert not [node for node in matched_nodes(query) if node.kind != "imaging"], query
+
+
+def test_causal_risk_role_survives_orthography_without_complication_leak():
+    from app.dental_query_intent import build_dental_requirement_plan
+
+    positives = (
+        "bone loss risk faktorleri nelerdir?",
+        "oroantral aciklik risk faktorleri ve tedavisi nelerdir?",
+        "MRONJ riskini artiran nedenleri acikla.",
+        "alveolit icin yatkinlastiran etkenleri say.",
+    )
+    for query in positives:
+        facets = set(build_dental_requirement_plan(query).requested_facets)
+        assert "cause" in facets, (query, facets)
+        assert "complication" not in facets, (query, facets)
+
+    adverse = (
+        "implant komplikasyon riski nedir?",
+        "ilacin yan etkileri nelerdir?",
+        "istenmeyen etkileri acikla.",
+    )
+    for query in adverse:
+        facets = set(build_dental_requirement_plan(query).requested_facets)
+        assert "complication" in facets, (query, facets)
+        assert "cause" not in facets, (query, facets)
+
+    combined = set(build_dental_requirement_plan(
+        "implant risk faktorleri ve komplikasyonlari nelerdir?"
+    ).requested_facets)
+    assert {"cause", "complication"}.issubset(combined), combined
