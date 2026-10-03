@@ -63,4 +63,4 @@ jobs:
       - name: Run Academic V2 invariant and function tests
         run: python tests/academic_v2/run_tests.py
       - name: Run 89K past-question note holdout standalone
-        run: python -m pytest -q -s tests/academic_v2/test_past_question_note_holdout_89k.py
+        run: python -c "from tests.academic_v2.test_past_question_note_holdout_89k import test_unseen_89k_past_question_note_workflow_holdout as t; t()"
