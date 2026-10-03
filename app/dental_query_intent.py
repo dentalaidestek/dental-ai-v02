@@ -185,7 +185,7 @@ def _asks_negation(query: str) -> bool:
         r"(?iu)\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
         r"yapılma(?:ma)?[a-zçğıöşü]*|kullanılma(?:ma)?[a-zçğıöşü]*|uygulanma(?:ma)?[a-zçğıöşü]*|"
         r"önerilme(?:me)?[a-zçğıöşü]*|tercih\s+edilme(?:me)?[a-zçğıöşü]*|"
-        r"hariç|yanlıştır|önerilmez|tercih\s+edilmez|olmamalı[a-zçğıöşü]*|"
+        r"hariç|yanlış(?:tır|\s+olan)?|doğru\s+(?:değil(?:dir)?|olmayan)|önerilmez|tercih\s+edilmez|olmamalı[a-zçğıöşü]*|"
         r"kaçınılma[a-zçğıöşü]*|kaçınılmalı[a-zçğıöşü]*|kontrendike\s+değildir)\b",
         text,
     ))
