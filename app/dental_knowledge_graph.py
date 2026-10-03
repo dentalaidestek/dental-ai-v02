@@ -306,14 +306,32 @@ def _bounded_edit_distance(left: str, right: str, max_edits: int) -> int | None:
 
 
 def _edit_distance_at_most_one(left: str, right: str) -> bool:
-    return _bounded_edit_distance(left, right, 1) is not None
+    if _bounded_edit_distance(left, right, 1) is not None:
+        return True
+    if len(left) == len(right):
+        diffs = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+        if len(diffs) == 2 and diffs[1] == diffs[0] + 1:
+            i = diffs[0]
+            return left[i] == right[i + 1] and left[i + 1] == right[i]
+    return False
 
 
 def _safe_token_typo_distance(left: str, right: str) -> int | None:
     # Two edits are allowed only on long, distinctive dental words.  The caller
     # still requires a unique best node, so ambiguity fails closed.
     radius = 2 if min(len(left), len(right)) >= 10 else 1
-    return _bounded_edit_distance(left, right, radius)
+    distance = _bounded_edit_distance(left, right, radius)
+    if distance is not None:
+        return distance
+    # Damerau-style adjacent transposition rescue. It is bounded to a single
+    # swapped pair and still passes through the unique-best-node guard.
+    if len(left) == len(right):
+        diffs = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+        if len(diffs) == 2 and diffs[1] == diffs[0] + 1:
+            i = diffs[0]
+            if left[i] == right[i + 1] and left[i + 1] == right[i]:
+                return 1
+    return None
 
 
 @functools.lru_cache(maxsize=1)
