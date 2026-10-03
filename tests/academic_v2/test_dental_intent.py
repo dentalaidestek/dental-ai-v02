@@ -193,3 +193,16 @@ def test_recurrence_and_risk_factor_morphology_are_semantic_not_literal():
     ):
         plan = build_dental_requirement_plan(query)
         assert "cause" in plan.requested_facets, (query, plan.requested_facets)
+
+
+def test_measurement_intent_understands_assessed_structure_morphology():
+    from app.dental_query_intent import build_dental_requirement_plan
+    cases = (
+        "SNA'nın değerlendirdiği yapı nedir?",
+        "SNA ve SNB'nin değerlendirdikleri yapıları karşılaştır.",
+        "Bu açının değerlendirdiği parametre hangisidir?",
+        "Bu ölçümlerin değerlendirdikleri ilişkileri açıkla.",
+    )
+    for query in cases:
+        plan = build_dental_requirement_plan(query)
+        assert "measurement" in plan.requested_facets, (query, plan.requested_facets)
