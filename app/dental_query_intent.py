@@ -168,11 +168,11 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     # A direct "how is X related to Y?" construction requests anatomical/
     # structural relation evidence. Subject recognition remains graph-bounded,
     # so this does not invent an anatomical entity from the wording alone.
-    if re.search(r"(?i)(?:\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b|\\biliski[a-z]*\\b.{0,28}\\b(?:nasil|degerlendir)[a-z]*\\b)", intent_clean):
+    if re.search(r"(?i)(?:\b(?:nasil|hangi\s+yapi[a-z]*)\b.{0,72}\biliski[a-z]*\b|\biliski[a-z]*\b.{0,28}\b(?:nasil|degerlendir)[a-z]*\b)", intent_clean):
         natural_roles.add("anatomy")
     # Relation nouns are a structural request when the query has a graph-resolved
     # dental subject; downstream subject matching remains the ambiguity guard.
-    elif re.search(r"(?i)\\biliski(?:si|li|leri|sini|sinin)?\\b", intent_clean):
+    elif re.search(r"(?i)\biliski(?:si|li|leri|sini|sinin)?\b", intent_clean):
         natural_roles.add("anatomy")
     role_pairs = (
         ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
@@ -618,6 +618,11 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     if any(x in lowered for x in ("özet", "özetle")):
         generate = bool(_STUDY_GENERATION_RE.search(clean))
         return AcademicStudyTaskPlan("summarize", False, True, broad, generate)
+
+    # Explicit question-generation command outranks persona/preparation context.
+    # Use the existing bounded generation grammar so "soru" alone is not enough.
+    if _STUDY_GENERATION_RE.search(clean):
+        return AcademicStudyTaskPlan("generate_questions", False, True, broad, True)
 
     # Explicit operation beats persona/context ("sınava hazırlanıyorum",
     # "arkadaşıma anlatacağım").  This prevents preparation context from
