@@ -1,4 +1,5 @@
 name: Academic V2 CI
+# Production validation workflow.
 
 on:
   workflow_dispatch:
