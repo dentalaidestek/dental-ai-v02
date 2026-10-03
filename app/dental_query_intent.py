@@ -165,6 +165,11 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
+    # A direct "how is X related to Y?" construction requests anatomical/
+    # structural relation evidence. Subject recognition remains graph-bounded,
+    # so this does not invent an anatomical entity from the wording alone.
+    if re.search(r"(?i)\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b", intent_clean):
+        natural_roles.add("anatomy")
     role_pairs = (
         ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
          ("uygulanir", "kullanilir", "tercih", "onerilir", "yapilir", "secimini", "secim")),
@@ -604,6 +609,12 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     lowered = clean.casefold()
+    # Explicit summary is the primary workflow even when the user also asks
+    # for exam-important points; those points are an output facet of the summary.
+    if any(x in lowered for x in ("özet", "özetle")):
+        generate = bool(_STUDY_GENERATION_RE.search(clean))
+        return AcademicStudyTaskPlan("summarize", False, True, broad, generate)
+
     # Natural study-workflow verbs: classify the user's requested operation,
     # independently of the dental noun. These families intentionally describe
     # utility ("what should I do with my notes?"), not factual dental facets.
