@@ -243,3 +243,14 @@ def test_measurement_intent_tracks_assessment_semantics_across_morphology():
     for query in cases:
         plan = build_dental_requirement_plan(query)
         assert "measurement" in plan.requested_facets, (query, plan.requested_facets)
+
+
+def test_negative_polarity_understands_wrong_and_not_true_forms():
+    from app.dental_query_intent import build_dental_requirement_plan
+    for query in (
+        "Periodontitis için yanlış olan ifadeyi bul.",
+        "Hangisi yanlış?",
+        "Doğru olmayan seçeneği işaretle.",
+        "Bu konuda doğru değildir denebilecek ifade hangisi?",
+    ):
+        assert build_dental_requirement_plan(query).asks_negation, query
