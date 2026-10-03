@@ -10,6 +10,59 @@ def _intent_text(query: str) -> str:
     clean = " ".join((query or "").split())
     return clean.translate(_ASCII_FOLD)
 
+
+# Closed vocabulary used only to repair misspelled *question operators*.  Subject
+# words are never rewritten here; entity typo recovery remains graph-scoped and
+# ambiguity guarded.
+_INTENT_OPERATOR_WORDS = (
+    "nedir", "demektir", "kavramini", "acikla", "anlat",
+    "deger", "referans", "araligi", "olcum", "olculur", "degerlendirilir",
+    "siniflama", "siniflandirilir", "evreleri",
+    "tani", "teshis", "bulgulari", "semptomlari",
+    "tedavi", "tedavisinde", "yonetimini",
+    "komplikasyon", "komplikasyonlari", "etkileri",
+    "neden", "faktorleri", "yatkinlastiran", "etkenleri",
+    "endikasyonlari", "kontrendikasyonlari", "uygulanir", "uygulanmamalidir",
+    "tercih", "edilmez", "anatomik", "iliskileri", "komsudur",
+)
+
+
+def _intent_edit_distance_at_most_one(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > 1:
+        return False
+    i = j = edits = 0
+    while i < len(left) and j < len(right):
+        if left[i] == right[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(left) > len(right):
+            i += 1
+        elif len(right) > len(left):
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return edits + int(i < len(left) or j < len(right)) <= 1
+
+
+def _repair_intent_operators(text: str) -> str:
+    """Repair one-edit typos only when a token has one unique operator target."""
+    tokens = re.findall(r"[a-z0-9]+|[^a-z0-9]+", text or "", flags=re.I)
+    repaired = []
+    for token in tokens:
+        if not token.isalpha() or len(token) < 5:
+            repaired.append(token)
+            continue
+        matches = [word for word in _INTENT_OPERATOR_WORDS if _intent_edit_distance_at_most_one(token, word)]
+        repaired.append(matches[0] if len(matches) == 1 else token)
+    return "".join(repaired)
+
 @dataclass(frozen=True)
 class DentalIntent:
     name: str
@@ -57,7 +110,7 @@ _ADVERSE_RISK_RE = re.compile(
 
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
-    intent_clean = _intent_text(clean)
+    intent_clean = _repair_intent_operators(_intent_text(clean))
     if _CAUSAL_RISK_ROLE_RE.search(intent_clean):
         for name, pattern, kinds, relations in _RULES:
             if name == "cause":
@@ -71,7 +124,7 @@ def classify_dental_intent(query: str) -> DentalIntent:
 def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent, ...]:
     """Return explicit question requirements without turning subject words into intents."""
     clean = " ".join((query or "").split())
-    intent_clean = _intent_text(clean)
+    intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     for name, pattern, kinds, relations in _RULES:
         raw_match = pattern.search(clean)
