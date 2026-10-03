@@ -10,7 +10,7 @@ class DentalIntent:
     relation_hints: tuple[str, ...] = ()
 
 _RULES = (
-    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer[a-zçğıöşü]*|normal\s+değer[a-zçğıöşü]*|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
+    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|normal\s+değer(?!lendir)[a-zçğıöşü]*|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
@@ -183,7 +183,10 @@ def _asks_negation(query: str) -> bool:
     text = (query or "").casefold()
     return bool(re.search(
         r"(?iu)\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
-        r"hariç|yanlıştır|önerilmez|tercih\s+edilmez|olmamalıdır|kaçınılmalı|kaçınılmalıdır|kontrendike\s+değildir)\b",
+        r"yapılma(?:ma)?[a-zçğıöşü]*|kullanılma(?:ma)?[a-zçğıöşü]*|uygulanma(?:ma)?[a-zçğıöşü]*|"
+        r"önerilme(?:me)?[a-zçğıöşü]*|tercih\s+edilme(?:me)?[a-zçğıöşü]*|"
+        r"hariç|yanlıştır|önerilmez|tercih\s+edilmez|olmamalı[a-zçğıöşü]*|"
+        r"kaçınılma[a-zçğıöşü]*|kaçınılmalı[a-zçğıöşü]*|kontrendike\s+değildir)\b",
         text,
     ))
 
