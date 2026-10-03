@@ -92,7 +92,7 @@ _RULES = (
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
-    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|ilişki[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*)\b", re.I),
+    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*|(?:hangi\s+)?yapı[a-zçğıöşü]*.{0,28}ilişki[a-zçğıöşü]*|anatomik\s+ilişki[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
     ("visual", re.compile(r"\b(?:radyografi(?!k)[a-zçğıöşü]{0,8}|röntgen[a-zçğıöşü]{0,6}|görüntü(?:de|den|ler|lerde|lerden|sü|sünde)?|fotoğraf(?:ta|tan|lar|larda)?|panoramik(?:te|ten|ler|lerde)?|periapikal(?:de|den|ler|lerde)?|sefalogram[a-zçğıöşü]{0,5}|opg|cbct|film|bitewing|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
@@ -116,16 +116,16 @@ _ADVERSE_RISK_RE = re.compile(
 # Natural academic/clinical discourse roles. These patterns describe what the
 # speaker asks the notes to provide; they are independent of any dental subject.
 _NATURAL_ROLE_PATTERNS = (
-    ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlatiliyor|nasil\s+tanimlamali|tanim\s+olarak\s+ne\s+soylemeliyim|temel\s+kavramsal\s+aciklama)\b")),
+    ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak\s+ne\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
     ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
     ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap|olcerken|hangi\s+olcum\s+esas)\b")),
-    ("classification", re.compile(r"(?i)\b(?:gruplari|evreleri|hangi\s+kategorilere\s+ayril|evreleme\s+sistemi)\b")),
+    ("classification", re.compile(r"(?i)\b(?:grup[a-z]*|evre[a-z]*|hangi\s+kategorilere\s+ayril|evreleme\s+sistemi|hangi\s+basliklari\s+(?:ver|say)|kategorilere\s+ayril)\b")),
     ("diagnosis", re.compile(r"(?i)\b(?:dusunmek\s+icin.*bulgu|suphesini\s+destekleyen\s+tanisal|tanisina\s+giderken|tanisini\s+gerekcelendirmek)\b")),
     ("treatment", re.compile(r"(?i)\b(?:yonetim\s+sirasi|onerilen\s+yaklasim|vakasinin\s+yonetimi|durumunda\s+ne\s+yapmam)\b")),
-    ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+sorun|olumsuz\s+sonuc|ardindan\s+hangi\s+problem)\b")),
-    ("cause", re.compile(r"(?i)\b(?:gelismesini\s+kolaylastiran|ortaya\s+cikmasina\s+zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken)\b")),
-    ("indication", re.compile(r"(?i)\b(?:secimini\s+hangi\s+klinik\s+kosul|kullanimini\s+uygun\s+kilan|tercihine\s+hangi\s+durumda\s+yonelmeli|uygun\s+kullanim\s+senaryo)\b")),
-    ("contraindication", re.compile(r"(?i)\b(?:seceneginden.*kacinmam|kullanimini\s+uygun\s+gormeyen|tercih\s+etmemem\s+gereken|sakincali\s+kabul\s+edilen)\b")),
+    ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+(?:sorun|komplikasyon)|olumsuz\s+sonuc|ardindan\s+hangi\s+problem|sonrasinda\s+karsilasilabilecek|uygulama[a-z]*\s+ardindan.{0,28}problem)\b")),
+    ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*\s+kolaylastiran|ortaya\s+cikma[a-z]*\s+zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor|kolaylastiran\s+(?:kosul|etken))\b")),
+    ("indication", re.compile(r"(?i)\b(?:secim[a-z]*\s+hangi\s+klinik\s+kosul|kullanim[a-z]*\s+uygun\s+kilan|tercih[a-z]*\s+hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo|kullanim\s+senaryo)\b")),
+    ("contraindication", re.compile(r"(?i)\b(?:secenek[a-z]*.{0,32}kacinmam|kullanim[a-z]*\s+uygun\s+gormeyen|tercih\s+etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
     ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa)\b")),
 )
 
