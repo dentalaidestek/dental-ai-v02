@@ -2,7 +2,7 @@ name: Academic V2 CI
 
 on:
   workflow_dispatch:
-  # Always validate pull requests to main. Required checks must not disappear
+  # Always validate pull requests to main; this is the release gate. Required checks must not disappear
   # because a path filter evaluated differently on the base branch.
   pull_request:
     branches: [main]
