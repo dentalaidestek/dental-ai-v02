@@ -18,7 +18,9 @@ def test_combined_35k_query_understanding_consistency():
     rows = [("15k", *r) for r in a] + [("20k", *r) for r in b]
     subject = recall = exact = leaks = 0
     timings = []
-    split = {"15k": [0,0,0,0,0], "20k": [0,0,0,0,0]}\n    failures = {}\n    samples = {}
+    split = {"15k": [0,0,0,0,0], "20k": [0,0,0,0,0]}
+    failures = {}
+    samples = {}
     for source, query, node, facets, style, kind in rows:
         t=time.perf_counter()
         plan=build_dental_requirement_plan(query)
