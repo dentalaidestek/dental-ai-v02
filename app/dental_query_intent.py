@@ -112,6 +112,23 @@ _ADVERSE_RISK_RE = re.compile(
     r"(?iu)\b(?:komplikasyon|yan\s+etki|istenmeyen\s+(?:etki|olay|sonuç))[a-zçğıöşü]*\s+risk[a-zçğıöşü]*\b"
 )
 
+
+# Natural academic/clinical discourse roles. These patterns describe what the
+# speaker asks the notes to provide; they are independent of any dental subject.
+_NATURAL_ROLE_PATTERNS = (
+    ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlatiliyor|nasil\s+tanimlamali|tanim\s+olarak\s+ne\s+soylemeliyim|temel\s+kavramsal\s+aciklama)\b")),
+    ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
+    ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap|olcerken|hangi\s+olcum\s+esas)\b")),
+    ("classification", re.compile(r"(?i)\b(?:gruplari|evreleri|hangi\s+kategorilere\s+ayril|evreleme\s+sistemi)\b")),
+    ("diagnosis", re.compile(r"(?i)\b(?:dusunmek\s+icin.*bulgu|suphesini\s+destekleyen\s+tanisal|tanisina\s+giderken|tanisini\s+gerekcelendirmek)\b")),
+    ("treatment", re.compile(r"(?i)\b(?:yonetim\s+sirasi|onerilen\s+yaklasim|vakasinin\s+yonetimi|durumunda\s+ne\s+yapmam)\b")),
+    ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+sorun|olumsuz\s+sonuc|ardindan\s+hangi\s+problem)\b")),
+    ("cause", re.compile(r"(?i)\b(?:gelismesini\s+kolaylastiran|ortaya\s+cikmasina\s+zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken)\b")),
+    ("indication", re.compile(r"(?i)\b(?:secimini\s+hangi\s+klinik\s+kosul|kullanimini\s+uygun\s+kilan|tercihine\s+hangi\s+durumda\s+yonelmeli|uygun\s+kullanim\s+senaryo)\b")),
+    ("contraindication", re.compile(r"(?i)\b(?:seceneginden.*kacinmam|kullanimini\s+uygun\s+gormeyen|tercih\s+etmemem\s+gereken|sakincali\s+kabul\s+edilen)\b")),
+    ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa)\b")),
+)
+
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
     intent_clean = _repair_intent_operators(_intent_text(clean))
@@ -130,11 +147,12 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     clean = " ".join((query or "").split())
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
+    natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
     for name, pattern, kinds, relations in _RULES:
         raw_match = pattern.search(clean)
         normalized_match = pattern.search(intent_clean)
         match = raw_match or normalized_match
-        if not match:
+        if not match and name not in natural_roles:
             continue
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
         # it does not ask for treatment itself. Require treatment wording to
