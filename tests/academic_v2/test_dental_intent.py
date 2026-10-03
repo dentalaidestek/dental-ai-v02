@@ -318,3 +318,64 @@ def test_semantic_role_contrasts_prevent_positive_negative_intent_leakage():
         facets = set(build_dental_requirement_plan(query).requested_facets)
         assert required.issubset(facets), (query, required, facets)
         assert not forbidden.intersection(facets), (query, forbidden, facets)
+
+
+def test_large_semantic_intent_pressure_matrix_with_negative_controls():
+    """Broad morphology/role pressure: many subjects, phrasings and inverse controls."""
+    from app.dental_query_intent import build_dental_requirement_plan
+
+    subjects = (
+        "implant", "alveolit", "periodontitis", "pulpitis", "MRONJ",
+        "lokal anestezi", "fissür örtücü", "flor uygulaması", "CBCT",
+        "gömülü diş", "apikal lezyon", "ortodontik aparey",
+    )
+    families = (
+        ("{s} için risk faktörleri nelerdir?", "cause"),
+        ("{s} riskini artıran nedenleri açıkla.", "cause"),
+        ("{s} açısından yatkınlaştıran etkenleri say.", "cause"),
+        ("{s} hangi nedenlerle gelişir?", "cause"),
+        ("{s} hangi durumlarda uygulanır?", "indication"),
+        ("{s} hangi koşullarda kullanılabilir?", "indication"),
+        ("{s} ne zaman tercih edilir?", "indication"),
+        ("{s} endikasyonlarını açıkla.", "indication"),
+        ("{s} hangi durumlarda uygulanmamalıdır?", "contraindication"),
+        ("{s} hangi koşullarda kullanılmamalı?", "contraindication"),
+        ("{s} için kontrendikasyonlar nelerdir?", "contraindication"),
+        ("{s} hangi durumda önerilmez?", "contraindication"),
+        ("{s} komplikasyonları nelerdir?", "complication"),
+        ("{s} için yan etkileri açıkla.", "complication"),
+        ("{s} komplikasyon riskini anlat.", "complication"),
+        ("{s} sonrası istenmeyen etkiler nelerdir?", "complication"),
+        ("{s} normal aralığı nedir?", "value"),
+        ("{s} referans aralığı kaçtır?", "value"),
+        ("{s} normal değeri nedir?", "value"),
+        ("{s} değeri zamanla nasıl değişir?", "value"),
+    )
+    failures = []
+    for subject in subjects:
+        for template, expected in families:
+            query = template.format(s=subject)
+            facets = set(build_dental_requirement_plan(query).requested_facets)
+            if expected not in facets:
+                failures.append((query, expected, tuple(sorted(facets))))
+    assert not failures, failures
+
+    # False-positive controls: neighboring vocabulary must not leak a facet.
+    controls = (
+        ("Bu kavram nedir?", "value"),
+        ("Tedavi sonucunu değerlendir.", "measurement"),
+        ("Hastanın genel riskini değerlendir.", "cause"),
+        ("Komplikasyonları açıkla.", "cause"),
+        ("Risk faktörlerini açıkla.", "complication"),
+        ("Bu yöntem uygulanmamalıdır.", "indication"),
+        ("Bu yöntem endikedir.", "contraindication"),
+        ("Bu yapının anatomik ilişkisini anlat.", "comparison"),
+        ("Tanı bulgularını listele.", "treatment"),
+        ("Sınıflamayı açıkla.", "diagnosis"),
+    )
+    leaked = []
+    for query, forbidden in controls:
+        facets = set(build_dental_requirement_plan(query).requested_facets)
+        if forbidden in facets:
+            leaked.append((query, forbidden, tuple(sorted(facets))))
+    assert not leaked, leaked
