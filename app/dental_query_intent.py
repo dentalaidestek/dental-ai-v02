@@ -216,8 +216,10 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # Negative applicability overrides a coincident positive applicability cue.
         # An explicit "endikasyon" word (not the one inside "kontrendikasyon") is
         # a separate request: "endikasyonları ve kontrendikasyonları".
-        if any(item.name == "contraindication" for item in found) and not re.search(
-            r"(?<!kontr)endikasyon", clean, re.I
+        if (
+            any(item.name == "contraindication" for item in found)
+            and "indication" not in natural_roles
+            and not re.search(r"(?<!kontr)endikasyon", clean, re.I)
         ):
             found = [item for item in found if item.name != "indication"]
         # Imaging words describe a modality/constraint surprisingly often
