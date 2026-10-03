@@ -168,7 +168,11 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     # A direct "how is X related to Y?" construction requests anatomical/
     # structural relation evidence. Subject recognition remains graph-bounded,
     # so this does not invent an anatomical entity from the wording alone.
-    if re.search(r"(?i)\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b", intent_clean):
+    if re.search(r"(?i)(?:\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b|\\biliski[a-z]*\\b.{0,28}\\b(?:nasil|degerlendir)[a-z]*\\b)", intent_clean):
+        natural_roles.add("anatomy")
+    # Relation nouns are a structural request when the query has a graph-resolved
+    # dental subject; downstream subject matching remains the ambiguity guard.
+    elif re.search(r"(?i)\\biliski(?:si|li|leri|sini|sinin)?\\b", intent_clean):
         natural_roles.add("anatomy")
     role_pairs = (
         ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
@@ -615,9 +619,17 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
         generate = bool(_STUDY_GENERATION_RE.search(clean))
         return AcademicStudyTaskPlan("summarize", False, True, broad, generate)
 
-    # Natural study-workflow verbs: classify the user's requested operation,
-    # independently of the dental noun. These families intentionally describe
-    # utility ("what should I do with my notes?"), not factual dental facets.
+    # Explicit operation beats persona/context ("sınava hazırlanıyorum",
+    # "arkadaşıma anlatacağım").  This prevents preparation context from
+    # stealing the actual requested transformation.
+    if re.search(r"(?iu)\b(?:alıştırma|mini\s+deneme|kendimi\s+test|çalışmamı\s+sına|quiz)\w*", clean):
+        return AcademicStudyTaskPlan("generate_questions", False, True, broad, True)
+    if re.search(r"(?iu)(?:\bezberle[a-zçğıöşü]*.{0,48}\bmantı[ğg][a-zçğıöşü]*.{0,24}\bayır|\bmantı[ğg]ını\s+kur|\bmantık\s+zinciri|\bbasamak\s+basamak|\bders\s+anlatır\s+gibi|\bezberletmeden|\bsade\s+bir\s+dille|\btemel\s+fikir)", clean):
+        # "ezberlemem gerekenlerle mantığını anlamam gerekenleri ayır" is an
+        # exam-study selection task, not a request to teach the topic.
+        if re.search(r"(?iu)\bezberle[a-zçğıöşü]*.{0,64}\bayır\w*", clean):
+            return AcademicStudyTaskPlan("exam_points", False, True, True, False)
+        return AcademicStudyTaskPlan("explain", False, True, broad, False)
     if re.search(r"(?iu)\b(?:toparla|sıkıştır|yoğunlaştır|birleştir|çalışma\s+sayfasına|tekrar\s+kağıdına|ders\s+fişine)\w*", clean):
         return AcademicStudyTaskPlan("summarize", False, True, broad, False)
     if (
@@ -625,10 +637,6 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
         and re.search(r"(?iu)\b(?:kritik|gözden\s+kaçır|takıl|ezberle|soru\s+kur|yokla|mutlaka\s+kontrol)\w*", clean)
     ):
         return AcademicStudyTaskPlan("exam_points", False, True, True, False)
-    if re.search(r"(?iu)\b(?:alıştırma|mini\s+deneme|kendimi\s+test|çalışmamı\s+sına|quiz)\w*", clean):
-        return AcademicStudyTaskPlan("generate_questions", False, True, broad, True)
-    if re.search(r"(?iu)\b(?:mantık\s+zinciri|basamak\s+basamak|ders\s+anlatır\s+gibi|ezberletmeden|sade\s+bir\s+dille|temel\s+fikir)\b", clean):
-        return AcademicStudyTaskPlan("explain", False, True, broad, False)
     # Extraction/condensation language has higher precedence than incidental
     # salience adjectives. "kritik ölçümleri çıkar" asks to extract a fact
     # class, not to predict exam importance. Conversely, salience requests
