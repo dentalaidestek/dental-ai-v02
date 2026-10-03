@@ -697,7 +697,11 @@ def _classify_past_question_workflow(query: str, broad: bool) -> AcademicStudyTa
         return AcademicStudyTaskPlan("past_option_review", True, True, broad, False)
 
     generation = bool(re.search(r"\b(?:uret\w*|hazirla\w*|olustur\w*)\b", text))
-    similarity = bool(re.search(r"\b(?:benzer\w*|ayni\s+(?:mantik|tarz|tip))\b", text))
+    # Similarity is an operation property, not a word-distance property:
+    # the dental subject may sit between "cikmis" and "ayni mantik".
+    similarity = bool(re.search(
+        r"\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:mantik\w*|tarz\w*|tip\w*))\b", text
+    ))
     if generation and similarity:
         return AcademicStudyTaskPlan("similar_questions", True, True, broad, True)
 
@@ -720,12 +724,23 @@ def _classify_past_question_workflow(query: str, broad: bool) -> AcademicStudyTa
     if alignment:
         return AcademicStudyTaskPlan("past_note_alignment", True, True, broad, False)
 
-    topic_from_past = bool(re.search(
-        r"(?:sorular\w*.{0,40}bagli\s+oldugu\s+konu|"
-        r"gecmis\s+sorular\w*.{0,40}yoklanan\s+baslik|"
-        r"cikmislarda\s+gecen.{0,64}baslig\w*|"
-        r"cikmis\s+sorular\w*.{0,32}hareketle.{0,32}konu\s+baslig\w*)", text
-    ))
+    # Topic-from-history is defined by the requested transformation, not by
+    # how many characters the subject name occupies between cue words.
+    topic_from_past = bool(
+        re.search(r"\bbagli\s+oldugu\s+konu\b", text)
+        or (
+            re.search(r"\byoklanan\s+baslik\w*\b", text)
+            and bool(re.search(r"\b(?:gecmis|cikmis)\w*\b", text))
+        )
+        or (
+            re.search(r"\bcikmislarda\s+gecen\b", text)
+            and bool(re.search(r"\bbaslig\w*\b", text))
+        )
+        or (
+            re.search(r"\bhareketle\b", text)
+            and bool(re.search(r"\bkonu\s+baslig\w*\b", text))
+        )
+    )
     if topic_from_past:
         return AcademicStudyTaskPlan("past_topic_summary", True, True, True, False)
 
