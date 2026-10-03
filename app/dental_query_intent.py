@@ -144,7 +144,7 @@ _NATURAL_ROLE_PATTERNS = (
     ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*.{0,16}kolaylastiran|ortaya\s+cikma[a-z]*.{0,16}zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor[a-z]*|kolaylastiran\s+(?:kosul|etken))\b")),
     ("indication", re.compile(r"(?i)\b(?:secim[a-z]*.{0,20}hangi\s+klinik\s+kosul[a-z]*|kullanim[a-z]*.{0,12}uygun\s+kilan|tercih[a-z]*.{0,16}hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo[a-z]*|kullanim\s+senaryo[a-z]*|uygun.{0,16}kullanim.{0,16}senaryo[a-z]*|(?:hangi|ne)\s+vaka[a-z]*.{0,24}(?:tercih|kullan|uygula)[a-z]*|secim[a-z]*.{0,24}(?:belirle|etkile)[a-z]*|(?:uygun|dogru)\s+(?:kullanim|tercih)[a-z]*|ne\s+zaman.{0,20}(?:tercih|kullan|uygula)[a-z]*)\b")),
     ("contraindication", re.compile(r"(?i)\b(?:secene(?:k|g)[a-z]*.{0,56}(?:kacin[a-z]*|uzak\s+dur[a-z]*)|kullanim[a-z]*.{0,16}uygun\s+gormeyen|tercih[a-z]*.{0,12}etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
-    ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa|(?:kanal|sinir|arter|ven|foramen|sinus|kok|kemik|kas|eklem).{0,48}iliski)\b")),
+    ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa|(?:kanal|sinir|arter|ven|foramen|sinus|kok|kemik|kas|eklem).{0,48}iliski[a-z]*)\b")),
 )
 
 def classify_dental_intent(query: str) -> DentalIntent:
@@ -169,7 +169,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     # A direct "how is X related to Y?" construction requests anatomical/
     # structural relation evidence. Subject recognition remains graph-bounded,
     # so this does not invent an anatomical entity from the wording alone.
-    if re.search(r"(?i)\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b", intent_clean):
+    if re.search(r"(?i)\b(?:nasil|hangi\s+yapi[a-z]*)\b.{0,72}\biliski[a-z]*\b", intent_clean):
         natural_roles.add("anatomy")
     role_pairs = (
         # Applicability is a semantic role, not a literal surface form.
@@ -184,6 +184,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     for role_name, left_words, right_words in role_pairs:
         if _has_role_pair(intent_clean, left_words, right_words):
             natural_roles.add(role_name)
+    structural_relation = "anatomy" in natural_roles and bool(re.search(r"(?i)\\biliski[a-z]*\\b.{0,32}\\bdegerlendir[a-z]*", intent_clean))
     for name, pattern, kinds, relations in _RULES:
         raw_match = pattern.search(clean)
         normalized_match = pattern.search(intent_clean)
@@ -250,6 +251,8 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         non_visual = [item for item in found if item.name != "visual"]
         if non_visual:
             found = non_visual
+        if structural_relation:
+            found = [item for item in found if item.name not in {"value", "measurement", "diagnosis"}]
         # Generic "nedir/nelerdir" often closes a multi-facet Turkish question
         # ("tanısı ve tedavisi nedir?"). It must not create a fake definition
         # requirement when stronger explicit facets are already present.
