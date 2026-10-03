@@ -407,3 +407,27 @@ def test_risk_semantic_roles_preserve_explicit_facets_and_block_neighbor_leakage
         facets = set(build_dental_requirement_plan(query).requested_facets)
         assert required.issubset(facets), (query, required, facets)
         assert not forbidden.intersection(facets), (query, forbidden, facets)
+
+
+def test_ascii_subject_fallback_is_positive_and_fail_closed():
+    from app.dental_knowledge_graph import matched_nodes
+
+    positives = {
+        "alt cene nerede bulunur?": "mandible",
+        "dis tasi nasil siniflandirilir?": "calculus",
+        "sut disi nerede bulunur?": "primary_tooth",
+        "alveol kemigi anatomik iliskileri nelerdir?": "alveolar_bone",
+    }
+    for query, expected in positives.items():
+        got = {node.id for node in matched_nodes(query)}
+        assert expected in got, (query, got)
+
+    # Orthographic folding is not permission to invent a subject from ordinary
+    # language or to fuzzy-match abbreviations.
+    for query in (
+        "bu konu nasil aciklanir?",
+        "risk faktorleri nelerdir?",
+        "normal deger kactir?",
+        "genel olarak ne yapilir?",
+    ):
+        assert not [node for node in matched_nodes(query) if node.kind != "imaging"], query
