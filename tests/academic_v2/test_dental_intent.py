@@ -300,3 +300,21 @@ def test_second_hundred_unseen_academic_questions_route_by_concept():
         if expected not in plan.requested_facets:
             failures.append((query, expected, plan.requested_facets))
     assert not failures, failures
+
+
+def test_semantic_role_contrasts_prevent_positive_negative_intent_leakage():
+    """Intent is determined by the role of a phrase, not a single trigger token."""
+    from app.dental_query_intent import build_dental_requirement_plan
+
+    cases = (
+        ("Bu durum için risk oluşturan etkenler nelerdir?", {"cause"}, {"complication"}),
+        ("Bu işlemin komplikasyon riski nedir?", {"complication"}, {"cause"}),
+        ("Hangi koşullarda bu yöntem uygulanabilir?", {"indication"}, set()),
+        ("Hangi koşullarda bu yöntem uygulanmamalıdır?", {"contraindication"}, {"indication"}),
+        ("Bu skorun referans aralığı nedir?", {"value"}, {"definition"}),
+        ("Bu kavram nedir?", {"definition"}, {"value"}),
+    )
+    for query, required, forbidden in cases:
+        facets = set(build_dental_requirement_plan(query).requested_facets)
+        assert required.issubset(facets), (query, required, facets)
+        assert not forbidden.intersection(facets), (query, forbidden, facets)
