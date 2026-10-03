@@ -9,90 +9,47 @@ class DentalIntent:
     preferred_kinds: tuple[str, ...]
     relation_hints: tuple[str, ...] = ()
 
-_TR = r"a-zçğıöşü"
-
-# Intent detection is deliberately split into semantic roles rather than isolated
-# trigger words.  A token such as "risk" or "nedir" is ambiguous by itself; the
-# surrounding predicate/polarity decides the requested fact class.
-_CAUSAL_RISK_RE = re.compile(
-    r"(?iu)\\b(?:risk\\s+faktör[" + _TR + r"]*|"
-    r"risk[" + _TR + r"]*\\s+(?:oluştur|artır|hazırla|yatkınlaştır)[" + _TR + r"]*|"
-    r"(?:risk|yatkınlık)[" + _TR + r"]*\\s+(?:etken|neden|faktör)[" + _TR + r"]*|"
-    r"(?:etken|neden|faktör)[" + _TR + r"]*\\s+.{0,20}(?:risk|yatkınlık)[" + _TR + r"]*)\\b"
-)
-_NEGATIVE_APPLICABILITY_RE = re.compile(
-    r"(?iu)\\b(?:kontrendik[" + _TR + r"]*|"
-    r"(?:kullan|uygula|yap|öner|tercih\\s+et)[" + _TR + r"]{0,12}(?:ma|me)[" + _TR + r"]*|"
-    r"(?:kullanılmaz|uygulanmaz|yapılmaz|önerilmez)|"
-    r"endike\\s+(?:değil|değildir)|kaçınıl[" + _TR + r"]*)\\b"
-)
-_POSITIVE_APPLICABILITY_RE = re.compile(
-    r"(?iu)\\b(?:endikasyon[" + _TR + r"]*|endikedir|"
-    r"(?:hangi|ne)\\s+(?:durum|koşul|şart)[" + _TR + r"]*.{0,32}"
-    r"(?:kullan|uygula|yap|öner|tercih\\s+et)[" + _TR + r"]*)\\b"
-)
-
 _RULES = (
-    ("value", re.compile(
-        r"(?iu)(?:\\b(?:kaç|kaçtır|değer(?!lendir)[" + _TR + r"]*|"
-        r"(?:normal|referans)\\s+(?:değer(?!lendir)[" + _TR + r"]*|aral[" + _TR + r"]*)|"
-        r"mm|oran[" + _TR + r"]*)\\b|"
-        r"\\b(?:açı|değer|ölçüm|oran)[" + _TR + r"]*\\b.{0,32}"
-        r"\\b(?:değiş|art|azal|trend|seyir)[" + _TR + r"]*\\b)"
-    ), ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(
-        r"(?iu)\\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[" + _TR + r"]*|"
-        r"neyle ölç|nasıl ölç|nasıl ölçül|ölçül[" + _TR + r"]*|ölçüm[" + _TR + r"]* nasıl|"
-        r"neyi değerlendir[" + _TR + r"]*|değerlendiril[" + _TR + r"]*|"
-        r"değerlendir[" + _TR + r"]*\\s+(?:yapı|parametre|özellik|ilişki)[" + _TR + r"]*|"
-        r"(?:hangi\\s+)?(?:yapısal\\s+)?(?:yapı|parametre|özellik|ilişki)[" + _TR + r"]*.{0,24}değerlendir[" + _TR + r"]*|"
-        r"ölçüm[" + _TR + r"]*.{0,40}(?:temsil|değerlendir)[" + _TR + r"]*.{0,32}(?:yapı|parametre|özellik|ilişki)[" + _TR + r"]*)\\b"
-    ), ("measurement",), ("measures", "assessed_by", "used_for")),
-    ("definition", re.compile(r"(?iu)\\b(?:nedir|ne demek|tanımı|tanımla)\\b"),
+    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|(?:normal|referans)\s+(?:değer(?!lendir)[a-zçğıöşü]*|aral(?:ık|ığ)[a-zçğıöşü]*)|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
+     ("measurement",), ("measures", "assessed_by")),
+    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
+     ("measurement",), ("measures", "assessed_by", "used_for")),
+    ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
-    ("classification", re.compile(r"(?iu)\\b(?:sınıflam[" + _TR + r"]*|sınıflandır[" + _TR + r"]*|class|sınıf[" + _TR + r"]*|evre[" + _TR + r"]*|stage|grade|derece)\\b"),
+    ("classification", re.compile(r"\b(?:sınıflam[a-zçğıöşü]*|sınıflandır[a-zçğıöşü]*|class|sınıf[a-zçğıöşü]*|evre[a-zçğıöşü]*|stage|grade|derece)\b", re.I),
      ("classification", "diagnosis", "finding"), ("classified_by", "has_stage", "has_grade")),
-    ("indication", _POSITIVE_APPLICABILITY_RE,
+    ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|endike(?:dir)?|ne zaman (?:kullan|uygula|yap)[a-zçğıöşü]*|hangi durum[a-zçğıöşü]* (?:kullan|uygula|yap)[a-zçğıöşü]*|kim(?:ler)?de (?:kullan|uygula|yap)[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material", "imaging"), ("used_for", "has_indication")),
-    ("contraindication", _NEGATIVE_APPLICABILITY_RE,
+    ("contraindication", re.compile(r"\b(?:kontrendikasyon[a-zçğıöşü]*|kontrendike|kullanılma(?:z|malı)[a-zçğıöşü]*|uygulanma(?:z|malı)[a-zçğıöşü]*|yapılma(?:z|malı)[a-zçğıöşü]*|sakınca|kim(?:ler)?de (?:kullanılmaz|uygulanmaz|yapılmaz)|hangi durum[a-zçğıöşü]* (?:kullanılma|uygulanma|yapılma)[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material"), ("has_contraindication",)),
-    ("complication", re.compile(
-        r"(?iu)\\b(?:komplikasyon[" + _TR + r"]*|yan\\s+etki[" + _TR + r"]*|istenmeyen[" + _TR + r"]*|"
-        r"(?:komplikasyon|yan\\s+etki|zarar)[" + _TR + r"]*.{0,20}risk[" + _TR + r"]*|"
-        r"risk[" + _TR + r"]*.{0,20}(?:komplikasyon|yan\\s+etki|zarar)[" + _TR + r"]*)\\b"
-    ), ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
-    ("diagnosis", re.compile(r"(?iu)\\b(?:tanı[" + _TR + r"]*|teşhis[" + _TR + r"]*|ayırt|ayırıcı|bulgu[" + _TR + r"]*|semptom[" + _TR + r"]*|nasıl tanı[" + _TR + r"]*|nasıl teşhis[" + _TR + r"]*)\\b"),
+    ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki)\b", re.I),
+     ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
+    ("diagnosis", re.compile(r"\b(?:tanı[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
-    ("treatment", re.compile(r"(?iu)\\b(?:tedavi[" + _TR + r"]*|müdahale[" + _TR + r"]*|yaklaşım[" + _TR + r"]*|yönetim[" + _TR + r"]*|ne yapıl[" + _TR + r"]*|nasıl tedavi[" + _TR + r"]*)\\b"),
+    ("treatment", re.compile(r"\b(?:tedavi[a-zçğıöşü]*|müdahale[a-zçğıöşü]*|yaklaşım[a-zçğıöşü]*|yönetim[a-zçğıöşü]*|ne yapıl[a-zçğıöşü]*|nasıl tedavi[a-zçğıöşü]*)\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
-    ("anatomy", re.compile(r"(?iu)\\b(?:nerede|konum[" + _TR + r"]*|komşu[" + _TR + r"]*|ilişki[" + _TR + r"]*|yakın[" + _TR + r"]*|geçer|seyreder|anatom[" + _TR + r"]*)\\b"),
+    ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|ilişki[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
-    ("visual", re.compile(r"(?iu)\\b(?:radyografi|röntgen|film|görüntü|fotoğraf|panoramik|opg|cbct|periapikal|bitewing|sefalogram|şekil|tablo|grafik)\\b"),
+    ("visual", re.compile(r"\b(?:radyografi|röntgen|film|görüntü|fotoğraf|panoramik|opg|cbct|periapikal|bitewing|sefalogram|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
-    ("comparison", re.compile(r"(?iu)\\b(?:fark[" + _TR + r"]*|karşılaştır[" + _TR + r"]*|versus|vs\\.?|hangisi daha)\\b"),
+    ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(
-        r"(?iu)\\b(?:neden[" + _TR + r"]*|niçin|sebep[" + _TR + r"]*|etyoloji[" + _TR + r"]*|"
-        r"etiyoloji[" + _TR + r"]*|patogenez[" + _TR + r"]*|niye|neden olur|neye bağlı)\\b"
-    ), ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
+    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
+     ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
-def _semantic_intent_names(clean: str) -> set[str]:
-    """Context-sensitive roles that cannot safely be represented by one token."""
-    names: set[str] = set()
-    if _CAUSAL_RISK_RE.search(clean):
-        names.add("cause")
-    if _NEGATIVE_APPLICABILITY_RE.search(clean):
-        names.add("contraindication")
-    elif _POSITIVE_APPLICABILITY_RE.search(clean):
-        names.add("indication")
-    return names
+_CAUSAL_RISK_ROLE_RE = re.compile(
+    r"(?iu)\\b(?:risk\\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\\s+(?:etken|faktör|neden)[a-zçğıöşü]*)\\b"
+)
 
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
-    semantic = _semantic_intent_names(clean)
+    if _CAUSAL_RISK_ROLE_RE.search(clean):
+        for name, pattern, kinds, relations in _RULES:
+            if name == "cause":
+                return DentalIntent(name, kinds, relations)
     for name, pattern, kinds, relations in _RULES:
-        if name in semantic or pattern.search(clean):
+        if pattern.search(clean):
             return DentalIntent(name, kinds, relations)
     return DentalIntent("general", (), ())
 
@@ -103,7 +60,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     found: list[DentalIntent] = []
     for name, pattern, kinds, relations in _RULES:
         match = pattern.search(clean)
-        if not match and name not in _semantic_intent_names(clean):
+        if not match:
             continue
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
         # it does not ask for treatment itself. Require treatment wording to
@@ -116,13 +73,12 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if len(found) >= max(1, min(limit, 6)):
             break
     if found:
-        names = {item.name for item in found}
-        # Resolve semantic polarity/role conflicts before generic cleanup.
-        # Cause-risk wording describes an antecedent, not an adverse outcome.
-        if "cause" in names and _CAUSAL_RISK_RE.search(clean):
+        # A causal-risk phrase names antecedent factors.  The bare word "risk"
+        # must not simultaneously turn that request into an adverse-outcome facet.
+        if _CAUSAL_RISK_ROLE_RE.search(clean) and any(item.name == "cause" for item in found):
             found = [item for item in found if item.name != "complication"]
-        # Negative applicability is mutually exclusive with positive indication.
-        if "contraindication" in {item.name for item in found} and _NEGATIVE_APPLICABILITY_RE.search(clean):
+        # Negative applicability overrides a coincident positive applicability cue.
+        if any(item.name == "contraindication" for item in found):
             found = [item for item in found if item.name != "indication"]
         # Imaging words describe a modality/constraint surprisingly often
         # ("CBCT'de mandibular kanal ilişkisi"). When another explicit intent
