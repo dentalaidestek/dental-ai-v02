@@ -27,6 +27,8 @@ _INTENT_OPERATOR_WORDS = (
     "tanimlamali", "kavramsal", "aciklamayi", "senaryolarini", "kacinmam",
     "ardindan", "problemler", "olumsuz", "sonuclar", "zemin", "hazirlayan",
     "predispozan", "kategorilere", "basliklari",
+    "secimini", "kullanimini", "tercihine", "yonelmeli",
+    "gelismesini", "kolaylastiran", "kosullar", "etiyolojik",
 )
 
 
