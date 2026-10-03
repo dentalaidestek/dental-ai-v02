@@ -171,3 +171,25 @@ def test_exam_salience_intent_generalizes_across_unseen_phrasings():
         assert plan is not None, query
         assert plan.task == "exam_points", (query, plan)
         assert plan.requires_note_evidence, (query, plan)
+
+
+def test_recurrence_and_risk_factor_morphology_are_semantic_not_literal():
+    from app.dental_query_intent import classify_academic_study_task, build_dental_requirement_plan
+    recurrence_cases = (
+        "En sık tekrar eden soru konularını çıkar.",
+        "Sıkça sorulan konuları bul.",
+        "Tekrarlanan soru başlıklarını belirle.",
+        "Soru konularından hangileri sık yineleniyor?",
+    )
+    for query in recurrence_cases:
+        plan = classify_academic_study_task(query)
+        assert plan is not None, query
+        assert plan.task == "repeated_patterns", (query, plan)
+
+    for query in (
+        "İmplantın risk faktörlerini açıkla.",
+        "MRONJ risk faktörleri nelerdir?",
+        "Risk faktörlerini ve komplikasyonları birlikte özetle.",
+    ):
+        plan = build_dental_requirement_plan(query)
+        assert "cause" in plan.requested_facets, (query, plan.requested_facets)
