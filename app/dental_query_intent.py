@@ -41,12 +41,12 @@ _RULES = (
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
     ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*|yatkınlaştıran\s+(?:etken|faktör|neden)[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
+    ("cause", re.compile(r"\b(?:neden[a-z]*|nicin|sebep[a-z]*|etyoloji[a-z]*|etiyoloji[a-z]*|patogenez[a-z]*|risk\s+faktor[a-z]*|risk[a-z]*\s+(?:olusturan|artiran|hazirlayan|yatkinlastiran)\s+(?:etken|faktor|neden)[a-z]*|yatkinlastiran\s+(?:etken|faktor|neden)[a-z]*|niye|neden\s+olur|neye\s+bagli)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
 _CAUSAL_RISK_ROLE_RE = re.compile(
-    r"(?iu)\b(?:risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*)\b"
+    r"(?i)\b(?:risk\s+faktor[a-z]*|risk[a-z]*\s+(?:olusturan|artiran|hazirlayan|yatkinlastiran)\s+(?:etken|faktor|neden)[a-z]*)\b"
 )
 _EXPLICIT_ADVERSE_OUTCOME_RE = re.compile(
     r"(?iu)\b(?:komplikasyon[a-zçğıöşü]*|yan\s+etki[a-zçğıöşü]*|istenmeyen\s+(?:etki|olay|sonuç)[a-zçğıöşü]*|zarar[a-zçğıöşü]*)\b"
@@ -58,7 +58,7 @@ _ADVERSE_RISK_RE = re.compile(
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
     intent_clean = _intent_text(clean)
-    if _CAUSAL_RISK_ROLE_RE.search(clean) or re.search(r"(?i)\brisk\s+faktor[a-z]*\b", intent_clean):
+    if _CAUSAL_RISK_ROLE_RE.search(intent_clean):
         for name, pattern, kinds, relations in _RULES:
             if name == "cause":
                 return DentalIntent(name, kinds, relations)
@@ -74,14 +74,20 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _intent_text(clean)
     found: list[DentalIntent] = []
     for name, pattern, kinds, relations in _RULES:
-        match = pattern.search(clean) or pattern.search(intent_clean)
+        raw_match = pattern.search(clean)
+        normalized_match = pattern.search(intent_clean)
+        match = raw_match or normalized_match
         if not match:
             continue
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
         # it does not ask for treatment itself. Require treatment wording to
         # behave like a requested facet, unless no stronger requested facet exists.
         if name == "treatment":
-            tail = clean[match.end():]
+            # Match offsets belong to whichever orthographic view matched.
+            # ASCII-normalized matches must never slice the raw string by a
+            # different match object's offsets.
+            source_text = clean if raw_match is not None else intent_clean
+            tail = source_text[match.end():]
             if re.search(r"^\s+(?:komplikasyon|risk|yan etki|endikasyon|kontrendikasyon)", tail, re.I):
                 continue
         found.append(DentalIntent(name, kinds, relations))
@@ -94,7 +100,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # A causal-risk phrase must suppress only the complication inferred from
         # the ambiguous word "risk"; it must never erase an independently explicit
         # adverse-outcome request in the same coordinated question.
-        causal_risk = bool(_CAUSAL_RISK_ROLE_RE.search(clean) or re.search(r"(?i)\brisk\s+faktor[a-z]*\b", intent_clean))
+        causal_risk = bool(_CAUSAL_RISK_ROLE_RE.search(intent_clean))
         if causal_risk and any(item.name == "cause" for item in found):
             explicit_adverse = bool(
                 _EXPLICIT_ADVERSE_OUTCOME_RE.search(clean) or _ADVERSE_RISK_RE.search(clean)
