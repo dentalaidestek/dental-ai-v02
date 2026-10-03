@@ -90,10 +90,10 @@ def test_graph_does_not_invent_unasked_relation_target():
 
 def test_qualifier_does_not_jump_between_separate_clauses():
     plan = decompose_academic_query(
-        "Akut apikal apse bulgularını anlat ama kronik periodontitis tedavisini söyle"
+        "Akut pulpitis bulgularını anlat ama kronik pulpa nekrozu tedavisini söyle"
     )
     for need in plan.needs:
-        if "periodontitis" in need.subject_ids:
+        if "pulp_necrosis" in need.subject_ids:
             assert "akut" not in need.qualifiers
-        if "apical_abscess" in need.subject_ids:
+        if "pulpitis" in need.subject_ids:
             assert "kronik" not in need.qualifiers
