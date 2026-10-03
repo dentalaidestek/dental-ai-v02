@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+_ASCII_FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+
+def _intent_text(query: str) -> str:
+    """Normalize orthography for intent semantics, never for factual content."""
+    clean = " ".join((query or "").split())
+    return clean.translate(_ASCII_FOLD)
+
 @dataclass(frozen=True)
 class DentalIntent:
     name: str
@@ -14,7 +21,7 @@ _RULES = (
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
-    ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
+    ("definition", re.compile(r"\b(?:nedir|ne\s+demek(?:tir)?|tanım[a-z]*|kavram[a-z]*\s+(?:acikla|anlat)|(?:kavramı|kavramini)\s+(?:acikla|anlat))\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
     ("classification", re.compile(r"\b(?:sınıflam[a-zçğıöşü]*|sınıflandır[a-zçğıöşü]*|class|sınıf[a-zçğıöşü]*|evre[a-zçğıöşü]*|stage|grade|derece)\b", re.I),
      ("classification", "diagnosis", "finding"), ("classified_by", "has_stage", "has_grade")),
@@ -26,7 +33,7 @@ _RULES = (
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
     ("diagnosis", re.compile(r"\b(?:tanı[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
-    ("treatment", re.compile(r"\b(?:tedavi[a-zçğıöşü]*|müdahale[a-zçğıöşü]*|yaklaşım[a-zçğıöşü]*|yönetim[a-zçğıöşü]*|ne yapıl[a-zçğıöşü]*|nasıl tedavi[a-zçğıöşü]*)\b", re.I),
+    ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
     ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|ilişki[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
@@ -50,12 +57,13 @@ _ADVERSE_RISK_RE = re.compile(
 
 def classify_dental_intent(query: str) -> DentalIntent:
     clean = " ".join((query or "").split())
-    if _CAUSAL_RISK_ROLE_RE.search(clean):
+    intent_clean = _intent_text(clean)
+    if _CAUSAL_RISK_ROLE_RE.search(clean) or re.search(r"(?i)\brisk\s+faktor[a-z]*\b", intent_clean):
         for name, pattern, kinds, relations in _RULES:
             if name == "cause":
                 return DentalIntent(name, kinds, relations)
     for name, pattern, kinds, relations in _RULES:
-        if pattern.search(clean):
+        if pattern.search(clean) or pattern.search(intent_clean):
             return DentalIntent(name, kinds, relations)
     return DentalIntent("general", (), ())
 
@@ -63,9 +71,10 @@ def classify_dental_intent(query: str) -> DentalIntent:
 def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent, ...]:
     """Return explicit question requirements without turning subject words into intents."""
     clean = " ".join((query or "").split())
+    intent_clean = _intent_text(clean)
     found: list[DentalIntent] = []
     for name, pattern, kinds, relations in _RULES:
-        match = pattern.search(clean)
+        match = pattern.search(clean) or pattern.search(intent_clean)
         if not match:
             continue
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
@@ -85,7 +94,8 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # A causal-risk phrase must suppress only the complication inferred from
         # the ambiguous word "risk"; it must never erase an independently explicit
         # adverse-outcome request in the same coordinated question.
-        if _CAUSAL_RISK_ROLE_RE.search(clean) and any(item.name == "cause" for item in found):
+        causal_risk = bool(_CAUSAL_RISK_ROLE_RE.search(clean) or re.search(r"(?i)\brisk\s+faktor[a-z]*\b", intent_clean))
+        if causal_risk and any(item.name == "cause" for item in found):
             explicit_adverse = bool(
                 _EXPLICIT_ADVERSE_OUTCOME_RE.search(clean) or _ADVERSE_RISK_RE.search(clean)
             )
