@@ -95,7 +95,13 @@ def _rows():
     if len(out)<TARGET: raise AssertionError(f"50K için yalnız {len(out)} benzersiz yeni istek üretildi")
     rows=out[:TARGET]
     assert not ({_norm(x[0]) for x in rows}&prior)
-    assert not ({_skeleton(x[0],tuple(dict.fromkeys((next(n for n in ALL_NODES if n.id==x[2]).label,*next(n for n in ALL_NODES if n.id==x[2]).aliases[:2]))) for x in rows}&prior_sk)
+    node_map={n.id:n for n in ALL_NODES}
+    row_skeletons=set()
+    for q,_task,node_id in rows:
+        node=node_map[node_id]
+        names=tuple(dict.fromkeys((node.label,*node.aliases[:2])))
+        row_skeletons.add(_skeleton(q,names))
+    assert not (row_skeletons & prior_sk)
     return rows,len(prior),len(prior_sk)
 
 def test_independent_50k_student_assistant_research_utility_holdout():
