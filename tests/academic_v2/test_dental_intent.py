@@ -379,3 +379,31 @@ def test_large_semantic_intent_pressure_matrix_with_negative_controls():
         if forbidden in facets:
             leaked.append((query, forbidden, tuple(sorted(facets))))
     assert not leaked, leaked
+
+
+def test_risk_semantic_roles_preserve_explicit_facets_and_block_neighbor_leakage():
+    """Risk wording is classified by semantic role, including coordinated requests."""
+    from app.dental_query_intent import build_dental_requirement_plan
+
+    cases = (
+        # Antecedent/cause role: these must not invent an adverse-outcome request.
+        ("İmplant için risk faktörleri nelerdir?", {"cause"}, {"complication"}),
+        ("MRONJ riskini artıran nedenleri açıkla.", {"cause"}, {"complication"}),
+        ("Alveolite yatkınlaştıran etkenleri say.", {"cause"}, {"complication"}),
+
+        # Adverse-outcome role: these must not be reinterpreted as etiology.
+        ("İmplant komplikasyonları nelerdir?", {"complication"}, {"cause"}),
+        ("İlacın yan etkilerini açıkla.", {"complication"}, {"cause"}),
+        ("Bu işlemin komplikasyon riski nedir?", {"complication"}, {"cause"}),
+
+        # Coordinated independent roles: neither explicit request may erase the other.
+        ("İmplantın risk faktörleri ve komplikasyonları nelerdir?", {"cause", "complication"}, set()),
+        ("MRONJ için yatkınlaştıran etkenleri ve yan etkileri birlikte özetle.", {"cause", "complication"}, set()),
+        ("Risk faktörlerini, komplikasyonları ve kontrendikasyonları karşılaştır.", {"cause", "complication", "contraindication"}, set()),
+        ("Endikasyonları, kontrendikasyonları, komplikasyonları ve risk faktörlerini özetle.", {"indication", "contraindication", "complication", "cause"}, set()),
+    )
+
+    for query, required, forbidden in cases:
+        facets = set(build_dental_requirement_plan(query).requested_facets)
+        assert required.issubset(facets), (query, required, facets)
+        assert not forbidden.intersection(facets), (query, forbidden, facets)
