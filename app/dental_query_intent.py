@@ -12,7 +12,7 @@ class DentalIntent:
 _RULES = (
     ("value", re.compile(r"\b(?:kaç|kaçtır|değer(?:i|in|ini|leri|lerin|lerini|ler)?|normal değer(?:i|in|ini|leri|lerin|lerini|ler)?|mm|oran)\b", re.I),
      ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*)\b", re.I),
+    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
@@ -420,7 +420,7 @@ _BROAD_ACADEMIC_RE = re.compile(
 )
 
 _ACADEMIC_STUDY_TASK_RULES = (
-    ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
+    ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|tekrar eden|en çok|en sık|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
     ("similar_questions", re.compile(r"\b(?:benz[a-zçğıöşü]*|aynı tarz|aynı tip)\b.{0,40}\b(?:soru[a-zçğıöşü]*|test[a-zçğıöşü]*).{0,40}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*|sor[a-zçğıöşü]*)|\b(?:benz[a-zçğıöşü]*)\b.{0,32}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(
