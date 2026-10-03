@@ -10,9 +10,9 @@ class DentalIntent:
     relation_hints: tuple[str, ...] = ()
 
 _RULES = (
-    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|normal\s+değer(?!lendir)[a-zçğıöşü]*|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
+    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|(?:normal|referans)\s+(?:değer(?!lendir)|aralık)[a-zçğıöşü]*|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
      ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
+    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne demek|tanımı|tanımla)\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
