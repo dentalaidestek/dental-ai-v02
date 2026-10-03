@@ -125,6 +125,13 @@ _ADVERSE_RISK_RE = re.compile(
 
 # Natural academic/clinical discourse roles. These patterns describe what the
 # speaker asks the notes to provide; they are independent of any dental subject.
+def _has_role_pair(text: str, left_words: tuple[str, ...], right_words: tuple[str, ...], *, window: int = 7) -> bool:
+    words = re.findall(r"[a-z]+", text or "", flags=re.I)
+    left_pos = [i for i, token in enumerate(words) if token in left_words]
+    right_pos = [i for i, token in enumerate(words) if token in right_words]
+    return any(abs(i - j) <= window for i in left_pos for j in right_pos)
+
+
 _NATURAL_ROLE_PATTERNS = (
     ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak\s+ne\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
     ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
@@ -158,6 +165,15 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
+    role_pairs = (
+        ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar"),
+         ("uygulanir", "kullanilir", "tercih", "onerilir", "yapilir")),
+        ("cause", ("predispozan", "risk", "etiyolojik", "yatkinlastiran"),
+         ("etken", "etkenleri", "faktor", "faktorleri", "neden", "nedenleri")),
+    )
+    for role_name, left_words, right_words in role_pairs:
+        if _has_role_pair(intent_clean, left_words, right_words):
+            natural_roles.add(role_name)
     for name, pattern, kinds, relations in _RULES:
         raw_match = pattern.search(clean)
         normalized_match = pattern.search(intent_clean)
