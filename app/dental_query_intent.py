@@ -143,7 +143,7 @@ _NATURAL_ROLE_PATTERNS = (
     ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*.{0,16}kolaylastiran|ortaya\s+cikma[a-z]*.{0,16}zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor[a-z]*|kolaylastiran\s+(?:kosul|etken))\b")),
     ("indication", re.compile(r"(?i)\b(?:secim[a-z]*.{0,20}hangi\s+klinik\s+kosul[a-z]*|kullanim[a-z]*.{0,12}uygun\s+kilan|tercih[a-z]*.{0,16}hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo[a-z]*|kullanim\s+senaryo[a-z]*|uygun.{0,16}kullanim.{0,16}senaryo[a-z]*|(?:hangi|ne)\s+vaka[a-z]*.{0,24}(?:tercih|kullan|uygula)[a-z]*|secim[a-z]*.{0,24}(?:belirle|etkile)[a-z]*|(?:uygun|dogru)\s+(?:kullanim|tercih)[a-z]*|ne\s+zaman.{0,20}(?:tercih|kullan|uygula)[a-z]*)\b")),
     ("contraindication", re.compile(r"(?i)\b(?:secene(?:k|g)[a-z]*.{0,56}(?:kacin[a-z]*|uzak\s+dur[a-z]*)|kullanim[a-z]*.{0,16}uygun\s+gormeyen|tercih[a-z]*.{0,12}etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
-    ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa)\b")),
+    ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa|(?:kanal|sinir|arter|ven|foramen|sinus|kok|kemik|kas|eklem).{0,48}iliski)\b")),
 )
 
 def classify_dental_intent(query: str) -> DentalIntent:
@@ -604,6 +604,20 @@ def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     lowered = clean.casefold()
+    # Natural study-workflow verbs: classify the user's requested operation,
+    # independently of the dental noun. These families intentionally describe
+    # utility ("what should I do with my notes?"), not factual dental facets.
+    if re.search(r"(?iu)\b(?:toparla|sıkıştır|yoğunlaştır|birleştir|çalışma\s+sayfasına|tekrar\s+kağıdına|ders\s+fişine)\w*", clean):
+        return AcademicStudyTaskPlan("summarize", False, True, broad, False)
+    if (
+        re.search(r"(?iu)\b(?:final|vize|sözlü|sınav|kurul)\w*\b", clean)
+        and re.search(r"(?iu)\b(?:kritik|gözden\s+kaçır|takıl|ezberle|soru\s+kur|yokla|mutlaka\s+kontrol)\w*", clean)
+    ):
+        return AcademicStudyTaskPlan("exam_points", False, True, True, False)
+    if re.search(r"(?iu)\b(?:alıştırma|mini\s+deneme|kendimi\s+test|çalışmamı\s+sına|quiz)\w*", clean):
+        return AcademicStudyTaskPlan("generate_questions", False, True, broad, True)
+    if re.search(r"(?iu)\b(?:mantık\s+zinciri|basamak\s+basamak|ders\s+anlatır\s+gibi|ezberletmeden|sade\s+bir\s+dille|temel\s+fikir)\b", clean):
+        return AcademicStudyTaskPlan("explain", False, True, broad, False)
     # Extraction/condensation language has higher precedence than incidental
     # salience adjectives. "kritik ölçümleri çıkar" asks to extract a fact
     # class, not to predict exam importance. Conversely, salience requests
