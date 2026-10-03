@@ -3,47 +3,105 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Iterator
 
 from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error_for_user
 from app.study_provider import (
     ProviderTarget,
     StudyProviderError,
-    get_generation_targets,
     get_provider,
     report_target_failure,
     report_target_success,
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
+from app.dental_query_intent import build_dental_requirement_plan
 
 logger = logging.getLogger(__name__)
 
 
-def _model() -> str:
-    return (os.getenv("STUDY_V2_GEMINI_MODEL") or "gemini-3.8-flash").strip()
+ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"
 
 
 def _generation_targets() -> list[ProviderTarget]:
-    """Keep V2 retrieval fixed while allowing one bounded generation fallback."""
-    primary = ProviderTarget("gemini", _model())
-    targets = [primary]
-    for target in get_generation_targets("complex"):
-        if target not in targets:
-            targets.append(target)
-    return targets
+    """Academic V2 uses exactly one generation provider/model; no fallback chain."""
+    return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
 
+
+_INTENT_RESPONSE_RULES = {
+    "value": "İstenen değeri/ölçümü kanıtta varsa ilk cümlede doğrudan ver; sonra yalnız gerekli bağlamı ekle.",
+    "definition": "Önce kısa ve doğrudan tanımı ver; ardından kanıttaki ayırt edici özellikleri ekle.",
+    "measurement": "Neyin, nasıl ve hangi referansla ölçüldüğünü kanıtın desteklediği sırayla açıkla.",
+    "comparison": "Karşılaştırılan kavramları aynı ölçütler üzerinden yan yana ve tekrar etmeden karşılaştır.",
+    "classification": "Sınıflamayı kaynak yapısını bozmadan düzenli ver; sınıf/evre ölçütlerini birbirine karıştırma.",
+    "diagnosis": "Tanı, bulgu ve ayırıcı tanı ifadelerini kanıtta nasıl ayrılmışsa öyle tut; yeni tanı çıkarımı yapma.",
+    "treatment": "Tedaviyi; endikasyon, işlem ve sonuç/izlem bilgisini kanıt destekliyorsa mantıksal sırada birleştir.",
+    "complication": "Komplikasyon ile risk/neden/önleme bilgisini kanıtta desteklenen ilişkilerle eşleştir.",
+    "cause": "Neden, risk faktörü ve mekanizmayı kanıtta desteklenen neden-sonuç yönünü bozmadan açıkla.",
+    "visual": "Yalnız ekli kaynak sayfasında gerçekten görülebilen ve metin kanıtıyla desteklenen özellikleri yorumla.",
+}
+
+
+def _response_contract(question: str) -> str:
+    plan = build_dental_requirement_plan(question)
+    names = [item.name for item in plan.intents if item.name != "general"]
+    rules = [_INTENT_RESPONSE_RULES[name] for name in names if name in _INTENT_RESPONSE_RULES]
+    if not rules:
+        rules = ["Sorunun istediği bilgiye doğrudan cevap ver; kanıt dışı ayrıntıyla cevabı genişletme."]
+    if len(rules) > 1:
+        return (
+            "Sorudaki her açık isteği ayrı ayrı karşıla ve hiçbirini atlama. "
+            + " ".join(rules)
+        )
+    return rules[0]
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
     context = "\n\n---\n\n".join(retrieval.note_context)
+    understood_question = (retrieval.resolved_query or question).strip()
+    exhaustive_rule = ""
+    if retrieval.retrieval_mode == "questions_exhaustive":
+        exhaustive_rule = (
+            "Bu istek kaynak içindeki soruları çözme isteğidir. Verilen soru/şıkları kaynak sırasını "
+            "koruyarak çöz; soru kökü ile A-E seçeneklerini birbirinden ayırma. Kaynakta görünmeyen "
+            "seçenek veya soru uydurma. Her soru için seçtiğin cevabı ve kısa gerekçeyi ver. "
+        )
+        if retrieval.has_more:
+            exhaustive_rule += (
+                "Bu turda güvenli bağlam sınırı nedeniyle kaynaktaki soruların yalnız ilk bölümü "
+                "verildi; yanıtın sonunda daha fazla soru bulunduğunu açıkça belirt. "
+            )
     return (
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
+        "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n"
+        "KANIT DURUMU:\n"
+        f"Retrieval modu: {retrieval.retrieval_mode}. "
+        f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
+        + (
+            "Bu mod tüm READY ders indeksinden seçilmiş sınırlı temsili kapsam kanıtıdır; "
+            "seçilmeyen bölümleri görmüş gibi davranma. "
+            if retrieval.retrieval_mode == "coverage" else ""
+        )
+        + f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
+        f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}. "
+        "Eksik başlıklar tamamlama görevi değildir; kanıtta yoksa onları kendi bilginle doldurma.\n\n"
         "KANIT KURALI:\n"
+        + exhaustive_rule +
+        "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
+        "Görevin yalnız sistemin seçtiği kanıtları kullanıcının sorusuna göre seçmek, "
+        "birleştirmek ve doğal, anlaşılır bir cevaba dönüştürmektir. Aynı bilgiyi gereksiz "
+        "tekrarlama; farklı kanıtlar birbirini tamamlıyorsa anlamını değiştirmeden birleştir. "
+        "Kanıtların desteklemediği boşlukları tahmin ederek doldurma. "
         "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
         "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
         "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
-        f"KULLANICI MESAJI:\n{question.strip()}"
+        "SORU YÖNÜ KURALI:\n"
+        "- 'değildir', 'yanlış', 'hariç', 'önerilmez', 'tercih edilmez' gibi negatif yönleri tersine çevirme.\n"
+        "- Karşılaştırmada adı geçen her tarafı ayrı ayrı kanıta bağla; bir tarafın bilgisini diğerine genelleme.\n"
+        "- Çene/yön/diş/akut-kronik gibi niteleyicileri cevap boyunca koru.\n\n"
+        f"SİSTEMİN ÇÖZÜMLEDiĞİ SORU:\n{understood_question}\n\n"
+        f"KULLANICININ BU TURDAKİ MESAJI:\n{question.strip()}"
     )
 
 
@@ -55,6 +113,10 @@ def stream_rag_v2(
 ) -> Iterator[str]:
     if not retrieval.note_context and not retrieval.attachments:
         raise StudyAIError("Bu soruyla ilişkilendirilebilecek ders notu bulunamadı.")
+    if not retrieval.evidence_sufficient:
+        raise StudyAIError(
+            "Ders notlarında bu soruyu güvenilir biçimde yanıtlamak için yeterli kanıt bulunamadı."
+        )
     required_attachment_types = {
         item.get("mime_type")
         for item in retrieval.attachments
@@ -63,13 +125,25 @@ def stream_rag_v2(
     prompt = _prompt(course_title, question, retrieval)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
+    candidates = _generation_targets()
+    logger.info(
+        "Academic AI V2 generation plan. candidates=%s attachments=%s evidence=%s semantic=%s",
+        ",".join(f"{item.provider}:{item.model}" for item in candidates),
+        len(retrieval.attachments),
+        len(retrieval.evidence),
+        retrieval.used_semantic_search,
+    )
 
-    # One primary call and at most one fallback. A fallback is only safe before
-    # the first byte reaches the client; providers are never mixed mid-answer.
-    for target in _generation_targets():
-        if attempted_api_calls >= 2:
+    # Exactly one external AI call is allowed for Academic V2.
+    for target in candidates:
+        if attempted_api_calls >= 1:
             break
         if not target_available(target):
+            logger.info(
+                "Academic AI V2 generation target skipped. provider=%s model=%s reason=unavailable",
+                target.provider,
+                target.model,
+            )
             continue
         emitted = False
         try:
@@ -78,13 +152,31 @@ def stream_rag_v2(
                 provider.supports_generation_attachment(mime_type)
                 for mime_type in required_attachment_types
             ):
+                logger.info(
+                    "Academic AI V2 generation target skipped. provider=%s model=%s reason=attachment_unsupported",
+                    target.provider,
+                    target.model,
+                )
                 continue
 
             attempted_api_calls += 1
+            logger.info(
+                "Academic AI V2 generation target selected. provider=%s model=%s api_call=%s",
+                target.provider,
+                target.model,
+                attempted_api_calls,
+            )
+            clean_history = [
+                {
+                    **item,
+                    "content": re.sub(r"\n?<!--ACADEMIC_Q_CURSOR:\d+:\d+-->", "", item.get("content") or ""),
+                }
+                for item in history[-8:]
+            ]
             for chunk in provider.generate_stream(
                 model=target.model,
                 system_prompt=STUDY_SYSTEM_PROMPT,
-                history=history[-8:],
+                history=clean_history,
                 prompt=prompt,
                 attachments=retrieval.attachments,
                 temperature=0.22,
@@ -96,6 +188,11 @@ def stream_rag_v2(
             if not emitted:
                 raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
             report_target_success(target)
+            if retrieval.retrieval_mode == "questions_exhaustive" and retrieval.has_more and retrieval.evidence:
+                # Persisted with the assistant message and consumed only by the
+                # server on an explicit "devam" turn; harmless in rendered HTML.
+                last = retrieval.evidence[-1]
+                yield f"\n<!--ACADEMIC_Q_CURSOR:{last.material_id}:{last.chunk_index}-->"
             return
         except StudyProviderError as exc:
             report_target_failure(target, exc)
