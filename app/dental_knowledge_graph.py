@@ -316,6 +316,35 @@ def _safe_token_typo_distance(left: str, right: str) -> int | None:
     return _bounded_edit_distance(left, right, radius)
 
 
+@functools.lru_cache(maxsize=1)
+def _fuzzy_single_alias_buckets() -> dict[tuple[str, int], tuple[tuple[str, DentalNode], ...]]:
+    """Pre-index distinctive aliases by first character and length.
+
+    Typo rescue then compares a query token only with plausible aliases instead
+    of scanning every graph node/alias and running Levenshtein each time.
+    """
+    buckets: dict[tuple[str, int], list[tuple[str, DentalNode]]] = {}
+    for node in ALL_NODES:
+        for term in (node.label, *node.aliases):
+            clean = _match_text(term)
+            if " " in clean or len(clean) < 7 or not clean.isalpha():
+                continue
+            buckets.setdefault((clean[0], len(clean)), []).append((clean, node))
+    return {key: tuple(value) for key, value in buckets.items()}
+
+
+@functools.lru_cache(maxsize=1)
+def _fuzzy_multiword_aliases() -> tuple[tuple[tuple[str, ...], DentalNode], ...]:
+    """Pre-tokenize the bounded 2-4 word phrase candidates once per process."""
+    out = []
+    for node in ALL_NODES:
+        for term in (node.label, *node.aliases):
+            words = tuple(re.findall(r"[a-zçğıöşü]{3,}", _match_text(term), flags=re.I))
+            if 2 <= len(words) <= 4:
+                out.append((words, node))
+    return tuple(out)
+
+
 def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     # Never fuzzy-match abbreviations or multiword aliases: one-edit fuzziness
     # there creates dangerous cross-concept seeds. This is only a typo rescue
@@ -324,41 +353,35 @@ def _fuzzy_long_alias_nodes(query: str, already: set[str]) -> list[DentalNode]:
     if not tokens:
         return []
     candidates: list[tuple[int, int, int, DentalNode]] = []
-    for node in ALL_NODES:
-        if node.id in already:
-            continue
-        for term in (node.label, *node.aliases):
-            clean = _match_text(term)
-            if " " in clean or len(clean) < 7 or not clean.isalpha():
-                continue
-            for pos, token in enumerate(tokens):
+    buckets = _fuzzy_single_alias_buckets()
+    for pos, token in enumerate(tokens):
+        # Edit distance cannot bridge a length gap larger than the allowed
+        # radius.  First-character bucketing removes the vast majority of
+        # impossible graph aliases before Levenshtein is evaluated.
+        radius = 2 if len(token) >= 10 else 1
+        for alias_len in range(max(7, len(token) - radius), len(token) + radius + 1):
+            for clean, node in buckets.get((token[0], alias_len), ()):
+                if node.id in already:
+                    continue
                 distance = _safe_token_typo_distance(token, clean)
                 if distance is not None:
                     candidates.append((distance, -len(clean), pos, node))
-                    break
     # Also allow one typo inside a multiword canonical phrase when every
     # other word matches exactly. This keeps "mandbular kanal" recoverable
     # without enabling fuzzy abbreviations or broad phrase guessing.
     query_words = re.findall(r"[a-zçğıöşü]{3,}", _match_text(query), flags=re.I)
-    for node in ALL_NODES:
-        if node.id in already:
+    for words, node in _fuzzy_multiword_aliases():
+        if node.id in already or len(words) > len(query_words):
             continue
-        for term in (node.label, *node.aliases):
-            words = re.findall(r"[a-zçğıöşü]{3,}", _match_text(term), flags=re.I)
-            if len(words) < 2 or len(words) > 4:
+        for start in range(0, len(query_words) - len(words) + 1):
+            window = query_words[start:start + len(words)]
+            diffs = [i for i, (left, right) in enumerate(zip(window, words)) if left != right]
+            if len(diffs) != 1:
                 continue
-            for start in range(0, max(0, len(query_words) - len(words) + 1)):
-                window = query_words[start:start + len(words)]
-                diffs = [
-                    i for i, (left, right) in enumerate(zip(window, words))
-                    if left != right
-                ]
-                if len(diffs) != 1:
-                    continue
-                i = diffs[0]
-                if len(words[i]) >= 7 and _edit_distance_at_most_one(window[i], words[i]):
-                    candidates.append((1, -sum(map(len, words)), start, node))
-                    break
+            i = diffs[0]
+            if len(words[i]) >= 7 and _edit_distance_at_most_one(window[i], words[i]):
+                candidates.append((1, -sum(map(len, words)), start, node))
+                break
 
     # A typo rescue is safe only when the best edit-distance candidate is
     # unambiguous. Equal-strength candidates mean "unknown", not permission to
