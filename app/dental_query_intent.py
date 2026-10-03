@@ -171,8 +171,12 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     if re.search(r"(?i)\\b(?:nasil|hangi\\s+yapi[a-z]*)\\b.{0,72}\\biliski[a-z]*\\b", intent_clean):
         natural_roles.add("anatomy")
     role_pairs = (
+        # Applicability is a semantic role, not a literal surface form.
+        # Keep the vocabulary bounded to positive selection/use operators so
+        # negative applicability remains owned by contraindication handling.
         ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
-         ("uygulanir", "kullanilir", "tercih", "onerilir", "yapilir", "secimini", "secim")),
+         ("uygulanir", "kullanilir", "tercih", "tercihine", "onerilir", "yapilir",
+          "secimini", "secim", "yonelmeli")),
         ("cause", ("predispozan", "risk", "etiyolojik", "yatkinlastiran"),
          ("etken", "etkenleri", "faktor", "faktorleri", "neden", "nedenleri")),
     )
