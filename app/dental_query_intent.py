@@ -28,27 +28,31 @@ _INTENT_OPERATOR_WORDS = (
 
 
 def _intent_edit_distance_at_most_one(left: str, right: str) -> bool:
+    """One insertion/deletion/substitution or one adjacent transposition."""
     if left == right:
         return True
-    if abs(len(left) - len(right)) > 1:
+    if len(left) == len(right):
+        diffs = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+        if len(diffs) == 1:
+            return True
+        if len(diffs) == 2 and diffs[1] == diffs[0] + 1:
+            i, j = diffs
+            return left[i] == right[j] and left[j] == right[i]
         return False
+    if abs(len(left) - len(right)) != 1:
+        return False
+    short, long = (left, right) if len(left) < len(right) else (right, left)
     i = j = edits = 0
-    while i < len(left) and j < len(right):
-        if left[i] == right[j]:
+    while i < len(short) and j < len(long):
+        if short[i] == long[j]:
             i += 1
-            j += 1
-            continue
-        edits += 1
-        if edits > 1:
-            return False
-        if len(left) > len(right):
-            i += 1
-        elif len(right) > len(left):
             j += 1
         else:
-            i += 1
+            edits += 1
             j += 1
-    return edits + int(i < len(left) or j < len(right)) <= 1
+            if edits > 1:
+                return False
+    return True
 
 
 def _repair_intent_operators(text: str) -> str:
