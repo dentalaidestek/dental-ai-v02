@@ -2,8 +2,6 @@ name: Academic V2 CI
 
 on:
   workflow_dispatch:
-  # Always validate pull requests to main. Required checks must not disappear
-  # because a path filter evaluated differently on the base branch.
   pull_request:
     branches: [main]
   push:
@@ -11,19 +9,15 @@ on:
     paths:
       - "app/study_ai_v2.py"
       - "app/study_retrieval_v2.py"
-      - "app/dental_retrieval_terms.py"
-      - "app/dental_knowledge_graph.py"
-      - "app/dental_query_intent.py"
-      - "app/dental_semantics.py"
-      - "app/dental_academic_scope.py"
-      - "app/dental_specialty_concepts.py"
       - "app/study_provider.py"
       - "app/study_local_ocr.py"
       - "app/study_index_worker.py"
       - "app/study_index_jobs.py"
-      - "app/dental_ocr_words.txt"
       - "app/study_router_state.py"
-      - "tests/academic_v2/**"
+      - "app/study_chunking.py"
+      - "app/migrate.py"
+      - "tests/test_study_ai_v2.py"
+      - "tests/test_study_retrieval_v2.py"
       - ".github/workflows/academic-v2-ci.yml"
 
 permissions:
@@ -42,14 +36,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Compile Academic V2 modules
+      - name: Install Academic V2 test dependencies
         run: |
-          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
-      - name: Run Academic V2 invariant tests
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check pytest==9.1.1
+      - name: Compile current Academic V2 modules
         run: |
-          python tests/academic_v2/test_static_invariants.py
-          python tests/academic_v2/test_retrieval_behavior.py
-          python tests/academic_v2/test_dental_graph.py
-          python tests/academic_v2/test_dental_intent.py
-          python tests/academic_v2/test_dental_semantics.py
-          python tests/academic_v2/test_academic_scope.py
+          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
+      - name: Run current Academic V2 tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m pytest -q tests/test_study_ai_v2.py tests/test_study_retrieval_v2.py
