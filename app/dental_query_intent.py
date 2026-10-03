@@ -216,9 +216,19 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # Negative applicability overrides a coincident positive applicability cue.
         # An explicit "endikasyon" word (not the one inside "kontrendikasyon") is
         # a separate request: "endikasyonları ve kontrendikasyonları".
+        paired_positive_applicability = bool(
+            re.search(
+                r"(?i)\\b(?:once|ilk olarak|oncelikle)\\b.{0,180}"
+                r"(?:secim[a-z]*.{0,24}klinik\\s+kosul[a-z]*|"
+                r"kullanim[a-z]*.{0,20}uygun\\s+kilan|"
+                r"tercih[a-z]*.{0,20}hangi\\s+durumda|"
+                r"uygun.{0,20}kullanim.{0,20}senaryo[a-z]*)",
+                intent_clean,
+            )
+        )
         if (
             any(item.name == "contraindication" for item in found)
-            and "indication" not in natural_roles
+            and not paired_positive_applicability
             and not re.search(r"(?<!kontr)endikasyon", clean, re.I)
         ):
             found = [item for item in found if item.name != "indication"]
