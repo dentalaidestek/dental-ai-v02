@@ -141,7 +141,7 @@ _NATURAL_ROLE_PATTERNS = (
     ("treatment", re.compile(r"(?i)\b(?:yonetim\s+sirasi|onerilen\s+yaklasim|vakasinin\s+yonetimi|durumunda\s+ne\s+yapmam)\b")),
     ("complication", re.compile(r"(?i)\b(?:istenmeyen\s+sonuc|iliskili\s+(?:sorun|komplikasyon)|olumsuz\s+sonuc[a-z]*|ardindan\s+hangi\s+problem[a-z]*|sonrasinda\s+karsilasilabilecek|uygulama[a-z]*\s+ardindan.{0,28}problem)\b")),
     ("cause", re.compile(r"(?i)\b(?:gelisme[a-z]*.{0,16}kolaylastiran|ortaya\s+cikma[a-z]*.{0,16}zemin\s+hazirlayan|predispozan\s+etken|etiyolojik\s+etken|zemin\s+hazirlayan\s+faktor[a-z]*|kolaylastiran\s+(?:kosul|etken))\b")),
-    ("indication", re.compile(r"(?i)\b(?:secim[a-z]*.{0,20}hangi\s+klinik\s+kosul[a-z]*|kullanim[a-z]*.{0,12}uygun\s+kilan|tercih[a-z]*.{0,16}hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo[a-z]*|kullanim\s+senaryo[a-z]*|uygun.{0,16}kullanim.{0,16}senaryo[a-z]*)\b")),
+    ("indication", re.compile(r"(?i)\b(?:secim[a-z]*.{0,20}hangi\s+klinik\s+kosul[a-z]*|kullanim[a-z]*.{0,12}uygun\s+kilan|tercih[a-z]*.{0,16}hangi\s+durumda\s+yonel|uygun\s+kullanim\s+senaryo[a-z]*|kullanim\s+senaryo[a-z]*|uygun.{0,16}kullanim.{0,16}senaryo[a-z]*|(?:hangi|ne)\s+vaka[a-z]*.{0,24}(?:tercih|kullan|uygula)[a-z]*|secim[a-z]*.{0,24}(?:belirle|etkile)[a-z]*|(?:uygun|dogru)\s+(?:kullanim|tercih)[a-z]*|ne\s+zaman.{0,20}(?:tercih|kullan|uygula)[a-z]*)\b")),
     ("contraindication", re.compile(r"(?i)\b(?:secene(?:k|g)[a-z]*.{0,56}(?:kacin[a-z]*|uzak\s+dur[a-z]*)|kullanim[a-z]*.{0,16}uygun\s+gormeyen|tercih[a-z]*.{0,12}etmemem\s+gereken|sakincali\s+kabul\s+edilen|hangi\s+kosul[a-z]*\s+kacin)\b")),
     ("anatomy", re.compile(r"(?i)\b(?:anatomik\s+komsuluk|bolgesinde.*yapilarla\s+iliski|anatomik\s+olarak\s+nerede|komsuluklari\s+sorulursa)\b")),
 )
@@ -166,8 +166,8 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
     role_pairs = (
-        ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar"),
-         ("uygulanir", "kullanilir", "tercih", "onerilir", "yapilir")),
+        ("indication", ("durum", "durumlar", "kosul", "kosullar", "sart", "sartlar", "vaka", "vakada", "zaman"),
+         ("uygulanir", "kullanilir", "tercih", "onerilir", "yapilir", "secimini", "secim")),
         ("cause", ("predispozan", "risk", "etiyolojik", "yatkinlastiran"),
          ("etken", "etkenleri", "faktor", "faktorleri", "neden", "nedenleri")),
     )
