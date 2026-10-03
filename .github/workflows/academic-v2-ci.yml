@@ -13,7 +13,7 @@ on:
       - "work/academic-v2-*"
       - "release/academic-v2-clean-*"
     paths:
-      - "app/study_ai_v2.py"
+      - "app/study_ai_v2.py"\n      - "app/academic_retrieval_plan.py"\n      - "app/academic_retrieval_adapter.py"\n      - "app/academic_query_decomposer.py"\n      - "scripts/generate_academic_retrieval_training.py"
       - "app/academic_coverage.py"
       - "app/academic_generation.py"
       - "app/academic_generation_jobs.py"
@@ -59,7 +59,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements-web.lock
       - name: Compile Academic V2 modules
         run: |
-          python -m py_compile app/study_ai_v2.py app/study_retrieval_v2.py app/academic_coverage.py app/academic_generation.py app/academic_generation_jobs.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_knowledge_relations.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/dental_specialty_concepts_extended.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
+          python -m py_compile app/study_ai_v2.py app/academic_retrieval_plan.py app/academic_retrieval_adapter.py app/academic_query_decomposer.py scripts/generate_academic_retrieval_training.py app/study_retrieval_v2.py app/academic_coverage.py app/academic_generation.py app/academic_generation_jobs.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_knowledge_relations.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/dental_specialty_concepts_extended.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
       - name: Run Academic V2 invariant and function tests
         run: python tests/academic_v2/run_tests.py
       - name: Run 89K past-question note holdout standalone
