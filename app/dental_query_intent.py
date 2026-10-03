@@ -423,7 +423,19 @@ _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
     ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
-    ("exam_points", re.compile(r"\b(?:(?:sorabileceği|sorulabilecek|sınavlık|sınavda çıkabilecek|önemli)\b.{0,40}\b(?:yer|nokta|konu|bilgi|kısım)|hoca\b.{0,48}\b(?:ne|neler)\s+sorabilir)\b", re.I), False, True, True, False),
+    # Salience/exam-point requests are modeled as a semantic composition:
+    # an importance/assessment cue + a request to identify/extract content.
+    # Keep the vocabulary generic enough for unseen phrasings rather than
+    # memorizing individual benchmark sentences.
+    ("exam_points", re.compile(
+        r"(?iu)(?:"
+        r"\b(?:sınav|sorul|sorabil|çıkma|çıkabil|önem|kritik|öncelik|yüksek\s+olasılık|yüksek\s+ihtimal)[a-zçğıöşü]*\b"
+        r".{0,64}\b(?:yer|nokta|konu|bilgi|kısım|başlık|bölüm|içerik)[a-zçğıöşü]*\b"
+        r"|\b(?:önem|kritik|öncelik)[a-zçğıöşü]*\b.{0,48}\b(?:çıkar|belirle|bul|listele|sırala|göster)[a-zçğıöşü]*\b"
+        r"|\b(?:sınav|soru)[a-zçğıöşü]*\b.{0,64}\b(?:çıkma|sorulma)[a-zçğıöşü]*\b.{0,32}\b(?:yüksek|fazla|olası)[a-zçğıöşü]*\b"
+        r"|\bhoca\b.{0,48}\b(?:ne|neler)\s+sorabil[a-zçğıöşü]*\b"
+        r")"
+    ), False, True, True, False),
     ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
