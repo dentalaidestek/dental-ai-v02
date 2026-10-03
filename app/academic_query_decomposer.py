@@ -1,9 +1,4 @@
-"""Conservative sentence decomposition for Academic AI retrieval planning.
-
-This layer binds explicit subjects to explicit requested facets at clause level.
-It augments, rather than replaces, the proven DentalRequirementPlan.  Ambiguous
-clauses remain unresolved so downstream retrieval can fail closed.
-"""
+"""Conservative sentence decomposition for Academic AI retrieval planning."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,18 +6,17 @@ import re
 
 from app.academic_retrieval_plan import AcademicRetrievalPlan, ComparisonRequirement, RetrievalNeed
 from app.dental_knowledge_graph import matched_nodes
-from app.dental_query_intent import (
-    build_dental_requirement_plan,
-    classify_dental_intents,
-    query_qualifiers,
-)
+from app.dental_query_intent import build_dental_requirement_plan, classify_dental_intents, query_qualifiers
 
 _CLAUSE_BOUNDARY_RE = re.compile(
-    r"\s*(?:[;.!?]+|\b(?:ama|ancak|fakat|oysa|ardından|ardindan|sonra)\b)\s*",
-    re.I,
+    r"\s*(?:[;.!?]+|\b(?:ama|ancak|fakat|oysa|ardından|ardindan|sonra)\b)\s*", re.I
 )
 _COORDINATOR_RE = re.compile(r"\s*,\s*|\s+ve\s+|\s+ile\s+", re.I)
 _COMPARISON_RE = re.compile(r"\b(?:fark|karşılaştır|karsilastir|versus|vs\.?|hangisi daha)\w*\b", re.I)
+_NEGATIVE_RE = re.compile(
+    r"(?iu)\b(?:değil(?:dir)?|olmayan|olmaz|kullanılmaz|uygulanmaz|yapılmaz|"
+    r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?|hariç|kontrendike)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -34,12 +28,10 @@ class _Mention:
 
 
 def _mentions(text: str) -> tuple[_Mention, ...]:
-    """Locate only graph-recognized subjects that are explicit in this clause."""
     output: list[_Mention] = []
     occupied: list[tuple[int, int]] = []
     for node in matched_nodes(text):
-        candidates = sorted((node.label, *node.aliases), key=len, reverse=True)
-        for term in candidates:
+        for term in sorted((node.label, *node.aliases), key=len, reverse=True):
             clean = " ".join((term or "").split())
             if not clean:
                 continue
@@ -58,27 +50,94 @@ def _mentions(text: str) -> tuple[_Mention, ...]:
 
 def _explicit_facets(text: str) -> tuple[str, ...]:
     return tuple(
-        intent.name
-        for intent in classify_dental_intents(text, limit=6)
+        intent.name for intent in classify_dental_intents(text, limit=6)
         if intent.name not in {"general", "comparison"}
     )
 
 
-def _local_segments(clause: str) -> tuple[str, ...]:
-    """Split coordination only when each side can carry its own semantic role."""
+def _append_need(
+    needs: list[RetrievalNeed],
+    seen: set[tuple],
+    *,
+    need_id: str,
+    subject: _Mention,
+    facet: str,
+    context: str,
+) -> bool:
+    qualifiers = query_qualifiers(context)
+    key = (subject.node_id, facet, qualifiers, bool(_NEGATIVE_RE.search(context)))
+    if key in seen:
+        return False
+    seen.add(key)
+    needs.append(RetrievalNeed(
+        need_id=need_id,
+        subject_ids=(subject.node_id,),
+        subject_terms=(subject.label,),
+        facet=facet,
+        qualifiers=qualifiers,
+        polarity="negative" if _NEGATIVE_RE.search(context) else "positive",
+    ))
+    return True
+
+
+def _bind_clause(
+    clause: str,
+    clause_index: int,
+    needs: list[RetrievalNeed],
+    seen: set[tuple],
+) -> bool:
+    """Bind only constructions whose ownership is explicit or structurally safe."""
+    mentions = _mentions(clause)
+    facets = _explicit_facets(clause)
+
+    # One explicit subject owns all requested facets in the same clause,
+    # including coordinated tails: "pulpitisin tanısı, tedavisi ve komplikasyonu".
+    if len(mentions) == 1 and facets:
+        return any(
+            _append_need(
+                needs, seen, need_id=f"c{clause_index}-{facet}",
+                subject=mentions[0], facet=facet, context=clause,
+            )
+            for facet in facets
+        )
+
+    # Multiple subjects: inspect coordinated pieces.  A piece that explicitly
+    # contains both a subject and a facet is safe. Facet-only pieces are not
+    # inherited across subjects because that creates false cross-binding.
+    produced = False
     pieces = tuple(part.strip(" ,") for part in _COORDINATOR_RE.split(clause) if part.strip(" ,"))
-    if len(pieces) < 2:
-        return (clause.strip(),)
-    informative = sum(bool(_mentions(part) or _explicit_facets(part)) for part in pieces)
-    return pieces if informative >= 2 else (clause.strip(),)
+    for piece_index, piece in enumerate(pieces, start=1):
+        piece_mentions = _mentions(piece)
+        piece_facets = _explicit_facets(piece)
+        if len(piece_mentions) != 1 or not piece_facets:
+            continue
+        for facet in piece_facets:
+            produced = _append_need(
+                needs, seen, need_id=f"c{clause_index}s{piece_index}-{facet}",
+                subject=piece_mentions[0], facet=facet, context=piece,
+            ) or produced
+
+    if produced:
+        return True
+
+    # Symmetric comparison: one explicit dimension applies to every explicit
+    # side. This is the only safe automatic cross-subject propagation.
+    if len(mentions) > 1 and _COMPARISON_RE.search(clause) and len(facets) == 1:
+        facet = facets[0]
+        for side_index, subject in enumerate(mentions, start=1):
+            produced = _append_need(
+                needs, seen, need_id=f"c{clause_index}-side{side_index}-{facet}",
+                subject=subject, facet=facet, context=clause,
+            ) or produced
+    return produced
 
 
 def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
-    """Build subject-bound needs from explicit clause-local evidence.
+    """Convert explicit sentence semantics into subject-bound evidence needs.
 
-    No pronoun/coreference guessing is done here.  Follow-up resolution remains
-    the responsibility of the existing retrieval flow before this function is
-    ever wired live.
+    This function does not resolve conversational pronouns and does not invent
+    missing dental entities. Existing follow-up resolution must run first when
+    this layer is eventually connected to live retrieval.
     """
     clean = " ".join((query or "").split()).strip()
     legacy = build_dental_requirement_plan(clean)
@@ -88,86 +147,20 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
 
     clauses = tuple(part for part in _CLAUSE_BOUNDARY_RE.split(clean) if part) or (clean,)
     for clause_index, clause in enumerate(clauses, start=1):
-        clause_mentions = _mentions(clause)
-        clause_facets = _explicit_facets(clause)
-        segments = _local_segments(clause)
-
-        produced_in_clause = 0
-        for segment_index, segment in enumerate(segments, start=1):
-            mentions = _mentions(segment)
-            facets = _explicit_facets(segment)
-            if len(mentions) == 1 and facets:
-                subject = mentions[0]
-                for facet in facets:
-                    key = (subject.node_id, facet, query_qualifiers(segment))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    needs.append(RetrievalNeed(
-                        need_id=f"c{clause_index}s{segment_index}-{facet}",
-                        subject_ids=(subject.node_id,),
-                        subject_terms=(subject.label,),
-                        facet=facet,
-                        qualifiers=query_qualifiers(segment),
-                        polarity="negative" if legacy.asks_negation else "positive",
-                    ))
-                    produced_in_clause += 1
-
-        if produced_in_clause:
+        if _bind_clause(clause, clause_index, needs, seen):
             continue
-
-        # A single explicit subject safely owns all explicit facets in its clause.
-        if len(clause_mentions) == 1 and clause_facets:
-            subject = clause_mentions[0]
-            for facet in clause_facets:
-                key = (subject.node_id, facet, query_qualifiers(clause))
-                if key in seen:
-                    continue
-                seen.add(key)
-                needs.append(RetrievalNeed(
-                    need_id=f"c{clause_index}-{facet}",
-                    subject_ids=(subject.node_id,),
-                    subject_terms=(subject.label,),
-                    facet=facet,
-                    qualifiers=query_qualifiers(clause),
-                    polarity="negative" if legacy.asks_negation else "positive",
-                ))
-                produced_in_clause += 1
-        elif len(clause_mentions) > 1 and clause_facets:
-            # Symmetric comparison wording can safely request the same dimension
-            # from each explicit side. Other multi-subject clauses are ambiguous.
-            if _COMPARISON_RE.search(clause) and len(clause_facets) == 1:
-                facet = clause_facets[0]
-                for side_index, subject in enumerate(clause_mentions, start=1):
-                    key = (subject.node_id, facet, query_qualifiers(clause))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    needs.append(RetrievalNeed(
-                        need_id=f"c{clause_index}-side{side_index}-{facet}",
-                        subject_ids=(subject.node_id,),
-                        subject_terms=(subject.label,),
-                        facet=facet,
-                        qualifiers=query_qualifiers(clause),
-                    ))
-                    produced_in_clause += 1
-            else:
-                unresolved.append(f"clause_{clause_index}:subject_facet_binding")
+        if len(_mentions(clause)) > 1 and _explicit_facets(clause):
+            unresolved.append(f"clause_{clause_index}:subject_facet_binding")
 
     if not needs:
-        # Preserve explicit legacy subjects as unresolved evidence anchors. This
-        # never makes an ambiguous query look sufficient.
-        for index, (node_id, label) in enumerate(
-            zip(legacy.subject_node_ids, legacy.subject_terms), start=1
-        ):
+        for index, (node_id, label) in enumerate(zip(legacy.subject_node_ids, legacy.subject_terms), start=1):
+            bound = next((qs for sid, qs in legacy.subject_qualifiers if sid == node_id), ())
             needs.append(RetrievalNeed(
                 need_id=f"unresolved-{index}",
                 subject_ids=(node_id,),
                 subject_terms=(label,),
                 facet="general",
-                qualifiers=tuple(
-                    values for sid, qs in legacy.subject_qualifiers if sid == node_id for values in qs
-                ),
+                qualifiers=bound,
             ))
         if not needs and legacy.subject_terms:
             needs.append(RetrievalNeed(
@@ -175,6 +168,12 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
                 subject_terms=(legacy.subject_terms[0],),
                 facet="general",
                 qualifiers=legacy.qualifiers,
+            ))
+        if not needs:
+            needs.append(RetrievalNeed(
+                need_id="unresolved-subject",
+                subject_terms=("<unresolved>",),
+                facet="general",
             ))
         unresolved.append("sentence_decomposition")
 
