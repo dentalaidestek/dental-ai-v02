@@ -30,6 +30,7 @@ def main() -> int:
         "test_intent_benchmark_15k.py",
     "test_intent_holdout_20k.py",
         "test_intent_combined_35k.py",
+        "test_utility_holdout_50k.py",
         "test_dental_semantics.py",
         "test_academic_scope.py",
         "test_academic_coverage.py",
