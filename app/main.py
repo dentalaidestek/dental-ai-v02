@@ -4500,8 +4500,6 @@ def study_ai_ask(
                         query=clean_message,
                         recent_history=history,
                     )
-                    if rag_result.visual_sources and rag_result.evidence_sufficient:
-                        materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
                 else:
                     rag_result = retrieve_course_context(
                         retrieval_session,
@@ -4511,6 +4509,13 @@ def study_ai_ask(
                         materials=materials,
                         recent_history=history,
                     )
+
+            # Retrieval DB work is complete. Release that connection before any
+            # potentially slow R2/PDF visual materialization.
+            if use_v2 and rag_result.visual_sources and rag_result.evidence_sufficient:
+                materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), rag_result,
+                )
 
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
