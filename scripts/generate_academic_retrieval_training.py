@@ -48,14 +48,20 @@ _FACETS = (
 )
 
 
+_FAMILY_SPLITS = {
+    # Split by semantic construction, never by individual paraphrase.
+    "single_subject_multi_facet": "train",
+    "two_subject_asymmetric_facets": "train",
+    "symmetric_comparison": "validation",
+    "past_question_to_note_dependency": "test",
+}
+
+
 def _split_for_family(family: str) -> str:
-    # Stable family-level split: variants from one construction never cross.
-    bucket = int(hashlib.sha256(family.encode("utf-8")).hexdigest()[:8], 16) % 100
-    if bucket < 80:
-        return "train"
-    if bucket < 90:
-        return "validation"
-    return "test"
+    try:
+        return _FAMILY_SPLITS[family]
+    except KeyError as exc:
+        raise ValueError(f"semantic family has no explicit split: {family}") from exc
 
 
 def _example_id(family: str, utterance: str) -> str:
