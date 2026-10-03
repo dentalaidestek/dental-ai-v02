@@ -62,3 +62,10 @@ def test_training_examples_are_not_live_parser_outputs():
     source = inspect.getsource(generator)
     assert "decompose_academic_query" not in source
     assert "build_dental_requirement_plan" not in source
+
+
+def test_every_declared_split_has_examples():
+    report = corpus_report(build_training_examples())
+    assert report["by_split"]["train"] > 0
+    assert report["by_split"]["validation"] > 0
+    assert report["by_split"]["test"] > 0
