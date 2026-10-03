@@ -421,7 +421,7 @@ _BROAD_ACADEMIC_RE = re.compile(
 
 _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
-    ("similar_questions", re.compile(r"\b(?:benzer[a-zçğıöşü]*|aynı tarz|aynı tip)\b.{0,40}\b(?:soru[a-zçğıöşü]*|test[a-zçğıöşü]*).{0,40}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*|sor[a-zçğıöşü]*)|\b(?:benzer[a-zçğıöşü]*)\b.{0,32}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*)", re.I), True, True, False, True),
+    ("similar_questions", re.compile(r"\b(?:benz[a-zçğıöşü]*|aynı tarz|aynı tip)\b.{0,40}\b(?:soru[a-zçğıöşü]*|test[a-zçğıöşü]*).{0,40}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*|sor[a-zçğıöşü]*)|\b(?:benz[a-zçğıöşü]*)\b.{0,32}\b(?:üret[a-zçğıöşü]*|hazırla[a-zçğıöşü]*|oluştur[a-zçğıöşü]*)", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
     ("exam_points", re.compile(
         r"\b(?:"
