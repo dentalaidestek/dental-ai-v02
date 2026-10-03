@@ -206,3 +206,16 @@ def test_measurement_intent_understands_assessed_structure_morphology():
     for query in cases:
         plan = build_dental_requirement_plan(query)
         assert "measurement" in plan.requested_facets, (query, plan.requested_facets)
+
+
+def test_value_intent_understands_measurement_change_not_only_literal_numbers():
+    from app.dental_query_intent import build_dental_requirement_plan
+    cases = (
+        "Gonial açı yaşla nasıl değişir?",
+        "Bu ölçüm çocukluktan erişkinliğe nasıl değişiyor?",
+        "Oranın dönemler arasındaki değişimini açıkla.",
+        "Açıdaki artış ve azalışı dönemlere göre anlat.",
+    )
+    for query in cases:
+        plan = build_dental_requirement_plan(query)
+        assert "value" in plan.requested_facets, (query, plan.requested_facets)
