@@ -88,7 +88,7 @@ _RULES = (
      ("procedure", "material"), ("has_contraindication",)),
     ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki[a-zçğıöşü]*)\b", re.I),
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
-    ("diagnosis", re.compile(r"\b(?:tanı[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
+    ("diagnosis", re.compile(r"\b(?:tanı(?!m)[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı(?!m)[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
     ("treatment", re.compile(r"\b(?:tedavi[a-z]*|mudahale[a-z]*|yaklasim[a-z]*|yonetim[a-z]*|ne\s+yapil[a-z]*|nasil\s+tedavi[a-z]*|(?:olunca|oldugunda|gelisince)\s+(?:ne\s+)?(?:yapilir|napilir))\b", re.I),
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
@@ -200,7 +200,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # ("tanısı ve tedavisi nedir?"). It must not create a fake definition
         # requirement when stronger explicit facets are already present.
         explicit = [item for item in found if item.name != "definition"]
-        if explicit:
+        if explicit and "definition" not in natural_roles:
             found = explicit
         return tuple(found)
     return (DentalIntent("general", (), ()),)
