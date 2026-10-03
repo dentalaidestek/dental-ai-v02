@@ -219,3 +219,14 @@ def test_value_intent_understands_measurement_change_not_only_literal_numbers():
     for query in cases:
         plan = build_dental_requirement_plan(query)
         assert "value" in plan.requested_facets, (query, plan.requested_facets)
+
+
+def test_value_noun_does_not_confuse_degerlendirmek_and_negation_inflects():
+    from app.dental_query_intent import classify_dental_intent, build_dental_requirement_plan
+    assert classify_dental_intent("alt çenenin konumunu hangi açıyla değerlendiririz").name == "measurement"
+    for query in (
+        "Kanal tedavisinde kullanılmaması gereken hangisidir?",
+        "Bu durumda yapılmaması gereken işlem nedir?",
+        "Hangi uygulamadan kaçınılması gerekir?",
+    ):
+        assert build_dental_requirement_plan(query).asks_negation, query
