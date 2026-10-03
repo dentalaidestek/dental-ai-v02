@@ -18,11 +18,11 @@ _RULES = (
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
     ("classification", re.compile(r"\b(?:sınıflam[a-zçğıöşü]*|sınıflandır[a-zçğıöşü]*|class|sınıf[a-zçğıöşü]*|evre[a-zçğıöşü]*|stage|grade|derece)\b", re.I),
      ("classification", "diagnosis", "finding"), ("classified_by", "has_stage", "has_grade")),
-    ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|endike(?:dir)?|ne zaman (?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*|hangi (?:durum|koşul|şart)[a-zçğıöşü]* (?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*|kim(?:ler)?de (?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*)\b", re.I),
+    ("indication", re.compile(r"\b(?:endikasyon[a-zçğıöşü]*|endike(?:dir)?|ne zaman (?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*|hangi (?:durum|koşul|şart)[a-zçğıöşü]* (?:[a-zçğıöşü]+ ){0,3}?(?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*|kim(?:ler)?de (?:kullan|uygula|yap|öner|tercih)[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material", "imaging"), ("used_for", "has_indication")),
     ("contraindication", re.compile(r"\b(?:kontrendikasyon[a-zçğıöşü]*|kontrendike|kullanılma(?:z|malı)[a-zçğıöşü]*|uygulanma(?:z|malı)[a-zçğıöşü]*|yapılma(?:z|malı)[a-zçğıöşü]*|sakınca|önerilme(?:z|meli)[a-zçğıöşü]*|tercih edilme(?:z|meli)[a-zçğıöşü]*|kim(?:ler)?de (?:kullanılmaz|uygulanmaz|yapılmaz|önerilmez)|hangi (?:durum|koşul|şart)[a-zçğıöşü]* (?:kullanılma|uygulanma|yapılma|önerilme)[a-zçğıöşü]*)\b", re.I),
      ("procedure", "material"), ("has_contraindication",)),
-    ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki)\b", re.I),
+    ("complication", re.compile(r"\b(?:komplikasyon[a-zçğıöşü]*|risk[a-zçğıöşü]*|zarar|istenmeyen|yan etki[a-zçğıöşü]*)\b", re.I),
      ("finding", "diagnosis", "procedure"), ("has_complication", "leads_to", "associated_with")),
     ("diagnosis", re.compile(r"\b(?:tanı[a-zçğıöşü]*|teşhis[a-zçğıöşü]*|ayırt|ayırıcı|bulgu[a-zçğıöşü]*|semptom[a-zçğıöşü]*|nasıl tanı[a-zçğıöşü]*|nasıl teşhis[a-zçğıöşü]*)\b", re.I),
      ("diagnosis", "finding", "imaging"), ("manifests_as", "has_clinical_feature", "has_radiographic_feature", "differential_with")),
@@ -30,11 +30,11 @@ _RULES = (
      ("procedure", "diagnosis"), ("has_treatment", "treats", "has_procedure", "used_for")),
     ("anatomy", re.compile(r"\b(?:nerede|konum[a-zçğıöşü]*|komşu[a-zçğıöşü]*|ilişki[a-zçğıöşü]*|yakın[a-zçğıöşü]*|geçer|seyreder|anatom[a-zçğıöşü]*)\b", re.I),
      ("anatomy", "relation"), ("anatomical_relation", "part_of")),
-    ("visual", re.compile(r"\b(?:radyografi|röntgen|film|görüntü|fotoğraf|panoramik|opg|cbct|periapikal|bitewing|sefalogram|şekil|tablo|grafik)\b", re.I),
+    ("visual", re.compile(r"\b(?:radyografi(?!k)[a-zçğıöşü]{0,8}|röntgen[a-zçğıöşü]{0,6}|görüntü(?:de|den|ler|lerde|lerden|sü|sünde)?|fotoğraf(?:ta|tan|lar|larda)?|panoramik(?:te|ten|ler|lerde)?|periapikal(?:de|den|ler|lerde)?|sefalogram[a-zçğıöşü]{0,5}|opg|cbct|film|bitewing|şekil|tablo|grafik)\b", re.I),
      ("imaging", "finding", "anatomy"), ("used_for", "anatomical_relation")),
     ("comparison", re.compile(r"\b(?:fark[a-zçğıöşü]*|karşılaştır[a-zçğıöşü]*|versus|vs\.?|hangisi daha)\b", re.I),
      ("measurement", "diagnosis", "finding", "material", "procedure"), ()),
-    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
+    ("cause", re.compile(r"\b(?:neden[a-zçğıöşü]*|niçin|sebep[a-zçğıöşü]*|etyoloji[a-zçğıöşü]*|etiyoloji[a-zçğıöşü]*|patogenez[a-zçğıöşü]*|risk\s+faktör[a-zçğıöşü]*|risk[a-zçğıöşü]*\s+(?:oluşturan|artıran|hazırlayan|yatkınlaştıran)\s+(?:etken|faktör|neden)[a-zçğıöşü]*|yatkınlaştıran\s+(?:etken|faktör|neden)[a-zçğıöşü]*|niye|neden olur|neye bağlı)\b", re.I),
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
@@ -78,7 +78,11 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if _CAUSAL_RISK_ROLE_RE.search(clean) and any(item.name == "cause" for item in found):
             found = [item for item in found if item.name != "complication"]
         # Negative applicability overrides a coincident positive applicability cue.
-        if any(item.name == "contraindication" for item in found):
+        # An explicit "endikasyon" word (not the one inside "kontrendikasyon") is
+        # a separate request: "endikasyonları ve kontrendikasyonları".
+        if any(item.name == "contraindication" for item in found) and not re.search(
+            r"(?<!kontr)endikasyon", clean, re.I
+        ):
             found = [item for item in found if item.name != "indication"]
         # Imaging words describe a modality/constraint surprisingly often
         # ("CBCT'de mandibular kanal ilişkisi"). When another explicit intent
@@ -298,6 +302,11 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         clean,
     )
     nodes = matched_nodes(entity_query)
+    if entity_query != clean:
+        # The suffix strip above turns "amoksisilin" into "amoksisil".  Keep the
+        # unstripped reading as well; the stripped result stays first and wins.
+        seen_ids = {node.id for node in nodes}
+        nodes = [*nodes, *(node for node in matched_nodes(clean) if node.id not in seen_ids)]
     # Imaging entities constrain how/where evidence is interpreted, but they
     # are not normally an independent factual subject. Requiring CBCT/OPG as a
     # second "subject" made otherwise correct evidence fail completeness.
