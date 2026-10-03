@@ -421,30 +421,37 @@ _BROAD_ACADEMIC_RE = re.compile(
 
 _ACADEMIC_STUDY_TASK_RULES = (
     ("repeated_patterns", re.compile(r"\b(?:sürekli|tekrar tekrar|en çok|sık sık)\b.{0,48}\b(?:sor|çıkmış|soru)", re.I), True, True, True, False),
-    ("similar_questions", re.compile(r"\b(?:benzer|aynı tarz|aynı tip)\b.{0,32}\b(?:soru|test).{0,32}\b(?:üret|hazırla|oluştur|sor)|\b(?:benzeri|benzerini)\b.{0,24}\b(?:üret|hazırla|oluştur)", re.I), True, True, False, True),
+    ("similar_questions", re.compile(r"\b(?:benzer|benzeyen|benzeri|benzerini|aynı tarz|aynı tip)\b.{0,64}\b(?:soru|test|üret|hazırla|oluştur|sor)|\b(?:soru|test|çıkmış)[a-zçğıöşü]*\b.{0,48}\b(?:benzer|benzeyen|benzeri|aynı tarz|aynı tip)\b.{0,48}\b(?:üret|hazırla|oluştur|sor)[a-zçğıöşü]*\b", re.I), True, True, False, True),
     ("past_exam_patterns", re.compile(r"\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)|\bhoca.{0,32}(?:sormuş|sorduğu)", re.I), True, True, True, False),
-    # Salience/exam-point requests are modeled as a semantic composition:
-    # an importance/assessment cue + a request to identify/extract content.
-    # Keep the vocabulary generic enough for unseen phrasings rather than
-    # memorizing individual benchmark sentences.
     ("exam_points", re.compile(
         r"(?iu)(?:"
-        r"\b(?:sınav|sorul|sorabil|çıkma|çıkabil|önem|kritik|öncelik|yüksek\s+olasılık|yüksek\s+ihtimal)[a-zçğıöşü]*\b"
-        r".{0,64}\b(?:yer|nokta|konu|bilgi|kısım|başlık|bölüm|içerik)[a-zçğıöşü]*\b"
-        r"|\b(?:önem|kritik|öncelik)[a-zçğıöşü]*\b.{0,48}\b(?:çıkar|belirle|bul|listele|sırala|göster)[a-zçğıöşü]*\b"
-        r"|\b(?:sınav|soru)[a-zçğıöşü]*\b.{0,64}\b(?:çıkma|sorulma)[a-zçğıöşü]*\b.{0,32}\b(?:yüksek|fazla|olası)[a-zçğıöşü]*\b"
+        r"\b(?:sınav|sorul|sorabil|çıkma|çıkabil)[a-zçğıöşü]*\b.{0,64}\b(?:yer|nokta|konu|bilgi|kısım|başlık|bölüm|içerik)[a-zçğıöşü]*\b"
+        r"|\b(?:soru|sınav)[a-zçğıöşü]*\b.{0,48}\b(?:gelme|çıkma|sorulma)[a-zçğıöşü]*\b.{0,32}\b(?:ihtimal|olasılık)[a-zçğıöşü]*\b"
+        r"|\b(?:ihtimal|olasılık)[a-zçğıöşü]*\b.{0,24}\b(?:yüksek|fazla)[a-zçğıöşü]*\b.{0,48}\b(?:yer|nokta|konu|bilgi|kısım|başlık|bölüm|içerik)[a-zçğıöşü]*\b"
+        r"|\b(?:önem|kritik|öncelik)[a-zçğıöşü]*\b.{0,48}\b(?:yer|nokta|konu|bilgi|kısım|başlık|bölüm|içerik)[a-zçğıöşü]*\b"
         r"|\bhoca\b.{0,48}\b(?:ne|neler)\s+sorabil[a-zçğıöşü]*\b"
         r")"
     ), False, True, True, False),
     ("explain", re.compile(r"\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)\b.{0,32}\b(?:anlat|açıkla|özetle|öğret)|\b(?:anlat|açıkla|özetle|öğret)\b.{0,32}\b(?:bu kısmı|şu kısmı|bu konuyu|bu konunun|konuyu|konunun|şu konuyu|şu konunun|burayı)", re.I), False, True, False, False),
 )
 
-
 def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     """Plan role-neutral academic workflows while keeping factual output source-bound."""
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     lowered = clean.casefold()
+    # Extraction/condensation language has higher precedence than incidental
+    # salience adjectives. "kritik ölçümleri çıkar" asks to extract a fact
+    # class, not to predict exam importance. Conversely, salience requests
+    # without an explicit factual class continue to the semantic task rules.
+    factual_class = bool(re.search(
+        r"(?iu)\b(?:değer|ölçüm|oran|sınıflama|endikasyon|kontrendikasyon|komplikasyon|"
+        r"bulgu|semptom|tanı|tedavi|neden|etyoloji|etiyoloji|anatom)[a-zçğıöşü]*\b",
+        clean,
+    ))
+    extract_action = bool(re.search(r"(?iu)\b(?:çıkar|listele|sırala|derle|topla)\w*\b", clean))
+    if broad and factual_class and extract_action:
+        return AcademicStudyTaskPlan("summarize", False, True, True, False)
     # A broad summary request remains a summary even when the user also asks
     # which parts are exam-important; exam-point wording is an output facet.
     if any(x in lowered for x in ("özet", "özetle")):
