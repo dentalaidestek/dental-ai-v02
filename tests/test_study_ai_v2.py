@@ -13,19 +13,19 @@ class _FakeGemini:
         yield "parça"
 
 
-def test_v2_generation_is_fixed_to_gemini_38_and_streams(monkeypatch):
+def test_v2_generation_uses_configured_single_model_and_streams(monkeypatch):
     fake = _FakeGemini()
     monkeypatch.delenv("STUDY_V2_GEMINI_MODEL", raising=False)
     monkeypatch.setattr(ai_v2, "get_provider", lambda name: fake if name == "gemini" else None)
-    retrieval = RetrievalResult(note_context=["[KANIT sayfa=2]\nMetin"])
+    retrieval = RetrievalResult(note_context=["[KANIT sayfa=2]\nMetin"], evidence_sufficient=True)
     assert list(ai_v2.stream_rag_v2("Endodonti", "Nedir?", [], retrieval)) == ["Birinci ", "parça"]
-    assert fake.model == "gemini-3.8-flash"
+    assert fake.model == ai_v2.ACADEMIC_V2_MODEL == "gemini-3.5-flash-lite"
 
 
 def test_v2_nonstreaming_wrapper_joins_stream(monkeypatch):
     fake = _FakeGemini()
     monkeypatch.setattr(ai_v2, "get_provider", lambda name: fake)
-    result = ai_v2.ask_rag_v2("Ortodonti", "Açıkla", [], RetrievalResult(note_context=["Kanıt"]))
+    result = ai_v2.ask_rag_v2("Ortodonti", "Açıkla", [], RetrievalResult(note_context=["Kanıt"], evidence_sufficient=True))
     assert result == "Birinci parça"
 
 
@@ -44,7 +44,7 @@ class _FailAfterOutput(_FailBeforeOutput):
         raise StudyProviderError("bağlantı koptu", retryable=False, tracked=True)
 
 
-def test_v2_falls_back_once_when_primary_fails_before_output(monkeypatch):
+def test_v2_never_uses_second_provider_after_primary_call_fails(monkeypatch):
     primary = _FailBeforeOutput()
     fallback = _FakeGemini()
     monkeypatch.setattr(
@@ -58,12 +58,16 @@ def test_v2_falls_back_once_when_primary_fails_before_output(monkeypatch):
     )
     monkeypatch.setattr(ai_v2, "report_target_failure", lambda *_args: None)
 
-    chunks = list(
-        ai_v2.stream_rag_v2("Endodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"]))
-    )
-
-    assert chunks == ["Birinci ", "parça"]
-    assert fallback.model == "fallback"
+    try:
+        list(ai_v2.stream_rag_v2(
+            "Endodonti", "Nedir?", [],
+            RetrievalResult(note_context=["Kanıt"], evidence_sufficient=True),
+        ))
+    except ai_v2.StudyAIError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("One failed provider call must not trigger a second external AI call")
+    assert fallback.model is None
 
 
 def test_v2_never_switches_provider_after_stream_has_started(monkeypatch):
@@ -81,7 +85,7 @@ def test_v2_never_switches_provider_after_stream_has_started(monkeypatch):
     monkeypatch.setattr(ai_v2, "report_target_failure", lambda *_args: None)
 
     stream = ai_v2.stream_rag_v2(
-        "Endodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"])
+        "Endodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"], evidence_sufficient=True)
     )
     assert next(stream) == "başladı"
     try:
@@ -106,7 +110,7 @@ def test_v2_provider_failures_do_not_expose_provider_or_raw_error(monkeypatch):
 
     try:
         list(ai_v2.stream_rag_v2(
-            "Ortodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"])
+            "Ortodonti", "Nedir?", [], RetrievalResult(note_context=["Kanıt"], evidence_sufficient=True)
         ))
     except ai_v2.StudyAIError as exc:
         public_message = str(exc)

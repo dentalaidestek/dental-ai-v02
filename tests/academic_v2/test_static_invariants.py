@@ -1,0 +1,267 @@
+from pathlib import Path
+import ast
+import re
+
+ROOT = Path(__file__).resolve().parents[2]
+retrieval = (ROOT / "app/study_retrieval_v2.py").read_text(encoding="utf-8")
+generation = (ROOT / "app/study_ai_v2.py").read_text(encoding="utf-8")
+ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+chunking = (ROOT / "app/study_chunking.py").read_text(encoding="utf-8")
+
+# Parse first: catches syntax/indentation damage without importing production deps.
+tree = ast.parse(retrieval)
+ast.parse(generation)
+ast.parse(ocr)
+ast.parse(chunking)
+for extra in (
+    "app/dental_query_intent.py",
+    "app/dental_semantics.py",
+    "app/academic_coverage.py",
+    "app/academic_generation.py",
+    "app/academic_generation_jobs.py",
+):
+    ast.parse((ROOT / extra).read_text(encoding="utf-8"))
+
+# A short standalone dental question must not become a follow-up merely due to length.
+assert "len(clean.split()) <= 3" not in retrieval
+assert "if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):" in retrieval
+assert "current_plan = build_dental_requirement_plan(clean)" in retrieval
+assert "if current_plan.subject_node_ids:" in retrieval
+
+# Exhaustive question requests must bypass semantic top-k and support bounded continuation.
+assert "_is_exhaustive_question_request" in retrieval
+assert "_question_rows" in retrieval
+assert "question_limit = 16" in retrieval
+assert "limit=question_limit + 1" in retrieval
+assert "has_more_questions = len(question_rows) > question_limit" in retrieval
+assert "if exhaustive_questions:" in retrieval
+assert "else:" in retrieval[retrieval.index("if exhaustive_questions:"):retrieval.index("precise_query = _fts_query") + 80]
+assert "continuation_cursor" in retrieval
+assert "ACADEMIC_Q_CURSOR" in retrieval
+
+# Repeated source-page attachments must not force a full PDF parse every time.
+assert "_PAGE_PDF_CACHE_MAX" in retrieval
+assert "_PAGE_PDF_CACHE.get(cache_key)" in retrieval
+
+# Academic V2 generation is one Gemini model and one external call, with no fallback chain.
+assert 'ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"' in generation
+assert "get_generation_targets" not in generation
+assert "if attempted_api_calls >= 1:" in generation
+assert "if emitted:" in generation
+assert "generation target selected" in generation
+assert "build_dental_requirement_plan" in generation
+assert "_INTENT_RESPONSE_RULES" in generation
+assert "Sen arama/retrieval yapma" in generation
+assert "if not retrieval.evidence_sufficient:" in generation
+assert "Eksik başlıklar tamamlama görevi değildir" in generation
+assert "class EvidenceSufficiency" in retrieval
+assert "def _evidence_sufficiency" in retrieval
+assert "result.evidence_sufficient = sufficiency.sufficient" in retrieval
+assert "DentalSemanticFeatures" in retrieval
+
+# OCR stays local/adaptive and preserves academic/dental structure.
+assert "_detect_page_layout" in ocr
+assert "PSM.SPARSE_TEXT" in ocr
+assert "PSM.SINGLE_BLOCK" in ocr
+assert "STUDY_V2_LOCAL_OCR_RETRY_DPI" in ocr
+assert "dental_ocr_words.txt" in ocr
+assert "pdf_document=None" in ocr
+assert "owned_document = document is None" in ocr
+assert "semantic_kinds" in retrieval
+assert 'meta.get("kinds")' in retrieval
+assert "_split_mcq_blocks" in chunking
+assert "inherited_section_title" in chunking
+assert "_MCQ_EXPLANATION_RE" in chunking
+assert '"QUESTION"' in chunking
+assert "c.content_kind = 'QUESTION'" in retrieval
+assert "_fts_query" in retrieval
+assert " OR " in retrieval
+assert "embed_text(" not in retrieval
+assert "get_embedding_target" not in retrieval
+worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
+ast.parse(worker)
+ast.parse(jobs)
+assert '"retrieval_profile": "fts-local-v1"' in worker
+assert '_int_env("STUDY_RAG_MAX_PDF_PAGES", 800, 1, 2000)' in worker
+main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+assert "from app.academic_generation_jobs import AcademicGenerationJob" in main_source
+assert "from app.academic_coverage import CoverageAccumulator" in retrieval
+assert "features = _row_semantic_features(row, feature_cache)" in retrieval
+assert "c.section_title IS NOT DISTINCT FROM seeds.section_title" in retrieval
+assert "if neighbor_limit:" in retrieval
+assert 'return "VERIFY"' in worker
+assert "require_embeddings=False" in worker
+assert 'STUDY_V2_PARSE_BATCH_PAGES", 32' in worker
+assert 'STUDY_V2_CHUNK_BATCH_PAGES", 32' in worker
+assert "session.add_all(pending)" in worker
+assert "inherited_section_title=inherited_title" in worker
+assert "retrieval_enrichment_text(semantic_source, features=features)" in worker
+parse_slice = worker[worker.index("def _extract_pdf_slice"):worker.index("def _chunk_slice")]
+assert "session.close()" not in parse_slice
+assert "require_embeddings: bool = True" in jobs
+
+print("Academic V2 static invariants: OK")
+
+
+def test_ocr_worker_reuses_pdfium_document_per_bounded_slice():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    ocr_slice = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    assert 'pdf_document = pdfium.PdfDocument(str(path))' in ocr_slice
+    assert "pdf_document=pdf_document" in ocr_slice
+    assert "pdf_document.close()" in ocr_slice
+
+
+def test_local_ocr_preserves_layout_and_bounds_quality_retry():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _deskew_image" in ocr
+    assert 'probe.thumbnail((700, 900)' in ocr
+    assert 'best < base * 1.10' in ocr
+    assert 'image_to_osd' not in ocr
+    assert "def _recognize_layout" in ocr
+    assert 'layout.kind != "two_column"' in ocr
+    assert "image.crop" in ocr
+    assert 'join(texts)' in ocr
+    assert "def _ocr_anomaly_score" in ocr
+    assert "_ocr_anomaly_score(text) >= 0.34" in ocr
+    assert "retry_layout.kind == \"two_column\"" in ocr
+
+
+def test_local_ocr_retries_only_weak_columns_when_possible():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _recognize_two_columns_selective" in ocr
+    assert "weak_columns = (False, False)" in ocr
+    assert "any(weak_columns)" in ocr
+    assert "if not weak_columns[idx]:" in ocr
+    assert "continue" in ocr
+    assert "column_confidences" in ocr
+    assert "confidences = list(column_confidences)" in ocr
+    assert "return confidence < 78" in ocr
+
+
+def test_local_ocr_reuses_engine_and_preserves_academic_structure():
+    ocr = (ROOT / "app/study_local_ocr.py").read_text(encoding="utf-8")
+    assert "def _recognize_many" in ocr
+    assert "api.Clear()" in ocr
+    assert "_recognize_many(" in ocr
+    assert "def _preserve_academic_structure" in ocr
+    assert "_MC_OPTION_RE" in ocr
+    assert "_TABLE_GAP_RE" in ocr
+    assert "text = _preserve_academic_structure(text)" in ocr
+
+
+def test_dental_ocr_lexicon_has_broad_specialty_coverage():
+    words = (ROOT / "app/dental_ocr_words.txt").read_text(encoding="utf-8")
+    required = [
+        "apeksifikasyon", "MTA", "klinik ataşman seviyesi", "GTR",
+        "Wits appraisal", "RME", "BSSO", "MRONJ", "CBCT", "OSCC",
+        "Kennedy sınıflaması", "RMGIC", "MIH", "IANB", "FDI",
+        "junctional epithelium",
+    ]
+    assert len({line.strip().casefold() for line in words.splitlines() if line.strip()}) >= 400
+    for term in required:
+        assert term.casefold() in words.casefold()
+
+
+# Shared request-local semantic features must be accepted by every hot-path
+# helper that callers invoke with query_features=; protects caller/callee drift.
+for helper in ("_rerank_dental_rows", "_evidence_sufficiency", "_coverage_select"):
+    node = next(
+        n for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == helper
+    )
+    kwonly = {arg.arg for arg in node.args.kwonlyargs}
+    positional = {arg.arg for arg in node.args.args}
+    assert "query_features" in kwonly | positional, helper
+
+
+# Deferred visual-page caching must have a byte budget, not only an entry count.
+retrieval_source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
+assert "_PAGE_PDF_CACHE_MAX_BYTES = 32 * 1024 * 1024" in retrieval_source
+assert "retained > _PAGE_PDF_CACHE_MAX_BYTES" in retrieval_source
+assert "_PAGE_PDF_CACHE_MAX = 12" in retrieval_source
+
+
+def test_index_pipeline_is_checkpoint_routed_and_future_worker_ready():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    assert "def _next_checkpoint_stage" in worker
+    router = worker.split("def _next_checkpoint_stage", 1)[1].split("def _extract_pdf_slice", 1)[0]
+    assert 'return "CHUNK"' in router
+    assert 'StudyIndexPage.status == "OCR_REQUIRED"' in router
+    assert 'return "OCR"' in router
+    assert 'checkpoint_count < int(job.expected_page_count)' in router
+    assert 'return "PARSE"' in router
+    assert router.rstrip().endswith('return "VERIFY"')
+    assert "future dedicated Academic/OCR worker" in worker
+    assert 'job.resource_class == "OCR_HEAVY"' in worker
+    assert 'resource_class="NORMAL"' in worker
+
+
+def test_parse_and_ocr_slices_feed_ready_pages_downstream_early():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    parse_slice = worker.split("def _extract_pdf_slice", 1)[1].split("def _strip_repeated_page_margins", 1)[0]
+    ocr_slice = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    chunk_slice = worker.split("def _chunk_slice", 1)[1].split("def _prepare_image_checkpoint", 1)[0]
+    assert "return _next_checkpoint_stage(session, job)" in parse_slice
+    assert "return _next_checkpoint_stage(session, job)" in ocr_slice
+    assert "return _next_checkpoint_stage(session, job)" in chunk_slice
+
+
+def test_streaming_visual_io_happens_after_retrieval_session_closes():
+    main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    endpoint = main_source.split('@app.post("/notes/courses/{course_id}/ai/ask-stream")', 1)[1]
+    endpoint = endpoint.split("# === TEMP_STUDY_TRACE_ENDPOINT_BEGIN ===", 1)[0]
+    with_block = endpoint.index("with Session(engine, expire_on_commit=False) as s:")
+    materialize = endpoint.index("materialize_visual_sources(")
+    owner = endpoint.index("owner_user_id = user.id")
+    # Dedentation before materialization is the contract: storage/PDF work owns
+    # its own short sessions and must not hold the retrieval connection.
+    between = endpoint[with_block:materialize]
+    assert "\n    if retrieval.visual_sources" in between
+    assert materialize < owner
+
+
+def test_text_quality_accepts_clean_multiline_pdf_text():
+    from app.study_index_worker import _text_quality
+
+    clean_slide = "\n".join([
+        "Bebeklik döneminde normal kabul edilen bu açı değeri,",
+        "yaşın ilerlemesine yani büyüme ve gelişime bağlı olarak",
+        "küçülür ve ortalama 130 dereceye iner.",
+    ])
+    ok, reason = _text_quality(clean_slide)
+    assert ok is True
+    assert reason is None
+
+
+def test_text_quality_still_rejects_real_control_character_noise():
+    from app.study_index_worker import _text_quality
+
+    noisy = ("Ortodontik büyüme ve gelişim " * 8) + ("\x00\x01\x02" * 20)
+    ok, reason = _text_quality(noisy)
+    assert ok is False
+    assert reason == "LOW_PRINTABLE_RATIO"
+
+
+def test_ocr_required_checkpoint_preserves_native_text_fallback():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    extract = worker.split("def _extract_pdf_slice", 1)[1].split("def _strip_repeated_page_margins", 1)[0]
+    ocr = worker.split("def _ocr_slice", 1)[1].split("def _embed_slice", 1)[0]
+    assert "text_content=text or None" in extract
+    assert "content_sha256=_sha256_text(text) if text else None" in extract
+    assert 'fallback_text = normalize_extracted_text(page.text_content or "")' in ocr
+    assert "if result.visual_only:" in ocr
+    assert "elif fallback_text and len(text) < len(fallback_text):" in ocr
+    assert "PDF_TEXT_OCR_FALLBACK" in ocr
+
+
+def test_interleaved_chunking_never_leaps_over_ocr_gap():
+    worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
+    router = worker.split("def _next_checkpoint_stage", 1)[1].split("def _extract_pdf_slice", 1)[0]
+    chunk = worker.split("def _chunk_slice", 1)[1].split("def _prepare_image_checkpoint", 1)[0]
+    assert ".order_by(StudyIndexPage.page_number.asc())" in router
+    assert "first_pending.status in TERMINAL_PAGE_STATES" in router
+    assert 'first_pending.status == "OCR_REQUIRED"' in router
+    assert "if rows[0].page_number != first_pending.page_number:" in chunk
+    assert "candidate.page_number != contiguous[-1].page_number + 1" in chunk
+    assert "rows = contiguous" in chunk
