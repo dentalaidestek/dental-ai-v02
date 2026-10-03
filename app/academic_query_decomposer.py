@@ -177,6 +177,29 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             ))
         unresolved.append("sentence_decomposition")
 
+    # Graph relations are retained only when both endpoints are explicit in
+    # the user's sentence. Graph knowledge guides search; it is never promoted
+    # into a requested fact by this planner.
+    explicit_ids = {sid for need in needs for sid in need.subject_ids}
+    relation_needs: list[RetrievalNeed] = []
+    for source_id, relation, target_id in legacy.explicit_relations:
+        if source_id not in explicit_ids or target_id not in explicit_ids:
+            continue
+        source_need = next((n for n in needs if source_id in n.subject_ids), None)
+        target_need = next((n for n in needs if target_id in n.subject_ids), None)
+        if source_need is None or target_need is None:
+            continue
+        relation_needs.append(RetrievalNeed(
+            need_id=f"relation-{source_id}-{relation}-{target_id}",
+            subject_ids=(source_id,),
+            subject_terms=source_need.subject_terms,
+            facet="anatomy" if relation == "anatomical_relation" else "relation",
+            relation=relation,
+            target_subject_ids=(target_id,),
+            target_subject_terms=target_need.subject_terms,
+        ))
+    needs.extend(relation_needs)
+
     comparisons: tuple[ComparisonRequirement, ...] = ()
     if _COMPARISON_RE.search(clean) and len(needs) >= 2:
         comparisons = (ComparisonRequirement(
