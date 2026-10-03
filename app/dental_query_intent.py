@@ -194,17 +194,15 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         # it does not ask for treatment itself. Require treatment wording to
         # behave like a requested facet, unless no stronger requested facet exists.
         if name == "treatment" and match is not None:
-            # A treatment word can be part of a multiword dental subject
-            # ("kanal tedavisi", "endodontik tedavi").  When a different
-            # explicit semantic role is requested after that subject, do not
-            # turn the subject token itself into an extra treatment facet.
+            # Suppress treatment only when it is grammatically the subject head
+            # immediately followed by another requested facet ("kanal tedavisi
+            # komplikasyonlari").  Coordinated requests such as "tanisi,
+            # tedavisi ve risk faktorleri" must retain treatment.
             source_text = clean if raw_match is not None else intent_clean
             tail = source_text[match.end():]
-            other_roles = natural_roles - {"treatment"}
-            if other_roles and re.search(
-                r"(?i)\b(?:komplikasyon|risk|yan\s+etki|endikasyon|kontrendikasyon|"
-                r"secim|tercih|kullanim|durum|kosul|sart|tanim|olcum|sinif|evre|"
-                r"tani|teshis|neden|etken|faktor|anatom|komsu|iliski)",
+            if re.search(
+                r"(?i)^\s+(?:komplikasyon|risk|yan\s+etki|endikasyon|kontrendikasyon|"
+                r"secim|tercih|kullanim|durum|kosul|sart)[a-z]*",
                 tail,
             ):
                 continue
