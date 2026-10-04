@@ -86,7 +86,7 @@ def build(i:int,seed=20261004)->Case:
  distractor=DISTRACTOR[(i*11)%len(DISTRACTOR)]
  distance=DISTANCE[(i*13)%len(DISTANCE)]
  t1=r.choice(TOPICS); t2=r.choice([x for x in TOPICS if x!=t1])
- history=[("user",f"{t1[0]} {r.choice(SURFACES[\"explain\"])}."),("assistant",f"{t1[0]} açıklaması örnek {i%97}.")]
+ history=[("user",f"{t1[0]} {r.choice(SURFACES['explain'])}."),("assistant",f"{t1[0]} açıklaması örnek {i%97}.")]
  must=list(t1[1]); bad=[]; expected={"topic":t1[0],"task":"explain"}
  # interaction defines the semantic transition; other axes perturb its surface/context.
  if interaction in {"topic_switch_explicit","same_task_new_topic"}:
