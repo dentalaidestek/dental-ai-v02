@@ -461,3 +461,17 @@ def test_causal_risk_role_survives_orthography_without_complication_leak():
         "implant risk faktorleri ve komplikasyonlari nelerdir?"
     ).requested_facets)
     assert {"cause", "complication"}.issubset(combined), combined
+
+
+def test_explicit_exclusion_is_not_global_negative_fact():
+    plan = build_dental_requirement_plan("Pulpitis tanısını anlat, tedavi hariç")
+    assert plan.asks_negation is False
+
+
+def test_true_negative_direction_remains_negative():
+    for query in (
+        "Pulpitis için hangisi doğru değildir?",
+        "Bu durumda hangi tedavi önerilmez?",
+        "Hangisi yanlış olan ifadedir?",
+    ):
+        assert build_dental_requirement_plan(query).asks_negation is True, query
