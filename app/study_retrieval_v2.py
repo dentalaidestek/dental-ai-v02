@@ -392,6 +392,32 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         return clean
 
     window = list(recent_history[-8:])
+    folded = clean.casefold()
+    clear_topic = bool(_STATE_CLEAR_TOPIC_RE.search(clean))
+    relative = bool(_STATE_RELATIVE_RE.search(clean))
+    assistant_ref = bool(_STATE_ASSISTANT_REF_RE.search(clean))
+    comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
+    correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
+    dependent = bool(
+        _FOLLOWUP_RE.search(clean)
+        or relative or assistant_ref or comparison or correction_relation
+        or re.search(
+            r"(?iu)\b(?:aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
+            r"normal anlat|soru sayısı|soru sayisi|formatta|amaçla|amacla|"
+            r"değil|degil|boşver|bosver|sadece bu)\b", clean
+        )
+    )
+    # Explicit ordinal list references are the only direct assistant-list lookup.
+    ordinal_subject = _assistant_ordinal_subject(clean, window)
+    if ordinal_subject:
+        subject_text = _subject_text(ordinal_subject, current_qualifiers, clean)
+        reference_text = ordinal_subject.reference_text
+        prefix = " — ".join(x for x in (subject_text, reference_text) if x)
+        return f"{prefix} — {clean}" if prefix else clean
+
+    if not dependent:
+        return clean
+
     current_plan = build_dental_requirement_plan(clean)
     current_subject = (
         ConversationSubject(
@@ -403,28 +429,6 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         if current_plan.subject_terms else None
     )
     current_qualifiers = set(query_qualifiers(clean))
-
-    # Explicit ordinal list references are the only direct assistant-list lookup.
-    ordinal_subject = _assistant_ordinal_subject(clean, window)
-    if ordinal_subject:
-        subject_text = _subject_text(ordinal_subject, current_qualifiers, clean)
-        reference_text = ordinal_subject.reference_text
-        prefix = " — ".join(x for x in (subject_text, reference_text) if x)
-        return f"{prefix} — {clean}" if prefix else clean
-
-    folded = clean.casefold()
-    clear_topic = bool(_STATE_CLEAR_TOPIC_RE.search(clean))
-    relative = bool(_STATE_RELATIVE_RE.search(clean))
-    assistant_ref = bool(_STATE_ASSISTANT_REF_RE.search(clean))
-    dependent = bool(
-        _FOLLOWUP_RE.search(clean)
-        or relative or assistant_ref
-        or re.search(
-            r"(?iu)\b(?:aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
-            r"normal anlat|soru sayısı|soru sayisi|formatta|amaçla|amacla|"
-            r"değil|degil|boşver|bosver|sadece bu)\b", clean
-        )
-    )
 
     # A genuinely new explicit subject wins, except comparison/correction where
     # the old subject is intentionally one side of the requested relation.
