@@ -512,7 +512,7 @@ def explicit_node_mentions(query: str) -> tuple[tuple[int, int, DentalNode], ...
     selected: list[tuple[int, int, DentalNode]] = []
     seen: set[str] = set()
     for start, end, _, node in mentions:
-        if any(start < used_end and end > used_start for used_start, used_end, _ in selected):
+        if any(start < used_end and end > used_start for used_start, used_end in occupied):
             continue
         occupied.append((start, end))
         if node.id not in seen:
