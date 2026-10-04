@@ -25,13 +25,23 @@ _NOUN_SUFFIXES = ('','lar','lari','larini','larinin','larin','larda','lardan','l
     'lara','lere','ler','leri','lerini','lerine','lerinin','lerin','lerde','lerden','lerle','le','la',
     'i','ini','inin','u','unu','unun','a','e','ya','ye','yi','yu','na','ne','nu','ni',
     'nin','nun','ta','te','tan','ten','da','de','dan','den','si','sini','sinin','su','sunu','suna','sunun','ki')
+def _noun_forms(root: str) -> frozenset[str]:
+    # Buffer consonants depend on the stem ending. A Cartesian product
+    # invents forms such as soru+unu and ozet+ni, creating false ambiguity
+    # against real inflections during one-edit rescue.
+    vowel = root[-1] in 'aeiou'
+    invalid = ({'i','ini','inin','u','unu','unun','a','e'} if vowel else
+               {'yi','yu','ya','ye','na','ne','nu','ni','nin','nun'})
+    return frozenset(root + suffix for suffix in _NOUN_SUFFIXES if suffix not in invalid)
+
+
 _DOMAINS = {
     'relationship': frozenset(('dayandigi','bagli','yoklanan','gecen','hareketle')),
     'action': frozenset(b+s for b in _ACTION_ROOTS for s in _REQUEST_SUFFIXES),
-    'source': frozenset(b+s for b in _SOURCE_ROOTS for s in _NOUN_SUFFIXES),
-    'question': frozenset('soru'+s for s in _NOUN_SUFFIXES),
-    'option': frozenset(b+s for b in ('sik','secenek','oncul') for s in _NOUN_SUFFIXES),
-    'argument': frozenset(b+s for b in _NOUN_ROOTS for s in _NOUN_SUFFIXES) | frozenset((
+    'source': frozenset().union(*(_noun_forms(b) for b in _SOURCE_ROOTS)),
+    'question': _noun_forms('soru'),
+    'option': frozenset().union(*(_noun_forms(b) for b in ('sik','secenek','oncul'))),
+    'argument': frozenset().union(*(_noun_forms(b) for b in _NOUN_ROOTS)) | frozenset((
         'karsiligi','karsiligini','karsiligina','karsiliklari','siklarini','siklarinin',
         'siklarin','siklarina','siklarindan','mantigini','mantigi','mantiginin',
         'baglantisini','baglantiyi','baglantilari','baglantilarini','dogru','cevabina',
@@ -70,6 +80,10 @@ def _repair(token: str,domain: str) -> str:
 
 def operation_text(query: str) -> str:
     text=' '.join((query or '').translate(_FOLD).lower().split())
+    # Consecutive dotted initials belong to one noun phrase. Ordinary full
+    # stops still terminate ownership, including after a complete word.
+    text=re.sub(r'\b(?:[a-z]\.){2,}(?=\s+[a-z])',
+                lambda m: m.group().replace('.', ''), text)
     chunks=re.findall(r'[a-z]+|[^a-z]+',text)
     positions=[i for i,c in enumerate(chunks) if c.isalpha()]
     words=[chunks[i] for i in positions]

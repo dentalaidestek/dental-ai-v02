@@ -537,3 +537,44 @@ def test_study_operator_typo_rescue_preserves_subject_and_negative_request():
         assert classify_academic_study_task(query) is None, query
     for query in ('Hoca yeni soru hazırlar.', 'Her öğrenci yeni soru üretir.'):
         assert classify_academic_study_task(query) is None, query
+
+
+def test_nominal_rescue_does_not_compete_with_invalid_buffer_forms():
+    from app.academic_task_language import _noun_forms, _repair
+    from app.dental_query_intent import classify_academic_study_task
+    assert 'soruunu' not in _noun_forms('soru')
+    assert 'ozetni' not in _noun_forms('ozet')
+    assert {'soruyu', 'sorusunu', 'sorunun'} <= _noun_forms('soru')
+    assert {'ozeti', 'ozetini', 'ozetinin'} <= _noun_forms('ozet')
+    for typo in ('sorsuunu', 'soruusnu'):
+        assert _repair(typo, 'question') == 'sorusunu'
+    # Genuine alternatives remain unresolved; do not choose a case at random.
+    assert _repair('sorun', 'question') == 'sorun'
+    cases = (
+        ('Geçmiş {subject} sorsuunu gerekçesiyle anlat.', 'past_question_explain'),
+        ('Geçmiş {subject} soruusnu gerekçesiyle açıkla.', 'past_question_explain'),
+        ('{subject} için çıkmış soru dağılıımnı ve odaklarını göster.', 'past_exam_patterns'),
+        ('{subject} konusunun çalışma özeitni çıkar.', 'summarize'),
+    )
+    for subject in ('kök kanalı', 'A.B. analizi', 'üst çenede yer kaybı'):
+        for template, expected in cases:
+            q = template.format(subject=subject)
+            plan = classify_academic_study_task(q)
+            assert plan and plan.task == expected, (q, plan)
+
+
+def test_dotted_initials_preserve_clause_but_full_stops_end_it():
+    from app.academic_task_language import operation_text
+    from app.dental_query_intent import classify_academic_study_task
+    for initials in ('A.B.', 'C.D.E.', 'X.Y.'):
+        for q, expected in (
+            (f'Geçmiş {initials} analizi sorusunu açıkla.', 'past_question_explain'),
+            (f'Geçmiş {initials} analizi sorularına benzeyen yeni sorular üret.', 'similar_questions'),
+            (f'Çıkmışlarda geçen {initials} analizi başlığını özetle.', 'past_topic_summary'),
+        ):
+            plan = classify_academic_study_task(q)
+            assert plan and plan.task == expected, (q, plan)
+    q = 'Geçmiş tedaviyi incele. Yeni implant soruları hazırla.'
+    assert '. yeni' in operation_text(q)
+    plan = classify_academic_study_task(q)
+    assert plan and plan.task == 'generate_questions', plan
