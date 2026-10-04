@@ -1900,7 +1900,7 @@ def retrieve_course_context_v2(
     # guarded legacy vector path for old indexed generations only.
     embedding_provider = ""
     embedding_model = ""
-    continuation_cursor = _continuation_cursor(resolved, recent_history)
+    continuation_cursor = _continuation_cursor(query, recent_history)
     study_task = classify_academic_study_task(resolved)
     exhaustive_questions = _is_exhaustive_question_request(resolved) or continuation_cursor is not None
     study_question_task = bool(
