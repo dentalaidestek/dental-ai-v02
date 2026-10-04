@@ -123,7 +123,7 @@ def test_relation_rejects_self_endpoint_when_ids_are_known():
 
 
 def test_comparison_requires_distinct_subjects_not_just_two_needs():
-    _raises("distinct subjects", lambda: AcademicRetrievalPlan(
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
         original_query="A'nın tanı ve tedavisini karşılaştır.",
         needs=(
             RetrievalNeed("a-diagnosis", subject_ids=("a",), subject_terms=("A",), facet="diagnosis"),
@@ -194,3 +194,22 @@ def test_dependencies_cannot_repeat_the_same_need():
     _raises("duplicate dependencies", lambda: RetrievalNeed(
         "child", subject_terms=("A",), depends_on=("parent", "parent"),
     ))
+
+
+
+def test_same_subject_can_be_compared_when_qualifier_contexts_are_distinct():
+    acute = RetrievalNeed(
+        "acute", subject_ids=("pulpitis",), subject_terms=("pulpitis",),
+        facet="finding", qualifiers=("akut",),
+    )
+    chronic = RetrievalNeed(
+        "chronic", subject_ids=("pulpitis",), subject_terms=("pulpitis",),
+        facet="finding", qualifiers=("kronik",),
+    )
+    plan = AcademicRetrievalPlan(
+        original_query="Akut ve kronik pulpitisi karşılaştır.",
+        needs=(acute, chronic),
+        answer_operation="compare",
+        comparisons=(ComparisonRequirement(("acute", "chronic"), ("finding",)),),
+    )
+    assert plan.comparisons
