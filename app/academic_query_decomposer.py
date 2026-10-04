@@ -72,8 +72,8 @@ def _bind_clause(
     clause_index: int,
     needs: list[RetrievalNeed],
     seen: set[tuple],
-) -> bool:
-    """Bind only constructions whose ownership is explicit or structurally safe."""
+) -> tuple[bool, bool]:
+    """Return produced evidence plus whether ownership remains ambiguous."""
     mentions = _mentions(clause)
     facets = _explicit_facets(clause)
 
@@ -86,7 +86,7 @@ def _bind_clause(
                 needs, seen, need_id=f"c{clause_index}-{facet}",
                 subject=mentions[0], facet=facet, context=clause,
             ) or produced
-        return produced
+        return produced, False
 
     # Symmetric comparison is handled before piece binding so a facet attached
     # to the final side cannot make the first side disappear.
@@ -98,7 +98,7 @@ def _bind_clause(
                 needs, seen, need_id=f"c{clause_index}-side{side_index}-{facet}",
                 subject=subject, facet=facet, context=clause,
             ) or produced
-        return produced
+        return produced, False
 
     # Multiple subjects: inspect coordinated pieces.  A piece that explicitly
     # contains both a subject and a facet is safe. Facet-only pieces are not
@@ -116,10 +116,17 @@ def _bind_clause(
                 subject=piece_mentions[0], facet=facet, context=piece,
             ) or produced
 
-    if produced:
-        return True
-
-    return produced
+    bound_subjects = {sid for need in needs for sid in need.subject_ids}
+    bound_facets = {need.facet for need in needs}
+    ambiguous = bool(
+        len(mentions) > 1
+        and facets
+        and (
+            not {mention.node_id for mention in mentions}.issubset(bound_subjects)
+            or not set(facets).issubset(bound_facets)
+        )
+    )
+    return produced, ambiguous
 
 
 def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
@@ -137,7 +144,10 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
 
     clauses = tuple(part for part in _CLAUSE_BOUNDARY_RE.split(clean) if part) or (clean,)
     for clause_index, clause in enumerate(clauses, start=1):
-        if _bind_clause(clause, clause_index, needs, seen):
+        produced, ambiguous = _bind_clause(clause, clause_index, needs, seen)
+        if ambiguous:
+            unresolved.append(f"clause_{clause_index}:subject_facet_binding")
+        if produced:
             continue
         if len(_mentions(clause)) > 1 and _explicit_facets(clause):
             unresolved.append(f"clause_{clause_index}:subject_facet_binding")
