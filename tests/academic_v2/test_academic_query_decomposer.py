@@ -148,3 +148,12 @@ def test_unmodeled_temporal_order_fails_closed_instead_of_flattening():
         "Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat"
     )
     assert "unmodeled:temporal_order" in plan.unresolved_references
+
+
+def test_fuzzy_typo_subject_is_not_used_for_clause_ownership():
+    plan = decompose_academic_query("mandbular kanalın anatomisini anlat")
+    assert not any(
+        "mandibular_canal" in need.subject_ids and need.facet == "anatomy"
+        for need in plan.needs
+    )
+    assert "sentence_decomposition" in plan.unresolved_references
