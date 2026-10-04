@@ -167,3 +167,19 @@ def test_compare_operation_and_comparison_contract_cannot_diverge():
     _raises("require compare operation", lambda: AcademicRetrievalPlan(
         original_query="A ile B", needs=(a, b), comparisons=(comparison,),
     ))
+
+
+def test_exclusion_and_output_constraint_metadata_are_unambiguous():
+    need = RetrievalNeed("n", subject_terms=("A",))
+    _raises("excluded facets must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), excluded_facets=("treatment", "treatment"),
+    ))
+    _raises("excluded subject terms must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), excluded_subject_terms=("Pulpitis", "pulpitis"),
+    ))
+    _raises("keys must not be empty", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), output_constraints=(("", "5"),),
+    ))
+    _raises("keys must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), output_constraints=(("count", "5"), ("COUNT", "10")),
+    ))
