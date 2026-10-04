@@ -1,0 +1,36 @@
+name: Academic V2 Multi-turn 50K
+on:
+  push:
+    branches:
+      - release/academic-v2-clean-20261003
+    paths:
+      - '.github/workflows/academic-v2-multiturn-50k.yml'
+      - 'scripts/benchmark_multiturn_continuity_50k.py'
+      - 'tests/academic_v2/multiturn_50k_generator.py'
+      - 'tests/academic_v2/multiturn_50k_taxonomy.py'
+      - 'app/study_retrieval_v2.py'
+      - 'app/dental_query_intent.py'
+  workflow_dispatch:
+jobs:
+  continuity-50k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimum resolver dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -q -r requirements.txt
+      - name: Run only 50K multi-turn continuity benchmark
+        run: |
+          python scripts/benchmark_multiturn_continuity_50k.py --count 50000 --report /tmp/multiturn_50k_report.json
+      - name: Print failure summary
+        if: always()
+        run: |
+          test -f /tmp/multiturn_50k_report.json && python - <<'PY'
+          import json
+          p=json.load(open('/tmp/multiturn_50k_report.json'))
+          print(json.dumps({k:p.get(k) for k in ('count','quality','passed','accuracy','failure_reasons','elapsed_s','cases_per_s')},ensure_ascii=False,indent=2))
+          PY
