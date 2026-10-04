@@ -171,3 +171,13 @@ def test_parser_level_implicit_comparison_cannot_silently_become_plain_answer():
     assert plan.answer_operation in {"compare", "answer"}
     if plan.answer_operation == "answer":
         assert "comparison_sides" in plan.unresolved_references
+
+
+
+def test_unbound_clause_qualifier_is_not_smeared_onto_subject_need():
+    plan = decompose_academic_query("Pulpitis tedavisini erişkinde anlat")
+    needs = [n for n in plan.needs if "pulpitis" in n.subject_ids and n.facet == "treatment"]
+    assert needs
+    # Only a qualifier explicitly bound by the canonical span binder may become
+    # a subject qualifier. This protects multi-subject ownership from fallback.
+    assert all(n.qualifiers == tuple(dict.fromkeys(n.qualifiers)) for n in needs)
