@@ -157,3 +157,10 @@ def test_fuzzy_typo_subject_is_not_used_for_clause_ownership():
         for need in plan.needs
     )
     assert "sentence_decomposition" in plan.unresolved_references
+
+
+def test_explicit_comparison_without_two_safe_sides_is_unresolved():
+    plan = decompose_academic_query("Pulpitisi karşılaştır")
+    assert plan.answer_operation == "answer"
+    assert not plan.comparisons
+    assert "comparison_sides" in plan.unresolved_references
