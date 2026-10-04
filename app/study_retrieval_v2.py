@@ -206,81 +206,271 @@ class RetrievalResult:
     missing_facets: tuple[str, ...] = ()
 
 
-def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
-    """Resolve dependent turns from prior USER subject identity, never answer prose."""
-    clean = re.sub(r"\s+", " ", query or "").strip()
-    if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):
-        return clean
+@dataclass(frozen=True)
+class ConversationSubject:
+    terms: tuple[str, ...]
+    qualifiers: tuple[str, ...] = ()
+    source: str = "user"
+    history_index: int = -1
 
-    # Explicit ordinal references may resolve a structured assistant list item.
-    # This is opt-in reference resolution, not free-form assistant prose seeding.
-    ordinal = re.search(r"(?iu)\b(\d{1,2})\.?\s*soru", clean)
-    if ordinal:
-        wanted=int(ordinal.group(1))
-        for item in reversed(window):
-            if str(item.get("role") or "").casefold() not in {"assistant","ai"}:
-                continue
-            body=str(item.get("content") or "")
-            m=re.search(rf"(?ms)^\s*{wanted}\.\s*(.+?)(?=^\s*{wanted+1}\.|\Z)",body)
-            if not m:
-                continue
-            item_text=re.sub(r"(?m)^\s*[A-E][.)].*$"," ",m.group(1))
-            plan=build_dental_requirement_plan(item_text[:700])
-            if plan.subject_terms:
-                subject=" ".join(plan.subject_terms)
-                return f"{subject} — {clean}"
 
-    # A conversational marker can still introduce a new explicit subject
-    # ("peki SNB nedir?"). Explicit current graph identity always wins.
-    current_plan = build_dental_requirement_plan(clean)
-    if current_plan.subject_node_ids:
-        return clean
+@dataclass(frozen=True)
+class ConversationState:
+    subjects: tuple[ConversationSubject, ...] = ()
+    task: str | None = None
+    goal: str | None = None
+    count: int | None = None
+    output_format: str | None = None
+    length: str | None = None
+    reference_kind: str | None = None
+    ambiguous: bool = False
 
-    # Inspect only a bounded recent window and only USER turns. Assistant
-    # answers may mention distractor diagnoses, measurements or treatments and
-    # must never become retrieval subject identity.
-    for item in reversed(recent_history[-8:]):
-        if str(item.get("role") or "").casefold() not in {"user", "human"}:
+
+_STATE_QUESTION_RE = re.compile(r"(?iu)\b(\d{1,3})\s*(?:soru|question|test)\b")
+_STATE_EXAM_RE = re.compile(r"(?iu)\b(?:sınav|sinav|sınavlık|sinavlik)\b")
+_STATE_TABLE_RE = re.compile(r"(?iu)\b(?:tablo|table)\b")
+_STATE_QUESTION_TASK_RE = re.compile(r"(?iu)\b(?:soru|question|test)\b.{0,28}\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b|\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b.{0,28}\b(?:soru|question|test)\b")
+_STATE_EXPLAIN_RE = re.compile(r"(?iu)\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|normal anlat)\b")
+_STATE_CLEAR_TOPIC_RE = re.compile(r"(?iu)\b(?:önceki konuyu bırak|onceki konuyu birak|konuyu bırak|konuyu birak|boşver onu|bosver onu)\b")
+_STATE_CLEAR_COUNT_RE = re.compile(r"(?iu)\b(?:soru sayısı önemli değil|soru sayisi onemli degil|sayısı önemli değil|sayisi onemli degil)\b")
+_STATE_CLEAR_FORMAT_RE = re.compile(r"(?iu)\b(?:tablo olmasın|tablo olmasin|formatı boşver|formati bosver)\b")
+_STATE_CLEAR_GOAL_RE = re.compile(r"(?iu)\b(?:sınavı boşver|sinavi bosver|normal anlat)\b")
+_STATE_RELATIVE_RE = re.compile(r"(?iu)\b(?:bir önceki|bir onceki|ondan bir önceki|ondan bir onceki|ilk anlattığın|ilk anlattigin)\b")
+_STATE_ASSISTANT_REF_RE = re.compile(r"(?iu)\b(?:bu konu|bu konudan|o anlattığın konu|o anlattigin konu|verdiğin cevap|verdigin cevap)\b")
+
+
+def _conversation_subject(text: str, *, source: str, history_index: int) -> ConversationSubject | None:
+    plan = build_dental_requirement_plan(text[:700])
+    terms = tuple(dict.fromkeys(term for term in plan.subject_terms if term))
+    if not terms:
+        return None
+    return ConversationSubject(
+        terms=terms,
+        qualifiers=tuple(dict.fromkeys(plan.qualifiers)),
+        source=source,
+        history_index=history_index,
+    )
+
+
+def _conversation_state(recent_history: list[dict] | None) -> ConversationState:
+    """Fold at most eight messages into bounded, provenance-aware state."""
+    window = list((recent_history or [])[-8:])
+    subjects: list[ConversationSubject] = []
+    task = goal = output_format = length = None
+    count: int | None = None
+
+    for idx, item in enumerate(window):
+        role = str(item.get("role") or "").casefold()
+        text_value = re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
+        if not text_value:
             continue
-        content = re.sub(r"\s+", " ", item.get("content") or "").strip()
-        if not content:
+
+        if role in {"user", "human"}:
+            subject = _conversation_subject(text_value, source="user", history_index=idx)
+            if subject:
+                subjects.append(subject)
+            if _STATE_QUESTION_TASK_RE.search(text_value):
+                task = "generate_questions"
+            elif _STATE_EXPLAIN_RE.search(text_value):
+                task = "explain"
+            counts = _STATE_QUESTION_RE.findall(text_value)
+            if counts:
+                count = int(counts[-1])
+            if _STATE_CLEAR_COUNT_RE.search(text_value):
+                count = None
+            if _STATE_EXAM_RE.search(text_value):
+                goal = "exam"
+            if _STATE_CLEAR_GOAL_RE.search(text_value):
+                goal = None
+            if _STATE_TABLE_RE.search(text_value):
+                output_format = "table"
+            if _STATE_CLEAR_FORMAT_RE.search(text_value):
+                output_format = None
+            if re.search(r"(?iu)\b(?:daha kısa|daha kisa|kısa özet|kisa ozet)\b", text_value):
+                length = "shorter"
+            elif re.search(r"(?iu)\b(?:detay|ayrınt|ayrint)\w*\b", text_value):
+                length = "detailed"
+
+        # Assistant prose is never a generic subject source.  It is eligible
+        # only when it is the direct answer to an explicit ordinal reference.
+        elif role in {"assistant", "ai"} and idx > 0:
+            previous = window[idx - 1]
+            previous_role = str(previous.get("role") or "").casefold()
+            previous_text = str(previous.get("content") or "")
+            if previous_role in {"user", "human"} and re.search(
+                r"(?iu)\b\d{1,2}\.?\s*soru(?:nun)?\b", previous_text
+            ):
+                subject = _conversation_subject(text_value, source="assistant_explicit_reference", history_index=idx)
+                if subject:
+                    subjects.append(subject)
+
+    return ConversationState(
+        subjects=tuple(subjects), task=task, goal=goal, count=count,
+        output_format=output_format, length=length,
+    )
+
+
+def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSubject | None:
+    ordinal = re.search(r"(?iu)\b(\d{1,2})\.?\s*soru(?:nun)?\b", clean)
+    if not ordinal:
+        return None
+    wanted = int(ordinal.group(1))
+    for idx in range(len(window) - 1, -1, -1):
+        item = window[idx]
+        if str(item.get("role") or "").casefold() not in {"assistant", "ai"}:
             continue
-        # A prior dependent USER turn ("peki tedavisi?") does not carry
-        # trustworthy standalone subject identity; keep scanning to the last
-        # self-contained user turn instead of inheriting its lexical residue.
-        if _FOLLOWUP_RE.search(content):
-            prior_current = build_dental_requirement_plan(content[:700])
-            if not prior_current.subject_node_ids:
-                continue
-        prior = build_dental_requirement_plan(content[:700])
-        if not prior.subject_terms:
-            continue
-        # Inherit subject + its explicit modifiers only. Prior intent/facet is
-        # intentionally discarded; the current turn defines what is requested.
-        # Current-turn qualifiers override incompatible inherited axes:
-        # "alt sağ ... -> peki üstte?" must not become "alt sağ üst ...".
-        current_qualifiers = set(query_qualifiers(clean))
-        inherited_qualifiers = list(prior.qualifiers)
-        qualifier_axes = (
-            {"üst", "alt", "maksiller", "mandibular"},
-            {"sağ", "sol"},
-            {"anterior", "posterior"},
-            {"süt", "daimi"},
-            {"akut", "kronik"},
-            {"reversible", "irreversible"},
-            {"semptomatik", "asemptomatik"},
-            {"lokalize", "generalize"},
-            {"çocuk", "erişkin"},
+        body = str(item.get("content") or "")
+        match = re.search(
+            rf"(?ms)^\s*{wanted}\.\s*(.+?)(?=^\s*{wanted + 1}\.|\Z)", body
         )
-        blocked: set[str] = set()
-        for axis in qualifier_axes:
-            if current_qualifiers.intersection(axis):
-                blocked.update(axis)
-        inherited_qualifiers = [q for q in inherited_qualifiers if q not in blocked]
-        inherited = " ".join(dict.fromkeys((*inherited_qualifiers, *prior.subject_terms))).strip()
-        if inherited:
-            return f"{inherited} — {clean}"
-    return clean
+        if not match:
+            continue
+        item_text = re.sub(r"(?m)^\s*[A-E][.)].*$", " ", match.group(1))
+        subject = _conversation_subject(
+            item_text, source="assistant_list_item", history_index=idx
+        )
+        if subject:
+            return subject
+    return None
+
+
+def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], clean: str) -> str:
+    axes = (
+        {"üst", "alt", "maksiller", "mandibular"}, {"sağ", "sol"},
+        {"anterior", "posterior"}, {"süt", "daimi"}, {"akut", "kronik"},
+        {"reversible", "irreversible"}, {"semptomatik", "asemptomatik"},
+        {"lokalize", "generalize"}, {"çocuk", "erişkin"},
+    )
+    blocked: set[str] = set()
+    for axis in axes:
+        if current_qualifiers.intersection(axis):
+            blocked.update(axis)
+    inherited = [q for q in subject.qualifiers if q not in blocked]
+
+    folded = clean.casefold()
+    if re.search(r"(?iu)\byaş grubunu\s+(?:boşver|bosver)\b", clean):
+        inherited = [q for q in inherited if q not in {"çocuk", "erişkin"}]
+    if re.search(r"(?iu)\bakut\s+değil\b|\bakut\s+degil\b", clean):
+        inherited = [q for q in inherited if q != "akut"]
+    if re.search(r"(?iu)\bçocuk\s+değil\b|\bcocuk\s+degil\b", clean):
+        inherited = [q for q in inherited if q != "çocuk"]
+
+    return " ".join(dict.fromkeys((*inherited, *subject.terms))).strip()
+
+
+def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
+    """Resolve bounded multi-turn state without allowing stale assistant prose."""
+    clean = re.sub(r"\s+", " ", query or "").strip()
+    if not clean or not recent_history:
+        return clean
+
+    window = list(recent_history[-8:])
+    state = _conversation_state(window)
+    current_plan = build_dental_requirement_plan(clean)
+    current_subject = _conversation_subject(clean, source="current", history_index=len(window))
+    current_qualifiers = set(query_qualifiers(clean))
+
+    # Explicit ordinal list references are the only direct assistant-list lookup.
+    ordinal_subject = _assistant_ordinal_subject(clean, window)
+    if ordinal_subject:
+        subject_text = _subject_text(ordinal_subject, current_qualifiers, clean)
+        return f"{subject_text} — {clean}" if subject_text else clean
+
+    folded = clean.casefold()
+    clear_topic = bool(_STATE_CLEAR_TOPIC_RE.search(clean))
+    relative = bool(_STATE_RELATIVE_RE.search(clean))
+    assistant_ref = bool(_STATE_ASSISTANT_REF_RE.search(clean))
+    dependent = bool(
+        _FOLLOWUP_RE.search(clean)
+        or relative or assistant_ref
+        or re.search(
+            r"(?iu)\b(?:aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
+            r"normal anlat|soru sayısı|soru sayisi|formatta|amaçla|amacla|"
+            r"değil|degil|boşver|bosver|sadece bu)\b", clean
+        )
+    )
+
+    # A genuinely new explicit subject wins, except comparison/correction where
+    # the old subject is intentionally one side of the requested relation.
+    comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
+    correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
+    if current_plan.subject_node_ids and not (comparison or correction_relation):
+        return clean
+    if clear_topic and current_plan.subject_node_ids:
+        return clean
+    if clear_topic and not current_plan.subject_node_ids:
+        return clean
+    if not dependent and not (comparison or correction_relation):
+        return clean
+
+    subjects = list(state.subjects)
+    if not subjects:
+        return clean
+
+    # Pronouns with a single USER turn containing multiple explicit subjects are
+    # ambiguous; never guess which antecedent "bu/onu" denotes.
+    if re.match(r"(?iu)^\s*(?:bunu|onu|bu konu)", clean):
+        last_user = next((x for x in reversed(subjects) if x.source == "user"), None)
+        if last_user and len(last_user.terms) > 1:
+            return clean
+
+    selected: ConversationSubject | None = None
+    if re.search(r"(?iu)\bilk anlattığın|\bilk anlattigin", clean):
+        selected = next((x for x in subjects if x.source == "user"), None)
+    elif relative:
+        user_subjects = [x for x in subjects if x.source == "user"]
+        distinct: list[ConversationSubject] = []
+        for subject in user_subjects:
+            if not distinct or subject.terms != distinct[-1].terms:
+                distinct.append(subject)
+        if len(distinct) >= 2:
+            selected = distinct[-2]
+        else:
+            return clean
+    elif assistant_ref:
+        selected = next(
+            (x for x in reversed(subjects) if x.source == "assistant_explicit_reference"),
+            None,
+        )
+        if selected is None:
+            selected = next((x for x in reversed(subjects) if x.source == "user"), None)
+    else:
+        selected = next((x for x in reversed(subjects) if x.source == "user"), None)
+
+    if selected is None:
+        return clean
+
+    subject_text = _subject_text(selected, current_qualifiers, clean)
+    if not subject_text:
+        return clean
+
+    prefixes: list[str] = [subject_text]
+
+    # Comparison adds the current explicit target while preserving the selected
+    # antecedent.  Correction excludes the negated old target by relying on the
+    # current requirement plan rather than copying arbitrary prior prose.
+    if current_subject and (comparison or correction_relation):
+        for term in current_subject.terms:
+            if term.casefold() not in subject_text.casefold():
+                prefixes.append(term)
+
+    # Inheritance is axis-specific. Current-turn values always win; only an
+    # explicit inheritance cue can recover an omitted old value.
+    if re.search(r"(?iu)\baynı sayıda|\bayni sayida", clean) and state.count is not None:
+        if not _STATE_QUESTION_RE.search(clean):
+            prefixes.append(f"{state.count} soru")
+    if re.search(r"(?iu)\baynı formatta|\bayni formatta", clean) and state.output_format:
+        if not _STATE_TABLE_RE.search(clean):
+            prefixes.append(state.output_format)
+    if re.search(r"(?iu)\baynı amaçla|\bayni amacla", clean) and state.goal == "exam":
+        if not _STATE_EXAM_RE.search(clean):
+            prefixes.append("sınav için")
+    if re.search(r"(?iu)\baynı şekilde|\bayni sekilde", clean) and state.task == "generate_questions":
+        if not _STATE_QUESTION_TASK_RE.search(clean):
+            prefixes.append("soru hazırla")
+
+    resolved_prefix = " ".join(dict.fromkeys(x for x in prefixes if x)).strip()
+    return f"{resolved_prefix} — {clean}" if resolved_prefix else clean
 
 
 def _extract_single_page_pdf(*, reference: str, page_number: int) -> bytes:
