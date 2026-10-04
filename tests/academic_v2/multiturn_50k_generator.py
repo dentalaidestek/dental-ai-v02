@@ -103,6 +103,31 @@ def build(i:int,seed=20261004)->Case:
   history=(history+fillers)[-8:]; q="ilk anlattığın konuya dön"
  elif interaction=="followup": q="peki komplikasyonları?"
  else: q="bunu biraz daha anlat"
+ # Reference semantics: these axes must change the actual dialogue.
+ if reference=="pronoun_o":
+  q=q.replace("bunu","onu").replace("Bunu","Onu")
+ elif reference=="previous_answer":
+  q="az önce verdiğin cevapta "+q
+ elif reference=="previous_user_turn":
+  q="az önce sorduğum şey için "+q
+ elif reference=="named_topic" and interaction not in {"topic_switch_explicit","topic_switch_implicit","same_task_new_topic","abandon_previous"}:
+  q=f"{t1[0]} için "+q
+ elif reference=="missing_antecedent":
+  history=[("assistant","Genel bir açıklama yaptım.")]
+  q="bunu biraz daha anlat"; must=[]; bad=[]; expected["should_abstain"]=True
+ elif reference=="ambiguous_antecedent":
+  history=[("user",f"{t1[0]} ve {t2[0]} anlat."),("assistant","İki konuyu da açıkladım.")]
+  q="bunu biraz daha anlat"; must=[]; bad=[]; expected["should_abstain"]=True
+ elif reference in {"ordinal_item","ordinal_question","assistant_list_item"}:
+  history=[("user",f"{t1[0]} konusunda 20 soru hazırla"),("assistant",_list(t1[0]))]
+  q="13. sorunun konusunu anlat"; must=list(t1[1]); expected["reference"]="assistant_item_13"
+ elif reference=="multi_hop":
+  history=[("user",f"{t1[0]} konusunda 20 soru hazırla"),("assistant",_list(t1[0])),("user","13. sorunun konusunu anlat"),("assistant",f"{t1[0]} klinik soru 13 açıklaması")]
+  q="sadece bu konudan 10 soru hazırla"; must=list(t1[1]); expected.update(reference="assistant_item_13",task="generate_questions",count=10)
+ elif reference=="assistant_prose_forbidden_subject":
+  history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
+  bad += ["implant","ameloblastoma"]
+
  if distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
  elif distractor=="irrelevant_turn": history += [("user","tamam sağ ol"),("assistant","rica ederim")]
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
