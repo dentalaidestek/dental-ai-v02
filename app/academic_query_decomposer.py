@@ -73,7 +73,10 @@ def _append_need(
     facet: str,
     context: str,
 ) -> bool:
-    qualifiers = subject.qualifiers or query_qualifiers(context)
+    # Subject-scoped qualifiers are authoritative. Falling back to every
+    # qualifier in the clause can attach a modifier to the wrong subject and
+    # can turn a negative applicability phrase into a fake subject condition.
+    qualifiers = subject.qualifiers
     key = (subject.node_id, facet, qualifiers, bool(_NEGATIVE_RE.search(context)))
     if key in seen:
         return False
