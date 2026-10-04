@@ -14,7 +14,7 @@ _COORDINATOR_RE = re.compile(r"\s*,\s*|\s+ve\s+|\s+ile\s+", re.I)
 _COMPARISON_RE = re.compile(r"\b(?:fark|karşılaştır|karsilastir|versus|vs\.?|hangisi daha)\w*\b", re.I)
 _NEGATIVE_RE = re.compile(
     r"(?iu)\b(?:değil(?:dir)?|olmayan|olmaz|kullanılmaz|uygulanmaz|yapılmaz|"
-    r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?|hariç)\b"
+    r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?)\b"
 )
 
 _UNMODELED_OPERATOR_PATTERNS = (
@@ -22,6 +22,7 @@ _UNMODELED_OPERATOR_PATTERNS = (
     ("explicit_exclusion", re.compile(r"(?iu)\b(?:hariç|dışında|değinme|girme|bahsetme)\b")),
     ("numeric_constraint", re.compile(r"(?iu)(?:\b\d+(?:[.,]\d+)?\s*(?:mm|cm|derece|°|%)\b|[<>]=?|\ben\s+(?:az|çok)\b)")),
     ("source_selection", re.compile(r"(?iu)\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)[a-zçğıöşü]*\b")),
+    ("temporal_order", re.compile(r"(?iu)\b(?:önce|sonra|ardından|ardindan|takiben|öncesi|sonrası)\b")),
 )
 
 
