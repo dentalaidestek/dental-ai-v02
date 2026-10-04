@@ -97,3 +97,21 @@ def test_qualifier_does_not_jump_between_separate_clauses():
             assert "akut" not in need.qualifiers
         if "pulpitis" in need.subject_ids:
             assert "kronik" not in need.qualifiers
+
+
+def test_qualifiers_are_preserved_on_their_own_inflected_subjects():
+    plan = decompose_academic_query(
+        "Akut pulpitisin bulgularını anlat ama kronik pulpa nekrozunun tedavisini söyle"
+    )
+    pulpitis = [n for n in plan.needs if "pulpitis" in n.subject_ids]
+    necrosis = [n for n in plan.needs if "pulp_necrosis" in n.subject_ids]
+    assert pulpitis and any("akut" in n.qualifiers for n in pulpitis)
+    assert necrosis and any("kronik" in n.qualifiers for n in necrosis)
+    assert all("kronik" not in n.qualifiers for n in pulpitis)
+    assert all("akut" not in n.qualifiers for n in necrosis)
+
+
+def test_relation_helpers_do_not_turn_into_comparison_sides():
+    plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
+    assert plan.answer_operation == "answer"
+    assert not plan.comparisons
