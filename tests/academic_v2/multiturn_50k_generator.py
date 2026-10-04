@@ -188,6 +188,25 @@ def validate_cases(cases):
  assert any(c.expected.get("should_abstain") for c in cases), "no abstention cases"
  assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases"
  assert any(c.expected.get("count")==20 for c in cases), "no count replacement cases"
+ # Observable-axis invariants prevent metadata-only coverage from passing.
+ checks=(
+  ("replace_count",lambda c:c.expected.get("count")==20),
+  ("inherit_count",lambda c:c.expected.get("count")==10),
+  ("replace_goal",lambda c:c.expected.get("goal")=="exam"),
+  ("missing_antecedent",lambda c:bool(c.expected.get("should_abstain"))),
+  ("ambiguous_antecedent",lambda c:bool(c.expected.get("should_abstain"))),
+  ("ordinal_item",lambda c:c.expected.get("reference")=="assistant_item_13"),
+  ("ordinal_question",lambda c:c.expected.get("reference")=="assistant_item_13"),
+  ("assistant_list_item",lambda c:c.expected.get("reference")=="assistant_item_13"),
+  ("multi_hop",lambda c:c.expected.get("reference")=="assistant_item_13" and c.expected.get("count")==10),
+  ("assistant_prose_forbidden_subject",lambda c:"implant" in c.must_not or "ameloblastoma" in c.must_not),
+ )
+ for value,predicate in checks:
+  axis="state" if value in STATE else "reference"
+  subset=[c for c in cases if c.axes.get(axis)==value and not c.expected.get("should_abstain")]
+  if subset:
+   ratio_ok=sum(bool(predicate(c)) for c in subset)/len(subset)
+   assert ratio_ok>=0.80, f"{axis}={value} is mostly metadata-only: {ratio_ok:.3f}"
  return {"count":len(cases),"exact_unique":len({c.case_id for c in cases}),"semantic_unique":semantic_unique,"semantic_unique_ratio":ratio}
 
 def generate(n=50000,seed=20261004):
