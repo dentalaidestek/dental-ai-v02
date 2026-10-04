@@ -17,6 +17,13 @@ _NEGATIVE_RE = re.compile(
     r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?|hariç)\b"
 )
 
+_UNMODELED_OPERATOR_PATTERNS = (
+    ("logical_or", re.compile(r"(?iu)\b(?:veya|yahut|ya\s+da)\b")),
+    ("explicit_exclusion", re.compile(r"(?iu)\b(?:hariç|dışında|değinme|girme|bahsetme)\b")),
+    ("numeric_constraint", re.compile(r"(?iu)(?:\b\d+(?:[.,]\d+)?\s*(?:mm|cm|derece|°|%)\b|[<>]=?|\ben\s+(?:az|çok)\b)")),
+    ("source_selection", re.compile(r"(?iu)\b(?:çıkmış|geçmiş)\s+(?:soru|sınav)[a-zçğıöşü]*\b")),
+)
+
 
 @dataclass(frozen=True)
 class _Mention:
@@ -141,7 +148,11 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
     clean = " ".join((query or "").split()).strip()
     legacy = build_dental_requirement_plan(clean)
     needs: list[RetrievalNeed] = []
-    unresolved: list[str] = []
+    unresolved: list[str] = [
+        f"unmodeled:{name}"
+        for name, pattern in _UNMODELED_OPERATOR_PATTERNS
+        if pattern.search(clean)
+    ]
     seen: set[tuple] = set()
 
     clauses = tuple(part for part in _CLAUSE_BOUNDARY_RE.split(clean) if part) or (clean,)
