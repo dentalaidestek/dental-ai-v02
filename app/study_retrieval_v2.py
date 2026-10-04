@@ -207,62 +207,107 @@ class RetrievalResult:
 
 
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
-    """Resolve dependent turns from prior USER subject identity, never answer prose."""
+    """Deterministically resolve bounded conversational state for retrieval."""
     clean = re.sub(r"\s+", " ", query or "").strip()
-    if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):
+    if not clean or not recent_history:
         return clean
 
-    # A conversational marker can still introduce a new explicit subject
-    # ("peki SNB nedir?"). Explicit current graph identity always wins.
-    current_plan = build_dental_requirement_plan(clean)
-    if current_plan.subject_node_ids:
+    window = recent_history[-8:]
+    current = build_dental_requirement_plan(clean)
+    current_q = set(query_qualifiers(clean))
+
+    # An explicit current dental subject is authoritative.  Do not contaminate
+    # a topic switch with stale history.
+    if current.subject_node_ids:
         return clean
 
-    # Inspect only a bounded recent window and only USER turns. Assistant
-    # answers may mention distractor diagnoses, measurements or treatments and
-    # must never become retrieval subject identity.
-    for item in reversed(recent_history[-8:]):
-        if str(item.get("role") or "").casefold() not in {"user", "human"}:
+    dependent = bool(_FOLLOWUP_RE.search(clean) or re.search(
+        r"(?iu)\b(?:aynı|önceki|bir önceki|ondan bir önceki|o anlattığın|"
+        r"bu konu|bu sorular|sadece bu|baştan|yeniden|farklı soru|"
+        r"normal anlat|soru sayısı|formatta|amacıyla|amaçla|boşver|bırak)\b", clean
+    ))
+    if not dependent:
+        return clean
+
+    # Explicit ambiguity/missing antecedent must remain unresolved.
+    user_contents = [
+        re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
+        for item in window if str(item.get("role") or "").casefold() in {"user","human"}
+    ]
+    if re.search(r"(?iu)^\s*(?:bunu|onu)\b", clean) and not user_contents:
+        return clean
+
+    candidates = []
+    for idx,item in enumerate(window):
+        if str(item.get("role") or "").casefold() not in {"user","human"}:
             continue
-        content = re.sub(r"\s+", " ", item.get("content") or "").strip()
+        content = re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
         if not content:
             continue
-        # A prior dependent USER turn ("peki tedavisi?") does not carry
-        # trustworthy standalone subject identity; keep scanning to the last
-        # self-contained user turn instead of inheriting its lexical residue.
-        if _FOLLOWUP_RE.search(content):
-            prior_current = build_dental_requirement_plan(content[:700])
-            if not prior_current.subject_node_ids:
-                continue
-        prior = build_dental_requirement_plan(content[:700])
-        if not prior.subject_terms:
-            continue
-        # Inherit subject + its explicit modifiers only. Prior intent/facet is
-        # intentionally discarded; the current turn defines what is requested.
-        # Current-turn qualifiers override incompatible inherited axes:
-        # "alt sağ ... -> peki üstte?" must not become "alt sağ üst ...".
-        current_qualifiers = set(query_qualifiers(clean))
-        inherited_qualifiers = list(prior.qualifiers)
-        qualifier_axes = (
-            {"üst", "alt", "maksiller", "mandibular"},
-            {"sağ", "sol"},
-            {"anterior", "posterior"},
-            {"süt", "daimi"},
-            {"akut", "kronik"},
-            {"reversible", "irreversible"},
-            {"semptomatik", "asemptomatik"},
-            {"lokalize", "generalize"},
-            {"çocuk", "erişkin"},
-        )
-        blocked: set[str] = set()
-        for axis in qualifier_axes:
-            if current_qualifiers.intersection(axis):
-                blocked.update(axis)
-        inherited_qualifiers = [q for q in inherited_qualifiers if q not in blocked]
-        inherited = " ".join(dict.fromkeys((*inherited_qualifiers, *prior.subject_terms))).strip()
-        if inherited:
-            return f"{inherited} — {clean}"
-    return clean
+        plan = build_dental_requirement_plan(content[:700])
+        if plan.subject_terms:
+            candidates.append((idx,content,plan))
+
+    if not candidates:
+        return clean
+
+    # Relative history references select a prior explicit USER subject.
+    pick = -1
+    if re.search(r"(?iu)ondan bir önceki", clean):
+        pick = -2
+    elif re.search(r"(?iu)bir önceki", clean) and len(candidates) >= 2:
+        pick = -2
+    try:
+        _, prior_content, prior = candidates[pick]
+    except IndexError:
+        return clean
+
+    # "X ve Y ... bunu" is intentionally ambiguous when both subjects are
+    # explicit in the same antecedent.
+    if re.search(r"(?iu)^\s*(?:bunu|onu)\b", clean) and prior.subject_count > 1:
+        return clean
+
+    qualifier_axes = (
+        {"üst","alt","maksiller","mandibular"}, {"sağ","sol"},
+        {"anterior","posterior"}, {"süt","daimi"}, {"akut","kronik"},
+        {"reversible","irreversible"}, {"semptomatik","asemptomatik"},
+        {"lokalize","generalize"}, {"çocuk","erişkin"},
+    )
+    inherited_q = list(prior.qualifiers)
+    blocked=set()
+    for axis in qualifier_axes:
+        if current_q.intersection(axis):
+            blocked.update(axis)
+    inherited_q=[q for q in inherited_q if q not in blocked]
+
+    # Current-turn removal/correction semantics clear stale modifiers.
+    if re.search(r"(?iu)\b(?:boşver|genel anlat|değil)\b", clean):
+        if "çocuk" in clean.casefold() and "değil" in clean.casefold():
+            inherited_q=[q for q in inherited_q if q!="çocuk"]
+        elif re.search(r"(?iu)yaş grubunu boşver",clean):
+            inherited_q=[q for q in inherited_q if q not in {"çocuk","erişkin"}]
+
+    subject = " ".join(dict.fromkeys((*inherited_q,*prior.subject_terms))).strip()
+    if not subject:
+        return clean
+
+    # Preserve explicit state dimensions from the current turn.  For dependent
+    # regeneration/inheritance, recover only compact USER-authored state.
+    extras=[]
+    history_text=" ".join(user_contents[-4:])
+    if re.search(r"(?iu)\b(?:aynı sayıda|farklı soru|baştan|yeniden)\b",clean):
+        counts=re.findall(r"(?iu)\b(\d{1,3})\s*(?:soru|test)\b",history_text)
+        if counts and not re.search(r"\b\d{1,3}\b",clean):
+            extras.append(counts[-1]+" soru")
+    if re.search(r"(?iu)\b(?:aynı formatta)\b",clean) and re.search(r"(?iu)\btablo\b",history_text):
+        extras.append("tablo")
+    if re.search(r"(?iu)\b(?:aynı amaçla|aynı amacı)\b",clean) and re.search(r"(?iu)\bsınav\b",history_text):
+        extras.append("sınav için")
+    if re.search(r"(?iu)\b(?:aynı şekilde)\b",clean) and re.search(r"(?iu)\b(?:soru|test)\b",history_text):
+        extras.append("soru hazırla")
+
+    prefix=" ".join(dict.fromkeys([subject,*extras])).strip()
+    return f"{prefix} — {clean}" if prefix else clean
 
 
 def _extract_single_page_pdf(*, reference: str, page_number: int) -> bytes:
