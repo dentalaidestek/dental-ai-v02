@@ -163,8 +163,10 @@ def build(i:int,seed=20261004)->Case:
  elif reference=="assistant_prose_forbidden_subject":
   expected["assistant_prose_forbidden_subject"]=True
 
- # State mutations must not destroy deliberately unresolved reference cases.
- if expected.get("should_abstain"):
+ # State axes may not overwrite the query that defines a structured assistant
+ # reference. Otherwise gold can demand information no longer present anywhere.
+ structured_reference = expected.get("reference")=="assistant_item_13"
+ if expected.get("should_abstain") or structured_reference:
   pass
  elif state=="replace_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
@@ -256,6 +258,7 @@ def build(i:int,seed=20261004)->Case:
   bad += ["implant","ameloblastoma"]
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
+ pretrim_history=list(history)
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
  desired_history=min(8,max(1,target_turns-1))
  if len(history)<desired_history:
@@ -265,6 +268,17 @@ def build(i:int,seed=20261004)->Case:
   history=(filler+history)[-desired_history:]
  else:
   history=history[-desired_history:]
+ # A resolvable case must retain evidence for its required subject. If
+ # bounded trimming removed the semantic anchor, replace only filler/oldest
+ # context with the latest pre-trim message that actually contains the subject.
+ if must and not expected.get("should_abstain"):
+  visible=(" ".join(x[1] for x in history)+" "+q).casefold()
+  missing_anchor=[term for term in must if term.casefold() not in visible]
+  if missing_anchor:
+   anchor=next((x for x in reversed(pretrim_history)
+                if all(term.casefold() in x[1].casefold() for term in missing_anchor)),None)
+   if anchor:
+    history=(history+[anchor])[-desired_history:]
  # Re-assert required distractor evidence after bounded-history trimming.
  if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
   history=(history+[required_tail[distractor]])[-desired_history:]
