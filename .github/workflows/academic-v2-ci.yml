@@ -43,12 +43,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
-# Push and pull_request events for the same commit may overlap. Do not let one
-# cancel the other while the deterministic suite is still running.
+# Superseded runs of the same event/branch must not repeat expensive suites.
 concurrency:
   group: academic-v2-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   static-safety:
@@ -59,15 +59,61 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install production web dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-web.lock
+      - name: Reuse verified main suite for workflow-only changes
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          base = "https://api.github.com/repos/" + os.environ["GITHUB_REPOSITORY"]
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"}
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(base + path, headers=headers), timeout=30) as response:
+                  return json.load(response)
+          verified = None
+          try:
+              branch = urllib.parse.quote(os.environ["TARGET_BRANCH"], safe="")
+              runs = get("/actions/workflows/academic-v2-ci.yml/runs?branch=" + branch + "&per_page=100")["workflow_runs"]
+              for run in runs:
+                  if run["head_sha"] == os.environ["TARGET_SHA"] or run["status"] != "completed":
+                      continue
+                  comparison = get("/compare/" + run["head_sha"] + "..." + os.environ["TARGET_SHA"])
+                  files = comparison.get("files", [])
+                  if comparison["status"] not in {"ahead", "identical"} or len(files) >= 300:
+                      continue
+                  if "files" not in comparison or any(
+                      not f["filename"].startswith(".github/workflows/")
+                      or not f.get("previous_filename", f["filename"]).startswith(".github/workflows/")
+                      for f in files
+                  ):
+                      continue
+                  jobs = get("/actions/runs/" + str(run["id"]) + "/jobs?filter=latest&per_page=100")["jobs"]
+                  required = {"Compile Academic V2 modules", "Run Academic V2 invariant and function tests"}
+                  if any(required <= {s["name"] for s in j["steps"] if s["conclusion"] == "success"} for j in jobs):
+                      verified = run["id"]
+                      break
+          except Exception as exc:
+              print("No reusable verification; run the full suite:", type(exc).__name__)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("reuse=" + ("true" if verified else "false") + "\n")
+          print("Verified unchanged application/tests using run", verified if verified else "none")
+          PY
       - name: Compile Academic V2 modules
+        if: steps.verified.outputs.reuse != 'true'
         run: |
           python -m py_compile app/study_ai_v2.py app/academic_retrieval_plan.py app/academic_retrieval_adapter.py app/academic_query_decomposer.py scripts/generate_academic_retrieval_training.py app/study_retrieval_v2.py app/academic_coverage.py app/academic_generation.py app/academic_generation_jobs.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_knowledge_relations.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/dental_specialty_concepts_extended.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
       - name: Run Academic V2 invariant and function tests
+        if: steps.verified.outputs.reuse != 'true'
         run: python tests/academic_v2/run_tests.py
       - name: Run 89K past-question note holdout standalone
         run: python -c "from tests.academic_v2.test_past_question_note_holdout_89k import test_unseen_89k_past_question_note_workflow_holdout as t; t()"
