@@ -377,52 +377,43 @@ def _query_qualifiers(query: str) -> tuple[str, ...]:
 
 
 def _subject_qualifier_bindings(query: str, subject_nodes) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    """Bind nearby explicit modifiers to explicit subjects without an NLP model."""
-    text = query or ""
-    mentions: list[tuple[int, int, str]] = []
-    for node in subject_nodes:
-        terms = sorted((node.label, *node.aliases), key=len, reverse=True)
-        for term in terms:
-            clean = " ".join((term or "").split())
-            if not clean:
-                continue
-            pattern = re.escape(clean).replace(r"\ ", r"\s+")
-            match = re.search(r"(?<!\w)" + pattern + r"(?!\w)", text, re.I)
-            if match:
-                mentions.append((match.start(), match.end(), node.id))
-                break
+    """Bind modifiers only to canonical explicit subject spans."""
+    from app.dental_knowledge_graph import explicit_node_mentions
+    subject_ids = {node.id for node in subject_nodes}
+    mentions = [
+        (start, end, node.id)
+        for start, end, node in explicit_node_mentions(query)
+        if node.id in subject_ids
+    ]
     if not mentions:
         return ()
     bound: dict[str, list[str]] = {}
     for qualifier, pattern in _QUALIFIER_PATTERNS:
-        qmatch = pattern.search(text)
-        if not qmatch:
-            continue
-        candidates: list[tuple[int, str]] = []
-        for start, end, node_id in mentions:
-            if qmatch.end() <= start:
-                distance = start - qmatch.end()
-                between = text[qmatch.end():start]
-            elif end <= qmatch.start():
-                distance = qmatch.start() - end
-                between = text[end:qmatch.start()]
-            else:
-                distance = 0
-                between = ""
-            if distance > 32 or re.search(r"[;.!?]", between):
+        for qmatch in pattern.finditer(query or ""):
+            candidates: list[tuple[int, str]] = []
+            for start, end, node_id in mentions:
+                if qmatch.end() <= start:
+                    distance = start - qmatch.end()
+                    between = (query or "")[qmatch.end():start]
+                elif end <= qmatch.start():
+                    distance = qmatch.start() - end
+                    between = (query or "")[end:qmatch.start()]
+                else:
+                    distance = 0
+                    between = ""
+                if distance > 32 or re.search(r"[;.!?]", between):
+                    continue
+                candidates.append((distance, node_id))
+            if not candidates:
                 continue
-            candidates.append((distance, node_id))
-        candidates.sort()
-        if not candidates:
-            continue
-        best_distance = candidates[0][0]
-        best_ids = {node_id for distance, node_id in candidates if distance == best_distance}
-        if len(best_ids) != 1:
-            continue
-        node_id = next(iter(best_ids))
-        bound.setdefault(node_id, []).append(qualifier)
+            candidates.sort()
+            best_distance = candidates[0][0]
+            best_ids = {node_id for distance, node_id in candidates if distance == best_distance}
+            if len(best_ids) != 1:
+                continue
+            node_id = next(iter(best_ids))
+            bound.setdefault(node_id, []).append(qualifier)
     return tuple((node_id, tuple(dict.fromkeys(values))) for node_id, values in bound.items())
-
 
 def _comparison_terms(query: str, intents: tuple[DentalIntent, ...]) -> tuple[str, ...]:
     if not any(intent.name == "comparison" for intent in intents):
