@@ -53,7 +53,10 @@ concurrency:
 jobs:
   static-safety:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The full invariant/35K/50K suite takes about seven minutes; the gated
+    # standalone 89K holdout also builds its 85K structural denylist. Allow
+    # both CPU-only stages to finish without changing any test/score gate.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
