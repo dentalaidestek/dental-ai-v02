@@ -74,6 +74,11 @@ class RetrievalNeed:
             self.target_subject_ids or self.target_subject_terms
         ):
             raise ValueError(f"{self.need_id}: relation requires a target subject")
+        if self.relation:
+            source_ids = set(self.subject_ids)
+            target_ids = set(self.target_subject_ids)
+            if source_ids and target_ids and source_ids.intersection(target_ids):
+                raise ValueError(f"{self.need_id}: relation endpoints must be distinct")
         if self.need_id in self.depends_on:
             raise ValueError(f"{self.need_id}: a need cannot depend on itself")
 
@@ -155,6 +160,13 @@ class AcademicRetrievalPlan:
                 raise ValueError(
                     "comparison references unknown needs: " + ", ".join(sorted(missing))
                 )
+            side_needs = [self.needs[ids.index(need_id)] for need_id in comparison.side_need_ids]
+            subject_keys = {
+                (need.subject_ids, need.subject_terms)
+                for need in side_needs
+            }
+            if len(subject_keys) < 2:
+                raise ValueError("comparison requires at least two distinct subjects")
 
     def _validate_dependency_cycles(self) -> None:
         dependencies = {need.need_id: set(need.depends_on) for need in self.needs}
