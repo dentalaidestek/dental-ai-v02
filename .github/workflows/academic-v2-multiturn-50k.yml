@@ -26,14 +26,16 @@ jobs:
       - name: Smoke import and 10 continuity cases
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE" python - <<'PY'
-          from tests.academic_v2.multiturn_50k_generator import generate
+          from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
           from scripts.benchmark_multiturn_continuity_50k import score
           cases=generate(50000)
           assert len(cases)==50000
           assert len({c.case_id for c in cases})==50000
+          quality=validate_cases(cases)
+          assert quality["semantic_unique_ratio"] >= 0.90
           for case in cases[:100]:
               score(case)
-          print("SMOKE_OK", len(cases), "UNIQUE", len({c.case_id for c in cases}))
+          print("SMOKE_OK", len(cases), "UNIQUE", len({c.case_id for c in cases}), "SEMANTIC", quality["semantic_unique_ratio"])
           PY
       - name: Run only 50K multi-turn continuity benchmark
         run: |
@@ -41,8 +43,12 @@ jobs:
       - name: Print failure summary
         if: always()
         run: |
-          test -f /tmp/multiturn_50k_report.json && python - <<'PY'
+          if [ -f /tmp/multiturn_50k_report.json ]; then
+            python - <<'PY'
           import json
           p=json.load(open('/tmp/multiturn_50k_report.json'))
           print(json.dumps({k:p.get(k) for k in ('count','quality','passed','accuracy','failure_reasons','elapsed_s','cases_per_s')},ensure_ascii=False,indent=2))
           PY
+          else
+            echo "50K report not produced"
+          fi
