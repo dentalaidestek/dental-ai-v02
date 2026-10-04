@@ -74,13 +74,13 @@ def test_treatment_named_subject_does_not_become_treatment_request():
     assert all(facet != "treatment" for _, facet in pairs)
 
 
-def test_explicit_anatomical_relation_keeps_both_query_endpoints():
+def test_explicit_anatomical_relation_does_not_invent_missing_graph_edge():
     plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
-    relation_needs = [n for n in plan.needs if n.relation]
-    assert relation_needs
-    assert all(n.target_subject_ids for n in relation_needs)
+    # Both endpoints are explicit, but the curated graph has no direct edge
+    # between them. The planner must not fabricate a transitive relation via IAN.
+    assert not [n for n in plan.needs if n.relation]
     explicit = {sid for n in plan.needs for sid in n.subject_ids}
-    assert all(n.target_subject_ids[0] in explicit for n in relation_needs)
+    assert {"mandibular_canal", "third_molar"}.issubset(explicit)
 
 
 def test_graph_does_not_invent_unasked_relation_target():
