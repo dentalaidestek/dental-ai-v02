@@ -80,7 +80,8 @@ def build(i:int,seed=20261004)->Case:
   history += [("user","10 soru hazırla"),("assistant",_list(t1[0],10))]
   q="bunlar olmadı baştan 20 farklı soru hazırla"; expected.update(task="generate_questions",count=20)
  elif interaction=="correction":
-  q="yok akut değil kronik olanı"; expected["correction"]="replace"
+  history=[("user",f"akut {t1[0]} anlat."),("assistant",f"akut {t1[0]} açıklaması.")]
+  q="yok akut değil kronik olanı"; must=list(t1[1])+["kronik"]; bad=["akut"]; expected.update(topic=t1[0],correction="replace")
  elif interaction=="negation_override":
   history += [("user","10 test sorusu hazırla"),("assistant",_list(t1[0],10))]
   q="test istemiyorum normal anlat"; expected["task"]="explain"
