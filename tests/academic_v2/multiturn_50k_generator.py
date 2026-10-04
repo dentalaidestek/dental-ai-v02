@@ -239,6 +239,17 @@ def build(i:int,seed=20261004)->Case:
  elif distractor=="old_goal": history += [("user","önceden ezber için istemiştim"),("assistant","not")]
  elif distractor=="old_qualifier": history += [("user","önceden sadece çocuk demiştim"),("assistant","not")]
  elif distractor=="quoted_old_question": history += [("user",f'Eski sorum şuydu: "{t2[0]} nedir?"'),("assistant","alıntıyı gördüm")]; bad += list(t2[1])
+ # Keep the selected distractor observable inside the resolver's bounded history.
+ required_tail={
+  "user_side_comment":("user","bu arada yarın sınav var"),
+  "irrelevant_turn":("user","tamam sağ ol"),
+  "old_count":("user","önceden 40 soru demiştim"),
+  "old_format":("user","önceden tablo istemiştim"),
+  "old_goal":("user","önceden ezber için istemiştim"),
+  "old_qualifier":("user","önceden sadece çocuk demiştim"),
+ }
+ if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
+  history.append(required_tail[distractor])
  # Apply assistant-prose distractor after state/distractor mutations so it cannot be overwritten.
  if expected.get("assistant_prose_forbidden_subject") and history:
   history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
