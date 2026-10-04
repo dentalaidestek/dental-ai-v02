@@ -296,9 +296,15 @@ def _conversation_state(
             previous = window[idx - 1]
             previous_role = str(previous.get("role") or "").casefold()
             previous_text = str(previous.get("content") or "")
-            if previous_role in {"user", "human"} and re.search(
-                r"(?iu)\b\d{1,2}\.?\s*soru(?:nun)?\b", previous_text
-            ):
+            explicit_reference_answer = bool(
+                previous_role in {"user", "human"} and re.search(
+                    r"(?iu)\b\d{1,2}\.?\s*soru(?:nun)?\b", previous_text
+                )
+            )
+            embedded_reference_marker = bool(
+                re.search(r"(?iu)\bklinik\s+soru\s+\d{1,2}\b", text_value)
+            )
+            if explicit_reference_answer or embedded_reference_marker:
                 subject = _conversation_subject(
                     text_value, source="assistant_explicit_reference", history_index=idx
                 )
