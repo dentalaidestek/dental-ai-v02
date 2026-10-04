@@ -96,6 +96,7 @@ def test_comparison_and_groups_cannot_reference_missing_needs():
     need = RetrievalNeed("a", subject_terms=("A",), facet="comparison")
     _raises("comparison references unknown", lambda: AcademicRetrievalPlan(
         original_query="A ile B'yi karşılaştır.", needs=(need,),
+        answer_operation="compare",
         comparisons=(ComparisonRequirement(("a", "b")),),
     ))
     _raises("need group references unknown", lambda: AcademicRetrievalPlan(
@@ -125,6 +126,7 @@ def test_relation_rejects_self_endpoint_when_ids_are_known():
 def test_comparison_requires_distinct_subjects_not_just_two_needs():
     _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
         original_query="A'nın tanı ve tedavisini karşılaştır.",
+        answer_operation="compare",
         needs=(
             RetrievalNeed("a-diagnosis", subject_ids=("a",), subject_terms=("A",), facet="diagnosis"),
             RetrievalNeed("a-treatment", subject_ids=("a",), subject_terms=("A",), facet="treatment"),
@@ -136,6 +138,7 @@ def test_comparison_requires_distinct_subjects_not_just_two_needs():
 def test_comparison_cannot_fake_distinct_subjects_with_alias_labels():
     _raises("distinct subjects", lambda: AcademicRetrievalPlan(
         original_query="aynı kavram",
+        answer_operation="compare",
         needs=(
             RetrievalNeed("a1", subject_ids=("pulpitis",), subject_terms=("pulpitis",), facet="diagnosis"),
             RetrievalNeed("a2", subject_ids=("pulpitis",), subject_terms=("pulpa iltihabı",), facet="treatment"),
