@@ -155,11 +155,17 @@ def build(i:int,seed=20261004)->Case:
  elif distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
  elif distractor=="irrelevant_turn": history += [("user","tamam sağ ol"),("assistant","rica ederim")]
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
- # Distance and turn length are observable conversation properties, not labels.
+ # Distance is the number of prior messages separating the anchor user turn
+ # from the current query, capped by the resolver's eight-message contract.
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
- while len(history)<max(1,target_turns-1):
-  k=len(history); history += [("user",f"ara not {k}"),("assistant","tamam")]
- history=history[-min(8,max(1,target_turns-1)):]
+ desired_history=min(8,max(1,target_turns-1))
+ if len(history)<desired_history:
+  filler=[]
+  while len(filler)+len(history)<desired_history:
+   k=len(filler); filler.append(("assistant",f"ara açıklama {k}"))
+  history=(filler+history)[-desired_history:]
+ else:
+  history=history[-desired_history:]
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
