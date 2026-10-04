@@ -261,6 +261,8 @@ def build(i:int,seed=20261004)->Case:
  pretrim_history=list(history)
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
  desired_history=min(8,max(1,target_turns-1))
+ if distractor!="none" and must and not expected.get("should_abstain"):
+  desired_history=max(2,desired_history)
  if len(history)<desired_history:
   filler=[]
   while len(filler)+len(history)<desired_history:
@@ -268,6 +270,9 @@ def build(i:int,seed=20261004)->Case:
   history=(filler+history)[-desired_history:]
  else:
   history=history[-desired_history:]
+ # Re-assert required distractor evidence after bounded-history trimming.
+ if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
+  history=(history+[required_tail[distractor]])[-desired_history:]
  # A resolvable case must retain evidence for its required subject. If
  # bounded trimming removed the semantic anchor, replace only filler/oldest
  # context with the latest pre-trim message that actually contains the subject.
@@ -279,9 +284,6 @@ def build(i:int,seed=20261004)->Case:
                 if all(term.casefold() in x[1].casefold() for term in missing_anchor)),None)
    if anchor:
     history=(history+[anchor])[-desired_history:]
- # Re-assert required distractor evidence after bounded-history trimming.
- if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
-  history=(history+[required_tail[distractor]])[-desired_history:]
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
