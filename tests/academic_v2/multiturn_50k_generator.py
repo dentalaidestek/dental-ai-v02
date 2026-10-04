@@ -107,7 +107,7 @@ def build(i:int,seed=20261004)->Case:
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance}
- raw=f"{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
+ raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
  return Case(cid,axes,tuple(history[-8:]),q,tuple(must),tuple(bad),expected)
 
 def generate(n=50000,seed=20261004):
