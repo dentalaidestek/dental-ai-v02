@@ -5,7 +5,6 @@ from dataclasses import dataclass
 import re
 
 from app.academic_retrieval_plan import AcademicRetrievalPlan, ComparisonRequirement, RetrievalNeed
-from app.dental_knowledge_graph import matched_nodes
 from app.dental_query_intent import build_dental_requirement_plan, classify_dental_intents, query_qualifiers
 
 _CLAUSE_BOUNDARY_RE = re.compile(
@@ -23,29 +22,17 @@ _NEGATIVE_RE = re.compile(
 class _Mention:
     node_id: str
     label: str
-    start: int
-    end: int
+    qualifiers: tuple[str, ...] = ()
 
 
 def _mentions(text: str) -> tuple[_Mention, ...]:
-    output: list[_Mention] = []
-    occupied: list[tuple[int, int]] = []
-    for node in matched_nodes(text):
-        for term in sorted((node.label, *node.aliases), key=len, reverse=True):
-            clean = " ".join((term or "").split())
-            if not clean:
-                continue
-            pattern = re.escape(clean).replace(r"\ ", r"\s+")
-            match = re.search(r"(?<!\w)" + pattern + r"(?!\w)", text, re.I)
-            if not match:
-                continue
-            span = (match.start(), match.end())
-            if any(span[0] < end and start < span[1] for start, end in occupied):
-                continue
-            occupied.append(span)
-            output.append(_Mention(node.id, node.label, *span))
-            break
-    return tuple(sorted(output, key=lambda item: item.start))
+    """Use the canonical requirement parser as the single entity truth."""
+    plan = build_dental_requirement_plan(text)
+    qualifier_map = {node_id: qualifiers for node_id, qualifiers in plan.subject_qualifiers}
+    return tuple(
+        _Mention(node_id, label, qualifier_map.get(node_id, ()))
+        for node_id, label in zip(plan.subject_node_ids, plan.subject_terms)
+    )
 
 
 def _explicit_facets(text: str) -> tuple[str, ...]:
@@ -64,7 +51,7 @@ def _append_need(
     facet: str,
     context: str,
 ) -> bool:
-    qualifiers = query_qualifiers(context)
+    qualifiers = subject.qualifiers or query_qualifiers(context)
     key = (subject.node_id, facet, qualifiers, bool(_NEGATIVE_RE.search(context)))
     if key in seen:
         return False
@@ -93,13 +80,25 @@ def _bind_clause(
     # One explicit subject owns all requested facets in the same clause,
     # including coordinated tails: "pulpitisin tanısı, tedavisi ve komplikasyonu".
     if len(mentions) == 1 and facets:
-        return any(
-            _append_need(
+        produced = False
+        for facet in facets:
+            produced = _append_need(
                 needs, seen, need_id=f"c{clause_index}-{facet}",
                 subject=mentions[0], facet=facet, context=clause,
-            )
-            for facet in facets
-        )
+            ) or produced
+        return produced
+
+    # Symmetric comparison is handled before piece binding so a facet attached
+    # to the final side cannot make the first side disappear.
+    if len(mentions) > 1 and _COMPARISON_RE.search(clause) and len(facets) == 1:
+        produced = False
+        facet = facets[0]
+        for side_index, subject in enumerate(mentions, start=1):
+            produced = _append_need(
+                needs, seen, need_id=f"c{clause_index}-side{side_index}-{facet}",
+                subject=subject, facet=facet, context=clause,
+            ) or produced
+        return produced
 
     # Multiple subjects: inspect coordinated pieces.  A piece that explicitly
     # contains both a subject and a facet is safe. Facet-only pieces are not
@@ -120,15 +119,6 @@ def _bind_clause(
     if produced:
         return True
 
-    # Symmetric comparison: one explicit dimension applies to every explicit
-    # side. This is the only safe automatic cross-subject propagation.
-    if len(mentions) > 1 and _COMPARISON_RE.search(clause) and len(facets) == 1:
-        facet = facets[0]
-        for side_index, subject in enumerate(mentions, start=1):
-            produced = _append_need(
-                needs, seen, need_id=f"c{clause_index}-side{side_index}-{facet}",
-                subject=subject, facet=facet, context=clause,
-            ) or produced
     return produced
 
 
@@ -162,13 +152,6 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
                 facet="general",
                 qualifiers=bound,
             ))
-        if not needs and legacy.subject_terms:
-            needs.append(RetrievalNeed(
-                need_id="unresolved-lexical",
-                subject_terms=(legacy.subject_terms[0],),
-                facet="general",
-                qualifiers=legacy.qualifiers,
-            ))
         if not needs:
             needs.append(RetrievalNeed(
                 need_id="unresolved-subject",
@@ -180,24 +163,30 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
     # Graph relations are retained only when both endpoints are explicit in
     # the user's sentence. Graph knowledge guides search; it is never promoted
     # into a requested fact by this planner.
-    explicit_ids = {sid for need in needs for sid in need.subject_ids}
+    explicit_ids = set(legacy.subject_node_ids)
+    labels = dict(zip(legacy.subject_node_ids, legacy.subject_terms))
     relation_needs: list[RetrievalNeed] = []
     for source_id, relation, target_id in legacy.explicit_relations:
         if source_id not in explicit_ids or target_id not in explicit_ids:
             continue
         source_need = next((n for n in needs if source_id in n.subject_ids), None)
         target_need = next((n for n in needs if target_id in n.subject_ids), None)
-        if source_need is None or target_need is None:
-            continue
         relation_needs.append(RetrievalNeed(
             need_id=f"relation-{source_id}-{relation}-{target_id}",
             subject_ids=(source_id,),
-            subject_terms=source_need.subject_terms,
+            subject_terms=source_need.subject_terms if source_need else (labels[source_id],),
             facet="anatomy" if relation == "anatomical_relation" else "relation",
             relation=relation,
             target_subject_ids=(target_id,),
-            target_subject_terms=target_need.subject_terms,
+            target_subject_terms=target_need.subject_terms if target_need else (labels[target_id],),
         ))
+        if target_need is None:
+            relation_needs.append(RetrievalNeed(
+                need_id=f"relation-endpoint-{target_id}",
+                subject_ids=(target_id,),
+                subject_terms=(labels[target_id],),
+                facet="general",
+            ))
     needs.extend(relation_needs)
 
     comparisons: tuple[ComparisonRequirement, ...] = ()
@@ -215,5 +204,5 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
         requires_visual_source=legacy.requires_visual_source,
         unresolved_references=tuple(dict.fromkeys(unresolved)),
         fail_closed=True,
-        metadata=(("origin", "sentence_decomposer_v1"),),
+        metadata=(("origin", "sentence_decomposer_v2"),),
     )
