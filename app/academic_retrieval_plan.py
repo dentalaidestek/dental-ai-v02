@@ -162,6 +162,14 @@ class AcademicRetrievalPlan:
                 raise ValueError(
                     "need group references unknown needs: " + ", ".join(sorted(missing))
                 )
+        if len(self.excluded_facets) != len(set(self.excluded_facets)):
+            raise ValueError("excluded facets must be unique")
+        if len(self.excluded_subject_terms) != len(set(term.casefold().strip() for term in self.excluded_subject_terms)):
+            raise ValueError("excluded subject terms must be unique")
+        if any(not key.strip() for key, _ in self.output_constraints):
+            raise ValueError("output constraint keys must not be empty")
+        if len(self.output_constraints) != len({key.casefold().strip() for key, _ in self.output_constraints}):
+            raise ValueError("output constraint keys must be unique")
         for comparison in self.comparisons:
             missing = set(comparison.side_need_ids) - known
             if missing:
