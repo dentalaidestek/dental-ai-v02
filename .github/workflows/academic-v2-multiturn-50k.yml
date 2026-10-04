@@ -43,6 +43,11 @@ jobs:
           for case in cases[:100]:
               score(case)
           print("SMOKE_OK", len(cases), "UNIQUE", len({c.case_id for c in cases}), "SEMANTIC", quality["semantic_unique_ratio"])
+          diag=[case for case in cases if case.axes.get("reference")=="multi_hop"][:20]
+          print("MULTIHOP_DIAG")
+          for case in diag:
+              ok,reason,detail,out=score(case)
+              print(json.dumps({"id":case.case_id,"state":case.axes.get("state"),"language":case.axes.get("language"),"distractor":case.axes.get("distractor"),"query":case.query,"history":case.history,"must":case.must,"expected":case.expected,"ok":ok,"reason":reason,"detail":detail,"resolved":out},ensure_ascii=False))
           PY
       - name: Run only 50K multi-turn continuity benchmark
         run: |
