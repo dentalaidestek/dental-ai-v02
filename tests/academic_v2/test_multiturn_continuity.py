@@ -1,9 +1,8 @@
 """Academic V2 deterministic multi-turn continuity benchmark."""
-from types import SimpleNamespace as NS
 from app.study_retrieval_v2 import resolve_followup_query
 
-def u(x): return NS(role="user", content=x)
-def a(x): return NS(role="assistant", content=x)
+def u(x): return {"role":"user", "content":x}
+def a(x): return {"role":"assistant", "content":x}
 def low(x): return x.replace("İ","i").replace("I","ı").lower()
 
 FLOR="Çocuklarda flor kullanımını anlat."
