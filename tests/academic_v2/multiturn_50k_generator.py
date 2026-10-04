@@ -114,7 +114,7 @@ def build(i:int,seed=20261004)->Case:
   q=f"{t1[0]} için "+q
  elif reference=="missing_antecedent":
   history=[("assistant","Genel bir açıklama yaptım.")]
-  q="bunu biraz daha anlat"; must=[]; bad=[]; expected["should_abstain"]=True
+  q="bunu biraz daha anlat"; must=[]; bad=[]; expected.update(should_abstain=True,forbidden_topics=tuple(term for _,terms in (t1,t2) for term in terms))
  elif reference=="ambiguous_antecedent":
   history=[("user",f"{t1[0]} ve {t2[0]} anlat."),("assistant","İki konuyu da açıkladım.")]
   q="bunu biraz daha anlat"; must=[]; bad=[]; expected["should_abstain"]=True
