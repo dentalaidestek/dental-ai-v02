@@ -161,8 +161,7 @@ def build(i:int,seed=20261004)->Case:
   history=[("user",f"{t1[0]} konusunda 20 soru hazırla"),("assistant",_list(t1[0])),("user","13. sorunun konusunu anlat"),("assistant",f"{t1[0]} klinik soru 13 açıklaması")]
   q="sadece bu konudan 10 soru hazırla"; must=list(t1[1]); expected.update(reference="assistant_item_13",task="generate_questions",count=10)
  elif reference=="assistant_prose_forbidden_subject":
-  history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
-  bad += ["implant","ameloblastoma"]
+  expected["assistant_prose_forbidden_subject"]=True
 
  # State mutations must not destroy deliberately unresolved reference cases.
  if expected.get("should_abstain"):
@@ -240,6 +239,10 @@ def build(i:int,seed=20261004)->Case:
  elif distractor=="old_goal": history += [("user","önceden ezber için istemiştim"),("assistant","not")]
  elif distractor=="old_qualifier": history += [("user","önceden sadece çocuk demiştim"),("assistant","not")]
  elif distractor=="quoted_old_question": history += [("user",f'Eski sorum şuydu: "{t2[0]} nedir?"'),("assistant","alıntıyı gördüm")]; bad += list(t2[1])
+ # Apply assistant-prose distractor after state/distractor mutations so it cannot be overwritten.
+ if expected.get("assistant_prose_forbidden_subject") and history:
+  history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
+  bad += ["implant","ameloblastoma"]
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
