@@ -13,7 +13,7 @@ _FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
 # targets. Productive nominal inflections preserve the operation's argument.
 _ACTION_ROOTS = frozenset(('acikla anlat ogret ozetle toparla birlestir yogunlastir sikistir '
     'uret hazirla olustur yaz cikar listele ayir grupla goster belirt bul belirle '
-    'coz eslestir bagla degerlendir kontrol incele kur cevir yap sec ayikla').split())
+    'coz eslestir bagla degerlendir kontrol incele kur cevir yap sec ayikla dogrula donustur').split())
 _REQUEST_SUFFIXES = ('', 'yin','in','sana','sene','mani','manizi','man','mam','r','ir',
     'yabilir','abilir','mek','mak','ip','yip')
 _SOURCE_ROOTS = ('cikmis','gecmis')
@@ -24,16 +24,19 @@ _NOUN_ROOTS = ('secenek','sik','oncul','karsilik','konu','baslik','soru','sinav'
 _NOUN_SUFFIXES = ('','lar','lari','larini','larinin','larin','larda','lardan','larla',
     'lara','lere','ler','leri','lerini','lerine','lerinin','lerin','lerde','lerden','lerle','le','la',
     'i','ini','inin','u','unu','unun','a','e','ya','ye','yi','yu','na','ne','nu','ni',
-    'nin','nun','ta','te','tan','ten','da','de','dan','den','si','sini','sinin','ki')
+    'nin','nun','ta','te','tan','ten','da','de','dan','den','si','sini','sinin','su','sunu','suna','sunun','ki')
 _DOMAINS = {
     'relationship': frozenset(('dayandigi','bagli','yoklanan','gecen','hareketle')),
     'action': frozenset(b+s for b in _ACTION_ROOTS for s in _REQUEST_SUFFIXES),
     'source': frozenset(b+s for b in _SOURCE_ROOTS for s in _NOUN_SUFFIXES),
+    'question': frozenset('soru'+s for s in _NOUN_SUFFIXES),
+    'option': frozenset(b+s for b in ('sik','secenek','oncul') for s in _NOUN_SUFFIXES),
     'argument': frozenset(b+s for b in _NOUN_ROOTS for s in _NOUN_SUFFIXES) | frozenset((
         'karsiligi','karsiligini','karsiligina','karsiliklari','siklarini','siklarinin',
         'siklarin','siklarina','siklarindan','mantigini','mantigi','mantiginin',
         'baglantisini','baglantiyi','baglantilari','baglantilarini','dogru','cevabina',
-        'cevabi','cevabin','cevabini','cevabinin','dogrulugunu','anlatir')),
+        'cevabi','cevabin','cevabini','cevabinin','dogrulugunu','anlatir',
+        'basligi','basligini','basligina','basliginin')),
 }
 
 def _one_edit(a: str,b: str) -> bool:
@@ -70,7 +73,22 @@ def operation_text(query: str) -> str:
     chunks=re.findall(r'[a-z]+|[^a-z]+',text)
     positions=[i for i,c in enumerate(chunks) if c.isalpha()]
     words=[chunks[i] for i in positions]
+    # Clause-local prefix/suffix state keeps long requests linear in tokens.
+    action_after=[False]*len(words)
+    evaluation_after=[False]*len(words)
+    requested=False
+    evaluation=False
+    for j in range(len(words)-1,-1,-1):
+        action_after[j]=requested
+        evaluation_after[j]=evaluation
+        requested=requested or words[j].startswith(('anlat','acikla','coz'))
+        evaluation=evaluation or words[j].startswith(('dogru','yanlis','degerlendir','kontrol','dogrula','incele'))
+        if positions[j]>0 and re.search(r'[.!?;:]',chunks[positions[j]-1]):
+            requested=False
+            evaluation=False
+    historical_before=False
     for j,(i,word) in enumerate(zip(positions,words)):
+        if i>0 and re.search(r'[.!?;:]',chunks[i-1]):historical_before=False
         following=words[j+1:j+4]
         if following and following[0].startswith(('konu','baslik','baslig')):
             chunks[i]=_repair(word,'relationship')
@@ -86,8 +104,15 @@ def operation_text(query: str) -> str:
             chunks[i]=source
         # Argument rescue is grammatical: a nearby request or question binds
         # the token. Subject words in a long list are not repaired globally.
-        if any(w.startswith(('kur','degerlendir','kontrol','nerede','nereye','nasil','gibi','dogrulug','yanlis','uret','hazirla','olustur','incele','istiyorum','sorul','yeni')) for w in following) or (j>0 and words[j-1].startswith(('yoklanan','dayandig','gecmis','cikmis'))):
+        if any(w.startswith(('kur','degerlendir','kontrol','nerede','nereye','nasil','gibi','dogrulug','dogru','yanlis','uret','hazirla','olustur','incele','istiyorum','sorul','yeni','ozetle','cikar','goster','bul')) for w in following) or (j>0 and words[j-1].startswith(('yoklanan','dayandig','gecmis','cikmis','ayni'))):
             chunks[i]=_repair(chunks[i],'argument')
+        # The question noun can follow an arbitrarily long modified subject.
+        # Rescue only that noun class, not all intervening subject tokens.
+        if historical_before and action_after[j]:
+            chunks[i]=_repair(chunks[i],'question')
+        if historical_before and evaluation_after[j]:
+            chunks[i]=_repair(chunks[i],'option')
+        if chunks[i].startswith(('gecmis','cikmis')):historical_before=True
     return ''.join(chunks)
 
 @dataclass(frozen=True)
@@ -113,10 +138,16 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     text=re.sub(r'[^.!?;]*?'+negative+r',?', '',text)
     clauses=[c.strip() for c in re.split(r'[.!?;:]\s*',text) if c.strip()]
     broad=bool(re.search(r'\b(?:tum|butun)\s+(?:not\w*|ders\w*|konu\w*|bolum\w*|baslik\w*)\b|\b(?:bastan sona|notun tamami\w*|her seyi|genel tekrar|eksiksiz|kapsamli|detayli)\b|\b(?:notu|notlari|dersi|bolumu)\s+ozetle|\bnotta\s+gecen\s+(?:tum|butun)\b',text))
-    historical=bool(re.search(r'\b(?:cikmis\w*|gecmis\s+(?:sinav\w*|soru\w*)|hoc\w*.{0,24}sor(?:mus|dugu)\w*)\b',text))
+    # A historical modifier can precede a long dental noun phrase. The
+    # question head owns that modifier inside a clause, without a character
+    # window or a list of recognized dental subject names.
+    historical=bool(re.search(r'\bcikmis\w*\b|\bhoc\w*.{0,24}sor(?:mus|dugu)\w*\b',text)) or any(
+        re.search(r'\bgecmis\b.*\b(?:sinav\w*|soru\w*)\b',c) for c in clauses)
     summary=any(_action(c,'ozetle|toparla|birlestir|yogunlastir|sikistir') or bool(re.search(r'\bozet\w*\b',c)) for c in clauses)
+    summary = summary or any(_action(c,'donustur|cevir|sikistir|birlestir') and re.search(
+        r'\b(?:tekrar kag[i]?d\w*|tekrar kagit\w*|ders fis\w*|calisma sayfa\w*)\b',c) for c in clauses)
     generation=any((_action(c,'uret|hazirla|olustur|yaz') and bool(re.search(r'\b(?:soru\w*|test\w*|alistirma\w*|quiz|deneme)\b',c))) or bool(re.search(r'\b(?:kendimi test|calismami sina|mini deneme|quiz)\b',c)) or bool(re.search(r'\byeni\b.*\bsoru\w*\b.*\bistiyorum\b',c)) for c in clauses)
-    similarity=bool(re.search(r'\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:tarz\w*|tip\w*|mantik\w*))\b',text))
+    similarity=bool(re.search(r'\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:tarz\w*|tip\w*|manti[kg]\w*))\b',text))
     explain=any(_action(c,'acikla|anlat|ogret') or bool(re.search(r'\b(?:mantig\w*|mantik|baglanti\w*)\b.{0,48}\bkur\b|\b(?:ders|ogrenciye)\b.{0,16}\banlatir gibi\b',c)) for c in clauses)
     if re.search(r'\b(?:veya|yahut|ya da)\b',text) and sum((summary,generation,explain))>1:
         return StudyOperation(None)
@@ -128,7 +159,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
         for c in clauses:
             no_frequency=re.sub(r'\ben sik\b|\bsik(?: sik| tekrar|ca)\b','',c)
             argument=bool(re.search(r'\b(?:secenek\w*|oncul\w*|sik(?:lar\w*|ki\w*|k\w*)?)\b',no_frequency))
-            judgment=(_action(c,'degerlendir|kontrol|gerekcelendir|incele') or bool(re.search(r'\b(?:dogru|yanlis|dogrulug\w*)\b',c)))
+            judgment=(_action(c,'degerlendir|kontrol|gerekcelendir|incele|dogrula') or bool(re.search(r'\b(?:dogru|yanlis|dogrulug\w*)\b',c)))
             if argument and judgment:option=True
         if option:return StudyOperation('past_option_review',True,False,broad)
         repeated=bool(re.search(r'\b(?:tekrar(?: tekrar| eden|lanan)?|yinelen\w*|surekli|en sik|sikca|sik sik)\b',text))
@@ -136,6 +167,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
         # Match the topic noun's inflection and its historical relationship;
         # a generic summary with incidental exam context remains a summary.
         topic=bool(re.search(r'\b(?:dayandig\w*|bagli oldugu|yoklanan|gecen)\s+(?:konu\w*|basli[kg]\w*)\b|\bhareketle\b.{0,48}\bkonu\w*\b',text))
+        topic = topic or any(re.search(r'\b(?:dayandig\w*|bagli oldugu|yoklanan|gecen)\b.*\b(?:konu\w*|basli[kg]\w*)\b',c) for c in clauses)
         topic = topic or any(re.search(r'\b(?:gecmis|cikmis)\w*\s+soru\w*(?:dan|den)\b',c) and re.search(r'\bkonu\w*\b',c) for c in clauses)
         if topic and (summary or any(_action(c,'cevir|toparla') for c in clauses)):return StudyOperation('past_topic_summary',True,False,True)
         alignment=any(bool(re.search(r'\b(?:eslestir\w*|karsilik\w*|karsilig\w*|eslesme\w*)\b',c)) or (_action(c,'bagla') and bool(re.search(r'\b(?:not\w*|sayfa\w*|bolum\w*|baslik\w*|oncul\w*)\b',c))) for c in clauses)
@@ -143,6 +175,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
         # Solving requires an affirmative request; "cozum uydurma" is a
         # source constraint and cannot steal alignment/distribution operations.
         solve=any(_action(c,'coz') or bool(re.search(r'\b(?:dogru cevab\w*|dogru sonuc\w*|celdirici\w*)\b',c)) for c in clauses)
+        solve = solve or any(_action(c,'anlat|acikla') and re.search(r'\b(?:sorusunu|soruyu|sorulari)\b',c) for c in clauses)
         if solve:return StudyOperation('past_question_explain',True,False,broad)
         distribution=bool(re.search(r'\b(?:dagilim\w*|oruntu\w*|kac sor\w*|bilgi tur\w*|kazan\w*)\b',text)) or any(_action(c,'grupla|ayir') and bool(re.search(r'\b(?:soru\w*|konu\w*)\b',c)) for c in clauses)
         if distribution and not summary:return StudyOperation('past_exam_patterns',True,False,True)
