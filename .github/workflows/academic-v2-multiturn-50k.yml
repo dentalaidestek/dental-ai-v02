@@ -23,6 +23,9 @@ jobs:
       - name: Install minimum resolver dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -r requirements.txt
+      - name: Compile benchmark files
+        run: |
+          python -m py_compile tests/academic_v2/multiturn_50k_taxonomy.py tests/academic_v2/multiturn_50k_generator.py scripts/benchmark_multiturn_continuity_50k.py app/study_retrieval_v2.py
       - name: Smoke import and 10 continuity cases
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE" python - <<'PY'
