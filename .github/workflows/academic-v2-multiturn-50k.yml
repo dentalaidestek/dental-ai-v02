@@ -11,6 +11,10 @@ on:
       - 'app/study_retrieval_v2.py'
       - 'app/dental_query_intent.py'
   workflow_dispatch:
+concurrency:
+  group: academic-v2-multiturn-50k-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   continuity-50k:
     runs-on: ubuntu-latest
