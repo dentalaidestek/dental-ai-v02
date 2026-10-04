@@ -181,13 +181,17 @@ class AcademicRetrievalPlan:
                     "comparison references unknown needs: " + ", ".join(sorted(missing))
                 )
             side_needs = [self.needs[ids.index(need_id)] for need_id in comparison.side_need_ids]
-            subject_keys = {
-                ("id", need.subject_ids) if need.subject_ids
-                else ("term", tuple(term.casefold().strip() for term in need.subject_terms))
+            side_keys = {
+                (
+                    ("id", need.subject_ids)
+                    if need.subject_ids
+                    else ("term", tuple(term.casefold().strip() for term in need.subject_terms)),
+                    tuple(sorted(q.casefold().strip() for q in need.qualifiers)),
+                )
                 for need in side_needs
             }
-            if len(subject_keys) < 2:
-                raise ValueError("comparison requires at least two distinct subjects")
+            if len(side_keys) < 2:
+                raise ValueError("comparison requires at least two distinct subject contexts")
 
     def _validate_dependency_cycles(self) -> None:
         dependencies = {need.need_id: set(need.depends_on) for need in self.needs}
