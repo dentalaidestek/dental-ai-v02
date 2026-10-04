@@ -1853,9 +1853,9 @@ def retrieve_course_context_v2(
     # guarded legacy vector path for old indexed generations only.
     embedding_provider = ""
     embedding_model = ""
-    continuation_cursor = _continuation_cursor(query, recent_history)
-    study_task = classify_academic_study_task(query)
-    exhaustive_questions = _is_exhaustive_question_request(query) or continuation_cursor is not None
+    continuation_cursor = _continuation_cursor(resolved, recent_history)
+    study_task = classify_academic_study_task(resolved)
+    exhaustive_questions = _is_exhaustive_question_request(resolved) or continuation_cursor is not None
     study_question_task = bool(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )
@@ -1863,7 +1863,7 @@ def retrieve_course_context_v2(
         study_task and study_task.requires_coverage
         and (not requirement.subject_node_ids or re.search(
             r"(?iu)\b(?:tüm|bütün|tamamı|baştan sona|genel tekrar|notu|notları|dersi|her şeyi|herşeyi)\b",
-            query or "",
+            resolved or "",
         ))
     )
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
@@ -1872,7 +1872,7 @@ def retrieve_course_context_v2(
         # lexical query. Metadata scanning is lightweight; only bounded selected
         # representatives are hydrated.
         requested_count = 24
-        study_plan = classify_dental_study_plan(query)
+        study_plan = classify_dental_study_plan(resolved)
         if study_plan and study_plan.count:
             requested_count = min(48, max(8, study_plan.count))
         coverage_plan = get_or_build_coverage_plan(
