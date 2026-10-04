@@ -128,6 +128,26 @@ def build(i:int,seed=20261004)->Case:
   history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
   bad += ["implant","ameloblastoma"]
 
+ # State semantics: mutate only dimensions that can be judged independently.
+ if state=="replace_count":
+  history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
+  q="yok 20 soru olsun"; expected.update(task="generate_questions",count=20)
+ elif state=="inherit_count":
+  history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
+  q="aynı sayıda farklı soru hazırla"; expected.update(task="generate_questions",count=10)
+ elif state=="replace_goal":
+  history += [("user","ezberlemek için anlat"),("assistant","özet")]
+  q="yok sınav için anlat"; expected["goal"]="exam"
+ elif state=="clear_goal":
+  history += [("user","sınav için anlat"),("assistant","özet")]
+  q="sınav odaklı olmasın normal anlat"; expected["goal"]=None
+ elif state=="replace_task":
+  history += [("user","test hazırla"),("assistant","test")]
+  q="yok soru istemiyorum normal anlat"; expected["task"]="explain"
+ elif state=="stale_state_trap":
+  history += [("user",f"{t2[0]} için 10 test sorusu hazırla"),("assistant","hazırlandı")]
+  q=f"boşver, {t1[0]} normal anlat"; must=list(t1[1]); bad=list(t2[1]); expected.update(topic=t1[0],task="explain")
+
  if distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
  elif distractor=="irrelevant_turn": history += [("user","tamam sağ ol"),("assistant","rica ederim")]
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
