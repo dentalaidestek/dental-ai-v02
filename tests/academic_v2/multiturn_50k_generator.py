@@ -265,6 +265,9 @@ def build(i:int,seed=20261004)->Case:
   history=(filler+history)[-desired_history:]
  else:
   history=history[-desired_history:]
+ # Re-assert required distractor evidence after bounded-history trimming.
+ if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
+  history=(history+[required_tail[distractor]])[-desired_history:]
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
