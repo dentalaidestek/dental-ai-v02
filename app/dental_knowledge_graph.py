@@ -495,23 +495,36 @@ def _ascii_fallback_nodes(lowered: str, already: set[str]) -> list[DentalNode]:
 
 
 def explicit_node_mentions(query: str) -> tuple[tuple[int, int, DentalNode], ...]:
-    """Return canonical exact/inflected graph mentions with spans.
+    """Return trustworthy exact/inflected graph mentions with source spans.
 
-    This deliberately excludes fuzzy typo rescue because a fuzzy node has no
-    trustworthy character span. Consumers that need ownership/qualifier
-    binding must prefer no binding over assigning a modifier to a guessed span.
+    Mirrors the safe exact + Turkish ASCII-fold passes used by matched_nodes.
+    Fuzzy typo rescue stays excluded because it has no trustworthy source span.
     """
     lowered = _match_text(query)
-    mentions: list[tuple[int, int, int, DentalNode]] = []
-    for node, clean_term, pattern in _compiled_mention_patterns():
-        for match in pattern.finditer(lowered):
-            if _term_context_ok(lowered, match.start(), match.end(), clean_term):
-                mentions.append((match.start(), match.end(), len(clean_term), node))
-    mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
+
+    def _collect(patterns, text: str, skip_ids: set[str] | None = None):
+        mentions: list[tuple[int, int, int, DentalNode]] = []
+        skipped = skip_ids or set()
+        for node, clean_term, pattern in patterns:
+            if node.id in skipped:
+                continue
+            for match in pattern.finditer(text):
+                if _term_context_ok(lowered, match.start(), match.end(), clean_term):
+                    mentions.append((match.start(), match.end(), len(clean_term), node))
+        return mentions
+
+    candidates = _collect(_compiled_mention_patterns(), lowered)
+    exact_has_subject = any(node.kind != "imaging" for _, _, _, node in candidates)
+    if not exact_has_subject:
+        folded = lowered.translate(_ASCII_FOLD)
+        seen_ids = {node.id for _, _, _, node in candidates}
+        candidates.extend(_collect(_compiled_folded_patterns(), folded, seen_ids))
+
+    candidates.sort(key=lambda item: (-item[2], item[0], item[3].id))
     occupied: list[tuple[int, int]] = []
     selected: list[tuple[int, int, DentalNode]] = []
     seen: set[str] = set()
-    for start, end, _, node in mentions:
+    for start, end, _, node in candidates:
         if any(start < used_end and end > used_start for used_start, used_end in occupied):
             continue
         occupied.append((start, end))
@@ -519,7 +532,6 @@ def explicit_node_mentions(query: str) -> tuple[tuple[int, int, DentalNode], ...
             seen.add(node.id)
             selected.append((start, end, node))
     return tuple(sorted(selected, key=lambda item: item[0]))
-
 
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
