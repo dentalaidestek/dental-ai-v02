@@ -112,3 +112,22 @@ def test_empty_subjectless_and_self_dependent_needs_fail_closed():
     _raises("at least one retrieval need", lambda: AcademicRetrievalPlan(
         original_query="pulpitis nedir", needs=(),
     ))
+
+
+def test_relation_rejects_self_endpoint_when_ids_are_known():
+    _raises("endpoints must be distinct", lambda: RetrievalNeed(
+        "self-relation", subject_ids=("sna",), subject_terms=("SNA",),
+        facet="relation", relation="associated_with",
+        target_subject_ids=("sna",), target_subject_terms=("SNA",),
+    ))
+
+
+def test_comparison_requires_distinct_subjects_not_just_two_needs():
+    _raises("distinct subjects", lambda: AcademicRetrievalPlan(
+        original_query="A'nın tanı ve tedavisini karşılaştır.",
+        needs=(
+            RetrievalNeed("a-diagnosis", subject_ids=("a",), subject_terms=("A",), facet="diagnosis"),
+            RetrievalNeed("a-treatment", subject_ids=("a",), subject_terms=("A",), facet="treatment"),
+        ),
+        comparisons=(ComparisonRequirement(("a-diagnosis", "a-treatment")),),
+    ))
