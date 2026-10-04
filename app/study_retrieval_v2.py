@@ -407,6 +407,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             r"değil|degil|boşver|bosver|sadece bu)\b", clean
         )
     )
+    current_qualifiers = set(query_qualifiers(clean))
+
     # Explicit ordinal list references are the only direct assistant-list lookup.
     ordinal_subject = _assistant_ordinal_subject(clean, window)
     if ordinal_subject:
@@ -428,8 +430,6 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         )
         if current_plan.subject_terms else None
     )
-    current_qualifiers = set(query_qualifiers(clean))
-
     # A genuinely new explicit subject wins, except comparison/correction where
     # the old subject is intentionally one side of the requested relation.
     comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
