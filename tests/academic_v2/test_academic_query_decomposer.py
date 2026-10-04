@@ -164,3 +164,10 @@ def test_explicit_comparison_without_two_safe_sides_is_unresolved():
     assert plan.answer_operation == "answer"
     assert not plan.comparisons
     assert "comparison_sides" in plan.unresolved_references
+
+
+def test_parser_level_implicit_comparison_cannot_silently_become_plain_answer():
+    plan = decompose_academic_query("SNA ve SNB değerlerinden hangisi daha büyüktür?")
+    assert plan.answer_operation in {"compare", "answer"}
+    if plan.answer_operation == "answer":
+        assert "comparison_sides" in plan.unresolved_references
