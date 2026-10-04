@@ -7,8 +7,11 @@ import re
 from app.academic_retrieval_plan import AcademicRetrievalPlan, ComparisonRequirement, RetrievalNeed
 from app.dental_query_intent import build_dental_requirement_plan, classify_dental_intents, query_qualifiers
 
+# Discourse boundaries may permit safe subject continuation. Temporal operators
+# are deliberately not consumed here: "sonra/ardından" carry meaning and stay
+# visible to the fail-closed temporal layer until temporal semantics are modeled.
 _CLAUSE_BOUNDARY_RE = re.compile(
-    r"\s*(?:[;.!?]+|\b(?:ama|ancak|fakat|oysa|ardından|ardindan|sonra)\b)\s*", re.I
+    r"\s*(?:[;.!?]+|\b(?:ama|ancak|fakat|oysa)\b)\s*", re.I
 )
 _COORDINATOR_RE = re.compile(r"\s*,\s*|\s+ve\s+|\s+ile\s+", re.I)
 _COMPARISON_RE = re.compile(r"\b(?:fark|karşılaştır|karsilastir|versus|vs\.?|hangisi daha)\w*\b", re.I)
@@ -97,10 +100,18 @@ def _bind_clause(
     clause_index: int,
     needs: list[RetrievalNeed],
     seen: set[tuple],
+    *,
+    inherited_subject: _Mention | None = None,
 ) -> tuple[bool, bool]:
-    """Return produced evidence plus whether ownership remains ambiguous."""
+    """Return produced evidence plus whether ownership remains ambiguous.
+
+    A subjectless continuation may inherit exactly one trustworthy subject
+    context from the preceding resolved clause. Explicit subjects always win.
+    """
     mentions = _mentions(clause)
     facets = _explicit_facets(clause)
+    if not mentions and facets and inherited_subject is not None:
+        mentions = (inherited_subject,)
 
     # One explicit subject owns all requested facets in the same clause,
     # including coordinated tails: "pulpitisin tanısı, tedavisi ve komplikasyonu".
@@ -174,14 +185,28 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
     seen: set[tuple] = set()
 
     clauses = tuple(part for part in _CLAUSE_BOUNDARY_RE.split(clean) if part) or (clean,)
+    continuation_subject: _Mention | None = None
     for clause_index, clause in enumerate(clauses, start=1):
-        produced, ambiguous = _bind_clause(clause, clause_index, needs, seen)
+        explicit_mentions = _mentions(clause)
+        # Only a single explicit subject can establish continuation state.
+        # Multiple subjects make the antecedent ambiguous; subjectless clauses
+        # must then fail closed instead of guessing one of them.
+        inherited = continuation_subject if not explicit_mentions else None
+        produced, ambiguous = _bind_clause(
+            clause, clause_index, needs, seen, inherited_subject=inherited,
+        )
         if ambiguous:
             unresolved.append(f"clause_{clause_index}:subject_facet_binding")
+        if len(explicit_mentions) == 1:
+            continuation_subject = explicit_mentions[0]
+        elif len(explicit_mentions) > 1:
+            continuation_subject = None
         if produced:
             continue
-        if len(_mentions(clause)) > 1 and _explicit_facets(clause):
+        if len(explicit_mentions) > 1 and _explicit_facets(clause):
             unresolved.append(f"clause_{clause_index}:subject_facet_binding")
+        elif not explicit_mentions and _explicit_facets(clause) and inherited is None:
+            unresolved.append(f"clause_{clause_index}:subject_reference")
 
     if not needs:
         for index, (node_id, label) in enumerate(zip(legacy.subject_node_ids, legacy.subject_terms), start=1):
