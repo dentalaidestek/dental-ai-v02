@@ -304,6 +304,12 @@ def validate_cases(cases):
  assert any(c.expected.get("should_abstain") for c in cases), "no abstention cases"
  assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases"
  assert any(c.expected.get("count")==20 for c in cases), "no count replacement cases"
+ for case in cases:
+  if case.expected.get("should_abstain"):
+   continue
+  visible=(" ".join(x[1] for x in case.history)+" "+case.query).casefold()
+  unsupported=[term for term in case.must if term.casefold() not in visible]
+  assert not unsupported, f"gold requires invisible context {unsupported}: {case.case_id}"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
   ("replace_count",lambda c:c.expected.get("count")==20),
