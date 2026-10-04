@@ -475,3 +475,57 @@ def test_true_negative_direction_remains_negative():
         "Hangisi yanlış olan ifadedir?",
     ):
         assert build_dental_requirement_plan(query).asks_negation is True, query
+
+
+def test_study_operations_bind_predicates_instead_of_subject_words():
+    from app.dental_query_intent import classify_academic_study_task
+    cases = (
+        ('Hocam burada takıldım, kron preparasyonunun gerekçesini açıklamanı istiyorum.', 'explain', False, False),
+        ('Bolton tüm dişler oranının mantığını açıkla.', 'explain', False, False),
+        ('Karışık dişlenmede ölçüm değerlendirmesi nasıl yapılır, sade biçimde anlat.', 'explain', False, False),
+        ('Finale çalışıyorum ama implanttan yeni sorular üret.', 'generate_questions', False, True),
+        ('Sınavda gözden kaçırmamam gereken implant ayrıntılarını ayıkla.', 'exam_points', False, False),
+        ('Yeni endodonti soruları istiyorum.', 'generate_questions', False, True),
+        ('Çıkmışları da yanına koyarak implant notunu özetle.', 'summarize', False, False),
+        ('Çıkmış endodonti sorularının dayandığı konuyu nottan özetle.', 'past_topic_summary', True, False),
+        ('Geçmiş sorulardan yararlanarak ilgili konu başlıklarını özetle.', 'past_topic_summary', True, False),
+        ('Çıkmış sorunun karşılığını ders notuna bağla; soru metni yoksa çözüm uydurma.', 'past_note_alignment', True, False),
+        ('Çıkmışta en sık sorulan kazanımları bul; değerlendirme yönteminin adını yaz.', 'repeated_patterns', True, False),
+        ('Geçmiş sınav sorularını kazanım türüne göre grupla; gelecek sınavı tahmin etme.', 'past_exam_patterns', True, False),
+        ('Çıkmış şıkların doğruluğunu nottan kontrol et.', 'past_option_review', True, False),
+        ('Geçmiş soruyu çözmek istiyorum; çözümün nedenini anlat.', 'past_question_explain', True, False),
+        ('Çıkmışlara benzer yeni endodonti soruları istiyorum.', 'similar_questions', True, True),
+        ('Notta “özetle” yazıyor, bu ifadeyi açıkla.', 'explain', False, False),
+        ('Özetleme, yalnız kök nedenini açıkla.', 'explain', False, False),
+        ('Çıkmış sorudaki yanlış şıkları bulma; konuyu nottan anlat.', 'explain', False, False),
+    )
+    fold = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
+    for query, task, past, generate in cases:
+        for spelling in (query, query.translate(fold)):
+            plan = classify_academic_study_task(spelling)
+            assert plan and plan.task == task, (spelling, plan)
+            assert plan.requires_past_questions is past, (spelling, plan)
+            assert plan.generate_new_questions is generate, (spelling, plan)
+            assert plan.requires_note_evidence
+    bounded = classify_academic_study_task('Bolton tüm dişler oranının mantığını açıkla.')
+    assert bounded and not bounded.requires_coverage
+
+
+def test_study_operator_typo_rescue_preserves_subject_and_negative_request():
+    from app.academic_task_language import operation_text
+    from app.dental_query_intent import classify_academic_study_task
+    for subject in ('karışık dişlenme', 'ölçülen bilgi', 'modelde simetri değerlendirmesi', 'burda'):
+        clean = operation_text(subject + ' hakkında açıklamanı istiyorum.')
+        assert subject.translate(str.maketrans('çğıöşü','cgiosu')) in clean
+    cases = (
+        ('Çıkmış öncülleri değrelendir.', 'past_option_review'),
+        ('Kök kanalı konusunu aciklamnai istiyorum.', 'explain'),
+        ('Çıkmış sorunun dayadnığı başlığı özetle.', 'past_topic_summary'),
+        ('Yeni sroular üret.', 'generate_questions'),
+    )
+    for query, task in cases:
+        plan = classify_academic_study_task(query)
+        assert plan and plan.task == task, (query, plan)
+    for query in ('Soru üretme.', 'Notu özetleme.', 'Soru üret veya notu özetle.',
+                  'Konuyu anlat veya özetle.', 'Notta “özetle” yazıyor.'):
+        assert classify_academic_study_task(query) is None, query

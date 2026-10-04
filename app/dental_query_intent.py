@@ -751,6 +751,14 @@ def _classify_past_question_workflow(query: str, broad: bool) -> AcademicStudyTa
 
 def classify_academic_study_task(query: str) -> AcademicStudyTaskPlan | None:
     """Plan role-neutral academic workflows while keeping factual output source-bound."""
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(query)
+    if operation is not None:
+        if operation.task is None:
+            return None
+        return AcademicStudyTaskPlan(
+            operation.task, operation.past, True, operation.coverage, operation.generate,
+        )
     clean = " ".join((query or "").split())
     broad = bool(_BROAD_ACADEMIC_RE.search(clean))
     lowered = clean.casefold()
