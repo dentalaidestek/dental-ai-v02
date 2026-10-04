@@ -34,12 +34,26 @@ class _Mention:
 
 
 def _mentions(text: str) -> tuple[_Mention, ...]:
-    """Use the canonical requirement parser as the single entity truth."""
+    """Return only subjects with trustworthy explicit spans in this clause.
+
+    The legacy parser may recover a subject through fuzzy typo matching. That is
+    useful for retrieval, but unsafe for sentence ownership: a guessed entity
+    must not receive a nearby facet/qualifier as if its text span were known.
+    """
+    from app.dental_knowledge_graph import explicit_node_mentions
+
     plan = build_dental_requirement_plan(text)
     qualifier_map = {node_id: qualifiers for node_id, qualifiers in plan.subject_qualifiers}
+    labels = dict(zip(plan.subject_node_ids, plan.subject_terms))
+    explicit_ids = tuple(
+        dict.fromkeys(
+            node.id for _, _, node in explicit_node_mentions(text)
+            if node.id in labels
+        )
+    )
     return tuple(
-        _Mention(node_id, label, qualifier_map.get(node_id, ()))
-        for node_id, label in zip(plan.subject_node_ids, plan.subject_terms)
+        _Mention(node_id, labels[node_id], qualifier_map.get(node_id, ()))
+        for node_id in explicit_ids
     )
 
 
