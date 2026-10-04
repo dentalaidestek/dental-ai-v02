@@ -64,3 +64,40 @@ def test_real_five_turn_reference_chain():
     h += [u("Yok bu sorular iyi değil ya baştan 20 soru hazırla"),a(_qlist(20))]
     q5=resolve_followup_query("Şimdi o anlattığın konuyu bu sorular arasında bul hangileri ile ilişkili",h[-8:])
     assert "periodontal cep" in low(q5) and ("ilişkili" in low(q5) or "eşleştir" in low(q5))
+
+
+def test_ordinal_reference_reads_only_explicit_assistant_list_item():
+    history=[
+        u("Flor konusunda 20 soru hazırla"),
+        a("\n".join(f"{i}. Flor ile ilgili klinik soru {i}\nA) a\nB) b\nC) c\nD) d" for i in range(1,21))),
+    ]
+    resolved=resolve_followup_query("13. sorunun konusunu anlat",history)
+    assert "flor" in resolved.casefold()
+    assert "klinik soru 13" in resolved.casefold()
+
+
+def test_multi_hop_reuses_assistant_subject_only_after_explicit_reference():
+    history=[
+        u("Flor konusunda 20 soru hazırla"),
+        a("\n".join(f"{i}. Flor ile ilgili klinik soru {i}\nA) a\nB) b\nC) c\nD) d" for i in range(1,21))),
+        u("13. sorunun konusunu anlat"),
+        a("Flor klinik soru 13 açıklaması"),
+    ]
+    resolved=resolve_followup_query("sadece bu konudan 10 soru hazırla",history)
+    assert "flor" in resolved.casefold()
+    assert "10 soru" in resolved.casefold()
+
+
+def test_unreferenced_assistant_prose_never_becomes_subject():
+    history=[u("Flor anlat"),a("Flor açıklaması. İmplant ve ameloblastoma ayrıca örnek olabilir.")]
+    resolved=resolve_followup_query("bunu biraz daha anlat",history)
+    assert "flor" in resolved.casefold()
+    assert "implant" not in resolved.casefold()
+    assert "ameloblastoma" not in resolved.casefold()
+
+
+def test_axis_specific_inheritance_does_not_copy_stale_count():
+    history=[u("Flor için 10 soru hazırla"),a("hazırlandı")]
+    resolved=resolve_followup_query("aynı konuyu normal anlat",history)
+    assert "flor" in resolved.casefold()
+    assert "10 soru" not in resolved.casefold()
