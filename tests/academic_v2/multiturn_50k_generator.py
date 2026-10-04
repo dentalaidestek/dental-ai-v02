@@ -53,6 +53,13 @@ def _noise(s,style,r):
  if style=="self_correction_mid_sentence": return s+" yani yok, demek istediğim bu"
  return s
 
+SURFACES={
+ "explain":("anlat","açıkla","özetle","mantığını anlat","temel noktalarını açıkla"),
+ "follow":("peki komplikasyonları?","bunun riskleri neler?","devamında ne olur?","klinikte neye dikkat edilir?","önemli sonuçları neler?"),
+ "detail":("biraz daha detaylandır","daha ayrıntılı açıkla","biraz aç bunu","mekanizmasıyla anlat","detaylarını ekle"),
+ "short":("daha kısa ve sınavlık yap","kısa özetle","sınav için özünü ver","en kritik yerleri kısalt","özet ve sınav odaklı yap"),
+}
+
 def build(i:int,seed=20261004)->Case:
  r=random.Random(seed+i*104729)
  interaction=INTERACTION[i%len(INTERACTION)]
@@ -62,7 +69,7 @@ def build(i:int,seed=20261004)->Case:
  distractor=DISTRACTOR[(i*11)%len(DISTRACTOR)]
  distance=DISTANCE[(i*13)%len(DISTANCE)]
  t1=r.choice(TOPICS); t2=r.choice([x for x in TOPICS if x!=t1])
- history=[("user",f"{t1[0]} anlat."),("assistant",f"{t1[0]} açıklaması.")]
+ history=[("user",f"{t1[0]} {r.choice(SURFACES[\"explain\"])}."),("assistant",f"{t1[0]} açıklaması örnek {i%97}.")]
  must=list(t1[1]); bad=[]; expected={"topic":t1[0],"task":"explain"}
  # interaction defines the semantic transition; other axes perturb its surface/context.
  if interaction in {"topic_switch_explicit","same_task_new_topic"}:
@@ -95,13 +102,13 @@ def build(i:int,seed=20261004)->Case:
   t3=r.choice([x for x in TOPICS if x not in {t1,t2}]); q=f"yok {t2[0]} değil {t3[0]} ile"; must=list(t1[1])+list(t3[1]); bad=list(t2[1])
  elif interaction=="abandon_previous":
   q=f"boşver onu {t2[0]} nedir"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
- elif interaction=="refinement": q="daha kısa ve sınavlık yap"; expected.update(goal="exam",length="shorter")
- elif interaction=="expansion": q="biraz daha detaylandır"; expected["length"]="detailed"
+ elif interaction=="refinement": q=r.choice(SURFACES["short"]); expected.update(goal="exam",length="shorter")
+ elif interaction=="expansion": q=r.choice(SURFACES["detail"]); expected["length"]="detailed"
  elif interaction=="recollection_far":
   fillers=[]
   for k in range(max(1,distance-1)): fillers += [("user",f"tamam {k}"),("assistant","tamam")]
   history=(history+fillers)[-8:]; q="ilk anlattığın konuya dön"
- elif interaction=="followup": q="peki komplikasyonları?"
+ elif interaction=="followup": q=r.choice(SURFACES["follow"])
  else: q="bunu biraz daha anlat"
  # Reference semantics: these axes must change the actual dialogue.
  if reference=="pronoun_o":
