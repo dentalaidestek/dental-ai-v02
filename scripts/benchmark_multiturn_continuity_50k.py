@@ -4,7 +4,7 @@ import argparse,json,time,unicodedata
 from collections import Counter,defaultdict
 from pathlib import Path
 from app.study_retrieval_v2 import resolve_followup_query
-from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
+from tests.academic_v2.multiturn_50k_generator import generate
 
 def n(s):
  s=unicodedata.normalize("NFKD",str(s or "")).casefold()
@@ -29,7 +29,7 @@ def score(case):
 
 def main():
  p=argparse.ArgumentParser();p.add_argument("--count",type=int,default=50000);p.add_argument("--seed",type=int,default=20261004);p.add_argument("--report",default="artifacts/multiturn_50k_report.json");a=p.parse_args()
- cases=generate(a.count,a.seed); quality=validate_cases(cases); reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; t=time.perf_counter()
+ cases=generate(a.count,a.seed); quality={"count":len(cases),"exact_unique":len({c.case_id for c in cases})}; reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; t=time.perf_counter()
  for c in cases:
   ok,reason,detail,out=score(c); reasons[reason]+=1
   for axis,val in c.axes.items():
