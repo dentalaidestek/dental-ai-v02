@@ -100,6 +100,9 @@ def build(i:int,seed=20261004)->Case:
  elif interaction=="scope_narrow":
   history=[("user",f"{t1[0]} konusunda 20 soru hazırla"),("assistant",_list(t1[0]))]
   q="13. sorunun konusunu anlat"; must+=["klinik soru 13"]; expected["reference"]="assistant_item_13"
+ elif interaction=="scope_expand":
+  history += [("user","sadece tanımı anlat"),("assistant","tanım")]
+  q="şimdi nedenleri bulguları ve tedaviyi de ekle"; expected["scope"]="expanded"
  elif interaction=="regenerate":
   history += [("user","10 soru hazırla"),("assistant",_list(t1[0],10))]
   q="bunlar olmadı baştan 20 farklı soru hazırla"; expected.update(task="generate_questions",count=20)
@@ -134,6 +137,15 @@ def build(i:int,seed=20261004)->Case:
   q="az önce verdiğin cevapta "+q
  elif reference=="previous_user_turn":
   q="az önce sorduğum şey için "+q
+ elif reference=="relative_previous":
+  history += [("user",f"{t2[0]} anlat"),("assistant",f"{t2[0]} açıklaması")]
+  q="bir önceki konuya dön"; must=list(t1[1]); bad=list(t2[1]); expected["reference"]="previous_topic"
+ elif reference=="relative_before_previous":
+  t3=r.choice([x for x in TOPICS if x not in {t1,t2}])
+  history += [("user",f"{t2[0]} anlat"),("assistant","açıklama"),("user",f"{t3[0]} anlat"),("assistant","açıklama")]
+  q="ondan bir önceki konuya dön"; must=list(t2[1]); bad=list(t3[1]); expected["reference"]="before_previous_topic"
+ elif reference=="implicit_subject":
+  q="aynı konudan devam et"; must=list(t1[1]); expected["reference"]="implicit_subject"
  elif reference=="named_topic" and interaction not in {"topic_switch_explicit","topic_switch_implicit","same_task_new_topic","abandon_previous"}:
   q=f"{t1[0]} için "+q
  elif reference=="missing_antecedent":
@@ -161,6 +173,12 @@ def build(i:int,seed=20261004)->Case:
  elif state=="inherit_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="aynı sayıda farklı soru hazırla"; expected.update(task="generate_questions",count=10)
+ elif state=="inherit_goal":
+  history += [("user","sınav için anlat"),("assistant","sınav özeti")]
+  q="aynı amaçla devam et"; expected["goal"]="exam"
+ elif state=="inherit_format":
+  history += [("user","tablo şeklinde anlat"),("assistant","tablo")]
+  q="aynı formatta devam et"; expected["format"]="table"
  elif state=="replace_goal":
   history += [("user","ezberlemek için anlat"),("assistant","özet")]
   q="yok sınav için anlat"; expected["goal"]="exam"
@@ -187,9 +205,6 @@ def build(i:int,seed=20261004)->Case:
  elif state=="replace_format":
   history += [("user","madde madde anlat"),("assistant","maddeler")]
   q="yok tablo şeklinde ver"; expected["format"]="table"
- elif state=="inherit_format":
-  history += [("user","tablo şeklinde anlat"),("assistant","tablo")]
-  q="aynı formatta devam et"; expected["format"]="table"
  elif state=="clear_format":
   history += [("user","tablo şeklinde anlat"),("assistant","tablo")]
   q="tablo olmasın normal anlat"; expected["format"]=None
