@@ -255,23 +255,22 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     )
 
 
-def _conversation_state(recent_history: list[dict] | None) -> ConversationState:
-    """Fold at most eight messages into bounded, provenance-aware state."""
+def _conversation_state(
+    recent_history: list[dict] | None, *, subject_mode: str = "latest"
+) -> ConversationState:
+    """Fold bounded state; parse dental subjects lazily to keep hot-path cost low."""
     window = list((recent_history or [])[-8:])
     subjects: list[ConversationSubject] = []
     task = goal = output_format = length = None
     count: int | None = None
 
+    # Cheap scalar state fold is chronological and does not invoke graph parsing.
     for idx, item in enumerate(window):
         role = str(item.get("role") or "").casefold()
         text_value = re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
         if not text_value:
             continue
-
         if role in {"user", "human"}:
-            subject = _conversation_subject(text_value, source="user", history_index=idx)
-            if subject:
-                subjects.append(subject)
             if _STATE_QUESTION_TASK_RE.search(text_value):
                 task = "generate_questions"
             elif _STATE_EXPLAIN_RE.search(text_value):
@@ -293,9 +292,6 @@ def _conversation_state(recent_history: list[dict] | None) -> ConversationState:
                 length = "shorter"
             elif re.search(r"(?iu)\b(?:detay|ayrınt|ayrint)\w*\b", text_value):
                 length = "detailed"
-
-        # Assistant prose is never a generic subject source.  It is eligible
-        # only when it is the direct answer to an explicit ordinal reference.
         elif role in {"assistant", "ai"} and idx > 0:
             previous = window[idx - 1]
             previous_role = str(previous.get("role") or "").casefold()
@@ -303,10 +299,33 @@ def _conversation_state(recent_history: list[dict] | None) -> ConversationState:
             if previous_role in {"user", "human"} and re.search(
                 r"(?iu)\b\d{1,2}\.?\s*soru(?:nun)?\b", previous_text
             ):
-                subject = _conversation_subject(text_value, source="assistant_explicit_reference", history_index=idx)
+                subject = _conversation_subject(
+                    text_value, source="assistant_explicit_reference", history_index=idx
+                )
                 if subject:
                     subjects.append(subject)
 
+    user_items = [
+        (idx, re.sub(r"\s+", " ", str(item.get("content") or "")).strip())
+        for idx, item in enumerate(window)
+        if str(item.get("role") or "").casefold() in {"user", "human"}
+        and str(item.get("content") or "").strip()
+    ]
+    if subject_mode in {"all", "first", "relative"}:
+        iterable = user_items
+        for idx, text_value in iterable:
+            subject = _conversation_subject(text_value, source="user", history_index=idx)
+            if subject:
+                subjects.append(subject)
+    else:
+        # Most follow-ups need only the latest self-contained USER subject.
+        for idx, text_value in reversed(user_items):
+            subject = _conversation_subject(text_value, source="user", history_index=idx)
+            if subject:
+                subjects.append(subject)
+                break
+
+    subjects.sort(key=lambda item: item.history_index)
     return ConversationState(
         subjects=tuple(subjects), task=task, goal=goal, count=count,
         output_format=output_format, length=length,
@@ -422,7 +441,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
     # History parsing is deliberately deferred until dependency is proven.
     # Independent/topic-switch turns therefore pay no O(history) state cost.
-    state = _conversation_state(window)
+    subject_mode = "all" if (relative or re.search(r"(?iu)\bilk anlattığın|\bilk anlattigin", clean)) else "latest"
+    state = _conversation_state(window, subject_mode=subject_mode)
     subjects = list(state.subjects)
     if not subjects:
         return clean
