@@ -183,3 +183,14 @@ def test_exclusion_and_output_constraint_metadata_are_unambiguous():
     _raises("keys must be unique", lambda: AcademicRetrievalPlan(
         original_query="A", needs=(need,), output_constraints=(("count", "5"), ("COUNT", "10")),
     ))
+
+
+def test_non_range_value_constraints_require_a_threshold():
+    _raises("requires a value", lambda: ValueConstraint("probing depth", unit="mm", operator="gte"))
+    ValueConstraint("probing depth", unit="mm", operator="gte", value=4.0)
+
+
+def test_dependencies_cannot_repeat_the_same_need():
+    _raises("duplicate dependencies", lambda: RetrievalNeed(
+        "child", subject_terms=("A",), depends_on=("parent", "parent"),
+    ))
