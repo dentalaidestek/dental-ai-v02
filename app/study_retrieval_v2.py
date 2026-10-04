@@ -373,9 +373,16 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         return clean
 
     window = list(recent_history[-8:])
-    state = _conversation_state(window)
     current_plan = build_dental_requirement_plan(clean)
-    current_subject = _conversation_subject(clean, source="current", history_index=len(window))
+    current_subject = (
+        ConversationSubject(
+            terms=tuple(dict.fromkeys(current_plan.subject_terms)),
+            node_ids=tuple(dict.fromkeys(current_plan.subject_node_ids)),
+            qualifiers=tuple(dict.fromkeys(current_plan.qualifiers)),
+            source="current", history_index=len(window),
+        )
+        if current_plan.subject_terms else None
+    )
     current_qualifiers = set(query_qualifiers(clean))
 
     # Explicit ordinal list references are the only direct assistant-list lookup.
@@ -413,6 +420,9 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     if not dependent and not (comparison or correction_relation):
         return clean
 
+    # History parsing is deliberately deferred until dependency is proven.
+    # Independent/topic-switch turns therefore pay no O(history) state cost.
+    state = _conversation_state(window)
     subjects = list(state.subjects)
     if not subjects:
         return clean
