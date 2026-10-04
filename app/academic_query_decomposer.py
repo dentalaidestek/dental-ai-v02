@@ -104,6 +104,7 @@ def _bind_clause(
     # contains both a subject and a facet is safe. Facet-only pieces are not
     # inherited across subjects because that creates false cross-binding.
     produced = False
+    clause_need_start = len(needs)
     pieces = tuple(part.strip(" ,") for part in _COORDINATOR_RE.split(clause) if part.strip(" ,"))
     for piece_index, piece in enumerate(pieces, start=1):
         piece_mentions = _mentions(piece)
@@ -116,8 +117,9 @@ def _bind_clause(
                 subject=piece_mentions[0], facet=facet, context=piece,
             ) or produced
 
-    bound_subjects = {sid for need in needs for sid in need.subject_ids}
-    bound_facets = {need.facet for need in needs}
+    clause_needs = needs[clause_need_start:]
+    bound_subjects = {sid for need in clause_needs for sid in need.subject_ids}
+    bound_facets = {need.facet for need in clause_needs}
     ambiguous = bool(
         len(mentions) > 1
         and facets
@@ -181,6 +183,20 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             continue
         source_need = next((n for n in needs if source_id in n.subject_ids), None)
         target_need = next((n for n in needs if target_id in n.subject_ids), None)
+        if source_need is None and not any(source_id in n.subject_ids for n in relation_needs):
+            relation_needs.append(RetrievalNeed(
+                need_id=f"relation-endpoint-{source_id}",
+                subject_ids=(source_id,),
+                subject_terms=(labels[source_id],),
+                facet="general",
+            ))
+        if target_need is None and not any(target_id in n.subject_ids for n in relation_needs):
+            relation_needs.append(RetrievalNeed(
+                need_id=f"relation-endpoint-{target_id}",
+                subject_ids=(target_id,),
+                subject_terms=(labels[target_id],),
+                facet="general",
+            ))
         relation_needs.append(RetrievalNeed(
             need_id=f"relation-{source_id}-{relation}-{target_id}",
             subject_ids=(source_id,),
@@ -190,20 +206,16 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             target_subject_ids=(target_id,),
             target_subject_terms=target_need.subject_terms if target_need else (labels[target_id],),
         ))
-        if target_need is None:
-            relation_needs.append(RetrievalNeed(
-                need_id=f"relation-endpoint-{target_id}",
-                subject_ids=(target_id,),
-                subject_terms=(labels[target_id],),
-                facet="general",
-            ))
     needs.extend(relation_needs)
 
     comparisons: tuple[ComparisonRequirement, ...] = ()
-    if _COMPARISON_RE.search(clean) and len(needs) >= 2:
+    comparison_needs = tuple(
+        need for need in needs if need.relation is None and need.facet != "general"
+    )
+    if _COMPARISON_RE.search(clean) and len(comparison_needs) >= 2:
         comparisons = (ComparisonRequirement(
-            tuple(need.need_id for need in needs),
-            tuple(dict.fromkeys(need.facet for need in needs if need.facet != "general")),
+            tuple(need.need_id for need in comparison_needs),
+            tuple(dict.fromkeys(need.facet for need in comparison_needs)),
         ),)
 
     return AcademicRetrievalPlan(
