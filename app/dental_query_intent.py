@@ -8,7 +8,7 @@ _ASCII_FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 def _intent_text(query: str) -> str:
     """Normalize orthography for intent semantics, never for factual content."""
     clean = " ".join((query or "").split())
-    return clean.translate(_ASCII_FOLD)
+    return clean.translate(_ASCII_FOLD).lower()
 
 
 # Closed vocabulary used only to repair misspelled *question operators*.  Subject
@@ -16,7 +16,7 @@ def _intent_text(query: str) -> str:
 # ambiguity guarded.
 _INTENT_OPERATOR_WORDS = (
     "nedir", "demektir", "tanim", "kavramini", "acikla", "anlat",
-    "deger", "referans", "araligi", "olcum", "olculur", "degerlendirilir",
+    "deger", "referans", "araligi", "olcum", "olculur", "degerlendirilir", "aciyla",
     "siniflama", "siniflandirilir", "evreleri",
     "tani", "teshis", "bulgulari", "semptomlari",
     "tedavi", "tedavisinde", "yonetimini",
@@ -85,7 +85,7 @@ class DentalIntent:
     relation_hints: tuple[str, ...] = ()
 
 _RULES = (
-    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|(?:normal|referans)\s+(?:değer(?!lendir)[a-zçğıöşü]*|aral(?:ık|ığ)[a-zçğıöşü]*)|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
+    ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|(?:normal|referans)\s+(?:değer(?!lendir)[a-zçğıöşü]*|aral(?:ık|ığ)[a-zçğıöşü]*)|mm|oran[a-zçğıöşü]*)\b|\b(?:açı(?!sından)|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
      ("measurement",), ("measures", "assessed_by")),
     ("measurement", re.compile(r"\b(?:ölçüm[a-zçğıöşü]*|olcum[a-z]*|hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
@@ -113,6 +113,11 @@ _RULES = (
      ("diagnosis", "finding"), ("caused_by", "has_mechanism", "has_risk_factor", "associated_with")),
 )
 
+# Normalize the grammar and its input together. Searching ASCII input with
+# Turkish-only patterns silently loses operators such as teshis/komsu/olculur.
+_FOLDED_RULES = {name: re.compile(pattern.pattern.translate(_ASCII_FOLD), pattern.flags)
+                 for name, pattern, _, _ in _RULES}
+
 _CAUSAL_RISK_ROLE_RE = re.compile(
     r"(?i)\b(?:risk\s+faktor[a-z]*|risk[a-z]*\s+(?:olusturan|artiran|hazirlayan|yatkinlastiran)\s+(?:etken|faktor|neden)[a-z]*)\b"
 )
@@ -136,7 +141,7 @@ def _has_role_pair(text: str, left_words: tuple[str, ...], right_words: tuple[st
 _NATURAL_ROLE_PATTERNS = (
     ("definition", re.compile(r"(?i)\b(?:tam\s+olarak\s+ne\s+anlat[a-z]*|nasil\s+tanimla[a-z]*|tanim\s+olarak\s+ne\s+soyle[a-z]*|temel\s+kavramsal\s+aciklama[a-z]*|kavramsal\s+aciklama)\b")),
     ("value", re.compile(r"(?i)\b(?:sayisal\s+sinir|normal\s+(?:sayi|deger)|referans\s+deger|esik|normal\s+aralik)\b")),
-    ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap|olcerken|hangi\s+olcum\s+esas)\b")),
+    ("measurement", re.compile(r"(?i)\b(?:hangi\s+yontem\s+veya\s+parametreyle\s+olcul|degerlendirmesini\s+nasil\s+yap[a-z]*|olcerken|hangi\s+olcum\s+esas)\b")),
     ("classification", re.compile(r"(?i)\b(?:grup[a-z]*|evre[a-z]*|hangi\s+kategorilere\s+ayril[a-z]*|evreleme\s+sistemi|hangi\s+basliklari\s+(?:ver|say)|kategorilere\s+ayril)\b")),
     ("diagnosis", re.compile(r"(?i)\b(?:dusunmek\s+icin.*bulgu|suphesini\s+destekleyen\s+tanisal|tanisina\s+giderken|tanisini\s+gerekcelendirmek)\b")),
     ("treatment", re.compile(r"(?i)\b(?:yonetim\s+sirasi|onerilen\s+yaklasim|vakasinin\s+yonetimi|durumunda\s+ne\s+yapmam)\b")),
@@ -155,7 +160,7 @@ def classify_dental_intent(query: str) -> DentalIntent:
             if name == "cause":
                 return DentalIntent(name, kinds, relations)
     for name, pattern, kinds, relations in _RULES:
-        if pattern.search(clean) or pattern.search(intent_clean):
+        if _FOLDED_RULES[name].search(intent_clean):
             return DentalIntent(name, kinds, relations)
     return DentalIntent("general", (), ())
 
@@ -185,9 +190,8 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if _has_role_pair(intent_clean, left_words, right_words):
             natural_roles.add(role_name)
     for name, pattern, kinds, relations in _RULES:
-        raw_match = pattern.search(clean)
-        normalized_match = pattern.search(intent_clean)
-        match = raw_match or normalized_match
+        normalized_match = _FOLDED_RULES[name].search(intent_clean)
+        match = normalized_match
         if not match and name not in natural_roles:
             continue
         # "kanal tedavisi komplikasyonları" names a treatment as the subject;
@@ -198,7 +202,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
             # immediately followed by another requested facet ("kanal tedavisi
             # komplikasyonlari").  Coordinated requests such as "tanisi,
             # tedavisi ve risk faktorleri" must retain treatment.
-            source_text = clean if raw_match is not None else intent_clean
+            source_text = intent_clean
             tail = source_text[match.end():]
             if re.search(
                 r"(?i)^\s+(?:komplikasyon|risk|yan\s+etki|endikasyon|kontrendikasyon|"
@@ -219,7 +223,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         causal_risk = bool(_CAUSAL_RISK_ROLE_RE.search(intent_clean))
         if causal_risk and any(item.name == "cause" for item in found):
             explicit_adverse = bool(
-                _EXPLICIT_ADVERSE_OUTCOME_RE.search(clean) or _ADVERSE_RISK_RE.search(clean)
+                _EXPLICIT_ADVERSE_OUTCOME_RE.search(intent_clean) or _ADVERSE_RISK_RE.search(intent_clean)
             )
             if not explicit_adverse:
                 found = [item for item in found if item.name != "complication"]
@@ -240,7 +244,7 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
         if (
             any(item.name == "contraindication" for item in found)
             and not paired_positive_applicability
-            and not re.search(r"(?<!kontr)endikasyon", clean, re.I)
+            and not re.search(r"(?<!kontr)endikasyon", intent_clean, re.I)
         ):
             found = [item for item in found if item.name != "indication"]
         # Imaging words describe a modality/constraint surprisingly often

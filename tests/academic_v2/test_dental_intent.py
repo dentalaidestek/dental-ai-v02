@@ -578,3 +578,39 @@ def test_dotted_initials_preserve_clause_but_full_stops_end_it():
     assert '. yeni' in operation_text(q)
     plan = classify_academic_study_task(q)
     assert plan and plan.task == 'generate_questions', plan
+
+
+def test_facet_grammar_and_query_share_turkish_ascii_normalization():
+    from app.dental_query_intent import classify_dental_intents
+    cases = (
+        ('Pulpitis nasıl teşhis edilir?', {'diagnosis'}),
+        ('Mandibula hangi yapılarla komşudur?', {'anatomy'}),
+        ('SNA nasıl ölçülür?', {'measurement'}),
+        ('Pulpitis nasıl sınıflandırılır?', {'classification'}),
+        ('İmplant hangi koşullarda uygulanmamalıdır?', {'contraindication'}),
+        ('Pulpitis tanımını açıkla.', {'definition'}),
+        ('Pulpitis tanısını açıkla.', {'diagnosis'}),
+        ('İmplant risk faktörleri ve komplikasyonları nelerdir?', {'cause', 'complication'}),
+    )
+    fold = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
+    for query, expected in cases:
+        for spelling in (query, query.translate(fold), query.upper(), query.translate(fold).upper()):
+            got = {i.name for i in classify_dental_intents(spelling)}
+            assert got == expected, (spelling, got, expected)
+
+
+def test_repaired_facet_operators_remain_authoritative_for_conflict_resolution():
+    from app.dental_query_intent import classify_dental_intents
+    cases = (
+        ('İmplant komplikasyolnarı ve risk faktörleri nelerdir?', {'complication', 'cause'}),
+        ('İmplant endikasoynları ve kontrendikasyonları nelerdir?', {'indication', 'contraindication'}),
+        ('SNA hangi ölçümle değerlednirilir?', {'measurement'}),
+        ('Sınav açısından articaine nedir?', {'definition'}),
+        ('Sınav açısından implant riskini artıran nedenleri açıkla.', {'cause'}),
+        ('SNA değerlendirmesini nasıl yapmam gerekiyor?', {'measurement'}),
+        ('SNA açısı neden artar?', {'value', 'cause'}),
+        ('Alt çenenin konumunu hangi açıyla değerlendiririz?', {'measurement', 'anatomy'}),
+    )
+    for query, expected in cases:
+        got = {i.name for i in classify_dental_intents(query)}
+        assert got == expected, (query, got, expected)
