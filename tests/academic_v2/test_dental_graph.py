@@ -33,3 +33,19 @@ def test_fuzzy_typo_subject_does_not_receive_fake_explicit_span():
     query = "mandbular kanal ilişkisini anlat"
     assert any(node.id == "mandibular_canal" for node in matched_nodes(query))
     assert all(node.id != "mandibular_canal" for _, _, node in explicit_node_mentions(query))
+
+
+
+def test_explicit_spans_preserve_safe_turkish_ascii_fallback():
+    from app.dental_knowledge_graph import explicit_node_mentions, matched_nodes
+    query = "cene iliskisini anlat"
+    matched = {node.id for node in matched_nodes(query)}
+    spanned = {node.id for _, _, node in explicit_node_mentions(query)}
+    assert spanned.issubset(matched)
+
+
+def test_explicit_spans_still_exclude_edit_distance_typo_rescue():
+    from app.dental_knowledge_graph import explicit_node_mentions, matched_nodes
+    query = "mandbular kanal anatomisini anlat"
+    assert any(node.id == "mandibular_canal" for node in matched_nodes(query))
+    assert all(node.id != "mandibular_canal" for _, _, node in explicit_node_mentions(query))
