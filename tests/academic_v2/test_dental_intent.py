@@ -1,4 +1,4 @@
-from app.dental_query_intent import classify_dental_intent
+from app.dental_query_intent import build_dental_requirement_plan, classify_dental_intent
 
 CASES = {
     "ANB normal değeri kaçtır": "value",
