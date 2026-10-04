@@ -186,12 +186,13 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
 
     clauses = tuple(part for part in _CLAUSE_BOUNDARY_RE.split(clean) if part) or (clean,)
     continuation_subject: _Mention | None = None
+    continuation_safe = False
     for clause_index, clause in enumerate(clauses, start=1):
         explicit_mentions = _mentions(clause)
         # Only a single explicit subject can establish continuation state.
         # Multiple subjects make the antecedent ambiguous; subjectless clauses
         # must then fail closed instead of guessing one of them.
-        inherited = continuation_subject if not explicit_mentions else None
+        inherited = continuation_subject if (not explicit_mentions and continuation_safe) else None
         produced, ambiguous = _bind_clause(
             clause, clause_index, needs, seen, inherited_subject=inherited,
         )
@@ -199,8 +200,10 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             unresolved.append(f"clause_{clause_index}:subject_facet_binding")
         if len(explicit_mentions) == 1:
             continuation_subject = explicit_mentions[0]
+            continuation_safe = not ambiguous
         elif len(explicit_mentions) > 1:
             continuation_subject = None
+            continuation_safe = False
         if produced:
             continue
         if len(explicit_mentions) > 1 and _explicit_facets(clause):
