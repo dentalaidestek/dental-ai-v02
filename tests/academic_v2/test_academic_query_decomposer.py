@@ -57,6 +57,29 @@ def test_negation_is_clause_local_not_global():
     assert contraindication and all(n.polarity == "positive" for n in contraindication)
 
 
+def test_subjectless_continuation_inherits_one_safe_subject_context():
+    plan, pairs = _pairs("Akut pulpitisin bulgularını anlat ama tedavisini de söyle")
+    treatment = [n for n in plan.needs if "pulpitis" in n.subject_ids and n.facet == "treatment"]
+    assert ("pulpitis", "treatment") in pairs
+    assert treatment and all("akut" in n.qualifiers for n in treatment)
+
+
+def test_explicit_new_subject_blocks_previous_subject_inheritance():
+    plan, pairs = _pairs("Pulpitisin tanısını anlat ama dry socket tedavisini söyle")
+    assert ("dry_socket", "treatment") in pairs
+    assert ("pulpitis", "treatment") not in pairs
+
+
+def test_ambiguous_multi_subject_antecedent_does_not_guess_continuation_subject():
+    plan = decompose_academic_query("SNA ve SNB değerlerini anlat ama ölçümünü de açıkla")
+    assert "clause_2:subject_reference" in plan.unresolved_references
+
+
+def test_temporal_operator_is_preserved_as_unmodeled_semantics():
+    plan = decompose_academic_query("Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat")
+    assert "unmodeled:temporal_order" in plan.unresolved_references
+    assert any("apical_periodontitis" in n.subject_ids for n in plan.needs)
+
 def test_explicit_negative_direction_stays_local():
     plan, _ = _pairs("Bisfosfonat hangi durumda önerilmez?")
     assert any(n.polarity == "negative" for n in plan.needs)
