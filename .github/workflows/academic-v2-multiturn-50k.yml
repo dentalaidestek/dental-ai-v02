@@ -23,6 +23,17 @@ jobs:
       - name: Install minimum resolver dependencies
         run: |
           python -m pip install --disable-pip-version-check -q -r requirements.txt
+      - name: Smoke import and 10 continuity cases
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE" python - <<'PY'
+          from tests.academic_v2.multiturn_50k_generator import generate
+          from scripts.benchmark_multiturn_continuity_50k import score
+          cases=generate(10)
+          assert len(cases)==10
+          for case in cases:
+              score(case)
+          print("SMOKE_OK", len(cases))
+          PY
       - name: Run only 50K multi-turn continuity benchmark
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE" python -m scripts.benchmark_multiturn_continuity_50k --count 50000 --report /tmp/multiturn_50k_report.json
