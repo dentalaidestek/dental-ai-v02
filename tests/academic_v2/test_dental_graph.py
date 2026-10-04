@@ -17,3 +17,19 @@ assert not any(n.id == "centric_relation" for n in matched_nodes("screen görün
 assert not any(n.id == "probing_depth" for n in matched_nodes("rapidly ilerleyen"))
 assert any(n.id == "centric_relation" for n in matched_nodes("dental CR ile sentrik ilişki kaydı"))
 assert any(n.id == "probing_depth" for n in matched_nodes("periodontal PD 6 mm sondalama"))
+
+
+def test_explicit_mention_spans_match_canonical_inflected_nodes():
+    from app.dental_knowledge_graph import explicit_node_mentions, matched_nodes
+    query = "İrreversible pulpitisin tanısı ile mandibular kanalın ilişkisini anlat"
+    span_ids = {node.id for _, _, node in explicit_node_mentions(query)}
+    exact_ids = {node.id for node in matched_nodes(query)}
+    assert {"irreversible_pulpitis", "mandibular_canal"}.issubset(span_ids)
+    assert span_ids.issubset(exact_ids)
+
+
+def test_fuzzy_typo_subject_does_not_receive_fake_explicit_span():
+    from app.dental_knowledge_graph import explicit_node_mentions, matched_nodes
+    query = "mandbular kanal ilişkisini anlat"
+    assert any(node.id == "mandibular_canal" for node in matched_nodes(query))
+    assert all(node.id != "mandibular_canal" for _, _, node in explicit_node_mentions(query))
