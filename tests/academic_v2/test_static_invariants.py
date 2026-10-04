@@ -265,3 +265,10 @@ def test_interleaved_chunking_never_leaps_over_ocr_gap():
     assert "if rows[0].page_number != first_pending.page_number:" in chunk
     assert "candidate.page_number != contiguous[-1].page_number + 1" in chunk
     assert "rows = contiguous" in chunk
+
+
+def test_generation_keeps_exclusion_distinct_from_negative_fact_direction():
+    generation = (ROOT / "app/study_ai_v2.py").read_text(encoding="utf-8")
+    assert "'değildir', 'yanlış', 'önerilmez', 'tercih edilmez'" in generation
+    assert "'hariç', 'girme', 'bahsetme'" in generation
+    assert "dışlanan kapsamı cevaba ekleme" in generation
