@@ -204,12 +204,18 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
         elif len(explicit_mentions) > 1:
             continuation_subject = None
             continuation_safe = False
+        # A subjectless clause with an explicit facet still has unresolved
+        # ownership unless a safe antecedent was actually inherited.  This
+        # check must happen before the produced short-circuit: the legacy
+        # lexical fallback may synthesize a pseudo-subject (e.g. "ölçümünü"),
+        # causing _bind_clause to report produced evidence even though there is
+        # no trustworthy canonical subject span.
+        if not explicit_mentions and _explicit_facets(clause) and inherited is None:
+            unresolved.append(f"clause_{clause_index}:subject_reference")
         if produced:
             continue
         if len(explicit_mentions) > 1 and _explicit_facets(clause):
             unresolved.append(f"clause_{clause_index}:subject_facet_binding")
-        elif not explicit_mentions and _explicit_facets(clause) and inherited is None:
-            unresolved.append(f"clause_{clause_index}:subject_reference")
 
     if not needs:
         for index, (node_id, label) in enumerate(zip(legacy.subject_node_ids, legacy.subject_terms), start=1):
