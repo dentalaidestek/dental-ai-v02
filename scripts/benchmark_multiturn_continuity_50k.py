@@ -4,7 +4,7 @@ import argparse,json,time,unicodedata
 from collections import Counter,defaultdict
 from pathlib import Path
 from app.study_retrieval_v2 import resolve_followup_query
-from tests.academic_v2.multiturn_50k_generator import generate
+from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
 
 def n(s):
  s=unicodedata.normalize("NFKD",str(s or "")).casefold()
@@ -15,11 +15,15 @@ def score(case):
  try: out=resolve_followup_query(case.query,hist)
  except Exception as e:return False,"exception",repr(e),""
  z=n(out)
+ exp=case.expected
+ if exp.get("should_abstain"):
+  inherited=[x for x in case.must_not if n(x) in z]
+  if inherited:return False,"resolved_but_should_abstain"," | ".join(inherited),out
+  return True,"ok","",""
  miss=[x for x in case.must if n(x) not in z]
  stale=[x for x in case.must_not if n(x) in z]
  if miss:return False,"missing_required"," | ".join(miss),out
  if stale:return False,"stale_context"," | ".join(stale),out
- exp=case.expected
  if exp.get("task")=="generate_questions" and not any(x in z for x in ("soru","test")):return False,"task_loss","generate_questions",out
  if exp.get("goal")=="exam" and "sinav" not in z:return False,"goal_loss","exam",out
  if exp.get("count") and str(exp["count"]) not in z:return False,"count_loss",str(exp["count"]),out
@@ -29,7 +33,7 @@ def score(case):
 
 def main():
  p=argparse.ArgumentParser();p.add_argument("--count",type=int,default=50000);p.add_argument("--seed",type=int,default=20261004);p.add_argument("--report",default="artifacts/multiturn_50k_report.json");a=p.parse_args()
- cases=generate(a.count,a.seed); quality={"count":len(cases),"exact_unique":len({c.case_id for c in cases})}; reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; t=time.perf_counter()
+ cases=generate(a.count,a.seed); quality=validate_cases(cases); reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; t=time.perf_counter()
  for c in cases:
   ok,reason,detail,out=score(c); reasons[reason]+=1
   for axis,val in c.axes.items():
