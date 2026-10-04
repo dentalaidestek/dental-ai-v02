@@ -155,3 +155,15 @@ def test_logic_and_comparison_references_must_be_unique():
         needs=(need_a, need_b),
         need_groups=(NeedGroup("g-ok", ("a", "b"), "all"),),
     )
+
+
+def test_compare_operation_and_comparison_contract_cannot_diverge():
+    a = RetrievalNeed("a", subject_ids=("a",), subject_terms=("A",), facet="value")
+    b = RetrievalNeed("b", subject_ids=("b",), subject_terms=("B",), facet="value")
+    _raises("requires an explicit comparison", lambda: AcademicRetrievalPlan(
+        original_query="A ile B karşılaştır", needs=(a, b), answer_operation="compare",
+    ))
+    comparison = ComparisonRequirement(("a", "b"), ("value",))
+    _raises("require compare operation", lambda: AcademicRetrievalPlan(
+        original_query="A ile B", needs=(a, b), comparisons=(comparison,),
+    ))
