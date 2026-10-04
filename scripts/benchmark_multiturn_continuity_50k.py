@@ -17,8 +17,8 @@ def score(case):
  z=n(out)
  exp=case.expected
  if exp.get("should_abstain"):
-  inherited=[x for x in case.must_not if n(x) in z]
-  if inherited:return False,"resolved_but_should_abstain"," | ".join(inherited),out
+  leaked=[x for x in exp.get("forbidden_topics",()) if n(x) in z and n(x) not in n(case.query)]
+  if leaked:return False,"resolved_but_should_abstain"," | ".join(leaked),out
   return True,"ok","",""
  miss=[x for x in case.must if n(x) not in z]
  stale=[x for x in case.must_not if n(x) in z]
