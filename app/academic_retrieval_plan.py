@@ -136,6 +136,10 @@ class AcademicRetrievalPlan:
             raise ValueError("original_query must not be empty")
         if not self.needs:
             raise ValueError("at least one retrieval need is required")
+        if self.answer_operation == "compare" and not self.comparisons:
+            raise ValueError("compare operation requires an explicit comparison")
+        if self.comparisons and self.answer_operation != "compare":
+            raise ValueError("comparison requirements require compare operation")
         ids = [need.need_id for need in self.needs]
         if len(ids) != len(set(ids)):
             raise ValueError("retrieval need ids must be unique")
