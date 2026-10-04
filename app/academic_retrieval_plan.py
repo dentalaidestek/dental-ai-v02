@@ -39,6 +39,8 @@ class ValueConstraint:
                 raise ValueError("range lower value cannot exceed upper value")
         elif self.upper_value is not None:
             raise ValueError("upper_value is valid only for range")
+        elif self.value is None:
+            raise ValueError(f"{self.operator} requires a value")
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,8 @@ class RetrievalNeed:
             target_ids = set(self.target_subject_ids)
             if source_ids and target_ids and source_ids.intersection(target_ids):
                 raise ValueError(f"{self.need_id}: relation endpoints must be distinct")
+        if len(self.depends_on) != len(set(self.depends_on)):
+            raise ValueError(f"{self.need_id}: duplicate dependencies are not allowed")
         if self.need_id in self.depends_on:
             raise ValueError(f"{self.need_id}: a need cannot depend on itself")
 
