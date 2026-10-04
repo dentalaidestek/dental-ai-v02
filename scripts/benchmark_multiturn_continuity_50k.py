@@ -27,6 +27,12 @@ def score(case):
  if exp.get("task")=="generate_questions" and not any(x in z for x in ("soru","test")):return False,"task_loss","generate_questions",out
  if exp.get("goal")=="exam" and "sinav" not in z:return False,"goal_loss","exam",out
  if exp.get("count") and str(exp["count"]) not in z:return False,"count_loss",str(exp["count"]),out
+ if exp.get("format")=="table" and not any(x in z for x in ("tablo","table")):return False,"format_loss","table",out
+ if exp.get("format") is None and "tablo" in z and "tablo" not in n(case.query):return False,"stale_format","table",out
+ for x in exp.get("qualifiers",()):
+  if n(x) not in z:return False,"qualifier_loss",x,out
+ for x in exp.get("forbidden_qualifiers",()):
+  if n(x) in z:return False,"stale_qualifier",x,out
  if exp.get("length")=="shorter" and not any(x in z for x in ("kisa","oz")):return False,"length_loss","shorter",out
  if exp.get("length")=="detailed" and not any(x in z for x in ("detay","ayrinti","kapsam")):return False,"length_loss","detailed",out
  return True,"ok","",out
