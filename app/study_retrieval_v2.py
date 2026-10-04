@@ -209,6 +209,7 @@ class RetrievalResult:
 @dataclass(frozen=True)
 class ConversationSubject:
     terms: tuple[str, ...]
+    node_ids: tuple[str, ...] = ()
     qualifiers: tuple[str, ...] = ()
     source: str = "user"
     history_index: int = -1
@@ -246,6 +247,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return None
     return ConversationSubject(
         terms=terms,
+        node_ids=tuple(dict.fromkeys(plan.subject_node_ids)),
         qualifiers=tuple(dict.fromkeys(plan.qualifiers)),
         source=source,
         history_index=history_index,
@@ -411,7 +413,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # ambiguous; never guess which antecedent "bu/onu" denotes.
     if re.match(r"(?iu)^\s*(?:bunu|onu|bu konu)", clean):
         last_user = next((x for x in reversed(subjects) if x.source == "user"), None)
-        if last_user and len(last_user.terms) > 1:
+        if last_user and len(last_user.node_ids) > 1:
             return clean
 
     selected: ConversationSubject | None = None
