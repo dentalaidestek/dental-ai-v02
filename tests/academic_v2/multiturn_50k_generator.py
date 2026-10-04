@@ -128,8 +128,10 @@ def build(i:int,seed=20261004)->Case:
   history[-1]=("assistant",history[-1][1]+" İmplant ve ameloblastoma ayrıca örnek olabilir.")
   bad += ["implant","ameloblastoma"]
 
- # State semantics: mutate only dimensions that can be judged independently.
- if state=="replace_count":
+ # State mutations must not destroy deliberately unresolved reference cases.
+ if expected.get("should_abstain"):
+  pass
+ elif state=="replace_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="yok 20 soru olsun"; expected.update(task="generate_questions",count=20)
  elif state=="inherit_count":
@@ -148,11 +150,18 @@ def build(i:int,seed=20261004)->Case:
   history += [("user",f"{t2[0]} için 10 test sorusu hazırla"),("assistant","hazırlandı")]
   q=f"boşver, {t1[0]} normal anlat"; must=list(t1[1]); bad=list(t2[1]); expected.update(topic=t1[0],task="explain")
 
- if distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
+ if expected.get("should_abstain"):
+  pass
+ elif distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
  elif distractor=="irrelevant_turn": history += [("user","tamam sağ ol"),("assistant","rica ederim")]
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
+ # Distance and turn length are observable conversation properties, not labels.
+ target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
+ while len(history)<max(1,target_turns-1):
+  k=len(history); history += [("user",f"ara not {k}"),("assistant","tamam")]
+ history=history[-min(8,max(1,target_turns-1)):]
  q=_noise(q,language,r)
- axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance}
+ axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
  return Case(cid,axes,tuple(history[-8:]),q,tuple(must),tuple(bad),expected)
 
