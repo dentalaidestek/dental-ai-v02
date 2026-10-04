@@ -140,27 +140,33 @@ def _bind_clause(
     # contains both a subject and a facet is safe. Facet-only pieces are not
     # inherited across subjects because that creates false cross-binding.
     produced = False
-    clause_need_start = len(needs)
+    bound_subjects: set[str] = set()
+    bound_facets: set[str] = set()
+    ownerless_piece = False
     pieces = tuple(part.strip(" ,") for part in _COORDINATOR_RE.split(clause) if part.strip(" ,"))
     for piece_index, piece in enumerate(pieces, start=1):
         piece_mentions = _mentions(piece)
         piece_facets = _explicit_facets(piece)
+        if piece_facets and not piece_mentions:
+            ownerless_piece = True
         if len(piece_mentions) != 1 or not piece_facets:
             continue
+        # Track binding independently of global deduplication. A repeated
+        # resolved pair remains resolved even when no new need is appended.
+        bound_subjects.add(piece_mentions[0].node_id)
+        bound_facets.update(piece_facets)
         for facet in piece_facets:
             produced = _append_need(
                 needs, seen, need_id=f"c{clause_index}s{piece_index}-{facet}",
                 subject=piece_mentions[0], facet=facet, context=piece,
             ) or produced
 
-    clause_needs = needs[clause_need_start:]
-    bound_subjects = {sid for need in clause_needs for sid in need.subject_ids}
-    bound_facets = {need.facet for need in clause_needs}
     ambiguous = bool(
         len(mentions) > 1
         and facets
         and (
-            not {mention.node_id for mention in mentions}.issubset(bound_subjects)
+            ownerless_piece
+            or not {mention.node_id for mention in mentions}.issubset(bound_subjects)
             or not set(facets).issubset(bound_facets)
         )
     )
@@ -193,7 +199,7 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
         # Multiple subjects make the antecedent ambiguous; subjectless clauses
         # must then fail closed instead of guessing one of them.
         inherited = continuation_subject if (not explicit_mentions and continuation_safe) else None
-        produced, ambiguous = _bind_clause(
+        _, ambiguous = _bind_clause(
             clause, clause_index, needs, seen, inherited_subject=inherited,
         )
         if ambiguous:
@@ -206,16 +212,10 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             continuation_safe = False
         # A subjectless clause with an explicit facet still has unresolved
         # ownership unless a safe antecedent was actually inherited.  This
-        # check must happen before the produced short-circuit: the legacy
-        # lexical fallback may synthesize a pseudo-subject (e.g. "ölçümünü"),
-        # causing _bind_clause to report produced evidence even though there is
-        # no trustworthy canonical subject span.
+        # check is based on canonical spans and requested facets; lexical
+        # search terms can never establish ownership.
         if not explicit_mentions and _explicit_facets(clause) and inherited is None:
             unresolved.append(f"clause_{clause_index}:subject_reference")
-        if produced:
-            continue
-        if len(explicit_mentions) > 1 and _explicit_facets(clause):
-            unresolved.append(f"clause_{clause_index}:subject_facet_binding")
 
     if not needs:
         for index, (node_id, label) in enumerate(zip(legacy.subject_node_ids, legacy.subject_terms), start=1):

@@ -1256,7 +1256,7 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
             pass
     section = row[5] or ""
     body = row[7] or ""
-    features = analyze_dental_text(f"{section}\\n{body}")
+    features = analyze_dental_text(f"{section}\n{body}")
     if cache is not None:
         cache[row_id] = features
     return features
@@ -1654,7 +1654,7 @@ def retrieve_course_context_v2(
     course_wide_coverage = bool(
         study_task and study_task.requires_coverage
         and (not requirement.subject_node_ids or re.search(
-            r"(?iu)\\b(?:tüm|bütün|tamamı|baştan sona|genel tekrar|notu|notları|dersi|her şeyi|herşeyi)\\b",
+            r"(?iu)\b(?:tüm|bütün|tamamı|baştan sona|genel tekrar|notu|notları|dersi|her şeyi|herşeyi)\b",
             query or "",
         ))
     )

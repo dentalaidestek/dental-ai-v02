@@ -10,6 +10,7 @@ from app.academic_retrieval_plan import (
     AcademicRetrievalPlan,
     ComparisonRequirement,
     RetrievalNeed,
+    subject_context_key,
 )
 from app.dental_query_intent import DentalRequirementPlan, build_dental_requirement_plan
 
@@ -44,7 +45,22 @@ def legacy_requirement_to_semantic_plan(
     needs: list[RetrievalNeed] = []
     unresolved: list[str] = []
 
-    if subjects:
+    # Explicit legacy comparison sides preserve qualifier contexts even when
+    # both sides refer to the same canonical subject. Global facets still do
+    # not prove ownership, so retain general needs and unresolved binding.
+    subject_labels = dict(subjects)
+    safe_sides = legacy.comparison_sides
+    if "comparison" in facets and len(safe_sides) >= 2 and all(
+        len(ids) == 1 and ids[0] in subject_labels for ids, _ in safe_sides
+    ):
+        unresolved.append("subject_facet_binding")
+        for index, (ids, qualifiers) in enumerate(safe_sides, start=1):
+            needs.append(RetrievalNeed(
+                need_id=f"legacy-side-{index}", subject_ids=ids,
+                subject_terms=(subject_labels[ids[0]],), facet="general",
+                qualifiers=qualifiers,
+            ))
+    elif subjects:
         # Legacy facets are global.  Binding every facet to every subject would
         # silently invent semantics for asymmetric sentences.  It is safe only
         # for one subject; multi-subject plans stay explicitly unresolved until
@@ -93,11 +109,7 @@ def legacy_requirement_to_semantic_plan(
         ))
 
     comparisons: tuple[ComparisonRequirement, ...] = ()
-    distinct_subjects = {
-        ("id", need.subject_ids) if need.subject_ids
-        else ("term", tuple(term.casefold().strip() for term in need.subject_terms))
-        for need in needs
-    }
+    distinct_subjects = {subject_context_key(need) for need in needs}
     if "comparison" in facets and len(needs) >= 2 and len(distinct_subjects) >= 2:
         comparisons = (ComparisonRequirement(
             side_need_ids=tuple(need.need_id for need in needs),

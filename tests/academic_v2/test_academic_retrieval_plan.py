@@ -216,3 +216,31 @@ def test_same_subject_can_be_compared_when_qualifier_contexts_are_distinct():
         comparisons=(ComparisonRequirement(("acute", "chronic"), ("finding",)),),
     )
     assert plan.comparisons
+
+
+def test_flat_comparison_needs_group_by_context_not_by_facet():
+    from app.academic_retrieval_plan import subject_context_key
+    needs = tuple(
+        RetrievalNeed(f"{side}-{facet}", subject_ids=("pulpitis",),
+                      subject_terms=("pulpitis",), facet=facet, qualifiers=(side,))
+        for side in ("akut", "kronik") for facet in ("diagnosis", "treatment")
+    )
+    comparison = ComparisonRequirement(tuple(n.need_id for n in needs), ("diagnosis", "treatment"))
+    plan = AcademicRetrievalPlan(original_query="Akut ve kronik pulpitis tanı ve tedavisini karşılaştır",
+                                needs=needs, answer_operation="compare", comparisons=(comparison,))
+    groups = {}
+    for need in plan.needs:
+        groups.setdefault(subject_context_key(need), []).append(need.facet)
+    assert len(groups) == 2
+    assert all(facets == ["diagnosis", "treatment"] for facets in groups.values())
+
+
+def test_subject_context_identity_ignores_set_order_and_display_labels():
+    from app.academic_retrieval_plan import subject_context_key
+    a = RetrievalNeed("a", subject_ids=("x", "y"), subject_terms=("A",), qualifiers=("akut", "üst"))
+    b = RetrievalNeed("b", subject_ids=("y", "x"), subject_terms=("B",), qualifiers=("ÜST", "akut"))
+    assert subject_context_key(a) == subject_context_key(b)
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
+        original_query="A ve B", needs=(a, b), answer_operation="compare",
+        comparisons=(ComparisonRequirement(("a", "b")),),
+    ))

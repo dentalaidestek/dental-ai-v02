@@ -49,3 +49,16 @@ def test_explicit_spans_still_exclude_edit_distance_typo_rescue():
     query = "mandbular kanal anatomisini anlat"
     assert any(node.id == "mandibular_canal" for node in matched_nodes(query))
     assert all(node.id != "mandibular_canal" for _, _, node in explicit_node_mentions(query))
+
+
+def test_measurement_derivation_is_not_an_impression_subject():
+    from app.dental_knowledge_graph import explicit_node_mentions
+    for word in ("ölçüm", "ölçümü", "ölçümünü", "ölçümlerin", "ölçümlerini", "olcumunu", "olcumlerin"):
+        query = f"{word} açıkla"
+        assert all(n.id != "impression" for n in matched_nodes(query)), query
+        assert all(n.id != "impression" for _, _, n in explicit_node_mentions(query)), query
+    # Genuine impression inflections must continue to resolve in both passes.
+    for word in ("ölçü", "ölçünün", "ölçüyü", "ölçülerini", "olcunun"):
+        query = f"{word} anlat"
+        assert any(n.id == "impression" for n in matched_nodes(query)), query
+        assert any(n.id == "impression" for _, _, n in explicit_node_mentions(query)), query

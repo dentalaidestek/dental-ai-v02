@@ -87,6 +87,15 @@ class RetrievalNeed:
             raise ValueError(f"{self.need_id}: a need cannot depend on itself")
 
 
+def subject_context_key(need: RetrievalNeed) -> tuple:
+    """Canonical comparison side identity; facets do not create new sides."""
+    subject = (
+        ("id", tuple(sorted(set(need.subject_ids)))) if need.subject_ids
+        else ("term", tuple(sorted({term.casefold().strip() for term in need.subject_terms})))
+    )
+    return subject, tuple(sorted({q.casefold().strip() for q in need.qualifiers}))
+
+
 @dataclass(frozen=True)
 class NeedGroup:
     """Logical evidence group for conjunction/disjunction semantics."""
@@ -181,15 +190,7 @@ class AcademicRetrievalPlan:
                     "comparison references unknown needs: " + ", ".join(sorted(missing))
                 )
             side_needs = [self.needs[ids.index(need_id)] for need_id in comparison.side_need_ids]
-            side_keys = {
-                (
-                    ("id", need.subject_ids)
-                    if need.subject_ids
-                    else ("term", tuple(term.casefold().strip() for term in need.subject_terms)),
-                    tuple(sorted(q.casefold().strip() for q in need.qualifiers)),
-                )
-                for need in side_needs
-            }
+            side_keys = {subject_context_key(need) for need in side_needs}
             if len(side_keys) < 2:
                 raise ValueError("comparison requires at least two distinct subject contexts")
 

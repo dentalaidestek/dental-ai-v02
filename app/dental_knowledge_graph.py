@@ -261,6 +261,8 @@ def _term_present(text: str, term: str) -> bool:
     escaped = re.escape(clean_term).replace(r"\ ", r"\s+")
     return bool(re.search(r"(?<!\w)" + escaped + r"(?!\w)", text, flags=re.IGNORECASE))
 
+_ASCII_FOLD = str.maketrans("çğıöşü", "cgiosu")
+
 _AMBIGUOUS_SHORT_TERMS = {"cep", "pd", "cr", "cal", "wl", "mine"}
 _DENTAL_CONTEXT_RE = re.compile(
     r"\b(?:diş|dental|periodontal|periodont|endodont|kanal|pulpa|oklüz|protez|"
@@ -282,7 +284,17 @@ def _alias_pattern(term: str) -> str:
     return r"\s+".join(pieces)
 
 
+# Inflection must not cross a lexical derivation boundary. "ölçüm" is
+# measurement, whereas "ölçü" is the impression procedure. This gate is shared
+# by exact, ASCII-folded, and explicit-span recognition.
+_DERIVED_ALIAS_ROOTS = {"olcu": ("olcum",)}
+
+
 def _term_context_ok(text: str, start: int, end: int, term: str) -> bool:
+    folded_term = term.casefold().translate(_ASCII_FOLD)
+    derivatives = _DERIVED_ALIAS_ROOTS.get(folded_term)
+    if derivatives and text[start:end].translate(_ASCII_FOLD).startswith(derivatives):
+        return False
     if term.casefold() not in _AMBIGUOUS_SHORT_TERMS:
         return True
     window = text[max(0, start - 56):min(len(text), end + 56)]
@@ -438,9 +450,6 @@ def _compiled_mention_patterns() -> tuple:
                 re.compile(r"(?<!\w)" + _alias_pattern(clean_term) + r"(?!\w)", flags=re.I),
             ))
     return tuple(compiled)
-
-
-_ASCII_FOLD = str.maketrans("çğıöşü", "cgiosu")
 
 
 @functools.lru_cache(maxsize=1)

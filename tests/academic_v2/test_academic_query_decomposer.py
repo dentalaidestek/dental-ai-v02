@@ -206,3 +206,42 @@ def test_parser_level_implicit_comparison_cannot_silently_become_plain_answer():
     assert plan.answer_operation in {"compare", "answer"}
     if plan.answer_operation == "answer":
         assert "comparison_sides" in plan.unresolved_references
+
+
+def test_inflected_measurement_facets_share_canonical_ownership_contract():
+    from app.dental_query_intent import build_dental_requirement_plan
+    for facet in ("ölçümünü", "ölçümlerini", "ölçümünü de", "olcumunu"):
+        ownerless = decompose_academic_query(f"{facet} açıkla")
+        assert "clause_1:subject_reference" in ownerless.unresolved_references
+        assert not build_dental_requirement_plan(f"{facet} açıkla").subject_terms
+        explicit = decompose_academic_query(f"SNA {facet} açıkla")
+        assert not explicit.unresolved_references
+        assert {(n.subject_ids, n.facet) for n in explicit.needs} == {(("sna",), "measurement")}
+        continued = decompose_academic_query(f"SNA değerini anlat ama {facet} açıkla")
+        assert not continued.unresolved_references
+        assert any(n.subject_ids == ("sna",) and n.facet == "measurement" for n in continued.needs)
+        ambiguous = decompose_academic_query(f"SNA ve SNB değerlerini anlat ama {facet} açıkla")
+        assert "clause_2:subject_reference" in ambiguous.unresolved_references
+        assert not any(n.facet == "measurement" for n in ambiguous.needs)
+
+
+def test_ownerless_repeated_facet_is_not_hidden_by_subject_and_facet_sets():
+    plan = decompose_academic_query("Pulpitis tanısını ve dry socket tedavisini ve tanısını anlat")
+    assert "clause_1:subject_facet_binding" in plan.unresolved_references
+    assert not any(n.subject_ids == ("dry_socket",) and n.facet == "diagnosis" for n in plan.needs)
+    control = decompose_academic_query("Pulpitis tanısını ve dry socket tedavisini anlat")
+    assert not control.unresolved_references
+
+
+def test_duplicate_resolved_bindings_do_not_become_ambiguous():
+    plan = decompose_academic_query("SNA değerini ve SNB ölçümünü anlat; SNA değerini ve SNB ölçümünü anlat")
+    assert not plan.unresolved_references
+    assert len(plan.needs) == 2
+
+
+def test_dedupe_keeps_different_qualifiers_and_polarities():
+    plan = decompose_academic_query("Akut pulpitis tanısını anlat ama kronik pulpitis tanısını anlat")
+    assert len([n for n in plan.needs if n.facet == "diagnosis"]) == 2
+    assert not plan.unresolved_references
+    negative = decompose_academic_query("Bisfosfonat endikasyonlarını anlat ama endikasyonları değildir")
+    assert {n.polarity for n in negative.needs if n.facet == "indication"} == {"positive", "negative"}

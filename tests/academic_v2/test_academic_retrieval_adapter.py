@@ -93,3 +93,19 @@ def test_comparison_operation_requires_two_distinct_sides():
     assert plan.answer_operation == "answer"
     assert not plan.comparisons
     assert "comparison_sides" in plan.unresolved_references
+
+
+def test_same_canonical_subject_comparison_keeps_distinct_side_contexts():
+    plan = legacy_requirement_to_semantic_plan(
+        "Akut pulpitis ile kronik pulpitis bulgularını karşılaştır",
+    )
+    assert plan.answer_operation == "compare"
+    assert [(n.subject_ids, n.qualifiers) for n in plan.needs] == [
+        (("pulpitis",), ("akut",)), (("pulpitis",), ("kronik",)),
+    ]
+    # Legacy global facets still cannot certify sentence-level ownership.
+    assert "subject_facet_binding" in plan.unresolved_references
+    assert all(n.facet == "general" for n in plan.needs)
+    identical = legacy_requirement_to_semantic_plan("Akut pulpitis ile akut pulpitis bulgularını karşılaştır")
+    assert identical.answer_operation == "answer"
+    assert "comparison_sides" in identical.unresolved_references

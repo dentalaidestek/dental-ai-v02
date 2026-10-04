@@ -1311,3 +1311,24 @@ def test_chunk_selection_multi_facet_matrix_requires_each_requested_evidence_fam
         assert _evidence_sufficiency(query, selected, requirement=plan).sufficient, (
             query, [(r[0], r[5]) for r in selected]
         )
+
+
+def test_row_feature_fallback_uses_a_real_text_separator():
+    joined = next(node for node in ast.walk(tree) if isinstance(node, ast.JoinedStr)
+                  and {part.value.id for part in node.values if isinstance(part, ast.FormattedValue)
+                       and isinstance(part.value, ast.Name)} == {"section", "body"})
+    value = eval(compile(ast.Expression(joined), "<row-feature-text>", "eval"),
+                 {"section": "SNA", "body": "SNB"})
+    assert value == "SNA\nSNB"
+    from app.dental_semantics import analyze_dental_text
+    assert {"sna", "snb"}.issubset(analyze_dental_text(value).node_ids)
+
+
+def test_course_wide_coverage_operator_has_real_word_boundaries():
+    pattern = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)
+                   and isinstance(node.value, str) and "baştan sona|genel tekrar" in node.value)
+    matcher = __import__("re").compile(pattern)
+    for query in ("SNA için tüm notları özetle", "dersi genel tekrar yap", "bütün ders içeriği"):
+        assert matcher.search(query), query
+    for query in ("SNA normal değerini anlat", "tamamıyla bu kavramı açıkla"):
+        assert not matcher.search(query), query

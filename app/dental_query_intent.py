@@ -87,7 +87,7 @@ class DentalIntent:
 _RULES = (
     ("value", re.compile(r"(?iu)(?:\b(?:kaç|kaçtır|değer(?!lendir)[a-zçğıöşü]*|(?:normal|referans)\s+(?:değer(?!lendir)[a-zçğıöşü]*|aral(?:ık|ığ)[a-zçğıöşü]*)|mm|oran[a-zçğıöşü]*)\b|\b(?:açı|değer|ölçüm|oran)[a-zçğıöşü]*\b.{0,32}\b(?:değiş[a-zçğıöşü]*|art[a-zçğıöşü]*|azal[a-zçğıöşü]*|trend[a-zçğıöşü]*|seyir[a-zçğıöşü]*)\b)", re.I),
      ("measurement",), ("measures", "assessed_by")),
-    ("measurement", re.compile(r"\b(?:hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
+    ("measurement", re.compile(r"\b(?:ölçüm[a-zçğıöşü]*|olcum[a-z]*|hangi açı(?:yla)?|hangi ölçüm|ölçüm mantığ[a-zçğıöşü]*|neyle ölç|nasıl ölç|nasıl ölçül|ölçül[a-zçğıöşü]*|ölçüm[a-zçğıöşü]* nasıl|neyi değerlendir[a-zçğıöşü]*|değerlendiril[a-zçğıöşü]*|değerlendir[a-zçğıöşü]*\s+(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*|(?:hangi\s+)?(?:yapısal\s+)?(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*.{0,24}değerlendir[a-zçğıöşü]*|ölçüm[a-zçğıöşü]*.{0,40}(?:temsil|değerlendir)[a-zçğıöşü]*.{0,32}(?:yapı|parametre|özellik|ilişki)[a-zçğıöşü]*)\b", re.I),
      ("measurement",), ("measures", "assessed_by", "used_for")),
     ("definition", re.compile(r"\b(?:nedir|ne\s+demek(?:tir)?|tanım[a-z]*|kavram[a-z]*\s+(?:acikla|anlat)|(?:kavramı|kavramini)\s+(?:acikla|anlat))\b", re.I),
      ("diagnosis", "finding", "anatomy", "measurement", "relation"), ()),
@@ -295,7 +295,7 @@ _SUBJECT_STOP_RE = re.compile(
     r"\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
     r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
     r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
-    r"sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
+    r"ölçüm[a-zçğıöşü]*|olcum[a-z]*|de|da|sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"
     r"klinik|radyografik|ayırt edici|ayırıcı|değil|değildir|olmayan|olmaz|olmamalı(?:dır)?|"
     r"yapılmaz|kullanılmaz|uygulanmaz|önerilmez|tercih edilmez|kaçınılmalı(?:dır)?|"
     r"hariç|yanlıştır|peki|bunun|onun|bunların|ve|ile|ile birlikte)\b",
