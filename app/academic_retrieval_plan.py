@@ -96,6 +96,8 @@ class NeedGroup:
             raise ValueError("group_id must not be empty")
         if not self.need_ids:
             raise ValueError(f"{self.group_id}: need group must not be empty")
+        if len(self.need_ids) != len(set(self.need_ids)):
+            raise ValueError(f"{self.group_id}: duplicate need references are not allowed")
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,8 @@ class ComparisonRequirement:
     def __post_init__(self) -> None:
         if len(self.side_need_ids) < 2:
             raise ValueError("comparison requires at least two side needs")
+        if len(self.side_need_ids) != len(set(self.side_need_ids)):
+            raise ValueError("comparison side needs must be unique")
 
 
 @dataclass(frozen=True)
