@@ -213,6 +213,7 @@ class ConversationSubject:
     qualifiers: tuple[str, ...] = ()
     source: str = "user"
     history_index: int = -1
+    reference_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -332,7 +333,12 @@ def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSu
             item_text, source="assistant_list_item", history_index=idx
         )
         if subject:
-            return subject
+            return ConversationSubject(
+                terms=subject.terms, node_ids=subject.node_ids,
+                qualifiers=subject.qualifiers, source=subject.source,
+                history_index=subject.history_index,
+                reference_text=re.sub(r"\s+", " ", item_text).strip()[:500],
+            )
     return None
 
 
@@ -376,7 +382,9 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     ordinal_subject = _assistant_ordinal_subject(clean, window)
     if ordinal_subject:
         subject_text = _subject_text(ordinal_subject, current_qualifiers, clean)
-        return f"{subject_text} — {clean}" if subject_text else clean
+        reference_text = ordinal_subject.reference_text
+        prefix = " — ".join(x for x in (subject_text, reference_text) if x)
+        return f"{prefix} — {clean}" if prefix else clean
 
     folded = clean.casefold()
     clear_topic = bool(_STATE_CLEAR_TOPIC_RE.search(clean))
