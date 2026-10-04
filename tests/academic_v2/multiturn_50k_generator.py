@@ -170,6 +170,43 @@ def build(i:int,seed=20261004)->Case:
  elif state=="replace_task":
   history += [("user","test hazırla"),("assistant","test")]
   q="yok soru istemiyorum normal anlat"; expected["task"]="explain"
+ elif state=="replace_topic":
+  history += [("user",f"{t1[0]} anlat"),("assistant","açıklama")]
+  q=f"yok {t2[0]} anlat"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
+ elif state=="inherit_topic":
+  q="aynı konudan devam et"; must=list(t1[1]); expected["topic"]=t1[0]
+ elif state=="clear_topic":
+  history += [("user",f"{t1[0]} anlat"),("assistant","açıklama")]
+  q="önceki konuyu bırak, genel çalışma planı çıkar"; bad=list(t1[1]); must=[]; expected["topic"]=None
+ elif state=="inherit_task":
+  history += [("user",f"{t1[0]} için test hazırla"),("assistant","test")]
+  q="aynı şekilde devam et"; expected["task"]="generate_questions"; must=list(t1[1])
+ elif state=="clear_task":
+  history += [("user","test hazırla"),("assistant","test")]
+  q=f"testi bırak, {t1[0]} hakkında normal konuşalım"; expected["task"]="explain"; must=list(t1[1])
+ elif state=="replace_format":
+  history += [("user","madde madde anlat"),("assistant","maddeler")]
+  q="yok tablo şeklinde ver"; expected["format"]="table"
+ elif state=="inherit_format":
+  history += [("user","tablo şeklinde anlat"),("assistant","tablo")]
+  q="aynı formatta devam et"; expected["format"]="table"
+ elif state=="clear_format":
+  history += [("user","tablo şeklinde anlat"),("assistant","tablo")]
+  q="tablo olmasın normal anlat"; expected["format"]=None
+ elif state=="clear_count":
+  history += [("user","10 soru hazırla"),("assistant","10 soru")]
+  q="soru sayısı önemli değil, konuyu anlat"; expected.update(task="explain",count=None)
+ elif state=="qualifier_add":
+  q="bunu çocuk hastalar açısından anlat"; expected["qualifiers"]=("çocuk",)
+ elif state=="qualifier_replace":
+  history += [("user","çocuk hastalar açısından anlat"),("assistant","çocuk")]
+  q="yok çocuk değil erişkin açısından"; expected["qualifiers"]=("erişkin",); expected["forbidden_qualifiers"]=("çocuk",)
+ elif state=="qualifier_remove":
+  history += [("user","çocuk hastalar açısından anlat"),("assistant","çocuk")]
+  q="yaş grubunu boşver genel anlat"; expected["qualifiers"]=(); expected["forbidden_qualifiers"]=("çocuk",)
+ elif state=="error_propagation_trap":
+  history += [("assistant",f"Yanlışlıkla {t2[0]} dedim.")]
+  q="önceki asıl konudan devam et"; must=list(t1[1]); bad=list(t2[1]); expected["topic"]=t1[0]
  elif state=="stale_state_trap":
   history += [("user",f"{t2[0]} için 10 test sorusu hazırla"),("assistant","hazırlandı")]
   q=f"boşver, {t1[0]} normal anlat"; must=list(t1[1]); bad=list(t2[1]); expected.update(topic=t1[0],task="explain")
