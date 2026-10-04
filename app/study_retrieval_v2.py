@@ -450,7 +450,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # antecedent.  Correction excludes the negated old target by relying on the
     # current requirement plan rather than copying arbitrary prior prose.
     if current_subject and (comparison or correction_relation):
+        negated_terms: set[str] = set()
+        if correction_relation:
+            left = re.split(r"(?iu)\b(?:değil|degil)\b", clean, maxsplit=1)[0]
+            left_plan = build_dental_requirement_plan(left)
+            negated_terms = {term.casefold() for term in left_plan.subject_terms}
         for term in current_subject.terms:
+            if term.casefold() in negated_terms:
+                continue
             if term.casefold() not in subject_text.casefold():
                 prefixes.append(term)
 
