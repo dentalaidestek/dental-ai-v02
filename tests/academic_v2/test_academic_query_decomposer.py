@@ -115,3 +115,23 @@ def test_relation_helpers_do_not_turn_into_comparison_sides():
     plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
     assert plan.answer_operation == "answer"
     assert not plan.comparisons
+
+
+def test_unmodeled_or_semantics_fail_closed_instead_of_flattening():
+    plan = decompose_academic_query("SNA veya SNB normal değerini getir")
+    assert "unmodeled:logical_or" in plan.unresolved_references
+
+
+def test_unmodeled_exclusion_semantics_fail_closed():
+    plan = decompose_academic_query("Pulpitis tanısını anlat ama tedaviye girme")
+    assert "unmodeled:explicit_exclusion" in plan.unresolved_references
+
+
+def test_unmodeled_numeric_constraint_fails_closed():
+    plan = decompose_academic_query("Sondalama derinliği en az 4 mm ise neyi gösterir?")
+    assert "unmodeled:numeric_constraint" in plan.unresolved_references
+
+
+def test_unmodeled_past_question_source_semantics_fail_closed():
+    plan = decompose_academic_query("Geçmiş sorularda apeksifikasyondan ne sorulmuş?")
+    assert "unmodeled:source_selection" in plan.unresolved_references
