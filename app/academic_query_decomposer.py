@@ -14,7 +14,7 @@ _COORDINATOR_RE = re.compile(r"\s*,\s*|\s+ve\s+|\s+ile\s+", re.I)
 _COMPARISON_RE = re.compile(r"\b(?:fark|karşılaştır|karsilastir|versus|vs\.?|hangisi daha)\w*\b", re.I)
 _NEGATIVE_RE = re.compile(
     r"(?iu)\b(?:değil(?:dir)?|olmayan|olmaz|kullanılmaz|uygulanmaz|yapılmaz|"
-    r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?|hariç|kontrendike)\b"
+    r"önerilmez|tercih\s+edilmez|yanlış(?:tır)?|hariç)\b"
 )
 
 
