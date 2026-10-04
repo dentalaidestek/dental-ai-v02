@@ -287,6 +287,22 @@ def validate_cases(cases):
   ("multi_hop",lambda c:c.expected.get("reference")=="assistant_item_13" and c.expected.get("count")==10),
   ("assistant_prose_forbidden_subject",lambda c:"implant" in c.must_not or "ameloblastoma" in c.must_not),
  )
+ distractor_checks={
+  "assistant_wrong_topic":lambda c:bool(c.must_not),
+  "user_side_comment":lambda c:any("yarın sınav" in x[1] for x in c.history),
+  "irrelevant_turn":lambda c:any("sağ ol" in x[1] for x in c.history),
+  "two_candidate_topics":lambda c:any("aklımda" in x[1] for x in c.history),
+  "old_count":lambda c:any("40 soru" in x[1] for x in c.history),
+  "old_format":lambda c:any("tablo istemiştim" in x[1] for x in c.history),
+  "old_goal":lambda c:any("ezber için" in x[1] for x in c.history),
+  "old_qualifier":lambda c:any("sadece çocuk" in x[1] for x in c.history),
+  "quoted_old_question":lambda c:bool(c.must_not),
+ }
+ for value,predicate in distractor_checks.items():
+  subset=[c for c in cases if c.axes.get("distractor")==value and not c.expected.get("should_abstain")]
+  if subset:
+   ratio_ok=sum(bool(predicate(c)) for c in subset)/len(subset)
+   assert ratio_ok>=0.70, f"distractor={value} is mostly metadata-only: {ratio_ok:.3f}"
  for value,predicate in checks:
   axis="state" if value in STATE else "reference"
   subset=[c for c in cases if c.axes.get(axis)==value and not c.expected.get("should_abstain")]
