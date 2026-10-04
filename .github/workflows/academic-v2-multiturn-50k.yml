@@ -33,6 +33,7 @@ jobs:
       - name: Smoke import and 10 continuity cases
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE" python - <<'PY'
+          import json
           from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
           from scripts.benchmark_multiturn_continuity_50k import score
           cases=generate(50000)
