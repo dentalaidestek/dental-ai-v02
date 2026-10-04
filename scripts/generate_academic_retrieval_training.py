@@ -12,7 +12,13 @@ import json
 import random
 from typing import Iterable
 
-from app.academic_retrieval_plan import (\n    AcademicRetrievalPlan, ComparisonRequirement, NeedGroup, RetrievalNeed, ValueConstraint,\n)
+from app.academic_retrieval_plan import (
+    AcademicRetrievalPlan,
+    ComparisonRequirement,
+    NeedGroup,
+    RetrievalNeed,
+    ValueConstraint,
+)
 
 
 @dataclass(frozen=True)
