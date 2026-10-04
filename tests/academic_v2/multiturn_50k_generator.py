@@ -165,7 +165,26 @@ def build(i:int,seed=20261004)->Case:
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
  return Case(cid,axes,tuple(history[-8:]),q,tuple(must),tuple(bad),expected)
 
+def _semantic_signature(case:Case):
+ return (case.history,case.query,case.must,case.must_not,tuple(sorted(case.expected.items(),key=lambda x:x[0])))
+
+def validate_cases(cases):
+ assert cases, "no generated cases"
+ assert len({c.case_id for c in cases})==len(cases), "duplicate case ids"
+ semantic_unique=len({_semantic_signature(c) for c in cases})
+ ratio=semantic_unique/len(cases)
+ assert ratio>=0.90, f"semantic diversity too low: {ratio:.4f}"
+ if len(cases)>=5000:
+  for axis,values in (("interaction",INTERACTION),("reference",REFERENCE),("state",STATE),("language",LANGUAGE),("distractor",DISTRACTOR),("distance",DISTANCE),("turn_length",TURN_LENGTH)):
+   seen={c.axes.get(axis) for c in cases}
+   missing=set(values)-seen
+   assert not missing, f"{axis} coverage missing: {sorted(missing,key=str)}"
+ assert any(c.expected.get("should_abstain") for c in cases), "no abstention cases"
+ assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases"
+ assert any(c.expected.get("count")==20 for c in cases), "no count replacement cases"
+ return {"count":len(cases),"exact_unique":len({c.case_id for c in cases}),"semantic_unique":semantic_unique,"semantic_unique_ratio":ratio}
+
 def generate(n=50000,seed=20261004):
  cases=[build(i,seed) for i in range(n)]
- assert len({c.case_id for c in cases})==n, "duplicate generated cases"
+ validate_cases(cases)
  return cases
