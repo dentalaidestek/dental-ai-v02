@@ -162,7 +162,8 @@ class AcademicRetrievalPlan:
                 )
             side_needs = [self.needs[ids.index(need_id)] for need_id in comparison.side_need_ids]
             subject_keys = {
-                (need.subject_ids, need.subject_terms)
+                ("id", need.subject_ids) if need.subject_ids
+                else ("term", tuple(term.casefold().strip() for term in need.subject_terms))
                 for need in side_needs
             }
             if len(subject_keys) < 2:
