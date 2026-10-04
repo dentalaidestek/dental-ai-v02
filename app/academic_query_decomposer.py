@@ -244,10 +244,14 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
             tuple(dict.fromkeys(need.facet for need in comparison_needs)),
         ),)
 
+    operation = "compare" if comparisons else "answer"
+    if _COMPARISON_RE.search(clean) and not comparisons:
+        unresolved.append("comparison_sides")
+
     return AcademicRetrievalPlan(
         original_query=clean,
         needs=tuple(needs),
-        answer_operation="compare" if comparisons else "answer",
+        answer_operation=operation,
         comparisons=comparisons,
         requires_visual_source=legacy.requires_visual_source,
         unresolved_references=tuple(dict.fromkeys(unresolved)),
