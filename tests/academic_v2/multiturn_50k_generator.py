@@ -214,8 +214,17 @@ def build(i:int,seed=20261004)->Case:
  if expected.get("should_abstain"):
   pass
  elif distractor=="assistant_dental_terms": history[-1]=("assistant",history[-1][1]+" amalgam implant pulpitis periodontitis")
+ elif distractor=="assistant_wrong_topic":
+  history += [("assistant",f"Yanlış örnek olarak {t2[0]} diyebilirim.")]; bad += list(t2[1])
+ elif distractor=="user_side_comment": history += [("user","bu arada yarın sınav var"),("assistant","anladım")]
  elif distractor=="irrelevant_turn": history += [("user","tamam sağ ol"),("assistant","rica ederim")]
  elif distractor=="two_candidate_topics": history += [("user",f"{t2[0]} de aklımda"),("assistant","not edildi")]
+ elif distractor=="same_term_different_context": history += [("assistant","Aynı terim başka bir klinik bağlamda da kullanılabilir.")]
+ elif distractor=="old_count": history += [("user","önceden 40 soru demiştim"),("assistant","not")]
+ elif distractor=="old_format": history += [("user","önceden tablo istemiştim"),("assistant","not")]
+ elif distractor=="old_goal": history += [("user","önceden ezber için istemiştim"),("assistant","not")]
+ elif distractor=="old_qualifier": history += [("user","önceden sadece çocuk demiştim"),("assistant","not")]
+ elif distractor=="quoted_old_question": history += [("user",f'Eski sorum şuydu: "{t2[0]} nedir?"'),("assistant","alıntıyı gördüm")]; bad += list(t2[1])
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
