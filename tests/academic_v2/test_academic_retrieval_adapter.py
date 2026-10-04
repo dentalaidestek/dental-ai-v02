@@ -79,3 +79,17 @@ def test_unresolved_subject_is_preserved_fail_closed():
     assert plan.unresolved_references == ("subject",)
     assert plan.fail_closed is True
     assert plan.needs[0].subject_terms == ("<unresolved>",)
+
+
+def test_comparison_operation_requires_two_distinct_sides():
+    plan = legacy_requirement_to_semantic_plan(
+        "Pulpitisi karşılaştır.",
+        _legacy(
+            intents=(DentalIntent("comparison", (), ()),),
+            requested_facets=("comparison",),
+            subject_count=1,
+        ),
+    )
+    assert plan.answer_operation == "answer"
+    assert not plan.comparisons
+    assert "comparison_sides" in plan.unresolved_references
