@@ -136,7 +136,7 @@ def test_comparison_requires_distinct_subjects_not_just_two_needs():
 
 
 def test_comparison_cannot_fake_distinct_subjects_with_alias_labels():
-    _raises("distinct subjects", lambda: AcademicRetrievalPlan(
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
         original_query="aynı kavram",
         answer_operation="compare",
         needs=(
