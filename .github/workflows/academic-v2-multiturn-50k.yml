@@ -25,7 +25,7 @@ jobs:
           python -m pip install --disable-pip-version-check -q -r requirements.txt
       - name: Run only 50K multi-turn continuity benchmark
         run: |
-          python scripts/benchmark_multiturn_continuity_50k.py --count 50000 --report /tmp/multiturn_50k_report.json
+          PYTHONPATH="$GITHUB_WORKSPACE" python -m scripts.benchmark_multiturn_continuity_50k --count 50000 --report /tmp/multiturn_50k_report.json
       - name: Print failure summary
         if: always()
         run: |
