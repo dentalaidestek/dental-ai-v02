@@ -408,9 +408,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         _FOLLOWUP_RE.search(clean)
         or relative or assistant_ref or comparison or correction_relation
         or re.search(
-            r"(?iu)\b(?:aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
+            r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
+            r"aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
             r"normal anlat|soru sayısı|soru sayisi|formatta|amaçla|amacla|"
-            r"değil|degil|boşver|bosver|sadece bu)\b", clean
+            r"değil|degil|boşver|bosver|sadece bu|"
+            r"biraz daha|daha ayrınt|daha ayrint|detaylandır|detaylandir|"
+            r"mekanizmasıyla|mekanizmasiyla|detaylarını|detaylarini|"
+            r"kısa özet|kisa ozet|özünü ver|ozunu ver|kısalt|kisalt|"
+            r"klinikte neye dikkat|önemli sonuç|onemli sonuc)\w*\b", clean
         )
     )
     current_qualifiers = set(query_qualifiers(clean))
