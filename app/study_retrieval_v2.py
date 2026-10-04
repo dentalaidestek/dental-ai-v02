@@ -213,6 +213,25 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         return clean
 
     window = recent_history[-8:]
+
+    # Explicit ordinal references may resolve a structured assistant list item.
+    # This is opt-in reference resolution, not free-form assistant prose seeding.
+    ordinal = re.search(r"(?iu)\b(\d{1,2})\.?\s*soru", clean)
+    if ordinal:
+        wanted=int(ordinal.group(1))
+        for item in reversed(window):
+            if str(item.get("role") or "").casefold() not in {"assistant","ai"}:
+                continue
+            body=str(item.get("content") or "")
+            m=re.search(rf"(?ms)^\s*{wanted}\.\s*(.+?)(?=^\s*{wanted+1}\.|\Z)",body)
+            if not m:
+                continue
+            item_text=re.sub(r"(?m)^\s*[A-E][.)].*$"," ",m.group(1))
+            plan=build_dental_requirement_plan(item_text[:700])
+            if plan.subject_terms:
+                subject=" ".join(plan.subject_terms)
+                return f"{subject} — {clean}"
+
     current = build_dental_requirement_plan(clean)
     current_q = set(query_qualifiers(clean))
 
