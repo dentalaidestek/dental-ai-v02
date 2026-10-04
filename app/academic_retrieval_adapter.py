@@ -93,16 +93,23 @@ def legacy_requirement_to_semantic_plan(
         ))
 
     comparisons: tuple[ComparisonRequirement, ...] = ()
-    if "comparison" in facets and len(needs) >= 2:
+    distinct_subjects = {
+        ("id", need.subject_ids) if need.subject_ids
+        else ("term", tuple(term.casefold().strip() for term in need.subject_terms))
+        for need in needs
+    }
+    if "comparison" in facets and len(needs) >= 2 and len(distinct_subjects) >= 2:
         comparisons = (ComparisonRequirement(
             side_need_ids=tuple(need.need_id for need in needs),
             dimensions=tuple(f for f in facets if f != "comparison"),
         ),)
+    elif "comparison" in facets:
+        unresolved.append("comparison_sides")
 
     return AcademicRetrievalPlan(
         original_query=query,
         needs=tuple(needs),
-        answer_operation="compare" if "comparison" in facets else "answer",
+        answer_operation="compare" if comparisons else "answer",
         comparisons=comparisons,
         requires_visual_source=legacy.requires_visual_source,
         unresolved_references=tuple(unresolved),
