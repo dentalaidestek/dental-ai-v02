@@ -481,6 +481,7 @@ def test_study_operations_bind_predicates_instead_of_subject_words():
     from app.dental_query_intent import classify_academic_study_task
     cases = (
         ('Hocam burada takıldım, kron preparasyonunun gerekçesini açıklamanı istiyorum.', 'explain', False, False),
+        ('Kron preparasyonunun gerekçesini anlatır mısın?', 'explain', False, False),
         ('Bolton tüm dişler oranının mantığını açıkla.', 'explain', False, False),
         ('Karışık dişlenmede ölçüm değerlendirmesi nasıl yapılır, sade biçimde anlat.', 'explain', False, False),
         ('Finale çalışıyorum ama implanttan yeni sorular üret.', 'generate_questions', False, True),
@@ -528,4 +529,6 @@ def test_study_operator_typo_rescue_preserves_subject_and_negative_request():
         assert plan and plan.task == task, (query, plan)
     for query in ('Soru üretme.', 'Notu özetleme.', 'Soru üret veya notu özetle.',
                   'Konuyu anlat veya özetle.', 'Notta “özetle” yazıyor.'):
+        assert classify_academic_study_task(query) is None, query
+    for query in ('Hoca yeni soru hazırlar.', 'Her öğrenci yeni soru üretir.'):
         assert classify_academic_study_task(query) is None, query

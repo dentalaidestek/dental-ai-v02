@@ -99,9 +99,10 @@ class StudyOperation:
 
 # Request inflections, not arbitrary root wildcards ("degerlendirmesi" is a
 # subject noun; "degerlendir" is an operation). Negative verbs are not requests.
-_REQUEST_END = r'(?:yin|in|sana|sene|mani|manizi|man|mam|r|ir|yabilir|abilir|mek|mak|ip|yip)?\b'
+_REQUEST_END = r'(?:yin|in|sana|sene|mani|manizi|man|mam|yabilir|abilir|mek|mak|ip|yip)?\b'
 def _action(clause: str,roots: str) -> bool:
-    return bool(re.search(r'\b(?:'+roots+r')'+_REQUEST_END,clause))
+    return bool(re.search(r'\b(?:'+roots+r')'+_REQUEST_END,clause)
+        or re.search(r'\b(?:'+roots+r')(?:r|ir)\s+(?:misin|misiniz)\b',clause))
 
 def parse_study_operation(query: str) -> StudyOperation | None:
     # Quoted note content is evidence, not a request to the assistant.
@@ -152,5 +153,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     if broad and any(_action(c,'cikar|listele|sirala|derle|topla') and bool(re.search(r'\b(?:deger\w*|olcum\w*|oran\w*|siniflama\w*|bulgu\w*|tani\w*|tedavi\w*)\b',c)) for c in clauses):return StudyOperation('summarize',False,False,True)
     if salience:return StudyOperation('exam_points',False,False,True)
     if explain:return StudyOperation('explain',False,False,broad)
+    if any(re.search(r'\b(?:'+ '|'.join(_ACTION_ROOTS) +r')(?:r|ir)\b',c) for c in clauses):
+        return StudyOperation(None)
     if has_negative or unquoted!=(query or ''):return StudyOperation(None)
     return None
