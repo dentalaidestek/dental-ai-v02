@@ -135,3 +135,16 @@ def test_unmodeled_numeric_constraint_fails_closed():
 def test_unmodeled_past_question_source_semantics_fail_closed():
     plan = decompose_academic_query("Geçmiş sorularda apeksifikasyondan ne sorulmuş?")
     assert "unmodeled:source_selection" in plan.unresolved_references
+
+
+def test_exclusion_is_not_mislabeled_as_negative_fact():
+    plan = decompose_academic_query("Pulpitis tanısını anlat, tedavi hariç")
+    assert "unmodeled:explicit_exclusion" in plan.unresolved_references
+    assert all(n.polarity == "positive" for n in plan.needs)
+
+
+def test_unmodeled_temporal_order_fails_closed_instead_of_flattening():
+    plan = decompose_academic_query(
+        "Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat"
+    )
+    assert "unmodeled:temporal_order" in plan.unresolved_references
