@@ -245,7 +245,10 @@ def decompose_academic_query(query: str) -> AcademicRetrievalPlan:
         ),)
 
     operation = "compare" if comparisons else "answer"
-    if _COMPARISON_RE.search(clean) and not comparisons:
+    comparison_requested = _COMPARISON_RE.search(clean) is not None or any(
+        item.name == "comparison" for item in legacy.intents
+    )
+    if comparison_requested and not comparisons:
         unresolved.append("comparison_sides")
 
     return AcademicRetrievalPlan(
