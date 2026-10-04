@@ -353,7 +353,7 @@ def qualifier_present(qualifier: str, text: str) -> bool:
 
 _NEGATION_REQUEST_RE = re.compile(
     r"\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
-    r"hariç|yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
+    r"yanlıştır|yanlış olan|doğru değildir|hangisi yanlış|"
     r"önerilmez|tercih edilmez|olmamalı(?:dır)?|kaçınılmalı(?:dır)?)\b",
     re.I,
 )
@@ -363,7 +363,7 @@ def _asks_negation(query: str) -> bool:
         r"(?iu)\b(?:değil|değildir|olmayan|olmaz|yapılmaz|kullanılmaz|uygulanmaz|"
         r"yapılma(?:ma)?[a-zçğıöşü]*|kullanılma(?:ma)?[a-zçğıöşü]*|uygulanma(?:ma)?[a-zçğıöşü]*|"
         r"önerilme(?:me)?[a-zçğıöşü]*|tercih\s+edilme(?:me)?[a-zçğıöşü]*|"
-        r"hariç|yanlış(?:tır|\s+olan)?|doğru\s+(?:değil(?:dir)?|olmayan)|önerilmez|tercih\s+edilmez|olmamalı[a-zçğıöşü]*|"
+        r"yanlış(?:tır|\s+olan)?|doğru\s+(?:değil(?:dir)?|olmayan)|önerilmez|tercih\s+edilmez|olmamalı[a-zçğıöşü]*|"
         r"kaçınılma[a-zçğıöşü]*|kaçınılmalı[a-zçğıöşü]*|kaçınmam\s+gerek[a-zçğıöşü]*|uzak\s+dur[a-zçğıöşü]*|kontrendike\s+değildir)\b",
         text,
     ))
