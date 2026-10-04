@@ -75,6 +75,18 @@ def test_ambiguous_multi_subject_antecedent_does_not_guess_continuation_subject(
     assert "clause_2:subject_reference" in plan.unresolved_references
 
 
+def test_ownerless_facet_cannot_be_hidden_by_lexical_fallback():
+    plan = decompose_academic_query("Ölçümünü de açıkla")
+    assert "clause_1:subject_reference" in plan.unresolved_references
+    assert not any(n.subject_ids for n in plan.needs)
+
+
+def test_resolved_single_subject_continuation_does_not_gain_false_unresolved():
+    plan = decompose_academic_query("Pulpitisin tanısını anlat ama tedavisini de açıkla")
+    assert "clause_2:subject_reference" not in plan.unresolved_references
+    assert any("pulpitis" in n.subject_ids and n.facet == "treatment" for n in plan.needs)
+
+
 def test_temporal_operator_is_preserved_as_unmodeled_semantics():
     plan = decompose_academic_query("Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat")
     assert "unmodeled:temporal_order" in plan.unresolved_references
