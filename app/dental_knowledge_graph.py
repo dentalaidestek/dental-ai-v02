@@ -494,6 +494,33 @@ def _ascii_fallback_nodes(lowered: str, already: set[str]) -> list[DentalNode]:
     return out
 
 
+def explicit_node_mentions(query: str) -> tuple[tuple[int, int, DentalNode], ...]:
+    """Return canonical exact/inflected graph mentions with spans.
+
+    This deliberately excludes fuzzy typo rescue because a fuzzy node has no
+    trustworthy character span. Consumers that need ownership/qualifier
+    binding must prefer no binding over assigning a modifier to a guessed span.
+    """
+    lowered = _match_text(query)
+    mentions: list[tuple[int, int, int, DentalNode]] = []
+    for node, clean_term, pattern in _compiled_mention_patterns():
+        for match in pattern.finditer(lowered):
+            if _term_context_ok(lowered, match.start(), match.end(), clean_term):
+                mentions.append((match.start(), match.end(), len(clean_term), node))
+    mentions.sort(key=lambda item: (-item[2], item[0], item[3].id))
+    occupied: list[tuple[int, int]] = []
+    selected: list[tuple[int, int, DentalNode]] = []
+    seen: set[str] = set()
+    for start, end, _, node in mentions:
+        if any(start < used_end and end > used_start for used_start, used_end, _ in selected):
+            continue
+        occupied.append((start, end))
+        if node.id not in seen:
+            seen.add(node.id)
+            selected.append((start, end, node))
+    return tuple(sorted(selected, key=lambda item: item[0]))
+
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
 
