@@ -15,6 +15,23 @@ TOPICS=[
 ("furkasyon lezyonları",("furkasyon",)),("periapikal kist",("periapikal","kist")),
 ("internal rezorpsiyon",("internal","rezorpsiyon")),("dry socket",("dry","socket")),
 ("gingival indeks",("gingival","indeks")),
+("Bennett açısı",("bennett","açı")),("Spee eğrisi",("spee","eğri")),("Wilson eğrisi",("wilson","eğri")),
+("overjet değerlendirmesi",("overjet",)),("overbite değerlendirmesi",("overbite",)),("crossbite",("crossbite",)),
+("pulpektomi",("pulpektomi",)),("pulpotomi",("pulpotomi",)),("MTA kullanımı",("mta",)),
+("kalsiyum hidroksit",("kalsiyum","hidroksit")),("EDTA irrigasyonu",("edta",)),("sodyum hipoklorit",("hipoklorit",)),
+("apeksifikasyon",("apeksifikasyon",)),("rejeneratif endodonti",("rejeneratif","endodonti")),
+("agresif periodontitis",("agresif","periodontitis")),("gingivitis",("gingivitis",)),("mukogingival cerrahi",("mukogingival",)),
+("oral kandidiyazis",("kandidiyazis",)),("liken planus",("liken","planus")),("aftöz ülser",("aftöz","ülser")),
+("odontojenik keratokist",("keratokist",)),("dentigeröz kist",("dentigeröz","kist")),("odontoma",("odontoma",)),
+("Le Fort kırıkları",("le","fort")),("mandibula kondil kırığı",("kondil","kırık")),("zigoma kırığı",("zigoma","kırık")),
+("inferior alveolar sinir",("inferior","alveolar","sinir")),("mental foramen",("mental","foramen")),
+("maksiller sinüs",("maksiller","sinüs")),("mandibular kanal",("mandibular","kanal")),
+("sefalometrik analiz",("sefalometrik",)),("Wits analizi",("wits",)),("Bolton analizi",("bolton",)),
+("yer tutucu",("yer","tutucu")),("fissür örtücü",("fissür","örtücü")),("paslanmaz çelik kron",("çelik","kron")),
+("cam iyonomer siman",("cam","iyonomer")),("kompozit rezin",("kompozit","rezin")),("adeziv sistemler",("adeziv",)),
+("bruksizm",("bruksizm",)),("TME dislokasyonu",("tme","dislokasyon")),("miyofasiyal ağrı",("miyofasiyal","ağrı")),
+("perikoronitis",("perikoronitis",)),("alveolit",("alveolit",)),("osteomiyelit",("osteomiyelit",)),
+("bisfosfonat ilişkili osteonekroz",("bisfosfonat","osteonekroz")),("lokal anestezi komplikasyonları",("anestezi","komplikasyon")),
 ]
 @dataclass(frozen=True)
 class Case:
