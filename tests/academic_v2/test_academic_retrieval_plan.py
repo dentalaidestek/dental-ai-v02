@@ -131,3 +131,14 @@ def test_comparison_requires_distinct_subjects_not_just_two_needs():
         ),
         comparisons=(ComparisonRequirement(("a-diagnosis", "a-treatment")),),
     ))
+
+
+def test_comparison_cannot_fake_distinct_subjects_with_alias_labels():
+    _raises("distinct subjects", lambda: AcademicRetrievalPlan(
+        original_query="aynı kavram",
+        needs=(
+            RetrievalNeed("a1", subject_ids=("pulpitis",), subject_terms=("pulpitis",), facet="diagnosis"),
+            RetrievalNeed("a2", subject_ids=("pulpitis",), subject_terms=("pulpa iltihabı",), facet="treatment"),
+        ),
+        comparisons=(ComparisonRequirement(("a1", "a2")),),
+    ))
