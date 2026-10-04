@@ -142,3 +142,16 @@ def test_comparison_cannot_fake_distinct_subjects_with_alias_labels():
         ),
         comparisons=(ComparisonRequirement(("a1", "a2")),),
     ))
+
+
+def test_logic_and_comparison_references_must_be_unique():
+    need_a = RetrievalNeed("a", subject_terms=("A",))
+    need_b = RetrievalNeed("b", subject_terms=("B",))
+    _raises("duplicate need references", lambda: NeedGroup("g", ("a", "a"), "all"))
+    _raises("side needs must be unique", lambda: ComparisonRequirement(("a", "a")))
+    # Control: distinct references remain valid.
+    AcademicRetrievalPlan(
+        original_query="A ve B",
+        needs=(need_a, need_b),
+        need_groups=(NeedGroup("g-ok", ("a", "b"), "all"),),
+    )
