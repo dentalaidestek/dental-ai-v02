@@ -429,24 +429,24 @@ def build(i:int,seed=20261004)->Case:
  fold_slot=lambda s:" ".join(str(s).translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
  fq_slot=fold_slot(q)
  fh_slot=fold_slot(" ".join(x[1] for x in history))
- question_now=bool(re.search(r"\\b(?:soru|question|test)\\b",fq_slot))
- question_inherit=bool(re.search(r"\\bayni sekilde\\b",fq_slot) and re.search(r"\\b(?:soru|question|test)\\b",fh_slot))
+ question_now=bool(re.search(r"\b(?:soru|question|test)\b",fq_slot))
+ question_inherit=bool(re.search(r"\bayni sekilde\b",fq_slot) and re.search(r"\b(?:soru|question|test)\b",fh_slot))
  if expected.get("task")=="generate_questions" and not (question_now or question_inherit):
   expected.pop("task",None); expected["_task_gold_reconciled"]=True
  if expected.get("count") is not None:
   wanted=str(expected["count"])
-  count_now=bool(re.search(rf"\\b{re.escape(wanted)}\\s*(?:soru|question|test)\\b",fq_slot))
-  count_inherit=bool(re.search(r"\\bayni sayida\\b",fq_slot) and re.search(rf"\\b{re.escape(wanted)}\\s*(?:soru|question|test)\\b",fh_slot))
+  count_now=bool(re.search(rf"\b{re.escape(wanted)}\s*(?:soru|question|test)\b",fq_slot))
+  count_inherit=bool(re.search(r"\bayni sayida\b",fq_slot) and re.search(rf"\b{re.escape(wanted)}\s*(?:soru|question|test)\b",fh_slot))
   if not (count_now or count_inherit):
    expected.pop("count",None); expected["_count_gold_reconciled"]=True
  if expected.get("format")=="table":
-  table_now=bool(re.search(r"\\b(?:tablo|table)\\b",fq_slot))
-  table_inherit=bool(re.search(r"\\bayni formatta\\b",fq_slot) and re.search(r"\\b(?:tablo|table)\\b",fh_slot))
+  table_now=bool(re.search(r"\b(?:tablo|table)\b",fq_slot))
+  table_inherit=bool(re.search(r"\bayni formatta\b",fq_slot) and re.search(r"\b(?:tablo|table)\b",fh_slot))
   if not (table_now or table_inherit):
    expected.pop("format",None); expected["_format_gold_reconciled"]=True
- if expected.get("length")=="shorter" and not re.search(r"\\b(?:kisa|ozet|ozunu|kisalt|sinavlik)\\w*",fq_slot):
+ if expected.get("length")=="shorter" and not re.search(r"\b(?:kisa|ozet|ozunu|kisalt|sinavlik)\w*",fq_slot):
   expected.pop("length",None); expected["_length_gold_reconciled"]=True
- if expected.get("length")=="detailed" and not re.search(r"\\b(?:detay|ayrint|mekanizma)\\w*",fq_slot):
+ if expected.get("length")=="detailed" and not re.search(r"\b(?:detay|ayrint|mekanizma)\w*",fq_slot):
   expected.pop("length",None); expected["_length_gold_reconciled"]=True
  # Reconcile exam-goal gold from the final semantic dialogue. Earlier
  # interaction/reference/state layers may have owned goal at different times;
