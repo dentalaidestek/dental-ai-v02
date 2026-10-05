@@ -371,6 +371,29 @@ def _has_question_task_cue(text: str) -> bool:
     return has_question and has_action
 
 
+def _has_clear_format_cue(text: str) -> bool:
+    folded = _state_text(text)
+    tokens = re.findall(r"\\w+", folded)
+    has_table = any(_edit_distance_at_most(token, "tablo", 1) for token in tokens)
+    has_negative = any(_edit_distance_at_most(token, target, 2) for token in tokens for target in ("olmasin", "bosver"))
+    return has_table and has_negative
+
+
+def _has_clear_goal_cue(text: str) -> bool:
+    folded = _state_text(text)
+    tokens = re.findall(r"\\w+", folded)
+    has_exam = any(_edit_distance_at_most(token, "sinav", 2) for token in tokens)
+    has_clear = any(_edit_distance_at_most(token, target, 2) for token in tokens for target in ("bosver", "olmasin", "normal"))
+    return has_exam and has_clear
+
+
+def _has_explain_task_cue(text: str) -> bool:
+    if _STATE_EXPLAIN_RE.search(text or ""):
+        return True
+    tokens = re.findall(r"\\w+", _state_text(text))
+    return any(_edit_distance_at_most(token, target, 2) for token in tokens for target in ("anlat", "acikla", "ozetle", "nedir"))
+
+
 def _has_followup_control_cue(text: str) -> bool:
     """Bounded typo tolerance for discourse-control words, never dental nouns."""
     folded = _state_text(text)
@@ -484,7 +507,7 @@ def _conversation_state(
             count = None
         if _has_question_task_cue(value):
             task = "generate_questions"
-        elif _STATE_EXPLAIN_RE.search(value):
+        elif _has_explain_task_cue(value):
             task = "explain"
         counts = _STATE_QUESTION_RE.findall(value)
         if counts:
@@ -497,7 +520,7 @@ def _conversation_state(
             goal = None
         if _has_table_cue(value):
             output_format = "table"
-        if _STATE_CLEAR_FORMAT_RE.search(value):
+        if _STATE_CLEAR_FORMAT_RE.search(value) or _has_clear_format_cue(value):
             output_format = None
         if re.search(r'\b(?:daha kisa|kisa ozet)\b', folded):
             length = "shorter"
