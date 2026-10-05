@@ -304,7 +304,16 @@ def build(i:int,seed=20261004)->Case:
  must_keys={term.casefold() for term in must}
  bad=list(dict.fromkeys(term for term in bad if term.casefold() not in must_keys))
  semantic_visible=(" ".join(x[1] for x in history)+" "+q).casefold()
- unsupported_pre_noise=tuple(term for term in must if term.casefold() not in semantic_visible)
+ # Topic labels are the canonical semantic source. A lexical facet may be a
+ # gold synonym/attribute that is not literally repeated in the dialogue.
+ # Accept it only when the final expected topic is visibly anchored; otherwise
+ # the case is genuinely asking the resolver to recover invisible information.
+ expected_topic=str(expected.get("topic") or "").casefold()
+ topic_visible=bool(expected_topic and expected_topic in semantic_visible)
+ unsupported_pre_noise=tuple(
+  term for term in must
+  if term.casefold() not in semantic_visible and not topic_visible
+ )
  expected["_gold_evidence_pre_noise"]=not unsupported_pre_noise
  expected["_gold_unsupported_pre_noise"]=unsupported_pre_noise
  expected["_gold_overlap_removed"]=True
