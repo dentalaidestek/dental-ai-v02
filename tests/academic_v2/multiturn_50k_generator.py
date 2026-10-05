@@ -325,7 +325,11 @@ def build(i:int,seed=20261004)->Case:
  return Case(cid,axes,tuple(history[-8:]),q,tuple(must),tuple(bad),expected)
 
 def _semantic_signature(case:Case):
- return (case.history,case.query,case.must,case.must_not,tuple(sorted(case.expected.items(),key=lambda x:x[0])))
+ semantic_expected=tuple(sorted(
+  ((k,v) for k,v in case.expected.items() if not k.startswith("_")),
+  key=lambda x:x[0],
+ ))
+ return (case.history,case.query,case.must,case.must_not,semantic_expected)
 
 def audit_gold_consistency(cases):
  defects={"overlap":0,"unsupported_pre_noise":0,"abstain_with_required":0}
