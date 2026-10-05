@@ -785,7 +785,10 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # Count corrections such as "yok 20 question olsun" keep the active
     # question-generation task even though they do not repeat the verb.
     count_correction = bool(re.search(r"(?iu)\b(?:yok|hayır|hayir)\b.{0,12}\b\d{1,3}\s+(?:soru|question(?:s)?)\b", clean))
-    if count_correction and state.task == "generate_questions" and not explicit_question_task:
+    # A correction of an explicit question count is itself an observable
+    # question-generation operation ("yok 20 soru/question olsun").  It must
+    # not depend on an older task surviving a later independent topic switch.
+    if count_correction and not explicit_question_task:
         prefixes.append("soru hazırla")
 
     # If the current turn explicitly asks for questions, that current task
