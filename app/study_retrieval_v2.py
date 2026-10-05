@@ -670,6 +670,33 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     if not dependent:
         return clean
 
+    # A correction-prefixed explicit explanation may contain surface-only noise
+    # in the dental noun ("yok alveolit anlat" -> one/two character corruption).
+    # Recover ONLY from an exact user-authored topic already present in the
+    # bounded history, and only when the current content phrase is within two
+    # edits after collapsing repeated letters. This is not global fuzzy dental
+    # matching and assistant prose is never a candidate.
+    if re.match(r"(?iu)^\\s*(?:yok|hayır|hayir)\\b", clean) and _STATE_EXPLAIN_RE.search(clean):
+        current_phrase = re.sub(r"(?iu)^\\s*(?:yok|hayır|hayir)\\b", "", clean).strip()
+        current_phrase = _STATE_EXPLAIN_RE.split(current_phrase, maxsplit=1)[0].strip(" .,;:-")
+        current_fold = _state_text(current_phrase)
+        best = None
+        for idx, item in enumerate(window):
+            if str(item.get("role") or "").casefold() not in {"user", "human"}:
+                continue
+            value = re.sub(r"\\s+", " ", str(item.get("content") or "")).strip()
+            if _incidental_turn(value):
+                continue
+            prior = _conversation_subject(value, source="user", history_index=idx)
+            if not prior or not prior.terms:
+                continue
+            prior_text = " ".join(prior.terms).strip()
+            prior_fold = _state_text(prior_text)
+            if current_fold and _edit_distance_at_most(current_fold, prior_fold, 2):
+                best = prior_text
+        if best and _state_text(best) != current_fold:
+            return f"{best} — {clean}"
+
     # The same ownership contract applies to history and the current turn.
     # Retrieval's typo/lexical fallback is never a source of discourse identity.
     current_subject = _conversation_subject(clean, source="current", history_index=len(window))
