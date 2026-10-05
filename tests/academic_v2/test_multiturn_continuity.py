@@ -348,3 +348,15 @@ def test_generator_inherit_topic_replays_final_active_user_topic():
                 active = topic
     assert active is not None
     assert case.expected["topic"] == active
+
+
+def test_relative_generator_gold_tracks_final_ordered_chain():
+    from tests.academic_v2.multiturn_50k_generator import build
+    previous = build(7)
+    before_previous = build(8)
+    assert previous.axes["reference"] == "relative_previous"
+    assert previous.expected["topic"] in previous.history[-4][1]
+    assert previous.expected["topic"] not in previous.history[-2][1]
+    assert before_previous.axes["reference"] == "relative_before_previous"
+    assert before_previous.expected["topic"] in before_previous.history[-4][1]
+    assert before_previous.expected["topic"] not in before_previous.history[-2][1]
