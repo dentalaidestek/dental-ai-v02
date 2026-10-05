@@ -649,6 +649,35 @@ def build(i:int,seed=20261004)->Case:
     retained.append(term)
   must=list(dict.fromkeys(retained))
 
+ # Final topic requirements come from the active dialogue state, not from
+ # superseded interaction layers. Canonical topic terms are the subject
+ # contract; correction/comparison facets survive only while the final
+ # semantic dialogue still expresses them.
+ if not expected.get("should_abstain") and expected.get("topic") and expected.get("reference")!="assistant_item_13":
+  final_topic=next((topic for topic in TOPICS if topic[0]==expected.get("topic")),None)
+  if final_topic:
+   fq_final=fold_slot(q)
+   active_user_text=""
+   for role,text in history:
+    if role!="user": continue
+    ft=fold_slot(text)
+    if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+    active_user_text=text
+   semantic_owner=fold_slot(active_user_text+" "+q)
+   canonical=list(final_topic[1])
+   # Keep additional required facets only when the final owner still says them.
+   extras=[term for term in must if term not in canonical and fold_slot(term) in semantic_owner]
+   must=canonical+extras
+
+ # A comparison is a task state too. A later independent explain turn clears
+ # it exactly like it clears question generation; do not keep stale compare gold.
+ if expected.get("task")=="compare":
+  compare_now=bool(re.search(r"\b(?:karsilastir|vs)\b",fq_slot))
+  compare_active=active_task=="compare"
+  if not (compare_now or compare_active):
+   expected["task"]="explain" if active_task=="explain" else expected.pop("task",None)
+   expected["_task_gold_reconciled"]=True
+
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
