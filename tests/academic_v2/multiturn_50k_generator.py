@@ -198,9 +198,14 @@ def build(i:int,seed=20261004)->Case:
   "inherit_task","replace_format","clear_format","clear_count","qualifier_add",
   "qualifier_replace","qualifier_remove","stale_state_trap","error_propagation_trap",
  }
- if expected.get("should_abstain") and explicit_state_transition and not structured_reference:
+ # A state operation only resolves an ambiguous subject when that operation
+ # itself introduces a new explicit user-authored topic (or explicitly abandons
+ # topic resolution). Count/goal/format/task inheritance and replacement do not
+ # license choosing one member of an ambiguous antecedent.
+ ambiguity_resolving_state={"replace_topic","clear_topic","clear_task","inherit_task","stale_state_trap"}
+ if expected.get("should_abstain") and state in ambiguity_resolving_state and not structured_reference:
   expected.pop("should_abstain",None)
- if (expected.get("should_abstain") and not explicit_state_transition) or structured_reference:
+ if (expected.get("should_abstain") and state not in ambiguity_resolving_state) or structured_reference:
   pass
  elif state=="replace_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
