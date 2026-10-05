@@ -571,10 +571,21 @@ def build(i:int,seed=20261004)->Case:
  # State inheritance must remain observable after distractor composition.
  # A later independent user topic legitimately clears goal, so reserve a final
  # bounded user antecedent that owns both the active subject and exam goal.
- if state=="inherit_goal" and not expected.get("should_abstain") and not structured_reference:
+ if state=="inherit_goal" and not expected.get("should_abstain"):
+  # "same purpose" needs a USER-owned active subject. Even when an earlier
+  # axis selected an assistant item, later independent topic turns supersede
+  # that selection; the goal antecedent therefore carries the final subject.
   topic_name=str(expected.get("topic") or semantic_topic[0])
   antecedent=("user",f"{topic_name} sınav için anlat")
   history=(history+[antecedent])[-8:]
+  if structured_reference:
+   expected.pop("reference",None)
+   structured_reference=False
+   final_goal_topic=next((topic for topic in TOPICS if topic[0]==topic_name),None)
+   if final_goal_topic:
+    semantic_topic=final_goal_topic
+    must=list(final_goal_topic[1])
+   expected["_reference_gold_reconciled"]=True
  # Reconcile non-topic slot gold from the FINAL semantic dialogue. Axes are
  # composed sequentially, so an earlier interaction must not keep owning a slot
  # after a later reference/state operation replaced the surface that expressed it.
