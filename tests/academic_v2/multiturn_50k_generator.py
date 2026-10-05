@@ -317,6 +317,8 @@ def build(i:int,seed=20261004)->Case:
  expected["_gold_evidence_pre_noise"]=not unsupported_pre_noise
  expected["_gold_unsupported_pre_noise"]=unsupported_pre_noise
  expected["_gold_overlap_removed"]=True
+ expected["_semantic_query_pre_noise"]=q
+ expected["_semantic_history_pre_noise"]=tuple(history)
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
