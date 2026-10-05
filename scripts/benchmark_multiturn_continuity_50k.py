@@ -65,7 +65,7 @@ def main():
  print("WORST AXES")
  for row in sorted(worst)[:30]:print(row)
  print("TARGET_FAILURE_SAMPLES")
- for reason in ("goal_loss","missing_required","task_loss","length_loss","count_loss","stale_context"):
+ for reason in ("goal_loss","missing_required","task_loss","length_loss","count_loss","format_loss","qualifier_loss","stale_qualifier","stale_context"):
   print(reason.upper())
   print(json.dumps(reason_samples.get(reason,[])[:20],ensure_ascii=False,indent=2))
 if __name__=="__main__":main()
