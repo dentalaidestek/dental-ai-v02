@@ -248,6 +248,34 @@ def _state_text(text: str) -> str:
     return " ".join(text.translate(_STATE_FOLD).lower().split())
 
 
+def _one_edit_token(value: str, target: str) -> bool:
+    """Bounded typo tolerance for short state-control words only."""
+    value = re.sub(r"(.)\\1+", r"\\1", value)
+    if value == target:
+        return True
+    if abs(len(value) - len(target)) > 1:
+        return False
+    if len(value) == len(target):
+        return sum(a != b for a, b in zip(value, target)) <= 1
+    short, long = (value, target) if len(value) < len(target) else (target, value)
+    i = j = edits = 0
+    while i < len(short) and j < len(long):
+        if short[i] == long[j]:
+            i += 1; j += 1
+        else:
+            edits += 1; j += 1
+            if edits > 1:
+                return False
+    return True
+
+
+def _has_exam_cue(text: str) -> bool:
+    folded = _state_text(text)
+    if re.search(r"\\b(?:sinav|sinavlik)\\b", folded):
+        return True
+    return any(_one_edit_token(token, "sinav") for token in re.findall(r"\\w+", folded))
+
+
 def _incidental_turn(text: str) -> bool:
     folded = _state_text(text)
     return bool(re.search(
@@ -343,7 +371,7 @@ def _conversation_state(
             count = int(counts[-1])
         if _STATE_CLEAR_COUNT_RE.search(value):
             count = None
-        if _STATE_EXAM_RE.search(value):
+        if _STATE_EXAM_RE.search(value) or _has_exam_cue(value):
             goal = "exam"
         if _STATE_CLEAR_GOAL_RE.search(value) or re.search(r'\bsinav\w*.*\bolmasin\b', folded):
             goal = None
@@ -538,6 +566,10 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         return clean
 
     prefixes: list[str] = [subject_text]
+    # Canonicalize a narrowly recognized typoed exam-goal cue. The raw user
+    # wording remains in the suffix; this only restores the semantic state.
+    if _has_exam_cue(clean) and not _STATE_EXAM_RE.search(clean):
+        prefixes.append("sınav için")
 
     # Comparison adds the current explicit target while preserving the selected
     # antecedent.  Correction excludes the negated old target by relying on the
