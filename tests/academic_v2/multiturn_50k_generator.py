@@ -280,10 +280,24 @@ def build(i:int,seed=20261004)->Case:
   visible=(" ".join(x[1] for x in history)+" "+q).casefold()
   missing_anchor=[term for term in must if term.casefold() not in visible]
   if missing_anchor:
-   anchor=next((x for x in reversed(pretrim_history)
-                if all(term.casefold() in x[1].casefold() for term in missing_anchor)),None)
-   if anchor:
-    history=(history+[anchor])[-desired_history:]
+   # A topic can expose several required lexical facets across different turns
+   # (e.g. "perikoronitis" + "üçüncü molar"). Preserve the smallest set of
+   # real pre-trim evidence messages instead of requiring one message to
+   # contain every missing term.
+   anchors=[]
+   uncovered={term.casefold() for term in missing_anchor}
+   for candidate in reversed(pretrim_history):
+    candidate_folded=candidate[1].casefold()
+    covered={term for term in uncovered if term in candidate_folded}
+    if covered:
+     anchors.append(candidate)
+     uncovered-=covered
+    if not uncovered:
+     break
+   if not uncovered and anchors:
+    keep=max(0,desired_history-len(anchors))
+    history=(history[-keep:] if keep else [])+list(reversed(anchors))
+    history=history[-desired_history:]
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
