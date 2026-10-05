@@ -448,7 +448,19 @@ def build(i:int,seed=20261004)->Case:
  fq_slot=fold_slot(q)
  fh_slot=fold_slot(" ".join(x[1] for x in history))
  question_now=bool(re.search(r"\b(?:soru|question|test)\b",fq_slot))
- question_inherit=bool(re.search(r"\bayni sekilde\b",fq_slot) and re.search(r"\b(?:soru|question|test)\b",fh_slot))
+ # Replay the active user task rather than searching arbitrary history. A later
+ # independent "... anlat" turn clears an older question-generation task.
+ active_task=None
+ for role,text in history:
+  if role!="user": continue
+  ft=fold_slot(text)
+  if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+  independent_explain=bool(re.search(r"\b(?:anlat|acikla|ozetle|nedir)\b",ft)) and not re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|normal)\b",ft)
+  if independent_explain: active_task="explain"
+  if re.search(r"\b(?:soru|question|test)\b.{0,28}\b(?:hazirla|yap|uret|olustur)\b|\b(?:hazirla|yap|uret|olustur)\b.{0,28}\b(?:soru|question|test)\b",ft):
+   active_task="generate_questions"
+  if re.search(r"\b(?:soru istemiyorum|testi birak|normal anlat)\b",ft): active_task="explain"
+ question_inherit=bool(re.search(r"\bayni sekilde\b",fq_slot) and active_task=="generate_questions")
  if expected.get("task")=="generate_questions" and not (question_now or question_inherit):
   expected.pop("task",None); expected["_task_gold_reconciled"]=True
  if expected.get("count") is not None:
