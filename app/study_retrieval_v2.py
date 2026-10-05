@@ -355,10 +355,22 @@ def _has_table_cue(text: str) -> bool:
 
 
 def _has_question_task_cue(text: str) -> bool:
-    """Bounded typo recovery for the question-generation operator only."""
+    """Bounded typo recovery for the question-generation operator only.
+
+    Explicit rejection of a question/test request owns the task transition.
+    A later generic verb such as "yap" must not resurrect generation in
+    "soru istemiyorum, normal anlat, düzgün yap".
+    """
+    folded = _state_text(text)
+    rejects_questions = bool(re.search(
+        r"\b(?:soru|question|test)\w*\s+(?:istemiyorum|istemi(?:yorum|yoruz)|olmasin|birak)\b",
+        folded,
+    ))
+    if rejects_questions and _STATE_EXPLAIN_RE.search(text or ""):
+        return False
     if _STATE_QUESTION_TASK_RE.search(text or ""):
         return True
-    tokens = re.findall(r"\w+", _state_text(text))
+    tokens = re.findall(r"\w+", folded)
     has_question = any(
         _edit_distance_at_most(token, "soru", 1)
         or _edit_distance_at_most(token, "question", 1)
@@ -413,6 +425,27 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     clean = ' '.join(re.sub(r'"[^"\n]*"|“[^”\n]*”', '', text[:700]).split())
     if _incidental_turn(clean):
         return None
+
+    # Strip only bounded discourse/correction prefixes before topic ownership
+    # is evaluated. This keeps colloquial "ya ..." and repeated-letter
+    # "yook ..." from becoming part of the dental noun while leaving arbitrary
+    # dental vocabulary completely unfuzzied.
+    first = re.match(r"^\s*([^\s,;:]+)[,;:]?\s+(.+)$", clean)
+    if first:
+        token = _state_text(first.group(1))
+        remainder = first.group(2).strip()
+        remainder_folded = _state_text(remainder)
+        correction_prefix = (
+            token == "ya"
+            or _one_edit_token(token, "yok")
+            or _one_edit_token(token, "hayir")
+        )
+        has_request_boundary = bool(re.search(
+            r"\b(?:anlat|acikla|ozetle|nedir|konusunda|hakkinda|icin)\b",
+            remainder_folded,
+        ))
+        if correction_prefix and has_request_boundary:
+            clean = remainder
     folded = _state_text(clean)
     if re.match(r'^(?:\d+\.?\s*soru\w*|bunu|bunun|onu|onun|ayni|sadece bu|peki|'
                 r'yok|hayir|simdi|daha|biraz|konuyu|soru|test|sinav|tablo|normal|'
@@ -593,12 +626,12 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
             blocked.update(axis)
     inherited = [q for q in subject.qualifiers if q not in blocked]
 
-    folded = clean.casefold()
-    if re.search(r"(?iu)\byaş grubunu\s+(?:boşver|bosver)\b", clean):
+    folded = _state_text(clean)
+    if re.search(r"\byas grubunu\s+bosver\b", folded):
         inherited = [q for q in inherited if q not in {"çocuk", "erişkin"}]
-    if re.search(r"(?iu)\bakut\s+değil\b|\bakut\s+degil\b", clean):
+    if re.search(r"\bakut\s+degil\b", folded):
         inherited = [q for q in inherited if q != "akut"]
-    if re.search(r"(?iu)\bçocuk\s+değil\b|\bcocuk\s+degil\b", clean):
+    if re.search(r"\bcocuk\s+degil\b", folded):
         inherited = [q for q in inherited if q != "çocuk"]
 
     removed = set(subject.qualifiers) - set(inherited)
