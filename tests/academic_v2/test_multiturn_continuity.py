@@ -388,3 +388,15 @@ def test_same_way_heavy_control_typos_enter_dependency_resolution():
     resolved=resolve_followup_query("ayı şekilde evam et",history)
     assert "odontoma" in resolved.casefold()
     assert "soru hazırla" in resolved.casefold()
+
+
+def test_same_way_two_edit_continue_replays_topic_and_task_but_not_old_format():
+    history=[
+        u("odontoma için test hazırla"),a("test"),
+        u("önceden tablo istemiştim"),a("not"),
+    ]
+    for query in ("ayı şekilde evam et","ayı şekilde dvam et"):
+        out=low(resolve_followup_query(query,history))
+        assert "odontoma" in out
+        assert "soru hazırla" in out
+        assert "tablo şeklinde" not in out
