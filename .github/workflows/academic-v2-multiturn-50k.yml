@@ -37,7 +37,16 @@ jobs:
           import json
           from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
           from scripts.benchmark_multiturn_continuity_50k import score
-          cases=generate(50000)
+          try:
+              cases=generate(50000)
+          except AssertionError:
+              from tests.academic_v2.multiturn_50k_generator import build
+              probe=[build(i) for i in range(50000)]
+              bad=[c for c in probe if c.expected.get("_gold_unsupported_pre_noise")]
+              print("GOLD_UNSUPPORTED_DIAG", len(bad))
+              for c in bad[:20]:
+                  print(json.dumps({"id":c.case_id,"axes":c.axes,"history":c.history,"query":c.query,"must":c.must,"must_not":c.must_not,"expected":c.expected},ensure_ascii=False))
+              raise
           assert len(cases)==50000
           assert len({c.case_id for c in cases})==50000
           quality=validate_cases(cases)
