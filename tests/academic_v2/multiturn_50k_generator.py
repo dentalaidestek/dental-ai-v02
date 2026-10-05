@@ -701,19 +701,32 @@ def build(i:int,seed=20261004)->Case:
     expected.pop("reference",None)
     expected["_reference_gold_reconciled"]=True
 
- # Structured assistant-item references own the final subject only while
- # their USER-authored ordinal selection is still observable. A bare synthetic
- # assistant "13." line can never create or resurrect subject ownership.
+ # Structured assistant-item references are valid when the final query itself
+ # performs the ordinal selection, or when a prior USER ordinal selection remains
+ # active for a dependent follow-up. A synthetic assistant "13." line alone never
+ # grants ownership, and a later independent USER topic expires that ownership.
  if expected.get("reference")=="assistant_item_13":
+  ordinal_current=bool(re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",q))
   ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
    if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",history[idx][1])),None)
-  selected_line=""
+  later_independent_topic=False
   if ordinal_user_index is not None:
-   for role,text in history[:ordinal_user_index]:
+   for role,text in history[ordinal_user_index+1:]:
+    if role!="user": continue
+    folded_text=fold_slot(text)
+    if any(topic[0].casefold() in text.casefold() or all(fold_slot(term) in folded_text for term in topic[1]) for topic in TOPICS):
+     later_independent_topic=True; break
+  provenance_valid=ordinal_current or (ordinal_user_index is not None and not later_independent_topic)
+  selected_line=""
+  if provenance_valid:
+   # Current ordinal selection reads the latest preceding assistant list item;
+   # chained follow-ups reuse the item selected before the user ordinal turn.
+   boundary=len(history) if ordinal_current else ordinal_user_index
+   for role,text in history[:boundary]:
     if role!="assistant": continue
     match=re.search(r"(?mi)^\\s*13[.)]\\s*([^\\n]+)",text)
     if match: selected_line=match.group(1)
-  if not selected_line:
+  if not provenance_valid or not selected_line:
    expected.pop("reference",None)
    expected["_reference_gold_reconciled"]=True
   selected_fold=selected_line.casefold()
