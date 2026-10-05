@@ -449,7 +449,7 @@ def _conversation_state(
 
 
 def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSubject | None:
-    ordinal = re.search(r"(?iu)\\b(\\d{1,3})(?:\\.\\s*s+o+r+u+(?:n+u+n+)?|\\s+s+o+r+u+n+u+n+)\\b", clean)
+    ordinal = re.search(r"(?iu)\b(\d{1,3})(?:\.\s*s+o+r+u+(?:n+u+n+)?|\s+s+o+r+u+n+u+n+)\b", clean)
     if not ordinal:
         return None
     wanted = int(ordinal.group(1))
