@@ -448,6 +448,12 @@ def build(i:int,seed=20261004)->Case:
   if not has_selected_item:
    topic_name=str(expected.get("topic") or semantic_topic[0])
    history=(history+[("assistant",f"13. {topic_name} klinik soru 13")])[-8:]
+  # Explicit list-item selection owns the subject contract. Earlier composed
+  # required terms are stale residue and must not override the selected item.
+  selected_topic=str(expected.get("topic") or "")
+  selected_terms=next((terms for topic,terms in TOPICS if topic==selected_topic),None)
+  if selected_terms:
+   must=list(selected_terms)
 
  # A later anchor repair/distractor append can evict the user provenance
  # restored above. Re-assert it at the final bounded-history boundary.
