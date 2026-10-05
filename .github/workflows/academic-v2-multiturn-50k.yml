@@ -79,6 +79,11 @@ jobs:
           import json
           p=json.load(open('/tmp/multiturn_50k_report.json'))
           print(json.dumps({k:p.get(k) for k in ('count','quality','passed','accuracy','failure_reasons','elapsed_s','cases_per_s')},ensure_ascii=False,indent=2))
+          samples=p.get('failure_samples_by_reason') or p.get('reason_samples') or {}
+          for reason in ('missing_required','stale_context','stale_qualifier','count_loss','format_loss','task_loss','goal_loss'):
+              if samples.get(reason):
+                  print('FAILURE_SAMPLES',reason)
+                  print(json.dumps(samples[reason][:5],ensure_ascii=False,indent=2))
           PY
           else
             echo "50K report not produced"
