@@ -288,6 +288,18 @@ def build(i:int,seed=20261004)->Case:
   history=(filler+history)[-desired_history:]
  else:
   history=history[-desired_history:]
+ # A state axis can replace the current surface while still inheriting the
+ # interaction-owned subject.  Very short turn_length combinations must not
+ # delete that subject entirely; keep one explicit antecedent within the same
+ # eight-message resolver budget.
+ if must and state_replaces_surface and not expected.get("should_abstain"):
+  visible_after_trim=(" ".join(x[1] for x in history)+" "+q).casefold()
+  topic_name=str(expected.get("topic") or semantic_topic[0])
+  if topic_name and any(term.casefold() not in visible_after_trim for term in must):
+   anchor=("user",f"{topic_name} anlat")
+   if anchor not in history:
+    history=(history+[anchor])[-8:]
+
  # Re-assert required distractor evidence after bounded-history trimming.
  if distractor in required_tail and not any(required_tail[distractor][1] in x[1] for x in history):
   history=(history+[required_tail[distractor]])[-desired_history:]
