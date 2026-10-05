@@ -1,4 +1,5 @@
 name: Deploy Academic Indexer to Modal
+# Runtime secret provisioned; retrigger deployment.
 
 on:
   workflow_dispatch:
