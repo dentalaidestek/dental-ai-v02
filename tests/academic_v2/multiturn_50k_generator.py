@@ -521,7 +521,7 @@ def build(i:int,seed=20261004)->Case:
   task_owner=None
   for role,text in history:
    if role!="user": continue
-   ft=fold_slot(text)
+   ft=" ".join(text.translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
    if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
    if re.search(r"\b(?:soru|question|test)\b.{0,28}\b(?:hazirla|yap|uret|olustur)\b|\b(?:hazirla|yap|uret|olustur)\b.{0,28}\b(?:soru|question|test)\b",ft):
     matched=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
