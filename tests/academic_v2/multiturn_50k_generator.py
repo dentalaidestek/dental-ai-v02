@@ -692,7 +692,7 @@ def build(i:int,seed=20261004)->Case:
  explicit_topic_request=bool(re.search(r"(?iu)\\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\\b",q))
  if explicit_query_topic and explicit_topic_request and not expected.get("should_abstain"):
   previous_topic_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
-  if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",q):
+  if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",q):
    expected["topic"]=explicit_query_topic[0]
    semantic_topic=explicit_query_topic
    must=list(explicit_query_topic[1])
@@ -701,26 +701,17 @@ def build(i:int,seed=20261004)->Case:
     expected.pop("reference",None)
     expected["_reference_gold_reconciled"]=True
 
- # Structured assistant-item references are valid when the final query itself
- # performs the ordinal selection, or when a prior USER ordinal selection remains
- # active for a dependent follow-up. A synthetic assistant "13." line alone never
- # grants ownership, and a later independent USER topic expires that ownership.
+ # Final structured-reference validation uses the same provenance state computed
+ # above. Current-turn ordinal selection is valid when the list item is visible;
+ # chained selection is valid only while structured_reference survived the later
+ # independent-topic expiry check. Never infer ownership from assistant text alone.
  if expected.get("reference")=="assistant_item_13":
   ordinal_current=bool(re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",q))
   ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
    if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",history[idx][1])),None)
-  later_independent_topic=False
-  if ordinal_user_index is not None:
-   for role,text in history[ordinal_user_index+1:]:
-    if role!="user": continue
-    folded_text=fold_slot(text)
-    if any(topic[0].casefold() in text.casefold() or all(fold_slot(term) in folded_text for term in topic[1]) for topic in TOPICS):
-     later_independent_topic=True; break
-  provenance_valid=ordinal_current or (ordinal_user_index is not None and not later_independent_topic)
+  provenance_valid=ordinal_current or (structured_reference and ordinal_user_index is not None)
   selected_line=""
   if provenance_valid:
-   # Current ordinal selection reads the latest preceding assistant list item;
-   # chained follow-ups reuse the item selected before the user ordinal turn.
    boundary=len(history) if ordinal_current else ordinal_user_index
    for role,text in history[:boundary]:
     if role!="assistant": continue
@@ -729,14 +720,15 @@ def build(i:int,seed=20261004)->Case:
   if not provenance_valid or not selected_line:
    expected.pop("reference",None)
    expected["_reference_gold_reconciled"]=True
-  selected_fold=selected_line.casefold()
-  selected_topic=next((topic for topic in TOPICS
-   if topic[0].casefold() in selected_fold
-   or all(term.casefold() in selected_fold for term in topic[1])),None)
-  if selected_topic:
-   expected["topic"]=selected_topic[0]; semantic_topic=selected_topic
-   must=list(selected_topic[1])
-   if interaction=="scope_narrow": must+=["klinik soru 13"]
+  else:
+   selected_fold=selected_line.casefold()
+   selected_topic=next((topic for topic in TOPICS
+    if topic[0].casefold() in selected_fold
+    or all(term.casefold() in selected_fold for term in topic[1])),None)
+   if selected_topic:
+    expected["topic"]=selected_topic[0]; semantic_topic=selected_topic
+    must=list(selected_topic[1])
+    if interaction=="scope_narrow": must+=["klinik soru 13"]
  # Reconcile required lexical facets from the FINAL semantic surface. The
  # canonical topic always remains required; correction/comparison extras survive
  # only while the current turn still expresses them. This prevents superseded
