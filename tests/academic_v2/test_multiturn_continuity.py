@@ -254,3 +254,11 @@ def test_independent_explain_turn_clears_old_question_task_before_same_way():
     ]
     resolved=resolve_followup_query("aynı şekilde devam et",history)
     assert "soru hazırla" not in resolved.casefold()
+
+
+def test_repeated_letter_ordinal_still_selects_explicit_assistant_item():
+    assistant="\n".join(f"{i}. irreversible pulpitis ile ilgili klinik soru {i}" for i in range(1,21))
+    history=[{"role":"user","content":"irreversible pulpitis konusunda 20 soru hazırla"},{"role":"assistant","content":assistant}]
+    resolved=resolve_followup_query("13. sooruuunun konusunu anlat",history)
+    assert "irreversible pulpitis" in resolved.casefold()
+    assert "klinik soru 13" in resolved.casefold()
