@@ -3823,8 +3823,10 @@ def _startup_database():
     if not os.getenv("RENDER"):
         _backfill_legacy_deadline_jobs_if_needed()
         _backfill_program_reminder_jobs()
-    from dental_rag.rag import _search_chunks
-    _search_chunks()
+    # Do not eagerly build the static clinical RAG cache during ASGI startup.
+    # _search_chunks() is already lazy/cached and can be populated by the first
+    # clinical search. Keeping it here delays port binding and can make Render
+    # fail an otherwise healthy deploy with a port-scan timeout.
 
 
 @app.on_event("startup")
