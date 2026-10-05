@@ -551,11 +551,14 @@ def build(i:int,seed=20261004)->Case:
   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
   independent_explain=bool(re.search(r"\b(?:anlat|acikla|ozetle|nedir)\b",ft)) and not re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|normal)\b",ft)
   if independent_explain: active_task="explain"
+  if re.search(r"\b(?:karsilastir|kiyasla)\b|\bvs\.?\b",ft): active_task="compare"
   if re.search(r"\b(?:soru|question|test)\b.{0,28}\b(?:hazirla|yap|uret|olustur)\b|\b(?:hazirla|yap|uret|olustur)\b.{0,28}\b(?:soru|question|test)\b",ft):
    active_task="generate_questions"
   if re.search(r"\b(?:soru istemiyorum|testi birak|normal anlat)\b",ft): active_task="explain"
  question_inherit=bool(re.search(r"\bayni sekilde\b",fq_slot) and active_task=="generate_questions")
  if expected.get("task")=="generate_questions" and not (question_now or question_inherit):
+  expected.pop("task",None); expected["_task_gold_reconciled"]=True
+ if expected.get("task")=="compare" and not (re.search(r"\b(?:karsilastir|kiyasla)\b|\bvs\.?\b",fq_slot) or active_task=="compare"):
   expected.pop("task",None); expected["_task_gold_reconciled"]=True
  active_count=None
  active_format=None
@@ -627,6 +630,25 @@ def build(i:int,seed=20261004)->Case:
    expected["topic"]=selected_topic[0]; semantic_topic=selected_topic
    must=list(selected_topic[1])
    if interaction=="scope_narrow": must+=["klinik soru 13"]
+ # Reconcile required lexical facets from the FINAL semantic surface. The
+ # canonical topic always remains required; correction/comparison extras survive
+ # only while the current turn still expresses them. This prevents superseded
+ # interaction-layer gold from leaking through later state inheritance.
+ expected_topic_name=str(expected.get("topic") or "")
+ canonical_terms=next((terms for topic,terms in TOPICS if topic==expected_topic_name),())
+ if canonical_terms and not expected.get("should_abstain"):
+  fq_required=fold_slot(q)
+  canonical_keys={fold_slot(term) for term in canonical_terms}
+  retained=list(canonical_terms)
+  for term in must:
+   key=fold_slot(term)
+   if key in canonical_keys: continue
+   if key and key in fq_required:
+    retained.append(term)
+   elif expected.get("reference")=="assistant_item_13" and "klinik soru 13" in key:
+    retained.append(term)
+  must=list(dict.fromkeys(retained))
+
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
