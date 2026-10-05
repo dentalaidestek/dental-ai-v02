@@ -840,7 +840,7 @@ def validate_cases(cases):
    missing=set(values)-seen
    assert not missing, f"{axis} coverage missing: {sorted(missing,key=str)}"
  assert any(c.expected.get("should_abstain") for c in cases), "no abstention cases"
- assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases"
+ assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases; diag="+repr([(c.axes.get("reference"),c.axes.get("state"),c.query,c.history,c.expected) for c in cases if c.axes.get("reference") in {"ordinal_item","ordinal_question","assistant_list_item","multi_hop"}][:3])
  assert any(c.expected.get("count")==20 for c in cases), "no count replacement cases"
  assert all(c.expected.get("_gold_overlap_removed") for c in cases), "gold reconciliation metadata missing"
  for case in cases:
