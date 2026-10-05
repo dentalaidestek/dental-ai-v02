@@ -314,6 +314,15 @@ def build(i:int,seed=20261004)->Case:
    if structured_reference:
     history += [("user",q),("assistant","seçilen öğe bağlamı korundu")]
    q=state_surface[state]
+ if expected.get("reference") in {"previous_topic","before_previous_topic"} and "önceki" not in q.casefold() and "onceki" not in q.casefold():
+  latest_topic=None
+  for role,text in reversed(history):
+   if role!="user" or "önceden" in text.casefold() or "aklımda" in text.casefold() or text.casefold().startswith("bu arada"): continue
+   latest_topic=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
+   if latest_topic: break
+  if latest_topic:
+   semantic_topic=latest_topic; must=list(latest_topic[1]); expected["topic"]=latest_topic[0]
+  expected.pop("reference",None)
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
  # Keep both the original semantic topic anchor and the fully mutated history:
