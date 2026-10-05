@@ -167,6 +167,19 @@ def build(i:int,seed=20261004)->Case:
  # State axes may not overwrite the query that defines a structured assistant
  # reference. Otherwise gold can demand information no longer present anywhere.
  structured_reference = expected.get("reference")=="assistant_item_13"
+ # State axes below test one slot at a time.  When they replace the surface
+ # query with an anaphoric continuation, explicitly retain the current
+ # interaction-owned subject first; otherwise the composition erases the very
+ # antecedent whose state is supposed to be inherited.
+ state_replaces_surface=state in {
+  "replace_count","inherit_count","inherit_goal","inherit_format","replace_goal",
+  "clear_goal","replace_task","inherit_topic","inherit_task","replace_format",
+  "clear_format","clear_count",
+ }
+ if not expected.get("should_abstain") and not structured_reference and state_replaces_surface:
+  topic_name=str(expected.get("topic") or "")
+  if topic_name:
+   history += [("user",f"{topic_name} anlat"),("assistant",f"{topic_name} açıklaması")]
  if expected.get("should_abstain") or structured_reference:
   pass
  elif state=="replace_count":
