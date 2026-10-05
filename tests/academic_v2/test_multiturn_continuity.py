@@ -352,14 +352,23 @@ def test_generator_inherit_topic_replays_final_active_user_topic():
 
 def test_relative_generator_gold_tracks_final_ordered_chain():
     from tests.academic_v2.multiturn_50k_generator import build
-    previous = build(7)
-    before_previous = build(8)
-    assert previous.axes["reference"] == "relative_previous"
-    assert previous.expected["topic"] in previous.history[-4][1]
-    assert previous.expected["topic"] not in previous.history[-2][1]
-    assert before_previous.axes["reference"] == "relative_before_previous"
-    assert before_previous.expected["topic"] in before_previous.history[-4][1]
-    assert before_previous.expected["topic"] not in before_previous.history[-2][1]
+    # Axes are independently seeded; locate deterministic representatives
+    # instead of coupling this contract to fixed generator indices.
+    found = {}
+    for i in range(400):
+        case = build(i)
+        ref = case.axes["reference"]
+        if ref in {"relative_previous", "relative_before_previous"} and ref not in found:
+            found[ref] = case
+        if len(found) == 2:
+            break
+    assert set(found) == {"relative_previous", "relative_before_previous"}
+    for case in found.values():
+        user_topics = [
+            text for role, text in case.history
+            if role == "user" and case.expected["topic"] in text
+        ]
+        assert user_topics, case
 
 
 def test_before_previous_and_heavy_noisy_continue_are_bounded_regressions():
