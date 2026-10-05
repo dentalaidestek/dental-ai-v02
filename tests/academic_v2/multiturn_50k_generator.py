@@ -297,10 +297,14 @@ def build(i:int,seed=20261004)->Case:
   "clear_format":"tablo olmasın normal anlat",
   "clear_count":"sayı önemli değil soru hazırla",
  }
- if state in state_surface and not expected.get("should_abstain"):
-  if structured_reference:
-   history += [("user",q),("assistant","seçilen öğe bağlamı korundu")]
-  q=state_surface[state]
+ if state in state_surface:
+  if expected.get("should_abstain") and state not in ("replace_count","replace_goal","replace_task","replace_format","clear_goal","clear_format","clear_count"):
+   pass
+  else:
+   expected.pop("should_abstain",None)
+   if structured_reference:
+    history += [("user",q),("assistant","seçilen öğe bağlamı korundu")]
+   q=state_surface[state]
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
  # Keep both the original semantic topic anchor and the fully mutated history:
