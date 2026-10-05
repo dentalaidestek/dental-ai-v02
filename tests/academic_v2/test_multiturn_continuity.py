@@ -229,7 +229,7 @@ def test_exam_goal_recovers_bounded_typo_variants_without_fuzzy_topic_guessing()
         {"role":"user","content":"pulpotomi anlat"},
         {"role":"assistant","content":"açıklama"},
     ]
-    for query in ("yok sıav için nlat", "yok sııınav için anlat", "yok sına içi anlat"):
+    for query in ("yok sıav için nlat", "yok sııınav için anlat", "yok sına içi anlat", "yok sav için anlat"):
         out = resolve_followup_query(query, history)
         assert "sınav için" in out
         assert "pulpotomi" in out
