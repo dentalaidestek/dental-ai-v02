@@ -64,6 +64,8 @@ def main():
   for val,d in vals.items(): worst.append((d["accuracy"],ax,val,d["n"]))
  print("WORST AXES")
  for row in sorted(worst)[:30]:print(row)
- print("GOAL_LOSS_SAMPLES")
- print(json.dumps(reason_samples.get("goal_loss",[])[:20],ensure_ascii=False,indent=2))
+ print("TARGET_FAILURE_SAMPLES")
+ for reason in ("goal_loss","missing_required","task_loss","length_loss","count_loss","stale_context"):
+  print(reason.upper())
+  print(json.dumps(reason_samples.get(reason,[])[:20],ensure_ascii=False,indent=2))
 if __name__=="__main__":main()
