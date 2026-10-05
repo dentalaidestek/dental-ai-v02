@@ -369,7 +369,7 @@ def test_before_previous_and_heavy_noisy_continue_are_bounded_regressions():
         u("rejeneratif endodonti anlat"),a("c"),
     ]
     out=low(resolve_followup_query("ondan bir önceki konuya dön",history))
-    assert "bruksizm" in out
+    assert "apikal periodontitis" in out
     assert "rejeneratif endodonti" not in out.split("—",1)[0]
 
     task_history=[u("internal rezorpsiyon için test hazırla"),a("test")]
