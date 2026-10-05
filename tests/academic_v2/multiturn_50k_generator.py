@@ -580,7 +580,9 @@ def build(i:int,seed=20261004)->Case:
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
  must_keys={term.casefold() for term in must}
- bad=list(dict.fromkeys(term for term in bad if term.casefold() not in must_keys))
+ expected_topic_key=str(expected.get("topic") or "").casefold()
+ bad=list(dict.fromkeys(term for term in bad
+  if term.casefold() not in must_keys and term.casefold() not in expected_topic_key))
  semantic_visible=(" ".join(x[1] for x in history)+" "+q).casefold()
  # Topic labels are the canonical semantic source. A lexical facet may be a
  # gold synonym/attribute that is not literally repeated in the dialogue.
@@ -610,13 +612,16 @@ def _semantic_signature(case:Case):
  return (case.history,case.query,case.must,case.must_not,semantic_expected)
 
 def audit_gold_consistency(cases):
- defects={"overlap":0,"unsupported_pre_noise":0,"abstain_with_required":0}
+ defects={"overlap":0,"topic_forbidden":0,"unsupported_pre_noise":0,"abstain_with_required":0}
  by_axis={axis:{} for axis in ("interaction","reference","state","language","distractor","turn_length")}
  for case in cases:
   overlap={x.casefold() for x in case.must}.intersection(x.casefold() for x in case.must_not)
   unsupported=tuple(case.expected.get("_gold_unsupported_pre_noise",()))
+  topic_key=str(case.expected.get("topic") or "").casefold()
+  topic_forbidden=[x for x in case.must_not if x.casefold() in topic_key]
   flags=[]
   if overlap: defects["overlap"]+=1; flags.append("overlap")
+  if topic_forbidden: defects["topic_forbidden"]+=1; flags.append("topic_forbidden")
   if unsupported: defects["unsupported_pre_noise"]+=1; flags.append("unsupported_pre_noise")
   if case.expected.get("should_abstain") and case.must:
    defects["abstain_with_required"]+=1; flags.append("abstain_with_required")
@@ -754,6 +759,7 @@ def validate_cases(cases):
    assert ratio_ok>=0.80, f"{axis}={value} is mostly metadata-only: {ratio_ok:.3f}"
  audit=audit_gold_consistency(cases)
  assert audit["defects"]["overlap"]==0, audit["defects"]
+ assert audit["defects"]["topic_forbidden"]==0, audit["defects"]
  assert audit["defects"]["unsupported_pre_noise"]==0, audit["defects"]
  assert audit["defects"]["abstain_with_required"]==0, audit["defects"]
  return {"count":len(cases),"exact_unique":len({c.case_id for c in cases}),"semantic_unique":semantic_unique,"semantic_unique_ratio":ratio,"gold_audit":audit["defects"]}
