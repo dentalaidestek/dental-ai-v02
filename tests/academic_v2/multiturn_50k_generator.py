@@ -707,7 +707,7 @@ def build(i:int,seed=20261004)->Case:
  explicit_query_topic=next((topic for topic in TOPICS
   if topic[0].casefold() in q.casefold()
   or all(fold_slot(term) in q_fold for term in topic[1])),None)
- explicit_topic_request=bool(re.search(r"(?iu)\\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\\b",q))
+ explicit_topic_request=bool(re.search(r"(?iu)\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\b",q))
  if explicit_query_topic and explicit_topic_request and not expected.get("should_abstain"):
   previous_topic_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
   if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",q):
