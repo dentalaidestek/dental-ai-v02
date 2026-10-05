@@ -304,6 +304,7 @@ def build(i:int,seed=20261004)->Case:
  # visible topic whose complete lexical signature is present.
  if must and not expected.get("should_abstain"):
   visible_pre_gold=(" ".join(x[1] for x in history)+" "+q).casefold()
+  must_folded={m.casefold() for m in must}
   visible_topics=[
    topic for topic in TOPICS
    if topic[0].casefold() in visible_pre_gold
@@ -314,7 +315,7 @@ def build(i:int,seed=20261004)->Case:
   if not expected_topic_visible:
    matching=[
     topic for topic in visible_topics
-    if any(term.casefold() in {m.casefold() for m in must} for term in topic[1])
+    if any(term.casefold() in must_folded for term in topic[1])
    ]
    if matching:
     expected["topic"]=matching[-1][0]
