@@ -411,7 +411,9 @@ def build(i:int,seed=20261004)->Case:
  # user antecedent rather than teaching the resolver to trust assistant prose.
  if must and not expected.get("should_abstain") and not structured_reference:
   user_visible=" ".join(text for role,text in history if role=="user").casefold()
-  if not any(term.casefold() in user_visible for term in must):
+  expected_topic_folded=str(expected.get("topic") or "").casefold()
+  has_user_provenance=bool(expected_topic_folded and expected_topic_folded in user_visible) or all(term.casefold() in user_visible for term in must)
+  if not has_user_provenance:
    topic_name=str(expected.get("topic") or semantic_topic[0])
    user_anchor=next((x for x in reversed(pretrim_history)
     if x[0]=="user" and any(term.casefold() in x[1].casefold() for term in must)
@@ -628,8 +630,9 @@ def validate_cases(cases):
  for case in cases:
   if case.expected.get("should_abstain") or case.expected.get("reference")=="assistant_item_13" or not case.must: continue
   user_text=" ".join(text for role,text in case.history if role=="user").casefold()
-  if not any(term.casefold() in user_text for term in case.must):
-   missing_user_provenance.append(case.case_id)
+  topic_text=str(case.expected.get("topic") or "").casefold()
+  supported=bool(topic_text and topic_text in user_text) or all(term.casefold() in user_text for term in case.must)
+  if not supported: missing_user_provenance.append(case.case_id)
  assert not missing_user_provenance, f"resolvable topic lacks user provenance: {missing_user_provenance[:20]} ({len(missing_user_provenance)})"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
