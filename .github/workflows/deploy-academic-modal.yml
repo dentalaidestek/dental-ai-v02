@@ -42,7 +42,7 @@ jobs:
           test -n "$MODAL_TOKEN_SECRET"
 
       - name: Install Modal
-        run: python -m pip install --disable-pip-version-check "modal>=1.2,<2"
+        run: python -m pip install --disable-pip-version-check "modal>=1.2,<2" "fastapi==0.141.1"
 
       - name: Validate Modal app
         run: python -m py_compile modal_academic_indexer.py
