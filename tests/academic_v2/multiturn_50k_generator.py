@@ -416,6 +416,13 @@ def build(i:int,seed=20261004)->Case:
    if matching:
     expected["topic"]=matching[-1][0]
 
+ # State inheritance must remain observable after distractor composition.
+ # A later independent user topic legitimately clears goal, so reserve a final
+ # bounded user antecedent that owns both the active subject and exam goal.
+ if state=="inherit_goal" and not expected.get("should_abstain") and not structured_reference:
+  topic_name=str(expected.get("topic") or semantic_topic[0])
+  antecedent=("user",f"{topic_name} sınav için anlat")
+  history=(history+[antecedent])[-8:]
  # Reconcile exam-goal gold from the final semantic dialogue. Earlier
  # interaction/reference/state layers may have owned goal at different times;
  # only the final surface + a valid same-purpose antecedent may own it.
