@@ -676,15 +676,15 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # bounded history, and only when the current content phrase is within two
     # edits after collapsing repeated letters. This is not global fuzzy dental
     # matching and assistant prose is never a candidate.
-    if re.match(r"(?iu)^\\s*(?:yok|hayır|hayir)\\b", clean) and _STATE_EXPLAIN_RE.search(clean):
-        current_phrase = re.sub(r"(?iu)^\\s*(?:yok|hayır|hayir)\\b", "", clean).strip()
+    if re.match(r"(?iu)^\s*(?:yok|hayır|hayir)\b", clean) and _STATE_EXPLAIN_RE.search(clean):
+        current_phrase = re.sub(r"(?iu)^\s*(?:yok|hayır|hayir)\b", "", clean).strip()
         current_phrase = _STATE_EXPLAIN_RE.split(current_phrase, maxsplit=1)[0].strip(" .,;:-")
         current_fold = _state_text(current_phrase)
         best = None
         for idx, item in enumerate(window):
             if str(item.get("role") or "").casefold() not in {"user", "human"}:
                 continue
-            value = re.sub(r"\\s+", " ", str(item.get("content") or "")).strip()
+            value = re.sub(r"\s+", " ", str(item.get("content") or "")).strip()
             if _incidental_turn(value):
                 continue
             prior = _conversation_subject(value, source="user", history_index=idx)
