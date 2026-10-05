@@ -587,6 +587,14 @@ def build(i:int,seed=20261004)->Case:
   if not (explicit_exam or inherited_exam):
    expected.pop("goal",None)
    expected["_goal_gold_reconciled"]=True
+ # Structured assistant-item references own the final subject. Earlier
+ # interaction/state layers may have left lexical requirements from another
+ # topic; rebind requirements to the selected item's canonical topic.
+ if expected.get("reference")=="assistant_item_13":
+  selected_topic=next((topic for topic in TOPICS if topic[0]==expected.get("topic")),None)
+  if selected_topic:
+   must=list(selected_topic[1])
+   if interaction=="scope_narrow": must+=["klinik soru 13"]
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
