@@ -186,6 +186,11 @@ def build(i:int,seed=20261004)->Case:
  elif state=="replace_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="yok 20 soru olsun"; expected.update(task="generate_questions",count=20)
+  # The count replacement itself is the current semantic operation. Keep it
+  # authoritative even when an earlier reference axis had marked the row as
+  # abstaining; otherwise the state axis becomes metadata-only.
+  if expected.get("should_abstain"):
+   expected.pop("should_abstain",None)
  elif state=="inherit_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="aynı sayıda farklı soru hazırla"; expected.update(task="generate_questions",count=10)
