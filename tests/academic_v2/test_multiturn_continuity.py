@@ -423,3 +423,13 @@ def test_generator_drops_superseded_comparison_and_correction_requirements():
     comparison_terms = next(terms for topic, terms in TOPICS if topic == comparison.expected["topic"])
     assert comparison.expected.get("task") != "compare"
     assert comparison.must == comparison_terms
+
+
+def test_ambiguous_replace_task_keeps_abstention_after_state_surface_reassertion():
+    from tests.academic_v2.multiturn_50k_generator import build
+    case = build(2024)
+    assert case.axes["reference"] == "ambiguous_antecedent"
+    assert case.axes["state"] == "replace_task"
+    assert case.expected.get("should_abstain") is True
+    assert case.must == ()
+    assert "normal anlat" in case.expected["_semantic_query_pre_noise"].casefold()
