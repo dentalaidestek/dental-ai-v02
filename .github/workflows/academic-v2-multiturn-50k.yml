@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - release/academic-v2-clean-20261003
+      - work/continuity-gold-consistency-20261005
     paths:
       - '.github/workflows/academic-v2-multiturn-50k.yml'
       - 'scripts/benchmark_multiturn_continuity_50k.py'
