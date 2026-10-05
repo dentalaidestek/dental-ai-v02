@@ -44,6 +44,14 @@ jobs:
               probe=[build(i) for i in range(50000)]
               bad=[c for c in probe if c.expected.get("_gold_unsupported_pre_noise")]
               print("GOLD_UNSUPPORTED_DIAG", len(bad))
+              from collections import Counter
+              for state_name in ("replace_count","inherit_count","inherit_goal","inherit_format","replace_task","replace_goal","clear_goal","replace_format","clear_format","clear_count"):
+                  subset=[x for x in probe if x.axes.get("state")==state_name]
+                  diag=Counter()
+                  for x in subset:
+                      q=str(x.expected.get("_semantic_query_pre_noise") or x.query).casefold()
+                      diag[(x.axes.get("reference"),x.axes.get("interaction"),bool(x.expected.get("should_abstain")),"20" in q,"aynı sayıda" in q)] += 1
+                  print("STATE_OBSERVABILITY_DIAG",state_name,diag.most_common(30))
               for c in bad[:20]:
                   print(json.dumps({"id":c.case_id,"axes":c.axes,"history":c.history,"query":c.query,"must":c.must,"must_not":c.must_not,"expected":c.expected},ensure_ascii=False))
               raise
