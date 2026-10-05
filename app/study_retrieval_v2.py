@@ -308,17 +308,13 @@ def _relative_reference_kind(text: str) -> str | None:
     """Recover bounded discourse navigation under surface noise."""
     folded = _state_text(text)
     if _STATE_RELATIVE_RE.search(text):
-        if re.search(r"\bilk\s+anlatt", folded):
-            return "first"
-        # Preserve the semantic distinction before the generic relative branch:
-        # "ondan bir önceki" is a two-step reference; "bir önceki" is one step.
-        return "before_previous" if re.search(r"\bondan\s+bir\s+onceki\b", folded) else "previous"
+        return "first" if re.search(r"\bilk\s+anlatt", folded) else "previous"
     tokens = re.findall(r"\w+", folded)
-    has_previous = any(_edit_distance_at_most(token, "onceki", 2) for token in tokens)
-    has_one = any(_edit_distance_at_most(token, "bir", 1) for token in tokens)
-    has_from_it = any(_edit_distance_at_most(token, "ondan", 1) for token in tokens)
-    if has_previous and (has_one or has_from_it):
-        return "before_previous" if has_one and has_from_it else "previous"
+    if any(_edit_distance_at_most(token, "onceki", 2) for token in tokens):
+        if any(_edit_distance_at_most(token, "bir", 1) for token in tokens) or any(
+            _edit_distance_at_most(token, "ondan", 1) for token in tokens
+        ):
+            return "previous"
     has_first = any(_edit_distance_at_most(token, "ilk", 1) for token in tokens)
     has_told = any(_edit_distance_at_most(token, "anlattigin", 2) for token in tokens)
     return "first" if has_first and has_told else None
@@ -706,9 +702,11 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         for subject in user_subjects:
             if not distinct or subject.terms != distinct[-1].terms:
                 distinct.append(subject)
-        # Relative navigation is over distinct USER-owned topics only.
-        # previous => one topic back from active; before_previous => two back.
-        offset = 3 if relative_kind == "before_previous" else 2
+        # A relative request is anchored to the active topic in history.
+        # Both "bir önceki" and "ondan bir önceki" select the immediately
+        # preceding distinct topic; "ondan" refers to that active topic, not
+        # to an additional hop. Deeper navigation needs an explicit ordinal.
+        offset = 2
         if len(distinct) >= offset:
             selected = distinct[-offset]
         else:
