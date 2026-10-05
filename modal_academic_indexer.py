@@ -13,7 +13,7 @@ Required Modal secrets/environment:
     R2_BUCKET_NAME
     R2_ENDPOINT_URL
     R2_ACCESS_KEY_ID
-    R2_SECRET_ACCESS_KEY_ID (or R2_SECRET_ACCESS_KEY)
+    R2_SECRET_ACCESS_KEY
 and the STUDY_ACADEMIC_V2_* feature flags used by production.
 
 The function scales to zero when idle because min_containers is left at zero.
@@ -38,7 +38,7 @@ image = (
         "tesserocr==2.11.0",
         "boto3>=1.35,<2",
     )
-    .add_local_dir(".", remote_path="/root/dental-ai", copy=True)
+    .add_local_python_source("app")
 )
 
 # Start conservatively. Modal may run several independent durable jobs in
@@ -57,9 +57,6 @@ MAX_SLICES_PER_INVOCATION = int(os.getenv("STUDY_MODAL_MAX_SLICES", "256"))
     secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
 )
 def drain_index_queue() -> dict[str, int | str]:
-    import sys
-    sys.path.insert(0, "/root/dental-ai")
-
     # Larger bounded slices are safe off the shared Render web instance.
     os.environ.setdefault("STUDY_V2_RESOURCE_CLASS", "MIXED")
     os.environ.setdefault("STUDY_V2_DB_POOL_SIZE", "1")
