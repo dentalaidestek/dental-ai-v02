@@ -421,9 +421,22 @@ def build(i:int,seed=20261004)->Case:
  # only the final surface + a valid same-purpose antecedent may own it.
  if expected.get("goal")=="exam":
   fold=lambda s:" ".join(str(s).translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
-  fq=fold(q); fh=fold(" ".join(x[1] for x in history))
+  fq=fold(q)
   explicit_exam=bool(re.search(r"\b(?:sinav|sinavlik)\b",fq))
-  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and re.search(r"\b(?:sinav|sinavlik)\b",fh))
+  active_exam=False
+  for role,text in history:
+   if role!="user": continue
+   ft=fold(text)
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+   # A later independent topic request starts a new discourse state and clears
+   # an older goal before any explicit goal on that same turn is applied.
+   topic_request=bool(re.search(r"\b(?:anlat|acikla|ozetle|nedir)\b",ft))
+   dependent_start=bool(re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|sinav|tablo|normal)\b",ft))
+   if topic_request and not dependent_start and not re.search(r"\b(?:sinav|sinavlik)\b",ft):
+    active_exam=False
+   if re.search(r"\b(?:sinav|sinavlik)\b",ft): active_exam=True
+   if re.search(r"\b(?:sinavi bosver|normal anlat)\b",ft): active_exam=False
+  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and active_exam)
   if not (explicit_exam or inherited_exam):
    expected.pop("goal",None)
    expected["_goal_gold_reconciled"]=True
@@ -508,9 +521,19 @@ def validate_cases(cases):
   sq=str(case.expected.get("_semantic_query_pre_noise") or case.query)
   sh=" ".join(x[1] for x in case.expected.get("_semantic_history_pre_noise",case.history))
   fold=lambda s:" ".join(str(s).translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
-  fq=fold(sq); fh=fold(sh)
+  fq=fold(sq)
   explicit_exam=bool(re.search(r"\b(?:sinav|sinavlik)\b",fq))
-  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and re.search(r"\b(?:sinav|sinavlik)\b",fh))
+  active_exam=False
+  for role,text in case.expected.get("_semantic_history_pre_noise",case.history):
+   if role!="user": continue
+   ft=fold(text)
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+   topic_request=bool(re.search(r"\b(?:anlat|acikla|ozetle|nedir)\b",ft))
+   dependent_start=bool(re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|sinav|tablo|normal)\b",ft))
+   if topic_request and not dependent_start and not re.search(r"\b(?:sinav|sinavlik)\b",ft): active_exam=False
+   if re.search(r"\b(?:sinav|sinavlik)\b",ft): active_exam=True
+   if re.search(r"\b(?:sinavi bosver|normal anlat)\b",ft): active_exam=False
+  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and active_exam)
   if not (explicit_exam or inherited_exam): unsupported_goal.append(case.case_id)
  assert not unsupported_goal, f"unsupported exam-goal gold: {unsupported_goal[:20]} ({len(unsupported_goal)})"
  # Conditional coverage prevents deterministic axis confounding.
