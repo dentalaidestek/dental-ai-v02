@@ -514,6 +514,24 @@ def build(i:int,seed=20261004)->Case:
   history=(history[-keep:] if keep else [])+tail
   q="ondan bir önceki konuya dön"
   semantic_topic=chain_topics[-2]; must=list(semantic_topic[1]); bad=list(chain_topics[-1][1]); expected["topic"]=semantic_topic[0]
+ # Final inherit-task oracle: "aynı şekilde devam et" replays the latest
+ # USER-owned task together with the subject that owned that task. An unrelated
+ # earlier explain topic or incidental "aklımda" mention cannot steal ownership.
+ if state=="inherit_task" and not expected.get("should_abstain") and not structured_reference:
+  task_owner=None
+  for role,text in history:
+   if role!="user": continue
+   ft=fold_slot(text)
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+   if re.search(r"\b(?:soru|question|test)\b.{0,28}\b(?:hazirla|yap|uret|olustur)\b|\b(?:hazirla|yap|uret|olustur)\b.{0,28}\b(?:soru|question|test)\b",ft):
+    matched=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
+    if matched: task_owner=matched
+  if task_owner:
+   semantic_topic=task_owner
+   expected["topic"]=task_owner[0]
+   expected["task"]="generate_questions"
+   must=list(task_owner[1])
+
  # Final inherit-topic oracle: after all interaction/reference composition and
  # bounded-history repair, "same topic" means the latest meaningful USER topic.
  # This is independent of resolver output and prevents superseded relative-axis
