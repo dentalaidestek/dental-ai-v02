@@ -91,9 +91,9 @@ def build(i:int,seed=20261004)->Case:
  semantic_topic=t1
  # interaction defines the semantic transition; other axes perturb its surface/context.
  if interaction in {"topic_switch_explicit","same_task_new_topic"}:
-  q=f"Peki {t2[0]} anlat."; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2; semantic_topic=t2; semantic_topic=t2
+  q=f"Peki {t2[0]} anlat."; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
  elif interaction=="topic_switch_implicit":
-  q=f"{t2[0]} peki"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
+  q=f"{t2[0]} peki"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
  elif interaction in {"same_topic_new_task","format_switch"}:
   q="bunu test şeklinde yap"; expected["task"]="generate_questions"
  elif interaction=="goal_switch":
