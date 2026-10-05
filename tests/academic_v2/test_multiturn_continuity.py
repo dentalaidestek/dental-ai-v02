@@ -308,3 +308,13 @@ def test_ambiguous_generator_inherit_topic_remains_abstention():
     assert case.axes["state"] == "inherit_topic"
     assert case.expected.get("should_abstain") is True
     assert case.must == ()
+
+
+def test_structured_reference_gold_uses_selected_item_topic_terms():
+    from tests.academic_v2.multiturn_50k_generator import TOPICS, build
+    case = build(99)
+    assert case.axes["reference"] == "ordinal_item"
+    assert case.axes["state"] == "inherit_topic"
+    assert case.expected.get("reference") == "assistant_item_13"
+    topic_terms = next(terms for topic, terms in TOPICS if topic == case.expected["topic"])
+    assert case.must == topic_terms
