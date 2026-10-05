@@ -23,7 +23,7 @@ TOPICS=[
 ("agresif periodontitis",("agresif","periodontitis")),("gingivitis",("gingivitis",)),("mukogingival cerrahi",("mukogingival",)),
 ("oral kandidiyazis",("kandidiyazis",)),("liken planus",("liken","planus")),("aftöz ülser",("aftöz","ülser")),
 ("odontojenik keratokist",("keratokist",)),("dentigeröz kist",("dentigeröz","kist")),("odontoma",("odontoma",)),
-("Le Fort kırıkları",("le","fort")),("mandibula kondil kırığı",("kondil","kırık")),("zigoma kırığı",("zigoma","kırık")),
+("Le Fort kırıkları",("le","fort")),("mandibula kondil kırığı",("kondil","kırığı")),("zigoma kırığı",("zigoma","kırığı")),
 ("inferior alveolar sinir",("inferior","alveolar","sinir")),("mental foramen",("mental","foramen")),
 ("maksiller sinüs",("maksiller","sinüs")),("mandibular kanal",("mandibular","kanal")),
 ("sefalometrik analiz",("sefalometrik",)),("Wits analizi",("wits",)),("Bolton analizi",("bolton",)),
