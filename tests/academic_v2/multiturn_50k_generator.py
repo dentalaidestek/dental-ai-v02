@@ -511,6 +511,23 @@ def build(i:int,seed=20261004)->Case:
   history=(history[-keep:] if keep else [])+tail
   q="ondan bir önceki konuya dön"
   semantic_topic=chain_topics[-2]; must=list(semantic_topic[1]); bad=list(chain_topics[-1][1]); expected["topic"]=semantic_topic[0]
+ # Final inherit-topic oracle: after all interaction/reference composition and
+ # bounded-history repair, "same topic" means the latest meaningful USER topic.
+ # This is independent of resolver output and prevents superseded relative-axis
+ # metadata from surviving after the final surface was replaced.
+ if state=="inherit_topic" and not expected.get("should_abstain") and not structured_reference and not expected.get("reference"):
+  active_topic=None
+  for role,text in history:
+   if role!="user": continue
+   folded_text=text.casefold()
+   if folded_text.startswith(("önceden","eski sorum","bu arada")) or "aklımda" in folded_text: continue
+   matched=next((topic for topic in TOPICS if topic[0].casefold() in folded_text or all(term.casefold() in folded_text for term in topic[1])),None)
+   if matched: active_topic=matched
+  if active_topic:
+   semantic_topic=active_topic
+   expected["topic"]=active_topic[0]
+   must=list(active_topic[1])
+
  # State inheritance must remain observable after distractor composition.
  # A later independent user topic legitimately clears goal, so reserve a final
  # bounded user antecedent that owns both the active subject and exam goal.
