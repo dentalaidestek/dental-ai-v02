@@ -49,13 +49,16 @@ def _noise(s,style,r):
  if style=="case_noise": return "".join(ch.upper() if r.random()<.25 else ch for ch in s)
  if style=="repeated_letters": return re.sub(r"([aeiouıöü])",lambda m:m.group(1)*r.randint(1,3),s,count=2,flags=re.I)
  if style=="typo_light":
-  if len(s)>8:
-   p=r.randrange(2,len(s)-2); return s[:p]+s[p+1:]
+  # Noise may corrupt spelling, never semantic numeric values such as 10/20.
+  positions=[i for i,ch in enumerate(s) if ch.isalpha() and 1<i<len(s)-2]
+  if positions:
+   p=r.choice(positions); return s[:p]+s[p+1:]
  if style=="typo_heavy":
   out=s
   for _ in range(2):
-   if len(out)>8:
-    p=r.randrange(2,len(out)-2); out=out[:p]+out[p+1:]
+   positions=[i for i,ch in enumerate(out) if ch.isalpha() and 1<i<len(out)-2]
+   if positions:
+    p=r.choice(positions); out=out[:p]+out[p+1:]
   return out
  if style=="fragment": return re.sub(r"^(peki |şimdi |bana )","",s,flags=re.I)
  if style=="colloquial": return "kral "+s.replace("hazırla","yap").replace("anlat","anlatsana")
