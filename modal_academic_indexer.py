@@ -23,6 +23,7 @@ from __future__ import annotations
 import hmac
 import os
 import modal
+import fastapi
 
 app = modal.App("dental-ai-academic-indexer")
 
@@ -102,17 +103,7 @@ def drain_index_queue() -> dict[str, int | str]:
         engine.dispose()
 
 
-@app.function(
-    image=image,
-    cpu=1.0,
-    memory=512,
-    timeout=60,
-    min_containers=0,
-    max_containers=2,
-    scaledown_window=10,
-    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
-)
-def _dispatch_authorized(request) -> bool:
+def _dispatch_authorized(request: fastapi.Request) -> bool:
     expected = (os.getenv("ACADEMIC_MODAL_DISPATCH_SECRET") or "").strip()
     if not expected:
         return False
@@ -139,7 +130,7 @@ def _spawn_drainers() -> None:
     secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
 )
 @modal.fastapi_endpoint(method="POST")
-def dispatch(request):
+def dispatch(request: fastapi.Request):
     """Authenticated Render -> Modal wake endpoint; it never owns queue state."""
     from fastapi.responses import JSONResponse
 
