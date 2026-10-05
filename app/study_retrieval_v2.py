@@ -726,7 +726,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
     prefixes: list[str] = [subject_text]
     # Canonicalize only recognized operation words; content/dental nouns remain exact.
-    if _has_question_task_cue(clean) and not _STATE_QUESTION_TASK_RE.search(clean):
+    # Mixed-language "question" is still the question-generation operator.
+    # Canonicalize only this control token; never fuzzy-match dental content.
+    mixed_question_task = bool(re.search(
+        r"(?iu)\bquestion(?:s)?\b.{0,28}\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b"
+        r"|\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b.{0,28}\bquestion(?:s)?\b",
+        clean,
+    ))
+    if (_has_question_task_cue(clean) or mixed_question_task) and not _STATE_QUESTION_TASK_RE.search(clean):
         prefixes.append("soru hazırla")
     if _has_table_cue(clean) and not _STATE_TABLE_RE.search(clean):
         prefixes.append("tablo şeklinde")
@@ -774,6 +781,12 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     general_resume = (fuzzy_continue or same_way) and not re.search(
         r"\bayni (?:sayida|formatta|amacla)\b", _state_text(clean)
     )
+    # Count corrections such as "yok 20 question olsun" keep the active
+    # question-generation task even though they do not repeat the verb.
+    count_correction = bool(re.search(r"(?iu)\b(?:yok|hayır|hayir)\b.{0,12}\b\d{1,3}\s+(?:soru|question(?:s)?)\b", clean))
+    if count_correction and state.task == "generate_questions" and not _STATE_QUESTION_TASK_RE.search(clean):
+        prefixes.append("soru hazırla")
+
     if general_resume and not _STATE_EXPLAIN_RE.search(clean):
         if state.task == "generate_questions":
             if not _STATE_QUESTION_TASK_RE.search(clean):
