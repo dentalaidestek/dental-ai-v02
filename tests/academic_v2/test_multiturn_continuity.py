@@ -233,3 +233,24 @@ def test_exam_goal_recovers_bounded_typo_variants_without_fuzzy_topic_guessing()
         out = resolve_followup_query(query, history)
         assert "sınav için" in out
         assert "pulpotomi" in out
+
+
+def test_same_topic_continuation_survives_bounded_control_word_typos():
+    history=[
+        {"role":"user","content":"cam iyonomer siman anlat"},
+        {"role":"assistant","content":"cam iyonomer siman açıklaması"},
+        {"role":"user","content":"bu arada yarın sınav var"},
+        {"role":"assistant","content":"anladım"},
+    ]
+    resolved=resolve_followup_query("aynı onudan devamet",history)
+    assert "cam iyonomer" in resolved.casefold()
+
+
+def test_independent_explain_turn_clears_old_question_task_before_same_way():
+    history=[
+        {"role":"user","content":"pulpektomi için test hazırla"},
+        {"role":"assistant","content":"test"},
+        {"role":"user","content":"pulpektomi anlat"},
+    ]
+    resolved=resolve_followup_query("aynı şekilde devam et",history)
+    assert "soru hazırla" not in resolved.casefold()
