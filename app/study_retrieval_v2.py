@@ -319,7 +319,13 @@ def _has_same_way_cue(text: str) -> bool:
     tokens = re.findall(r"\w+", folded)
     has_same = any(_edit_distance_at_most(token, "ayni", 1) for token in tokens)
     has_way = any(_edit_distance_at_most(token, "sekilde", 2) for token in tokens)
-    has_continue = any(_edit_distance_at_most(token, "devam", 1) or _edit_distance_at_most(token, "devamet", 1) for token in tokens)
+    # Two-edit recovery is allowed only inside the complete "same way ...
+    # continue" control construction. Dental/content tokens are never fuzzy.
+    has_continue = any(
+        _edit_distance_at_most(token, "devam", 2)
+        or _edit_distance_at_most(token, "devamet", 2)
+        for token in tokens
+    )
     return has_same and has_way and has_continue
 
 
@@ -681,9 +687,9 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # silently recreate an old question-generation request.
     control_tokens = re.findall(r"\w+", _state_text(clean))
     fuzzy_continue = any(_edit_distance_at_most(token, "devam", 1) for token in control_tokens)
-    general_resume = fuzzy_continue and not (
-        re.search(r"\bayni (?:sayida|formatta|amacla|sekilde)\b", _state_text(clean))
-        or _has_same_way_cue(clean)
+    same_way = _has_same_way_cue(clean)
+    general_resume = (fuzzy_continue or same_way) and not re.search(
+        r"\bayni (?:sayida|formatta|amacla)\b", _state_text(clean)
     )
     if general_resume and not _STATE_EXPLAIN_RE.search(clean):
         if state.task == "generate_questions":
