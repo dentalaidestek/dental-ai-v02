@@ -174,6 +174,7 @@ def build(i:int,seed=20261004)->Case:
  # State axes may not overwrite the query that defines a structured assistant
  # reference. Otherwise gold can demand information no longer present anywhere.
  structured_reference = expected.get("reference")=="assistant_item_13"
+ structured_reference_origin=structured_reference
  # State axes below test one slot at a time.  When they replace the surface
  # query with an anaphoric continuation, explicitly retain the current
  # interaction-owned subject first; otherwise the composition erases the very
@@ -715,7 +716,7 @@ def build(i:int,seed=20261004)->Case:
   ordinal_current=bool(re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",q))
   ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
    if history[idx][0]=="user" and re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",history[idx][1])),None)
-  provenance_valid=ordinal_current or (structured_reference and ordinal_user_index is not None)
+  provenance_valid=ordinal_current or (structured_reference_origin and structured_reference and ordinal_user_index is not None)
   selected_line=""
   if provenance_valid:
    boundary=len(history) if ordinal_current else ordinal_user_index
