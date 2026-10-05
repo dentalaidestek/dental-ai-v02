@@ -312,10 +312,11 @@ def build(i:int,seed=20261004)->Case:
   "clear_count":"sayı önemli değil soru hazırla",
  }
  if state in state_surface:
-  if expected.get("should_abstain") and state not in ("replace_count","replace_goal","replace_task","replace_format","clear_goal","clear_format","clear_count"):
+  # Slot operations do not manufacture a missing/ambiguous topic antecedent.
+  # They may alter task/count/goal/format only after a subject is resolvable.
+  if expected.get("should_abstain"):
    pass
   else:
-   expected.pop("should_abstain",None)
    if structured_reference:
     history += [("user",q),("assistant","seçilen öğe bağlamı korundu")]
    q=state_surface[state]
