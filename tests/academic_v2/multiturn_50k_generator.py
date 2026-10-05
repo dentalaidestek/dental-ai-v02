@@ -325,6 +325,25 @@ def build(i:int,seed=20261004)->Case:
 def _semantic_signature(case:Case):
  return (case.history,case.query,case.must,case.must_not,tuple(sorted(case.expected.items(),key=lambda x:x[0])))
 
+def audit_gold_consistency(cases):
+ defects={"overlap":0,"unsupported_pre_noise":0,"abstain_with_required":0}
+ by_axis={axis:{} for axis in ("interaction","reference","state","language","distractor","turn_length")}
+ for case in cases:
+  overlap={x.casefold() for x in case.must}.intersection(x.casefold() for x in case.must_not)
+  unsupported=tuple(case.expected.get("_gold_unsupported_pre_noise",()))
+  flags=[]
+  if overlap: defects["overlap"]+=1; flags.append("overlap")
+  if unsupported: defects["unsupported_pre_noise"]+=1; flags.append("unsupported_pre_noise")
+  if case.expected.get("should_abstain") and case.must:
+   defects["abstain_with_required"]+=1; flags.append("abstain_with_required")
+  if flags:
+   for axis in by_axis:
+    value=str(case.axes.get(axis))
+    bucket=by_axis[axis].setdefault(value,{"cases":0})
+    bucket["cases"]+=1
+    for flag in flags: bucket[flag]=bucket.get(flag,0)+1
+ return {"defects":defects,"by_axis":by_axis}
+
 def validate_cases(cases):
  assert cases, "no generated cases"
  assert len({c.case_id for c in cases})==len(cases), "duplicate case ids"
@@ -402,7 +421,11 @@ def validate_cases(cases):
   if subset:
    ratio_ok=sum(bool(predicate(c)) for c in subset)/len(subset)
    assert ratio_ok>=0.80, f"{axis}={value} is mostly metadata-only: {ratio_ok:.3f}"
- return {"count":len(cases),"exact_unique":len({c.case_id for c in cases}),"semantic_unique":semantic_unique,"semantic_unique_ratio":ratio}
+ audit=audit_gold_consistency(cases)
+ assert audit["defects"]["overlap"]==0, audit["defects"]
+ assert audit["defects"]["unsupported_pre_noise"]==0, audit["defects"]
+ assert audit["defects"]["abstain_with_required"]==0, audit["defects"]
+ return {"count":len(cases),"exact_unique":len({c.case_id for c in cases}),"semantic_unique":semantic_unique,"semantic_unique_ratio":ratio,"gold_audit":audit["defects"]}
 
 def generate(n=50000,seed=20261004):
  cases=[build(i,seed) for i in range(n)]
