@@ -422,7 +422,7 @@ def build(i:int,seed=20261004)->Case:
  # identity; if trimming removed the user anchor, restore a bounded real/canonical
  # user antecedent rather than teaching the resolver to trust assistant prose.
  if must and not expected.get("should_abstain") and not structured_reference:
-  user_visible=" ".join(text for role,text in history if role=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\\baklımda\\b",text)).casefold()
+  user_visible=" ".join(text for role,text in history if role=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\baklımda\b",text)).casefold()
   expected_topic_folded=str(expected.get("topic") or "").casefold()
   has_user_provenance=bool(expected_topic_folded and expected_topic_folded in user_visible) or all(term.casefold() in user_visible for term in must)
   if not has_user_provenance:
@@ -447,7 +447,7 @@ def build(i:int,seed=20261004)->Case:
  # A later anchor repair/distractor append can evict the user provenance
  # restored above. Re-assert it at the final bounded-history boundary.
  if must and not expected.get("should_abstain") and not structured_reference:
-  user_visible=" ".join(text for role,text in history if role=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\\baklımda\\b",text)).casefold()
+  user_visible=" ".join(text for role,text in history if role=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\baklımda\b",text)).casefold()
   topic_name=str(expected.get("topic") or semantic_topic[0])
   topic_folded=topic_name.casefold()
   supported=bool(topic_folded and topic_folded in user_visible) or all(term.casefold() in user_visible for term in must)
