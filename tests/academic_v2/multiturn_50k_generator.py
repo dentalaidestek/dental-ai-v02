@@ -175,6 +175,7 @@ def build(i:int,seed=20261004)->Case:
   "replace_count","inherit_count","inherit_goal","inherit_format","replace_goal",
   "clear_goal","replace_task","inherit_topic","inherit_task","replace_format",
   "clear_format","clear_count","qualifier_add","qualifier_replace","qualifier_remove",
+  "error_propagation_trap",
  }
  if not expected.get("should_abstain") and not structured_reference and state_replaces_surface:
   topic_name=str(expected.get("topic") or "")
@@ -296,7 +297,11 @@ def build(i:int,seed=20261004)->Case:
   visible_after_trim=(" ".join(x[1] for x in history)+" "+q).casefold()
   topic_name=str(expected.get("topic") or semantic_topic[0])
   if topic_name and any(term.casefold() not in visible_after_trim for term in must):
-   anchor=("user",f"{topic_name} anlat")
+   # Comparison/reference cases can require more than one topic.  Preserve the
+   # exact required lexical contract in one user antecedent so no gold facet is
+   # hidden by a short turn window.
+   anchor_text=" ".join(must)+" anlat"
+   anchor=("user",anchor_text)
    if anchor not in history:
     history=(history+[anchor])[-8:]
 
