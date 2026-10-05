@@ -13,7 +13,13 @@ def n(s):
  # the same Turkish fold contract as the conversation state engine first.
  s=str(s or "").translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU"))
  s=unicodedata.normalize("NFKD",s).casefold()
- return "".join(ch for ch in s if not unicodedata.combining(ch))
+ s="".join(ch for ch in s if not unicodedata.combining(ch))
+ return " ".join(s.split())
+
+def has_term(text,term):
+ term=n(term)
+ if not term:return False
+ return bool(__import__("re").search(r"(?<!\\w)"+__import__("re").escape(term)+r"(?!\\w)",text))
 
 def score(case):
  hist=[{"role":r,"content":c} for r,c in case.history]
@@ -22,13 +28,13 @@ def score(case):
  z=n(out)
  exp=case.expected
  if exp.get("should_abstain"):
-  leaked=[x for x in exp.get("forbidden_topics",()) if n(x) in z and n(x) not in n(case.query)]
+  leaked=[x for x in exp.get("forbidden_topics",()) if has_term(z,x) and not has_term(n(case.query),x)]
   if leaked:return False,"resolved_but_should_abstain"," | ".join(leaked),out
   return True,"ok","",""
- miss=[x for x in case.must if n(x) not in z]
+ miss=[x for x in case.must if not has_term(z,x)]
  qz=n(case.query)
  resolver_context=z.replace(qz,"",1) if qz and qz in z else z
- stale=[x for x in case.must_not if n(x) in resolver_context or (n(x) in z and n(x) not in qz)]
+ stale=[x for x in case.must_not if has_term(resolver_context,x) or (has_term(z,x) and not has_term(qz,x))]
  if miss:return False,"missing_required"," | ".join(miss),out
  if stale:return False,"stale_context"," | ".join(stale),out
  if exp.get("task")=="generate_questions" and not any(x in z for x in ("soru","test")):return False,"task_loss","generate_questions",out
@@ -37,9 +43,9 @@ def score(case):
  if exp.get("format")=="table" and not any(x in z for x in ("tablo","table")):return False,"format_loss","table",out
  if exp.get("format") is None and "tablo" in z and "tablo" not in n(case.query):return False,"stale_format","table",out
  for x in exp.get("qualifiers",()):
-  if n(x) not in z:return False,"qualifier_loss",x,out
+  if not has_term(z,x):return False,"qualifier_loss",x,out
  for x in exp.get("forbidden_qualifiers",()):
-  if n(x) in resolver_context or (n(x) in z and n(x) not in qz):return False,"stale_qualifier",x,out
+  if has_term(resolver_context,x) or (has_term(z,x) and not has_term(qz,x)):return False,"stale_qualifier",x,out
  if exp.get("length")=="shorter" and not any(x in z for x in ("kisa","oz")):return False,"length_loss","shorter",out
  if exp.get("length")=="detailed" and not any(x in z for x in ("detay","ayrinti","kapsam")):return False,"length_loss","detailed",out
  return True,"ok","",out
