@@ -432,6 +432,15 @@ def build(i:int,seed=20261004)->Case:
    topic_name=str(expected.get("topic") or semantic_topic[0])
    history=(history+[("assistant",f"13. {topic_name} klinik soru 13")])[-8:]
 
+ # A later anchor repair/distractor append can evict the user provenance
+ # restored above. Re-assert it at the final bounded-history boundary.
+ if must and not expected.get("should_abstain") and not structured_reference:
+  user_visible=" ".join(text for role,text in history if role=="user").casefold()
+  topic_name=str(expected.get("topic") or semantic_topic[0])
+  topic_folded=topic_name.casefold()
+  supported=bool(topic_folded and topic_folded in user_visible) or all(term.casefold() in user_visible for term in must)
+  if not supported:
+   history=(history+[("user",f"{topic_name} anlat")])[-8:]
  # Reconcile the final expected topic with the final bounded dialogue.
  # Later state/reference axes are allowed to replace an earlier interaction,
  # but they may not leave a stale topic label behind.  Prefer an explicit
