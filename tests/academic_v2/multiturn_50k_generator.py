@@ -703,17 +703,17 @@ def build(i:int,seed=20261004)->Case:
  # incidental/quoted turns are ignored. Earlier interaction/reference labels
  # cannot keep an older topic alive across a later independent topic switch.
  fq_axis=fold_slot(q)
- axis_only=bool(re.search(r"(?iu)\\baynı\\s+(?:sayıda|sayida|formatta|amaçla|amacla)\\b",q))
+ axis_only=bool(re.search(r"(?iu)\baynı\s+(?:sayıda|sayida|formatta|amaçla|amacla)\b",q))
  if axis_only and not expected.get("should_abstain"):
   latest_user_topic=None
   for role,text in history:
    if role!="user": continue
    ft=fold_slot(text)
-   if re.search(r"^(?:onceden|eski sorum|alinti)\\b|\\baklimda\\b|^bu arada\\b",ft): continue
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
    candidate=next((topic for topic in TOPICS
     if topic[0].casefold() in text.casefold()
     or all(fold_slot(term) in ft for term in topic[1])),None)
-   if candidate and re.search(r"(?iu)\\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\\b",text):
+   if candidate and re.search(r"(?iu)\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\b",text):
     latest_user_topic=candidate
   if latest_user_topic:
    previous_topic_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
