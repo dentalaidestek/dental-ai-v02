@@ -222,3 +222,14 @@ def test_goal_inheritance_uses_active_state_not_any_old_exam_mention():
     ]
     out = resolve_followup_query("aynı amaçla devam et", switched)
     assert "sınav için" not in out
+
+
+def test_exam_goal_recovers_bounded_typo_variants_without_fuzzy_topic_guessing():
+    history = [
+        {"role":"user","content":"pulpotomi anlat"},
+        {"role":"assistant","content":"açıklama"},
+    ]
+    for query in ("yok sıav için nlat", "yok sııınav için anlat", "yok sına içi anlat"):
+        out = resolve_followup_query(query, history)
+        assert "sınav için" in out
+        assert "pulpotomi" in out
