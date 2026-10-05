@@ -12,6 +12,12 @@ from dataclasses import dataclass
 
 _BULLET_RE = re.compile(r"^\s*(?:[-*•◦▪] |\d+[.)]\s+|[A-ZÇĞİÖŞÜ][.)]\s+)")
 _TABLE_GAP_RE = re.compile(r"\S\s{2,}\S")
+_MCQ_STEM_RE = re.compile(r"^\s*(?:soru\s*)?\d{1,3}[.)]\s+", re.I)
+_MCQ_OPTION_RE = re.compile(r"^\s*[A-E][.)]\s+", re.I)
+_MCQ_EXPLANATION_RE = re.compile(
+    r"^\s*(?:doğru\s+cevap|cevap|yanıt|açıklama|çözüm)\s*[:.\-–]",
+    re.I,
+)
 _DENTAL_HEADING_RE = re.compile(
     r"\b(?:tanı|tanım|etyoloji|patogenez|sınıflama|klinik|radyografik|"
     r"endikasyon|kontrendikasyon|tedavi|komplikasyon|prognoz|ayırıcı tanı|"
@@ -65,7 +71,8 @@ def _content_kind(lines: list[str]) -> str:
         return "TEXT"
     table_rows = sum(bool(_TABLE_GAP_RE.search(line)) or line.count("|") >= 2 for line in nonempty)
     bullets = sum(bool(_BULLET_RE.match(line)) for line in nonempty)
-    figure_terms = sum(bool(re.search(r"\b(?:şekil|resim|grafik|diagram|tablo)\s*\d*", line, re.I)) for line in nonempty)
+    figure_terms = sum(bool(re.search(r"\b(?:şekil|resim|grafik|diagram|tablo|radyografi|röntgen|panoramik|opg|cbct|"
+            r"periapikal|bitewing|sefalogram|sefalometrik|fotoğraf|görüntü)\s*\d*", line, re.I)) for line in nonempty)
     if table_rows >= 2 or (table_rows and len(nonempty) <= 5):
         return "TABLE"
     if figure_terms and len(nonempty) <= 10:
@@ -73,6 +80,46 @@ def _content_kind(lines: list[str]) -> str:
     if bullets >= max(2, len(nonempty) // 2):
         return "LIST"
     return "TEXT"
+
+
+def _split_mcq_blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
+    """Keep MCQ stems/options clean; preamble and explanations remain TEXT."""
+    blocks: list[tuple[str, list[str]]] = []
+    preamble: list[str] = []
+    current: list[str] = []
+    seen_option = False
+
+    def flush_question() -> None:
+        nonlocal current, seen_option
+        if current:
+            blocks.append(("QUESTION" if seen_option else "TEXT", current))
+        current = []
+        seen_option = False
+
+    for line in lines:
+        if _MCQ_STEM_RE.match(line):
+            if current:
+                flush_question()
+            elif preamble:
+                blocks.append(("TEXT", preamble))
+                preamble = []
+            current = [line]
+            continue
+        if not current:
+            preamble.append(line)
+            continue
+        if seen_option and _MCQ_EXPLANATION_RE.match(line):
+            flush_question()
+            preamble = [line]
+            continue
+        if _MCQ_OPTION_RE.match(line):
+            seen_option = True
+        current.append(line)
+    if current:
+        flush_question()
+    if preamble:
+        blocks.append(("TEXT", preamble))
+    return blocks if any(kind == "QUESTION" for kind, _ in blocks) else []
 
 
 def _split_long_block(text: str, max_chars: int, overlap_chars: int) -> list[str]:
@@ -110,6 +157,7 @@ def _split_long_block(text: str, max_chars: int, overlap_chars: int) -> list[str
 def chunk_dental_page(
     text: str,
     *,
+    inherited_section_title: str | None = None,
     max_chars: int = 1800,
     min_chars: int = 180,
     overlap_chars: int = 180,
@@ -124,7 +172,7 @@ def chunk_dental_page(
         return []
     lines = normalized.splitlines()
     sections: list[tuple[str | None, list[str]]] = []
-    title: str | None = None
+    title: str | None = inherited_section_title
     body: list[str] = []
     for line in lines:
         if _is_heading(line):
@@ -149,6 +197,14 @@ def chunk_dental_page(
 
     chunks: list[DentalChunk] = []
     for section_title, section_lines in merged:
+        mcq_blocks = _split_mcq_blocks(section_lines)
+        if mcq_blocks:
+            for block_kind, block in mcq_blocks:
+                block_text = "\n".join(block).strip()
+                if not block_text:
+                    continue
+                chunks.append(DentalChunk(block_text, section_title, block_kind))
+            continue
         body_text = "\n".join(section_lines).strip()
         complete = f"{section_title}\n{body_text}".strip() if section_title else body_text
         if not complete:

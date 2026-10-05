@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import LargeBinary, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -64,6 +64,9 @@ class StudyIndexPage(SQLModel, table=True):
     text_content: Optional[str] = None
     extraction_method: Optional[str] = Field(default=None, index=True)
     content_sha256: Optional[str] = Field(default=None, index=True)
+    # Lazily populated only for pages actually used by visual QA. It belongs to
+    # the generation checkpoint, so reindex/deletion removes it automatically.
+    visual_pdf_bytes: Optional[bytes] = Field(default=None, sa_type=LargeBinary)
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow_naive, index=True)
     updated_at: datetime = Field(default_factory=utcnow_naive, index=True)
@@ -83,6 +86,8 @@ class StudyIndexChunk(SQLModel, table=True):
     content_kind: str = Field(default="TEXT", index=True)
     text_content: str
     text_sha256: str = Field(index=True)
+    retrieval_terms: Optional[str] = None
+    semantic_json: Optional[str] = None
     embedding_provider: Optional[str] = Field(default=None, index=True)
     embedding_model: Optional[str] = Field(default=None, index=True)
     embedding_dimensions: Optional[int] = None
@@ -466,8 +471,9 @@ def verify_build_complete(
     material_id: int,
     index_version: str,
     expected_page_count: int,
+    require_embeddings: bool = True,
 ) -> tuple[bool, str | None]:
-    """Fail closed: publication requires complete pages and embedded chunks."""
+    """Fail closed: publication requires complete pages/chunks and, when configured, embeddings."""
     page_rows = session.exec(
         select(StudyIndexPage)
         .where(StudyIndexPage.material_id == material_id)
@@ -488,9 +494,9 @@ def verify_build_complete(
     ).all()
     if not chunks:
         return False, "NO_CHUNKS"
-    if any(not row.embedding_json for row in chunks):
+    if require_embeddings and any(not row.embedding_json for row in chunks):
         return False, "EMBEDDINGS_INCOMPLETE"
-    if session.get_bind().dialect.name == "postgresql":
+    if require_embeddings and session.get_bind().dialect.name == "postgresql":
         native_missing = session.exec(
             text(
                 "SELECT COUNT(*) FROM studyindexchunk "
@@ -1019,6 +1025,7 @@ def publish_index_version(
     job_id: int,
     lease_token: str,
     worker_id: str,
+    require_embeddings: bool = True,
 ) -> bool:
     """Atomically publish a verified build.
 
@@ -1087,18 +1094,27 @@ def publish_index_version(
         ),
         params={"material_id": material_id, "index_version": index_version},
     ).first()
-    native_clause = " AND embedding_array IS NOT NULL" if dialect == "postgresql" else ""
-    chunk_stats = session.exec(
-        text(
-            """
-            SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN embedding_json IS NOT NULL""" + native_clause + """ THEN 1 ELSE 0 END) AS embedded
-            FROM studyindexchunk
-            WHERE material_id = :material_id AND index_version = :index_version
-            """
-        ),
-        params={"material_id": material_id, "index_version": index_version},
-    ).first()
+    if require_embeddings:
+        native_clause = " AND embedding_array IS NOT NULL" if dialect == "postgresql" else ""
+        chunk_stats = session.exec(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN embedding_json IS NOT NULL""" + native_clause + """ THEN 1 ELSE 0 END) AS ready
+                FROM studyindexchunk
+                WHERE material_id = :material_id AND index_version = :index_version
+                """
+            ),
+            params={"material_id": material_id, "index_version": index_version},
+        ).first()
+    else:
+        chunk_stats = session.exec(
+            text(
+                "SELECT COUNT(*) AS total, COUNT(*) AS ready FROM studyindexchunk "
+                "WHERE material_id=:material_id AND index_version=:index_version"
+            ),
+            params={"material_id": material_id, "index_version": index_version},
+        ).first()
     page_total = int(page_stats[0] or 0) if page_stats else 0
     page_ready = int(page_stats[1] or 0) if page_stats else 0
     if (

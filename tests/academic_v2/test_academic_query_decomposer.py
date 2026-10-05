@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+from app.academic_query_decomposer import decompose_academic_query
+
+
+def _pairs(query):
+    plan = decompose_academic_query(query)
+    pairs = {(n.subject_ids[0] if n.subject_ids else n.subject_terms[0], n.facet) for n in plan.needs}
+    return plan, pairs
+
+
+def test_single_subject_keeps_multiple_requested_facets():
+    plan, pairs = _pairs("İrreversible pulpitisin tanısı, tedavisi ve komplikasyonları nelerdir?")
+    assert ("irreversible_pulpitis", "diagnosis") in pairs
+    assert ("irreversible_pulpitis", "treatment") in pairs
+    assert ("irreversible_pulpitis", "complication") in pairs
+    assert not plan.unresolved_references
+
+
+def test_asymmetric_coordinated_subjects_do_not_cross_bind_facets():
+    plan, pairs = _pairs("İrreversible pulpitisin tanısı ve reversible pulpitisin tedavisi")
+    assert ("irreversible_pulpitis", "diagnosis") in pairs
+    assert ("reversible_pulpitis", "treatment") in pairs
+    assert ("irreversible_pulpitis", "treatment") not in pairs
+    assert ("reversible_pulpitis", "diagnosis") not in pairs
+
+
+def test_adversative_clauses_keep_subject_and_facet_local():
+    plan, pairs = _pairs("MRONJ bulgularını anlat ama dry socket tedavisini söyle")
+    assert ("mronj", "diagnosis") in pairs
+    assert ("dry_socket", "treatment") in pairs
+    assert ("mronj", "treatment") not in pairs
+
+
+def test_symmetric_comparison_can_bind_one_dimension_to_both_sides():
+    plan, pairs = _pairs("SNA ile SNB normal değerlerini karşılaştır")
+    assert ("sna", "value") in pairs
+    assert ("snb", "value") in pairs
+    assert plan.answer_operation == "compare"
+    assert plan.comparisons
+
+
+def test_ambiguous_multi_subject_multi_facet_sentence_stays_unresolved():
+    plan, _ = _pairs("SNA ve SNB için değer ve ölçüm mantığını anlat")
+    assert any("subject_facet_binding" in item for item in plan.unresolved_references)
+
+
+def test_negation_is_clause_local_not_global():
+    plan, pairs = _pairs(
+        "Bisfosfonatın endikasyonlarını anlat ama kontrendikasyonlarını da söyle"
+    )
+    indication = [n for n in plan.needs if n.facet == "indication"]
+    contraindication = [n for n in plan.needs if n.facet == "contraindication"]
+    assert indication and all(n.polarity == "positive" for n in indication)
+    # Contraindication is itself a negative applicability facet; polarity only
+    # records explicit sentence negation and therefore remains positive here.
+    assert contraindication and all(n.polarity == "positive" for n in contraindication)
+
+
+def test_subjectless_continuation_inherits_one_safe_subject_context():
+    plan, pairs = _pairs("Akut pulpitisin bulgularını anlat ama tedavisini de söyle")
+    treatment = [n for n in plan.needs if "pulpitis" in n.subject_ids and n.facet == "treatment"]
+    assert ("pulpitis", "treatment") in pairs
+    assert treatment and all("akut" in n.qualifiers for n in treatment)
+
+
+def test_explicit_new_subject_blocks_previous_subject_inheritance():
+    plan, pairs = _pairs("Pulpitisin tanısını anlat ama dry socket tedavisini söyle")
+    assert ("dry_socket", "treatment") in pairs
+    assert ("pulpitis", "treatment") not in pairs
+
+
+def test_ambiguous_multi_subject_antecedent_does_not_guess_continuation_subject():
+    plan = decompose_academic_query("SNA ve SNB değerlerini anlat ama ölçümünü de açıkla")
+    assert "clause_2:subject_reference" in plan.unresolved_references
+
+
+def test_ownerless_facet_cannot_be_hidden_by_lexical_fallback():
+    plan = decompose_academic_query("Ölçümünü de açıkla")
+    assert "clause_1:subject_reference" in plan.unresolved_references
+    assert not any(n.subject_ids for n in plan.needs)
+
+
+def test_resolved_single_subject_continuation_does_not_gain_false_unresolved():
+    plan = decompose_academic_query("Pulpitisin tanısını anlat ama tedavisini de açıkla")
+    assert "clause_2:subject_reference" not in plan.unresolved_references
+    assert any("pulpitis" in n.subject_ids and n.facet == "treatment" for n in plan.needs)
+
+
+def test_temporal_operator_is_preserved_as_unmodeled_semantics():
+    plan = decompose_academic_query("Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat")
+    assert "unmodeled:temporal_order" in plan.unresolved_references
+    assert any("apical_periodontitis" in n.subject_ids for n in plan.needs)
+
+def test_explicit_negative_direction_stays_local():
+    plan, _ = _pairs("Bisfosfonat hangi durumda önerilmez?")
+    assert any(n.polarity == "negative" for n in plan.needs)
+
+
+def test_no_subject_invention_for_pronoun_only_query():
+    plan = decompose_academic_query("Bunun tedavisini ve komplikasyonlarını anlat")
+    assert plan.unresolved_references
+    assert plan.needs[0].subject_terms == ("<unresolved>",)
+
+
+def test_treatment_named_subject_does_not_become_treatment_request():
+    plan, pairs = _pairs("Kanal tedavisi komplikasyonlarını anlat")
+    assert any(facet == "complication" for _, facet in pairs)
+    assert all(facet != "treatment" for _, facet in pairs)
+
+
+def test_explicit_anatomical_relation_does_not_invent_missing_graph_edge():
+    plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
+    # Both endpoints are explicit, but the curated graph has no direct edge
+    # between them. The planner must not fabricate a transitive relation via IAN.
+    assert not [n for n in plan.needs if n.relation]
+    explicit = {sid for n in plan.needs for sid in n.subject_ids}
+    assert {"mandibular_canal", "third_molar"}.issubset(explicit)
+
+
+def test_graph_does_not_invent_unasked_relation_target():
+    plan = decompose_academic_query("Üçüncü moların komplikasyonlarını anlat")
+    assert all(not n.relation for n in plan.needs)
+
+
+def test_qualifier_does_not_jump_between_separate_clauses():
+    plan = decompose_academic_query(
+        "Akut pulpitis bulgularını anlat ama kronik pulpa nekrozu tedavisini söyle"
+    )
+    for need in plan.needs:
+        if "pulp_necrosis" in need.subject_ids:
+            assert "akut" not in need.qualifiers
+        if "pulpitis" in need.subject_ids:
+            assert "kronik" not in need.qualifiers
+
+
+def test_qualifiers_are_preserved_on_their_own_inflected_subjects():
+    plan = decompose_academic_query(
+        "Akut pulpitisin bulgularını anlat ama kronik pulpa nekrozunun tedavisini söyle"
+    )
+    pulpitis = [n for n in plan.needs if "pulpitis" in n.subject_ids]
+    necrosis = [n for n in plan.needs if "pulp_necrosis" in n.subject_ids]
+    assert pulpitis and any("akut" in n.qualifiers for n in pulpitis)
+    assert necrosis and any("kronik" in n.qualifiers for n in necrosis)
+    assert all("kronik" not in n.qualifiers for n in pulpitis)
+    assert all("akut" not in n.qualifiers for n in necrosis)
+
+
+def test_relation_helpers_do_not_turn_into_comparison_sides():
+    plan = decompose_academic_query("Mandibular kanal ile üçüncü molar ilişkisini anlat")
+    assert plan.answer_operation == "answer"
+    assert not plan.comparisons
+
+
+def test_unmodeled_or_semantics_fail_closed_instead_of_flattening():
+    plan = decompose_academic_query("SNA veya SNB normal değerini getir")
+    assert "unmodeled:logical_or" in plan.unresolved_references
+
+
+def test_unmodeled_exclusion_semantics_fail_closed():
+    plan = decompose_academic_query("Pulpitis tanısını anlat ama tedaviye girme")
+    assert "unmodeled:explicit_exclusion" in plan.unresolved_references
+
+
+def test_unmodeled_numeric_constraint_fails_closed():
+    plan = decompose_academic_query("Sondalama derinliği en az 4 mm ise neyi gösterir?")
+    assert "unmodeled:numeric_constraint" in plan.unresolved_references
+
+
+def test_unmodeled_past_question_source_semantics_fail_closed():
+    plan = decompose_academic_query("Geçmiş sorularda apeksifikasyondan ne sorulmuş?")
+    assert "unmodeled:source_selection" in plan.unresolved_references
+
+
+def test_exclusion_is_not_mislabeled_as_negative_fact():
+    plan = decompose_academic_query("Pulpitis tanısını anlat, tedavi hariç")
+    assert "unmodeled:explicit_exclusion" in plan.unresolved_references
+    assert all(n.polarity == "positive" for n in plan.needs)
+
+
+def test_unmodeled_temporal_order_fails_closed_instead_of_flattening():
+    plan = decompose_academic_query(
+        "Pulpa nekrozundan sonra apikal periodontitis bulgularını anlat"
+    )
+    assert "unmodeled:temporal_order" in plan.unresolved_references
+
+
+def test_fuzzy_typo_subject_is_not_used_for_clause_ownership():
+    plan = decompose_academic_query("mandbular kanalın anatomisini anlat")
+    assert not any(
+        "mandibular_canal" in need.subject_ids and need.facet == "anatomy"
+        for need in plan.needs
+    )
+    assert "sentence_decomposition" in plan.unresolved_references
+
+
+def test_explicit_comparison_without_two_safe_sides_is_unresolved():
+    plan = decompose_academic_query("Pulpitisi karşılaştır")
+    assert plan.answer_operation == "answer"
+    assert not plan.comparisons
+    assert "comparison_sides" in plan.unresolved_references
+
+
+def test_parser_level_implicit_comparison_cannot_silently_become_plain_answer():
+    plan = decompose_academic_query("SNA ve SNB değerlerinden hangisi daha büyüktür?")
+    assert plan.answer_operation in {"compare", "answer"}
+    if plan.answer_operation == "answer":
+        assert "comparison_sides" in plan.unresolved_references
+
+
+def test_inflected_measurement_facets_share_canonical_ownership_contract():
+    from app.dental_query_intent import build_dental_requirement_plan
+    for facet in ("ölçümünü", "ölçümlerini", "ölçümünü de", "olcumunu"):
+        ownerless = decompose_academic_query(f"{facet} açıkla")
+        assert "clause_1:subject_reference" in ownerless.unresolved_references
+        assert not build_dental_requirement_plan(f"{facet} açıkla").subject_terms
+        explicit = decompose_academic_query(f"SNA {facet} açıkla")
+        assert not explicit.unresolved_references
+        assert {(n.subject_ids, n.facet) for n in explicit.needs} == {(("sna",), "measurement")}
+        continued = decompose_academic_query(f"SNA değerini anlat ama {facet} açıkla")
+        assert not continued.unresolved_references
+        assert any(n.subject_ids == ("sna",) and n.facet == "measurement" for n in continued.needs)
+        ambiguous = decompose_academic_query(f"SNA ve SNB değerlerini anlat ama {facet} açıkla")
+        assert "clause_2:subject_reference" in ambiguous.unresolved_references
+        assert not any(n.facet == "measurement" for n in ambiguous.needs)
+
+
+def test_ownerless_repeated_facet_is_not_hidden_by_subject_and_facet_sets():
+    plan = decompose_academic_query("Pulpitis tanısını ve dry socket tedavisini ve tanısını anlat")
+    assert "clause_1:subject_facet_binding" in plan.unresolved_references
+    assert not any(n.subject_ids == ("dry_socket",) and n.facet == "diagnosis" for n in plan.needs)
+    control = decompose_academic_query("Pulpitis tanısını ve dry socket tedavisini anlat")
+    assert not control.unresolved_references
+
+
+def test_duplicate_resolved_bindings_do_not_become_ambiguous():
+    plan = decompose_academic_query("SNA değerini ve SNB ölçümünü anlat; SNA değerini ve SNB ölçümünü anlat")
+    assert not plan.unresolved_references
+    assert len(plan.needs) == 2
+
+
+def test_dedupe_keeps_different_qualifiers_and_polarities():
+    plan = decompose_academic_query("Akut pulpitis tanısını anlat ama kronik pulpitis tanısını anlat")
+    assert len([n for n in plan.needs if n.facet == "diagnosis"]) == 2
+    assert not plan.unresolved_references
+    negative = decompose_academic_query("Bisfosfonat endikasyonlarını anlat ama endikasyonları değildir")
+    assert {n.polarity for n in negative.needs if n.facet == "indication"} == {"positive", "negative"}

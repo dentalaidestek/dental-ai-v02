@@ -1,0 +1,246 @@
+from __future__ import annotations
+
+from app.academic_retrieval_plan import (
+    AcademicRetrievalPlan, ComparisonRequirement, NeedGroup, RetrievalNeed, ValueConstraint,
+)
+
+
+def _raises(message, fn):
+    try:
+        fn()
+    except ValueError as exc:
+        assert message in str(exc), str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_subject_facets_remain_bound_to_their_subjects():
+    plan = AcademicRetrievalPlan(
+        original_query="A'nın tanısı ve tedavisi ile B'nin komplikasyonlarını karşılaştır.",
+        answer_operation="compare",
+        needs=(
+            RetrievalNeed("a-diagnosis", subject_terms=("A",), facet="diagnosis"),
+            RetrievalNeed("a-treatment", subject_terms=("A",), facet="treatment"),
+            RetrievalNeed("b-complication", subject_terms=("B",), facet="complication"),
+        ),
+        comparisons=(ComparisonRequirement(
+            ("a-diagnosis", "a-treatment", "b-complication"),
+            ("diagnosis", "treatment", "complication"),
+        ),),
+    )
+    assert [(n.subject_terms, n.facet) for n in plan.required_needs] == [
+        (("A",), "diagnosis"), (("A",), "treatment"), (("B",), "complication"),
+    ]
+
+
+def test_historical_question_can_feed_later_note_retrieval():
+    plan = AcademicRetrievalPlan(
+        original_query="Geçen yıl apeksifikasyonda ne sorulduğuna bak, nottan o yerleri özetle.",
+        answer_operation="summarize",
+        needs=(
+            RetrievalNeed("past-pattern", subject_terms=("apeksifikasyon",), facet="tested_concept", sources=("past_questions",)),
+            RetrievalNeed("note-evidence", subject_terms=("apeksifikasyon",), facet="study_evidence", sources=("notes",), depends_on=("past-pattern",)),
+        ),
+    )
+    assert plan.required_sources == ("past_questions", "notes")
+    assert plan.needs[1].depends_on == ("past-pattern",)
+
+
+def test_relation_accepts_text_target_but_rejects_missing_target():
+    need = RetrievalNeed(
+        "relation", subject_terms=("mandibular kanal",), facet="anatomy",
+        relation="anatomical_relation", target_subject_terms=("üçüncü molar",),
+    )
+    assert need.target_subject_terms == ("üçüncü molar",)
+    _raises("relation requires a target subject", lambda: RetrievalNeed(
+        "bad-relation", subject_terms=("mandibular kanal",), facet="anatomy",
+        relation="anatomical_relation",
+    ))
+
+
+def test_logic_groups_preserve_or_semantics():
+    plan = AcademicRetrievalPlan(
+        original_query="Soğuk veya sıcak test bulgusunu nottan bul.",
+        needs=(
+            RetrievalNeed("cold", subject_terms=("pulpa",), facet="finding", qualifiers=("cold",)),
+            RetrievalNeed("heat", subject_terms=("pulpa",), facet="finding", qualifiers=("heat",)),
+        ),
+        need_groups=(NeedGroup("thermal-test", ("cold", "heat"), mode="any"),),
+    )
+    assert plan.need_groups[0].mode == "any"
+
+
+def test_numeric_range_is_structured_and_validated():
+    constraint = ValueConstraint("probing_depth", unit="mm", operator="range", value=4, upper_value=6)
+    assert constraint.unit == "mm"
+    _raises("lower value cannot exceed", lambda: ValueConstraint(
+        "bad", operator="range", value=7, upper_value=3,
+    ))
+
+
+def test_dependencies_must_exist_and_be_acyclic():
+    _raises("unknown needs", lambda: AcademicRetrievalPlan(
+        original_query="x",
+        needs=(RetrievalNeed("a", subject_terms=("x",), depends_on=("missing",)),),
+    ))
+    _raises("acyclic", lambda: AcademicRetrievalPlan(
+        original_query="x",
+        needs=(
+            RetrievalNeed("a", subject_terms=("x",), depends_on=("b",)),
+            RetrievalNeed("b", subject_terms=("x",), depends_on=("a",)),
+        ),
+    ))
+
+
+def test_comparison_and_groups_cannot_reference_missing_needs():
+    need = RetrievalNeed("a", subject_terms=("A",), facet="comparison")
+    _raises("comparison references unknown", lambda: AcademicRetrievalPlan(
+        original_query="A ile B'yi karşılaştır.", needs=(need,),
+        answer_operation="compare",
+        comparisons=(ComparisonRequirement(("a", "b")),),
+    ))
+    _raises("need group references unknown", lambda: AcademicRetrievalPlan(
+        original_query="A veya B", needs=(need,),
+        need_groups=(NeedGroup("g", ("a", "b"), "any"),),
+    ))
+
+
+def test_empty_subjectless_and_self_dependent_needs_fail_closed():
+    _raises("requires a subject", lambda: RetrievalNeed("bad", facet="diagnosis"))
+    _raises("cannot depend on itself", lambda: RetrievalNeed(
+        "bad", subject_terms=("x",), depends_on=("bad",),
+    ))
+    _raises("at least one retrieval need", lambda: AcademicRetrievalPlan(
+        original_query="pulpitis nedir", needs=(),
+    ))
+
+
+def test_relation_rejects_self_endpoint_when_ids_are_known():
+    _raises("endpoints must be distinct", lambda: RetrievalNeed(
+        "self-relation", subject_ids=("sna",), subject_terms=("SNA",),
+        facet="relation", relation="associated_with",
+        target_subject_ids=("sna",), target_subject_terms=("SNA",),
+    ))
+
+
+def test_comparison_requires_distinct_subjects_not_just_two_needs():
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
+        original_query="A'nın tanı ve tedavisini karşılaştır.",
+        answer_operation="compare",
+        needs=(
+            RetrievalNeed("a-diagnosis", subject_ids=("a",), subject_terms=("A",), facet="diagnosis"),
+            RetrievalNeed("a-treatment", subject_ids=("a",), subject_terms=("A",), facet="treatment"),
+        ),
+        comparisons=(ComparisonRequirement(("a-diagnosis", "a-treatment")),),
+    ))
+
+
+def test_comparison_cannot_fake_distinct_subjects_with_alias_labels():
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
+        original_query="aynı kavram",
+        answer_operation="compare",
+        needs=(
+            RetrievalNeed("a1", subject_ids=("pulpitis",), subject_terms=("pulpitis",), facet="diagnosis"),
+            RetrievalNeed("a2", subject_ids=("pulpitis",), subject_terms=("pulpa iltihabı",), facet="treatment"),
+        ),
+        comparisons=(ComparisonRequirement(("a1", "a2")),),
+    ))
+
+
+def test_logic_and_comparison_references_must_be_unique():
+    need_a = RetrievalNeed("a", subject_terms=("A",))
+    need_b = RetrievalNeed("b", subject_terms=("B",))
+    _raises("duplicate need references", lambda: NeedGroup("g", ("a", "a"), "all"))
+    _raises("side needs must be unique", lambda: ComparisonRequirement(("a", "a")))
+    # Control: distinct references remain valid.
+    AcademicRetrievalPlan(
+        original_query="A ve B",
+        needs=(need_a, need_b),
+        need_groups=(NeedGroup("g-ok", ("a", "b"), "all"),),
+    )
+
+
+def test_compare_operation_and_comparison_contract_cannot_diverge():
+    a = RetrievalNeed("a", subject_ids=("a",), subject_terms=("A",), facet="value")
+    b = RetrievalNeed("b", subject_ids=("b",), subject_terms=("B",), facet="value")
+    _raises("requires an explicit comparison", lambda: AcademicRetrievalPlan(
+        original_query="A ile B karşılaştır", needs=(a, b), answer_operation="compare",
+    ))
+    comparison = ComparisonRequirement(("a", "b"), ("value",))
+    _raises("require compare operation", lambda: AcademicRetrievalPlan(
+        original_query="A ile B", needs=(a, b), comparisons=(comparison,),
+    ))
+
+
+def test_exclusion_and_output_constraint_metadata_are_unambiguous():
+    need = RetrievalNeed("n", subject_terms=("A",))
+    _raises("excluded facets must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), excluded_facets=("treatment", "treatment"),
+    ))
+    _raises("excluded subject terms must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), excluded_subject_terms=("Pulpitis", "pulpitis"),
+    ))
+    _raises("keys must not be empty", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), output_constraints=(("", "5"),),
+    ))
+    _raises("keys must be unique", lambda: AcademicRetrievalPlan(
+        original_query="A", needs=(need,), output_constraints=(("count", "5"), ("COUNT", "10")),
+    ))
+
+
+def test_non_range_value_constraints_require_a_threshold():
+    _raises("requires a value", lambda: ValueConstraint("probing depth", unit="mm", operator="gte"))
+    ValueConstraint("probing depth", unit="mm", operator="gte", value=4.0)
+
+
+def test_dependencies_cannot_repeat_the_same_need():
+    _raises("duplicate dependencies", lambda: RetrievalNeed(
+        "child", subject_terms=("A",), depends_on=("parent", "parent"),
+    ))
+
+
+
+def test_same_subject_can_be_compared_when_qualifier_contexts_are_distinct():
+    acute = RetrievalNeed(
+        "acute", subject_ids=("pulpitis",), subject_terms=("pulpitis",),
+        facet="finding", qualifiers=("akut",),
+    )
+    chronic = RetrievalNeed(
+        "chronic", subject_ids=("pulpitis",), subject_terms=("pulpitis",),
+        facet="finding", qualifiers=("kronik",),
+    )
+    plan = AcademicRetrievalPlan(
+        original_query="Akut ve kronik pulpitisi karşılaştır.",
+        needs=(acute, chronic),
+        answer_operation="compare",
+        comparisons=(ComparisonRequirement(("acute", "chronic"), ("finding",)),),
+    )
+    assert plan.comparisons
+
+
+def test_flat_comparison_needs_group_by_context_not_by_facet():
+    from app.academic_retrieval_plan import subject_context_key
+    needs = tuple(
+        RetrievalNeed(f"{side}-{facet}", subject_ids=("pulpitis",),
+                      subject_terms=("pulpitis",), facet=facet, qualifiers=(side,))
+        for side in ("akut", "kronik") for facet in ("diagnosis", "treatment")
+    )
+    comparison = ComparisonRequirement(tuple(n.need_id for n in needs), ("diagnosis", "treatment"))
+    plan = AcademicRetrievalPlan(original_query="Akut ve kronik pulpitis tanı ve tedavisini karşılaştır",
+                                needs=needs, answer_operation="compare", comparisons=(comparison,))
+    groups = {}
+    for need in plan.needs:
+        groups.setdefault(subject_context_key(need), []).append(need.facet)
+    assert len(groups) == 2
+    assert all(facets == ["diagnosis", "treatment"] for facets in groups.values())
+
+
+def test_subject_context_identity_ignores_set_order_and_display_labels():
+    from app.academic_retrieval_plan import subject_context_key
+    a = RetrievalNeed("a", subject_ids=("x", "y"), subject_terms=("A",), qualifiers=("akut", "üst"))
+    b = RetrievalNeed("b", subject_ids=("y", "x"), subject_terms=("B",), qualifiers=("ÜST", "akut"))
+    assert subject_context_key(a) == subject_context_key(b)
+    _raises("distinct subject contexts", lambda: AcademicRetrievalPlan(
+        original_query="A ve B", needs=(a, b), answer_operation="compare",
+        comparisons=(ComparisonRequirement(("a", "b")),),
+    ))

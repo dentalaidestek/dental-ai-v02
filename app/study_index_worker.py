@@ -24,6 +24,7 @@ from sqlmodel import Session, select
 
 from app.object_storage import ensure_local as storage_ensure_local
 from app.study_chunking import chunk_dental_page, normalize_extracted_text
+from app.dental_semantics import analyze_dental_text, bind_value_evidence, retrieval_enrichment_text
 from app.study_index_jobs import (
     StudyIndexChunk,
     StudyIndexJob,
@@ -84,8 +85,11 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     compact = re.sub(r"\s+", "", text)
     if len(compact) < 24:
         return False, "TOO_SHORT"
-    printable = sum(1 for ch in text if ch.isprintable())
-    if printable / max(1, len(text)) < 0.97:
+    # Newlines/tabs are legitimate PDF layout separators. str.isprintable()
+    # returns False for them, so counting them as corrupt glyphs sends clean,
+    # line-rich lecture slides through expensive OCR unnecessarily.
+    visible = sum(1 for ch in text if ch.isprintable() or ch.isspace())
+    if visible / max(1, len(text)) < 0.97:
         return False, "LOW_PRINTABLE_RATIO"
     alnum = sum(1 for ch in text if ch.isalnum())
     if alnum / max(1, len(compact)) < 0.35:
@@ -93,6 +97,27 @@ def _text_quality(text: str) -> tuple[bool, str | None]:
     replacement = text.count("\ufffd")
     if replacement / max(1, len(text)) > 0.01:
         return False, "DECODE_REPLACEMENTS"
+
+    # Long PDF text layers can still be unusable when fonts map glyphs to
+    # garbage. Detect that without penalizing normal Turkish/Latin dental terms.
+    tokens = re.findall(r"\S+", text)
+    if len(tokens) >= 12:
+        singletons = sum(1 for token in tokens if len(token.strip(".,;:!?()[]{}")) == 1)
+        if singletons / len(tokens) > 0.42:
+            return False, "FRAGMENTED_GLYPHS"
+        noisy = sum(
+            1 for token in tokens
+            if len(token) >= 4
+            and sum(ch.isalnum() or ch in "-/'’." for ch in token) / len(token) < 0.65
+        )
+        if noisy / len(tokens) > 0.18:
+            return False, "NOISY_TOKENS"
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) >= 8:
+        repeated = max((lines.count(line) for line in set(lines)), default=0)
+        if repeated / len(lines) > 0.45:
+            return False, "REPEATED_GLYPH_LINES"
     return True, None
 
 
@@ -109,15 +134,17 @@ def _sha256_file(path) -> str:
 
 
 def _index_fingerprint() -> str:
-    target = get_embedding_target()
     payload = {
-        "schema": "academic-v2-dental-structure-2",
-        "embedding_provider": target.provider,
-        "embedding_model": target.model,
-        "embedding_dimensions": get_embedding_dimensions(),
+        "schema": "academic-v2-dental-semantics-10",
+        "retrieval_profile": "fts-local-v1",
+        "chunk_profile": "dental-page-v2-margin-position-safe",
+        "embedding_provider": None,
+        "embedding_model": None,
+        "embedding_dimensions": None,
         "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower(),
         "ocr_engine": LOCAL_OCR_ENGINE_VERSION,
-        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 180, 120, 240),
+        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200),
+        "ocr_retry_dpi": _int_env("STUDY_V2_LOCAL_OCR_RETRY_DPI", 210, 160, 240),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
@@ -199,16 +226,62 @@ def _upsert_chunk(
     session.flush()
 
 
+def _next_checkpoint_stage(session: Session, job: StudyIndexJob) -> str:
+    """Route from the earliest unchunked checkpoint, preserving page order.
+
+    The resource-class seam is intentional: today's MIXED worker executes
+    bounded slices serially, while a future dedicated Academic/OCR worker can
+    consume the same checkpoints without changing publication semantics.
+    """
+    first_pending = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number,
+        ).exists())
+        .order_by(StudyIndexPage.page_number.asc())
+        .limit(1)
+    ).first()
+    if first_pending is not None:
+        if first_pending.status in TERMINAL_PAGE_STATES:
+            return "CHUNK"
+        if first_pending.status == "OCR_REQUIRED":
+            return "OCR"
+
+    checkpoint_count = len(session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+    ).all())
+    if job.expected_page_count and checkpoint_count < int(job.expected_page_count):
+        return "PARSE"
+
+    # Defensive fallback for legacy/unexpected checkpoint states. Never VERIFY
+    # while a recoverable OCR checkpoint still exists.
+    ocr = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status == "OCR_REQUIRED")
+        .limit(1)
+    ).first()
+    if ocr:
+        return "OCR"
+    return "VERIFY"
+
 def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
     # PdfReader keeps cyclic page/xref graphs. Reclaim the previous bounded
     # slice before opening the document again on memory-limited workers.
     gc.collect()
     reader = PdfReader(str(path))
     try:
-        max_pages = _int_env("STUDY_RAG_MAX_PDF_PAGES", 300, 1, 2000)
+        max_pages = _int_env("STUDY_RAG_MAX_PDF_PAGES", 800, 1, 2000)
         if len(reader.pages) > max_pages:
             raise RuntimeError(f"PDF_PAGE_LIMIT:{len(reader.pages)}>{max_pages}")
-        batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 12, 1, 50)
+        batch = _int_env("STUDY_V2_PARSE_BATCH_PAGES", 32, 1, 50)
         missing = missing_page_numbers(
             session,
             material_id=job.material_id,
@@ -223,7 +296,6 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
-            session.close()
             text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
             if not _lease_still_owned(session, job):
                 session.rollback()
@@ -241,9 +313,12 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                     index_version=job.index_version,
                     page_number=page_number,
                     status="OCR_REQUIRED",
-                    text_content=None,
+                    # Preserve a usable short/suspicious text layer as a
+                    # fallback. OCR may recover much more, but it can also be
+                    # worse on title-only or highly graphical slides.
+                    text_content=text or None,
                     extraction_method="PDF_TEXT",
-                    content_sha256=None,
+                    content_sha256=_sha256_text(text) if text else None,
                     error=f"OCR_REQUIRED:{quality_reason}",
                 )
             else:
@@ -260,7 +335,7 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
                     extraction_method="PDF_TEXT",
                     content_sha256=digest,
                 )
-            session.commit()
+        session.commit()
 
         remaining = missing_page_numbers(
             session,
@@ -269,24 +344,51 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             page_count=len(reader.pages),
             limit=1,
         )
-        if remaining:
-            return "PARSE"
-        unresolved = session.exec(
-            select(StudyIndexPage)
-            .where(StudyIndexPage.material_id == job.material_id)
-            .where(StudyIndexPage.index_version == job.index_version)
-            .where(StudyIndexPage.status == "OCR_REQUIRED")
-        ).first()
-        return "OCR" if unresolved else "CHUNK"
+        # Interleave bounded work: make freshly extracted pages available to
+        # chunking before the rest of a long PDF has finished parsing.
+        return _next_checkpoint_stage(session, job)
     finally:
         stream = getattr(reader, "stream", None)
         if stream and hasattr(stream, "close"):
             stream.close()
 
 
+
+def _strip_repeated_page_margins(rows: list[StudyIndexPage]) -> dict[int, str]:
+    """Remove repeated page furniture only at observed margin line positions."""
+    if len(rows) < 3:
+        return {int(row.page_number): (row.text_content or "") for row in rows}
+    positions: dict[str, set[int]] = {}
+    per_page: dict[int, tuple[list[str], set[int]]] = {}
+    for row in rows:
+        lines = (row.text_content or "").splitlines()
+        nonempty = [(idx, line.strip()) for idx, line in enumerate(lines) if line.strip()]
+        # Only the outermost non-empty line is page furniture. Treating
+        # the first/last two as margins can delete real body text when a short
+        # page starts immediately below a repeated title.
+        margin = nonempty[:1] + nonempty[-1:]
+        margin_indices = {idx for idx, _ in margin}
+        per_page[int(row.page_number)] = (lines, margin_indices)
+        for _, line in margin:
+            key = re.sub(r"\s+", " ", line).casefold()
+            if 3 <= len(key) <= 120:
+                positions.setdefault(key, set()).add(int(row.page_number))
+    threshold = max(3, int(len(rows) * 0.60 + 0.999))
+    repeated = {key for key, pages in positions.items() if len(pages) >= threshold}
+    cleaned: dict[int, str] = {}
+    for page_number, (lines, margin_indices) in per_page.items():
+        out: list[str] = []
+        for idx, line in enumerate(lines):
+            key = re.sub(r"\s+", " ", line.strip()).casefold()
+            if idx in margin_indices and key in repeated:
+                continue
+            out.append(line)
+        cleaned[page_number] = normalize_extracted_text("\n".join(out))
+    return cleaned
+
 def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
-    """Create a bounded batch of deterministic, page-addressable chunks."""
-    batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 16, 1, 50)
+    """Create one bounded chunk batch with O(1) DB round-trips per page batch."""
+    batch = _int_env("STUDY_V2_CHUNK_BATCH_PAGES", 32, 1, 100)
     rows = list(session.exec(
         select(StudyIndexPage)
         .where(StudyIndexPage.material_id == job.material_id)
@@ -296,41 +398,131 @@ def _chunk_slice(session: Session, job: StudyIndexJob) -> str:
             StudyIndexChunk.material_id == StudyIndexPage.material_id,
             StudyIndexChunk.index_version == StudyIndexPage.index_version,
             StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
-        .order_by(StudyIndexPage.page_number.asc()).limit(batch + 1)
+        .order_by(StudyIndexPage.page_number.asc()).limit(batch)
     ).all())
-    processed = 0
-    for page in rows:
-        existing = session.exec(
-            select(StudyIndexChunk.id)
+    if not rows:
+        return _next_checkpoint_stage(session, job)
+
+    # Never leap over an OCR/missing-page gap. Section-title inheritance and
+    # neighboring-page retrieval depend on chunks being published in source
+    # page order.
+    first_pending = session.exec(
+        select(StudyIndexPage)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number,
+        ).exists())
+        .order_by(StudyIndexPage.page_number.asc())
+        .limit(1)
+    ).first()
+    if first_pending is None or first_pending.status not in TERMINAL_PAGE_STATES:
+        return _next_checkpoint_stage(session, job)
+    if rows[0].page_number != first_pending.page_number:
+        return _next_checkpoint_stage(session, job)
+
+    contiguous = [rows[0]]
+    for candidate in rows[1:]:
+        if candidate.page_number != contiguous[-1].page_number + 1:
+            break
+        contiguous.append(candidate)
+    rows = contiguous
+
+    if not _lease_still_owned(session, job):
+        session.rollback()
+        return "LEASE_LOST"
+
+    pending: list[StudyIndexChunk] = []
+    cleaned_page_text = _strip_repeated_page_margins(rows)
+    inherited_title: str | None = None
+    if rows and rows[0].page_number > 1:
+        previous = session.exec(
+            select(StudyIndexChunk.section_title)
             .where(StudyIndexChunk.material_id == job.material_id)
             .where(StudyIndexChunk.index_version == job.index_version)
-            .where(StudyIndexChunk.page_start == page.page_number)
+            .where(StudyIndexChunk.page_start < rows[0].page_number)
+            .where(StudyIndexChunk.section_title.is_not(None))
+            .order_by(StudyIndexChunk.page_start.desc(), StudyIndexChunk.chunk_index.desc())
+            .limit(1)
         ).first()
-        if existing:
-            continue
-        if processed >= batch:
-            return "CHUNK"
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        chunks = chunk_dental_page(page.text_content or "")
+        inherited_title = previous
+    for page in rows:
+        chunks = chunk_dental_page(
+            cleaned_page_text.get(int(page.page_number), page.text_content or ""),
+            inherited_section_title=inherited_title,
+        )
+        explicit_titles = [chunk.section_title for chunk in chunks if chunk.section_title]
+        if explicit_titles:
+            inherited_title = explicit_titles[-1]
         if not chunks:
             raise RuntimeError(f"NO_CHUNKS_FOR_PAGE:{page.page_number}")
         if len(chunks) >= 1000:
             raise RuntimeError(f"TOO_MANY_CHUNKS_FOR_PAGE:{page.page_number}")
         for local_index, chunk in enumerate(chunks):
-            _upsert_chunk(
-                session,
-                job=job,
+            semantic_source = f"{chunk.section_title or ''}\n{chunk.text}"
+            features = analyze_dental_text(semantic_source)
+            bound_values = bind_value_evidence(semantic_source)
+            semantic_json = json.dumps({
+                "nodes": features.node_ids,
+                "specialties": features.specialties,
+                "kinds": features.kinds,
+                "measurements": features.measurements,
+                "teeth": features.tooth_numbers,
+                "imaging": features.imaging_types,
+                "negated_nodes": features.negated_node_ids,
+                # Chunk-local evidence only. Never promote the first observed
+                # number to a course-wide/reference truth here; reconciliation
+                # happens after all relevant evidence is available.
+                "value_evidence": [{
+                    "text": item.value.text,
+                    "kind": item.value.kind,
+                    "assertion": item.assertion,
+                    "assertion_confidence": item.assertion_confidence,
+                    "subject_node": item.subject_node_id,
+                    "subject_text": item.subject_text,
+                    "binding_confidence": item.binding_confidence,
+                    "qualifiers": item.qualifiers,
+                    "context": item.context_text,
+                } for item in bound_values[:24]],
+            }, ensure_ascii=False, separators=(",", ":"))
+            pending.append(StudyIndexChunk(
+                owner_user_id=job.owner_user_id,
+                course_id=job.course_id,
+                material_id=job.material_id,
+                index_version=job.index_version,
                 chunk_index=((page.page_number - 1) * 1000) + local_index,
-                page_number=page.page_number,
-                text_content=chunk.text,
+                page_start=page.page_number,
+                page_end=page.page_number,
                 section_title=chunk.section_title,
                 content_kind=chunk.content_kind,
-            )
-        session.commit()
-        processed += 1
-    return "EMBED"
+                text_content=chunk.text,
+                text_sha256=_sha256_text(chunk.text),
+                retrieval_terms=retrieval_enrichment_text(semantic_source, features=features),
+                semantic_json=semantic_json,
+            ))
+
+    if not _lease_still_owned(session, job):
+        session.rollback()
+        return "LEASE_LOST"
+    session.add_all(pending)
+    session.commit()
+
+    remaining = session.exec(
+        select(StudyIndexPage.id)
+        .where(StudyIndexPage.material_id == job.material_id)
+        .where(StudyIndexPage.index_version == job.index_version)
+        .where(StudyIndexPage.status.in_(list(TERMINAL_PAGE_STATES)))
+        .where(~select(StudyIndexChunk.id).where(
+            StudyIndexChunk.material_id == StudyIndexPage.material_id,
+            StudyIndexChunk.index_version == StudyIndexPage.index_version,
+            StudyIndexChunk.page_start == StudyIndexPage.page_number).exists())
+        .limit(1)
+    ).first()
+    if remaining:
+        return "CHUNK"
+    return _next_checkpoint_stage(session, job)
 
 
 def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
@@ -374,61 +566,87 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         return "CHUNK"
     if provider_name != "local":
         raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
-    for page in pages:
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        from app.study_index_jobs import renew_index_lease
-        if not renew_index_lease(
-            session,
-            job_id=job.id,
-            lease_token=job.lease_token,
-            worker_id=job.worker_id,
-            lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
-        ):
-            session.rollback()
-            return "LEASE_LOST"
-        session.close()
-        result = ocr_material_page(
-            path,
-            mime_type=mime_type,
-            page_number=page.page_number,
-        )
-        if not _lease_still_owned(session, job):
-            session.rollback()
-            return "LEASE_LOST"
-        text = normalize_extracted_text(result.text)
-        method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-        if result.visual_only:
-            # A diagram/blank page can legitimately contain no dependable text.
-            # Account for it without inventing clinical content; the immutable
-            # source PDF remains the visual evidence for page-aware fallback.
-            text = (
-                f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
-                "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+
+    # PDFium document parsing is non-trivial on long scanned lecture notes.
+    # Reuse one document for the whole bounded OCR slice; ocr_material_page
+    # already accepts this handle and will reuse it for a quality retry too.
+    pdf_document = None
+    if mime_type == "application/pdf":
+        import pypdfium2 as pdfium
+        pdf_document = pdfium.PdfDocument(str(path))
+    try:
+        for page in pages:
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
+            from app.study_index_jobs import renew_index_lease
+            if not renew_index_lease(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
+            ):
+                session.rollback()
+                return "LEASE_LOST"
+            session.close()
+            result = ocr_material_page(
+                path,
+                mime_type=mime_type,
+                page_number=page.page_number,
+                pdf_document=pdf_document,
             )
-            method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-        upsert_page_checkpoint(
-            session,
-            owner_user_id=job.owner_user_id,
-            course_id=job.course_id,
-            material_id=job.material_id,
-            index_version=job.index_version,
-            page_number=page.page_number,
-            status="OCR_DONE",
-            text_content=text,
-            extraction_method=method,
-            content_sha256=_sha256_text(text),
-            error=None,
-        )
-        session.commit()
+            if not _lease_still_owned(session, job):
+                session.rollback()
+                return "LEASE_LOST"
+            text = normalize_extracted_text(result.text)
+            fallback_text = normalize_extracted_text(page.text_content or "")
+            method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            if result.visual_only:
+                # OCR must not erase a clean short text layer (for example a
+                # section heading) merely because the slide is mostly visual.
+                if fallback_text:
+                    text = fallback_text
+                    method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+                else:
+                    # A diagram/blank page can legitimately contain no dependable text.
+                    # Account for it without inventing clinical content; the immutable
+                    # source PDF remains the visual evidence for page-aware fallback.
+                    text = (
+                        f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
+                        "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+                    )
+                    method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            elif fallback_text and len(text) < len(fallback_text):
+                # A confident OCR pass can still truncate a title. Keep the
+                # longer native layer rather than replacing known source text.
+                text = fallback_text
+                method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            upsert_page_checkpoint(
+                session,
+                owner_user_id=job.owner_user_id,
+                course_id=job.course_id,
+                material_id=job.material_id,
+                index_version=job.index_version,
+                page_number=page.page_number,
+                status="OCR_DONE",
+                text_content=text,
+                extraction_method=method,
+                content_sha256=_sha256_text(text),
+                error=None,
+            )
+            session.commit()
+    finally:
+        if pdf_document is not None:
+            pdf_document.close()
     remaining = session.exec(
         select(StudyIndexPage.id)
         .where(StudyIndexPage.material_id == job.material_id)
         .where(StudyIndexPage.index_version == job.index_version)
         .where(StudyIndexPage.status == "OCR_REQUIRED")
     ).first()
-    return "OCR" if remaining else "CHUNK"
+    # One bounded OCR slice is enough before downstream chunking gets a turn.
+    return _next_checkpoint_stage(session, job)
 
 
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
@@ -579,6 +797,21 @@ def _run_claimed_slice(session, job, resource_class):
         mime_type = material[4] or ""
         stage = (job.stage or "PREPARE").upper()
 
+        # OCR_HEAVY is a scheduling boundary, not permanent ownership. On the
+        # current low-cost MIXED deployment non-OCR slices return to NORMAL.
+        # A future dedicated Academic/OCR service can use the same boundary for
+        # true parallel workers without changing checkpoints or atomic publish.
+        if stage != "OCR" and job.resource_class == "OCR_HEAVY":
+            moved = set_job_resource_class(
+                session,
+                job_id=job.id,
+                lease_token=job.lease_token,
+                worker_id=job.worker_id,
+                resource_class="NORMAL",
+                stage=stage,
+            )
+            return f"MOVED:NORMAL:{stage}" if moved else "LEASE_LOST"
+
         # Never mix artifacts generated by two OCR/embedding profiles. This is
         # especially important when migrating a paused remote-OCR generation to
         # local OCR: discard only the unpublished generation and replay it.
@@ -649,6 +882,7 @@ def _run_claimed_slice(session, job, resource_class):
                 material_id=job.material_id,
                 index_version=job.index_version,
                 expected_page_count=page_count,
+                require_embeddings=False,
             )
             if not ok:
                 raise RuntimeError(reason or "BUILD_INCOMPLETE")
@@ -660,6 +894,7 @@ def _run_claimed_slice(session, job, resource_class):
                 job_id=job.id,
                 lease_token=job.lease_token,
                 worker_id=job.worker_id,
+                require_embeddings=False,
             )
             return "PUBLISHED" if published else "PUBLISH_REJECTED"
         else:

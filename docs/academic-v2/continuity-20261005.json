@@ -1,0 +1,105 @@
+{
+  "baseline_commit": "6c2081cdfa2c7eeb49e251de34193e5f6a4e1888",
+  "generator_revision": "ff07068",
+  "seed": 20261004,
+  "count": 50000,
+  "frozen_sha256": "de0e88329ad4c8e232bdc40ca214a2b238564ad3e50e71408036e4cd03470ceb",
+  "baseline": {
+    "counts": {
+      "missing_required": 32914,
+      "stale_context": 1406,
+      "goal_loss": 930,
+      "ok": 12651,
+      "length_loss": 537,
+      "task_loss": 1003,
+      "count_loss": 483,
+      "format_loss": 5,
+      "resolved_but_should_abstain": 11,
+      "stale_qualifier": 10,
+      "stale_format": 50
+    },
+    "strata": {
+      "no_detected_lexical_defect": {
+        "missing_required": 13594,
+        "goal_loss": 930,
+        "ok": 12651,
+        "length_loss": 537,
+        "task_loss": 1003,
+        "count_loss": 482,
+        "format_loss": 5,
+        "stale_context": 270,
+        "resolved_but_should_abstain": 11,
+        "stale_qualifier": 10,
+        "stale_format": 50
+      },
+      "lexical_defect": {
+        "missing_required": 19320,
+        "stale_context": 1136,
+        "count_loss": 1
+      }
+    },
+    "seconds": 180.95800471305847
+  },
+  "after": {
+    "counts": {
+      "missing_required": 24035,
+      "length_loss": 962,
+      "goal_loss": 2678,
+      "ok": 16412,
+      "stale_context": 2706,
+      "task_loss": 1804,
+      "count_loss": 1142,
+      "stale_qualifier": 261
+    },
+    "strata": {
+      "no_detected_lexical_defect": {
+        "missing_required": 5795,
+        "length_loss": 962,
+        "goal_loss": 2678,
+        "ok": 16412,
+        "task_loss": 1804,
+        "stale_context": 489,
+        "count_loss": 1142,
+        "stale_qualifier": 261
+      },
+      "lexical_defect": {
+        "missing_required": 18240,
+        "stale_context": 2217
+      }
+    },
+    "seconds": 36.96926951408386
+  },
+  "multi_hop": {
+    "baseline": {
+      "missing_required": 2568,
+      "count_loss": 273,
+      "goal_loss": 36,
+      "task_loss": 311,
+      "stale_context": 89,
+      "ok": 37,
+      "length_loss": 6
+    },
+    "after": {
+      "count_loss": 798,
+      "goal_loss": 234,
+      "missing_required": 1605,
+      "stale_context": 275,
+      "ok": 106,
+      "task_loss": 285,
+      "length_loss": 17
+    }
+  },
+  "audit_counts": {
+    "total": 50000,
+    "at_least_one_lexical_gold_defect": 20457,
+    "required_term_not_visible_anywhere": 16866,
+    "required_and_forbidden_same_term": 4758
+  },
+  "limitations": [
+    "Original substring scorer unchanged; no cases removed or relabelled.",
+    "No detected lexical defect does not mean semantically valid gold.",
+    "Timing is one local run, not a controlled performance benchmark.",
+    "Regenerated baseline differs by eight passes from the reported remote run; compare the paired local runs, not mixed environments.",
+    "Current HEAD generator still fails its existing invisible-context validation before 50K scoring."
+  ]
+}

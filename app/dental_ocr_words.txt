@@ -1,0 +1,459 @@
+abutment
+alveol
+alveolar
+ameloblast
+ameloblastoma
+ankiloz
+apikal
+apeks
+artikülatör
+ataşman
+bifurkasyon
+bruksizm
+bukkal
+sement
+sementum
+dentin
+dentinojen
+diastema
+distal
+endodonti
+endodontik
+epulis
+fissür
+furkasyon
+gingiva
+gingivitis
+implant
+implantoloji
+insizal
+interproksimal
+kalsifikasyon
+kanin
+kavite
+keratinize
+kondil
+kret
+kron
+lingual
+maloklüzyon
+mandibula
+mandibular
+maksilla
+maksiller
+mezial
+molar
+mukogingival
+oklüzal
+oklüzyon
+ortodonti
+ortodontik
+osteointegrasyon
+palatinal
+panoramik
+periapikal
+periodontal
+periodontitis
+periodontoloji
+premolar
+protetik
+pulpa
+pulpitis
+radyolüsent
+radyopak
+rezorpsiyon
+retrognati
+sefalometri
+sefalometrik
+sentrik
+temporomandibular
+TME
+TMJ
+ANB
+SNA
+SNB
+overbite
+overjet
+Angle
+Steiner
+Downs
+Ricketts
+cephalometric
+periodontium
+periapical
+radiolucent
+radiopaque
+apicoectomy
+apikoektomi
+apeksifikasyon
+apexification
+apeksogenez
+apexogenesis
+pulpektomi
+pulpectomy
+pulpotomi
+pulpotomy
+rejeneratif endodonti
+regenerative endodontics
+kök kanal tedavisi
+root canal therapy
+kök kanal preparasyonu
+root canal preparation
+kök kanal obturasyonu
+root canal obturation
+gutta-percha
+güta-perka
+MTA
+Biodentine
+EDTA
+sodyum hipoklorit
+NaOCl
+smear layer
+çalışma boyu
+working length
+apikal konstriksiyon
+apical constriction
+periradiküler
+periradicular
+periapikal lezyon
+apikal periodontitis
+irreversible pulpitis
+reversible pulpitis
+pulpa nekrozu
+pulp necrosis
+internal resorption
+external resorption
+kök rezorpsiyonu
+periodontal ligament
+PDL
+sement-mine birleşimi
+CEJ
+mine-sement birleşimi
+klinik ataşman seviyesi
+CAL
+sondalama derinliği
+probing depth
+cep derinliği
+furkasyon tutulumu
+gingival recession
+gingival çekilme
+plak indeksi
+gingival indeks
+bleeding on probing
+BOP
+guided tissue regeneration
+GTR
+guided bone regeneration
+GBR
+root planing
+kök yüzeyi düzleştirme
+scaling
+subgingival
+supragingival
+mukogingival cerrahi
+free gingival graft
+FGG
+connective tissue graft
+CTG
+malocclusion
+Sınıf I
+Sınıf II
+Sınıf III
+Class I
+Class II
+Class III
+Angle sınıflaması
+Angle classification
+sefalometrik analiz
+cephalometric analysis
+Frankfort horizontal
+FH
+SN düzlemi
+mandibular plane
+oklüzal düzlem
+occlusal plane
+Wits appraisal
+ANB açısı
+SNA açısı
+SNB açısı
+interinsizal açı
+interincisal angle
+IMPA
+FMA
+GoGn-SN
+Co-A
+Co-Gn
+Nasion
+Sella
+Porion
+Orbitale
+Pogonion
+Gnathion
+Menton
+Gonion
+Subspinale
+Supramentale
+A noktası
+B noktası
+crossbite
+çapraz kapanış
+open bite
+açık kapanış
+deep bite
+derin kapanış
+crowding
+çapraşıklık
+ankraj
+anchorage
+rapid maxillary expansion
+RME
+palatal expansion
+seri çekim
+serial extraction
+retainer
+pekiştirme
+orthognathic surgery
+ortognatik cerrahi
+Le Fort I
+BSSO
+bilateral sagittal split osteotomy
+sagittal split ramus osteotomy
+osteotomi
+alveoloplasti
+alveoloplasty
+frenektomi
+frenectomy
+gingivektomi
+gingivectomy
+gingivoplasti
+gingivoplasty
+sinus lift
+sinus floor augmentation
+inferior alveolar nerve
+IAN
+nervus alveolaris inferior
+mental foramen
+foramen mentale
+mandibular canal
+canalis mandibulae
+maxillary sinus
+sinus maxillaris
+impacted tooth
+gömülü diş
+perikoronitis
+dry socket
+alveolar osteitis
+osteonekroz
+osteomyelitis
+osteomiyelit
+MRONJ
+odontojenik kist
+odontogenic cyst
+dentigerous cyst
+radicular cyst
+keratocyst
+odontogenic keratocyst
+OKC
+odontoma
+mucocele
+mukosel
+leukoplakia
+lökoplaki
+erythroplakia
+eritroplaki
+oral squamous cell carcinoma
+OSCC
+skuamöz hücreli karsinom
+CBCT
+cone beam computed tomography
+konik ışınlı bilgisayarlı tomografi
+panoramic radiography
+panoramik radyografi
+periapical radiography
+periapikal radyografi
+bitewing
+occlusal radiography
+oklüzal radyografi
+radiolucency
+radyolüsensi
+radiopacity
+radyopasite
+lamina dura
+trabeculation
+trabekülasyon
+cortication
+kortikasyon
+root fracture
+kök kırığı
+horizontal root fracture
+vertical root fracture
+VRF
+internal derangement
+temporomandibular disorder
+TMD
+temporomandibular joint
+disk displacement
+disk deplasmanı
+centric relation
+sentrik ilişki
+maximum intercuspation
+MI
+MIP
+articulator
+facebow
+yüz arkı
+vertical dimension
+dikey boyut
+freeway space
+interocclusal rest space
+complete denture
+tam protez
+removable partial denture
+RPD
+hareketli bölümlü protez
+fixed partial denture
+FPD
+sabit bölümlü protez
+pontic
+pontik
+connector
+konnektör
+major connector
+minor connector
+clasp
+kroşe
+rest seat
+tırnak yuvası
+survey line
+ekvator hattı
+Kennedy sınıflaması
+Kennedy classification
+Applegate
+impression
+ölçü
+alginate
+aljinat
+polyvinyl siloxane
+PVS
+addition silicone
+kondansasyon silikonu
+polyether
+polieter
+zinc oxide eugenol
+ZOE
+glass ionomer cement
+GIC
+cam iyonomer siman
+resin-modified glass ionomer
+RMGIC
+kompozit rezin
+composite resin
+bonding
+adeziv
+etching
+asitleme
+total-etch
+self-etch
+universal adhesive
+polimerizasyon
+polymerization
+light curing
+fotopolimerizasyon
+C-factor
+configuration factor
+microleakage
+mikrosızıntı
+nanoleakage
+caries
+çürük
+dental caries
+early childhood caries
+ECC
+MIH
+molar incisor hypomineralization
+amelogenesis imperfecta
+dentinogenesis imperfecta
+fluorosis
+hipomineralizasyon
+hipoplazi
+remineralization
+remineralizasyon
+demineralization
+demineralizasyon
+fissure sealant
+fissür örtücü
+stainless steel crown
+SSC
+paslanmaz çelik kron
+space maintainer
+yer tutucu
+primary tooth
+süt dişi
+permanent tooth
+daimi diş
+mixed dentition
+karışık dişlenme
+local anesthesia
+lokal anestezi
+lidocaine
+lidokain
+articaine
+artikain
+mepivacaine
+mepivakain
+prilocaine
+prilokain
+epinephrine
+epinefrin
+vasoconstrictor
+vazokonstriktör
+inferior alveolar nerve block
+IANB
+posterior superior alveolar
+PSA
+middle superior alveolar
+MSA
+anterior superior alveolar
+ASA
+infiltration anesthesia
+infiltrasyon anestezisi
+intraligamentary anesthesia
+intraligamenter anestezi
+intrapulpal anesthesia
+intrapulpal anestezi
+hematoma
+paresthesia
+parestezi
+trismus
+aspiration
+aspirasyon
+FDI
+Universal numbering system
+Palmer notation
+odontoblast
+cementoblast
+osteoblast
+osteoclast
+odontogenesis
+odontogenez
+amelogenesis
+dentinogenesis
+cementogenesis
+sementogenez
+enamel
+mine
+cementum
+pulp
+alveolar bone
+alveol kemiği
+junctional epithelium
+birleşim epiteli
+periodonsiyum
+oral mucosa
+oral mukoza
+keratinized gingiva
+attached gingiva
+yapışık dişeti
+masticatory mucosa
+lining mucosa
+specialized mucosa
