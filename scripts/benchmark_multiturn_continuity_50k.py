@@ -39,15 +39,19 @@ def score(case):
 
 def main():
  p=argparse.ArgumentParser();p.add_argument("--count",type=int,default=50000);p.add_argument("--seed",type=int,default=20261004);p.add_argument("--report",default="artifacts/multiturn_50k_report.json");a=p.parse_args()
- cases=generate(a.count,a.seed); quality=validate_cases(cases); reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; t=time.perf_counter()
+ cases=generate(a.count,a.seed); quality=validate_cases(cases); reasons=Counter(); axes=defaultdict(lambda:defaultdict(lambda:[0,0])); samples=[]; failure_axes=defaultdict(Counter); failure_combos=defaultdict(Counter); t=time.perf_counter()
  for c in cases:
   ok,reason,detail,out=score(c); reasons[reason]+=1
+  if not ok:
+   for axis,val in c.axes.items(): failure_axes[reason][f"{axis}={val}"]+=1
+   failure_combos[reason][(str(c.axes.get("interaction")),str(c.axes.get("reference")),str(c.axes.get("state")),str(c.axes.get("language")),str(c.axes.get("turn_length")))]+=1
   for axis,val in c.axes.items():
    axes[axis][str(val)][0]+=1;axes[axis][str(val)][1]+=int(ok)
   if not ok and len(samples)<500:samples.append({"id":c.case_id,"axes":c.axes,"query":c.query,"history":c.history,"expected":c.expected,"must":c.must,"must_not":c.must_not,"reason":reason,"detail":detail,"resolved":out})
  elapsed=time.perf_counter()-t
  axis_report={ax:{v:{"n":q[0],"passed":q[1],"accuracy":q[1]/q[0]} for v,q in vals.items()} for ax,vals in axes.items()}
- report={"count":len(cases),"seed":a.seed,"quality":quality,"passed":reasons["ok"],"accuracy":reasons["ok"]/len(cases),"elapsed_s":elapsed,"cases_per_s":len(cases)/max(elapsed,.001),"failure_reasons":dict(reasons),"axes":axis_report,"failure_samples":samples}
+ failure_diagnostics={reason:{"top_axes":counter.most_common(40),"top_combinations":[{"interaction":k[0],"reference":k[1],"state":k[2],"language":k[3],"turn_length":k[4],"n":v} for k,v in failure_combos[reason].most_common(40)]} for reason,counter in failure_axes.items()}
+ report={"count":len(cases),"seed":a.seed,"quality":quality,"passed":reasons["ok"],"accuracy":reasons["ok"]/len(cases),"elapsed_s":elapsed,"cases_per_s":len(cases)/max(elapsed,.001),"failure_reasons":dict(reasons),"axes":axis_report,"failure_diagnostics":failure_diagnostics,"failure_samples":samples}
  path=Path(a.report);path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
  print(json.dumps({k:v for k,v in report.items() if k not in {"failure_samples","axes"}},ensure_ascii=False,indent=2))
  worst=[]
