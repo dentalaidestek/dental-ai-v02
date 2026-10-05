@@ -443,6 +443,34 @@ def build(i:int,seed=20261004)->Case:
     user_anchor=("user",f"{topic_name} anlat")
    if user_anchor:
     history=(history+[user_anchor])[-8:]
+ # Structured-reference metadata is valid only while the user's ordinal
+ # selection remains the active subject. A later independent USER topic switch
+ # supersedes that provenance; never resurrect it by appending a synthetic
+ # assistant item after the switch.
+ if structured_reference and not expected.get("should_abstain"):
+  last_selection=-1
+  last_independent_topic=-1
+  for idx,(role,text) in enumerate(history):
+   if role!="user": continue
+   ft=fold_slot(text) if "fold_slot" in locals() else " ".join(text.translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
+   if re.search(r"\b13\s*[.)]?\s*(?:sorunun|soru|madde|ogenin|ogenin)\b",ft):
+    last_selection=idx
+    continue
+   matched=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
+   incidental=bool(re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft))
+   dependent=bool(re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|normal|daha|biraz)\b",ft))
+   if matched and not incidental and not dependent:
+    last_independent_topic=idx
+  if last_independent_topic>last_selection>=0:
+   structured_reference=False
+   expected.pop("reference",None)
+   latest_text=history[last_independent_topic][1]
+   latest_topic=next((topic for topic in TOPICS if topic[0].casefold() in latest_text.casefold() or all(term.casefold() in latest_text.casefold() for term in topic[1])),None)
+   if latest_topic:
+    semantic_topic=latest_topic
+    expected["topic"]=latest_topic[0]
+    must=list(latest_topic[1])
+
  # Structured assistant-item references have their own explicit provenance.
  # Short turn-length/distractor composition must retain the selected list item
  # rather than leaving an ordinal with no assistant list antecedent.
