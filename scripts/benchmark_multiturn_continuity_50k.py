@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse,json,time,unicodedata
 from collections import Counter,defaultdict
+# benchmark revision: post-ordinal-typo
 from pathlib import Path
 from app.study_retrieval_v2 import resolve_followup_query
 from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
