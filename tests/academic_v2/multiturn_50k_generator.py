@@ -174,6 +174,17 @@ def build(i:int,seed=20261004)->Case:
  # State axes may not overwrite the query that defines a structured assistant
  # reference. Otherwise gold can demand information no longer present anywhere.
  structured_reference = expected.get("reference")=="assistant_item_13"
+ # A structured reference needs observable USER ordinal selection provenance.
+ # Current ordinal query counts as the selection; multi-hop may carry it in history.
+ if structured_reference:
+  has_user_ordinal=bool(re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",q)) or any(
+   role=="user" and re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",text)
+   for role,text in history
+  )
+  if not has_user_ordinal:
+   structured_reference=False
+   expected.pop("reference",None)
+   expected["_reference_gold_reconciled"]=True
  structured_reference_origin=structured_reference
  # State axes below test one slot at a time.  When they replace the surface
  # query with an anaphoric continuation, explicitly retain the current
