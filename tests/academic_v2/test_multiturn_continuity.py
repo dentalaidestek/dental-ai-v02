@@ -500,3 +500,15 @@ def test_count_correction_keeps_active_question_task():
     assert "liken planus" in out
     assert "soru hazırla" in out
     assert "20 question" in out
+
+
+def test_correction_prefixed_noisy_topic_uses_bounded_user_history_recovery():
+    cases = [
+        ("alveolit anlat", "yok aveolit anlat", "alveolit"),
+        ("mandibula kondil kırığı anlat", "yok mandibla kondil kıığı anlat", "mandibula kondil kırığı"),
+    ]
+    for prior, query, expected in cases:
+        history=[u("oral kandidiyazis anlat"),a("açıklama"),u(prior),a("açıklama")]
+        out=low(resolve_followup_query(query,history))
+        assert expected in out
+        assert "oral kandidiyazis" not in out.split("—",1)[0]
