@@ -532,6 +532,25 @@ def build(i:int,seed=20261004)->Case:
    expected["task"]="generate_questions"
    must=list(task_owner[1])
 
+ # Final anaphoric-topic oracle: once an earlier reference axis has been
+ # superseded/reconciled, a topic-less continuation follows the latest meaningful
+ # USER topic. This is independent of resolver output and excludes incidental turns.
+ if not expected.get("should_abstain") and not structured_reference and not expected.get("reference"):
+  fq_owner=" ".join(q.translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
+  anaphoric=bool(re.match(r"^(?:ayni|bunu|onu|peki|yok|hayir|normal|daha|biraz)\b",fq_owner))
+  if anaphoric:
+   latest_topic=None
+   for role,text in history:
+    if role!="user": continue
+    ft=" ".join(text.translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
+    if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+    matched=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
+    if matched: latest_topic=matched
+   if latest_topic:
+    semantic_topic=latest_topic
+    expected["topic"]=latest_topic[0]
+    must=list(latest_topic[1])
+
  # Final inherit-topic oracle: after all interaction/reference composition and
  # bounded-history repair, "same topic" means the latest meaningful USER topic.
  # This is independent of resolver output and prevents superseded relative-axis
