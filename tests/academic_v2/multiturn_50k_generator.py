@@ -461,10 +461,17 @@ def build(i:int,seed=20261004)->Case:
    dependent=bool(re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|normal|daha|biraz)\b",ft))
    if matched and not incidental and not dependent:
     last_independent_topic=idx
-  if last_independent_topic>last_selection>=0:
+  # Assistant text by itself never establishes reference ownership. If the
+  # user's ordinal-selection turn was trimmed/overwritten, structured provenance
+  # is no longer observable in the final dialogue and must not be synthesized.
+  if last_selection < 0 or last_independent_topic>last_selection:
    structured_reference=False
    expected.pop("reference",None)
-   latest_text=history[last_independent_topic][1]
+   latest_idx=last_independent_topic
+   if latest_idx < 0:
+    latest_idx=next((i for i in range(len(history)-1,-1,-1)
+                     if history[i][0]=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\baklımda\b",history[i][1])),-1)
+   latest_text=history[latest_idx][1] if latest_idx>=0 else ""
    latest_topic=next((topic for topic in TOPICS if topic[0].casefold() in latest_text.casefold() or all(term.casefold() in latest_text.casefold() for term in topic[1])),None)
    if latest_topic:
     semantic_topic=latest_topic
