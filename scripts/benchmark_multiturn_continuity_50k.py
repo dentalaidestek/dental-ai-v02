@@ -58,7 +58,9 @@ def main():
   if not ok:
    if len(reason_samples[reason])<20: reason_samples[reason].append({"id":c.case_id,"axes":c.axes,"query":c.query,"history":c.history,"expected":c.expected,"must":c.must,"must_not":c.must_not,"detail":detail,"resolved":out})
    for axis,val in c.axes.items(): failure_axes[reason][f"{axis}={val}"]+=1
-   failure_combos[reason][(str(c.axes.get("interaction")),str(c.axes.get("reference")),str(c.axes.get("state")),str(c.axes.get("language")),str(c.axes.get("turn_length")))]+=1\n   for left,right in (("reference","state"),("language","state"),("reference","language"),("interaction","state"),("interaction","reference")):\n    failure_pairs[reason][f"{left}={c.axes.get(left)} | {right}={c.axes.get(right)}"]+=1
+   failure_combos[reason][(str(c.axes.get("interaction")),str(c.axes.get("reference")),str(c.axes.get("state")),str(c.axes.get("language")),str(c.axes.get("turn_length")))]+=1
+   for left,right in (("reference","state"),("language","state"),("reference","language"),("interaction","state"),("interaction","reference")):
+    failure_pairs[reason][f"{left}={c.axes.get(left)} | {right}={c.axes.get(right)}"]+=1
   for axis,val in c.axes.items():
    axes[axis][str(val)][0]+=1;axes[axis][str(val)][1]+=int(ok)
   if not ok and len(samples)<500:samples.append({"id":c.case_id,"axes":c.axes,"query":c.query,"history":c.history,"expected":c.expected,"must":c.must,"must_not":c.must_not,"reason":reason,"detail":detail,"resolved":out})
