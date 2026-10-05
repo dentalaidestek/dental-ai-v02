@@ -376,3 +376,15 @@ def test_before_previous_and_heavy_noisy_continue_are_bounded_regressions():
     noisy=low(resolve_followup_query("ayı şekilde evam et",task_history))
     assert "internal rezorpsiyon" in noisy
     assert "soru hazırla" in noisy
+
+
+def test_same_way_heavy_control_typos_enter_dependency_resolution():
+    history=[
+        {"role":"user","content":"odontoma için test hazırla"},
+        {"role":"assistant","content":"test"},
+        {"role":"user","content":"önceden tablo istemiştim"},
+        {"role":"assistant","content":"not"},
+    ]
+    resolved=resolve_followup_query("ayı şekilde evam et",history)
+    assert "odontoma" in resolved.casefold()
+    assert "soru hazırla" in resolved.casefold()
