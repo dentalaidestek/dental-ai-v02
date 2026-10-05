@@ -82,9 +82,11 @@ def build(i:int,seed=20261004)->Case:
  interaction=INTERACTION[i%len(INTERACTION)]
  reference=REFERENCE[(i//len(INTERACTION))%len(REFERENCE)]
  state=STATE[(i//(len(INTERACTION)*len(REFERENCE)))%len(STATE)]
- language=LANGUAGE[(i*7)%len(LANGUAGE)]
- distractor=DISTRACTOR[(i*11)%len(DISTRACTOR)]
- distance=DISTANCE[(i*13)%len(DISTANCE)]
+ # Deterministic independent perturbation streams. The old modulo formulas
+ # coupled interaction->language 1:1 and partially coupled distractor/distance.
+ language=LANGUAGE[random.Random(seed ^ 0x1A2B3C ^ (i*1000003)).randrange(len(LANGUAGE))]
+ distractor=DISTRACTOR[random.Random(seed ^ 0x2B3C4D ^ (i*1000033)).randrange(len(DISTRACTOR))]
+ distance=DISTANCE[random.Random(seed ^ 0x3C4D5E ^ (i*1000037)).randrange(len(DISTANCE))]
  t1=r.choice(TOPICS); t2=r.choice([x for x in TOPICS if x!=t1])
  history=[("user",f"{t1[0]} {r.choice(SURFACES['explain'])}."),("assistant",f"{t1[0]} açıklaması örnek {i%97}.")]
  must=list(t1[1]); bad=[]; expected={"topic":t1[0],"task":"explain"}
@@ -123,7 +125,9 @@ def build(i:int,seed=20261004)->Case:
   t3=r.choice([x for x in TOPICS if x not in {t1,t2}]); q=f"yok {t2[0]} değil {t3[0]} ile"; must=list(t1[1])+list(t3[1]); bad=list(t2[1])
  elif interaction=="abandon_previous":
   q=f"boşver onu {t2[0]} nedir"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
- elif interaction=="refinement": q=r.choice(SURFACES["short"]); expected.update(goal="exam",length="shorter")
+ elif interaction=="refinement":
+  q=r.choice(SURFACES["short"]); expected["length"]="shorter"
+  if re.search(r"(?iu)\b(?:sınav|sinav|sınavlık|sinavlik)\b",q): expected["goal"]="exam"
  elif interaction=="expansion": q=r.choice(SURFACES["detail"]); expected["length"]="detailed"
  elif interaction=="recollection_far":
   fillers=[]
@@ -486,6 +490,24 @@ def validate_cases(cases):
   assert not overlap, f"gold requires and forbids same term {sorted(overlap)}: {case.case_id}"
   unsupported=case.expected.get("_gold_unsupported_pre_noise",())
   assert not unsupported, f"gold requires semantically absent context {unsupported}: {case.case_id}"
+ # Slot gold must be semantically supported by the final pre-noise dialogue.
+ unsupported_goal=[]
+ for case in cases:
+  if case.expected.get("goal")!="exam": continue
+  sq=str(case.expected.get("_semantic_query_pre_noise") or case.query)
+  sh=" ".join(x[1] for x in case.expected.get("_semantic_history_pre_noise",case.history))
+  fq=_norm(sq); fh=_norm(sh)
+  explicit_exam=bool(re.search(r"\b(?:sinav|sinavlik)\b",fq))
+  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and re.search(r"\b(?:sinav|sinavlik)\b",fh))
+  if not (explicit_exam or inherited_exam): unsupported_goal.append(case.case_id)
+ assert not unsupported_goal, f"unsupported exam-goal gold: {unsupported_goal[:20]} ({len(unsupported_goal)})"
+ # Conditional coverage prevents deterministic axis confounding.
+ if len(cases)>=50000:
+  for interaction in INTERACTION:
+   subset=[case for case in cases if case.axes.get("interaction")==interaction]
+   assert len({case.axes.get("language") for case in subset})>=18, f"language confounded with {interaction}"
+   assert len({case.axes.get("distractor") for case in subset})>=11, f"distractor confounded with {interaction}"
+   assert len({case.axes.get("distance") for case in subset})>=8, f"distance confounded with {interaction}"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
   ("replace_count",lambda c:c.expected.get("count")==20 or c.expected.get("reference")=="assistant_item_13"),
