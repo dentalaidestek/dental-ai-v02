@@ -720,8 +720,17 @@ def validate_cases(cases):
  for value,predicate in checks:
   axis="state" if value in STATE else "reference"
   subset=[c for c in cases if c.axes.get(axis)==value and not c.expected.get("should_abstain")]
-  if subset:
-   ratio_ok=sum(bool(predicate(c)) for c in subset)/len(subset)
+  # A later explicit state surface may legitimately supersede a reference cue.
+  # Validate reference observability only where reference still owns the final
+  # dialogue; separately require enough surviving cases so reconciliation cannot
+  # hide an axis completely.
+  observable_subset=subset
+  if axis=="reference":
+   observable_subset=[c for c in subset if not c.expected.get("_reference_gold_reconciled")]
+   if len(cases)>=50000:
+    assert len(observable_subset)>=250, f"reference={value} has too little surviving coverage: {len(observable_subset)}"
+  if observable_subset:
+   ratio_ok=sum(bool(predicate(c)) for c in observable_subset)/len(observable_subset)
    assert ratio_ok>=0.80, f"{axis}={value} is mostly metadata-only: {ratio_ok:.3f}"
  audit=audit_gold_consistency(cases)
  assert audit["defects"]["overlap"]==0, audit["defects"]
