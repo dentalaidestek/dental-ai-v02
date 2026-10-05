@@ -304,6 +304,16 @@ def _has_exam_cue(text: str) -> bool:
     )
 
 
+def _has_followup_control_cue(text: str) -> bool:
+    """Bounded typo tolerance for discourse-control words, never dental nouns."""
+    folded = _state_text(text)
+    tokens = re.findall(r"\w+", folded)
+    has_same = any(_one_edit_token(token, "ayni") for token in tokens)
+    has_topic = any(_edit_distance_at_most(token, "konudan", 2) or _edit_distance_at_most(token, "konu", 1) for token in tokens)
+    has_continue = any(_edit_distance_at_most(token, "devam", 1) or _edit_distance_at_most(token, "devamet", 1) for token in tokens)
+    return has_same and has_topic and has_continue
+
+
 def _incidental_turn(text: str) -> bool:
     folded = _state_text(text)
     return bool(re.search(
@@ -518,7 +528,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
     dependent = bool(
-        _FOLLOWUP_RE.search(clean)
+        _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean)
         or relative or assistant_ref or comparison or correction_relation
         or re.search(
             r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
