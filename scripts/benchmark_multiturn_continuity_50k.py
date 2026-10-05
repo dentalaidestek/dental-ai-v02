@@ -7,7 +7,11 @@ from app.study_retrieval_v2 import resolve_followup_query
 from tests.academic_v2.multiturn_50k_generator import generate, validate_cases
 
 def n(s):
- s=unicodedata.normalize("NFKD",str(s or "")).casefold()
+ # Unicode decomposition removes combining accents but does not fold Turkish
+ # dotless ı. Hard-coded semantic checks use ASCII (sinav/kisa/ayrinti), so use
+ # the same Turkish fold contract as the conversation state engine first.
+ s=str(s or "").translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU"))
+ s=unicodedata.normalize("NFKD",s).casefold()
  return "".join(ch for ch in s if not unicodedata.combining(ch))
 
 def score(case):
