@@ -478,7 +478,13 @@ def build(i:int,seed=20261004)->Case:
   has_selected_item=any(x[0]=="assistant" and "klinik soru 13" in x[1].casefold() for x in history)
   if not has_selected_item:
    topic_name=str(expected.get("topic") or semantic_topic[0])
-   history=(history+[("assistant",f"13. {topic_name} klinik soru 13")])[-8:]
+   restored=("assistant",f"13. {topic_name} klinik soru 13")
+   selection_idx=next((idx for idx,(role,text) in enumerate(history)
+    if role=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",text)),None)
+   if selection_idx is None:
+    history=(history+[restored])[-8:]
+   else:
+    history=(history[:selection_idx]+[restored]+history[selection_idx:])[-8:]
   # Explicit list-item selection owns the subject contract. Earlier composed
   # required terms are stale residue and must not override the selected item.
   selected_topic=str(expected.get("topic") or "")
