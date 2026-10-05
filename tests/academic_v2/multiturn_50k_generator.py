@@ -385,6 +385,24 @@ def build(i:int,seed=20261004)->Case:
    if topic_anchor:
     history=(history+[topic_anchor])[-desired_history:]
 
+ # Multi-hop is a reference-chain contract, not a metadata label. Preserve
+ # the full user-selection provenance inside the resolver's bounded window even
+ # after distractor/turn-length composition. Do not synthesize a bare assistant
+ # item: the user ordinal selection is what grants assistant text referent ownership.
+ if reference=="multi_hop" and not expected.get("should_abstain"):
+  topic_name=str(expected.get("topic") or semantic_topic[0])
+  chain=[
+   ("assistant",_list(topic_name)),
+   ("user","13. sorunun konusunu anlat"),
+   ("assistant",f"{topic_name} klinik soru 13 açıklaması"),
+  ]
+  # Reserve three messages for the chain; keep only the newest unrelated context.
+  keep=max(0,min(5,desired_history-len(chain)))
+  history=(history[-keep:] if keep else [])+chain
+  history=history[-8:]
+  q="sadece bu konudan 10 soru hazırla"
+  must=list(semantic_topic[1])
+  expected.update(reference="assistant_item_13",task="generate_questions",count=10,topic=semantic_topic[0])
  # Structured assistant-item references have their own explicit provenance.
  # Short turn-length/distractor composition must retain the selected list item
  # rather than leaving an ordinal with no assistant list antecedent.
@@ -605,7 +623,7 @@ def validate_cases(cases):
   ("ordinal_item",lambda c:c.expected.get("reference")=="assistant_item_13"),
   ("ordinal_question",lambda c:c.expected.get("reference")=="assistant_item_13"),
   ("assistant_list_item",lambda c:c.expected.get("reference")=="assistant_item_13"),
-  ("multi_hop",lambda c:c.expected.get("reference")=="assistant_item_13" and c.expected.get("count")==10),
+  ("multi_hop",lambda c:c.expected.get("reference")=="assistant_item_13" and c.expected.get("count")==10 and any("13. sorunun konusunu anlat" in x[1] for x in c.history) and any("klinik soru 13" in x[1] for x in c.history)),
   ("assistant_prose_forbidden_subject",lambda c:"implant" in c.must_not or "ameloblastoma" in c.must_not),
  )
  distractor_checks={
