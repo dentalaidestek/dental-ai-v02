@@ -701,16 +701,21 @@ def build(i:int,seed=20261004)->Case:
     expected.pop("reference",None)
     expected["_reference_gold_reconciled"]=True
 
- # Structured assistant-item references own the final subject. Earlier
- # interaction/state layers may have left lexical requirements from another
- # topic; rebind requirements to the selected item's canonical topic.
+ # Structured assistant-item references own the final subject only while
+ # their USER-authored ordinal selection is still observable. A bare synthetic
+ # assistant "13." line can never create or resurrect subject ownership.
  if expected.get("reference")=="assistant_item_13":
+  ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
+   if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",history[idx][1])),None)
   selected_line=""
-  for role,text in reversed(history):
-   if role!="assistant": continue
-   match=re.search(r"(?mi)^\s*13[.)]\s*([^\n]+)",text)
-   if match:
-    selected_line=match.group(1); break
+  if ordinal_user_index is not None:
+   for role,text in history[:ordinal_user_index]:
+    if role!="assistant": continue
+    match=re.search(r"(?mi)^\\s*13[.)]\\s*([^\\n]+)",text)
+    if match: selected_line=match.group(1)
+  if not selected_line:
+   expected.pop("reference",None)
+   expected["_reference_gold_reconciled"]=True
   selected_fold=selected_line.casefold()
   selected_topic=next((topic for topic in TOPICS
    if topic[0].casefold() in selected_fold
