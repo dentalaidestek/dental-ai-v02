@@ -698,6 +698,24 @@ def build(i:int,seed=20261004)->Case:
   if not (explicit_exam or inherited_exam):
    expected.pop("goal",None)
    expected["_goal_gold_reconciled"]=True
+ # Final slot-only surfaces inherit their topic from the most recent
+ # observable semantic topic anchor.  This is derived from user dialogue/gold
+ # evidence, never resolver output.  Incidental quoted/old turns do not own it.
+ if state in {"replace_count","inherit_count","inherit_goal","inherit_format","replace_goal","clear_goal","replace_task","replace_format","clear_format","clear_count","qualifier_add","qualifier_replace","qualifier_remove"} and not expected.get("should_abstain") and not structured_reference:
+  latest_semantic=None
+  for role,text in history:
+   if role!="user": continue
+   ft=fold_slot(text)
+   if re.search(r"^(?:onceden|eski sorum|alinti)\\b|\\baklimda\\b|^bu arada\\b",ft): continue
+   candidate=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(fold_slot(term) in ft for term in topic[1])),None)
+   if candidate and re.search(r"\\b(?:anlat|acikla|ozetle|nedir|konusunda|hakkinda)\\b",ft): latest_semantic=candidate
+  if latest_semantic:
+   old_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
+   expected["topic"]=latest_semantic[0]; semantic_topic=latest_semantic; must=list(latest_semantic[1])
+   bad=[x for x in dict.fromkeys((*bad,*old_terms)) if fold_slot(x) not in {fold_slot(y) for y in must}]
+   if expected.get("reference") not in {"assistant_item_13"}:
+    expected.pop("reference",None); expected["_reference_gold_reconciled"]=True
+
  # Final current-turn topic ownership: an explicit user-authored dental topic
  # in the current semantic query outranks older relative/reference metadata.
  # This oracle is derived only from the final dialogue surface, never from the
