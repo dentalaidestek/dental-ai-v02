@@ -615,7 +615,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     relative_kind = _relative_reference_kind(clean)
     relative = relative_kind is not None
     assistant_ref = bool(_STATE_ASSISTANT_REF_RE.search(clean))
-    comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
+    # "karşılaştır" alone is a task verb, not proof that the current turn
+    # depends on history.  History inheritance requires an anaphoric/comparative
+    # bridge ("bununla ...", "onunla ...", "... ile bunu ...", vs.).
+    comparison = bool(
+        re.search(r"(?iu)\b(?:bununla|onunla|bunlarla|onlarla)\b.*\b(?:karşılaştır|karsilastir)\b", clean)
+        or re.search(r"(?iu)\b(?:bunu|onu)\b.*\b(?:ile|vs\.?)\b.*\b(?:karşılaştır|karsilastir)\b", clean)
+        or re.search(r"(?iu)\bvs\.?\b", clean)
+    )
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
     dependent = bool(
         _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean) or _has_same_way_cue(clean)
