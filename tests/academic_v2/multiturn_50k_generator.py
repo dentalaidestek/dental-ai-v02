@@ -258,6 +258,10 @@ def build(i:int,seed=20261004)->Case:
   bad += ["implant","ameloblastoma"]
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
+ # Keep both the original semantic topic anchor and the fully mutated history:
+ # later axes can overwrite/trim one another, but gold repair must never invent
+ # an antecedent that did not exist in the case.
+ original_topic_anchor=("user",f"{t1[0]} anlat.")
  pretrim_history=list(history)
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
  desired_history=min(8,max(1,target_turns-1))
@@ -307,6 +311,8 @@ def build(i:int,seed=20261004)->Case:
    topic_anchor=next((x for x in reversed(pretrim_history)
     if any(term.casefold() in x[1].casefold() for term in must)
     and "eski sorum" not in x[1].casefold() and "önceden" not in x[1].casefold()),None)
+   if topic_anchor is None and all(term.casefold() in t1[0].casefold() for term in must):
+    topic_anchor=original_topic_anchor
    if topic_anchor:
     history=(history+[topic_anchor])[-desired_history:]
 
