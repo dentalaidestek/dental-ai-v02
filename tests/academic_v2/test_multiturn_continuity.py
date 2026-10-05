@@ -318,3 +318,16 @@ def test_structured_reference_gold_uses_selected_item_topic_terms():
     assert case.expected.get("reference") == "assistant_item_13"
     topic_terms = next(terms for topic, terms in TOPICS if topic == case.expected["topic"])
     assert case.must == topic_terms
+
+
+def test_noisy_ordinal_reference_resolves_selected_item_without_count_confusion():
+    history=[
+        {"role":"user","content":"pulpektomi konusunda 20 soru hazırla"},
+        {"role":"assistant","content":"12. başka konu\n13. pulpektomi klinik soru 13\n14. başka konu"},
+    ]
+    typo=resolve_followup_query("13. orunu konusunu anlat",history)
+    mixed=resolve_followup_query("13. questionnun konusunu anlat",history)
+    count=resolve_followup_query("20 soru hazırla",history)
+    assert "pulpektomi" in typo.casefold()
+    assert "pulpektomi" in mixed.casefold()
+    assert "klinik soru 13" not in count.casefold()
