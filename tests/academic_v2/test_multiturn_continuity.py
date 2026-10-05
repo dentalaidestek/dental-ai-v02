@@ -407,3 +407,19 @@ def test_topic_gold_terms_are_literal_canonical_facets():
     for topic, terms in TOPICS:
         folded = topic.casefold()
         assert all(term.casefold() in folded for term in terms), (topic, terms)
+
+
+def test_generator_drops_superseded_comparison_and_correction_requirements():
+    from tests.academic_v2.multiturn_50k_generator import TOPICS, build
+    correction = build(615)
+    assert correction.axes["interaction"] == "correction"
+    assert correction.axes["state"] == "inherit_goal"
+    correction_terms = next(terms for topic, terms in TOPICS if topic == correction.expected["topic"])
+    assert correction.must == correction_terms
+
+    comparison = build(617)
+    assert comparison.axes["interaction"] == "comparison_add_target"
+    assert comparison.axes["state"] == "inherit_goal"
+    comparison_terms = next(terms for topic, terms in TOPICS if topic == comparison.expected["topic"])
+    assert comparison.expected.get("task") != "compare"
+    assert comparison.must == comparison_terms
