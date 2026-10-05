@@ -274,3 +274,28 @@ def test_same_way_task_continuation_survives_bounded_control_word_typos():
     resolved=resolve_followup_query("ayı şekilde devamet",history)
     assert "sefalometrik" in resolved.casefold()
     assert "soru hazırla" in resolved.casefold()
+
+
+def test_relative_previous_selects_previous_distinct_user_topic():
+    history=[
+        {"role":"user","content":"bruksizm anlat"},
+        {"role":"assistant","content":"bruksizm açıklaması"},
+        {"role":"user","content":"apikal periodontitis anlat"},
+        {"role":"assistant","content":"apikal periodontitis açıklaması"},
+    ]
+    resolved=resolve_followup_query("bir önceki konuya dön",history)
+    assert "bruksizm" in resolved.casefold()
+    assert "apikal periodontitis" not in resolved.casefold().split("—",1)[0]
+
+
+def test_relative_before_previous_selects_middle_of_three_topics():
+    history=[
+        {"role":"user","content":"bruksizm anlat"},
+        {"role":"assistant","content":"a"},
+        {"role":"user","content":"apikal periodontitis anlat"},
+        {"role":"assistant","content":"b"},
+        {"role":"user","content":"rejeneratif endodonti anlat"},
+        {"role":"assistant","content":"c"},
+    ]
+    resolved=resolve_followup_query("ondan bir önceki konuya dön",history)
+    assert "apikal periodontitis" in resolved.casefold()
