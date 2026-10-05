@@ -320,6 +320,21 @@ def _relative_reference_kind(text: str) -> str | None:
     return "first" if has_first and has_told else None
 
 
+def _has_anaphoric_topic_cue(text: str) -> bool:
+    """Recognize topic pronouns under bounded operator-only typo noise."""
+    folded = _state_text(text)
+    tokens = re.findall(r"\w+", folded)
+    has_demonstrative = any(
+        _edit_distance_at_most(token, target, 1)
+        for token in tokens for target in ("bu", "bunu", "bundan", "ayni")
+    )
+    has_topic = any(
+        _edit_distance_at_most(token, target, 2)
+        for token in tokens for target in ("konu", "konudan")
+    )
+    return has_demonstrative and has_topic
+
+
 def _has_same_count_cue(text: str) -> bool:
     folded = _state_text(text)
     tokens = re.findall(r"\w+", folded)
@@ -626,6 +641,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
     dependent = bool(
         _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean) or _has_same_way_cue(clean)
+        or _has_anaphoric_topic_cue(clean)
         or relative or assistant_ref or comparison or correction_relation
         or re.search(
             r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
