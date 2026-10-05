@@ -446,3 +446,16 @@ def test_noisy_relative_and_question_operator_recover_semantics_not_dental_terms
     ]))
     assert "liken planus" in task
     assert "soru hazırla" in task
+
+
+def test_noisy_count_and_table_operators_recover_only_control_state():
+    count=low(resolve_followup_query("aynı saya farklı soru hazırla",[
+        u("mental foramen anlat"),a("a"),u("10 soru hazırla"),a("b")
+    ]))
+    assert "mental foramen" in count
+    assert "10 soru" in count
+    table=low(resolve_followup_query("bunu tabo şeklinde er",[
+        u("aftöz ülser anlat"),a("a")
+    ]))
+    assert "aftöz ülser" in table
+    assert "tablo şeklinde" in table
