@@ -468,3 +468,20 @@ def test_noisy_count_and_table_operators_recover_only_control_state():
     ]))
     assert "aftöz ülser" in table
     assert "tablo şeklinde" in table
+
+
+def test_noisy_anaphoric_topic_recovers_selected_subject_without_fuzzy_content():
+    history=[
+        a("1. konu\n13. süt dişi pulpa tedavisi klinik soru 13"),
+        u("13. sorunun konusunu anlat"),
+        a("süt dişi pulpa tedavisi açıklaması"),
+    ]
+    out=low(resolve_followup_query("sadece u konudn 10 soru hazırla",history))
+    assert "süt dişi pulpa tedavisi" in out
+    assert "10 soru" in out
+
+
+def test_independent_comparison_does_not_inherit_unrelated_history_topic():
+    history=[u("Angle Sınıf II nedir?")]
+    query="Mandibular sinirin dallarını ayrıntılı karşılaştır"
+    assert resolve_followup_query(query,history)==query
