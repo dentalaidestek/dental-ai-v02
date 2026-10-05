@@ -262,3 +262,15 @@ def test_repeated_letter_ordinal_still_selects_explicit_assistant_item():
     resolved=resolve_followup_query("13. sooruuunun konusunu anlat",history)
     assert "irreversible pulpitis" in resolved.casefold()
     assert "klinik soru 13" in resolved.casefold()
+
+
+def test_same_way_task_continuation_survives_bounded_control_word_typos():
+    history=[
+        {"role":"user","content":"sefalometrik analiz için test hazırla"},
+        {"role":"assistant","content":"test"},
+        {"role":"user","content":"tamam sağ ol"},
+        {"role":"assistant","content":"rica ederim"},
+    ]
+    resolved=resolve_followup_query("ayı şekilde devamet",history)
+    assert "sefalometrik" in resolved.casefold()
+    assert "soru hazırla" in resolved.casefold()
