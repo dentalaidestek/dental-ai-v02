@@ -316,6 +316,7 @@ def validate_cases(cases):
  assert any(c.expected.get("should_abstain") for c in cases), "no abstention cases"
  assert any(c.expected.get("reference")=="assistant_item_13" for c in cases), "no assistant-item reference cases"
  assert any(c.expected.get("count")==20 for c in cases), "no count replacement cases"
+ assert all(c.expected.get("_gold_overlap_removed") for c in cases), "gold reconciliation metadata missing"
  for case in cases:
   if case.expected.get("should_abstain"):
    continue
