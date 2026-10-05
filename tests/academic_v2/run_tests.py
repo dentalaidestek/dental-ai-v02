@@ -44,6 +44,7 @@ def main() -> int:
         "test_academic_generation_jobs.py",
         "test_adversarial_benchmark.py",
         "test_retrieval_behavior.py",
+        "test_multiturn_continuity.py",
         "test_static_invariants.py",
     )
     for filename in selected:

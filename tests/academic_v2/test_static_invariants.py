@@ -24,9 +24,16 @@ for extra in (
 
 # A short standalone dental question must not become a follow-up merely due to length.
 assert "len(clean.split()) <= 3" not in retrieval
-assert "if not clean or not recent_history or not _FOLLOWUP_RE.search(clean):" in retrieval
-assert "current_plan = build_dental_requirement_plan(clean)" in retrieval
-assert "if current_plan.subject_node_ids:" in retrieval
+# The old exact-source assertion assumed only prefix follow-ups. Ordinal and
+# multi-turn references require a wider grammar; verify the safety behavior.
+from app.study_retrieval_v2 import resolve_followup_query
+_history = [{"role": "user", "content": "Pulpitis nedir?"}]
+for _query in ("SNA nedir?", "ANB kaçtır?", "Neden dentin hassasiyeti oluşur?"):
+    assert resolve_followup_query(_query, _history) == _query
+assert resolve_followup_query("bunu anlat", []) == "bunu anlat"
+assert resolve_followup_query("", _history) == ""
+assert "pulpitis" in resolve_followup_query("peki tedavisi?", _history).casefold()
+assert "pulpitis" not in resolve_followup_query("peki SNB nedir?", _history).casefold()
 
 # Exhaustive question requests must bypass semantic top-k and support bounded continuation.
 assert "_is_exhaustive_question_request" in retrieval

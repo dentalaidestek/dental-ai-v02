@@ -38,10 +38,12 @@ def test_history_window_is_bounded_to_eight():
     h=[u(FLOR),a("...")]+[a("x")]*8
     assert "flor" not in low(resolve_followup_query("Daha kısa yap.",h))
 
-def test_invalid_large_count_is_not_silently_accepted():
+def test_large_requested_count_is_not_an_ordinal_reference():
     h=[u(FLOR),a("..."),u("10 soru yap."),a("...")]
     q=resolve_followup_query("500 soru yap.",h)
-    assert "500" not in q
+    # Resolution preserves the user's request. Execution budgets belong to
+    # generation orchestration; deleting the number silently changes intent.
+    assert "500 soru" in q and "flor" in low(q)
 
 def _qlist(n=20):
     rows=[]
@@ -60,7 +62,9 @@ def test_real_five_turn_reference_chain():
     assert "periodontal cep" in low(q3) and "soru" in low(q3)
     h += [u("Sadece bu konudan soru hazırla"),a(_qlist(10))]
     q4=resolve_followup_query("Yok bu sorular iyi değil ya baştan 20 soru hazırla",h[-8:])
-    assert "20" in q4 and "periodontal" not in low(q4)
+    # Rejecting the generated questions is not an instruction to drop the
+    # selected topic. The former assertion rewarded the lost-topic bug.
+    assert "20" in q4 and "periodontal cep" in low(q4)
     h += [u("Yok bu sorular iyi değil ya baştan 20 soru hazırla"),a(_qlist(20))]
     q5=resolve_followup_query("Şimdi o anlattığın konuyu bu sorular arasında bul hangileri ile ilişkili",h[-8:])
     assert "periodontal cep" in low(q5) and ("ilişkili" in low(q5) or "eşleştir" in low(q5))
@@ -101,3 +105,94 @@ def test_axis_specific_inheritance_does_not_copy_stale_count():
     resolved=resolve_followup_query("aynı konuyu normal anlat",history)
     assert "flor" in resolved.casefold()
     assert "10 soru" not in resolved.casefold()
+
+
+def test_count_and_ordinal_have_different_ownership():
+    history = [u("Flor için soru hazırla"), a("1. Pulpitis sorusu\n2. SNB sorusu")]
+    generated = low(resolve_followup_query("2 soru hazırla", history))
+    selected = low(resolve_followup_query("2. sorunun konusunu anlat", history))
+    assert "flor" in generated and "snb" not in generated
+    assert "snb" in selected and "flor" not in selected
+
+
+def test_selected_item_survives_chained_operations_and_acknowledgements():
+    for number in (2, 9, 17):
+        for acknowledgment in ("tamam sağ ol", "bu arada yarın sınav var", "önceden 40 soru demiştim"):
+            history = [u("Soru hazırla"), a(f"{number}. Gingivitis tanısı\nA) Pulpitis\nB) Amalgam"),
+                       u(f"{number}. sorunun konusunu anlat"), a("İmplant da örnek olabilir."),
+                       u("sadece bu konudan soru hazırla"), a("hazırlandı"), u(acknowledgment)]
+            result = low(resolve_followup_query("aynı konudan devam et", history))
+            assert "gingivitis" in result
+            assert all(x not in result for x in ("pulpitis", "amalgam", "implant", "40 soru"))
+
+
+def test_explicit_new_subject_overrides_previously_selected_item():
+    history = [u("Soru hazırla"), a("2. Gingivitis tanısı"),
+               u("2. sorunun konusunu anlat"), a("..."), u("SNB nedir?"), a("...")]
+    result = low(resolve_followup_query("bu konudan devam et", history))
+    assert "snb" in result and "gingivitis" not in result
+
+
+def test_unknown_user_noun_phrase_is_not_replaced_by_operator_words():
+    history = [u("Mukogingival cerrahi hakkında anlat"), a("..."),
+               u("sadece tanımı anlat"), a("..."), u("10 soru hazırla"), a("...")]
+    result = low(resolve_followup_query("bunun komplikasyonları?", history))
+    assert "mukogingival cerrahi" in result
+    assert "sadece tanımı" not in result and "10 soru" not in result
+
+
+def test_unavailable_selected_item_does_not_fall_back_to_old_topic():
+    history = [u("Pulpitis anlat"), a("1. SNB sorusu")]
+    query = "9. sorunun konusunu anlat"
+    assert resolve_followup_query(query, history) == query
+
+
+def test_qualifier_replacement_persists_without_old_qualifier():
+    history = [u("Çocuklarda flor kullanımını anlat"), a("..."),
+               u("Hayır çocuk değil erişkin açısından anlat"), a("...")]
+    result = low(resolve_followup_query("aynı konudan devam et", history))
+    assert "flor" in result and "erişkin" in result and "çocuk" not in result
+
+
+def test_count_inheritance_ignores_reported_old_request():
+    history = [u("Flor için 11 soru hazırla"), a("..."),
+               u("önceden 40 soru demiştim"), a("...")]
+    result = low(resolve_followup_query("aynı sayıda soru hazırla", history))
+    assert "11 soru" in result and "40" not in result
+
+
+def test_multiple_subject_pronoun_does_not_choose_one():
+    history = [u("SNA ve SNB anlat"), a("...")]
+    query = "bunu biraz daha anlat"
+    assert resolve_followup_query(query, history) == query
+
+
+def test_gold_audit_reports_contradictions_without_mutating_cases():
+    from copy import deepcopy
+    from scripts.audit_multiturn_continuity import defects
+    case = {"history": [("user", "Pulpitis anlat")], "query": "devam et",
+            "must": ["pulpitis"], "must_not": ["PULPITIS"]}
+    before = deepcopy(case)
+    assert defects(case) == {"required_and_forbidden_same_term": ["pulpitis"]}
+    assert case == before
+    case["must_not"] = []
+    assert defects(case) == {}
+    case["must"] = ["SNB"]
+    assert defects(case) == {"required_term_not_visible_anywhere": ["snb"]}
+
+
+def test_count_override_keeps_topic_without_selecting_a_list_item():
+    history = [u("Gingivitis için 12 soru hazırla"), a("12. Amalgam sorusu")]
+    resolved = low(resolve_followup_query("yok 12 soru olsun", history))
+    assert "gingivitis" in resolved and "12 soru" in resolved
+    assert "amalgam" not in resolved
+
+
+def test_unqualified_continue_resumes_active_task_but_new_topic_resets_slots():
+    history = [u("Flor için sınav amaçlı 11 soru hazırla"), a("...")]
+    resumed = low(resolve_followup_query("aynı konudan devam et", history))
+    assert "flor" in resumed and "11 soru" in resumed and "sınav" in resumed
+    history += [u("SNB nedir?"), a("...")]
+    resumed = low(resolve_followup_query("aynı konudan devam et", history))
+    assert "snb" in resumed
+    assert all(x not in resumed for x in ("flor", "11 soru", "sınav"))
