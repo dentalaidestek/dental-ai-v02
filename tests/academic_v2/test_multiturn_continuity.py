@@ -360,3 +360,19 @@ def test_relative_generator_gold_tracks_final_ordered_chain():
     assert before_previous.axes["reference"] == "relative_before_previous"
     assert before_previous.expected["topic"] in before_previous.history[-4][1]
     assert before_previous.expected["topic"] not in before_previous.history[-2][1]
+
+
+def test_before_previous_and_heavy_noisy_continue_are_bounded_regressions():
+    history=[
+        u("bruksizm anlat"),a("a"),
+        u("apikal periodontitis anlat"),a("b"),
+        u("rejeneratif endodonti anlat"),a("c"),
+    ]
+    out=low(resolve_followup_query("ondan bir önceki konuya dön",history))
+    assert "bruksizm" in out
+    assert "rejeneratif endodonti" not in out.split("—",1)[0]
+
+    task_history=[u("internal rezorpsiyon için test hazırla"),a("test")]
+    noisy=low(resolve_followup_query("ayı şekilde evam et",task_history))
+    assert "internal rezorpsiyon" in noisy
+    assert "soru hazırla" in noisy
