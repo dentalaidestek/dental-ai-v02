@@ -196,3 +196,11 @@ def test_unqualified_continue_resumes_active_task_but_new_topic_resets_slots():
     resumed = low(resolve_followup_query("aynı konudan devam et", history))
     assert "snb" in resumed
     assert all(x not in resumed for x in ("flor", "11 soru", "sınav"))
+
+
+def test_benchmark_normalization_folds_turkish_dotless_i():
+    from scripts.benchmark_multiturn_continuity_50k import n
+    folded = n("sınav kısa ayrıntılı")
+    assert "sinav" in folded
+    assert "kisa" in folded
+    assert "ayrintili" in folded
