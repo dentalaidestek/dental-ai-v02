@@ -448,11 +448,33 @@ def _conversation_state(
     return ConversationState(tuple(subjects), task, goal, count, output_format, length)
 
 
-def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSubject | None:
-    ordinal = re.search(r"(?iu)\b(\d{1,3})(?:\.\s*s+o+r+u+(?:n+u+n+)?|\s+s+o+r+u+n+u+n+)\b", clean)
-    if not ordinal:
+def _ordinal_reference_number(text: str) -> int | None:
+    """Parse an explicit list ordinal with bounded noise; never a plain count."""
+    match = re.search(r"(?iu)\b(\d{1,3})(\.)?\s*([a-zçğıöşü]+)", text or "")
+    if not match:
         return None
-    wanted = int(ordinal.group(1))
+    token = _state_text(match.group(3))
+    dotted = bool(match.group(2))
+    possessive = token.endswith(("nun","nun","nin","nin","nu","ni"))
+    base = token
+    for suffix in ("nun","nin","nu","ni"):
+        if base.endswith(suffix) and len(base) > len(suffix) + 1:
+            base = base[:-len(suffix)]
+            break
+    is_question = token.startswith("question") or _edit_distance_at_most(base, "soru", 1)
+    if not is_question:
+        return None
+    # "20 soru hazırla" is a count. Dot or possessive morphology is required
+    # for an ordinal selection ("13. soru", "13 sorunun", typo variants).
+    if not dotted and not possessive and not token.startswith("questionn"):
+        return None
+    return int(match.group(1))
+
+
+def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSubject | None:
+    wanted = _ordinal_reference_number(clean)
+    if wanted is None:
+        return None
     for idx in range(len(window) - 1, -1, -1):
         item = window[idx]
         if str(item.get("role") or "").casefold() not in {"assistant", "ai"}:
