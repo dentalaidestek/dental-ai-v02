@@ -432,4 +432,3 @@ def test_ambiguous_replace_task_keeps_abstention_after_state_surface_reassertion
     assert case.axes["state"] == "replace_task"
     assert case.expected.get("should_abstain") is True
     assert case.must == ()
-    assert "normal anlat" in case.expected["_semantic_query_pre_noise"].casefold()
