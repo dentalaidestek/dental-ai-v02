@@ -331,3 +331,20 @@ def test_noisy_ordinal_reference_resolves_selected_item_without_count_confusion(
     assert "pulpektomi" in typo.casefold()
     assert "pulpektomi" in mixed.casefold()
     assert "klinik soru 13" not in count.casefold()
+
+
+def test_generator_inherit_topic_replays_final_active_user_topic():
+    from tests.academic_v2.multiturn_50k_generator import TOPICS, build
+    case = build(120)
+    assert case.axes["reference"] == "relative_previous"
+    assert case.axes["state"] == "inherit_topic"
+    assert "aynı konudan" in case.expected["_semantic_query_pre_noise"].casefold()
+    active = None
+    for role, text in case.expected["_semantic_history_pre_noise"]:
+        if role != "user" or text.casefold().startswith(("önceden", "eski sorum", "bu arada")) or "aklımda" in text.casefold():
+            continue
+        for topic, terms in TOPICS:
+            if topic.casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in terms):
+                active = topic
+    assert active is not None
+    assert case.expected["topic"] == active
