@@ -26,7 +26,10 @@ def score(case):
   if leaked:return False,"resolved_but_should_abstain"," | ".join(leaked),out
   return True,"ok","",""
  miss=[x for x in case.must if n(x) not in z]
- qz=n(case.query)\n resolver_context=z.replace(qz,"",1) if qz and qz in z else z\n stale=[x for x in case.must_not if n(x) in resolver_context or (n(x) in z and n(x) not in qz)]\n if miss:return False,"missing_required"," | ".join(miss),out
+ qz=n(case.query)
+ resolver_context=z.replace(qz,"",1) if qz and qz in z else z
+ stale=[x for x in case.must_not if n(x) in resolver_context or (n(x) in z and n(x) not in qz)]
+ if miss:return False,"missing_required"," | ".join(miss),out
  if stale:return False,"stale_context"," | ".join(stale),out
  if exp.get("task")=="generate_questions" and not any(x in z for x in ("soru","test")):return False,"task_loss","generate_questions",out
  if exp.get("goal")=="exam" and "sinav" not in z:return False,"goal_loss","exam",out
