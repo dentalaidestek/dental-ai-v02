@@ -299,3 +299,12 @@ def test_relative_before_previous_selects_middle_of_three_topics():
     ]
     resolved=resolve_followup_query("ondan bir önceki konuya dön",history)
     assert "apikal periodontitis" in resolved.casefold()
+
+
+def test_ambiguous_generator_inherit_topic_remains_abstention():
+    from tests.academic_v2.multiturn_50k_generator import build
+    case = build(220)
+    assert case.axes["reference"] == "ambiguous_antecedent"
+    assert case.axes["state"] == "inherit_topic"
+    assert case.expected.get("should_abstain") is True
+    assert case.must == ()
