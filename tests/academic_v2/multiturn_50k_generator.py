@@ -680,6 +680,27 @@ def build(i:int,seed=20261004)->Case:
   if not (explicit_exam or inherited_exam):
    expected.pop("goal",None)
    expected["_goal_gold_reconciled"]=True
+ # Final current-turn topic ownership: an explicit user-authored dental topic
+ # in the current semantic query outranks older relative/reference metadata.
+ # This oracle is derived only from the final dialogue surface, never from the
+ # resolver output.  It prevents compositions such as "bir önceki" + later
+ # state replace_topic => "yok Wits analizi anlat" from still demanding SNA.
+ q_fold=fold_slot(q)
+ explicit_query_topic=next((topic for topic in TOPICS
+  if topic[0].casefold() in q.casefold()
+  or all(fold_slot(term) in q_fold for term in topic[1])),None)
+ explicit_topic_request=bool(re.search(r"(?iu)\\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\\b",q))
+ if explicit_query_topic and explicit_topic_request and not expected.get("should_abstain"):
+  previous_topic_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
+  if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",q):
+   expected["topic"]=explicit_query_topic[0]
+   semantic_topic=explicit_query_topic
+   must=list(explicit_query_topic[1])
+   bad=list(dict.fromkeys((*bad,*previous_topic_terms)))
+   if expected.get("reference") in {"previous_topic","before_previous_topic","assistant_item_13"}:
+    expected.pop("reference",None)
+    expected["_reference_gold_reconciled"]=True
+
  # Structured assistant-item references own the final subject. Earlier
  # interaction/state layers may have left lexical requirements from another
  # topic; rebind requirements to the selected item's canonical topic.
