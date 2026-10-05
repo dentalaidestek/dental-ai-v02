@@ -269,11 +269,39 @@ def _one_edit_token(value: str, target: str) -> bool:
     return True
 
 
+def _edit_distance_at_most(value: str, target: str, limit: int) -> bool:
+    value = re.sub(r"(.)\1+", r"\1", value)
+    if abs(len(value) - len(target)) > limit:
+        return False
+    previous = list(range(len(target) + 1))
+    for i, left in enumerate(value, 1):
+        current = [i]
+        row_min = i
+        for j, right in enumerate(target, 1):
+            cell = min(current[-1] + 1, previous[j] + 1, previous[j - 1] + (left != right))
+            current.append(cell)
+            row_min = min(row_min, cell)
+        if row_min > limit:
+            return False
+        previous = current
+    return previous[-1] <= limit
+
+
 def _has_exam_cue(text: str) -> bool:
     folded = _state_text(text)
     if re.search(r"\b(?:sinav|sinavlik)\b", folded):
         return True
-    return any(_one_edit_token(token, "sinav") for token in re.findall(r"\w+", folded))
+    tokens = re.findall(r"\w+", folded)
+    if any(_one_edit_token(token, "sinav") for token in tokens):
+        return True
+    # Heavy-noise recovery is intentionally contextual: two edits are allowed
+    # only for a plausible exam token immediately participating in an "icin"
+    # goal phrase, never as general fuzzy vocabulary matching.
+    has_for = any(_one_edit_token(token, "icin") for token in tokens)
+    return has_for and any(
+        token.startswith("s") and len(token) >= 3 and _edit_distance_at_most(token, "sinav", 2)
+        for token in tokens
+    )
 
 
 def _incidental_turn(text: str) -> bool:
@@ -476,6 +504,9 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    fuzzy_exam = bool(clean and _has_exam_cue(clean) and not _STATE_EXAM_RE.search(clean))
+    if fuzzy_exam:
+        clean = f"sınav için — {clean}"
     if not clean or not recent_history:
         return clean
 
