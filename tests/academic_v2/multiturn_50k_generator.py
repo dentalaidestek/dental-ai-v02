@@ -495,15 +495,28 @@ def build(i:int,seed=20261004)->Case:
  question_inherit=bool(re.search(r"\bayni sekilde\b",fq_slot) and active_task=="generate_questions")
  if expected.get("task")=="generate_questions" and not (question_now or question_inherit):
   expected.pop("task",None); expected["_task_gold_reconciled"]=True
+ active_count=None
+ active_format=None
+ for role,text in history:
+  if role!="user": continue
+  ft=fold_slot(text)
+  if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+  independent=bool(re.search(r"\b(?:anlat|acikla|ozetle|nedir)\b",ft)) and not re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|normal)\b",ft)
+  if independent:
+   active_count=None; active_format=None
+  cm=re.search(r"\b(\d+)\s*(?:soru|question|test)\b",ft)
+  if cm: active_count=int(cm.group(1))
+  if re.search(r"\b(?:tablo|table)\b",ft): active_format="table"
+  if re.search(r"\b(?:tablo olmasin|normal anlat)\b",ft): active_format=None
  if expected.get("count") is not None:
   wanted=str(expected["count"])
   count_now=bool(re.search(rf"\b{re.escape(wanted)}\s*(?:soru|question|test)\b",fq_slot))
-  count_inherit=bool(re.search(r"\bayni sayida\b",fq_slot) and re.search(rf"\b{re.escape(wanted)}\s*(?:soru|question|test)\b",fh_slot))
+  count_inherit=bool(re.search(r"\bayni sayida\b",fq_slot) and active_count==int(wanted))
   if not (count_now or count_inherit):
    expected.pop("count",None); expected["_count_gold_reconciled"]=True
  if expected.get("format")=="table":
   table_now=bool(re.search(r"\b(?:tablo|table)\b",fq_slot))
-  table_inherit=bool(re.search(r"\bayni formatta\b",fq_slot) and re.search(r"\b(?:tablo|table)\b",fh_slot))
+  table_inherit=bool(re.search(r"\bayni formatta\b",fq_slot) and active_format=="table")
   if not (table_now or table_inherit):
    expected.pop("format",None); expected["_format_gold_reconciled"]=True
  if expected.get("length")=="shorter" and not re.search(r"\b(?:kisa|ozet|ozunu|kisalt|sinavlik)\w*",fq_slot):
