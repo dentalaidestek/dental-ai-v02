@@ -284,6 +284,16 @@ def build(i:int,seed=20261004)->Case:
                 if all(term.casefold() in x[1].casefold() for term in missing_anchor)),None)
    if anchor:
     history=(history+[anchor])[-desired_history:]
+ # Gold consistency is decided on the semantic (pre-noise) dialogue.
+ # Surface noise is a robustness axis and must not be mistaken for missing evidence.
+ must=list(dict.fromkeys(must))
+ must_keys={term.casefold() for term in must}
+ bad=list(dict.fromkeys(term for term in bad if term.casefold() not in must_keys))
+ semantic_visible=(" ".join(x[1] for x in history)+" "+q).casefold()
+ unsupported_pre_noise=tuple(term for term in must if term.casefold() not in semantic_visible)
+ expected["_gold_evidence_pre_noise"]=not unsupported_pre_noise
+ expected["_gold_unsupported_pre_noise"]=unsupported_pre_noise
+ expected["_gold_overlap_removed"]=True
  q=_noise(q,language,r)
  axes={"interaction":interaction,"reference":reference,"state":state,"language":language,"distractor":distractor,"distance":distance,"turn_length":target_turns}
  raw=f"{i}|{seed}|{axes}|{history}|{q}|{must}|{bad}"; cid=hashlib.sha1(raw.encode()).hexdigest()[:12]
@@ -309,9 +319,10 @@ def validate_cases(cases):
  for case in cases:
   if case.expected.get("should_abstain"):
    continue
-  visible=(" ".join(x[1] for x in case.history)+" "+case.query).casefold()
-  unsupported=[term for term in case.must if term.casefold() not in visible]
-  assert not unsupported, f"gold requires invisible context {unsupported}: {case.case_id}"
+  overlap={term.casefold() for term in case.must}.intersection(term.casefold() for term in case.must_not)
+  assert not overlap, f"gold requires and forbids same term {sorted(overlap)}: {case.case_id}"
+  unsupported=case.expected.get("_gold_unsupported_pre_noise",())
+  assert not unsupported, f"gold requires semantically absent context {unsupported}: {case.case_id}"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
   ("replace_count",lambda c:c.expected.get("count")==20),
