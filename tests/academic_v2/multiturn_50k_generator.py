@@ -430,7 +430,7 @@ def build(i:int,seed=20261004)->Case:
  # Short turn-length/distractor composition must retain the selected list item
  # rather than leaving an ordinal with no assistant list antecedent.
  if structured_reference and not expected.get("should_abstain"):
-  has_selected_item=any("klinik soru 13" in x[1].casefold() for x in history)
+  has_selected_item=any(x[0]=="assistant" and "klinik soru 13" in x[1].casefold() for x in history)
   if not has_selected_item:
    topic_name=str(expected.get("topic") or semantic_topic[0])
    history=(history+[("assistant",f"13. {topic_name} klinik soru 13")])[-8:]
