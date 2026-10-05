@@ -559,7 +559,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
     dependent = bool(
-        _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean)
+        _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean) or _has_same_way_cue(clean)
         or relative or assistant_ref or comparison or correction_relation
         or re.search(
             r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
@@ -679,10 +679,10 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # An unqualified "continue" resumes the active task. Explicit axis-only
     # requests above inherit only that axis; switching to explanation must not
     # silently recreate an old question-generation request.
-    control_tokens = re.findall(r"\\w+", _state_text(clean))
+    control_tokens = re.findall(r"\w+", _state_text(clean))
     fuzzy_continue = any(_edit_distance_at_most(token, "devam", 1) for token in control_tokens)
     general_resume = fuzzy_continue and not (
-        re.search(r"\\bayni (?:sayida|formatta|amacla|sekilde)\\b", _state_text(clean))
+        re.search(r"\bayni (?:sayida|formatta|amacla|sekilde)\b", _state_text(clean))
         or _has_same_way_cue(clean)
     )
     if general_resume and not _STATE_EXPLAIN_RE.search(clean):
