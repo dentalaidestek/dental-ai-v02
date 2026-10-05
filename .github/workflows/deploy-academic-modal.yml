@@ -1,0 +1,50 @@
+name: Deploy Academic Indexer to Modal
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - work/modal-academic-indexing-20261005
+    paths:
+      - modal_academic_indexer.py
+      - app/study_index_worker.py
+      - app/study_index_worker_main.py
+      - app/study_local_ocr.py
+      - app/study_v2_database.py
+      - .github/workflows/deploy-academic-modal.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modal-academic-indexer
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Require Modal credentials
+        shell: bash
+        run: |
+          test -n "$MODAL_TOKEN_ID"
+          test -n "$MODAL_TOKEN_SECRET"
+
+      - name: Install Modal
+        run: python -m pip install --disable-pip-version-check "modal>=1.2,<2"
+
+      - name: Validate Modal app
+        run: python -m py_compile modal_academic_indexer.py
+
+      - name: Deploy Academic indexer
+        run: python -m modal deploy modal_academic_indexer.py
