@@ -298,6 +298,27 @@ def build(i:int,seed=20261004)->Case:
     keep=max(0,desired_history-len(anchors))
     history=(history[-keep:] if keep else [])+list(reversed(anchors))
     history=history[-desired_history:]
+ # Reconcile the final expected topic with the final bounded dialogue.
+ # Later state/reference axes are allowed to replace an earlier interaction,
+ # but they may not leave a stale topic label behind.  Prefer an explicit
+ # visible topic whose complete lexical signature is present.
+ if must and not expected.get("should_abstain"):
+  visible_pre_gold=(" ".join(x[1] for x in history)+" "+q).casefold()
+  visible_topics=[
+   topic for topic in TOPICS
+   if topic[0].casefold() in visible_pre_gold
+   or all(term.casefold() in visible_pre_gold for term in topic[1])
+  ]
+  expected_topic=str(expected.get("topic") or "").casefold()
+  expected_topic_visible=bool(expected_topic and expected_topic in visible_pre_gold)
+  if not expected_topic_visible:
+   matching=[
+    topic for topic in visible_topics
+    if any(term.casefold() in {m.casefold() for m in must} for term in topic[1])
+   ]
+   if matching:
+    expected["topic"]=matching[-1][0]
+
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
