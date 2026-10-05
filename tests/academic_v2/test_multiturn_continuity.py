@@ -204,3 +204,21 @@ def test_benchmark_normalization_folds_turkish_dotless_i():
     assert "sinav" in folded
     assert "kisa" in folded
     assert "ayrintili" in folded
+
+
+def test_goal_inheritance_uses_active_state_not_any_old_exam_mention():
+    active = [
+        {"role":"user","content":"apeksifikasyon anlat"},
+        {"role":"assistant","content":"açıklama"},
+        {"role":"user","content":"sınav için anlat"},
+        {"role":"assistant","content":"sınav özeti"},
+    ]
+    out = resolve_followup_query("aynı amaçla devam et", active)
+    assert "sınav için" in out
+
+    switched = active + [
+        {"role":"user","content":"Spee eğrisi anlat"},
+        {"role":"assistant","content":"açıklama"},
+    ]
+    out = resolve_followup_query("aynı amaçla devam et", switched)
+    assert "sınav için" not in out
