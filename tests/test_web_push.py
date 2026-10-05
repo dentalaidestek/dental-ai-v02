@@ -39,10 +39,19 @@ class WebPushContractTests(unittest.TestCase):
         self.assertIn("except IntegrityError:", sender)
 
     def test_permission_is_only_requested_from_account_button_interaction(self):
-        self.assertIn("Notification.requestPermission()", ACCOUNT)
+        # Account owns the explicit user gesture; the shared helper owns the
+        # browser permission API so every screen uses one subscription path.
         listener = ACCOUNT.split("button.addEventListener('click'", 1)[1]
-        self.assertIn("Notification.requestPermission()", listener)
-        self.assertNotIn("Notification.requestPermission()", BASE)
+        self.assertIn("daiEnsureWebPush({requestPermission:true})", listener)
+        self.assertNotIn("Notification.requestPermission()", ACCOUNT)
+        helper = BASE.split("async function daiEnsureWebPushOnce", 1)[1].split(
+            "async function daiEnsureWebPush(options={})", 1
+        )[0]
+        self.assertIn("if(!requestPermission)return", helper)
+        self.assertIn("Notification.requestPermission()", helper)
+        startup = BASE.split("window.daiEnsureWebPush=daiEnsureWebPush;", 1)[1]
+        self.assertIn('Notification.permission==="granted")daiEnsureWebPush();', startup)
+        self.assertNotIn("daiEnsureWebPush({requestPermission:true})", startup)
 
     def test_foreground_suppression_is_process_safe_in_service_worker(self):
         self.assertIn('type:"visibility",visible:!document.hidden', BASE)
