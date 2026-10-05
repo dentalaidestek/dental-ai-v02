@@ -54,7 +54,7 @@ MAX_SLICES_PER_INVOCATION = int(os.getenv("STUDY_MODAL_MAX_SLICES", "256"))
     min_containers=0,
     max_containers=8,
     scaledown_window=20,
-    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
+    secrets=[modal.Secret.from_name("dental-ai-academic-indexer", create_if_missing=True)],
 )
 def drain_index_queue() -> dict[str, int | str]:
     # Larger bounded slices are safe off the shared Render web instance.
@@ -106,7 +106,7 @@ def drain_index_queue() -> dict[str, int | str]:
     min_containers=0,
     max_containers=2,
     scaledown_window=10,
-    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
+    secrets=[modal.Secret.from_name("dental-ai-academic-indexer", create_if_missing=True)],
 )
 def kick() -> str:
     """Cheap trigger: fan out bounded drainers; DB leases prevent double work."""
