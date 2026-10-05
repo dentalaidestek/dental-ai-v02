@@ -250,7 +250,7 @@ def _state_text(text: str) -> str:
 
 def _one_edit_token(value: str, target: str) -> bool:
     """Bounded typo tolerance for short state-control words only."""
-    value = re.sub(r"(.)\\1+", r"\\1", value)
+    value = re.sub(r"(.)\1+", r"\1", value)
     if value == target:
         return True
     if abs(len(value) - len(target)) > 1:
@@ -271,9 +271,9 @@ def _one_edit_token(value: str, target: str) -> bool:
 
 def _has_exam_cue(text: str) -> bool:
     folded = _state_text(text)
-    if re.search(r"\\b(?:sinav|sinavlik)\\b", folded):
+    if re.search(r"\b(?:sinav|sinavlik)\b", folded):
         return True
-    return any(_one_edit_token(token, "sinav") for token in re.findall(r"\\w+", folded))
+    return any(_one_edit_token(token, "sinav") for token in re.findall(r"\w+", folded))
 
 
 def _incidental_turn(text: str) -> bool:
