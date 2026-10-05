@@ -304,6 +304,40 @@ def _has_exam_cue(text: str) -> bool:
     )
 
 
+def _relative_reference_kind(text: str) -> str | None:
+    """Recover bounded discourse navigation under surface noise."""
+    folded = _state_text(text)
+    if _STATE_RELATIVE_RE.search(text):
+        return "first" if re.search(r"\bilk\s+anlatt", folded) else "previous"
+    tokens = re.findall(r"\w+", folded)
+    if any(_edit_distance_at_most(token, "onceki", 2) for token in tokens):
+        if any(_edit_distance_at_most(token, "bir", 1) for token in tokens) or any(
+            _edit_distance_at_most(token, "ondan", 1) for token in tokens
+        ):
+            return "previous"
+    has_first = any(_edit_distance_at_most(token, "ilk", 1) for token in tokens)
+    has_told = any(_edit_distance_at_most(token, "anlattigin", 2) for token in tokens)
+    return "first" if has_first and has_told else None
+
+
+def _has_question_task_cue(text: str) -> bool:
+    """Bounded typo recovery for the question-generation operator only."""
+    if _STATE_QUESTION_TASK_RE.search(text or ""):
+        return True
+    tokens = re.findall(r"\w+", _state_text(text))
+    has_question = any(
+        _edit_distance_at_most(token, "soru", 1)
+        or _edit_distance_at_most(token, "question", 1)
+        or _edit_distance_at_most(token, "test", 1)
+        for token in tokens
+    )
+    has_action = any(
+        _edit_distance_at_most(token, target, 1)
+        for token in tokens for target in ("hazirla", "yap", "uret", "olustur")
+    )
+    return has_question and has_action
+
+
 def _has_followup_control_cue(text: str) -> bool:
     """Bounded typo tolerance for discourse-control words, never dental nouns."""
     folded = _state_text(text)
@@ -415,7 +449,7 @@ def _conversation_state(
             subjects.clear()
             task = goal = output_format = length = None
             count = None
-        if _STATE_QUESTION_TASK_RE.search(value):
+        if _has_question_task_cue(value):
             task = "generate_questions"
         elif _STATE_EXPLAIN_RE.search(value):
             task = "explain"
@@ -560,7 +594,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     window = list(recent_history[-8:])
     folded = clean.casefold()
     clear_topic = bool(_STATE_CLEAR_TOPIC_RE.search(clean))
-    relative = bool(_STATE_RELATIVE_RE.search(clean))
+    relative_kind = _relative_reference_kind(clean)
+    relative = relative_kind is not None
     assistant_ref = bool(_STATE_ASSISTANT_REF_RE.search(clean))
     comparison = bool(re.search(r"(?iu)\b(?:karşılaştır|karsilastir|\bvs\.?\b|\bile\b)\b", clean))
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
@@ -604,7 +639,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
     # History parsing is deliberately deferred until dependency is proven.
     # Independent/topic-switch turns therefore pay no O(history) state cost.
-    subject_mode = "all" if (relative or re.search(r"(?iu)\bilk anlattığın|\bilk anlattigin", clean)) else "latest"
+    subject_mode = "all" if relative else "latest"
     state = _conversation_state(window, subject_mode=subject_mode)
     subjects = list(state.subjects)
     if not subjects:
@@ -618,7 +653,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             return clean
 
     selected: ConversationSubject | None = None
-    if re.search(r"(?iu)\bilk anlattığın|\bilk anlattigin", clean):
+    if relative_kind == "first":
         selected = next((x for x in subjects if x.source in {"user", "user_selected_item"}), None)
     elif relative:
         user_subjects = [x for x in subjects if x.source in {"user", "user_selected_item"}]
@@ -649,6 +684,9 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         return clean
 
     prefixes: list[str] = [subject_text]
+    # Canonicalize only recognized operation words; content/dental nouns remain exact.
+    if _has_question_task_cue(clean) and not _STATE_QUESTION_TASK_RE.search(clean):
+        prefixes.append("soru hazırla")
     # Canonicalize a narrowly recognized typoed exam-goal cue. The raw user
     # wording remains in the suffix; this only restores the semantic state.
     if _has_exam_cue(clean) and not _STATE_EXAM_RE.search(clean):
