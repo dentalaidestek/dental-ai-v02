@@ -174,7 +174,7 @@ def build(i:int,seed=20261004)->Case:
  state_replaces_surface=state in {
   "replace_count","inherit_count","inherit_goal","inherit_format","replace_goal",
   "clear_goal","replace_task","inherit_topic","inherit_task","replace_format",
-  "clear_format","clear_count",
+  "clear_format","clear_count","qualifier_add","qualifier_replace","qualifier_remove",
  }
  if not expected.get("should_abstain") and not structured_reference and state_replaces_surface:
   topic_name=str(expected.get("topic") or "")
@@ -341,6 +341,15 @@ def build(i:int,seed=20261004)->Case:
     topic_anchor=original_topic_anchor
    if topic_anchor:
     history=(history+[topic_anchor])[-desired_history:]
+
+ # Structured assistant-item references have their own explicit provenance.
+ # Short turn-length/distractor composition must retain the selected list item
+ # rather than leaving an ordinal with no assistant list antecedent.
+ if structured_reference and not expected.get("should_abstain"):
+  has_selected_item=any("klinik soru 13" in x[1].casefold() for x in history)
+  if not has_selected_item:
+   topic_name=str(expected.get("topic") or semantic_topic[0])
+   history=(history+[("assistant",f"13. {topic_name} klinik soru 13")])[-8:]
 
  # Reconcile the final expected topic with the final bounded dialogue.
  # Later state/reference axes are allowed to replace an earlier interaction,
