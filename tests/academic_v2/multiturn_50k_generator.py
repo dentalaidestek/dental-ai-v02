@@ -88,9 +88,10 @@ def build(i:int,seed=20261004)->Case:
  t1=r.choice(TOPICS); t2=r.choice([x for x in TOPICS if x!=t1])
  history=[("user",f"{t1[0]} {r.choice(SURFACES['explain'])}."),("assistant",f"{t1[0]} açıklaması örnek {i%97}.")]
  must=list(t1[1]); bad=[]; expected={"topic":t1[0],"task":"explain"}
+ semantic_topic=t1
  # interaction defines the semantic transition; other axes perturb its surface/context.
  if interaction in {"topic_switch_explicit","same_task_new_topic"}:
-  q=f"Peki {t2[0]} anlat."; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
+  q=f"Peki {t2[0]} anlat."; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2; semantic_topic=t2; semantic_topic=t2
  elif interaction=="topic_switch_implicit":
   q=f"{t2[0]} peki"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
  elif interaction in {"same_topic_new_task","format_switch"}:
@@ -121,7 +122,7 @@ def build(i:int,seed=20261004)->Case:
   history += [("user",f"bunu {t2[0]} ile karşılaştır"),("assistant","karşılaştırma")]
   t3=r.choice([x for x in TOPICS if x not in {t1,t2}]); q=f"yok {t2[0]} değil {t3[0]} ile"; must=list(t1[1])+list(t3[1]); bad=list(t2[1])
  elif interaction=="abandon_previous":
-  q=f"boşver onu {t2[0]} nedir"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
+  q=f"boşver onu {t2[0]} nedir"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
  elif interaction=="refinement": q=r.choice(SURFACES["short"]); expected.update(goal="exam",length="shorter")
  elif interaction=="expansion": q=r.choice(SURFACES["detail"]); expected["length"]="detailed"
  elif interaction=="recollection_far":
@@ -191,7 +192,7 @@ def build(i:int,seed=20261004)->Case:
   q="yok soru istemiyorum normal anlat"; expected["task"]="explain"
  elif state=="replace_topic":
   history += [("user",f"{t1[0]} anlat"),("assistant","açıklama")]
-  q=f"yok {t2[0]} anlat"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]
+  q=f"yok {t2[0]} anlat"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
  elif state=="inherit_topic":
   q="aynı konudan devam et"; must=list(t1[1]); expected["topic"]=t1[0]
  elif state=="clear_topic":
@@ -261,7 +262,7 @@ def build(i:int,seed=20261004)->Case:
  # Keep both the original semantic topic anchor and the fully mutated history:
  # later axes can overwrite/trim one another, but gold repair must never invent
  # an antecedent that did not exist in the case.
- original_topic_anchor=("user",f"{t1[0]} anlat.")
+ original_topic_anchor=("user",f"{semantic_topic[0]} anlat.")
  pretrim_history=list(history)
  target_turns=TURN_LENGTH[(i*17)%len(TURN_LENGTH)]
  desired_history=min(8,max(1,target_turns-1))
@@ -311,7 +312,7 @@ def build(i:int,seed=20261004)->Case:
    topic_anchor=next((x for x in reversed(pretrim_history)
     if any(term.casefold() in x[1].casefold() for term in must)
     and "eski sorum" not in x[1].casefold() and "önceden" not in x[1].casefold()),None)
-   if topic_anchor is None and all(term.casefold() in t1[0].casefold() for term in must):
+   if topic_anchor is None and all(term.casefold() in semantic_topic[0].casefold() for term in must):
     topic_anchor=original_topic_anchor
    if topic_anchor:
     history=(history+[topic_anchor])[-desired_history:]
