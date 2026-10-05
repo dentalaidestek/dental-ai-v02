@@ -224,7 +224,9 @@ def build(i:int,seed=20261004)->Case:
   history += [("user",f"{t1[0]} anlat"),("assistant","açıklama")]
   q=f"yok {t2[0]} anlat"; must=list(t2[1]); bad=list(t1[1]); expected["topic"]=t2[0]; semantic_topic=t2
  elif state=="inherit_topic":
-  q="aynı konudan devam et"; must=list(t1[1]); expected["topic"]=t1[0]
+  # Inherit the ACTIVE composed topic, not the generator's original t1. Earlier
+  # interaction/reference transitions may already have switched ownership.
+  q="aynı konudan devam et"; must=list(semantic_topic[1]); expected["topic"]=semantic_topic[0]
  elif state=="clear_topic":
   history += [("user",f"{t1[0]} anlat"),("assistant","açıklama")]
   q="önceki konuyu bırak, genel çalışma planı çıkar"; bad=list(t1[1]); must=[]; expected["topic"]=None
