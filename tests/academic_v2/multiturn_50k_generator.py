@@ -492,20 +492,25 @@ def build(i:int,seed=20261004)->Case:
  # inside the resolver's eight-message window. This tests relative navigation,
  # not accidental survival of an early generator turn.
  if expected.get("reference")=="previous_topic":
-  tail=[("user",f"{t1[0]} anlat"),("assistant",f"{t1[0]} açıklaması"),
-        ("user",f"{t2[0]} anlat"),("assistant",f"{t2[0]} açıklaması")]
+  # Relative navigation is an independent oracle contract: derive the final
+  # ordered topic chain here instead of inheriting stale interaction topics.
+  chain_topics=(t1,t2)
+  tail=[]
+  for topic in chain_topics:
+   tail += [("user",f"{topic[0]} anlat"),("assistant",f"{topic[0]} açıklaması")]
   keep=max(0,8-len(tail))
   history=(history[-keep:] if keep else [])+tail
   q="bir önceki konuya dön"
-  semantic_topic=t1; must=list(t1[1]); bad=list(t2[1]); expected["topic"]=t1[0]
+  semantic_topic=chain_topics[-2]; must=list(semantic_topic[1]); bad=list(chain_topics[-1][1]); expected["topic"]=semantic_topic[0]
  elif expected.get("reference")=="before_previous_topic":
-  tail=[("user",f"{t1[0]} anlat"),("assistant",f"{t1[0]} açıklaması"),
-        ("user",f"{t2[0]} anlat"),("assistant",f"{t2[0]} açıklaması"),
-        ("user",f"{t3[0]} anlat"),("assistant",f"{t3[0]} açıklaması")]
+  chain_topics=(t1,t2,t3)
+  tail=[]
+  for topic in chain_topics:
+   tail += [("user",f"{topic[0]} anlat"),("assistant",f"{topic[0]} açıklaması")]
   keep=max(0,8-len(tail))
   history=(history[-keep:] if keep else [])+tail
   q="ondan bir önceki konuya dön"
-  semantic_topic=t2; must=list(t2[1]); bad=list(t3[1]); expected["topic"]=t2[0]
+  semantic_topic=chain_topics[-2]; must=list(semantic_topic[1]); bad=list(chain_topics[-1][1]); expected["topic"]=semantic_topic[0]
  # State inheritance must remain observable after distractor composition.
  # A later independent user topic legitimately clears goal, so reserve a final
  # bounded user antecedent that owns both the active subject and exam goal.
