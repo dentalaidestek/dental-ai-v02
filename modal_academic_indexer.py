@@ -38,6 +38,7 @@ image = (
         "pypdfium2==5.13.0",
         "tesserocr==2.11.0",
         "boto3>=1.35,<2",
+        "fastapi==0.141.1",
     )
     .add_local_python_source("app")
 )
