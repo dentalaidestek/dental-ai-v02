@@ -20,6 +20,7 @@ The function scales to zero when idle because min_containers is left at zero.
 """
 from __future__ import annotations
 
+import hmac
 import os
 import modal
 
@@ -110,8 +111,54 @@ def drain_index_queue() -> dict[str, int | str]:
     scaledown_window=10,
     secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
 )
-def kick() -> str:
-    """Cheap trigger: fan out bounded drainers; DB leases prevent double work."""
+def _dispatch_authorized(request) -> bool:
+    expected = (os.getenv("ACADEMIC_MODAL_DISPATCH_SECRET") or "").strip()
+    if not expected:
+        return False
+    supplied = (request.headers.get("authorization") or "").strip()
+    if not supplied.lower().startswith("bearer "):
+        return False
+    return hmac.compare_digest(supplied[7:].strip(), expected)
+
+
+def _spawn_drainers() -> None:
+    # Duplicate wakeups are harmless: PostgreSQL leases remain authoritative.
     for _ in range(4):
         drain_index_queue.spawn()
+
+
+@app.function(
+    image=image,
+    cpu=0.25,
+    memory=256,
+    timeout=30,
+    min_containers=0,
+    max_containers=4,
+    scaledown_window=10,
+    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
+)
+@modal.fastapi_endpoint(method="POST")
+def dispatch(request):
+    """Authenticated Render -> Modal wake endpoint; it never owns queue state."""
+    from fastapi.responses import JSONResponse
+
+    if not _dispatch_authorized(request):
+        return JSONResponse({"ok": False}, status_code=401)
+    _spawn_drainers()
+    return {"ok": True, "scheduled": True}
+
+
+@app.function(
+    image=image,
+    cpu=1.0,
+    memory=512,
+    timeout=60,
+    min_containers=0,
+    max_containers=2,
+    scaledown_window=10,
+    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
+)
+def kick() -> str:
+    """CLI/manual trigger using the same durable queue contract."""
+    _spawn_drainers()
     return "scheduled"
