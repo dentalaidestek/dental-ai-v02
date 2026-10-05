@@ -551,9 +551,16 @@ def _prepare_image_checkpoint(session: Session, job: StudyIndexJob) -> str:
 
 
 def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> str:
-    """Process a bounded batch locally; source pages never leave the service."""
+    """Process a bounded OCR batch.
+
+    Sequential mode remains the production-safe default. Elastic executors such
+    as Modal can opt into bounded intra-document parallelism with
+    STUDY_V2_OCR_PARALLELISM>1. DB writes stay serialized behind the existing
+    job lease, so page checkpoints and generation fencing remain authoritative.
+    """
     provider_name = (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower()
     batch = _int_env("STUDY_V2_OCR_BATCH_PAGES", 4, 1, 20)
+    parallelism = _int_env("STUDY_V2_OCR_PARALLELISM", 1, 1, 8)
     pages = list(session.exec(
         select(StudyIndexPage)
         .where(StudyIndexPage.material_id == job.material_id)
@@ -567,87 +574,116 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
     if provider_name != "local":
         raise RuntimeError(f"UNSUPPORTED_OCR_PROVIDER:{provider_name}")
 
-    # PDFium document parsing is non-trivial on long scanned lecture notes.
-    # Reuse one document for the whole bounded OCR slice; ocr_material_page
-    # already accepts this handle and will reuse it for a quality retry too.
-    pdf_document = None
-    if mime_type == "application/pdf":
-        import pypdfium2 as pdfium
-        pdf_document = pdfium.PdfDocument(str(path))
-    try:
-        for page in pages:
+    from app.study_index_jobs import renew_index_lease
+
+    def persist(page, result) -> None:
+        text = normalize_extracted_text(result.text)
+        fallback_text = normalize_extracted_text(page.text_content or "")
+        method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+        if result.visual_only:
+            if fallback_text:
+                text = fallback_text
+                method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+            else:
+                text = (
+                    f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
+                    "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
+                )
+                method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+        elif fallback_text and len(text) < len(fallback_text):
+            text = fallback_text
+            method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+        upsert_page_checkpoint(
+            session,
+            owner_user_id=job.owner_user_id,
+            course_id=job.course_id,
+            material_id=job.material_id,
+            index_version=job.index_version,
+            page_number=page.page_number,
+            status="OCR_DONE",
+            text_content=text,
+            extraction_method=method,
+            content_sha256=_sha256_text(text),
+            error=None,
+        )
+
+    if parallelism == 1 or len(pages) == 1:
+        # Preserve the low-memory Render path and reuse one PDFium handle.
+        pdf_document = None
+        if mime_type == "application/pdf":
+            import pypdfium2 as pdfium
+            pdf_document = pdfium.PdfDocument(str(path))
+        try:
+            for page in pages:
+                if not _lease_still_owned(session, job):
+                    session.rollback()
+                    return "LEASE_LOST"
+                if not renew_index_lease(
+                    session,
+                    job_id=job.id,
+                    lease_token=job.lease_token,
+                    worker_id=job.worker_id,
+                    lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
+                ):
+                    session.rollback()
+                    return "LEASE_LOST"
+                session.close()
+                result = ocr_material_page(
+                    path, mime_type=mime_type, page_number=page.page_number,
+                    pdf_document=pdf_document,
+                )
+                if not _lease_still_owned(session, job):
+                    session.rollback()
+                    return "LEASE_LOST"
+                persist(page, result)
+                session.commit()
+        finally:
+            if pdf_document is not None:
+                pdf_document.close()
+    else:
+        # A single StudyIndexJob owns the generation lease, therefore separate
+        # Modal containers must not independently mutate the same PDF. Instead
+        # use bounded CPU-parallel OCR waves inside the lease owner. Each task
+        # owns its PDFium handle; SQLModel/DB state never crosses threads.
+        from concurrent.futures import ThreadPoolExecutor
+
+        lease_seconds = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)
+        wave_size = min(parallelism, len(pages))
+        for offset in range(0, len(pages), wave_size):
+            wave = pages[offset:offset + wave_size]
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
-            from app.study_index_jobs import renew_index_lease
             if not renew_index_lease(
                 session,
                 job_id=job.id,
                 lease_token=job.lease_token,
                 worker_id=job.worker_id,
-                lease_seconds=_int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800),
+                lease_seconds=lease_seconds,
             ):
                 session.rollback()
                 return "LEASE_LOST"
-            session.close()
-            result = ocr_material_page(
-                path,
-                mime_type=mime_type,
-                page_number=page.page_number,
-                pdf_document=pdf_document,
-            )
+            session.commit()
+
+            def recognize(page):
+                return ocr_material_page(
+                    path,
+                    mime_type=mime_type,
+                    page_number=page.page_number,
+                    pdf_document=None,
+                )
+
+            with ThreadPoolExecutor(max_workers=wave_size, thread_name_prefix="study-ocr") as pool:
+                results = list(pool.map(recognize, wave))
+
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
-            text = normalize_extracted_text(result.text)
-            fallback_text = normalize_extracted_text(page.text_content or "")
-            method = f"LOCAL_OCR:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-            if result.visual_only:
-                # OCR must not erase a clean short text layer (for example a
-                # section heading) merely because the slide is mostly visual.
-                if fallback_text:
-                    text = fallback_text
-                    method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-                else:
-                    # A diagram/blank page can legitimately contain no dependable text.
-                    # Account for it without inventing clinical content; the immutable
-                    # source PDF remains the visual evidence for page-aware fallback.
-                    text = (
-                        f"Sayfa {page.page_number}: Güvenilir metin çıkarılamayan görsel, "
-                        "şema veya boş sayfa. Özgün kaynak sayfa korunmuştur."
-                    )
-                    method = f"LOCAL_OCR_VISUAL_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-            elif fallback_text and len(text) < len(fallback_text):
-                # A confident OCR pass can still truncate a title. Keep the
-                # longer native layer rather than replacing known source text.
-                text = fallback_text
-                method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
-            upsert_page_checkpoint(
-                session,
-                owner_user_id=job.owner_user_id,
-                course_id=job.course_id,
-                material_id=job.material_id,
-                index_version=job.index_version,
-                page_number=page.page_number,
-                status="OCR_DONE",
-                text_content=text,
-                extraction_method=method,
-                content_sha256=_sha256_text(text),
-                error=None,
-            )
+            for page, result in zip(wave, results):
+                persist(page, result)
             session.commit()
-    finally:
-        if pdf_document is not None:
-            pdf_document.close()
-    remaining = session.exec(
-        select(StudyIndexPage.id)
-        .where(StudyIndexPage.material_id == job.material_id)
-        .where(StudyIndexPage.index_version == job.index_version)
-        .where(StudyIndexPage.status == "OCR_REQUIRED")
-    ).first()
-    # One bounded OCR slice is enough before downstream chunking gets a turn.
-    return _next_checkpoint_stage(session, job)
 
+    return _next_checkpoint_stage(session, job)
 
 def _embed_slice(session: Session, job: StudyIndexJob) -> str:
     batch = _int_env("STUDY_V2_EMBED_BATCH_CHUNKS", 16, 1, 50)
