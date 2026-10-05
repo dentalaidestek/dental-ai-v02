@@ -322,7 +322,7 @@ def build(i:int,seed=20261004)->Case:
    if latest_topic: break
   if latest_topic:
    semantic_topic=latest_topic; must=list(latest_topic[1]); expected["topic"]=latest_topic[0]
-  expected.pop("reference",None)
+  expected.pop("reference",None); expected["_reference_gold_reconciled"]=True
  # Distance is the number of prior messages separating the anchor user turn
  # from the current query, capped by the resolver's eight-message contract.
  # Keep both the original semantic topic anchor and the fully mutated history:
