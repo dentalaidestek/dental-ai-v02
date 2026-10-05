@@ -485,3 +485,18 @@ def test_independent_comparison_does_not_inherit_unrelated_history_topic():
     history=[u("Angle Sınıf II nedir?")]
     query="Mandibular sinirin dallarını ayrıntılı karşılaştır"
     assert resolve_followup_query(query,history)==query
+
+
+def test_mixed_language_question_generation_keeps_task_semantics():
+    history=[u("bennett açı anlat")]
+    out=low(resolve_followup_query("aynı sayıda farklı question hazırla",history))
+    assert "bennett açı" in out
+    assert "soru hazırla" in out
+
+
+def test_count_correction_keeps_active_question_task():
+    history=[u("liken planus anlat"),a("açıklama"),u("10 soru hazırla"),a("10 soru hazırlandı")]
+    out=low(resolve_followup_query("yok 20 question olsun",history))
+    assert "liken planus" in out
+    assert "soru hazırla" in out
+    assert "20 question" in out
