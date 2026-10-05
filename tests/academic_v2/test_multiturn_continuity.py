@@ -432,3 +432,17 @@ def test_ambiguous_replace_task_keeps_abstention_after_state_surface_reassertion
     assert case.axes["state"] == "replace_task"
     assert case.expected.get("should_abstain") is True
     assert case.must == ()
+
+
+def test_noisy_relative_and_question_operator_recover_semantics_not_dental_terms():
+    history=[
+        u("bruksizm anlat"),a("a"),
+        u("apikal periodontitis anlat"),a("b"),
+    ]
+    relative=low(resolve_followup_query("bir öncki konuya dön",history))
+    assert "bruksizm" in relative
+    task=low(resolve_followup_query("aynı sayıda farklı sru hazırla",[
+        u("liken planus anlat"),a("a"),u("10 soru hazırla"),a("b")
+    ]))
+    assert "liken planus" in task
+    assert "soru hazırla" in task
