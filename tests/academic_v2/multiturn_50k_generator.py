@@ -652,6 +652,23 @@ def build(i:int,seed=20261004)->Case:
     retained.append(term)
   must=list(dict.fromkeys(retained))
 
+ # Final provenance oracle: ordinary topics must be owned by a USER turn.
+ # If later composition changed the expected topic after bounded-history repair,
+ # do not synthesize evidence and do not guess from assistant prose.
+ if not expected.get("should_abstain") and expected.get("reference")!="assistant_item_13" and must:
+  final_user_text=" ".join(
+   text for role,text in history
+   if role=="user" and not re.search(r"(?iu)^(?:önceden|eski sorum|bu arada)|\baklımda\b",text)
+  ).casefold()
+  final_topic_name=str(expected.get("topic") or "")
+  final_supported=bool(final_topic_name and final_topic_name.casefold() in final_user_text) or all(
+   term.casefold() in final_user_text for term in must
+  )
+  if not final_supported:
+   expected["should_abstain"]=True
+   expected["forbidden_topics"]=tuple(dict.fromkeys((*expected.get("forbidden_topics",()),*must)))
+   must=[]
+
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
