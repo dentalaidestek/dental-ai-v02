@@ -315,7 +315,9 @@ def build(i:int,seed=20261004)->Case:
   # Slot operations do not manufacture a missing/ambiguous topic antecedent.
   # They may alter task/count/goal/format only after a subject is resolvable.
   if expected.get("should_abstain"):
-   pass
+   # Keep the state axis visible while preserving the ambiguity contract.
+   # Slot changes do not authorize choosing either candidate topic.
+   q=state_surface[state]
   else:
    if structured_reference:
     history += [("user",q),("assistant","seçilen öğe bağlamı korundu")]
