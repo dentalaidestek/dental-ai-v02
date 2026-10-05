@@ -416,6 +416,17 @@ def build(i:int,seed=20261004)->Case:
    if matching:
     expected["topic"]=matching[-1][0]
 
+ # Reconcile exam-goal gold from the final semantic dialogue. Earlier
+ # interaction/reference/state layers may have owned goal at different times;
+ # only the final surface + a valid same-purpose antecedent may own it.
+ if expected.get("goal")=="exam":
+  fold=lambda s:" ".join(str(s).translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
+  fq=fold(q); fh=fold(" ".join(x[1] for x in history))
+  explicit_exam=bool(re.search(r"\b(?:sinav|sinavlik)\b",fq))
+  inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and re.search(r"\b(?:sinav|sinavlik)\b",fh))
+  if not (explicit_exam or inherited_exam):
+   expected.pop("goal",None)
+   expected["_goal_gold_reconciled"]=True
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
  # Surface noise is a robustness axis and must not be mistaken for missing evidence.
  must=list(dict.fromkeys(must))
