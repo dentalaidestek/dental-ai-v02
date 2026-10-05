@@ -706,9 +706,9 @@ def build(i:int,seed=20261004)->Case:
  # active for a dependent follow-up. A synthetic assistant "13." line alone never
  # grants ownership, and a later independent USER topic expires that ownership.
  if expected.get("reference")=="assistant_item_13":
-  ordinal_current=bool(re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",q))
+  ordinal_current=bool(re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",q))
   ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
-   if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru|sorunun|madde|maddenin)\\b",history[idx][1])),None)
+   if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",history[idx][1])),None)
   later_independent_topic=False
   if ordinal_user_index is not None:
    for role,text in history[ordinal_user_index+1:]:
