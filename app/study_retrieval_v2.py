@@ -320,6 +320,24 @@ def _relative_reference_kind(text: str) -> str | None:
     return "first" if has_first and has_told else None
 
 
+def _has_same_count_cue(text: str) -> bool:
+    folded = _state_text(text)
+    tokens = re.findall(r"\w+", folded)
+    return (
+        any(_edit_distance_at_most(token, "ayni", 1) for token in tokens)
+        and any(_edit_distance_at_most(token, "sayida", 2) for token in tokens)
+    )
+
+
+def _has_table_cue(text: str) -> bool:
+    if _STATE_TABLE_RE.search(text or ""):
+        return True
+    tokens = re.findall(r"\w+", _state_text(text))
+    has_table = any(_edit_distance_at_most(token, "tablo", 1) for token in tokens)
+    has_shape = any(_edit_distance_at_most(token, "sekilde", 2) for token in tokens)
+    return has_table and has_shape
+
+
 def _has_question_task_cue(text: str) -> bool:
     """Bounded typo recovery for the question-generation operator only."""
     if _STATE_QUESTION_TASK_RE.search(text or ""):
@@ -462,7 +480,7 @@ def _conversation_state(
             goal = "exam"
         if _STATE_CLEAR_GOAL_RE.search(value) or re.search(r'\bsinav\w*.*\bolmasin\b', folded):
             goal = None
-        if _STATE_TABLE_RE.search(value):
+        if _has_table_cue(value):
             output_format = "table"
         if _STATE_CLEAR_FORMAT_RE.search(value):
             output_format = None
@@ -687,6 +705,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # Canonicalize only recognized operation words; content/dental nouns remain exact.
     if _has_question_task_cue(clean) and not _STATE_QUESTION_TASK_RE.search(clean):
         prefixes.append("soru hazırla")
+    if _has_table_cue(clean) and not _STATE_TABLE_RE.search(clean):
+        prefixes.append("tablo şeklinde")
     # Canonicalize a narrowly recognized typoed exam-goal cue. The raw user
     # wording remains in the suffix; this only restores the semantic state.
     if _has_exam_cue(clean) and not _STATE_EXAM_RE.search(clean):
@@ -709,7 +729,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
     # Inheritance is axis-specific. Current-turn values always win; only an
     # explicit inheritance cue can recover an omitted old value.
-    if re.search(r"(?iu)\baynı sayıda|\bayni sayida", clean) and state.count is not None:
+    if _has_same_count_cue(clean) and state.count is not None:
         if not _STATE_QUESTION_RE.search(clean):
             prefixes.append(f"{state.count} soru")
     if re.search(r"(?iu)\baynı formatta|\bayni formatta", clean) and state.output_format:
