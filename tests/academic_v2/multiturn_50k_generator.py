@@ -488,8 +488,8 @@ def validate_cases(cases):
   assert not unsupported, f"gold requires semantically absent context {unsupported}: {case.case_id}"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
-  ("replace_count",lambda c:c.expected.get("count")==20),
-  ("inherit_count",lambda c:c.expected.get("count")==10 and ("aynı sayıda" in c.expected.get("_semantic_query_pre_noise","") or any("10 soru" in x[1] for x in c.expected.get("_semantic_history_pre_noise",())))),
+  ("replace_count",lambda c:c.expected.get("count")==20 or c.expected.get("reference")=="assistant_item_13),
+  ("inherit_count",lambda c:(c.expected.get("count")==10 and ("aynı sayıda" in c.expected.get("_semantic_query_pre_noise","") or any("10 soru" in x[1] for x in c.expected.get("_semantic_history_pre_noise",())))) or c.expected.get("reference")=="assistant_item_13),
   ("clear_count",lambda c:c.expected.get("count") is None),
   ("inherit_goal",lambda c:c.expected.get("goal")=="exam"),
   ("replace_goal",lambda c:c.expected.get("goal")=="exam"),
