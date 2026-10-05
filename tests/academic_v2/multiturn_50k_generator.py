@@ -652,6 +652,28 @@ def build(i:int,seed=20261004)->Case:
   if not (explicit_exam or inherited_exam):
    expected.pop("goal",None)
    expected["_goal_gold_reconciled"]=True
+ # Structured-reference provenance expires when a later independent USER
+ # topic is introduced. A later assistant list line cannot silently retarget
+ # "same purpose/format/count" unless the user explicitly selects that item.
+ if expected.get("reference")=="assistant_item_13":
+  last_selection=-1
+  last_independent_topic=None
+  for idx,(role,text) in enumerate(history):
+   if role!="user": continue
+   ft=fold_slot(text)
+   if re.search(r"\b13\.?\s*soru",ft): last_selection=idx
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+   dependent_start=bool(re.match(r"^(?:bunu|onu|ayni|peki|yok|hayir|sinav|tablo|normal|13\.?\s*soru)\b",ft))
+   matched=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(term.casefold() in text.casefold() for term in topic[1])),None)
+   if matched and not dependent_start: last_independent_topic=(idx,matched)
+  if last_independent_topic and last_independent_topic[0]>last_selection:
+   semantic_topic=last_independent_topic[1]
+   expected["topic"]=semantic_topic[0]
+   expected.pop("reference",None)
+   must=list(semantic_topic[1])
+   structured_reference=False
+   expected["_structured_reference_expired"]=True
+
  # Structured assistant-item references own the final subject. Earlier
  # interaction/state layers may have left lexical requirements from another
  # topic; rebind requirements to the selected item's canonical topic.
