@@ -733,7 +733,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         r"|\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b.{0,28}\bquestion(?:s)?\b",
         clean,
     ))
-    if (_has_question_task_cue(clean) or mixed_question_task) and not _STATE_QUESTION_TASK_RE.search(clean):
+    explicit_question_task = bool(_STATE_QUESTION_TASK_RE.search(clean))
+    if (_has_question_task_cue(clean) or mixed_question_task) and not explicit_question_task:
         prefixes.append("soru hazırla")
     if _has_table_cue(clean) and not _STATE_TABLE_RE.search(clean):
         prefixes.append("tablo şeklinde")
@@ -784,7 +785,12 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     # Count corrections such as "yok 20 question olsun" keep the active
     # question-generation task even though they do not repeat the verb.
     count_correction = bool(re.search(r"(?iu)\b(?:yok|hayır|hayir)\b.{0,12}\b\d{1,3}\s+(?:soru|question(?:s)?)\b", clean))
-    if count_correction and state.task == "generate_questions" and not _STATE_QUESTION_TASK_RE.search(clean):
+    if count_correction and state.task == "generate_questions" and not explicit_question_task:
+        prefixes.append("soru hazırla")
+
+    # If the current turn explicitly asks for questions, that current task
+    # wins even when its wording is mixed-language; no history task is needed.
+    if mixed_question_task and "soru hazırla" not in prefixes:
         prefixes.append("soru hazırla")
 
     if general_resume and not _STATE_EXPLAIN_RE.search(clean):
