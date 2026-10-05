@@ -480,7 +480,7 @@ def build(i:int,seed=20261004)->Case:
    topic_name=str(expected.get("topic") or semantic_topic[0])
    restored=("assistant",f"13. {topic_name} klinik soru 13")
    selection_idx=next((idx for idx,(role,text) in enumerate(history)
-    if role=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",text)),None)
+    if role=="user" and re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",text)),None)
    if selection_idx is None:
     history=(history+[restored])[-8:]
    else:
@@ -698,7 +698,7 @@ def build(i:int,seed=20261004)->Case:
  explicit_topic_request=bool(re.search(r"(?iu)\\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|konuşalım|konusalim)\\b",q))
  if explicit_query_topic and explicit_topic_request and not expected.get("should_abstain"):
   previous_topic_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
-  if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",q):
+  if expected.get("reference")!="assistant_item_13" or not re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",q):
    expected["topic"]=explicit_query_topic[0]
    semantic_topic=explicit_query_topic
    must=list(explicit_query_topic[1])
@@ -712,16 +712,16 @@ def build(i:int,seed=20261004)->Case:
  # chained selection is valid only while structured_reference survived the later
  # independent-topic expiry check. Never infer ownership from assistant text alone.
  if expected.get("reference")=="assistant_item_13":
-  ordinal_current=bool(re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",q))
+  ordinal_current=bool(re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",q))
   ordinal_user_index=next((idx for idx in range(len(history)-1,-1,-1)
-   if history[idx][0]=="user" and re.search(r"(?iu)\\b13[.)]?\\s*(?:soru(?:nun)?|madde(?:nin)?)\\b",history[idx][1])),None)
+   if history[idx][0]=="user" and re.search(r"(?iu)\b13[.)]?\s*(?:soru(?:nun)?|madde(?:nin)?)\b",history[idx][1])),None)
   provenance_valid=ordinal_current or (structured_reference and ordinal_user_index is not None)
   selected_line=""
   if provenance_valid:
    boundary=len(history) if ordinal_current else ordinal_user_index
    for role,text in history[:boundary]:
     if role!="assistant": continue
-    match=re.search(r"(?mi)^\\s*13[.)]\\s*([^\\n]+)",text)
+    match=re.search(r"(?mi)^\s*13[.)]\s*([^\n]+)",text)
     if match: selected_line=match.group(1)
   if not provenance_valid or not selected_line:
    expected.pop("reference",None)
