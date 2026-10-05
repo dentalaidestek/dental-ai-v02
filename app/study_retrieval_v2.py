@@ -626,9 +626,11 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         for subject in user_subjects:
             if not distinct or subject.terms != distinct[-1].terms:
                 distinct.append(subject)
-        relative_folded = _state_text(clean)
-        before_previous = bool(re.search(r"\bondan bir onceki\b", relative_folded))
-        offset = 3 if before_previous else 2
+        # A relative request is anchored to the active topic in history.
+        # Both "bir önceki" and "ondan bir önceki" select the immediately
+        # preceding distinct topic; "ondan" refers to that active topic, not
+        # to an additional hop. Deeper navigation needs an explicit ordinal.
+        offset = 2
         if len(distinct) >= offset:
             selected = distinct[-offset]
         else:
