@@ -620,8 +620,11 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         for subject in user_subjects:
             if not distinct or subject.terms != distinct[-1].terms:
                 distinct.append(subject)
-        if len(distinct) >= 2:
-            selected = distinct[-2]
+        relative_folded = _state_text(clean)
+        before_previous = bool(re.search(r"\bondan bir onceki\b", relative_folded))
+        offset = 3 if before_previous else 2
+        if len(distinct) >= offset:
+            selected = distinct[-offset]
         else:
             return clean
     elif assistant_ref:
