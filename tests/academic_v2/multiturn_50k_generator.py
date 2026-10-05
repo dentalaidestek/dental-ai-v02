@@ -353,7 +353,7 @@ def build(i:int,seed=20261004)->Case:
  # interaction-owned subject.  Very short turn_length combinations must not
  # delete that subject entirely; keep one explicit antecedent within the same
  # eight-message resolver budget.
- if must and state_replaces_surface and not expected.get("should_abstain"):
+ if must and state_replaces_surface and not expected.get("should_abstain") and not structured_reference:
   visible_after_trim=(" ".join(x[1] for x in history)+" "+q).casefold()
   topic_name=str(expected.get("topic") or semantic_topic[0])
   if topic_name and any(term.casefold() not in visible_after_trim for term in must):
@@ -396,7 +396,7 @@ def build(i:int,seed=20261004)->Case:
  # Preserve a real topic-bearing turn when a later inheritance mutation
  # replaced the current query and bounded trimming removed its antecedent.
  inheritance_cue=any(token in q.casefold() for token in ("aynı konu","aynı şekilde","aynı amaçla","aynı formatta","aynı sayıda","önceki asıl konu"))
- if must and inheritance_cue and not expected.get("should_abstain"):
+ if must and inheritance_cue and not expected.get("should_abstain") and not structured_reference:
   visible_now=(" ".join(x[1] for x in history)+" "+q).casefold()
   if any(term.casefold() not in visible_now for term in must):
    topic_anchor=next((x for x in reversed(pretrim_history)
