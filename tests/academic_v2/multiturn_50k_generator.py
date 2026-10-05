@@ -405,6 +405,22 @@ def build(i:int,seed=20261004)->Case:
   q="sadece bu konudan 10 soru hazırla"
   must=list(semantic_topic[1])
   expected.update(reference="assistant_item_13",task="generate_questions",count=10,topic=semantic_topic[0])
+ # Resolvable non-assistant-item topic references require USER-authored
+ # provenance. Assistant prose may repeat a topic but can never seed discourse
+ # identity; if trimming removed the user anchor, restore a bounded real/canonical
+ # user antecedent rather than teaching the resolver to trust assistant prose.
+ if must and not expected.get("should_abstain") and not structured_reference:
+  user_visible=" ".join(text for role,text in history if role=="user").casefold()
+  if not any(term.casefold() in user_visible for term in must):
+   topic_name=str(expected.get("topic") or semantic_topic[0])
+   user_anchor=next((x for x in reversed(pretrim_history)
+    if x[0]=="user" and any(term.casefold() in x[1].casefold() for term in must)
+    and "eski sorum" not in x[1].casefold() and "önceden" not in x[1].casefold()
+    and "aklımda" not in x[1].casefold()),None)
+   if user_anchor is None and topic_name:
+    user_anchor=("user",f"{topic_name} anlat")
+   if user_anchor:
+    history=(history+[user_anchor])[-8:]
  # Structured assistant-item references have their own explicit provenance.
  # Short turn-length/distractor composition must retain the selected list item
  # rather than leaving an ordinal with no assistant list antecedent.
@@ -607,6 +623,14 @@ def validate_cases(cases):
    assert len({case.axes.get("language") for case in subset})>=18, f"language confounded with {interaction}"
    assert len({case.axes.get("distractor") for case in subset})>=11, f"distractor confounded with {interaction}"
    assert len({case.axes.get("distance") for case in subset})>=8, f"distance confounded with {interaction}"
+ # Assistant prose is never sufficient provenance for ordinary resolvable topics.
+ missing_user_provenance=[]
+ for case in cases:
+  if case.expected.get("should_abstain") or case.expected.get("reference")=="assistant_item_13" or not case.must: continue
+  user_text=" ".join(text for role,text in case.history if role=="user").casefold()
+  if not any(term.casefold() in user_text for term in case.must):
+   missing_user_provenance.append(case.case_id)
+ assert not missing_user_provenance, f"resolvable topic lacks user provenance: {missing_user_provenance[:20]} ({len(missing_user_provenance)})"
  # Observable-axis invariants prevent metadata-only coverage from passing.
  checks=(
   ("replace_count",lambda c:c.expected.get("count")==20 or c.expected.get("_count_gold_reconciled") or c.expected.get("reference")=="assistant_item_13"),
