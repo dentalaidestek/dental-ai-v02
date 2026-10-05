@@ -269,8 +269,9 @@ def _one_edit_token(value: str, target: str) -> bool:
     return True
 
 
-def _edit_distance_at_most(value: str, target: str, limit: int) -> bool:
-    value = re.sub(r"(.)\1+", r"\1", value)
+def _edit_distance_at_most(value: str, target: str, limit: int, *, collapse_repeats: bool = True) -> bool:
+    if collapse_repeats:
+        value = re.sub(r"(.)\1+", r"\1", value)
     if abs(len(value) - len(target)) > limit:
         return False
     previous = list(range(len(target) + 1))
@@ -692,7 +693,10 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
                 continue
             prior_text = " ".join(prior.terms).strip()
             prior_fold = _state_text(prior_text)
-            if current_fold and _edit_distance_at_most(current_fold, prior_fold, 2):
+            if current_fold and (
+                _edit_distance_at_most(current_fold, prior_fold, 2, collapse_repeats=False)
+                or _edit_distance_at_most(current_fold, prior_fold, 2)
+            ):
                 best = prior_text
         if best and _state_text(best) != current_fold:
             return f"{best} — {clean}"
@@ -2573,3 +2577,4 @@ def retrieve_course_context_v2(
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
     return result
+

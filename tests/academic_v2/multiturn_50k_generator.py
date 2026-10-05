@@ -701,14 +701,21 @@ def build(i:int,seed=20261004)->Case:
  # Final slot-only surfaces inherit their topic from the most recent
  # observable semantic topic anchor.  This is derived from user dialogue/gold
  # evidence, never resolver output.  Incidental quoted/old turns do not own it.
- if state in {"replace_count","inherit_count","inherit_goal","inherit_format","replace_goal","clear_goal","replace_task","replace_format","clear_format","clear_count","qualifier_add","qualifier_replace","qualifier_remove"} and not expected.get("should_abstain") and not structured_reference:
+ if state in {"replace_count","inherit_count","inherit_goal","inherit_format","replace_goal","clear_goal","replace_task","replace_format","clear_format","clear_count","qualifier_add","qualifier_replace","qualifier_remove"} and not expected.get("should_abstain") and not structured_reference and not re.search(r"\b(?:bir onceki|ilk anlattigin)\b", fold_slot(q)):
   latest_semantic=None
   for role,text in history:
    if role!="user": continue
    ft=fold_slot(text)
-   if re.search(r"^(?:onceden|eski sorum|alinti)\\b|\\baklimda\\b|^bu arada\\b",ft): continue
-   candidate=next((topic for topic in TOPICS if topic[0].casefold() in text.casefold() or all(fold_slot(term) in ft for term in topic[1])),None)
-   if candidate and re.search(r"\\b(?:anlat|acikla|ozetle|nedir|konusunda|hakkinda)\\b",ft): latest_semantic=candidate
+   if re.search(r"^(?:onceden|eski sorum|alinti)\b|\baklimda\b|^bu arada\b",ft): continue
+   if not re.search(r"\b(?:anlat|acikla|ozetle|nedir|konusunda|hakkinda)\b",ft): continue
+   candidates=[topic for topic in TOPICS if fold_slot(topic[0]) in ft or all(fold_slot(term) in ft for term in topic[1])]
+   # A generic signature cannot displace a more specific supported topic.
+   maximal=[topic for topic in candidates if not any(
+    {fold_slot(term) for term in topic[1]} < {fold_slot(term) for term in other[1]}
+    for other in candidates)]
+   # Multiple independent topics are not a single-owner slot antecedent.
+   # Preserve their existing comparison/ambiguity contract rather than guessing.
+   if maximal: latest_semantic=maximal[0] if len(maximal)==1 else None
   if latest_semantic:
    old_terms=next((terms for name,terms in TOPICS if name==str(expected.get("topic") or "")),())
    expected["topic"]=latest_semantic[0]; semantic_topic=latest_semantic; must=list(latest_semantic[1])
@@ -993,3 +1000,4 @@ def generate(n=50000,seed=20261004):
  cases=[build(i,seed) for i in range(n)]
  validate_cases(cases)
  return cases
+

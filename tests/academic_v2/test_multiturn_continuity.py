@@ -512,3 +512,23 @@ def test_correction_prefixed_noisy_topic_uses_bounded_user_history_recovery():
         out=low(resolve_followup_query(query,history))
         assert expected in out
         assert "oral kandidiyazis" not in out.split("—",1)[0]
+
+
+def test_noisy_correction_does_not_use_assistant_or_out_of_window_topic():
+    query = "yok mandibla kondil kıığı anlat"
+    topic = "mandibula kondil kırığı anlat"
+    for history in ([u("oral kandidiyazis anlat"), a(topic)],
+                    [u(topic)] + [a("açıklama")] * 8):
+        assert resolve_followup_query(query, history) == query
+
+
+def test_slot_gold_keeps_specific_topic_and_requires_visible_antecedent():
+    from tests.academic_v2.multiturn_50k_generator import build
+    for index, required in ((790, ("apikal", "periodontitis")),
+                            (791, ("agresif", "periodontitis")),
+                            (1385, ("irreversible", "pulpitis"))):
+        case = build(index)
+        assert case.must == required
+        assert not case.expected.get("should_abstain")
+        assert any(role == "user" and all(term in low(text) for term in required)
+                   for role, text in case.history)
