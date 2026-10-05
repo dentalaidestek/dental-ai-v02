@@ -3,7 +3,7 @@
 Keep this file data-only. The generator composes these axes instead of
 hard-coding 50k near-duplicate sentences.
 """
-TAXONOMY_VERSION="2026-10-04.1"
+TAXONOMY_VERSION="2026-10-05.2"
 INTERACTION=[
 "recollection_near","recollection_far","expansion","refinement","followup",
 "topic_switch_explicit","topic_switch_implicit","return_to_old_topic",
@@ -20,7 +20,7 @@ REFERENCE=[
 STATE=[
 "inherit_topic","inherit_task","inherit_goal","inherit_format","inherit_count",
 "replace_topic","replace_task","replace_goal","replace_format","replace_count",
-"clear_topic","clear_task","clear_goal","clear_count","qualifier_add",
+"clear_topic","clear_task","clear_goal","clear_format","clear_count","qualifier_add",
 "qualifier_replace","qualifier_remove","stale_state_trap","error_propagation_trap",
 ]
 LANGUAGE=[
