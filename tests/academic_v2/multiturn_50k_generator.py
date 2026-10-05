@@ -298,6 +298,18 @@ def build(i:int,seed=20261004)->Case:
     keep=max(0,desired_history-len(anchors))
     history=(history[-keep:] if keep else [])+list(reversed(anchors))
     history=history[-desired_history:]
+ # Preserve a real topic-bearing turn when a later inheritance mutation
+ # replaced the current query and bounded trimming removed its antecedent.
+ inheritance_cue=any(token in q.casefold() for token in ("aynı konu","aynı şekilde","aynı amaçla","aynı formatta","aynı sayıda","önceki asıl konu"))
+ if must and inheritance_cue and not expected.get("should_abstain"):
+  visible_now=(" ".join(x[1] for x in history)+" "+q).casefold()
+  if any(term.casefold() not in visible_now for term in must):
+   topic_anchor=next((x for x in reversed(pretrim_history)
+    if any(term.casefold() in x[1].casefold() for term in must)
+    and "eski sorum" not in x[1].casefold() and "önceden" not in x[1].casefold()),None)
+   if topic_anchor:
+    history=(history+[topic_anchor])[-desired_history:]
+
  # Reconcile the final expected topic with the final bounded dialogue.
  # Later state/reference axes are allowed to replace an earlier interaction,
  # but they may not leave a stale topic label behind.  Prefer an explicit
