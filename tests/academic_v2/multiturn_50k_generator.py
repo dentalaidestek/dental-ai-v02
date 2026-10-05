@@ -591,8 +591,18 @@ def build(i:int,seed=20261004)->Case:
  # interaction/state layers may have left lexical requirements from another
  # topic; rebind requirements to the selected item's canonical topic.
  if expected.get("reference")=="assistant_item_13":
-  selected_topic=next((topic for topic in TOPICS if topic[0]==expected.get("topic")),None)
+  selected_line=""
+  for role,text in reversed(history):
+   if role!="assistant": continue
+   match=re.search(r"(?mi)^\s*13[.)]\s*([^\n]+)",text)
+   if match:
+    selected_line=match.group(1); break
+  selected_fold=selected_line.casefold()
+  selected_topic=next((topic for topic in TOPICS
+   if topic[0].casefold() in selected_fold
+   or all(term.casefold() in selected_fold for term in topic[1])),None)
   if selected_topic:
+   expected["topic"]=selected_topic[0]; semantic_topic=selected_topic
    must=list(selected_topic[1])
    if interaction=="scope_narrow": must+=["klinik soru 13"]
  # Gold consistency is decided on the semantic (pre-noise) dialogue.
