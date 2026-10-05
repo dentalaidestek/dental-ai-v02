@@ -496,7 +496,8 @@ def validate_cases(cases):
   if case.expected.get("goal")!="exam": continue
   sq=str(case.expected.get("_semantic_query_pre_noise") or case.query)
   sh=" ".join(x[1] for x in case.expected.get("_semantic_history_pre_noise",case.history))
-  fq=_norm(sq); fh=_norm(sh)
+  fold=lambda s:" ".join(str(s).translate(str.maketrans("çğıöşüÇĞİÖŞÜ","cgiosuCGIOSU")).casefold().split())
+  fq=fold(sq); fh=fold(sh)
   explicit_exam=bool(re.search(r"\b(?:sinav|sinavlik)\b",fq))
   inherited_exam=bool(re.search(r"\bayni amacla\b",fq) and re.search(r"\b(?:sinav|sinavlik)\b",fh))
   if not (explicit_exam or inherited_exam): unsupported_goal.append(case.case_id)
