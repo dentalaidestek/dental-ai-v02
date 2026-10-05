@@ -181,16 +181,23 @@ def build(i:int,seed=20261004)->Case:
   topic_name=str(expected.get("topic") or "")
   if topic_name:
    history += [("user",f"{topic_name} anlat"),("assistant",f"{topic_name} açıklaması")]
- if expected.get("should_abstain") or structured_reference:
+ # Explicit state transitions own their affected slot.  Reference axes may
+ # still own topic provenance, but they must not suppress an observable state
+ # operation that appears in the current turn.  Structured ordinal selection
+ # remains protected because its provenance is part of the reference contract.
+ explicit_state_transition=state in {
+  "replace_count","inherit_count","inherit_goal","inherit_format","replace_goal",
+  "clear_goal","replace_task","replace_topic","clear_topic","inherit_topic",
+  "inherit_task","replace_format","clear_format","clear_count","qualifier_add",
+  "qualifier_replace","qualifier_remove","stale_state_trap","error_propagation_trap",
+ }
+ if expected.get("should_abstain") and explicit_state_transition and not structured_reference:
+  expected.pop("should_abstain",None)
+ if (expected.get("should_abstain") and not explicit_state_transition) or structured_reference:
   pass
  elif state=="replace_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="yok 20 soru olsun"; expected.update(task="generate_questions",count=20)
-  # The count replacement itself is the current semantic operation. Keep it
-  # authoritative even when an earlier reference axis had marked the row as
-  # abstaining; otherwise the state axis becomes metadata-only.
-  if expected.get("should_abstain"):
-   expected.pop("should_abstain",None)
  elif state=="inherit_count":
   history += [("user","10 soru hazırla"),("assistant","10 soru hazırlandı")]
   q="aynı sayıda farklı soru hazırla"; expected.update(task="generate_questions",count=10)
