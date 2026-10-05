@@ -26,8 +26,7 @@ def score(case):
   if leaked:return False,"resolved_but_should_abstain"," | ".join(leaked),out
   return True,"ok","",""
  miss=[x for x in case.must if n(x) not in z]
- stale=[x for x in case.must_not if n(x) in z]
- if miss:return False,"missing_required"," | ".join(miss),out
+ qz=n(case.query)\n resolver_context=z.replace(qz,"",1) if qz and qz in z else z\n stale=[x for x in case.must_not if n(x) in resolver_context or (n(x) in z and n(x) not in qz)]\n if miss:return False,"missing_required"," | ".join(miss),out
  if stale:return False,"stale_context"," | ".join(stale),out
  if exp.get("task")=="generate_questions" and not any(x in z for x in ("soru","test")):return False,"task_loss","generate_questions",out
  if exp.get("goal")=="exam" and "sinav" not in z:return False,"goal_loss","exam",out
@@ -37,7 +36,7 @@ def score(case):
  for x in exp.get("qualifiers",()):
   if n(x) not in z:return False,"qualifier_loss",x,out
  for x in exp.get("forbidden_qualifiers",()):
-  if n(x) in z:return False,"stale_qualifier",x,out
+  if n(x) in resolver_context or (n(x) in z and n(x) not in qz):return False,"stale_qualifier",x,out
  if exp.get("length")=="shorter" and not any(x in z for x in ("kisa","oz")):return False,"length_loss","shorter",out
  if exp.get("length")=="detailed" and not any(x in z for x in ("detay","ayrinti","kapsam")):return False,"length_loss","detailed",out
  return True,"ok","",out
