@@ -314,6 +314,15 @@ def _has_followup_control_cue(text: str) -> bool:
     return has_same and has_topic and has_continue
 
 
+def _has_same_way_cue(text: str) -> bool:
+    folded = _state_text(text)
+    tokens = re.findall(r"\w+", folded)
+    has_same = any(_one_edit_token(token, "ayni") for token in tokens)
+    has_way = any(_edit_distance_at_most(token, "sekilde", 2) for token in tokens)
+    has_continue = any(_edit_distance_at_most(token, "devam", 1) or _edit_distance_at_most(token, "devamet", 1) for token in tokens)
+    return has_same and has_way and has_continue
+
+
 def _incidental_turn(text: str) -> bool:
     folded = _state_text(text)
     return bool(re.search(
@@ -638,7 +647,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     if re.search(r"(?iu)\baynı amaçla|\bayni amacla", clean) and state.goal == "exam":
         if not _STATE_EXAM_RE.search(clean):
             prefixes.append("sınav için")
-    if re.search(r"(?iu)\baynı şekilde|\bayni sekilde", clean) and state.task == "generate_questions":
+    if (re.search(r"(?iu)\baynı şekilde|\bayni sekilde", clean) or _has_same_way_cue(clean)) and state.task == "generate_questions":
         if not _STATE_QUESTION_TASK_RE.search(clean):
             prefixes.append("soru hazırla")
 
