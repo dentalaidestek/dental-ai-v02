@@ -63,6 +63,8 @@ def drain_index_queue() -> dict[str, int | str]:
     os.environ.setdefault("STUDY_V2_PARSE_BATCH_PAGES", "50")
     os.environ.setdefault("STUDY_V2_CHUNK_BATCH_PAGES", "32")
     os.environ.setdefault("STUDY_V2_OCR_BATCH_PAGES", "16")
+    os.environ.setdefault("STUDY_V2_OCR_PARALLELISM", "4")
+    os.environ.setdefault("STUDY_V2_LEASE_SECONDS", "600")
     os.environ.setdefault("STUDY_V2_IDLE_SLEEP_SECONDS", "1")
 
     from sqlmodel import Session
