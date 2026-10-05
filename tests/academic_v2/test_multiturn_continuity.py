@@ -400,3 +400,10 @@ def test_same_way_two_edit_continue_replays_topic_and_task_but_not_old_format():
         assert "odontoma" in out
         assert "soru hazırla" in out
         assert "tablo şeklinde" not in out
+
+
+def test_topic_gold_terms_are_literal_canonical_facets():
+    from tests.academic_v2.multiturn_50k_generator import TOPICS
+    for topic, terms in TOPICS:
+        folded = topic.casefold()
+        assert all(term.casefold() in folded for term in terms), (topic, terms)
