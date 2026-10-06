@@ -8,7 +8,13 @@ _ASCII_FOLD = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 def _intent_text(query: str) -> str:
     """Normalize orthography for intent semantics, never for factual content."""
     clean = " ".join((query or "").split())
-    return clean.translate(_ASCII_FOLD).lower()
+    folded = clean.translate(_ASCII_FOLD).lower()
+    # Output format does not request a source-table/visual evidence facet.
+    return re.sub(
+        r"\b(?:bunu|onu)\s+tablo(?:\s+seklinde)?\s+(?:yap|hazirla|duzenle|goster)\b"
+        r"|\btablo\s+(?:haline\s+getir|olarak\s+(?:ver|yaz|sun))\b",
+        " ", folded,
+    )
 
 
 # Closed vocabulary used only to repair misspelled *question operators*.  Subject
@@ -296,7 +302,7 @@ class DentalRequirementPlan:
     comparison_sides: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = ()
 
 _SUBJECT_STOP_RE = re.compile(
-    r"\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|tanı(?:sı|ları|nı|yı)?|"
+    r"\b(?:nedir|nelerdir|kaçtır|hangisi|hangileri|anlat|açıkla|özetle|toparla|yoğunlaştır|sıkıştır|öğret|tanı(?:sı|ları|nı|yı)?|"
     r"tedavi(?:si|leri|sini)?|bulgu(?:su|ları|larını)?|semptom(?:u|ları)?|"
     r"komplikasyon(?:u|ları)?|endikasyon(?:u|ları)?|kontrendikasyon(?:u|ları)?|"
     r"ölçüm[a-zçğıöşü]*|olcum[a-z]*|de|da|sınıflama(?:sı|ları)?|etyoloji(?:si)?|etiyoloji(?:si)?|patogenez(?:i)?|"

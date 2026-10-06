@@ -1,0 +1,65 @@
+import io
+import logging
+import unittest
+import urllib.error
+from unittest.mock import patch
+
+from app.academic_modal_dispatch import wake_academic_modal_indexer
+
+
+class Response(io.BytesIO):
+    status = 200
+
+
+class DispatchTests(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict("os.environ", {
+            "ACADEMIC_MODAL_DISPATCH_URL": "https://example.invalid/wake",
+            "ACADEMIC_MODAL_DISPATCH_SECRET": "test-only-secret",
+        })
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_acknowledged_wake_is_observable_and_authenticated(self):
+        with patch("urllib.request.urlopen", return_value=Response(b'{"ok":true,"scheduled":true}')) as request:
+            with self.assertLogs("app.academic_modal_dispatch", logging.INFO) as logs:
+                self.assertTrue(wake_academic_modal_indexer())
+            self.assertIn("outcome=scheduled", " ".join(logs.output))
+            self.assertNotIn("test-only-secret", " ".join(logs.output))
+            args, kwargs = request.call_args
+            self.assertEqual(args[0].get_header("Authorization"), "Bearer test-only-secret")
+            self.assertEqual(args[0].data, b"{}")
+            self.assertEqual(kwargs["timeout"], 5)
+
+    def test_transient_failure_retries_with_bounded_jitter(self):
+        outcomes = [TimeoutError(), urllib.error.URLError("test-only-secret"), Response(b'{"ok":true,"scheduled":true}')]
+        with patch("urllib.request.urlopen", side_effect=outcomes) as request, patch("time.sleep") as sleep, patch("random.uniform", return_value=0.1) as jitter:
+            with self.assertLogs("app.academic_modal_dispatch", logging.INFO) as logs:
+                self.assertTrue(wake_academic_modal_indexer())
+            self.assertEqual(request.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual([c.args for c in jitter.call_args_list], [(0, 0.5), (0, 1.0)])
+            self.assertNotIn("test-only-secret", " ".join(logs.output))
+
+    def test_auth_failure_does_not_retry(self):
+        error = urllib.error.HTTPError("https://example.invalid", 401, "unauthorized", {}, None)
+        with patch("urllib.request.urlopen", side_effect=error) as request, patch("time.sleep") as sleep:
+            self.assertFalse(wake_academic_modal_indexer())
+            self.assertEqual(request.call_count, 1)
+            sleep.assert_not_called()
+
+    def test_outage_and_invalid_acknowledgement_cannot_succeed(self):
+        for outcome in (lambda: TimeoutError(), lambda: Response(b'{"ok":true}')):
+            with patch("urllib.request.urlopen", side_effect=lambda *a, **k: self._response(outcome)), patch("time.sleep"):
+                self.assertFalse(wake_academic_modal_indexer())
+
+    @staticmethod
+    def _response(factory):
+        result = factory()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+if __name__ == "__main__":
+    unittest.main()
