@@ -3806,20 +3806,10 @@ def _startup_database():
             require_schema(engine)
     else:
         init_db()
-    try:
-        with Session(engine, expire_on_commit=False) as study_session:
-            queued_v2 = enqueue_legacy_materials_v2(
-                study_session, material_model=StudyMaterial,
-            )
-            reactivated_ocr = reactivate_configured_ocr_jobs(study_session)
-            if queued_v2 or reactivated_ocr:
-                study_session.commit()
-                logger.info(
-                    "Academic V2 startup queued_legacy=%s reactivated_ocr=%s",
-                    queued_v2, reactivated_ocr,
-                )
-    except work_jobs.WorkCapacity:
-        logger.info("Academic backfill deferred: queue at capacity")
+    # Academic V2 queue repair/backfill must not block ASGI startup. New uploads
+    # enqueue transactionally in their request path; the durable index worker
+    # owns queued work. Legacy/OCR repair is maintenance work, not a web-server
+    # readiness requirement, and can contend with active index workers.
     if not os.getenv("RENDER"):
         _backfill_legacy_deadline_jobs_if_needed()
         _backfill_program_reminder_jobs()
