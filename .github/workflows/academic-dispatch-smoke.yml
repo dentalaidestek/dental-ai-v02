@@ -5,6 +5,7 @@ on:
     branches:
       - work/modal-academic-indexing-20261005
     paths:
+      - app/academic_modal_dispatch.py
       - scripts/modal_academic_dispatch_smoke.py
       - .github/workflows/academic-dispatch-smoke.yml
 permissions:

@@ -441,7 +441,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
             or _one_edit_token(token, "hayir")
         )
         has_request_boundary = bool(re.search(
-            r"\b(?:anlat|acikla|ozetle|nedir|konusunda|hakkinda|icin)\b",
+            r"\b(?:anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|konusunda|hakkinda|icin)\b",
             remainder_folded,
         ))
         if correction_prefix and has_request_boundary:
@@ -458,7 +458,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     if mentions:
         # Preserve the user's named phrase rather than swapping it for a graph
         # label which may lose modifiers or scope (e.g. maximum dosage).
-        end = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|nedir|'
+        end = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
                         r'nasil|hangi|kac|niye|neden)\b', folded)
         phrase = clean[:end.start()].strip(' .,;:') if end else ''
         if phrase and not dependent:
@@ -471,7 +471,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return None
     # Unknown dental terminology is retained only as a user-authored noun
     # phrase governed by a clear request, never arbitrary lexical leftovers.
-    boundary = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|nedir|'
+    boundary = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
                          r'mantigini|temel noktalarini)\b', folded)
     if not boundary:
         return None

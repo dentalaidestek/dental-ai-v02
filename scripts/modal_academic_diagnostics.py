@@ -174,7 +174,8 @@ def snapshot():
                 return {"mode": selected.retrieval_mode, "sufficient": selected.evidence_sufficient,
                     "confidence": selected.evidence_confidence, "chunk_ids": [r.chunk_id for r in selected.evidence],
                     "material_ids": selected.source_material_ids, "resolved_query": selected.resolved_query}
-        result["live_retrieval"] = {"course_summary": retrieve("Özetle")}
+        result["live_retrieval"] = {"course_summary": retrieve("Özetle"),
+                                    "concise_course_summary": retrieve("Kısaca özetle")}
         if topics:
             history = [{"role":"user", "content":topics[0] + " hakkında bilgi ver"}]
             for name, query in (("topic_summary", "Özetle"), ("detail", "biraz daha detaylı"),
