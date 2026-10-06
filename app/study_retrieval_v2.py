@@ -233,12 +233,12 @@ _STATE_QUESTION_RE = re.compile(r"(?iu)\b(\d{1,3})\s*(?:soru|question|test)\b")
 _STATE_EXAM_RE = re.compile(r"(?iu)\b(?:sınav|sinav|sınavlık|sinavlik)\b")
 _STATE_TABLE_RE = re.compile(r"(?iu)\b(?:tablo|table)\b")
 _STATE_QUESTION_TASK_RE = re.compile(r"(?iu)\b(?:soru|question|test)\b.{0,28}\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b|\b(?:hazırla|hazirla|yap|üret|uret|oluştur|olustur)\b.{0,28}\b(?:soru|question|test)\b")
-_STATE_EXPLAIN_RE = re.compile(r"(?iu)\b(?:anlat|açıkla|acikla|özetle|ozetle|nedir|normal anlat)\b")
+_STATE_EXPLAIN_RE = re.compile(r"(?iu)\b(?:(?:anlat|açıkla|acikla|özetle|ozetle)(?:sana|sene|ın|in|ır|ir|ır\s+mısın|ir\s+misin)?|nedir|normal anlat)\b")
 _STATE_CLEAR_TOPIC_RE = re.compile(r"(?iu)\b(?:önceki konuyu bırak|onceki konuyu birak|konuyu bırak|konuyu birak|boşver onu|bosver onu)\b")
 _STATE_CLEAR_COUNT_RE = re.compile(r"(?iu)\b(?:soru sayısı önemli değil|soru sayisi onemli degil|sayısı önemli değil|sayisi onemli degil)\b")
 _STATE_CLEAR_FORMAT_RE = re.compile(r"(?iu)\b(?:tablo olmasın|tablo olmasin|formatı boşver|formati bosver)\b")
 _STATE_CLEAR_GOAL_RE = re.compile(r"(?iu)\b(?:sınavı boşver|sinavi bosver|normal anlat)\b")
-_STATE_RELATIVE_RE = re.compile(r"(?iu)\b(?:bir önceki|bir onceki|ondan bir önceki|ondan bir onceki|ilk anlattığın|ilk anlattigin)\b")
+_STATE_RELATIVE_RE = re.compile(r"(?iu)\b(?:bir önceki|bir onceki|ondan bir önceki|ondan bir onceki|(?:önceki|onceki)(?:\s+(?:asıl|asil))?\s+konu\w*|ilk anlattığın|ilk anlattigin)\b")
 _STATE_ASSISTANT_REF_RE = re.compile(r"(?iu)\b(?:bu konu|bu konudan|o anlattığın konu|o anlattigin konu|verdiğin cevap|verdigin cevap)\b")
 
 
@@ -306,6 +306,54 @@ def _has_exam_cue(text: str) -> bool:
     )
 
 
+def _normalize_state_controls(text: str) -> str:
+    """Repair only grammatical scope slots, never arbitrary clinical nouns."""
+    leading = re.match(r'^(\w+)(\s+)(.*)$', text)
+    if leading:
+        folded = re.sub(r'(.)\1+', r'\1', _state_text(leading.group(1)))
+        canonical = {'bunu': 'bunu', 'onu': 'onu', 'ayni': 'aynı', 'tablo': 'tablo',
+                     'yas': 'yaş', 'onceki': 'önceki'}.get(folded)
+        if canonical:
+            text = canonical + leading.group(2) + leading.group(3)
+    text = re.sub(r'(?iu)^yaş\s+(\w+)\s+', lambda match:
+                  'yaş grubunu ' if re.sub(r'(.)\1+', r'\1', _state_text(match.group(1))) == 'grubunu'
+                  else match.group(0), text)
+    def rejected_task(match):
+        value = _state_text(match.group(1))
+        targets = [word for word in ('soru', 'question', 'test', 'quiz')
+                   if _edit_distance_at_most(value, word, 0)]
+        return targets[0] + ' ' if len(targets) == 1 else match.group(0)
+    text = re.sub(r'(?iu)\b(\w+)\s+(?=(?:istemiyorum|istemiyoruz|olmasın|olmasin)\b)',
+                  rejected_task, text)
+    age = re.compile(r'(?iu)\b(\w+)\s+(?=(?:\w+\s+)?\w+\b)')
+    def age_slot(match):
+        value = _state_text(match.group(1))
+        targets = [canonical for folded, canonical in (('cocuk', 'çocuk'), ('eriskin', 'erişkin'))
+                   if len(value) >= 3 and _edit_distance_at_most(value, folded, 2)]
+        if len(targets) != 1:
+            return match.group(0)
+        right = re.findall(r'\w+', _state_text(text[match.end():]))[:2]
+        patients = bool(len(right) == 2 and _edit_distance_at_most(right[0], 'hastalar', 1)
+                        and _edit_distance_at_most(right[1], 'acisindan', 2))
+        direct = bool(right and _edit_distance_at_most(right[0], 'acisindan', 2))
+        contrast = bool(re.search(r'\b(?:cocuk|eriskin)\s+degil\s*$', _state_text(text[:match.start()])))
+        if not patients and not (direct and (contrast or value == _state_text(targets[0]))):
+            return match.group(0)
+        if value != _state_text(targets[0]):
+            # Clinical vocabulary can be close in spelling to an age word
+            # (çürük/çocuk); an exact medical concept always wins.
+            from app.dental_knowledge_graph import explicit_node_mentions
+            if explicit_node_mentions(match.group(1)):
+                return match.group(0)
+        return targets[0] + ' '
+    text = age.sub(age_slot, text)
+    clear = re.search(r'(?iu)\byaş\s+grubunu\s+(\w+)\s+(\w+)\b', text)
+    if clear and (_edit_distance_at_most(_state_text(clear.group(1)), 'bosver', 2)
+                  and _edit_distance_at_most(_state_text(clear.group(2)), 'genel', 2)):
+        text = text[:clear.start()] + 'yaş grubunu boşver genel' + text[clear.end():]
+    return text
+
+
 def _relative_reference_kind(text: str) -> str | None:
     """Recover bounded discourse navigation under surface noise."""
     folded = _state_text(text)
@@ -351,7 +399,8 @@ def _has_table_cue(text: str) -> bool:
         return True
     tokens = re.findall(r"\w+", _state_text(text))
     has_table = any(_edit_distance_at_most(token, "tablo", 1) for token in tokens)
-    has_shape = any(_edit_distance_at_most(token, "sekilde", 2) for token in tokens)
+    has_shape = any(_edit_distance_at_most(token, target, 2)
+                    for token in tokens for target in ("sekilde", "seklinde"))
     return has_table and has_shape
 
 
@@ -369,6 +418,10 @@ def _has_question_task_cue(text: str) -> bool:
     ))
     if rejects_questions and _STATE_EXPLAIN_RE.search(text or ""):
         return False
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(text)
+    if operation and operation.task == 'generate_questions':
+        return True
     if re.search(r'\bsoru\s+sor(?:ar\s+misin|mani|ar|abilir)?\b', folded):
         return True
     if _STATE_QUESTION_TASK_RE.search(text or ""):
@@ -435,11 +488,14 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # dental vocabulary completely unfuzzied.
     from app.academic_task_language import strip_request_prefix
     remainder = strip_request_prefix(clean)
-    if re.search(r'\b(?:anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|konusunda|hakkinda|icin)\b', _state_text(remainder)):
+    if (_STATE_EXPLAIN_RE.search(remainder) or re.search(r'\b(?:toparla|sikistir|yogunlastir|ogret|konusunda|hakkinda|icin)\b', _state_text(remainder))):
         clean = remainder
     folded = _state_text(clean)
+    # Request suffixes change politeness, not the owned noun phrase.
+    folded = re.sub(r'\b(anlat|acikla|ozetle)(?:sana|sene|in|ir)\b', r'\1', folded)
+    request_boundary = _STATE_EXPLAIN_RE.search(clean)
     if re.match(r'^(?:\d+\.?\s*soru\w*|bunu|bunun|onu|onun|ayni|sadece bu|peki|'
-                r'yok|hayir|simdi|daha|biraz|konuyu|soru|test|sinav|tablo|normal|'
+                r'yok|hayir|simdi|daha|biraz|konuyu|soru|test|sinav(?:lik)?|tablo|normal|'
                 r'cocuk hastalar|eriskin|yas grubunu|sadece tanim\w*)\b', folded):
         # Explicit graph mentions still override discourse markers below.
         dependent = True
@@ -449,12 +505,19 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     from app.academic_task_language import course_source_request
     if not mentions and course_source_request(clean):
         return ConversationSubject((), source="course", history_index=history_index)
+    from app.academic_task_language import remove_source_reference
+    clean = ' '.join(remove_source_reference(clean).split())
+    folded = _state_text(clean)
+    folded = re.sub(r'\b(anlat|acikla|ozetle)(?:sana|sene|in|ir)\b', r'\1', folded)
+    request_boundary = _STATE_EXPLAIN_RE.search(clean)
+    mentions = explicit_node_mentions(clean)
     if mentions:
         # Preserve the user's named phrase rather than swapping it for a graph
         # label which may lose modifiers or scope (e.g. maximum dosage).
         end = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
                         r'nasil|hangi|kac|niye|neden)\b', folded)
-        phrase = clean[:end.start()].strip(' .,;:') if end else ''
+        end_pos = min([m.start() for m in (end, request_boundary) if m], default=None)
+        phrase = clean[:end_pos].strip(' .,;:') if end_pos is not None else ''
         if phrase and not dependent:
             terms = (phrase,)
         else:
@@ -466,10 +529,13 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # Unknown dental terminology is retained only as a user-authored noun
     # phrase governed by a clear request, never arbitrary lexical leftovers.
     boundary = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
-                         r'mantigini|temel noktalarini)\b', folded)
+                         r'mantigini|temel noktalarini|ne\s+ise\s+yarar|ne\s+anlama\s+gelir|ne\s+demek)\b', folded)
     if not boundary:
         return None
-    phrase = clean[:boundary.start()].strip(' .,;:')
+    # The folded string can be shorter after suffix normalization; use the
+    # original request match for slicing the original noun phrase.
+    position = min(boundary.start(), request_boundary.start()) if request_boundary else boundary.start()
+    phrase = clean[:position].strip(' .,;:')
     words = re.findall(r'\w+', _state_text(phrase))
     # A qualifier correction changes the active topic's axis; it cannot own a
     # new dental noun phrase merely because it precedes an explanation verb.
@@ -484,7 +550,8 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
                  'normal','kisa','kisaca','detayli','ayrintili','madde','mekanizmasiyla',
                  'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet',
-                 'bu','su','o','bana','beni','lutfen'}
+                 'bu','su','o','bana','beni','lutfen','question','questions','quiz',
+                 'istemiyorum','istemiyoruz','olmasin','icin'}
     if not words or len(words) > 12 or all(w in operators or w.isdigit() for w in words):
         return None
     return ConversationSubject((phrase,), (), tuple(query_qualifiers(clean)), source, history_index)
@@ -509,6 +576,7 @@ def _conversation_state(
         value = re.sub(r"\s+", " ", value).strip()
         if not value or _incidental_turn(value):
             continue
+        value = _normalize_state_controls(value)
         folded = _state_text(value)
         subject = _conversation_subject(value, source="user", history_index=idx)
         from app.academic_task_language import subjectless_study_request
@@ -683,6 +751,11 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    clean = _normalize_state_controls(clean)
+    # Discourse wrappers do not own a topic. Keep correction words themselves
+    # so task/qualifier transitions remain visible to the state engine.
+    clean = re.sub(r'(?iu)^(?:(?:ya|kral|hocam|abi|lütfen|lutfen)[,;:]?\s+)+', '', clean)
+    clean = re.sub(r'(?iu)^(yok|hayır|hayir)(?=(?:soru|test|question)\s+istem)', r'\1 ', clean)
     leading = re.match(r'^(\S+)\s+(.+)$', clean)
     if leading:
         control = re.sub(r'(.)\1+', r'\1', _state_text(leading.group(1).strip(',;:')))
@@ -772,7 +845,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         current_phrase = re.sub(r"(?iu)^\s*(?:yok|hayır|hayir)\b", "", clean).strip()
         current_phrase = _STATE_EXPLAIN_RE.split(current_phrase, maxsplit=1)[0].strip(" .,;:-")
         current_fold = _state_text(current_phrase)
-        best = None
+        candidates: dict[str, tuple[int, str]] = {}
         for idx, item in enumerate(window):
             if str(item.get("role") or "").casefold() not in {"user", "human"}:
                 continue
@@ -782,13 +855,26 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             prior = _conversation_subject(value, source="user", history_index=idx)
             if not prior or not prior.terms:
                 continue
-            prior_text = " ".join(prior.terms).strip()
-            prior_fold = _state_text(prior_text)
-            if current_fold and (
-                _edit_distance_at_most(current_fold, prior_fold, 2, collapse_repeats=False)
-                or _edit_distance_at_most(current_fold, prior_fold, 2)
-            ):
-                best = prior_text
+            # A user-authored comparison owns separate topics as well as its
+            # complete phrase. Never use assistant examples as spelling gold.
+            alternatives = list(prior.terms)
+            alternatives += [value[start:end] for start, end, _ in explicit_node_mentions(value)]
+            alternatives += re.split(r'(?iu)\s+(?:ve|ile)\s+', " ".join(prior.terms))
+            for prior_text in alternatives:
+                prior_text = prior_text.strip()
+                prior_fold = _state_text(prior_text)
+                if not current_fold or not prior_fold:
+                    continue
+                for distance in range(3):
+                    if (_edit_distance_at_most(current_fold, prior_fold, distance, collapse_repeats=False)
+                            or _edit_distance_at_most(current_fold, prior_fold, distance)):
+                        old = candidates.get(prior_fold)
+                        if old is None or distance < old[0]:
+                            candidates[prior_fold] = (distance, prior_text)
+                        break
+        closest = min((entry[0] for entry in candidates.values()), default=None)
+        winners = [text for distance, text in candidates.values() if distance == closest]
+        best = winners[0] if len(winners) == 1 else None
         if best and _state_text(best) != current_fold:
             return f"{best} — {clean}"
 
@@ -813,7 +899,11 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     if re.match(r"(?iu)^\s*(?:bunu|onu|bu konu|bu|şu|o)\b", clean):
         last_user = next((x for x in reversed(subjects) if x.source in {"user", "user_selected_item"}), None)
         collective = bool(re.search(r'(?iu)\b(?:ikisini|ikisinin|ikisi|bunları|bunların|hepsini)\b', clean))
-        if last_user and len(last_user.node_ids) > 1 and not collective:
+        # Several graph nodes can describe one clinical topic (mandibula +
+        # kondil kırığı). Ambiguity requires separately coordinated subjects,
+        # not merely a count of component entities inside that noun phrase.
+        coordinated = bool(last_user and re.search(r'(?iu)\b(?:ve|ile|vs)\b|,|;', ' '.join(last_user.terms)))
+        if last_user and len(last_user.node_ids) > 1 and coordinated and not collective:
             return clean
 
     selected: ConversationSubject | None = None
@@ -911,7 +1001,13 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     )
     # Count corrections such as "yok 20 question olsun" keep the active
     # question-generation task even though they do not repeat the verb.
-    count_correction = bool(re.search(r"(?iu)\b(?:yok|hayır|hayir)\b.{0,12}\b\d{1,3}\s+(?:soru|question(?:s)?)\b", clean))
+    count_match = re.search(r'(?iu)\b(?:yok|hayır|hayir)\s+\d{1,3}\s+(\w+)\s+(\w+)\b', clean)
+    count_correction = bool(count_match and (
+        any(_edit_distance_at_most(_state_text(count_match.group(1)), word, 1)
+            for word in ('soru', 'question', 'test'))
+        or (state.task == 'generate_questions'
+            and _edit_distance_at_most(_state_text(count_match.group(1)), 'soru', 2))
+    ) and _edit_distance_at_most(_state_text(count_match.group(2)), 'olsun', 1))
     # A correction of an explicit question count is itself an observable
     # question-generation operation ("yok 20 soru/question olsun").  It must
     # not depend on an older task surviving a later independent topic switch.

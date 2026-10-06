@@ -19,7 +19,11 @@ def n(s):
 def has_term(text,term):
  term=n(term)
  if not term:return False
- return bool(__import__("re").search(r"(?<!\\w)"+__import__("re").escape(term)+r"(?!\\w)",text))
+ # A word boundary must distinguish Le from 'lutfen', while recognizing
+ # grammatical forms such as avulsiyon-u and cocuk-larda. Only explicit
+ # Turkish nominal endings are accepted; short aliases remain exact.
+ ending=r"(?:i|u|in|un|ini|unu|nin|nun|nini|nunu|si|su|sini|sunu|sinin|sunun|a|e|ya|ye|da|de|ta|te|dan|den|tan|ten|lar|ler|lari|leri|larda|lerde|lardan|lerden|larin|lerin)?" if len(term.split()[-1])>=3 else ""
+ return bool(__import__("re").search(r"(?<!\w)"+__import__("re").escape(term)+ending+r"(?!\w)",text))
 
 def score(case):
  hist=[{"role":r,"content":c} for r,c in case.history]
@@ -33,7 +37,10 @@ def score(case):
   return True,"ok","",""
  miss=[x for x in case.must if not has_term(z,x)]
  qz=n(case.query)
- resolver_context=z.replace(qz,"",1) if qz and qz in z else z
+ # The resolver normalizes discourse prefixes, so literal subtraction of the
+ # raw query can misclassify a negated word in that query as inherited context.
+ # Score only the explicit context prefix; independent queries have none.
+ resolver_context=n(out.rsplit(' — ',1)[0]) if ' — ' in out else ''
  stale=[x for x in case.must_not if has_term(resolver_context,x) or (has_term(z,x) and not has_term(qz,x))]
  if miss:return False,"missing_required"," | ".join(miss),out
  if stale:return False,"stale_context"," | ".join(stale),out

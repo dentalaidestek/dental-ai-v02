@@ -147,6 +147,141 @@ class StudyDialogueTests(unittest.TestCase):
         self.assertIn('value', requirement.requested_facets)
         self.assertEqual('Bu nedir?', resolve_followup_query('Bu nedir?', pair))
 
+    def test_corrections_use_individual_user_topics_and_unique_matches(self):
+        history = [user('kök yüzeyi düzleştirme ve mental foramen anlat.'),
+                   assistant('Yanlış örnek olarak mental foramen diyebilirim.')]
+        resolved = resolve_followup_query('yok mental forame anlat', history)
+        self.assertEqual('mental foramen', resolved.split(' — ', 1)[0])
+        pair = [user('alveolit ve mukogingival cerrahi anlat.')]
+        resolved = resolve_followup_query('kral yok mukogingival cerrahi anlatsana', pair)
+        self.assertNotIn('alveolit', resolved)
+        self.assertIn('mukogingival cerrahi', resolved)
+        # Two equally close, user-authored terms cannot be resolved by recency.
+        ambiguous = [user('Nance anlat'), user('Nanse anlat')]
+        self.assertEqual('yok Nante anlat', resolve_followup_query('yok Nante anlat', ambiguous))
+
+    def test_joined_correction_clears_question_generation(self):
+        history = [user('furkasyon lezyonları anlat'), assistant('...'),
+                   user('test hazırla'), assistant('...')]
+        resolved = resolve_followup_query('yoksoru istemiyorum normal anlat', history)
+        self.assertIn('furkasyon lezyonları', resolved)
+        self.assertNotIn('soru hazırla', resolved)
+        repeated = resolve_followup_query('yoook soooru istemiyorum normal anlat', history)
+        self.assertIn('furkasyon lezyonları', repeated)
+        self.assertNotIn('soru hazırla', repeated)
+
+    def test_insufficient_evidence_streams_followup_without_provider_call(self):
+        import ast
+        from pathlib import Path
+        from typing import Iterator
+        from app.study_retrieval_v2 import RetrievalResult
+        # Exercise the actual generator's early evidence branches without a
+        # configured external provider; this is not an HTTP integration test.
+        tree = ast.parse((Path(__file__).parents[2] / 'app/study_ai_v2.py').read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                        and node.name == 'stream_rag_v2')
+        def forbidden_provider_call():
+            self.fail('Insufficient evidence must not invoke generation')
+        namespace = {'Iterator': Iterator, 'RetrievalResult': RetrievalResult,
+                     '_generation_targets': forbidden_provider_call}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), 'study_ai_v2.py', 'exec'), namespace)
+        for result in (RetrievalResult(resolved_query='Pulpitis anlat'),
+                       RetrievalResult(resolved_query='Pulpitis tedavisi', note_context=['kanıt'],
+                                       missing_facets=('tedavi',)),
+                       RetrievalResult(resolved_query='Bu ders notlarını özetle', retrieval_mode='coverage')):
+            with self.subTest(mode=result.retrieval_mode):
+                response = ''.join(namespace['stream_rag_v2']('Ders', 'anlat', [], result))
+                self.assertTrue(response)
+                self.assertNotIn('Bu soruyla ilişkilendirilebilecek ders notu bulunamadı', response)
+        self.assertIn('pulpitis', ''.join(namespace['stream_rag_v2'](
+            'Ders', 'anlat', [], RetrievalResult(resolved_query='Pulpitis anlat'))).casefold())
+
+    def test_noisy_scope_controls_do_not_mutate_medical_nouns(self):
+        from app.study_retrieval_v2 import _normalize_state_controls
+        history = [user('Flor anlat'), assistant('...'),
+                   user('çocuk hastalar açısından anlat'), assistant('...')]
+        adult = resolve_followup_query('yok çocuk değil rşkin açısından', history)
+        self.assertNotIn('çocuk', adult.split(' — ')[0])
+        self.assertIn('erişkin açısından', adult)
+        general = resolve_followup_query('yaş grubunu bover geel anlat', history)
+        self.assertNotIn('çocuk', general)
+        self.assertIn('Flor', general)
+        for text in ('kök yüzeyi anlat', 'süt pulpa tedavisi', 'erken tanı açısından anlat',
+                     'çürük açısından anlat', 'çürük hastalar açısından anlat'):
+            self.assertEqual(text, _normalize_state_controls(text))
+
+    def test_noisy_count_and_table_are_task_slots(self):
+        history = [user('Pulpitis anlat'), assistant('...')]
+        self.assertIn('soru hazırla', resolve_followup_query('yok 20 sru lsun', history))
+        self.assertNotIn('soru hazırla', resolve_followup_query('yok 20 mg olsun', history))
+        self.assertIn('tablo şeklinde', resolve_followup_query('bunu talo eklinde ver', history))
+        for request in ('20 soru olsun', 'İki soru istiyorum', '10 soru lazım'):
+            plan = build_dental_requirement_plan(request)
+            self.assertTrue(_course_coverage_requested(request, plan, classify_academic_study_task(request)))
+        self.assertIsNone(classify_academic_study_task('20 mg olsun'))
+
+    def test_source_scope_handles_study_goals_and_spelled_counts(self):
+        for query in ('Bu notlardan sınava çalışalım, önemli yerleri mantığıyla anlat.',
+                      'Ders notlarından iki soru hazırla; cevap anahtarını gösterme.',
+                      'Bu ders notlarını konu konu anlat.',
+                      'Bu slaytlardaki konuyu bana öğret.',
+                      'Bu materyallerden iki soru hazırla.'):
+            with self.subTest(query=query):
+                plan = build_dental_requirement_plan(query)
+                self.assertFalse(plan.subject_terms)
+                self.assertTrue(_course_coverage_requested(query, plan, classify_academic_study_task(query)))
+        named = 'Bu notlardan flor çalışalım.'
+        self.assertTrue(build_dental_requirement_plan(named).subject_terms)
+
+    def test_named_unknown_topic_in_notes_is_not_a_source_search_term(self):
+        for query in ('Bu ders notlarında geçen Nance ne işe yarar?',
+                      'Notlara göre Nance anlat'):
+            with self.subTest(query=query):
+                self.assertEqual(('Nance',), build_dental_requirement_plan(query).subject_terms)
+                self.assertEqual(['Nance'], _retrieval_terms(query)[0])
+                resolved = resolve_followup_query('Bunu daha basit anlat', [user(query)])
+                self.assertEqual('Nance', resolved.split(' — ')[0])
+
+    def test_goal_changes_do_not_become_new_topics(self):
+        history = [user('apeksifikasyon anlat'), assistant('...'),
+                   user('ezberlemek için anlat'), assistant('...')]
+        resolved = resolve_followup_query('yok sınav için anlat', history)
+        self.assertIn('apeksifikasyon', resolved.split(' — ')[0])
+        self.assertNotIn('ezberlemek', resolved.split(' — ')[0])
+        correction = resolve_followup_query('taaabloo olmasın normal anlat', history)
+        self.assertIn('apeksifikasyon', correction.split(' — ')[0])
+
+    def test_compound_clinical_topic_is_one_referent(self):
+        history = [user('mandibula kondil kırığı anlat'), assistant('...'),
+                   user('madde madde anlat'), assistant('...')]
+        resolved = resolve_followup_query('bunu tablo şeklinde ver', history)
+        self.assertIn('kondil kırığı', resolved.split(' — ')[0])
+        self.assertEqual('Bu nedir?', resolve_followup_query('Bu nedir?', [user('SNA ve SNB anlat')]))
+        repeated = resolve_followup_query('buuunuu çocuk hastalar açısından anlat', history)
+        self.assertIn('kondil kırığı', repeated)
+        previous = [user('odontoma anlat'), assistant('...'), user('mental foramen anlat'), assistant('...')]
+        self.assertIn('odontoma', resolve_followup_query('önceki asıl konudan devam et', previous))
+
+    def test_free_text_answer_uses_pending_question_but_new_requests_do_not(self):
+        history = [user('Bana bir soru sor ve cevabımı bekle'), assistant('Soru 1\n' + QUESTION)]
+        for reply in ('Ağrı', 'Ağrı olduğu için pulpitis düşünüyorum', 'Cevabım ağrı'):
+            with self.subTest(reply=reply):
+                reference = active_question_reference(reply, history)
+                self.assertIsNotNone(reference)
+                self.assertIn('Pulpitis', reference.topic)
+                self.assertIn('Pulpitis', resolve_followup_query(reply, history))
+                self.assertIn('ders kanıtlarıyla değerlendir', dialogue_rules(reply, history))
+        for query in ('Flor nedir?', 'Şimdi flor anlat', 'Yeni konuya geç', 'devam et',
+                      'teşekkürler', 'daha basit', 'tablo'):
+            self.assertIsNone(active_question_reference(query, history))
+        batch = [assistant('Soru 1\nPulpitis?\nSoru 2\nFlor?')]
+        self.assertTrue(answer_needs_reference('Ağrı', batch))
+        self.assertFalse(answer_needs_reference('Flor nedir?', batch))
+        lecture = [user('Pulpitis anlat'), assistant('Pulpitis neden ağrır? Çünkü ...')]
+        self.assertIsNone(active_question_reference('Flor', lecture))
+        outline = [user('Notları özetle'), assistant('1. Pulpitis\n2. Flor')]
+        self.assertFalse(answer_needs_reference('Nance', outline))
+
 
 if __name__ == '__main__':
     unittest.main()

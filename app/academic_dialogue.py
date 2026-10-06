@@ -34,6 +34,56 @@ class QuestionReference:
     number: int | None = None
 
 
+def _free_answer_intent(query: str) -> bool:
+    """A short declarative response can answer a pending actual question.
+
+    New requests and conversation controls retain their own intent. This does
+    not classify a response as factually correct; generation must grade it
+    against the selected question and retrieved note evidence.
+    """
+    from app.academic_task_language import parse_study_operation
+    text = ' '.join((query or '').translate(_FOLD).lower().split())
+    if not text or len(text) > 600 or '?' in text:
+        return False
+    if re.fullmatch(r'(?:tamam|tesekkurler|tesekkur ederim|sag ol)[.! ]*', text):
+        return False
+    operation = parse_study_operation(query)
+    if operation and operation.task:
+        return False
+    return not re.search(
+        r'\b(?:nedir|nasil|neden|niye|hangi|kac|ne|devam|baska|yeni|degistir|'
+        r'birak|bosver|onceki|sonraki|konu|konuyu|don|gec|hazirla|anlat|acikla|'
+        r'tablo|format|ayni|anlamadim|tekrar)\b|\bdaha\s+(?:basit|detayli|kisa)\b', text)
+
+
+def evidence_followup(*, resolved_query: str, retrieval_mode: str,
+                      has_evidence: bool, missing_facets: tuple[str, ...] = ()) -> str:
+    """Keep insufficient retrieval conversational without inventing an answer.
+
+    Coverage failures are system/source failures, not missing user topics.
+    An explicit topic is acknowledged separately from an unresolved referent.
+    This changes no evidence gate and makes no provider call.
+    """
+    from app.dental_query_intent import build_dental_requirement_plan
+    if retrieval_mode == 'coverage':
+        return ('Dersin tamamından çalışmak istediğini anladım. Ancak notların tümünden '
+                'güvenilir içerik hazırlayamadım. İstersen belirli bir konuyla başlayabiliriz; '
+                'hangi konuyu çalışmak istersin?')
+    plan = build_dental_requirement_plan(resolved_query)
+    subjects = ' ve '.join(plan.subject_terms[:3])
+    if subjects:
+        if has_evidence and missing_facets:
+            missing = ', '.join(missing_facets)
+            return (f'{subjects} hakkında notlarda içerik buldum; ancak {missing} için '
+                    'yeterli kaynak bulamadım. Bu başlığın notlarda geçen diğer adını '
+                    'veya ilgili slayttan kısa bir ifadeyi paylaşır mısın?')
+        return (f'{subjects} konusunu çalışmak istediğini anladım. Bu isteği yanıtlayacak '
+                'yeterli not içeriğini henüz eşleştiremedim. Notlarda geçen diğer adını '
+                'veya ilgili slayttan kısa bir ifadeyi paylaşır mısın?')
+    return ('Notlardan çalışmana yardımcı olabilirim. Hangi konuyu kastettiğini '
+            'netleştirelim: bir konu adı yazabilir veya dersin tamamını çalışmamı isteyebilirsin.')
+
+
 def active_question_reference(query: str, history: list[dict] | None) -> QuestionReference | None:
     """Bind short answers only to a single actual question, never guess a batch item."""
     folded = ' '.join((query or '').translate(_FOLD).lower().split())
@@ -42,7 +92,7 @@ def active_question_reference(query: str, history: list[dict] | None) -> Questio
         r'\b(?:bu|onceki|bir onceki|son|az onceki)\s+soru\w*\b|'
         r'\b(?:cevabimi|cevabim|yanitim|yanitimi)\b', folded,
     ))
-    if not (answer or reference):
+    if not (answer or reference or _free_answer_intent(query)):
         return None
     latest = next((item for item in reversed((history or [])[-8:])
                    if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
@@ -59,12 +109,38 @@ def active_question_reference(query: str, history: list[dict] | None) -> Questio
     stem = question_topic(text)
     if not stem or ('?' not in stem and not _OPTIONS.search(text)):
         return None
+    if not (answer or reference or _OPTIONS.search(text)):
+        # A rhetorical question inside a lecture is not a pending quiz. Free
+        # answers require an actual question-generation turn or quiz options.
+        from app.academic_task_language import parse_study_operation
+        latest_user = next((item for item in reversed((history or [])[-8:])
+                            if str(item.get('role') or '').casefold() in {'user', 'human'}), None)
+        operation = parse_study_operation(str(latest_user.get('content') or '')) if latest_user else None
+        if not operation or not operation.generate:
+            return None
     return QuestionReference(text[:4000], stem, number)
 
 
 def answer_needs_reference(query: str, history: list[dict] | None) -> bool:
     folded = ' '.join((query or '').translate(_FOLD).lower().split())
-    return bool(_ANSWER.fullmatch(folded)) and active_question_reference(query, history) is None
+    if _ANSWER.fullmatch(folded):
+        return active_question_reference(query, history) is None
+    if not _free_answer_intent(query):
+        return False
+    latest = next((item for item in reversed((history or [])[-8:])
+                   if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    if not latest:
+        return False
+    body = str(latest.get('content') or '')[:16000]
+    if len(numbered_items(body)) <= 1:
+        return False
+    if _OPTIONS.search(body) or re.search(r'(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?soru\s+\d+', body):
+        return True
+    from app.academic_task_language import parse_study_operation
+    latest_user = next((item for item in reversed((history or [])[-8:])
+                        if str(item.get('role') or '').casefold() in {'user', 'human'}), None)
+    operation = parse_study_operation(str(latest_user.get('content') or '')) if latest_user else None
+    return bool(operation and operation.generate)
 
 
 def numbered_answer_references(query: str, history: list[dict] | None) -> list[QuestionReference]:

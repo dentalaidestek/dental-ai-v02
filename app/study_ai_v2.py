@@ -117,12 +117,15 @@ def stream_rag_v2(
     if retrieval.clarification:
         yield retrieval.clarification
         return
-    if not retrieval.note_context and not retrieval.attachments:
-        raise StudyAIError("Bu soruyla ilişkilendirilebilecek ders notu bulunamadı.")
-    if not retrieval.evidence_sufficient:
-        raise StudyAIError(
-            "Ders notlarında bu soruyu güvenilir biçimde yanıtlamak için yeterli kanıt bulunamadı."
+    if (not retrieval.note_context and not retrieval.attachments) or not retrieval.evidence_sufficient:
+        from app.academic_dialogue import evidence_followup
+        yield evidence_followup(
+            resolved_query=retrieval.resolved_query or question,
+            retrieval_mode=retrieval.retrieval_mode,
+            has_evidence=bool(retrieval.note_context or retrieval.attachments),
+            missing_facets=retrieval.missing_facets,
         )
+        return
     required_attachment_types = {
         item.get("mime_type")
         for item in retrieval.attachments

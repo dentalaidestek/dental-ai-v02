@@ -324,8 +324,9 @@ _REQUEST_CONTROL_RE = re.compile(
 
 def request_subject_text(query: str) -> str:
     """Remove request grammar from candidate search, preserving dental nouns."""
-    from app.academic_task_language import strip_request_prefix
-    return _REQUEST_CONTROL_RE.sub(' ', strip_request_prefix((query or '').split(' — ', 1)[0]))
+    from app.academic_task_language import strip_request_prefix, remove_source_reference
+    text = remove_source_reference(strip_request_prefix((query or '').split(' — ', 1)[0]))
+    return _REQUEST_CONTROL_RE.sub(' ', text)
 
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
