@@ -3792,8 +3792,12 @@ templates = Jinja2Templates(
 def _startup_database():
     from app.settings_cache import invalidate
     invalidate()
+    logger.info("startup.step begin=validate_configuration")
     validate_configuration()
+    logger.info("startup.step end=validate_configuration")
+    logger.info("startup.step begin=storage_check_connection")
     storage_check_connection()
+    logger.info("startup.step end=storage_check_connection")
     if os.getenv("RENDER"):
         if os.getenv("DENTAL_MIGRATE_ON_STARTUP", "0") == "1":
             # One-shot compatibility path for deployments that cannot run a
@@ -3803,7 +3807,9 @@ def _startup_database():
             apply()
         else:
             from app.migrate import require_schema
+            logger.info("startup.step begin=require_schema")
             require_schema(engine)
+            logger.info("startup.step end=require_schema")
     else:
         init_db()
     # Academic V2 queue repair/backfill must not block ASGI startup. New uploads
