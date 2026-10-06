@@ -645,6 +645,10 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
         # Modal containers must not independently mutate the same PDF. Instead
         # use bounded CPU-parallel OCR waves inside the lease owner. Each task
         # owns its PDFium handle; SQLModel/DB state never crosses threads.
+        # tesserocr initializes cysignals handlers on first import. Import it
+        # on the lease-owner thread before worker threads enter OCR; native
+        # Recognize(timeout=...) retains its bounded C++ deadline.
+        import tesserocr  # noqa: F401
         from concurrent.futures import ThreadPoolExecutor
 
         lease_seconds = _int_env("STUDY_V2_LEASE_SECONDS", 180, 60, 1800)

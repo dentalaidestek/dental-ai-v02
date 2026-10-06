@@ -31,6 +31,22 @@ def snapshot():
     except Exception as exc:
         result["ocr_init"] = False
         result["ocr_init_error_type"] = type(exc).__name__
+    if result["ocr_init"]:
+        from concurrent.futures import ThreadPoolExecutor
+        from PIL import Image, ImageDraw, ImageFont
+        from app.study_local_ocr import _recognize
+        def recognize_probe(_):
+            # Synthetic image tests real threaded native OCR without PDFs or DB writes.
+            with Image.new("L", (700, 120), 255) as probe:
+                ImageDraw.Draw(probe).text((20, 30), "DENTAL TEST 123", fill=0,
+                    font=ImageFont.load_default(size=42))
+                value, confidence = _recognize(probe, psm=tesserocr.PSM.SINGLE_BLOCK, timeout_ms=5000)
+                return {"recognized": "DENTAL" in value.upper(), "confidence": confidence}
+        try:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                result["parallel_ocr_probe"] = list(pool.map(recognize_probe, range(4)))
+        except Exception as exc:
+            result["parallel_ocr_error_type"] = type(exc).__name__
     engine = create_engine(url, pool_size=1, max_overflow=0,
                            connect_args={"connect_timeout": 5, "application_name": "academic-readonly-diagnostics"})
     try:
