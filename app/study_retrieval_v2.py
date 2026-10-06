@@ -1245,10 +1245,14 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
         for term in values
         if " " not in term
     } if "_FACET_SEARCH_TERMS" in globals() else set()
+    # _normalize_dental_notation may ASCII-fold Turkish operators while the
+    # facet catalog keeps their native spelling (uygulanır -> uygulanir).
+    # Compare both forms so request verbs never become subject search terms.
+    facet_noise_folded = {item.translate(_STATE_FOLD) for item in facet_noise}
 
     def _is_facet_noise(token: str) -> bool:
         value = token.casefold()
-        if value in facet_noise:
+        if value in facet_noise or value.translate(_STATE_FOLD) in facet_noise_folded:
             return True
         # Turkish lecture questions inflect facet nouns heavily
         # (tedavisi, komplikasyonları, endikasyonları). Keep this bounded to
