@@ -142,6 +142,43 @@ def dispatch(request: fastapi.Request):
 
 @app.function(
     image=image,
+    cpu=0.25,
+    memory=256,
+    timeout=30,
+    min_containers=0,
+    max_containers=1,
+    scaledown_window=10,
+    schedule=modal.Period(minutes=1),
+    secrets=[modal.Secret.from_name("dental-ai-academic-indexer")],
+)
+def queue_watchdog() -> dict[str, bool]:
+    """Cheap safety net for lost HTTP wakeups; PostgreSQL remains authoritative."""
+    from sqlalchemy import text
+    from app.study_index_worker_main import build_worker_engine
+
+    engine = build_worker_engine()
+    try:
+        with engine.connect() as connection:
+            pending = connection.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM studyindexjob
+                    WHERE status = 'QUEUED'
+                      AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                    LIMIT 1
+                    """
+                )
+            ).first() is not None
+        if pending:
+            _spawn_drainers()
+        return {"pending": pending, "scheduled": pending}
+    finally:
+        engine.dispose()
+
+
+@app.function(
+    image=image,
     cpu=1.0,
     memory=512,
     timeout=60,
