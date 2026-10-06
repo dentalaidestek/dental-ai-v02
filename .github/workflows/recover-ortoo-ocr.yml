@@ -26,8 +26,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api 'repos/dentalaidestek/dental-ai-v02/actions/workflows/deploy-academic-modal.yml/runs?head_sha=f3c5906dbfd6da1817fdab6068e5049f8a068250' --jq '.workflow_runs | any(.conclusion == "success")' | python -c 'import sys; assert sys.stdin.read().strip() == "true"'
+          gh api 'repos/dentalaidestek/dental-ai-v02/actions/workflows/deploy-academic-modal.yml/runs?head_sha=26deb7a9982f80ee4f314320992fbb28a98d3245' --jq '.workflow_runs | any(.conclusion == "success")' | python -c 'import sys; assert sys.stdin.read().strip() == "true"'
       - name: Install Modal
         run: python -m pip install --disable-pip-version-check "modal>=1.2,<2" "fastapi==0.141.1"
       - name: Resume existing generations and verify watchdog recovery
         run: python -m modal run scripts/modal_academic_recover_ortoo.py
+

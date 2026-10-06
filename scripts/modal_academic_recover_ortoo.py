@@ -7,7 +7,7 @@ from modal_academic_indexer import image as indexing_image
 image = indexing_image.add_local_file("modal_academic_indexer.py", "/root/modal_academic_indexer.py")
 app = modal.App("dental-ai-academic-ortoo-recovery")
 JOB_IDS = (17, 20, 21, 22)
-EXPECTED_ERROR = "signal only works in main thread of the main interpreter"
+EXPECTED_ERROR = "Failed to load document (PDFium: Data format error)."
 
 @app.function(image=image, cpu=0.25, memory=256, timeout=30, max_containers=1,
               secrets=[modal.Secret.from_name("dental-ai-academic-indexer")])
@@ -94,3 +94,4 @@ def main():
             raise RuntimeError("ORTOO_RECOVERY_FAILED")
         time.sleep(3)
     raise RuntimeError("ORTOO_E2E_TIMED_OUT")
+
