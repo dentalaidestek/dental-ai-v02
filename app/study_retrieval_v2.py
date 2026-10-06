@@ -204,6 +204,7 @@ class RetrievalResult:
     evidence_confidence: float = 0.0
     covered_facets: tuple[str, ...] = ()
     missing_facets: tuple[str, ...] = ()
+    clarification: str = ""
 
 
 @dataclass(frozen=True)
@@ -368,6 +369,8 @@ def _has_question_task_cue(text: str) -> bool:
     ))
     if rejects_questions and _STATE_EXPLAIN_RE.search(text or ""):
         return False
+    if re.search(r'\bsoru\s+sor(?:ar\s+misin|mani|ar|abilir)?\b', folded):
+        return True
     if _STATE_QUESTION_TASK_RE.search(text or ""):
         return True
     tokens = re.findall(r"\w+", folded)
@@ -430,22 +433,10 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # is evaluated. This keeps colloquial "ya ..." and repeated-letter
     # "yook ..." from becoming part of the dental noun while leaving arbitrary
     # dental vocabulary completely unfuzzied.
-    first = re.match(r"^\s*([^\s,;:]+)[,;:]?\s+(.+)$", clean)
-    if first:
-        token = _state_text(first.group(1))
-        remainder = first.group(2).strip()
-        remainder_folded = _state_text(remainder)
-        correction_prefix = (
-            token == "ya"
-            or _one_edit_token(token, "yok")
-            or _one_edit_token(token, "hayir")
-        )
-        has_request_boundary = bool(re.search(
-            r"\b(?:anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|konusunda|hakkinda|icin)\b",
-            remainder_folded,
-        ))
-        if correction_prefix and has_request_boundary:
-            clean = remainder
+    from app.academic_task_language import strip_request_prefix
+    remainder = strip_request_prefix(clean)
+    if re.search(r'\b(?:anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|konusunda|hakkinda|icin)\b', _state_text(remainder)):
+        clean = remainder
     folded = _state_text(clean)
     if re.match(r'^(?:\d+\.?\s*soru\w*|bunu|bunun|onu|onun|ayni|sadece bu|peki|'
                 r'yok|hayir|simdi|daha|biraz|konuyu|soru|test|sinav|tablo|normal|'
@@ -455,6 +446,9 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     else:
         dependent = False
     mentions = explicit_node_mentions(clean)
+    from app.academic_task_language import course_source_request
+    if not mentions and course_source_request(clean):
+        return ConversationSubject((), source="course", history_index=history_index)
     if mentions:
         # Preserve the user's named phrase rather than swapping it for a graph
         # label which may lose modifiers or scope (e.g. maximum dosage).
@@ -489,7 +483,8 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
                  'normal','kisa','kisaca','detayli','ayrintili','madde','mekanizmasiyla',
-                 'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet'}
+                 'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet',
+                 'bu','su','o','bana','beni','lutfen'}
     if not words or len(words) > 12 or all(w in operators or w.isdigit() for w in words):
         return None
     return ConversationSubject((phrase,), (), tuple(query_qualifiers(clean)), source, history_index)
@@ -516,7 +511,10 @@ def _conversation_state(
             continue
         folded = _state_text(value)
         subject = _conversation_subject(value, source="user", history_index=idx)
-        new_topic = bool(subject and subjects and subject.terms != subjects[-1].terms
+        from app.academic_task_language import subjectless_study_request
+        if subject is None and not subjects and subjectless_study_request(value):
+            subject = ConversationSubject((), source="course", history_index=idx)
+        new_topic = bool(subject
                          and not re.search(r"\b(?:karsilastir|ile|vs)\b", folded))
         if new_topic:
             task = goal = output_format = length = None
@@ -547,6 +545,19 @@ def _conversation_state(
         elif re.search(r'\b(?:detay|ayrint)\w*\b', folded):
             length = "detailed"
         ordinal = _assistant_ordinal_subject(value, window[:idx])
+        if ordinal is None:
+            from app.academic_dialogue import active_question_reference
+            question_reference = active_question_reference(value, window[:idx])
+            if question_reference:
+                selected_subject = _conversation_subject(
+                    question_reference.topic, source="user_selected_item", history_index=idx,
+                )
+                ordinal = ConversationSubject(
+                    (question_reference.topic,),
+                    selected_subject.node_ids if selected_subject else (),
+                    selected_subject.qualifiers if selected_subject else (),
+                    "user_selected_item", idx, question_reference.topic,
+                )
         if ordinal:
             subjects.append(ConversationSubject(ordinal.terms, ordinal.node_ids,
                             ordinal.qualifiers, "user_selected_item", idx, ordinal.reference_text))
@@ -582,7 +593,9 @@ def _ordinal_reference_number(text: str) -> int | None:
         if base.endswith(suffix) and len(base) > len(suffix) + 1:
             base = base[:-len(suffix)]
             break
-    is_question = token.startswith("question") or _edit_distance_at_most(base, "soru", 1)
+    is_question = (token.startswith("question")
+                   or token in {"soru", "soruyu", "sorusu", "sorusunu", "sorunun", "soruda", "soruya"}
+                   or _edit_distance_at_most(base, "soru", 1))
     if not is_question:
         return None
     # "20 soru hazırla" is a count. Dot or possessive morphology is required
@@ -601,12 +614,16 @@ def _assistant_ordinal_subject(clean: str, window: list[dict]) -> ConversationSu
         if str(item.get("role") or "").casefold() not in {"assistant", "ai"}:
             continue
         body = str(item.get("content") or "")
-        match = re.search(
-            rf"(?ms)^\s*{wanted}[.)]\s*(.+?)(?=^\s*\d+[.)]\s|\Z)", body
-        )
-        if not match:
+        from app.academic_dialogue import numbered_items, question_topic
+        items = numbered_items(body)
+        if not items:
             continue
-        item_text = re.sub(r"(?m)^\s*[A-E][.)].*$", " ", match.group(1))
+        # The latest numbered answer owns this list reference. A missing item
+        # must not silently select the same ordinal from an older question set.
+        selected = next((value for number, value in items if number == wanted), None)
+        if selected is None:
+            return None
+        item_text = question_topic(selected)
         subject = _conversation_subject(
             item_text, source="assistant_list_item", history_index=idx
         )
@@ -666,6 +683,11 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    leading = re.match(r'^(\S+)\s+(.+)$', clean)
+    if leading:
+        control = re.sub(r'(.)\1+', r'\1', _state_text(leading.group(1).strip(',;:')))
+        if control in {'yok', 'hayir'}:
+            clean = ('yok' if control == 'yok' else 'hayır') + ' ' + leading.group(2)
     from app.academic_task_language import course_source_request
     from app.dental_knowledge_graph import explicit_node_mentions
     if course_source_request(clean) and not explicit_node_mentions(clean):
@@ -676,6 +698,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         clean = f"sınav için — {clean}"
     if not clean or not recent_history:
         return clean
+
+    from app.academic_dialogue import active_question_reference, numbered_answer_references
+    numbered_answers = numbered_answer_references(clean, recent_history)
+    if numbered_answers:
+        return f"{'; '.join(item.topic for item in numbered_answers)} — {clean}"
+    question_reference = active_question_reference(clean, recent_history)
+    if question_reference:
+        return f"{question_reference.topic} — {clean}"
 
     window = list(recent_history[-8:])
     folded = clean.casefold()
@@ -694,11 +724,16 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
     operation = classify_academic_study_task(clean)
     transform_task = bool(operation and operation.task in {"summarize", "explain"})
+    deictic_question = bool(re.search(
+        r'(?iu)\b(?:bu|şu|o)\s+(?:nedir|ne\s+demek|ne\s+işe\s+yarar)\b'
+        r'|^(?:neden|niye|nasıl|nasıl yani)[?.! ]*$'
+        r'|\b(?:ikisini|ikisinin|ikisi|bunları|bunların|hepsini)\b', clean,
+    ))
     dependent = bool(
         _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean) or _has_same_way_cue(clean)
         or _has_anaphoric_topic_cue(clean)
         or relative or assistant_ref or comparison or correction_relation
-        or transform_task
+        or transform_task or deictic_question or _has_question_task_cue(clean)
         or re.match(r"(?iu)^\d+\s+(?:tane|adet|madde)\s+(?:say|listele|sırala|sirala)\b", clean)
         or re.search(
             r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
@@ -775,16 +810,17 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
 
     # Pronouns with a single USER turn containing multiple explicit subjects are
     # ambiguous; never guess which antecedent "bu/onu" denotes.
-    if re.match(r"(?iu)^\s*(?:bunu|onu|bu konu)", clean):
+    if re.match(r"(?iu)^\s*(?:bunu|onu|bu konu|bu|şu|o)\b", clean):
         last_user = next((x for x in reversed(subjects) if x.source in {"user", "user_selected_item"}), None)
-        if last_user and len(last_user.node_ids) > 1:
+        collective = bool(re.search(r'(?iu)\b(?:ikisini|ikisinin|ikisi|bunları|bunların|hepsini)\b', clean))
+        if last_user and len(last_user.node_ids) > 1 and not collective:
             return clean
 
     selected: ConversationSubject | None = None
     if relative_kind == "first":
-        selected = next((x for x in subjects if x.source in {"user", "user_selected_item"}), None)
+        selected = next((x for x in subjects if x.source in {"user", "user_selected_item", "course"}), None)
     elif relative:
-        user_subjects = [x for x in subjects if x.source in {"user", "user_selected_item"}]
+        user_subjects = [x for x in subjects if x.source in {"user", "user_selected_item", "course"}]
         distinct: list[ConversationSubject] = []
         for subject in user_subjects:
             if not distinct or subject.terms != distinct[-1].terms:
@@ -800,14 +836,18 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             return clean
     elif assistant_ref:
         selected = next((x for x in reversed(subjects)
-                         if x.source in {"user", "user_selected_item"}), None)
+                         if x.source in {"user", "user_selected_item", "course"}), None)
     else:
-        selected = next((x for x in reversed(subjects) if x.source in {"user", "user_selected_item"}), None)
+        selected = next((x for x in reversed(subjects) if x.source in {"user", "user_selected_item", "course"}), None)
 
     if selected is None:
         return clean
 
     subject_text = _subject_text(selected, current_qualifiers, clean)
+    if selected.source == "course":
+        task = operation.task if operation else state.task
+        verb = "soru hazırla" if task == "generate_questions" else "özetle" if task == "summarize" else "açıkla"
+        subject_text = f"Bu ders notlarını {verb}"
     if not subject_text:
         return clean
 
@@ -1071,7 +1111,8 @@ _QUERY_NOISE_RE = re.compile(
 
 def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     """Return precise source terms and bounded dental alternatives."""
-    clean = _normalize_dental_notation(query)
+    from app.dental_query_intent import request_subject_text
+    clean = _normalize_dental_notation(request_subject_text(query))
     # Output and reference operators are retrieval controls, not note nouns.
     # Remove complete grammatical constructions so dental uses of "madde",
     # "tablo", numbers or "ikinci molar" retain their content meaning.
@@ -1461,7 +1502,7 @@ def get_or_build_coverage_plan(
         after_id = int(page[-1][0])
         if len(page) < bounded_page_size:
             break
-    plan = accumulator.build(requested_count)
+    plan = accumulator.build(requested_count, ensure_material_coverage=True)
     cache_coverage_plan(owner_user_id, course_id, fingerprint, plan)
     return plan
 
@@ -2273,7 +2314,7 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     from app.academic_task_language import course_source_request
     if course_source_request(query) and not requirement.subject_node_ids:
         return True
-    if (study_task.task in {"summarize", "explain"}
+    if (study_task.task in {"summarize", "explain", "generate_questions"}
             and not requirement.subject_terms and not requirement.subject_node_ids):
         return True
     return bool(study_task.requires_coverage and (
@@ -2296,6 +2337,24 @@ def retrieve_course_context_v2(
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     resolved = resolve_followup_query(query, recent_history)
+    from app.academic_dialogue import answer_needs_reference
+    if answer_needs_reference(query, recent_history):
+        return RetrievalResult(
+            resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Hangi soruyu yanıtladığını belirtir misin? Soru numarasıyla birlikte cevabını yazabilirsin; örneğin 2B.",
+        )
+    if (_ordinal_reference_number(query) is not None
+            and _assistant_ordinal_subject(query, list(recent_history or [])) is None):
+        return RetrievalResult(
+            resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Bahsettiğin soruyu son soru listesinde bulamadım. Soru metnini veya doğru numarasını paylaşır mısın?",
+        )
+    if (resolved == ' '.join((query or '').split()) and re.fullmatch(
+            r'(?iu)(?:bu|şu|o)\s+(?:nedir|ne\s+demek|ne\s+işe\s+yarar)[?.! ]*', resolved)):
+        return RetrievalResult(
+            resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Hangi konuyu veya soruyu kastettiğini belirtir misin? Birkaç konu varsa hangisini açıklamamı istediğini yazabilirsin.",
+        )
     requirement = build_dental_requirement_plan(resolved)
     query_features = analyze_dental_text(resolved)
     # Request-local semantic memo: bounded by this retrieval's candidate rows,
@@ -2313,7 +2372,16 @@ def retrieve_course_context_v2(
     embedding_model = ""
     continuation_cursor = _continuation_cursor(query, recent_history)
     study_task = classify_academic_study_task(resolved)
-    exhaustive_questions = _is_exhaustive_question_request(resolved) or continuation_cursor is not None
+    from app.academic_dialogue import active_question_reference, numbered_answer_references
+    chat_question_reference = bool(
+        active_question_reference(query, recent_history)
+        or numbered_answer_references(query, recent_history)
+        or _assistant_ordinal_subject(query, list(recent_history or []))
+    )
+    exhaustive_questions = (
+        (_is_exhaustive_question_request(resolved) and not chat_question_reference)
+        or continuation_cursor is not None
+    )
     study_question_task = bool(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )

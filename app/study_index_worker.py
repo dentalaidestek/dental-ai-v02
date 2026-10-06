@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import socket
+import time
 from datetime import datetime, timedelta, timezone
 
 from pypdf import PdfReader
@@ -771,11 +772,32 @@ def run_one_slice(
                 logger.exception("Index heartbeat failed job=%s", job.id)
     thread = threading.Thread(target=renew, daemon=True, name="dental-index-heartbeat")
     thread.start()
+    slice_started = time.monotonic()
+    stage = job.stage
+    # Capture metadata before the worker closes/rolls back its Session. Logging
+    # must never reopen a transaction or mask the original indexing outcome.
+    job_id, material_id, course_id = job.id, job.material_id, job.course_id
+    queued_at = job.first_queued_at or job.created_at
+    started_at, expected_pages = job.started_at, job.expected_page_count
+    result = "EXCEPTION"
     try:
-        return _run_claimed_slice(session, job, resource_class)
+        result = _run_claimed_slice(session, job, resource_class)
+        return result
     finally:
+        work_ms = round((time.monotonic() - slice_started) * 1000)
         stop.set()
         thread.join(6)
+        lifecycle_ms = round((time.monotonic() - slice_started) * 1000)
+        first_start_ms = (round((started_at - queued_at).total_seconds() * 1000)
+                          if started_at and queued_at else None)
+        age_ms = (round((_utcnow_naive() - queued_at).total_seconds() * 1000)
+                  if queued_at else None)
+        logger.info(
+            "Academic index slice job=%s material=%s course=%s stage=%s result=%s "
+            "work_ms=%s lifecycle_ms=%s first_start_ms=%s total_age_ms=%s pages=%s",
+            job_id, material_id, course_id, stage, result,
+            work_ms, lifecycle_ms, first_start_ms, age_ms, expected_pages,
+        )
 
 
 def _run_claimed_slice(session, job, resource_class):

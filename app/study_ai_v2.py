@@ -56,7 +56,8 @@ def _response_contract(question: str) -> str:
         )
     return rules[0]
 
-def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str:
+def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
+    from app.academic_dialogue import dialogue_rules
     context = "\n\n---\n\n".join(retrieval.note_context)
     understood_question = (retrieval.resolved_query or question).strip()
     exhaustive_rule = ""
@@ -75,6 +76,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult) -> str
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n"
+        "ÇALIŞMA ETKİLEŞİMİ:\n" + dialogue_rules(question, history) + "\n\n"
         "KANIT DURUMU:\n"
         f"Retrieval modu: {retrieval.retrieval_mode}. "
         f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
@@ -112,6 +114,9 @@ def stream_rag_v2(
     history: list[dict],
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
+    if retrieval.clarification:
+        yield retrieval.clarification
+        return
     if not retrieval.note_context and not retrieval.attachments:
         raise StudyAIError("Bu soruyla ilişkilendirilebilecek ders notu bulunamadı.")
     if not retrieval.evidence_sufficient:
@@ -123,7 +128,7 @@ def stream_rag_v2(
         for item in retrieval.attachments
         if item.get("mime_type")
     }
-    prompt = _prompt(course_title, question, retrieval)
+    prompt = _prompt(course_title, question, retrieval, history)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
     candidates = _generation_targets()

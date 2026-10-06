@@ -110,7 +110,7 @@ class CoverageAccumulator:
                 reps.sort(key=lambda item: (item[0], item[1]))
                 del reps[self.representative_limit:]
 
-    def build(self, requested_count: int) -> CoveragePlan:
+    def build(self, requested_count: int, *, ensure_material_coverage: bool = False) -> CoveragePlan:
         items = []
         for (material_id, _section_key, nodes), group in self._groups.items():
             chunk_ids = tuple(cid for _score, cid in sorted(group["representatives"]))
@@ -119,6 +119,19 @@ class CoverageAccumulator:
         items.sort(key=lambda x: (x[0], x[1].casefold(), x[3][0] if x[3] else 0))
         count = max(1, min(int(requested_count or 10), 200))
         budgets = _largest_remainder([x[4] for x in items], count)
+        if ensure_material_coverage:
+            # Course-wide transformations must retain small READY documents.
+            # Reserve one representative bucket per material, then distribute
+            # the remaining bounded budget by coverage weight as before.
+            representatives: dict[int, int] = {}
+            for i, item in enumerate(items):
+                previous = representatives.get(item[0])
+                if previous is None or item[4] > items[previous][4]:
+                    representatives[item[0]] = i
+            if len(representatives) <= count:
+                budgets = _largest_remainder([x[4] for x in items], count - len(representatives))
+                for i in representatives.values():
+                    budgets[i] += 1
         buckets = tuple(
             CoverageBucket(mid, section, nodes, chunk_ids, weight, budget)
             for (mid, section, nodes, chunk_ids, weight), budget in zip(items, budgets)

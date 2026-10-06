@@ -313,11 +313,28 @@ _SUBJECT_STOP_RE = re.compile(
 )
 _SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
 
+_REQUEST_CONTROL_RE = re.compile(
+    r'(?iu)\b(?:bana|beni|lütfen|lutfen|acaba|peki|şimdi|simdi)\b'
+    r'|\bne\s+(?:işe\s+yar(?:ar|ıyor)|ise\s+yar(?:ar|iyor)|anlama\s+gel(?:ir|iyor))\b'
+    r'|\b(?:basit|sade|anlaşılır|anlasilir)\s+bir\s+dille\b'
+    r'|\b(?:bir\s+)?(?:hoca|öğretmen|ogretmen)\s+gibi\b'
+    r'|\b(?:sınav|sinav|final|vize)\s+(?:için|icin|odaklı|odakli|yönelik|yonelik)\b',
+)
+
+
+def request_subject_text(query: str) -> str:
+    """Remove request grammar from candidate search, preserving dental nouns."""
+    from app.academic_task_language import strip_request_prefix
+    return _REQUEST_CONTROL_RE.sub(' ', strip_request_prefix((query or '').split(' — ', 1)[0]))
+
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
-    from app.academic_task_language import course_source_request
-    if course_source_request(query):
+    from app.academic_task_language import course_source_request, subjectless_study_request
+    if course_source_request(query) or subjectless_study_request(query):
         return ()
+    # Resolver prefixes are user-owned topics or explicitly selected question
+    # stems. Output controls in the suffix must not become lexical subjects.
+    query = request_subject_text(query)
     clean = re.sub(r"[?,;:()]+", " ", query or "")
     clean = _SUBJECT_STOP_RE.sub(" ", clean)
     tokens = [t.strip(".-") for t in clean.split() if len(t.strip(".-")) >= 2]
@@ -354,8 +371,8 @@ _QUALIFIER_PATTERNS = (
     ("generalize", re.compile(r"\bgeneralize\b", re.I)),
     ("erken", re.compile(r"\berken\b", re.I)),
     ("geç", re.compile(r"\bgeç\b", re.I)),
-    ("çocuk", re.compile(r"\bçocuk(?:ta|tan|larda|larda)?\b", re.I)),
-    ("erişkin", re.compile(r"\berişkin(?:de|den|lerde)?\b", re.I)),
+    ("çocuk", re.compile(r"\bçocuk(?:lar(?:a|da|dan)?|ta|tan)?\b", re.I)),
+    ("erişkin", re.compile(r"\berişkin(?:ler(?:e|de|den)?|de|den)?\b", re.I)),
 )
 def query_qualifiers(query: str) -> tuple[str, ...]:
     text = query or ""

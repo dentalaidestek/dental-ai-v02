@@ -1,5 +1,4 @@
 """Course source arguments must not become lexical topics or history references."""
-import ast
 import re
 import unittest
 from pathlib import Path
@@ -42,19 +41,9 @@ class CourseSourceScopeTests(unittest.TestCase):
                 self.assertFalse(course_source_request(query))
 
     def test_current_course_scope_survives_old_topic(self):
-        # Exercise the resolver's scope boundary without loading DB/storage
-        # dependencies. Any attempt to inherit the old topic fails this test.
-        source = Path('app/study_retrieval_v2.py').read_text()
-        tree = ast.parse(source)
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
-                        and n.name == 'resolve_followup_query')
-        namespace = {'re': re}
-        code = ast.Module(body=[ast.ImportFrom(module='__future__',
-                          names=[ast.alias(name='annotations')], level=0), function],
-                          type_ignores=[])
-        exec(compile(ast.fix_missing_locations(code), '<resolver>', 'exec'), namespace)
+        from app.study_retrieval_v2 import resolve_followup_query
         query = 'Bu ders notlarını sınav odaklı özetle'
-        self.assertEqual(query, namespace['resolve_followup_query'](
+        self.assertEqual(query, resolve_followup_query(
             query, [{'role': 'USER', 'content': 'SNA kaç derece?'}]))
 
 
