@@ -44,6 +44,30 @@ def snapshot():
             result["failed_errors"] = [{"id": row["id"], "error_code": (
                 row["last_error"] if re.fullmatch(r"[A-Z][A-Za-z0-9_:]{2,100}", row["last_error"] or "") else "NON_CODE_ERROR_REDACTED"
             )} for row in rows("SELECT id, last_error FROM studyindexjob WHERE status='FAILED' ORDER BY id")]
+            error_signatures = {
+                "tessdata_init": "invalid tessdata path",
+                "tesseract_init": "Failed to init API",
+                "detached_orm": "not bound to a Session",
+                "missing_module": "No module named",
+                "render_argument": "unexpected keyword argument",
+                "ocr_engine": "OCR_ENGINE_FAILED",
+                "ocr_render": "OCR_RENDER_FAILED",
+                "ocr_timeout": "OCR_RECOGNITION_TIMEOUT",
+                "missing_source": "SOURCE_MISSING",
+            }
+            result["failed_error_signatures"] = [{"id": row["id"], "signatures": [
+                key for key, marker in error_signatures.items() if marker in (row["last_error"] or "")
+            ]} for row in rows("SELECT id, last_error FROM studyindexjob WHERE status='FAILED' ORDER BY id")]
+            def safe_error_detail(message):
+                detail = str(message or "")
+                for name, value in os.environ.items():
+                    if len(value) >= 6 and any(marker in name for marker in ("KEY", "SECRET", "TOKEN", "PASSWORD", "DATABASE_URL")):
+                        detail = detail.replace(value, "[REDACTED]")
+                detail = re.sub(r"(?:https?|postgres(?:ql)?|r2)://[^\s]+", "[URL_REDACTED]", detail)
+                detail = re.sub(r"\b[A-Za-z0-9/_+=-]{24,}\b", "[TOKEN_REDACTED]", detail)
+                return detail[:400]
+            result["failed_error_details_safe"] = [{"id": row["id"], "detail": safe_error_detail(row["last_error"])}
+                for row in rows("SELECT id, last_error FROM studyindexjob WHERE status='FAILED' ORDER BY id")]
             result["materials"] = rows("""SELECT m.id, m.course_id, m.index_status,
                 m.deleted_at IS NOT NULL AS deleted, m.active_index_version IS NOT NULL AS has_active,
                 m.building_index_version IS NOT NULL AS has_building,
