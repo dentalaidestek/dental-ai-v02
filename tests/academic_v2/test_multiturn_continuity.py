@@ -7,6 +7,56 @@ def low(x): return x.replace("İ","i").replace("I","ı").lower()
 
 FLOR="Çocuklarda flor kullanımını anlat."
 
+def test_transformations_and_bounded_lists_reuse_active_subject():
+    h = [u("Pulpitis tedavisini anlat"), a("Periodontitis ilgisiz bir örnektir.")]
+    for query in ("Özetle", "Toparla", "açıkla", "3 tane say", "5 madde listele"):
+        resolved = low(resolve_followup_query(query, h))
+        assert "pulpitis" in resolved and "tedavisini" in resolved
+        assert "periodontitis" not in resolved
+        assert resolved.endswith(low(query))
+
+def test_transformations_keep_explicit_topic_switch_and_unknown_dental_subject():
+    h = [u("Pulpitis tedavisini anlat"), a("...")]
+    for query in ("Periodontitis özetle", "İmplant stabilitesini toparla"):
+        assert resolve_followup_query(query, h) == query
+    h = [u("Nance apareyinin kullanımını anlat"), a("...")]
+    assert "nance" in low(resolve_followup_query("Özetle", h))
+
+def test_subjectless_transform_uses_course_scope_but_resolved_topic_does_not():
+    from app.study_retrieval_v2 import _course_coverage_requested
+    from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task
+    def coverage(query):
+        return _course_coverage_requested(query, build_dental_requirement_plan(query), classify_academic_study_task(query))
+    assert coverage("Özetle")
+    assert coverage("Toparla")
+    assert coverage("Açıkla")
+    assert coverage("Notları özetle")
+    for query in ("Pulpitis özetle", "Flor kullanımını özetle", "Nance apareyinin kullanımını özetle", "SNB normal değeri nedir?"):
+        assert not coverage(query)
+
+def test_word_ordinal_binds_selected_item_and_missing_reference_abstains():
+    history = [u("Ders konularını sırala"), a("1. Pulpitis\n2. Periodontitis\n3. Alveolit")]
+    result = low(resolve_followup_query("ikincisini açıkla", history))
+    assert "periodontitis" in result and "pulpitis" not in result and "alveolit" not in result
+    query = "ikincisini açıkla"
+    assert resolve_followup_query(query, [u("Pulpitis anlat"), a("Liste bulunmuyor")]) == query
+
+def test_output_controls_do_not_become_literal_chunk_terms():
+    from app.study_retrieval_v2 import _retrieval_terms
+    for suffix in ("Özetle", "3 tane say", "bunu tablo yap", "biraz daha detaylı", "ikincisini açıkla"):
+        terms, _ = _retrieval_terms("Pulpitis — " + suffix)
+        assert terms == ["Pulpitis"], (suffix, terms)
+    assert "ikinci" in _retrieval_terms("ikinci molar anatomisi")[0]
+    assert "madde" in _retrieval_terms("restoratif madde nedir")[0]
+
+def test_output_table_is_not_a_visual_source_requirement():
+    from app.dental_query_intent import build_dental_requirement_plan
+    output = build_dental_requirement_plan("Pulpitis — bunu tablo yap")
+    assert "visual" not in output.requested_facets
+    assert not output.requires_visual_source
+    source = build_dental_requirement_plan("Bu tablodaki bulguları açıkla")
+    assert source.requires_visual_source
+
 def test_exam_test_count_chain():
     h=[u(FLOR),a("Flor çürük önlemede etkilidir.")]
     q=resolve_followup_query("Sınav için en önemli yerleri?",h)

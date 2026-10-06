@@ -4041,31 +4041,9 @@ def delete_study_course(request: Request, course_id: int):
 
 
 def _wake_academic_modal_indexer() -> bool:
-    """Best-effort wake after the durable StudyIndexJob commit."""
-    endpoint = (os.getenv("ACADEMIC_MODAL_DISPATCH_URL") or "").strip()
-    secret = (os.getenv("ACADEMIC_MODAL_DISPATCH_SECRET") or "").strip()
-    if not endpoint or not secret:
-        logger.warning("Academic Modal dispatch is not configured")
-        return False
-    request = urllib.request.Request(
-        endpoint,
-        data=b"{}",
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {secret}",
-            "Content-Type": "application/json",
-            "User-Agent": "dental-ai-academic-dispatch/1",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            ok = 200 <= int(getattr(response, "status", 0)) < 300
-        if not ok:
-            logger.warning("Academic Modal dispatch returned non-success")
-        return ok
-    except (urllib.error.URLError, TimeoutError, OSError):
-        logger.exception("Academic Modal dispatch failed; durable job remains queued")
-        return False
+    """Wake after durable commit; upload survives an unavailable Modal endpoint."""
+    from app.academic_modal_dispatch import wake_academic_modal_indexer
+    return wake_academic_modal_indexer()
 
 
 def _index_study_course_background(owner_user_id: int, course_id: int) -> None:
