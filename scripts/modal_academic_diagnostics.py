@@ -130,10 +130,12 @@ def snapshot():
                 except Exception as exc:
                     result["source_access"].append({"material_id": source["id"], "error_type": type(exc).__name__})
         if source_rows:
-            from app.object_cache import scoped
+            from app.object_cache import scope
+            from app.object_storage import ensure_local
             from app.study_local_ocr import _render_pdf_page
             import hashlib
-            with scoped(source_rows[0]["file_path"]) as local_source:
+            with scope():
+                local_source = ensure_local(source_rows[0]["file_path"])
                 def render_probe(_):
                     with _render_pdf_page(local_source, 1) as page_image:
                         return {"size": list(page_image.size),
