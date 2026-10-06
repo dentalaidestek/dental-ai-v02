@@ -94,6 +94,13 @@ def snapshot():
                 j.index_version = m.building_index_version AS building_generation_matches
                 FROM studymaterial m LEFT JOIN studyindexjob j ON j.material_id=m.id
                 WHERE m.course_id=3 ORDER BY m.id""")
+            current_materials = [m for m in result["materials"] if not m["deleted"]]
+            result["ortoo_completion"] = {
+                "material_ids": [m["id"] for m in current_materials],
+                "all_six_published_ready": len(current_materials) == 6 and all(
+                    m["index_status"] == "READY" and m["job_status"] == "DONE"
+                    and m["published_generation_matches"] is True for m in current_materials),
+            }
             result["eligible"] = rows("""SELECT resource_class, count(*) AS jobs FROM studyindexjob
                 WHERE (status='QUEUED' AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP))
                    OR (status='RUNNING' AND lease_until IS NOT NULL AND lease_until <= CURRENT_TIMESTAMP)
