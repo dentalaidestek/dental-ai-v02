@@ -566,6 +566,11 @@ def _conversation_state(
 
 def _ordinal_reference_number(text: str) -> int | None:
     """Parse an explicit list ordinal with bounded noise; never a plain count."""
+    ordinal_roots = ("birinci", "ikinci", "ucuncu", "dorduncu", "besinci",
+                     "altinci", "yedinci", "sekizinci", "dokuzuncu", "onuncu")
+    word = re.search(r"\b(" + "|".join(ordinal_roots) + r")(?:sini|sinin|sine|si)\b", _state_text(text or ""))
+    if word:
+        return ordinal_roots.index(word.group(1)) + 1
     match = re.search(r"(?iu)\b(\d{1,3})(\.)?\s*([a-zçğıöşü]+)", text or "")
     if not match:
         return None
@@ -711,7 +716,7 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         prefix = " — ".join(dict.fromkeys(x for x in (subject_text, reference_text) if x))
         return f"{prefix} — {clean}" if prefix else clean
 
-    if re.search(r"(?iu)\b\d+\.\s*soru\w*", clean):
+    if _ordinal_reference_number(clean) is not None or re.search(r"(?iu)\b\d+\.\s*soru\w*", clean):
         return clean
 
     if not dependent:
@@ -1052,7 +1057,7 @@ def _concept_alternatives(query: str) -> list[str]:
     return extras
 
 _QUERY_NOISE_RE = re.compile(
-    r"\b(?:nedir|ne demek|açıkla|anlat|kaçtır|hangisi|hangileridir|nelerdir|"
+    r"\b(?:nedir|ne demek|açıkla|anlat|özetle|toparla|yoğunlaştır|sıkıştır|öğret|kaçtır|hangisi|hangileridir|nelerdir|"
     r"nedendir|neden|niçin|nasıl|nerede|ne zaman|hangi durumda|kimlerde|"
     r"ne yapılır|neye bağlı|göre|hakkında|bilgi|ver|söyle|ders notunda|notlarda)\b",
     re.I,
@@ -1062,6 +1067,13 @@ _QUERY_NOISE_RE = re.compile(
 def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
     """Return precise source terms and bounded dental alternatives."""
     clean = _normalize_dental_notation(query)
+    # Output and reference operators are retrieval controls, not note nouns.
+    # Remove complete grammatical constructions so dental uses of "madde",
+    # "tablo", numbers or "ikinci molar" retain their content meaning.
+    clean = re.sub(r"(?iu)\b\d+\s+(?:tane|adet|madde)\s+(?:say|listele|sırala|sirala)\b", " ", clean)
+    clean = re.sub(r"(?iu)\b(?:bunu|onu)\s+tablo(?:\s+(?:şeklinde|seklinde))?\s+yap\b", " ", clean)
+    clean = re.sub(r"(?iu)\b(?:biraz\s+)?daha\s+(?:detaylı|ayrıntılı|basit|kısa)\b", " ", clean)
+    clean = re.sub(r"(?iu)\b(?:birinci|ikinci|üçüncü|dördüncü|beşinci|altıncı|yedinci|sekizinci|dokuzuncu|onuncu)(?:sini|sinin|sine|si)\b", " ", clean)
     core = re.sub(_QUERY_NOISE_RE, " ", clean)
     core = re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü+./'-]+", " ", core)
     core = re.sub(r"\s+", " ", core).strip(" ?.,;:")

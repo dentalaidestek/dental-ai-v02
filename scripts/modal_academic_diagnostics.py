@@ -3,13 +3,16 @@ import json
 import os
 import modal
 from modal_academic_indexer import image as indexing_image
+from pathlib import Path
 
 # Modal auto-mounts the entrypoint, not imported root-level modules.
 image = indexing_image.add_local_file("modal_academic_indexer.py", "/root/modal_academic_indexer.py")
+if Path("baseline_retrieval.py").is_file():
+    image = image.add_local_file("baseline_retrieval.py", "/root/baseline_retrieval.py")
 
 app = modal.App("dental-ai-academic-diagnostics")
 
-@app.function(image=image, cpu=0.25, memory=256, timeout=60,
+@app.function(image=image, cpu=1, memory=1024, timeout=120,
               max_containers=1,
               secrets=[modal.Secret.from_name("dental-ai-academic-indexer")])
 def snapshot():
@@ -126,6 +129,53 @@ def snapshot():
                         "pdf_header": header.startswith(b"%PDF-")})
                 except Exception as exc:
                     result["source_access"].append({"material_id": source["id"], "error_type": type(exc).__name__})
+        from sqlmodel import Session
+        from app.study_retrieval_v2 import retrieve_course_context_v2
+        from app.dental_knowledge_graph import node_label
+        from collections import Counter
+        with engine.connect() as connection:
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            owner = connection.execute(text("SELECT owner_user_id FROM studycourse WHERE id=3")).scalar_one()
+            published = connection.execute(text("""SELECT c.semantic_json FROM studyindexchunk c
+                JOIN studymaterial m ON m.id=c.material_id AND m.active_index_version=c.index_version
+                WHERE c.course_id=3 AND m.deleted_at IS NULL AND m.index_status='READY'
+                AND c.semantic_json IS NOT NULL ORDER BY c.id LIMIT 240""")).scalars().all()
+        nodes = Counter(node for value in published for node in json.loads(value).get("nodes", []))
+        topics = [node_label(node) for node, _ in nodes.most_common(3)]
+        topics = [topic for topic in topics if topic]
+        def retrieve(query, history=None, implementation=retrieve_course_context_v2):
+            with Session(engine, expire_on_commit=False) as session:
+                session.exec(text("SET TRANSACTION READ ONLY"))
+                selected = implementation(session, owner_user_id=owner, course_id=3,
+                    query=query, recent_history=history or [])
+                return {"mode": selected.retrieval_mode, "sufficient": selected.evidence_sufficient,
+                    "confidence": selected.evidence_confidence, "chunk_ids": [r.chunk_id for r in selected.evidence],
+                    "material_ids": selected.source_material_ids, "resolved_query": selected.resolved_query}
+        result["live_retrieval"] = {"course_summary": retrieve("Özetle")}
+        if topics:
+            history = [{"role":"user", "content":topics[0] + " hakkında bilgi ver"}]
+            for name, query in (("topic_summary", "Özetle"), ("detail", "biraz daha detaylı"),
+                                ("table", "bunu tablo yap"), ("count", "3 tane say")):
+                result["live_retrieval"][name] = retrieve(query, history)
+            if len(topics) > 1:
+                reference = [{"role":"user", "content":"Ders konularını sırala"},
+                    {"role":"assistant", "content":"1. " + topics[0] + "\n2. " + topics[1]}]
+                result["live_retrieval"]["ordinal"] = retrieve("ikincisini açıkla", reference)
+            if Path("/root/baseline_retrieval.py").is_file():
+                import importlib.util, sys
+                spec = importlib.util.spec_from_file_location("academic_baseline_retrieval", "/root/baseline_retrieval.py")
+                baseline = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = baseline
+                spec.loader.exec_module(baseline)
+                comparisons = []
+                queries = [topics[0] + " nedir?", topics[0] + " anatomik ilişkilerini ayrıntılı açıkla"]
+                if len(topics) > 1:
+                    queries.append(topics[0] + " ve " + topics[1] + " kavramlarını karşılaştır")
+                for query in queries:
+                    before = retrieve(query, implementation=baseline.retrieve_course_context_v2)
+                    after = retrieve(query)
+                    comparisons.append({"query":query, "unchanged": before == after, "before":before, "after":after})
+                result["long_query_comparisons"] = comparisons
     except Exception as exc:
         # Exception strings can contain connection URLs: never print them.
         result["error_type"] = type(exc).__name__

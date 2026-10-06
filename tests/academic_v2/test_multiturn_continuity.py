@@ -34,6 +34,21 @@ def test_subjectless_transform_uses_course_scope_but_resolved_topic_does_not():
     for query in ("Pulpitis özetle", "Flor kullanımını özetle", "Nance apareyinin kullanımını özetle", "SNB normal değeri nedir?"):
         assert not coverage(query)
 
+def test_word_ordinal_binds_selected_item_and_missing_reference_abstains():
+    history = [u("Ders konularını sırala"), a("1. Pulpitis\n2. Periodontitis\n3. Alveolit")]
+    result = low(resolve_followup_query("ikincisini açıkla", history))
+    assert "periodontitis" in result and "pulpitis" not in result and "alveolit" not in result
+    query = "ikincisini açıkla"
+    assert resolve_followup_query(query, [u("Pulpitis anlat"), a("Liste bulunmuyor")]) == query
+
+def test_output_controls_do_not_become_literal_chunk_terms():
+    from app.study_retrieval_v2 import _retrieval_terms
+    for suffix in ("Özetle", "3 tane say", "bunu tablo yap", "biraz daha detaylı", "ikincisini açıkla"):
+        terms, _ = _retrieval_terms("Pulpitis — " + suffix)
+        assert terms == ["Pulpitis"], (suffix, terms)
+    assert "ikinci" in _retrieval_terms("ikinci molar anatomisi")[0]
+    assert "madde" in _retrieval_terms("restoratif madde nedir")[0]
+
 def test_exam_test_count_chain():
     h=[u(FLOR),a("Flor çürük önlemede etkilidir.")]
     q=resolve_followup_query("Sınav için en önemli yerleri?",h)
