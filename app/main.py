@@ -3827,10 +3827,19 @@ def _startup_database():
 
 @app.on_event("startup")
 async def startup():
+    logger.info("startup.trace entered")
+    logger.info("startup.trace begin=program_reminder_wakeup.bind")
     _program_reminder_wakeup.bind()
+    logger.info("startup.trace end=program_reminder_wakeup.bind")
+    logger.info("startup.trace begin=consultation_deadline_wakeup.bind")
     _consultation_deadline_wakeup.bind()
+    logger.info("startup.trace end=consultation_deadline_wakeup.bind")
+    logger.info("startup.trace begin=run_in_threadpool")
     await run_in_threadpool(_startup_database)
+    logger.info("startup.trace end=run_in_threadpool")
+    logger.info("startup.trace begin=start_colocated_worker_task")
     app.state.study_v2_worker_task = start_colocated_worker_task()
+    logger.info("startup.trace end=start_colocated_worker_task")
     from app.work_worker import embedded
     app.state.work_task = asyncio.create_task(embedded()) if os.getenv("DENTAL_WORK_EXECUTION", "external") == "embedded" else None
     run_embedded_deadline_worker = DEADLINE_EXECUTION_MODE != "external"
