@@ -12,6 +12,12 @@ _FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
 _STUDY_COUNT_WORDS = frozenset('bir iki uc dort bes alti yedi sekiz dokuz on yirmi otuz kirk elli'.split())
 
 
+def comprehension_followup(query: str) -> bool:
+    """An omitted object in a comprehension repair requires prior context."""
+    text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split())
+    return bool(re.fullmatch(r'(?:anlamadim|anlayamadim|kafam\s+karisti)[.!? ]*', text))
+
+
 def strip_request_prefix(query: str) -> str:
     """Strip bounded discourse prefixes without fuzzy matching medical nouns."""
     clean = (query or '').strip()
@@ -65,7 +71,7 @@ def course_source_request(query: str) -> bool:
     if prefix and not re.fullmatch(r'(?:lutfen|bana|simdi|peki)(?:\s+(?:lutfen|bana|simdi|peki))*', prefix):
         return False
     tail = text[source.end():]
-    action = re.search(r'\b(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala|sor|calisalim)\w*\b', tail)
+    action = re.search(r'\b(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala|sor|calisalim|calistir|sina)\w*\b', tail)
     if action is None:
         return False
     argument = tail[:action.start()]
@@ -83,12 +89,12 @@ def course_source_request(query: str) -> bool:
     tokens = re.findall(r'\w+', argument)
     modifiers = {
         'konu', 'konuyu', 'konulari', 'konularini', 'icerigi', 'icerigini',
-        'bana', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak',
+        'bana', 'beni', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak',
         'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade',
         'yuksek', 'verimli', 'zor', 'zorlayici', 'kolay', 'orta',
         'soru', 'sorular', 'sorulari', 'test', 'tane', 'adet',
         'kritik', 'onemli', 'yerleri', 'yerlerini', 'noktalar', 'noktalarini',
-        'calisma', 'plani', 'planini', 'mantigiyla', 'her', 'tek',
+        'calisma', 'plani', 'planini', 'programi', 'programini', 'mantigiyla', 'her', 'tek',
         'sinava', 'finale', 'vizeye',
     }
     return all(token in modifiers or token in _STUDY_COUNT_WORDS or token.isdigit() for token in tokens)
@@ -111,10 +117,10 @@ def subjectless_study_request(query: str) -> bool:
         'soru', 'sorular', 'test', 'quiz', 'alistirma', 'deneme',
         'kolay', 'orta', 'zor', 'zorlayici', 'farkli', 'yeni',
         'ozet', 'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit',
-        'calisma', 'plani', 'planini', 'simdi', 'sonra', 'bekle', 'olsun', 'istiyorum', 'lazim',
+        'calisma', 'plani', 'planini', 'programi', 'programini', 'simdi', 'sonra', 'bekle', 'olsun', 'istiyorum', 'lazim',
     }
     return all(token in controls or token in _STUDY_COUNT_WORDS or token.isdigit()
-               or re.fullmatch(r'(?:ozetle|toparla|acikla|anlat|ogret|sor|hazirla|uret|olustur|yaz|cikar|yap|sina)' + _REQUEST_END, token)
+               or re.fullmatch(r'(?:ozetle|toparla|acikla|anlat|ogret|sor|hazirla|uret|olustur|yaz|cikar|yap|sina|calistir)' + _REQUEST_END, token)
                for token in re.findall(r'\w+', text))
 # Orthographic rescue is limited to grammar/operators, with unique one-edit
 # targets. Productive nominal inflections preserve the operation's argument.
@@ -272,8 +278,11 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     generation = generation or any(re.search(
         r'\b' + count_argument + r'\s+(?:soru|test|quiz|questions?)\s+(?:olsun|istiyorum|lazim)\b', c)
         for c in clauses)
+    generation = generation or any(_action(c, 'calistir|sina')
+                                  and re.search(r'\b(?:beni|bizi|kendimi)\b', c) for c in clauses)
     similarity=bool(re.search(r'\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:tarz\w*|tip\w*|manti[kg]\w*))\b',text))
     explain=any(_action(c,'acikla|anlat|ogret') or bool(re.search(r'\bcalisalim\b|\b(?:mantig\w*|mantik|baglanti\w*)\b.{0,48}\bkur\b|\b(?:ders|ogrenciye)\b.{0,16}\banlatir gibi\b',c)) for c in clauses)
+    explain = explain or any(re.search(r'\b(?:anlamadim|anlayamadim|kafam\s+karisti)\b', c) for c in clauses)
     if re.search(r'\b(?:veya|yahut|ya da)\b',text) and sum((summary,generation,explain))>1:
         return StudyOperation(None)
     if historical or bool(re.search(r'\b(?:sikca|en sik|surekli|tekrarlanan|yinelenen)\b.{0,64}\b(?:soru\w*|sorul\w*|sordu\w*)\b',text)):
@@ -305,7 +314,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
         distribution=bool(re.search(r'\b(?:dagilim\w*|oruntu\w*|kac sor\w*|bilgi tur\w*|kazan\w*)\b',text)) or any(_action(c,'grupla|ayir') and bool(re.search(r'\b(?:soru\w*|konu\w*)\b',c)) for c in clauses)
         if distribution and not summary:return StudyOperation('past_exam_patterns',True,False,True)
     if summary:return StudyOperation('summarize',False,generation,broad)
-    if any(_action(c, 'cikar|hazirla|olustur|yap') and re.search(r'\bcalisma\s+plan\w*\b', c) for c in clauses):
+    if any(_action(c, 'cikar|hazirla|olustur|yap') and re.search(r'\bcalisma\s+(?:plan|program)\w*\b', c) for c in clauses):
         return StudyOperation('summarize',False,False,True)
     if generation:return StudyOperation('generate_questions',False,True,broad or bool(re.search(r'\b(?:dengeli|her konu\w*)\b',text)))
     # Salience is a requested selection, not a passing exam/persona mention.

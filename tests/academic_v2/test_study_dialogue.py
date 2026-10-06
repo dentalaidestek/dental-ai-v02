@@ -291,6 +291,49 @@ class StudyDialogueTests(unittest.TestCase):
         outline = [user('Notları özetle'), assistant('1. Pulpitis\n2. Flor')]
         self.assertFalse(answer_needs_reference('Nance', outline))
 
+    def test_learner_practice_and_program_requests_are_operations(self):
+        for query in ('Beni çalıştır', 'Bana notlardan çalışma programı çıkar'):
+            with self.subTest(query=query):
+                plan = build_dental_requirement_plan(query)
+                self.assertFalse(plan.subject_terms)
+                self.assertTrue(_course_coverage_requested(query, plan, classify_academic_study_task(query)))
+        self.assertIn('yalnız bir soru', dialogue_rules('Beni çalıştır', []))
+        history = [user('Pulpitis anlat'), assistant('...')]
+        self.assertIn('Pulpitis', resolve_followup_query('Beni çalıştır', history))
+        self.assertNotEqual('generate_questions', getattr(classify_academic_study_task('Motoru çalıştır'), 'task', None))
+
+    def test_comprehension_repair_uses_topic_or_clarifies_without_a_search(self):
+        from types import SimpleNamespace
+        from app.study_retrieval_v2 import retrieve_course_context_v2
+        session = SimpleNamespace(get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name='postgresql')))
+        history = [user('Pulpitis anlat'), assistant('Pulpitis açıklaması.')]
+        resolved = resolve_followup_query('anlamadım', history)
+        self.assertIn('Pulpitis', resolved)
+        self.assertNotIn('anlamadım', build_dental_requirement_plan(resolved).subject_terms)
+        raw_plan = build_dental_requirement_plan('anlamadım')
+        self.assertFalse(raw_plan.subject_terms)
+        self.assertFalse(_course_coverage_requested('anlamadım', raw_plan, classify_academic_study_task('anlamadım')))
+        result = retrieve_course_context_v2(session, owner_user_id=1, course_id=3, query='anlamadım')
+        self.assertEqual('clarification', result.retrieval_mode)
+        self.assertTrue(result.clarification)
+
+    def test_courtesy_bypasses_note_search_and_preserves_pending_question(self):
+        from types import SimpleNamespace
+        from app.study_retrieval_v2 import retrieve_course_context_v2
+        from app.academic_dialogue import ACKNOWLEDGEMENT_RESPONSE
+        session = SimpleNamespace(get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name='postgresql')))
+        for query in ('teşekkürler', 'tamam', 'anladım'):
+            result = retrieve_course_context_v2(session, owner_user_id=1, course_id=3, query=query)
+            self.assertEqual('conversation', result.retrieval_mode)
+            self.assertEqual(ACKNOWLEDGEMENT_RESPONSE, result.clarification)
+            self.assertFalse(result.evidence)
+        history = [user('Bana bir soru sor'), assistant('Soru 1\n' + QUESTION),
+                   user('tamam'), assistant(ACKNOWLEDGEMENT_RESPONSE)]
+        self.assertIn('Pulpitis', resolve_followup_query('B', history))
+        unnumbered = [user('Bana bir soru sor'), assistant('Pulpitis hangi belirtiyi verir?'),
+                      user('tamam'), assistant(ACKNOWLEDGEMENT_RESPONSE)]
+        self.assertIsNotNone(active_question_reference('Ağrı', unnumbered))
+
 
 if __name__ == '__main__':
     unittest.main()

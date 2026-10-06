@@ -330,8 +330,8 @@ def request_subject_text(query: str) -> str:
 
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
-    from app.academic_task_language import course_source_request, subjectless_study_request
-    if course_source_request(query) or subjectless_study_request(query):
+    from app.academic_task_language import course_source_request, subjectless_study_request, comprehension_followup
+    if course_source_request(query) or subjectless_study_request(query) or comprehension_followup(query):
         return ()
     # Resolver prefixes are user-owned topics or explicitly selected question
     # stems. Output controls in the suffix must not become lexical subjects.

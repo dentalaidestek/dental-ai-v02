@@ -758,6 +758,9 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_dialogue import conversational_acknowledgement
+    if conversational_acknowledgement(clean):
+        return clean
     clean = _normalize_state_controls(clean)
     # Discourse wrappers do not own a topic. Keep correction words themselves
     # so task/qualifier transitions remain visible to the state engine.
@@ -2419,7 +2422,9 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     """
     if not study_task:
         return False
-    from app.academic_task_language import course_source_request
+    from app.academic_task_language import course_source_request, comprehension_followup
+    if comprehension_followup(query):
+        return False
     if course_source_request(query) and not requirement.subject_node_ids:
         return True
     if (study_task.task in {"summarize", "explain", "generate_questions"}
@@ -2444,7 +2449,15 @@ def retrieve_course_context_v2(
 ) -> RetrievalResult:
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
+    from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
+    if conversational_acknowledgement(query):
+        return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
+                               clarification=ACKNOWLEDGEMENT_RESPONSE)
     resolved = resolve_followup_query(query, recent_history)
+    from app.academic_task_language import comprehension_followup
+    if comprehension_followup(resolved):
+        return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
     from app.academic_dialogue import answer_needs_reference
     if answer_needs_reference(query, recent_history):
         return RetrievalResult(

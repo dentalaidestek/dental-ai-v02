@@ -41,11 +41,16 @@ usage-credit decrement. That does not establish the behavior of other endpoints.
 
 ## Local validation and its limits
 
-27 focused source/dialogue tests and 59 existing continuity checks pass. Two
+30 focused source/dialogue tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
 topics, and sole-topic versus previous-topic references.
+
+Conversational control checks additionally cover learner-practice requests,
+study-program requests, comprehension repair with/without prior topic, courtesy
+messages that bypass candidate retrieval, and pending-question continuity across
+a courtesy exchange. These routes do not classify every message as a new topic.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

@@ -11,6 +11,25 @@ _ITEM = re.compile(
 )
 _OPTIONS = re.compile(r'(?im)^\s*(?:[-*]\s*)?(?:\*\*)?[A-E][.)\:]\s*')
 _ANSWER = re.compile(r'(?:cevabim\s*[:=]?\s*|bence\s+|cevap\s*[:=]?\s*)?[a-e](?:\s+sikki)?[.!]?')
+ACKNOWLEDGEMENT_RESPONSE = 'Rica ederim. Hazır olduğunda devam edebiliriz.'
+
+
+def conversational_acknowledgement(query: str) -> bool:
+    text = ' '.join((query or '').translate(_FOLD).lower().split())
+    return bool(re.fullmatch(r'(?:tamam|tesekkurler|tesekkur ederim|sag\s*ol|eyvallah|anladim)[.! ]*', text))
+
+
+def _latest_assistant(history: list[dict] | None) -> dict | None:
+    # A deterministic courtesy exchange does not replace a pending question.
+    return next((item for item in reversed((history or [])[-8:])
+                 if str(item.get('role') or '').casefold() in {'assistant', 'ai'}
+                 and str(item.get('content') or '').strip() != ACKNOWLEDGEMENT_RESPONSE), None)
+
+
+def _latest_study_user(history: list[dict] | None) -> dict | None:
+    return next((item for item in reversed((history or [])[-8:])
+                 if str(item.get('role') or '').casefold() in {'user', 'human'}
+                 and not conversational_acknowledgement(str(item.get('content') or ''))), None)
 
 
 def numbered_items(body: str) -> list[tuple[int, str]]:
@@ -94,8 +113,7 @@ def active_question_reference(query: str, history: list[dict] | None) -> Questio
     ))
     if not (answer or reference or _free_answer_intent(query)):
         return None
-    latest = next((item for item in reversed((history or [])[-8:])
-                   if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    latest = _latest_assistant(history)
     if latest is None:
         return None
     body = str(latest.get('content') or '')[:16000]
@@ -113,8 +131,7 @@ def active_question_reference(query: str, history: list[dict] | None) -> Questio
         # A rhetorical question inside a lecture is not a pending quiz. Free
         # answers require an actual question-generation turn or quiz options.
         from app.academic_task_language import parse_study_operation
-        latest_user = next((item for item in reversed((history or [])[-8:])
-                            if str(item.get('role') or '').casefold() in {'user', 'human'}), None)
+        latest_user = _latest_study_user(history)
         operation = parse_study_operation(str(latest_user.get('content') or '')) if latest_user else None
         if not operation or not operation.generate:
             return None
@@ -127,8 +144,7 @@ def answer_needs_reference(query: str, history: list[dict] | None) -> bool:
         return active_question_reference(query, history) is None
     if not _free_answer_intent(query):
         return False
-    latest = next((item for item in reversed((history or [])[-8:])
-                   if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    latest = _latest_assistant(history)
     if not latest:
         return False
     body = str(latest.get('content') or '')[:16000]
@@ -137,8 +153,7 @@ def answer_needs_reference(query: str, history: list[dict] | None) -> bool:
     if _OPTIONS.search(body) or re.search(r'(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?soru\s+\d+', body):
         return True
     from app.academic_task_language import parse_study_operation
-    latest_user = next((item for item in reversed((history or [])[-8:])
-                        if str(item.get('role') or '').casefold() in {'user', 'human'}), None)
+    latest_user = _latest_study_user(history)
     operation = parse_study_operation(str(latest_user.get('content') or '')) if latest_user else None
     return bool(operation and operation.generate)
 
@@ -152,8 +167,7 @@ def numbered_answer_references(query: str, history: list[dict] | None) -> list[Q
     remainder = re.sub(r'\b(?:cevaplarim|cevabim|yanitlarim|yanitim|bence|ve)\b', ' ', remainder)
     if not answers or re.search(r'\w', remainder):
         return []
-    latest = next((item for item in reversed((history or [])[-8:])
-                   if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    latest = _latest_assistant(history)
     if latest is None:
         return []
     items = dict(numbered_items(str(latest.get('content') or '')[:16000]))
@@ -179,8 +193,14 @@ def dialogue_rules(query: str, history: list[dict] | None) -> str:
                            for item in references)
         )
     folded = ' '.join((query or '').translate(_FOLD).lower().split())
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(query)
+    learner_practice = bool(operation and operation.generate
+                            and re.search(r'\b(?:beni|bizi|kendimi)\b', folded)
+                            and re.search(r'\b(?:calistir|sina)\w*\b', folded))
     if (re.search(r'\b(?:cevabimi|yanitimi|cevaplarimi|yanitlarimi)\s+bekle\b', folded)
-            or re.search(r'\b(?:tek tek|birer birer|sirayla)\b.*\bsoru\w*\b', folded)):
+            or re.search(r'\b(?:tek tek|birer birer|sirayla)\b.*\bsoru\w*\b', folded)
+            or learner_practice):
         return (
             'Etkileşimli çalışma: bu turda yalnız bir soru sor ve öğrencinin '
             'cevabını bekle. Cevabı/anahtarı henüz açıklama. İstenen toplam soru '
