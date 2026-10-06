@@ -9,6 +9,57 @@ from functools import lru_cache
 import re
 
 _FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
+
+_COURSE_SOURCE_RE = re.compile(
+    r'\b(?:(?:bu|tum|butun)\s+)?(?:ders\s+)?'
+    r'(?:not(?:lar)?(?:u|unu|un|ta|tan|taki|i|ini|larini|dan|indan|larindan|indaki|larindaki|da|larda|larin|imi|imdan)?'
+    r'|ders(?:in\s+tamam(?:i|ini|indan)|i|in))\b'
+)
+
+def course_source_request(query: str) -> bool:
+    """Recognize a course source as the argument of a study operation.
+
+    Task/style words between that source argument and the operation are not
+    topical search terms. Unknown nouns remain subjects, so naming a topic
+    inside the notes does not silently turn into a whole-course request.
+    Entity recognition is deliberately left to the caller.
+    """
+    operation = parse_study_operation(query)
+    if operation is None or operation.task is None or operation.past:
+        return False
+    text = (query or '').translate(_FOLD).lower()
+    text = ' '.join(text.split())
+    source = _COURSE_SOURCE_RE.search(text)
+    if source is None:
+        return False
+    prefix = text[:source.start()].strip(' ,.!?')
+    if prefix and not re.fullmatch(r'(?:lutfen|bana|simdi|peki)(?:\s+(?:lutfen|bana|simdi|peki))*', prefix):
+        return False
+    tail = text[source.end():]
+    action = re.search(r'\b(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala)\w*\b', tail)
+    if action is None:
+        return False
+    argument = tail[:action.start()]
+    # Output/persona/goal modifiers describe how to transform the source.
+    # These are shared language rules, independent of any UI preset text.
+    argument = re.sub(
+        r'\b(?:sinav|final|vize)(?:a|da|dan)?\s+(?:odakli|icin|yonelik)\b'
+        r'|\b(?:bir\s+)?(?:hoca|ogretmen|ogrenci)(?:ya|ye)?\s+gibi\b'
+        r'|\b(?:mantigini|mantik)\s+kurarak\b'
+        r'|\b(?:gerektiginde\s+)?orneklerle\b'
+        r'|\b(?:basit|sade|anlasilir)\s+bir\s+dille\b'
+        r'|\b(?:coktan\s+secmeli|acik\s+uclu|dogru\s+yanlis)\b',
+        ' ', argument,
+    )
+    tokens = re.findall(r'\w+', argument)
+    modifiers = {
+        'konu', 'konuyu', 'konulari', 'konularini', 'icerigi', 'icerigini',
+        'bana', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak',
+        'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade',
+        'yuksek', 'verimli', 'zor', 'zorlayici', 'kolay', 'orta',
+        'soru', 'sorular', 'sorulari', 'test', 'tane', 'adet',
+    }
+    return all(token in modifiers or token.isdigit() for token in tokens)
 # Orthographic rescue is limited to grammar/operators, with unique one-edit
 # targets. Productive nominal inflections preserve the operation's argument.
 _ACTION_ROOTS = frozenset(('acikla anlat ogret ozetle toparla birlestir yogunlastir sikistir '
