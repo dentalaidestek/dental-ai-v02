@@ -22,7 +22,7 @@ class DispatchTests(unittest.TestCase):
 
     def test_acknowledged_wake_is_observable_and_authenticated(self):
         with patch("urllib.request.urlopen", return_value=Response(b'{"ok":true,"scheduled":true}')) as request:
-            with self.assertLogs("app.academic_modal_dispatch", logging.INFO) as logs:
+            with self.assertLogs("uvicorn.error.academic_modal_dispatch", logging.INFO) as logs:
                 self.assertTrue(wake_academic_modal_indexer())
             self.assertIn("outcome=scheduled", " ".join(logs.output))
             self.assertNotIn("test-only-secret", " ".join(logs.output))
@@ -34,7 +34,7 @@ class DispatchTests(unittest.TestCase):
     def test_transient_failure_retries_with_bounded_jitter(self):
         outcomes = [TimeoutError(), urllib.error.URLError("test-only-secret"), Response(b'{"ok":true,"scheduled":true}')]
         with patch("urllib.request.urlopen", side_effect=outcomes) as request, patch("time.sleep") as sleep, patch("random.uniform", return_value=0.1) as jitter:
-            with self.assertLogs("app.academic_modal_dispatch", logging.INFO) as logs:
+            with self.assertLogs("uvicorn.error.academic_modal_dispatch", logging.INFO) as logs:
                 self.assertTrue(wake_academic_modal_indexer())
             self.assertEqual(request.call_count, 3)
             self.assertEqual(sleep.call_count, 2)
@@ -47,6 +47,27 @@ class DispatchTests(unittest.TestCase):
             self.assertFalse(wake_academic_modal_indexer())
             self.assertEqual(request.call_count, 1)
             sleep.assert_not_called()
+
+    def test_success_reaches_uvicorn_handler_when_root_filters_info(self):
+        output = io.StringIO()
+        handler = logging.StreamHandler(output)
+        root = logging.getLogger()
+        server = logging.getLogger("uvicorn.error")
+        previous = (root.level, server.level, server.handlers, server.propagate)
+        try:
+            root.setLevel(logging.WARNING)
+            server.setLevel(logging.INFO)
+            server.handlers = [handler]
+            server.propagate = False
+            with patch("urllib.request.urlopen", return_value=Response(b'{"ok":true,"scheduled":true}')):
+                self.assertTrue(wake_academic_modal_indexer())
+            self.assertIn("outcome=scheduled", output.getvalue())
+            self.assertNotIn("test-only-secret", output.getvalue())
+        finally:
+            root.setLevel(previous[0])
+            server.setLevel(previous[1])
+            server.handlers = previous[2]
+            server.propagate = previous[3]
 
     def test_outage_and_invalid_acknowledgement_cannot_succeed(self):
         for outcome in (lambda: TimeoutError(), lambda: Response(b'{"ok":true}')):

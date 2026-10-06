@@ -7,7 +7,9 @@ import time
 import urllib.error
 import urllib.request
 
-logger = logging.getLogger(__name__)
+# Uvicorn configures this parent at INFO with a stream handler; the application
+# root logger can remain at WARNING without hiding successful background wakes.
+logger = logging.getLogger("uvicorn.error.academic_modal_dispatch")
 
 
 def wake_academic_modal_indexer() -> bool:
