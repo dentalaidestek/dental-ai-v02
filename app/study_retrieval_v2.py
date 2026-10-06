@@ -666,6 +666,11 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_task_language import course_source_request
+    from app.dental_knowledge_graph import explicit_node_mentions
+    if course_source_request(clean) and not explicit_node_mentions(clean):
+        # The current course source owns scope, even with an older chat topic.
+        return clean
     fuzzy_exam = bool(clean and _has_exam_cue(clean) and not _STATE_EXAM_RE.search(clean))
     if fuzzy_exam:
         clean = f"sınav için — {clean}"
@@ -2265,6 +2270,9 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     """
     if not study_task:
         return False
+    from app.academic_task_language import course_source_request
+    if course_source_request(query) and not requirement.subject_node_ids:
+        return True
     if (study_task.task in {"summarize", "explain"}
             and not requirement.subject_terms and not requirement.subject_node_ids):
         return True
@@ -2310,6 +2318,13 @@ def retrieve_course_context_v2(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )
     course_wide_coverage = _course_coverage_requested(resolved, requirement, study_task)
+    logging.getLogger("uvicorn.error.academic_retrieval").info(
+        "Academic retrieval route owner=%s course=%s history_turns=%s "
+        "resolved_changed=%s task=%s subject_count=%s course_wide=%s",
+        owner_user_id, course_id, len(recent_history or []), resolved != query,
+        study_task.task if study_task else "qa",
+        len(requirement.subject_terms), course_wide_coverage,
+    )
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
         # Broad course-wide summary/explanation/generation must sample the whole published
         # course deterministically instead of collapsing back to a normal top-k
@@ -2329,6 +2344,13 @@ def retrieve_course_context_v2(
                 coverage_plan, limit=min(48, max(8, requested_count)),
             ),
             limit=min(48, max(8, requested_count)),
+        )
+        logging.getLogger("uvicorn.error.academic_retrieval").info(
+            "Academic coverage hydration owner=%s course=%s metadata_rows=%s "
+            "planned_materials=%s buckets=%s hydrated_chunks=%s hydrated_materials=%s",
+            owner_user_id, course_id, coverage_plan.scanned_rows,
+            len({bucket.material_id for bucket in coverage_plan.buckets}),
+            len(coverage_plan.buckets), len(rows), len({int(row[1]) for row in rows}),
         )
         has_more_questions = False
     elif exhaustive_questions:
@@ -2649,4 +2671,11 @@ def retrieve_course_context_v2(
     if visual_requested and result.evidence_sufficient and not result.visual_sources:
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
+    logging.getLogger("uvicorn.error.academic_retrieval").info(
+        "Academic retrieval complete owner=%s course=%s mode=%s chunks=%s "
+        "materials=%s sufficient=%s confidence=%.3f",
+        owner_user_id, course_id, result.retrieval_mode, len(result.evidence),
+        len(result.source_material_ids), result.evidence_sufficient,
+        result.evidence_confidence,
+    )
     return result
