@@ -2,7 +2,10 @@
 import json
 import os
 import modal
-from modal_academic_indexer import image
+from modal_academic_indexer import image as indexing_image
+
+# Modal auto-mounts the entrypoint, not imported root-level modules.
+image = indexing_image.add_local_file("modal_academic_indexer.py", "/root/modal_academic_indexer.py")
 
 app = modal.App("dental-ai-academic-diagnostics")
 
