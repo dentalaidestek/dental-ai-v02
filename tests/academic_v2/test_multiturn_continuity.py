@@ -34,6 +34,15 @@ def test_unknown_explicit_transform_topic_overrides_history():
         resolved = low(resolve_followup_query("Özetle", history))
         assert "nance" in resolved and "pulpitis" not in resolved
 
+def test_concise_summary_never_owns_a_conversation_topic():
+    history = [u("Pulpitis tedavisini anlat"), a("...")]
+    for query in ("Kısaca özetle", "Kisaca özetle"):
+        resolved = low(resolve_followup_query(query, history))
+        assert "pulpitis" in resolved
+        later = history + [u(query), a("...")]
+        followup = low(resolve_followup_query("Özetle", later))
+        assert "pulpitis" in followup and "kısaca" not in followup and "kisaca" not in followup
+
 def test_subjectless_transform_uses_course_scope_but_resolved_topic_does_not():
     from app.study_retrieval_v2 import _course_coverage_requested
     from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task
