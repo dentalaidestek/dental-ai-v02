@@ -31,7 +31,8 @@ def wake_academic_modal_indexer() -> bool:
         return False
     try:
         parsed = urlsplit(endpoint)
-        valid_endpoint = parsed.scheme == "https" and bool(parsed.hostname)
+        valid_endpoint = (parsed.scheme == "https" and bool(parsed.hostname)
+                          and not any(ord(char) <= 32 or ord(char) == 127 for char in endpoint))
         parsed.port  # Validate malformed ports before constructing the request.
     except ValueError:
         valid_endpoint = False

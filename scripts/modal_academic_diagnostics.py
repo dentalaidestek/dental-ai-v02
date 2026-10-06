@@ -178,6 +178,9 @@ def snapshot():
                                     "concise_course_summary": retrieve("Kısaca özetle")}
         if topics:
             history = [{"role":"user", "content":topics[0] + " hakkında bilgi ver"}]
+            concise_history = history + [{"role":"assistant", "content":"..."},
+                {"role":"user", "content":"Kısaca özetle"}, {"role":"assistant", "content":"..."}]
+            result["live_retrieval"]["summary_after_concise_summary"] = retrieve("Özetle", concise_history)
             for name, query in (("topic_summary", "Özetle"), ("detail", "biraz daha detaylı"),
                                 ("table", "bunu tablo yap"), ("count", "3 tane say")):
                 result["live_retrieval"][name] = retrieve(query, history)

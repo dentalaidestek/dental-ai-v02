@@ -52,7 +52,8 @@ class DispatchTests(unittest.TestCase):
             sleep.assert_not_called()
 
     def test_insecure_or_malformed_endpoint_never_sends_secret(self):
-        for endpoint in ("http://example.invalid/wake", "file:///tmp/wake", "https:///wake", "https://example.invalid:bad/wake"):
+        for endpoint in ("http://example.invalid/wake", "file:///tmp/wake", "https:///wake", "https://example.invalid:bad/wake",
+                         "https://example.invalid/wake path", "https://example.invalid/wake\tpath", "https://example.invalid/wake\npath"):
             with patch.dict("os.environ", {"ACADEMIC_MODAL_DISPATCH_URL": endpoint}), patch("app.academic_modal_dispatch._open_dispatch_request") as request:
                 with self.assertLogs("uvicorn.error.academic_modal_dispatch", logging.WARNING) as logs:
                     self.assertFalse(wake_academic_modal_indexer())

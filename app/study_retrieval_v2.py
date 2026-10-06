@@ -488,7 +488,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return None
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
-                 'normal','kisa','detayli','ayrintili','madde','mekanizmasiyla',
+                 'normal','kisa','kisaca','detayli','ayrintili','madde','mekanizmasiyla',
                  'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet'}
     if not words or len(words) > 12 or all(w in operators or w.isdigit() for w in words):
         return None
