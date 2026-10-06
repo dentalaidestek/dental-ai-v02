@@ -315,6 +315,9 @@ _SUBJECT_SUFFIX_RE = re.compile(r"(?iu)(?:nın|nin|nun|nün|ın|in|un|ün)$")
 
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
+    from app.academic_task_language import course_source_request
+    if course_source_request(query):
+        return ()
     clean = re.sub(r"[?,;:()]+", " ", query or "")
     clean = _SUBJECT_STOP_RE.sub(" ", clean)
     tokens = [t.strip(".-") for t in clean.split() if len(t.strip(".-")) >= 2]
