@@ -6,10 +6,21 @@ import random
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 # Uvicorn configures this parent at INFO with a stream handler; the application
 # root logger can remain at WARNING without hiding successful background wakes.
 logger = logging.getLogger("uvicorn.error.academic_modal_dispatch")
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A credentialed wake must never forward Authorization to a redirect.
+        return None
+
+
+def _open_dispatch_request(request, *, timeout):
+    return urllib.request.build_opener(_RejectRedirects()).open(request, timeout=timeout)
 
 
 def wake_academic_modal_indexer() -> bool:
@@ -17,6 +28,15 @@ def wake_academic_modal_indexer() -> bool:
     secret = (os.getenv("ACADEMIC_MODAL_DISPATCH_SECRET") or "").strip()
     if not endpoint or not secret:
         logger.warning("Academic Modal wake outcome=unconfigured")
+        return False
+    try:
+        parsed = urlsplit(endpoint)
+        valid_endpoint = parsed.scheme == "https" and bool(parsed.hostname)
+        parsed.port  # Validate malformed ports before constructing the request.
+    except ValueError:
+        valid_endpoint = False
+    if not valid_endpoint:
+        logger.warning("Academic Modal wake outcome=invalid_endpoint")
         return False
     request = urllib.request.Request(endpoint, data=b"{}", method="POST", headers={
         "Authorization": f"Bearer {secret}", "Content-Type": "application/json",
@@ -28,7 +48,7 @@ def wake_academic_modal_indexer() -> bool:
         reason = "network"
         retryable = True
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with _open_dispatch_request(request, timeout=5) as response:
                 status = int(response.status)
                 payload = response.read(4097)
             if 200 <= status < 300 and len(payload) <= 4096:
