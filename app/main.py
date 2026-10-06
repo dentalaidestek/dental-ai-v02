@@ -71,6 +71,7 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
+from app.academic_recovery_store import AcademicRecoveryEvent, recover_course_context
 from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
@@ -4543,6 +4544,15 @@ def study_ai_ask(
             # Generation may take minutes; it must not occupy a DB connection.
             s.close()
             if use_v2:
+                rag_result = recover_course_context(
+                    session_factory=lambda: Session(engine, expire_on_commit=False),
+                    owner_user_id=user.id, course_id=course_id,
+                    question=clean_message, history=history, initial=rag_result,
+                )
+                if rag_result.visual_sources and rag_result.evidence_sufficient and not rag_result.attachments:
+                    materialize_visual_sources(
+                        lambda: Session(engine, expire_on_commit=False), rag_result,
+                    )
                 answer = ask_study_ai_v2(
                     course_title,
                     clean_message,
@@ -4744,8 +4754,24 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
     def generate_stream():
         pieces: list[str] = []
         try:
+            prepared = recover_course_context(
+                session_factory=lambda: Session(engine, expire_on_commit=False),
+                owner_user_id=owner_user_id, course_id=course_id,
+                question=clean_message, history=history, initial=retrieval,
+            )
+            if prepared.visual_sources and prepared.evidence_sufficient and not prepared.attachments:
+                materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), prepared,
+                )
+            recovered_source_json = json.dumps(prepared.source_material_ids, ensure_ascii=False)
+            recovered_evidence_json = json.dumps([
+                {"material_id": item.material_id, "display_name": item.display_name,
+                 "page_start": item.page_start, "page_end": item.page_end,
+                 "section_title": item.section_title, "content_kind": item.content_kind}
+                for item in prepared.evidence
+            ], ensure_ascii=False)
             for piece in stream_study_ai_v2(
-                course_title, clean_message, history, retrieval,
+                course_title, clean_message, history, prepared,
             ):
                 pieces.append(piece)
                 yield json.dumps({"type": "delta", "text": piece}, ensure_ascii=False) + "\n"
@@ -4766,14 +4792,14 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 save_session.add(StudyChatMessage(
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="USER", content=clean_message,
-                    source_ids_json=source_json, mode="RAG_V2_HYBRID_STREAM",
-                    source_evidence_json=evidence_json,
+                    source_ids_json=recovered_source_json, mode="RAG_V2_HYBRID_STREAM",
+                    source_evidence_json=recovered_evidence_json,
                 ))
                 save_session.add(StudyChatMessage(
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="ASSISTANT", content=answer,
-                    source_ids_json=source_json, mode="RAG_V2_HYBRID_STREAM",
-                    source_evidence_json=evidence_json,
+                    source_ids_json=recovered_source_json, mode="RAG_V2_HYBRID_STREAM",
+                    source_evidence_json=recovered_evidence_json,
                 ))
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)

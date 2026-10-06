@@ -143,7 +143,8 @@ def stream_rag_v2(
         retrieval.used_semantic_search,
     )
 
-    # Exactly one external AI call is allowed for Academic V2.
+    # Exactly one final-generation call; difficult failures may have spent one
+    # separate bounded planning call before reaching this function.
     for target in candidates:
         if attempted_api_calls >= 1:
             break

@@ -2446,6 +2446,7 @@ def retrieve_course_context_v2(
     query: str,
     recent_history: list[dict] | None = None,
     limit: int = 8,
+    recovery_terms: tuple[str, ...] = (),
 ) -> RetrievalResult:
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
@@ -2570,6 +2571,13 @@ def retrieve_course_context_v2(
         has_more_questions = False
     else:
         precise_query = _fts_query(resolved, broad=False)
+        # Recovery may propose bounded alternate search phrases, never change
+        # the resolved request, scope, requirements, ranking or evidence gate.
+        if recovery_terms:
+            safe_terms = [term for term in recovery_terms[:4]
+                          if re.fullmatch(r"[\w\s-]{2,80}", term)]
+            if safe_terms:
+                precise_query += ' OR ' + ' OR '.join(f'"{term}"' for term in safe_terms)
         # Canonical subject understanding must reach the first DB lookup.
         # This is not graph expansion: only explicitly resolved subject labels
         # are OR-ed with the user's precise lexical form, so typo rescue and

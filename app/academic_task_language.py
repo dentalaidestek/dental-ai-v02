@@ -71,7 +71,9 @@ def course_source_request(query: str) -> bool:
     if prefix and not re.fullmatch(r'(?:lutfen|bana|simdi|peki)(?:\s+(?:lutfen|bana|simdi|peki))*', prefix):
         return False
     tail = text[source.end():]
-    action = re.search(r'\b(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala|sor|calisalim|calistir|sina)\w*\b', tail)
+    action_roots = r'(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala|goster|belirle|sec|ayir|bul|ayikla|sor|calisalim|calistir|sina)'
+    action = re.search(r'\b' + action_roots + _REQUEST_END
+                       + r'|\b' + action_roots + r'(?:r|ir|ar|er)\s+(?:misin|misiniz)\b', tail)
     if action is None:
         return False
     argument = tail[:action.start()]
@@ -93,7 +95,8 @@ def course_source_request(query: str) -> bool:
         'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade',
         'yuksek', 'verimli', 'zor', 'zorlayici', 'kolay', 'orta',
         'soru', 'sorular', 'sorulari', 'test', 'tane', 'adet',
-        'kritik', 'onemli', 'yerleri', 'yerlerini', 'noktalar', 'noktalarini',
+        'kritik', 'onemli', 'yerleri', 'yerlerini', 'noktalar', 'noktalari', 'noktalarini',
+        'baslik', 'basliklari', 'basliklarini',
         'calisma', 'plani', 'planini', 'programi', 'programini', 'mantigiyla', 'her', 'tek',
         'sinava', 'finale', 'vizeye',
     }

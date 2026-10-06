@@ -34,14 +34,49 @@ usage-credit decrement. That does not establish the behavior of other endpoints.
 - Compound clinical subjects are distinguished from explicitly coordinated
   subjects. Ambiguous references ask for clarification; explicit new topic
   requests own their scope and clear stale output settings.
-- Insufficient evidence streams an actionable follow-up without invoking the
-  generation provider. It does not fabricate a factual answer or relax evidence
-  gates. The browser verifier rejects these follow-ups for answer-required steps.
-- Generation retains its existing single external provider call and model.
+- Successful local retrieval and deterministic dialogue/clarification routes
+  never invoke the recovery planner. Failed evidence may spend one Gemini
+  planning call and one bounded retrieval retry before final generation.
+  Recovery phrases only expand candidate discovery: original request, course
+  scope, scorer and evidence requirements are unchanged. If recovery still
+  fails, an actionable follow-up is streamed; no factual answer is fabricated.
+- Generation retains its single final generation call and existing model.
+
+## Difficult-query recovery and learning records
+
+Both V2 ask endpoints release their retrieval Session before invoking the
+recovery planner. A separate Gemini adapter uses one attempt, a four-second
+transport timeout and 700 output tokens. This is a timeout setting, not a
+measured end-to-end latency guarantee. There is no provider retry chain or
+recursive recovery. Course catalogs are bounded to 32 READY sources and four
+headings per source; metadata/persistence queries have a local 1.2s timeout and
+the recovery retrieval uses a local 1.5s per-statement timeout.
+
+The planner receives the current request, locally resolved intent/scope, missing
+facets and bounded recent dialogue. Its strictly parsed JSON supplies up to
+four alternate search phrases and an unverified failure diagnosis. It cannot
+choose chunk IDs, grant access, rewrite requirements or lower thresholds.
+Rescued evidence passes the original relevance and sufficiency gates. Recovery
+does not solve every intent/resolver defect; diagnoses inform subsequent local
+fixes rather than silently replacing the user's request.
+
+The additive `AcademicRecoveryEvent` table is registered before existing
+`create_all`. It stores private owner/course-scoped query, first plan, suggested
+phrases, diagnosis, candidate IDs, outcome and elapsed time. Records start
+UNREVIEWED, with cascading course/user foreign keys. Application logs contain
+only outcomes and timings, not user questions or conversation text. Persistence
+failure is logged and does not discard a recovered answer.
+
+`scripts/review_academic_recovery.py` produces a private read-only pattern report
+for an explicit owner/course. Repeated failure classes and missing facets can
+be turned into shared resolver rules and regression scenarios after checking
+the original messages and actual source evidence. The stored diagnosis is not
+automatically trusted, deployed as a rule or used to fine-tune a model. Recovery
+outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-30 focused source/dialogue tests and 59 existing continuity checks pass. Two
+31 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound

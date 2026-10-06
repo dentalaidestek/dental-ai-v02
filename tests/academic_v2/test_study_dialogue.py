@@ -18,6 +18,19 @@ QUESTION = 'Pulpitis tanısında hangi bulgu beklenir?\nA) Ağrı\nB) Amalgam\nC
 
 
 class StudyDialogueTests(unittest.TestCase):
+    def test_course_salience_operators_do_not_become_medical_topics(self):
+        from app.academic_task_language import course_source_request
+        for query in ('Notlarda önemli noktaları göster', 'Slaytlardan kritik yerleri seç',
+                      'Ders notlarından önemli başlıkları belirle'):
+            with self.subTest(query=query):
+                self.assertTrue(course_source_request(query))
+                requirement = build_dental_requirement_plan(query)
+                self.assertFalse(requirement.subject_terms)
+                self.assertTrue(_course_coverage_requested(query, requirement, classify_academic_study_task(query)))
+        for query in ('Notlardan pulpitis tedavisini göster', 'Slaytlardan mandibula kırıklarını bul'):
+            self.assertFalse(course_source_request(query))
+            self.assertTrue(build_dental_requirement_plan(query).subject_terms)
+
     def test_question_headers_and_inflections(self):
         for heading in ('Soru 1', 'Soru 1:', '**Soru 1**', '1.', '1)', '### Soru 1'):
             history = [user('Notlardan soru hazırla'), assistant(heading + '\n' + QUESTION)]
