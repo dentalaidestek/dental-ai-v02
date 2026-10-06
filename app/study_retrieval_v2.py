@@ -477,6 +477,15 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return None
     phrase = clean[:boundary.start()].strip(' .,;:')
     words = re.findall(r'\w+', _state_text(phrase))
+    # A qualifier correction changes the active topic's axis; it cannot own a
+    # new dental noun phrase merely because it precedes an explanation verb.
+    qualifier_words = {word for q in query_qualifiers(phrase)
+                       for word in re.findall(r'\w+', _state_text(q))}
+    if qualifier_words and all(w in qualifier_words or w in {
+        'degil', 'acisindan', 'olarak', 'icin', 'sadece', 'hastalarda',
+        'hastalar', 'hastada', 'hasta', 'larda', 'lerde',
+    } for w in words):
+        return None
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
                  'normal','kisa','detayli','ayrintili','madde','mekanizmasiyla',
@@ -673,10 +682,14 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         or re.search(r"(?iu)\bvs\.?\b", clean)
     )
     correction_relation = bool(re.search(r"(?iu)\bdeğil\b|\bdegil\b", clean)) and " ile" in folded
+    operation = classify_academic_study_task(clean)
+    transform_task = bool(operation and operation.task in {"summarize", "explain"})
     dependent = bool(
         _FOLLOWUP_RE.search(clean) or _has_followup_control_cue(clean) or _has_same_way_cue(clean)
         or _has_anaphoric_topic_cue(clean)
         or relative or assistant_ref or comparison or correction_relation
+        or transform_task
+        or re.match(r"(?iu)^\d+\s+(?:tane|adet|madde)\s+(?:say|listele|sırala|sirala)\b", clean)
         or re.search(
             r"(?iu)\b(?:bunu|bunun|onu|onun|bunlar|bunların|bunlarin|burada|peki|"
             r"aynı|ayni|devam|baştan|bastan|yeniden|farklı soru|farkli soru|"
@@ -2230,6 +2243,27 @@ def _coverage_select(query: str, rows: list, *, limit: int, requirement=None, fe
     return selected
 
 
+def _course_coverage_requested(query: str, requirement, study_task) -> bool:
+    """Bind a subjectless study operation to the endpoint's owned course scope.
+
+    Topic transformations use the resolved subject, including lexical subjects
+    outside the graph. With no topic/reference, a summary or explanation uses
+    the existing published-course coverage planner instead of searching task
+    words as dental content.
+    """
+    if not study_task:
+        return False
+    if (study_task.task in {"summarize", "explain"}
+            and not requirement.subject_terms and not requirement.subject_node_ids):
+        return True
+    return bool(study_task.requires_coverage and (
+        not requirement.subject_node_ids or re.search(
+            r"(?iu)\b(?:tüm|bütün|tamamı|baştan sona|genel tekrar|notu|notları|dersi|her şeyi|herşeyi)\b",
+            query or "",
+        )
+    ))
+
+
 def retrieve_course_context_v2(
     session: Session,
     *,
@@ -2263,13 +2297,7 @@ def retrieve_course_context_v2(
     study_question_task = bool(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )
-    course_wide_coverage = bool(
-        study_task and study_task.requires_coverage
-        and (not requirement.subject_node_ids or re.search(
-            r"(?iu)\b(?:tüm|bütün|tamamı|baştan sona|genel tekrar|notu|notları|dersi|her şeyi|herşeyi)\b",
-            resolved or "",
-        ))
-    )
+    course_wide_coverage = _course_coverage_requested(resolved, requirement, study_task)
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
         # Broad course-wide summary/explanation/generation must sample the whole published
         # course deterministically instead of collapsing back to a normal top-k
@@ -2610,4 +2638,3 @@ def retrieve_course_context_v2(
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
     return result
-

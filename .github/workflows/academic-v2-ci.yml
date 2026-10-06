@@ -11,6 +11,7 @@ on:
     branches:
       - main
       - "work/academic-v2-*"
+      - "work/modal-academic-indexing-20261005"
       - "release/academic-v2-clean-*"
     paths:
       - "app/study_ai_v2.py"
@@ -109,6 +110,16 @@ jobs:
               output.write("reuse=" + ("true" if verified else "false") + "\n")
           print("Verified unchanged application/tests using run", verified if verified else "none")
           PY
+      - name: Verify Modal wake and OCR deployment contracts
+        run: |
+          python -m unittest discover -s tests -p test_academic_modal_dispatch.py -v
+          python - <<'PY'
+          import inspect, runpy
+          for path in ("tests/test_modal_academic_indexer.py", "tests/test_modal_parallel_ocr.py"):
+              for name, fn in runpy.run_path(path).items():
+                  if name.startswith("test_") and callable(fn) and not inspect.signature(fn).parameters:
+                      fn()
+          PY
       - name: Compile Academic V2 modules
         if: steps.verified.outputs.reuse != 'true'
         run: |
@@ -119,3 +130,4 @@ jobs:
         run: python tests/academic_v2/run_tests.py
       - name: Run 89K past-question note holdout standalone
         run: python -c "from tests.academic_v2.test_past_question_note_holdout_89k import test_unseen_89k_past_question_note_workflow_holdout as t; t()"
+

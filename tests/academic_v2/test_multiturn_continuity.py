@@ -7,6 +7,33 @@ def low(x): return x.replace("İ","i").replace("I","ı").lower()
 
 FLOR="Çocuklarda flor kullanımını anlat."
 
+def test_transformations_and_bounded_lists_reuse_active_subject():
+    h = [u("Pulpitis tedavisini anlat"), a("Periodontitis ilgisiz bir örnektir.")]
+    for query in ("Özetle", "Toparla", "açıkla", "3 tane say", "5 madde listele"):
+        resolved = low(resolve_followup_query(query, h))
+        assert "pulpitis" in resolved and "tedavisini" in resolved
+        assert "periodontitis" not in resolved
+        assert resolved.endswith(low(query))
+
+def test_transformations_keep_explicit_topic_switch_and_unknown_dental_subject():
+    h = [u("Pulpitis tedavisini anlat"), a("...")]
+    for query in ("Periodontitis özetle", "İmplant stabilitesini toparla"):
+        assert resolve_followup_query(query, h) == query
+    h = [u("Nance apareyinin kullanımını anlat"), a("...")]
+    assert "nance" in low(resolve_followup_query("Özetle", h))
+
+def test_subjectless_transform_uses_course_scope_but_resolved_topic_does_not():
+    from app.study_retrieval_v2 import _course_coverage_requested
+    from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task
+    def coverage(query):
+        return _course_coverage_requested(query, build_dental_requirement_plan(query), classify_academic_study_task(query))
+    assert coverage("Özetle")
+    assert coverage("Toparla")
+    assert coverage("Açıkla")
+    assert coverage("Notları özetle")
+    for query in ("Pulpitis özetle", "Flor kullanımını özetle", "Nance apareyinin kullanımını özetle", "SNB normal değeri nedir?"):
+        assert not coverage(query)
+
 def test_exam_test_count_chain():
     h=[u(FLOR),a("Flor çürük önlemede etkilidir.")]
     q=resolve_followup_query("Sınav için en önemli yerleri?",h)
