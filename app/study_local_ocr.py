@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from PIL import Image, ImageOps
 LOCAL_OCR_ENGINE_VERSION = "tesseract-5.5-adaptive-dental-tur-eng-v3"
 _DENTAL_WORDS_PATH = Path(__file__).with_name("dental_ocr_words.txt")
 _TESSDATA_PATH = Path(__file__).with_name("tessdata")
+_PDFIUM_LOCK = threading.RLock()
 
 
 class LocalOCRError(RuntimeError):
@@ -44,6 +46,15 @@ def _int_env(name: str, default: int, low: int, high: int) -> int:
 
 
 def _render_pdf_page(
+    path: Path, page_number: int, *, dpi: int | None = None, document=None
+) -> Image.Image:
+    # PDFium is process-global and forbids concurrent calls even for separate
+    # document handles. Serialize rasterization only; Tesseract remains parallel.
+    with _PDFIUM_LOCK:
+        return _render_pdf_page_locked(path, page_number, dpi=dpi, document=document)
+
+
+def _render_pdf_page_locked(
     path: Path, page_number: int, *, dpi: int | None = None, document=None
 ) -> Image.Image:
     import pypdfium2 as pdfium

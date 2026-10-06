@@ -129,6 +129,20 @@ def snapshot():
                         "pdf_header": header.startswith(b"%PDF-")})
                 except Exception as exc:
                     result["source_access"].append({"material_id": source["id"], "error_type": type(exc).__name__})
+        if source_rows:
+            from app.object_cache import scoped
+            from app.study_local_ocr import _render_pdf_page
+            import hashlib
+            with scoped(source_rows[0]["file_path"]) as local_source:
+                def render_probe(_):
+                    with _render_pdf_page(local_source, 1) as page_image:
+                        return {"size": list(page_image.size),
+                            "pixel_hash": hashlib.sha256(page_image.tobytes()).hexdigest()}
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    renders = list(pool.map(render_probe, range(4)))
+                result["parallel_pdf_render_probe"] = {
+                    "renders": len(renders), "consistent": len({r["pixel_hash"] for r in renders}) == 1,
+                    "sizes": [r["size"] for r in renders]}
         from sqlmodel import Session
         from app.study_retrieval_v2 import retrieve_course_context_v2
         from app.dental_knowledge_graph import node_label

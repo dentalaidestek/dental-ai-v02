@@ -2368,7 +2368,7 @@ def retrieve_course_context_v2(
             normalized = " ".join((term or "").split()).strip()
             if not normalized or len(normalized) > 80:
                 continue
-            if normalized.casefold() in precise_query.casefold():
+            if normalized.casefold() == precise_query.strip('"').casefold():
                 continue
             canonical_subjects.append(normalized)
             if len(canonical_subjects) >= 3:

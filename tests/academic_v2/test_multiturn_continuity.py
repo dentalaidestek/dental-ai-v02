@@ -49,6 +49,14 @@ def test_output_controls_do_not_become_literal_chunk_terms():
     assert "ikinci" in _retrieval_terms("ikinci molar anatomisi")[0]
     assert "madde" in _retrieval_terms("restoratif madde nedir")[0]
 
+def test_output_table_is_not_a_visual_source_requirement():
+    from app.dental_query_intent import build_dental_requirement_plan
+    output = build_dental_requirement_plan("Pulpitis — bunu tablo yap")
+    assert "visual" not in output.requested_facets
+    assert not output.requires_visual_source
+    source = build_dental_requirement_plan("Bu tablodaki bulguları açıkla")
+    assert source.requires_visual_source
+
 def test_exam_test_count_chain():
     h=[u(FLOR),a("Flor çürük önlemede etkilidir.")]
     q=resolve_followup_query("Sınav için en önemli yerleri?",h)
