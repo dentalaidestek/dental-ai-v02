@@ -322,8 +322,15 @@ def _normalize_state_controls(text: str) -> str:
         value = _state_text(match.group(1))
         targets = [word for word in ('soru', 'question', 'test', 'quiz')
                    if _edit_distance_at_most(value, word, 0)]
+        if not targets and len(value) == 3 and _edit_distance_at_most(value, 'soru', 1):
+            # Only a single missing letter in the question noun, inside a
+            # desire/rejection slot. Same-length clinical nouns such as boru
+            # and known medical aliases are never substituted.
+            from app.dental_knowledge_graph import explicit_node_mentions
+            if not explicit_node_mentions(match.group(1)):
+                targets = ['soru']
         return targets[0] + ' ' if len(targets) == 1 else match.group(0)
-    text = re.sub(r'(?iu)\b(\w+)\s+(?=(?:istemiyorum|istemiyoruz|olmasın|olmasin)\b)',
+    text = re.sub(r'(?iu)\b(\w+)\s+(?=(?:ist[ei]\w{3,10}|olmasın|olmasin)\b)',
                   rejected_task, text)
     age = re.compile(r'(?iu)\b(\w+)\s+(?=(?:\w+\s+)?\w+\b)')
     def age_slot(match):
@@ -922,6 +929,11 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
         offset = 2
         if len(distinct) >= offset:
             selected = distinct[-offset]
+        elif len(distinct) == 1 and re.search(r'\basil\s+konu\w*\b', _state_text(clean)):
+            # "Asıl konu" resumes the sole user-owned topic when surrounding
+            # assistant examples/quoted old requests are merely incidental.
+            # An explicit "bir önceki" still requires two distinct topics.
+            selected = distinct[0]
         else:
             return clean
     elif assistant_ref:

@@ -169,6 +169,10 @@ class StudyDialogueTests(unittest.TestCase):
         repeated = resolve_followup_query('yoook soooru istemiyorum normal anlat', history)
         self.assertIn('furkasyon lezyonları', repeated)
         self.assertNotIn('soru hazırla', repeated)
+        for query in ('yok sru istemiyorum normal anlat', 'yok sou isteiyorum normal anlat'):
+            resolved = resolve_followup_query(query, history)
+            self.assertIn('furkasyon lezyonları', resolved)
+            self.assertNotIn('soru hazırla', resolved)
 
     def test_insufficient_evidence_streams_followup_without_provider_call(self):
         import ast
@@ -209,6 +213,8 @@ class StudyDialogueTests(unittest.TestCase):
         for text in ('kök yüzeyi anlat', 'süt pulpa tedavisi', 'erken tanı açısından anlat',
                      'çürük açısından anlat', 'çürük hastalar açısından anlat'):
             self.assertEqual(text, _normalize_state_controls(text))
+        self.assertEqual('boru istemiyorum normal anlat',
+                         _normalize_state_controls('boru istemiyorum normal anlat'))
 
     def test_noisy_count_and_table_are_task_slots(self):
         history = [user('Pulpitis anlat'), assistant('...')]
@@ -261,6 +267,9 @@ class StudyDialogueTests(unittest.TestCase):
         self.assertIn('kondil kırığı', repeated)
         previous = [user('odontoma anlat'), assistant('...'), user('mental foramen anlat'), assistant('...')]
         self.assertIn('odontoma', resolve_followup_query('önceki asıl konudan devam et', previous))
+        sole = [user('Wits analizi anlat'), assistant('Yanlışlıkla inferior alveolar sinir dedim.')]
+        self.assertIn('Wits', resolve_followup_query('önceki asıl konudan devam et', sole))
+        self.assertEqual('bir önceki konuya dön', resolve_followup_query('bir önceki konuya dön', sole))
 
     def test_free_text_answer_uses_pending_question_but_new_requests_do_not(self):
         history = [user('Bana bir soru sor ve cevabımı bekle'), assistant('Soru 1\n' + QUESTION)]
