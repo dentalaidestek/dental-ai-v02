@@ -42,7 +42,7 @@ def snapshot():
             result["queue"] = rows("SELECT status, stage, resource_class, count(*) AS jobs FROM studyindexjob GROUP BY status, stage, resource_class ORDER BY status, stage, resource_class")
             import re
             result["failed_errors"] = [{"id": row["id"], "error_code": (
-                row["last_error"] if re.fullmatch(r"[A-Z][A-Z0-9_:]{2,100}", row["last_error"] or "") else "NON_CODE_ERROR_REDACTED"
+                row["last_error"] if re.fullmatch(r"[A-Z][A-Za-z0-9_:]{2,100}", row["last_error"] or "") else "NON_CODE_ERROR_REDACTED"
             )} for row in rows("SELECT id, last_error FROM studyindexjob WHERE status='FAILED' ORDER BY id")]
             result["materials"] = rows("""SELECT m.id, m.course_id, m.index_status,
                 m.deleted_at IS NOT NULL AS deleted, m.active_index_version IS NOT NULL AS has_active,
@@ -64,7 +64,28 @@ def snapshot():
             result["chunks"] = rows("SELECT course_id, count(*) AS chunks, count(semantic_json) AS semantic_chunks FROM studyindexchunk GROUP BY course_id")
             result["material_schema"] = rows("SELECT column_name FROM information_schema.columns WHERE table_name='studymaterial' ORDER BY ordinal_position")
             result["course_schema"] = rows("SELECT column_name FROM information_schema.columns WHERE table_name='studycourse' ORDER BY ordinal_position")
+            source_rows = rows("SELECT id, file_path, size_bytes FROM studymaterial WHERE course_id=3 AND deleted_at IS NULL ORDER BY id")
             connection.rollback()
+        from app.object_storage import _client, _object_key, _settings, enabled
+        result["r2_enabled"] = enabled()
+        result["source_access"] = []
+        if enabled():
+            bucket = _settings()[0]
+            for source in source_rows:
+                try:
+                    client = _client()
+                    key = _object_key(source["file_path"])
+                    metadata = client.head_object(Bucket=bucket, Key=key)
+                    response = client.get_object(Bucket=bucket, Key=key, Range="bytes=0-63")
+                    try:
+                        header = response["Body"].read(64)
+                    finally:
+                        response["Body"].close()
+                    result["source_access"].append({"material_id": source["id"], "exists": True,
+                        "size_matches": metadata["ContentLength"] == source["size_bytes"],
+                        "pdf_header": header.startswith(b"%PDF-")})
+                except Exception as exc:
+                    result["source_access"].append({"material_id": source["id"], "error_type": type(exc).__name__})
     except Exception as exc:
         # Exception strings can contain connection URLs: never print them.
         result["error_type"] = type(exc).__name__

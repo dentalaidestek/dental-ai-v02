@@ -42,6 +42,9 @@ image = (
         "fastapi==0.141.1",
     )
     .add_local_python_source("app")
+    # Python source mounts exclude non-Python OCR model/lexicon assets.
+    .add_local_dir("app/tessdata", "/root/app/tessdata")
+    .add_local_file("app/dental_ocr_words.txt", "/root/app/dental_ocr_words.txt")
 )
 
 # Start conservatively. Modal may run several independent durable jobs in
@@ -69,6 +72,9 @@ def drain_index_queue() -> dict[str, int | str]:
     os.environ.setdefault("STUDY_V2_OCR_PARALLELISM", "4")
     os.environ.setdefault("STUDY_V2_LEASE_SECONDS", "600")
     os.environ.setdefault("STUDY_V2_IDLE_SLEEP_SECONDS", "1")
+    # Preserve lease fencing while making the execution platform observable.
+    import socket
+    os.environ.setdefault("STUDY_INDEX_WORKER_ID", f"modal:{socket.gethostname()}:{os.getpid()}")
 
     from sqlmodel import Session
     from app.study_index_worker_main import build_worker_engine
@@ -164,8 +170,14 @@ def queue_watchdog() -> dict[str, bool]:
                     """
                     SELECT 1
                     FROM studyindexjob
-                    WHERE status = 'QUEUED'
-                      AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+                    WHERE resource_class IN ('NORMAL', 'OCR_HEAVY')
+                      AND (
+                        (status = 'QUEUED'
+                         AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP))
+                        OR (status = 'RUNNING'
+                            AND lease_until IS NOT NULL
+                            AND lease_until <= CURRENT_TIMESTAMP)
+                      )
                     LIMIT 1
                     """
                 )
