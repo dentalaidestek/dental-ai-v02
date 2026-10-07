@@ -78,7 +78,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-43 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+47 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -131,6 +131,26 @@ renderer verifies marker hiding, question formatting and HTML escaping. The
 browser verifier now rejects the screenshot's provider refusal text, includes
 both outline feedback requests, and checks rendered assistant text for leaked
 pagination markers. It has not been run authenticated against production.
+
+## Depth versus basic sufficiency
+
+Previously detail/outline feedback reused the normal eight-chunk topic limit
+and 24-chunk course hydration budget. A provisional sufficient result skipped
+neighbor retrieval even when the user explicitly requested more depth. Thus a
+basic answer sufficiency decision did not imply evidence completeness for a
+detailed explanation. This is a code-level cause, not proof of the actual chunk
+payload used in any screenshot request.
+
+Explicit depth/completeness requests now allocate a topic limit of at least 16
+and course hydration budget of 48. Topic queries inspect up to four relevant
+neighbors even when initial evidence passes basic sufficiency; resulting rows
+still re-enter unchanged relevance, coverage and final sufficiency gates.
+Ordinary short questions retain existing budgets, and negated detail requests
+do not widen them. There is no extra provider call in this policy. Four tests
+exercise budget selection, course hydration, neighbor behavior and failure on
+empty expanded evidence. Candidate SQL/provider behavior and live answer depth
+remain unverified; increased budgets are bounded settings, not latency or answer
+quality guarantees. Routing logs include requested depth and topic budget.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

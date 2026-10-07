@@ -2501,6 +2501,12 @@ def retrieve_course_context_v2(
             clarification="Hangi konuyu veya soruyu kastettiğini belirtir misin? Birkaç konu varsa hangisini açıklamamı istediğini yazabilirsin.",
         )
     requirement = build_dental_requirement_plan(resolved)
+    from app.academic_task_language import wants_deeper_evidence
+    deeper_evidence = wants_deeper_evidence(query)
+    # Depth is an evidence-allocation axis, separate from subject and scorer.
+    # The normal fast path retains its existing budget.
+    if deeper_evidence:
+        limit = max(limit, 16)
     query_features = analyze_dental_text(resolved)
     # Request-local semantic memo: bounded by this retrieval's candidate rows,
     # discarded immediately after the request. Avoid repeated JSON parsing/text
@@ -2533,20 +2539,20 @@ def retrieve_course_context_v2(
     course_wide_coverage = _course_coverage_requested(resolved, requirement, study_task)
     logging.getLogger("uvicorn.error.academic_retrieval").info(
         "Academic retrieval route owner=%s course=%s history_turns=%s "
-        "resolved_changed=%s task=%s subject_count=%s course_wide=%s",
+        "resolved_changed=%s task=%s subject_count=%s course_wide=%s depth=%s topic_budget=%s",
         owner_user_id, course_id, len(recent_history or []), resolved != query,
         study_task.task if study_task else "qa",
-        len(requirement.subject_terms), course_wide_coverage,
+        len(requirement.subject_terms), course_wide_coverage, deeper_evidence, limit,
     )
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
         # Broad course-wide summary/explanation/generation must sample the whole published
         # course deterministically instead of collapsing back to a normal top-k
         # lexical query. Metadata scanning is lightweight; only bounded selected
         # representatives are hydrated.
-        requested_count = 24
+        requested_count = 48 if deeper_evidence else 24
         study_plan = classify_dental_study_plan(resolved)
         if study_plan and study_plan.count:
-            requested_count = min(48, max(8, study_plan.count))
+            requested_count = min(48, max(48 if deeper_evidence else 8, study_plan.count))
         coverage_plan = get_or_build_coverage_plan(
             session, owner_user_id=owner_user_id, course_id=course_id,
             requested_count=requested_count,
@@ -2747,6 +2753,8 @@ def retrieve_course_context_v2(
         }
         fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)
         context_target = min(10, limit + 2) if _needs_multi_evidence(resolved, requirement=requirement) else max(4, limit)
+        if deeper_evidence:
+            context_target = min(24, limit + 4)
         # Fast questions skip the neighbor query only when the selected evidence
         # already passes the same local sufficiency gate used before generation.
         # A hit at a chunk boundary therefore gets bounded adjacent context,
@@ -2754,8 +2762,8 @@ def retrieve_course_context_v2(
         provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         neighbor_limit = (
             0
-            if provisional.sufficient
-            else min(2, max(0, context_target - len(rows)))
+            if provisional.sufficient and not deeper_evidence
+            else min(4 if deeper_evidence else 2, max(0, context_target - len(rows)))
         )
         if neighbor_limit:
             neighbor_rows = _neighbor_rows(

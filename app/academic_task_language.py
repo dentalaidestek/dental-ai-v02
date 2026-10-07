@@ -46,6 +46,22 @@ def elliptical_study_request(query: str) -> str | None:
     return None
 
 
+def wants_deeper_evidence(query: str) -> bool:
+    """Requested depth changes evidence budget, never relevance thresholds."""
+    text = ' '.join((query or '').translate(_FOLD).lower().split())
+    if re.search(r'\b(?:detay|ayrinti)\w*\s+(?:istemiyorum|istemiyoruz|olmasin)\b'
+                 r'|\b(?:detaylandirma|ayrintilandirma)\b'
+                 r'|\b(?:detayli|ayrintili)\s+(?:anlatma|aciklama\s+istemiyorum)\b', text):
+        return False
+    if elliptical_study_request(query) == 'outline':
+        return True
+    if re.fullmatch(r'(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|eksik|yetersiz)[.!? ]*',
+                    strip_request_prefix(query).translate(_FOLD).lower()):
+        return True
+    return bool(re.search(r'\b(?:detaylandir|ayrintilandir)(?:sana|sene)?\b'
+                         r'|\b(?:detayli|ayrintili|derinlemesine)\b', text))
+
+
 def strip_request_prefix(query: str) -> str:
     """Strip bounded discourse prefixes without fuzzy matching medical nouns."""
     clean = (query or '').strip()
