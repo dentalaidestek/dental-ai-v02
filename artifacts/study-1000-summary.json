@@ -1,0 +1,1105 @@
+{
+  "scope": "local intent/context/reference audit of draft code; no live SQL or generation",
+  "total": 1000,
+  "passed": 663,
+  "failed": 337,
+  "percent": 66.3,
+  "elapsed_seconds": 7.376,
+  "categories": {
+    "course_quiz": {
+      "total": 50,
+      "passed": 0,
+      "failed": 50,
+      "percent": 0.0
+    },
+    "course_summary": {
+      "total": 50,
+      "passed": 28,
+      "failed": 22,
+      "percent": 56.0
+    },
+    "course_teaching": {
+      "total": 50,
+      "passed": 28,
+      "failed": 22,
+      "percent": 56.0
+    },
+    "depth_repair": {
+      "total": 50,
+      "passed": 42,
+      "failed": 8,
+      "percent": 84.0
+    },
+    "exam_priorities": {
+      "total": 50,
+      "passed": 25,
+      "failed": 25,
+      "percent": 50.0
+    },
+    "frustration": {
+      "total": 50,
+      "passed": 36,
+      "failed": 14,
+      "percent": 72.0
+    },
+    "grouped_quiz_answers": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "percent": 100.0
+    },
+    "multipart_request": {
+      "total": 50,
+      "passed": 0,
+      "failed": 50,
+      "percent": 0.0
+    },
+    "named_definition": {
+      "total": 50,
+      "passed": 49,
+      "failed": 1,
+      "percent": 98.0
+    },
+    "named_numeric_fact": {
+      "total": 50,
+      "passed": 48,
+      "failed": 2,
+      "percent": 96.0
+    },
+    "named_procedure": {
+      "total": 50,
+      "passed": 49,
+      "failed": 1,
+      "percent": 98.0
+    },
+    "ordinal_quiz_reference": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "percent": 100.0
+    },
+    "outline_format": {
+      "total": 50,
+      "passed": 42,
+      "failed": 8,
+      "percent": 84.0
+    },
+    "qualifier_replacement": {
+      "total": 50,
+      "passed": 0,
+      "failed": 50,
+      "percent": 0.0
+    },
+    "return_previous_topic": {
+      "total": 50,
+      "passed": 0,
+      "failed": 50,
+      "percent": 0.0
+    },
+    "single_quiz_answer": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "percent": 100.0
+    },
+    "source_markings": {
+      "total": 50,
+      "passed": 25,
+      "failed": 25,
+      "percent": 50.0
+    },
+    "topic_switch_during_quiz": {
+      "total": 50,
+      "passed": 49,
+      "failed": 1,
+      "percent": 98.0
+    },
+    "unbound_reference": {
+      "total": 50,
+      "passed": 42,
+      "failed": 8,
+      "percent": 84.0
+    },
+    "unknown_topic": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "percent": 100.0
+    }
+  },
+  "failed_checks": {
+    "course_scope": 119,
+    "context_reference": 85,
+    "qualifier": 50,
+    "facets": 50,
+    "task": 28,
+    "visual_source": 25,
+    "not_grading": 11,
+    "conversation_repair": 14,
+    "named_subject": 7,
+    "unbound_clarification": 8,
+    "no_stale_context": 1,
+    "no_stale_qualifier": 1
+  },
+  "production_end_to_end": {
+    "tested": 0,
+    "unverified": 1000,
+    "percent": null,
+    "reason": "No authorized DentalAI browser session or database/provider credentials in this environment."
+  },
+  "gold_policy": "Authored before evaluation; every assertion must pass. Unreviewed flags are not automatically confirmed product defects. No fixes or gold edits during this run.",
+  "diversity": "1000 distinct input+history+gold scenarios, 20 behavior families, 50 subject/count/reference positions; not 1000 independent product features.",
+  "unique_query_texts": 860,
+  "unique_scenarios": 1000,
+  "scorer_revision": "3: exact canonical aliases, finite Turkish nominal suffixes, explicit unbound candidate-access assertion; no app/gold changes",
+  "code_commit": "94e4154836085e32444d19de2ea4b6814ca78f4e (draft; app code unchanged during measurement)",
+  "scorer_sha256": "e9a8cd9984eedc9b86561520bfae4887a3cbce133b4b930cf9f38621092427b0",
+  "corpus_sha256": "313e20c22e05063943eab72c6082fc7d2376b985283638ae4754fc0ead4424f5",
+  "failed_examples": [
+    {
+      "id": "course_quiz-01",
+      "family": "course_quiz",
+      "query": "Bu ders notlarını kullanarak 1 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "SNB açısı anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 1
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bu ders notlarını kullanarak 1 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "return_previous_topic-01",
+      "family": "return_previous_topic",
+      "query": "Bir önceki konuya dön, daha basit anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "flor kullanımı anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "flor kullanımı açıklaması. SNB açısı ilgisiz bir örnektir."
+        },
+        {
+          "role": "USER",
+          "content": "SNB açısı anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Yeni konunun açıklaması."
+        }
+      ],
+      "gold": {
+        "inherited": "flor",
+        "no_context": "snb"
+      },
+      "dimension": "two-topic/relative-reference",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bir önceki konuya dön, daha basit anlat",
+      "subject_terms": [
+        "Bir önceki konuya dön daha basit"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "context_reference": false,
+        "no_stale_context": true
+      },
+      "passed": false
+    },
+    {
+      "id": "qualifier_replacement-01",
+      "family": "qualifier_replacement",
+      "query": "Çocukları değil erişkinleri kastediyorum, flor kullanımı için aynı şeyi anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Çocuklarda flor kullanımı anlat"
+        }
+      ],
+      "gold": {
+        "current": "flor",
+        "qualifier": "eriskin",
+        "forbidden_qualifier": "cocuk"
+      },
+      "dimension": "age/negation/topic-retention",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Çocukları değil erişkinleri kastediyorum, flor kullanımı için aynı şeyi anlat",
+      "subject_terms": [
+        "Çocukları erişkinleri kastediyorum flor kullanımı iç aynı şeyi"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "qualifier": false,
+        "no_stale_qualifier": true
+      },
+      "passed": false
+    },
+    {
+      "id": "multipart_request-01",
+      "family": "multipart_request",
+      "query": "flor kullanımı tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "SNB açısı anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "current": "flor",
+        "no_context": "snb",
+        "facets": [
+          "definition",
+          "cause",
+          "treatment"
+        ]
+      },
+      "dimension": "multiple-facets/one-turn",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "flor kullanımı tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "subject_terms": [
+        "flor kullanımı tanımını neden oluştuğunu nasıl edildiğini söyle"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [
+        "treatment",
+        "cause"
+      ],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "no_stale_context": true,
+        "facets": false
+      },
+      "passed": false
+    },
+    {
+      "id": "course_quiz-02",
+      "family": "course_quiz",
+      "query": "Bütün slaytları kullanarak 2 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "implant stabilitesi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 2
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bütün slaytları kullanarak 2 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "return_previous_topic-02",
+      "family": "return_previous_topic",
+      "query": "Kral Bir önceki konuya dön, daha basit anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "pulpitis anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "pulpitis açıklaması. implant stabilitesi ilgisiz bir örnektir."
+        },
+        {
+          "role": "USER",
+          "content": "implant stabilitesi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Yeni konunun açıklaması."
+        }
+      ],
+      "gold": {
+        "inherited": "pulpitis",
+        "no_context": "implant"
+      },
+      "dimension": "two-topic/relative-reference",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bir önceki konuya dön, daha basit anlat",
+      "subject_terms": [
+        "Bir önceki konuya dön daha basit"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "context_reference": false,
+        "no_stale_context": true
+      },
+      "passed": false
+    },
+    {
+      "id": "qualifier_replacement-02",
+      "family": "qualifier_replacement",
+      "query": "Çocukları değil erişkinleri kastediyorum, pulpitis için aynı şeyi anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Çocuklarda pulpitis anlat"
+        }
+      ],
+      "gold": {
+        "current": "pulpitis",
+        "qualifier": "eriskin",
+        "forbidden_qualifier": "cocuk"
+      },
+      "dimension": "age/negation/topic-retention",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Çocukları değil erişkinleri kastediyorum, pulpitis için aynı şeyi anlat",
+      "subject_terms": [
+        "pulpitis"
+      ],
+      "subject_nodes": [
+        "pulpitis"
+      ],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "qualifier": false,
+        "no_stale_qualifier": true
+      },
+      "passed": false
+    },
+    {
+      "id": "multipart_request-02",
+      "family": "multipart_request",
+      "query": "pulpitis tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "implant stabilitesi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "current": "pulpitis",
+        "no_context": "implant",
+        "facets": [
+          "definition",
+          "cause",
+          "treatment"
+        ]
+      },
+      "dimension": "multiple-facets/one-turn",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "pulpitis tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "subject_terms": [
+        "pulpitis"
+      ],
+      "subject_nodes": [
+        "pulpitis"
+      ],
+      "task": "explain",
+      "facets": [
+        "treatment",
+        "cause"
+      ],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "no_stale_context": true,
+        "facets": false
+      },
+      "passed": false
+    },
+    {
+      "id": "course_quiz-03",
+      "family": "course_quiz",
+      "query": "Bu dersin tamamını kullanarak 3 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "lokal anestezi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 3
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bu dersin tamamını kullanarak 3 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "return_previous_topic-03",
+      "family": "return_previous_topic",
+      "query": "Hocam Bir önceki konuya dön, daha basit anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "apikal periodontitis anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "apikal periodontitis açıklaması. lokal anestezi ilgisiz bir örnektir."
+        },
+        {
+          "role": "USER",
+          "content": "lokal anestezi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Yeni konunun açıklaması."
+        }
+      ],
+      "gold": {
+        "inherited": "apikal",
+        "no_context": "anestezi"
+      },
+      "dimension": "two-topic/relative-reference",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bir önceki konuya dön, daha basit anlat",
+      "subject_terms": [
+        "Bir önceki konuya dön daha basit"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "context_reference": false,
+        "no_stale_context": true
+      },
+      "passed": false
+    },
+    {
+      "id": "qualifier_replacement-03",
+      "family": "qualifier_replacement",
+      "query": "Çocukları değil erişkinleri kastediyorum, apikal periodontitis için aynı şeyi anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Çocuklarda apikal periodontitis anlat"
+        }
+      ],
+      "gold": {
+        "current": "apikal",
+        "qualifier": "eriskin",
+        "forbidden_qualifier": "cocuk"
+      },
+      "dimension": "age/negation/topic-retention",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Çocukları değil erişkinleri kastediyorum, apikal periodontitis için aynı şeyi anlat",
+      "subject_terms": [
+        "apikal periodontitis"
+      ],
+      "subject_nodes": [
+        "apical_periodontitis"
+      ],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "qualifier": false,
+        "no_stale_qualifier": true
+      },
+      "passed": false
+    },
+    {
+      "id": "multipart_request-03",
+      "family": "multipart_request",
+      "query": "apikal periodontitis tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "lokal anestezi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "current": "apikal",
+        "no_context": "anestezi",
+        "facets": [
+          "definition",
+          "cause",
+          "treatment"
+        ]
+      },
+      "dimension": "multiple-facets/one-turn",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "apikal periodontitis tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "subject_terms": [
+        "apikal periodontitis"
+      ],
+      "subject_nodes": [
+        "apical_periodontitis"
+      ],
+      "task": "explain",
+      "facets": [
+        "treatment",
+        "cause"
+      ],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "no_stale_context": true,
+        "facets": false
+      },
+      "passed": false
+    },
+    {
+      "id": "course_summary-04",
+      "family": "course_summary",
+      "query": "Ya Notların hepsini sınav odaklı özetle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "alveolit anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "task": "summarize"
+      },
+      "dimension": "source/manner/stale-topic",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Notların hepsini sınav odaklı özetle",
+      "subject_terms": [
+        "hepsini"
+      ],
+      "subject_nodes": [],
+      "task": "summarize",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "task": true
+      },
+      "passed": false
+    },
+    {
+      "id": "course_teaching-04",
+      "family": "course_teaching",
+      "query": "Ya Notların hepsini sınav odaklı öğret",
+      "history": [
+        {
+          "role": "USER",
+          "content": "alveolit anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "task": "explain"
+      },
+      "dimension": "source/depth/stale-topic",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Notların hepsini sınav odaklı öğret",
+      "subject_terms": [
+        "hepsini"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "task": true
+      },
+      "passed": false
+    },
+    {
+      "id": "course_quiz-04",
+      "family": "course_quiz",
+      "query": "Notların hepsini kullanarak 4 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "alveolit anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 4
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Notların hepsini kullanarak 4 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "hepsini kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "return_previous_topic-04",
+      "family": "return_previous_topic",
+      "query": "Ya Bir önceki konuya dön, daha basit anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Nance apareyi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Nance apareyi açıklaması. alveolit ilgisiz bir örnektir."
+        },
+        {
+          "role": "USER",
+          "content": "alveolit anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Yeni konunun açıklaması."
+        }
+      ],
+      "gold": {
+        "inherited": "nance",
+        "no_context": "alveolit"
+      },
+      "dimension": "two-topic/relative-reference",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bir önceki konuya dön, daha basit anlat",
+      "subject_terms": [
+        "Bir önceki konuya dön daha basit"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "context_reference": false,
+        "no_stale_context": true
+      },
+      "passed": false
+    },
+    {
+      "id": "qualifier_replacement-04",
+      "family": "qualifier_replacement",
+      "query": "Çocukları değil erişkinleri kastediyorum, Nance apareyi için aynı şeyi anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Çocuklarda Nance apareyi anlat"
+        }
+      ],
+      "gold": {
+        "current": "nance",
+        "qualifier": "eriskin",
+        "forbidden_qualifier": "cocuk"
+      },
+      "dimension": "age/negation/topic-retention",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Çocukları değil erişkinleri kastediyorum, Nance apareyi için aynı şeyi anlat",
+      "subject_terms": [
+        "Çocukları erişkinleri kastediyorum Nance apareyi iç aynı şeyi"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "qualifier": false,
+        "no_stale_qualifier": true
+      },
+      "passed": false
+    },
+    {
+      "id": "multipart_request-04",
+      "family": "multipart_request",
+      "query": "Nance apareyi tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "alveolit anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "current": "nance",
+        "no_context": "alveolit",
+        "facets": [
+          "definition",
+          "cause",
+          "treatment"
+        ]
+      },
+      "dimension": "multiple-facets/one-turn",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Nance apareyi tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "subject_terms": [
+        "Nance apareyi tanımını neden oluştuğunu nasıl edildiğini söyle"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [
+        "treatment",
+        "cause"
+      ],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "no_stale_context": true,
+        "facets": false
+      },
+      "passed": false
+    },
+    {
+      "id": "course_quiz-05",
+      "family": "course_quiz",
+      "query": "Ders notlarını kullanarak 5 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "gingivitis anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 5
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Ders notlarını kullanarak 5 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "exam_priorities-05",
+      "family": "exam_priorities",
+      "query": "Hocanın nereden sorabileceğini anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Downs analizi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Downs analizi açıklaması. gingivitis ilgisiz bir örnektir."
+        }
+      ],
+      "gold": {
+        "inherited": "downs",
+        "task": "exam_points"
+      },
+      "dimension": "exam-selection/style",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Hocanın nereden sorabileceğini anlat",
+      "subject_terms": [
+        "Hoca nereden sorabileceğini"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "task": false,
+        "context_reference": false
+      },
+      "passed": false
+    },
+    {
+      "id": "return_previous_topic-05",
+      "family": "return_previous_topic",
+      "query": "Rica etsem Bir önceki konuya dön, daha basit anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Downs analizi anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Downs analizi açıklaması. gingivitis ilgisiz bir örnektir."
+        },
+        {
+          "role": "USER",
+          "content": "gingivitis anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Yeni konunun açıklaması."
+        }
+      ],
+      "gold": {
+        "inherited": "downs",
+        "no_context": "gingivitis"
+      },
+      "dimension": "two-topic/relative-reference",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Rica etsem Bir önceki konuya dön, daha basit anlat",
+      "subject_terms": [
+        "Bir önceki konuya dön daha basit"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "context_reference": false,
+        "no_stale_context": true
+      },
+      "passed": false
+    },
+    {
+      "id": "qualifier_replacement-05",
+      "family": "qualifier_replacement",
+      "query": "Çocukları değil erişkinleri kastediyorum, Downs analizi için aynı şeyi anlat",
+      "history": [
+        {
+          "role": "USER",
+          "content": "Çocuklarda Downs analizi anlat"
+        }
+      ],
+      "gold": {
+        "current": "downs",
+        "qualifier": "eriskin",
+        "forbidden_qualifier": "cocuk"
+      },
+      "dimension": "age/negation/topic-retention",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Çocukları değil erişkinleri kastediyorum, Downs analizi için aynı şeyi anlat",
+      "subject_terms": [
+        "Çocukları erişkinleri kastediyorum Downs analizi iç aynı şeyi"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "qualifier": false,
+        "no_stale_qualifier": true
+      },
+      "passed": false
+    },
+    {
+      "id": "multipart_request-05",
+      "family": "multipart_request",
+      "query": "Downs analizi tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "history": [
+        {
+          "role": "USER",
+          "content": "gingivitis anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "current": "downs",
+        "no_context": "gingivitis",
+        "facets": [
+          "definition",
+          "cause",
+          "treatment"
+        ]
+      },
+      "dimension": "multiple-facets/one-turn",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Downs analizi tanımını anlat, neden oluştuğunu açıkla ve nasıl tedavi edildiğini söyle",
+      "subject_terms": [
+        "Downs analizi tanımını neden oluştuğunu nasıl edildiğini söyle"
+      ],
+      "subject_nodes": [],
+      "task": "explain",
+      "facets": [
+        "treatment",
+        "cause"
+      ],
+      "qualifiers": [],
+      "checks": {
+        "named_subject": true,
+        "no_stale_context": true,
+        "facets": false
+      },
+      "passed": false
+    },
+    {
+      "id": "course_quiz-06",
+      "family": "course_quiz",
+      "query": "Bu ders notlarını kullanarak 6 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "history": [
+        {
+          "role": "USER",
+          "content": "bruksizm anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "Önceki konu açıklaması."
+        }
+      ],
+      "gold": {
+        "course": true,
+        "generate": true,
+        "count": 6
+      },
+      "dimension": "source/count/hidden-key",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "Bu ders notlarını kullanarak 6 zorlayıcı soru hazırla; cevap anahtarını gösterme",
+      "subject_terms": [
+        "kullanarak zorlayıcı cevap anahtarını gösterme"
+      ],
+      "subject_nodes": [],
+      "task": "generate_questions",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "course_scope": false,
+        "generation": true,
+        "count": true
+      },
+      "passed": false
+    },
+    {
+      "id": "exam_priorities-06",
+      "family": "exam_priorities",
+      "query": "En kritik yerleri ayır",
+      "history": [
+        {
+          "role": "USER",
+          "content": "ANB açısı anlat"
+        },
+        {
+          "role": "ASSISTANT",
+          "content": "ANB açısı açıklaması. bruksizm ilgisiz bir örnektir."
+        }
+      ],
+      "gold": {
+        "inherited": "anb",
+        "task": "exam_points"
+      },
+      "dimension": "exam-selection/style",
+      "provenance": "authored synthetic Turkish study scenario",
+      "resolved": "En kritik yerleri ayır",
+      "subject_terms": [
+        "En kritik yerleri ayır"
+      ],
+      "subject_nodes": [],
+      "task": "exam_points",
+      "facets": [],
+      "qualifiers": [],
+      "checks": {
+        "task": true,
+        "context_reference": false
+      },
+      "passed": false
+    }
+  ]
+}

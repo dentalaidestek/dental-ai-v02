@@ -328,3 +328,48 @@ messages plus a task after frustration. It remains unexecuted because this
 session has no usable authenticated browser. Thresholds, indexing, OCR and Modal
 scheduling are unchanged. This is shared parsing logic, not model fine-tuning or
 proof that arbitrary natural language is fully understood.
+
+## Frozen 1000-scenario baseline (draft code, not production accuracy)
+
+`tests/academic_v2/study_1000_cases.json` freezes 1000 distinct query/history/gold
+scenarios across 20 behavior families and 50 clinical subject/count/reference
+positions. The full evaluator is `scripts/evaluate_study_1000.py`; reproduce with
+`python scripts/evaluate_study_1000.py --language-only`. The corpus hash is
+`313e20c22e05063943eab72c6082fc7d2376b985283638ae4754fc0ead4424f5`.
+
+The current local result is **663/1000 (66.3%)**, with **337 flagged scenarios**.
+Every assertion must pass for a scenario to pass. Inputs and expectations were
+frozen before evaluation, and application code was not modified during this
+measurement. Eight initial flags were scorer alias mismatches (MTA canonical
+node IDs and sefalometri/cephalometry), not product changes; the initial score
+was 655/1000. The scorer now checks exact aliases and finite Turkish nominal
+endings, and continues rejecting generic cyst for dentigerous cyst and SNA for
+maxillary sinus. Unbound controls assert that candidate SQL is not attempted;
+they do not run live SQL.
+
+The broad audit exposes gaps despite the earlier narrow regression suites:
+all 50 `using the notes` course-wide quiz requests fail scope assertions; all
+50 multipart cases miss the explicitly requested definition facet; all 50
+plural-object age corrections miss the adult qualifier; all 50 requests to
+return to the preceding topic fail reference binding. Other flagged samples
+include dentigerous cyst collapsing to generic cyst and maxillary sinus
+resolving to SNA. These are local plan/reference findings and must not be
+represented as actual generated answers. Some authored clinical requests are
+naive or medically inapplicable; the audit measures recognition of requested
+facets, not whether such clinical premises should be accepted or answered.
+
+The full JSON records every query, history, expected plan, actual plan, failed
+checks, frozen corpus/scorer/component hashes, and category counts. The CSV
+includes question text, history, expectations and outcomes. The summary is
+`artifacts/study-1000-report.md`; the full report is
+`artifacts/study-1000-report.json`. Repeated short answers/commands occur in
+different histories; count distinct scenario inputs rather than claiming 1000
+independent product features. Question-text diversity is explicit in the report.
+
+**Production /ask-stream requests sent: 0.** Live candidate selection, owner/READY
+SQL restrictions, actual material hydration, coverage gates, Gemini factual
+quality, source citations and stream completion remain unverified for these
+1000 scenarios. The environment still has no authorized shared DentalAI browser
+session or bound database/provider credentials. Therefore no whole-system or
+production retrieval accuracy percentage is available. Do not label 66.3% as
+production accuracy or replace it with the earlier 210-case score.
