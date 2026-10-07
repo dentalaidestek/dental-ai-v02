@@ -16,7 +16,7 @@ tree = ast.parse(source)
 terms_source = (ROOT / "app/dental_retrieval_terms.py").read_text(encoding="utf-8")
 terms_ns = {}
 exec(compile(terms_source, "<dental-terms>", "exec"), terms_ns)
-wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES"}
+wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES", "_STATE_FOLD"}
 namespace = {"re": __import__("re"), "classify_dental_intent": classify_dental_intent, "classify_dental_intents": classify_dental_intents, "combined_relation_hints": combined_relation_hints, "graph_expansion_terms": graph_expansion_terms}
 namespace["DENTAL_ALIAS_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 namespace["_DENTAL_CONCEPT_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
