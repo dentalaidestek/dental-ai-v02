@@ -1,0 +1,423 @@
+[
+  {
+    "id": "format_outline-01",
+    "category": "format_outline",
+    "query": "Her başlığı tek bir oaragrafla anlat",
+    "source": "hand-authored colloquial Turkish; screenshot spelling preserved"
+  },
+  {
+    "id": "format_outline-02",
+    "category": "format_outline",
+    "query": "Her başlığı tek bir paragrafla anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-03",
+    "category": "format_outline",
+    "query": "her basligi bi paragrafla anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-04",
+    "category": "format_outline",
+    "query": "başlık başlık git",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-05",
+    "category": "format_outline",
+    "query": "hepsini madde madde anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-06",
+    "category": "format_outline",
+    "query": "her konuyu ayrı ayrı anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-07",
+    "category": "format_outline",
+    "query": "tek tek bütün başlıkları açıkla",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-08",
+    "category": "format_outline",
+    "query": "başlıkları atlama",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-09",
+    "category": "format_outline",
+    "query": "diğer konulara da geç",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-10",
+    "category": "format_outline",
+    "query": "bütün başlıkları kısa kısa anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-11",
+    "category": "format_outline",
+    "query": "her başlığı 3 cümleyle açıkla",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-12",
+    "category": "format_outline",
+    "query": "her başlık için bir paragraf yaz",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-13",
+    "category": "format_outline",
+    "query": "her başlığı tablo halinde göster",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "format_outline-14",
+    "category": "format_outline",
+    "query": "kalan başlıkları da açıkla",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-01",
+    "category": "explain",
+    "query": "adam gibi anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-02",
+    "category": "explain",
+    "query": "kafama oturmadı",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-03",
+    "category": "explain",
+    "query": "anlamıyom",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-04",
+    "category": "explain",
+    "query": "hic bisey anlamadim",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-05",
+    "category": "explain",
+    "query": "hiçbir şey anlamadım",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-06",
+    "category": "explain",
+    "query": "şunu tane tane anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-07",
+    "category": "explain",
+    "query": "bunu biraz aç",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-08",
+    "category": "explain",
+    "query": "daha anlaşılır olsun",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-09",
+    "category": "explain",
+    "query": "ezber değil mantığını anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-10",
+    "category": "explain",
+    "query": "çocuğa anlatır gibi anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-11",
+    "category": "explain",
+    "query": "kısa kesme ayrıntıya gir",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-12",
+    "category": "explain",
+    "query": "burayı anlamadım",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-13",
+    "category": "explain",
+    "query": "bu anlattığın kafamı karıştırdı",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-14",
+    "category": "explain",
+    "query": "bi daha anlatır mısın",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-15",
+    "category": "explain",
+    "query": "örnekle anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-16",
+    "category": "explain",
+    "query": "niye böyle",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-17",
+    "category": "explain",
+    "query": "nerede kullanıyoruz",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-18",
+    "category": "explain",
+    "query": "ikisinin farkı ne",
+    "source": "hand-authored colloquial Turkish",
+    "expected_behavior": "clarify when two referents are missing; retain scope when exactly two headings are visible"
+  },
+  {
+    "id": "explain-19",
+    "category": "explain",
+    "query": "çok hızlı geçtin",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "explain-20",
+    "category": "explain",
+    "query": "anlatımın çok yüzeysel",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-01",
+    "category": "feedback",
+    "query": "Kral sen dalga mı geçiyorsun",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-02",
+    "category": "feedback",
+    "query": "dalga mı geçiyosun",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-03",
+    "category": "feedback",
+    "query": "beni anlamıyorsun",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-04",
+    "category": "feedback",
+    "query": "aynı şeyi yazıp duruyorsun",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-05",
+    "category": "feedback",
+    "query": "alakasız cevap verdin",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-06",
+    "category": "feedback",
+    "query": "ben bunu istemedim",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-07",
+    "category": "feedback",
+    "query": "yine aynı cevabı verdin",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "feedback-08",
+    "category": "feedback",
+    "query": "ne diyorsun ya",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-01",
+    "category": "course",
+    "query": "notlardan sınava çalışalım",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-02",
+    "category": "course",
+    "query": "bu notların tamamını öğret",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-03",
+    "category": "course",
+    "query": "dersi baştan sona anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-04",
+    "category": "course",
+    "query": "slaytların özetini çıkar",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-05",
+    "category": "course",
+    "query": "notları okuyup bana çalışma planı yap",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-06",
+    "category": "course",
+    "query": "notlardaki önemli yerleri ayıkla",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-07",
+    "category": "course",
+    "query": "notlardan 20 soru yap",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "course-08",
+    "category": "course",
+    "query": "ders notlarından beni çalıştır",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-01",
+    "category": "quiz",
+    "query": "bi soru sor cevabımı bekle",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-02",
+    "category": "quiz",
+    "query": "bir tane daha sor",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-03",
+    "category": "quiz",
+    "query": "bana zor bi soru sor",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-04",
+    "category": "quiz",
+    "query": "20 tane test sorusu yap",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-05",
+    "category": "quiz",
+    "query": "cevapları söyleme 5 soru hazırla",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-06",
+    "category": "quiz",
+    "query": "sırayla soru sor",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-07",
+    "category": "quiz",
+    "query": "beni bi dene",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "quiz-08",
+    "category": "quiz",
+    "query": "beni test et",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "priority-01",
+    "category": "priority",
+    "query": "hoca nerden sorar",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "priority-02",
+    "category": "priority",
+    "query": "sınavda ne çıkar",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "priority-03",
+    "category": "priority",
+    "query": "hocanın altını çizdiği yerler var mı",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "priority-04",
+    "category": "priority",
+    "query": "slaytlarda işaretli yerler nerede",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-01",
+    "category": "named",
+    "query": "Pulpitis nasıl uygulanıyor",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-02",
+    "category": "named",
+    "query": "Nance apareyini tane tane anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-03",
+    "category": "named",
+    "query": "Şimdi implant stabilitesine geçelim",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-04",
+    "category": "named",
+    "query": "Zorbital sendromunu anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-05",
+    "category": "named",
+    "query": "Flor ile pulpitis aynı şey mi",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-06",
+    "category": "named",
+    "query": "İkinci molar nedir",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-07",
+    "category": "named",
+    "query": "Doz tablolarındaki sodyum florürü anlat",
+    "source": "hand-authored colloquial Turkish"
+  },
+  {
+    "id": "named-08",
+    "category": "named",
+    "query": "Apikal periodontitiste kalan başlıkları açıkla",
+    "source": "hand-authored colloquial Turkish"
+  }
+]

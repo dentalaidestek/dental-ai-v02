@@ -16,7 +16,7 @@ tree = ast.parse(source)
 terms_source = (ROOT / "app/dental_retrieval_terms.py").read_text(encoding="utf-8")
 terms_ns = {}
 exec(compile(terms_source, "<dental-terms>", "exec"), terms_ns)
-wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES"}
+wanted = {"_QUERY_NOISE_RE", "_DENTAL_NOTATION_RULES", "_STATE_FOLD"}
 namespace = {"re": __import__("re"), "classify_dental_intent": classify_dental_intent, "classify_dental_intents": classify_dental_intents, "combined_relation_hints": combined_relation_hints, "graph_expansion_terms": graph_expansion_terms}
 namespace["DENTAL_ALIAS_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
 namespace["_DENTAL_CONCEPT_GROUPS"] = terms_ns["DENTAL_ALIAS_GROUPS"]
@@ -1332,3 +1332,11 @@ def test_course_wide_coverage_operator_has_real_word_boundaries():
         assert matcher.search(query), query
     for query in ("SNA normal değerini anlat", "tamamıyla bu kavramı açıkla"):
         assert not matcher.search(query), query
+
+
+def test_material_subject_is_distinct_from_course_material_reference():
+    from app.academic_task_language import remove_source_reference
+    for query in ("ABC materyali hangi durumda uygulanır?", "kompozit materyalini açıkla"):
+        assert remove_source_reference(query) == query
+    for query in ("bu materyali özetle", "ders materyalini açıkla", "materyali özetle"):
+        assert "materyal" not in remove_source_reference(query)

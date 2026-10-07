@@ -59,7 +59,14 @@ assert "generation target selected" in generation
 assert "build_dental_requirement_plan" in generation
 assert "_INTENT_RESPONSE_RULES" in generation
 assert "Sen arama/retrieval yapma" in generation
-assert "if not retrieval.evidence_sufficient:" in generation
+# Generation must fail closed before any provider call when evidence is absent
+# or insufficient. The guard may combine both conditions in one branch.
+assert "not retrieval.evidence_sufficient" in generation
+_stream_body = generation.split("def stream_rag_v2(", 1)[1]
+_stream_prefix = _stream_body.split("required_attachment_types =", 1)[0]
+assert "not retrieval.evidence_sufficient" in _stream_prefix
+assert "yield evidence_followup(" in _stream_prefix
+assert "_generation_targets()" not in _stream_prefix
 assert "Eksik başlıklar tamamlama görevi değildir" in generation
 assert "class EvidenceSufficiency" in retrieval
 assert "def _evidence_sufficiency" in retrieval

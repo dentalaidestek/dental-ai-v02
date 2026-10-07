@@ -1,0 +1,2812 @@
+{
+  "total": 210,
+  "passed": 210,
+  "failed": 0,
+  "gold_note": "The ambiguous comparison case explicitly expects clarification with only one referent. Earlier exploratory report used overly strict task/scope gold and is not a directly comparable score.",
+  "limits": "Hand-authored intent/context audit; no SQL, provider generation or authenticated production browser. Quiz requests anchored to actual pending question may legitimately preserve the selected question stem.",
+  "cases": [
+    {
+      "id": "format_outline-01",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir oaragrafla anlat",
+      "source": "hand-authored colloquial Turkish; screenshot spelling preserved",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — Her başlığı tek bir oaragrafla anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-01",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir oaragrafla anlat",
+      "source": "hand-authored colloquial Turkish; screenshot spelling preserved",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — Her başlığı tek bir oaragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-01",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir oaragrafla anlat",
+      "source": "hand-authored colloquial Turkish; screenshot spelling preserved",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — Her başlığı tek bir oaragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-02",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — Her başlığı tek bir paragrafla anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-02",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — Her başlığı tek bir paragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-02",
+      "category": "format_outline",
+      "query": "Her başlığı tek bir paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — Her başlığı tek bir paragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-03",
+      "category": "format_outline",
+      "query": "her basligi bi paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — her basligi bi paragrafla anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-03",
+      "category": "format_outline",
+      "query": "her basligi bi paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — her basligi bi paragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-03",
+      "category": "format_outline",
+      "query": "her basligi bi paragrafla anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — her basligi bi paragrafla anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-04",
+      "category": "format_outline",
+      "query": "başlık başlık git",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — başlık başlık git",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-04",
+      "category": "format_outline",
+      "query": "başlık başlık git",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — başlık başlık git",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-04",
+      "category": "format_outline",
+      "query": "başlık başlık git",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — başlık başlık git",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-05",
+      "category": "format_outline",
+      "query": "hepsini madde madde anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — hepsini madde madde anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-05",
+      "category": "format_outline",
+      "query": "hepsini madde madde anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — hepsini madde madde anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-05",
+      "category": "format_outline",
+      "query": "hepsini madde madde anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — hepsini madde madde anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-06",
+      "category": "format_outline",
+      "query": "her konuyu ayrı ayrı anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — her konuyu ayrı ayrı anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-06",
+      "category": "format_outline",
+      "query": "her konuyu ayrı ayrı anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — her konuyu ayrı ayrı anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-06",
+      "category": "format_outline",
+      "query": "her konuyu ayrı ayrı anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — her konuyu ayrı ayrı anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-07",
+      "category": "format_outline",
+      "query": "tek tek bütün başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — tek tek bütün başlıkları açıkla",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-07",
+      "category": "format_outline",
+      "query": "tek tek bütün başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — tek tek bütün başlıkları açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-07",
+      "category": "format_outline",
+      "query": "tek tek bütün başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — tek tek bütün başlıkları açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-08",
+      "category": "format_outline",
+      "query": "başlıkları atlama",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — başlıkları atlama",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-08",
+      "category": "format_outline",
+      "query": "başlıkları atlama",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — başlıkları atlama",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-08",
+      "category": "format_outline",
+      "query": "başlıkları atlama",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — başlıkları atlama",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-09",
+      "category": "format_outline",
+      "query": "diğer konulara da geç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — diğer konulara da geç",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-09",
+      "category": "format_outline",
+      "query": "diğer konulara da geç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — diğer konulara da geç",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-09",
+      "category": "format_outline",
+      "query": "diğer konulara da geç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — diğer konulara da geç",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-10",
+      "category": "format_outline",
+      "query": "bütün başlıkları kısa kısa anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — bütün başlıkları kısa kısa anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-10",
+      "category": "format_outline",
+      "query": "bütün başlıkları kısa kısa anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — bütün başlıkları kısa kısa anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-10",
+      "category": "format_outline",
+      "query": "bütün başlıkları kısa kısa anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — bütün başlıkları kısa kısa anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-11",
+      "category": "format_outline",
+      "query": "her başlığı 3 cümleyle açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — her başlığı 3 cümleyle açıkla",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-11",
+      "category": "format_outline",
+      "query": "her başlığı 3 cümleyle açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — her başlığı 3 cümleyle açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-11",
+      "category": "format_outline",
+      "query": "her başlığı 3 cümleyle açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — her başlığı 3 cümleyle açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-12",
+      "category": "format_outline",
+      "query": "her başlık için bir paragraf yaz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — her başlık için bir paragraf yaz",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-12",
+      "category": "format_outline",
+      "query": "her başlık için bir paragraf yaz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — her başlık için bir paragraf yaz",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-12",
+      "category": "format_outline",
+      "query": "her başlık için bir paragraf yaz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — her başlık için bir paragraf yaz",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-13",
+      "category": "format_outline",
+      "query": "her başlığı tablo halinde göster",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — her başlığı tablo halinde göster",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-13",
+      "category": "format_outline",
+      "query": "her başlığı tablo halinde göster",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — her başlığı tablo halinde göster",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-13",
+      "category": "format_outline",
+      "query": "her başlığı tablo halinde göster",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — her başlığı tablo halinde göster",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-14",
+      "category": "format_outline",
+      "query": "kalan başlıkları da açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — kalan başlıkları da açıkla",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "format_outline-14",
+      "category": "format_outline",
+      "query": "kalan başlıkları da açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — kalan başlıkları da açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "format_outline-14",
+      "category": "format_outline",
+      "query": "kalan başlıkları da açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — kalan başlıkları da açıkla",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-01",
+      "category": "explain",
+      "query": "adam gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — adam gibi anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-01",
+      "category": "explain",
+      "query": "adam gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — adam gibi anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-01",
+      "category": "explain",
+      "query": "adam gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — adam gibi anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-02",
+      "category": "explain",
+      "query": "kafama oturmadı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — kafama oturmadı",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-02",
+      "category": "explain",
+      "query": "kafama oturmadı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — kafama oturmadı",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-02",
+      "category": "explain",
+      "query": "kafama oturmadı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — kafama oturmadı",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-03",
+      "category": "explain",
+      "query": "anlamıyom",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — anlamıyom",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-03",
+      "category": "explain",
+      "query": "anlamıyom",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — anlamıyom",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-03",
+      "category": "explain",
+      "query": "anlamıyom",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — anlamıyom",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-04",
+      "category": "explain",
+      "query": "hic bisey anlamadim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — hic bisey anlamadim",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-04",
+      "category": "explain",
+      "query": "hic bisey anlamadim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — hic bisey anlamadim",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-04",
+      "category": "explain",
+      "query": "hic bisey anlamadim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — hic bisey anlamadim",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-05",
+      "category": "explain",
+      "query": "hiçbir şey anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — hiçbir şey anlamadım",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-05",
+      "category": "explain",
+      "query": "hiçbir şey anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — hiçbir şey anlamadım",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-05",
+      "category": "explain",
+      "query": "hiçbir şey anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — hiçbir şey anlamadım",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-06",
+      "category": "explain",
+      "query": "şunu tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — şunu tane tane anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-06",
+      "category": "explain",
+      "query": "şunu tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — şunu tane tane anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-06",
+      "category": "explain",
+      "query": "şunu tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — şunu tane tane anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-07",
+      "category": "explain",
+      "query": "bunu biraz aç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — bunu biraz aç",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-07",
+      "category": "explain",
+      "query": "bunu biraz aç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — bunu biraz aç",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-07",
+      "category": "explain",
+      "query": "bunu biraz aç",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — bunu biraz aç",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-08",
+      "category": "explain",
+      "query": "daha anlaşılır olsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — daha anlaşılır olsun",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-08",
+      "category": "explain",
+      "query": "daha anlaşılır olsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — daha anlaşılır olsun",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-08",
+      "category": "explain",
+      "query": "daha anlaşılır olsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — daha anlaşılır olsun",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-09",
+      "category": "explain",
+      "query": "ezber değil mantığını anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — ezber değil mantığını anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-09",
+      "category": "explain",
+      "query": "ezber değil mantığını anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — ezber değil mantığını anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-09",
+      "category": "explain",
+      "query": "ezber değil mantığını anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — ezber değil mantığını anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-10",
+      "category": "explain",
+      "query": "çocuğa anlatır gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — çocuğa anlatır gibi anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-10",
+      "category": "explain",
+      "query": "çocuğa anlatır gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — çocuğa anlatır gibi anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-10",
+      "category": "explain",
+      "query": "çocuğa anlatır gibi anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — çocuğa anlatır gibi anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-11",
+      "category": "explain",
+      "query": "kısa kesme ayrıntıya gir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — kısa kesme ayrıntıya gir",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-11",
+      "category": "explain",
+      "query": "kısa kesme ayrıntıya gir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — kısa kesme ayrıntıya gir",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-11",
+      "category": "explain",
+      "query": "kısa kesme ayrıntıya gir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — kısa kesme ayrıntıya gir",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-12",
+      "category": "explain",
+      "query": "burayı anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — burayı anlamadım",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-12",
+      "category": "explain",
+      "query": "burayı anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — burayı anlamadım",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-12",
+      "category": "explain",
+      "query": "burayı anlamadım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — burayı anlamadım",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-13",
+      "category": "explain",
+      "query": "bu anlattığın kafamı karıştırdı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — bu anlattığın kafamı karıştırdı",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-13",
+      "category": "explain",
+      "query": "bu anlattığın kafamı karıştırdı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — bu anlattığın kafamı karıştırdı",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-13",
+      "category": "explain",
+      "query": "bu anlattığın kafamı karıştırdı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — bu anlattığın kafamı karıştırdı",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-14",
+      "category": "explain",
+      "query": "bi daha anlatır mısın",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — bi daha anlatır mısın",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-14",
+      "category": "explain",
+      "query": "bi daha anlatır mısın",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — bi daha anlatır mısın",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-14",
+      "category": "explain",
+      "query": "bi daha anlatır mısın",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — bi daha anlatır mısın",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-15",
+      "category": "explain",
+      "query": "örnekle anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — örnekle anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-15",
+      "category": "explain",
+      "query": "örnekle anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — örnekle anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-15",
+      "category": "explain",
+      "query": "örnekle anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — örnekle anlat",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-16",
+      "category": "explain",
+      "query": "niye böyle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — niye böyle",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-16",
+      "category": "explain",
+      "query": "niye böyle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — niye böyle",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-16",
+      "category": "explain",
+      "query": "niye böyle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — niye böyle",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-17",
+      "category": "explain",
+      "query": "nerede kullanıyoruz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — nerede kullanıyoruz",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-17",
+      "category": "explain",
+      "query": "nerede kullanıyoruz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — nerede kullanıyoruz",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-17",
+      "category": "explain",
+      "query": "nerede kullanıyoruz",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — nerede kullanıyoruz",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-18",
+      "category": "explain",
+      "query": "ikisinin farkı ne",
+      "source": "hand-authored colloquial Turkish",
+      "expected_behavior": "clarify when two referents are missing; retain scope when exactly two headings are visible",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — ikisinin farkı ne",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-18",
+      "category": "explain",
+      "query": "ikisinin farkı ne",
+      "source": "hand-authored colloquial Turkish",
+      "expected_behavior": "clarify when two referents are missing; retain scope when exactly two headings are visible",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — ikisinin farkı ne",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-18",
+      "category": "explain",
+      "query": "ikisinin farkı ne",
+      "source": "hand-authored colloquial Turkish",
+      "expected_behavior": "clarify when two referents are missing; retain scope when exactly two headings are visible",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — ikisinin farkı ne",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-19",
+      "category": "explain",
+      "query": "çok hızlı geçtin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — çok hızlı geçtin",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-19",
+      "category": "explain",
+      "query": "çok hızlı geçtin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — çok hızlı geçtin",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-19",
+      "category": "explain",
+      "query": "çok hızlı geçtin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — çok hızlı geçtin",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-20",
+      "category": "explain",
+      "query": "anlatımın çok yüzeysel",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — anlatımın çok yüzeysel",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "explain-20",
+      "category": "explain",
+      "query": "anlatımın çok yüzeysel",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — anlatımın çok yüzeysel",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "explain-20",
+      "category": "explain",
+      "query": "anlatımın çok yüzeysel",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — anlatımın çok yüzeysel",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-01",
+      "category": "feedback",
+      "query": "Kral sen dalga mı geçiyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Kral sen dalga mı geçiyorsun",
+      "subjects": [
+        "sen dalga mı geçiyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-01",
+      "category": "feedback",
+      "query": "Kral sen dalga mı geçiyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Kral sen dalga mı geçiyorsun",
+      "subjects": [
+        "sen dalga mı geçiyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-01",
+      "category": "feedback",
+      "query": "Kral sen dalga mı geçiyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Kral sen dalga mı geçiyorsun",
+      "subjects": [
+        "sen dalga mı geçiyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-02",
+      "category": "feedback",
+      "query": "dalga mı geçiyosun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "dalga mı geçiyosun",
+      "subjects": [
+        "dalga mı geçiyos"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-02",
+      "category": "feedback",
+      "query": "dalga mı geçiyosun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "dalga mı geçiyosun",
+      "subjects": [
+        "dalga mı geçiyos"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-02",
+      "category": "feedback",
+      "query": "dalga mı geçiyosun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "dalga mı geçiyosun",
+      "subjects": [
+        "dalga mı geçiyos"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-03",
+      "category": "feedback",
+      "query": "beni anlamıyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "beni anlamıyorsun",
+      "subjects": [
+        "anlamıyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-03",
+      "category": "feedback",
+      "query": "beni anlamıyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "beni anlamıyorsun",
+      "subjects": [
+        "anlamıyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-03",
+      "category": "feedback",
+      "query": "beni anlamıyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "beni anlamıyorsun",
+      "subjects": [
+        "anlamıyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-04",
+      "category": "feedback",
+      "query": "aynı şeyi yazıp duruyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "aynı şeyi yazıp duruyorsun",
+      "subjects": [
+        "aynı şeyi yazıp duruyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-04",
+      "category": "feedback",
+      "query": "aynı şeyi yazıp duruyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "aynı şeyi yazıp duruyorsun",
+      "subjects": [
+        "aynı şeyi yazıp duruyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-04",
+      "category": "feedback",
+      "query": "aynı şeyi yazıp duruyorsun",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "aynı şeyi yazıp duruyorsun",
+      "subjects": [
+        "aynı şeyi yazıp duruyors"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-05",
+      "category": "feedback",
+      "query": "alakasız cevap verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "alakasız cevap verdin",
+      "subjects": [
+        "alakasız cevap verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-05",
+      "category": "feedback",
+      "query": "alakasız cevap verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "alakasız cevap verdin",
+      "subjects": [
+        "alakasız cevap verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-05",
+      "category": "feedback",
+      "query": "alakasız cevap verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "alakasız cevap verdin",
+      "subjects": [
+        "alakasız cevap verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-06",
+      "category": "feedback",
+      "query": "ben bunu istemedim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "ben bunu istemedim",
+      "subjects": [
+        "ben bunu istemedim"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-06",
+      "category": "feedback",
+      "query": "ben bunu istemedim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "ben bunu istemedim",
+      "subjects": [
+        "ben bunu istemedim"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-06",
+      "category": "feedback",
+      "query": "ben bunu istemedim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "ben bunu istemedim",
+      "subjects": [
+        "ben bunu istemedim"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-07",
+      "category": "feedback",
+      "query": "yine aynı cevabı verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "yine aynı cevabı verdin",
+      "subjects": [
+        "yine aynı cevabı verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-07",
+      "category": "feedback",
+      "query": "yine aynı cevabı verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "yine aynı cevabı verdin",
+      "subjects": [
+        "yine aynı cevabı verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-07",
+      "category": "feedback",
+      "query": "yine aynı cevabı verdin",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "yine aynı cevabı verdin",
+      "subjects": [
+        "yine aynı cevabı verd"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-08",
+      "category": "feedback",
+      "query": "ne diyorsun ya",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "ne diyorsun ya",
+      "subjects": [
+        "ne diyors ya"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-08",
+      "category": "feedback",
+      "query": "ne diyorsun ya",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "ne diyorsun ya",
+      "subjects": [
+        "ne diyors ya"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "feedback-08",
+      "category": "feedback",
+      "query": "ne diyorsun ya",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "ne diyorsun ya",
+      "subjects": [
+        "ne diyors ya"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "course-01",
+      "category": "course",
+      "query": "notlardan sınava çalışalım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "notlardan sınava çalışalım",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-01",
+      "category": "course",
+      "query": "notlardan sınava çalışalım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "notlardan sınava çalışalım",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-01",
+      "category": "course",
+      "query": "notlardan sınava çalışalım",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "notlardan sınava çalışalım",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-02",
+      "category": "course",
+      "query": "bu notların tamamını öğret",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "bu notların tamamını öğret",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-02",
+      "category": "course",
+      "query": "bu notların tamamını öğret",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "bu notların tamamını öğret",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-02",
+      "category": "course",
+      "query": "bu notların tamamını öğret",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "bu notların tamamını öğret",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-03",
+      "category": "course",
+      "query": "dersi baştan sona anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "dersi baştan sona anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-03",
+      "category": "course",
+      "query": "dersi baştan sona anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "dersi baştan sona anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-03",
+      "category": "course",
+      "query": "dersi baştan sona anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "dersi baştan sona anlat",
+      "subjects": [],
+      "task": "explain",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-04",
+      "category": "course",
+      "query": "slaytların özetini çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "slaytların özetini çıkar",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-04",
+      "category": "course",
+      "query": "slaytların özetini çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "slaytların özetini çıkar",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-04",
+      "category": "course",
+      "query": "slaytların özetini çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "slaytların özetini çıkar",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-05",
+      "category": "course",
+      "query": "notları okuyup bana çalışma planı yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "notları okuyup bana çalışma planı yap",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-05",
+      "category": "course",
+      "query": "notları okuyup bana çalışma planı yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "notları okuyup bana çalışma planı yap",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-05",
+      "category": "course",
+      "query": "notları okuyup bana çalışma planı yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "notları okuyup bana çalışma planı yap",
+      "subjects": [],
+      "task": "summarize",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-06",
+      "category": "course",
+      "query": "notlardaki önemli yerleri ayıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "notlardaki önemli yerleri ayıkla",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-06",
+      "category": "course",
+      "query": "notlardaki önemli yerleri ayıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "notlardaki önemli yerleri ayıkla",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-06",
+      "category": "course",
+      "query": "notlardaki önemli yerleri ayıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "notlardaki önemli yerleri ayıkla",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-07",
+      "category": "course",
+      "query": "notlardan 20 soru yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "notlardan 20 soru yap",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-07",
+      "category": "course",
+      "query": "notlardan 20 soru yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "notlardan 20 soru yap",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-07",
+      "category": "course",
+      "query": "notlardan 20 soru yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "notlardan 20 soru yap",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-08",
+      "category": "course",
+      "query": "ders notlarından beni çalıştır",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "ders notlarından beni çalıştır",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-08",
+      "category": "course",
+      "query": "ders notlarından beni çalıştır",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "ders notlarından beni çalıştır",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "course-08",
+      "category": "course",
+      "query": "ders notlarından beni çalıştır",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "ders notlarından beni çalıştır",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-01",
+      "category": "quiz",
+      "query": "bi soru sor cevabımı bekle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — bi soru sor cevabımı bekle",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-01",
+      "category": "quiz",
+      "query": "bi soru sor cevabımı bekle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — bi soru sor cevabımı bekle",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-01",
+      "category": "quiz",
+      "query": "bi soru sor cevabımı bekle",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — bi soru sor cevabımı bekle",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-02",
+      "category": "quiz",
+      "query": "bir tane daha sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — bir tane daha sor",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-02",
+      "category": "quiz",
+      "query": "bir tane daha sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — bir tane daha sor",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-02",
+      "category": "quiz",
+      "query": "bir tane daha sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — bir tane daha sor",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-03",
+      "category": "quiz",
+      "query": "bana zor bi soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — bana zor bi soru sor",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-03",
+      "category": "quiz",
+      "query": "bana zor bi soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — bana zor bi soru sor",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-03",
+      "category": "quiz",
+      "query": "bana zor bi soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — bana zor bi soru sor",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-04",
+      "category": "quiz",
+      "query": "20 tane test sorusu yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla — 20 tane test sorusu yap",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-04",
+      "category": "quiz",
+      "query": "20 tane test sorusu yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — 20 tane test sorusu yap",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-04",
+      "category": "quiz",
+      "query": "20 tane test sorusu yap",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — 20 tane test sorusu yap",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-05",
+      "category": "quiz",
+      "query": "cevapları söyleme 5 soru hazırla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla — cevapları söyleme 5 soru hazırla",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-05",
+      "category": "quiz",
+      "query": "cevapları söyleme 5 soru hazırla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — cevapları söyleme 5 soru hazırla",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-05",
+      "category": "quiz",
+      "query": "cevapları söyleme 5 soru hazırla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — cevapları söyleme 5 soru hazırla",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-06",
+      "category": "quiz",
+      "query": "sırayla soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — sırayla soru sor",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-06",
+      "category": "quiz",
+      "query": "sırayla soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — sırayla soru sor",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-06",
+      "category": "quiz",
+      "query": "sırayla soru sor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — sırayla soru sor",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-07",
+      "category": "quiz",
+      "query": "beni bi dene",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — beni bi dene",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-07",
+      "category": "quiz",
+      "query": "beni bi dene",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — beni bi dene",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-07",
+      "category": "quiz",
+      "query": "beni bi dene",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — beni bi dene",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-08",
+      "category": "quiz",
+      "query": "beni test et",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını soru hazırla soru hazırla — beni test et",
+      "subjects": [],
+      "task": "generate_questions",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "quiz-08",
+      "category": "quiz",
+      "query": "beni test et",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını soru hazırla — beni test et",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "quiz-08",
+      "category": "quiz",
+      "query": "beni test et",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından soru hazırla — beni test et",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "generate_questions",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "priority-01",
+      "category": "priority",
+      "query": "hoca nerden sorar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — hoca nerden sorar",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-01",
+      "category": "priority",
+      "query": "hoca nerden sorar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — hoca nerden sorar",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-01",
+      "category": "priority",
+      "query": "hoca nerden sorar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — hoca nerden sorar",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-02",
+      "category": "priority",
+      "query": "sınavda ne çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — sınavda ne çıkar",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-02",
+      "category": "priority",
+      "query": "sınavda ne çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — sınavda ne çıkar",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-02",
+      "category": "priority",
+      "query": "sınavda ne çıkar",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — sınavda ne çıkar",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-03",
+      "category": "priority",
+      "query": "hocanın altını çizdiği yerler var mı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — hocanın altını çizdiği yerler var mı",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-03",
+      "category": "priority",
+      "query": "hocanın altını çizdiği yerler var mı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — hocanın altını çizdiği yerler var mı",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-03",
+      "category": "priority",
+      "query": "hocanın altını çizdiği yerler var mı",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — hocanın altını çizdiği yerler var mı",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-04",
+      "category": "priority",
+      "query": "slaytlarda işaretli yerler nerede",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Bu ders notlarını açıkla — slaytlarda işaretli yerler nerede",
+      "subjects": [],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-04",
+      "category": "priority",
+      "query": "slaytlarda işaretli yerler nerede",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Çocuklarda flor kullanımını — slaytlarda işaretli yerler nerede",
+      "subjects": [
+        "Çocuklarda flor kullanımını"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "priority-04",
+      "category": "priority",
+      "query": "slaytlarda işaretli yerler nerede",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Çocuklarda flor kullanımından — slaytlarda işaretli yerler nerede",
+      "subjects": [
+        "Çocuklarda flor kullanımından"
+      ],
+      "task": "exam_points",
+      "course_scope": true,
+      "passed": true
+    },
+    {
+      "id": "named-01",
+      "category": "named",
+      "query": "Pulpitis nasıl uygulanıyor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Pulpitis nasıl uygulanıyor",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-01",
+      "category": "named",
+      "query": "Pulpitis nasıl uygulanıyor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Pulpitis nasıl uygulanıyor",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-01",
+      "category": "named",
+      "query": "Pulpitis nasıl uygulanıyor",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Pulpitis nasıl uygulanıyor",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-02",
+      "category": "named",
+      "query": "Nance apareyini tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Nance apareyini tane tane anlat",
+      "subjects": [
+        "Nance apareyini tane tane"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-02",
+      "category": "named",
+      "query": "Nance apareyini tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Nance apareyini tane tane anlat",
+      "subjects": [
+        "Nance apareyini tane tane"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-02",
+      "category": "named",
+      "query": "Nance apareyini tane tane anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Nance apareyini tane tane anlat",
+      "subjects": [
+        "Nance apareyini tane tane"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-03",
+      "category": "named",
+      "query": "Şimdi implant stabilitesine geçelim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Şimdi implant stabilitesine geçelim",
+      "subjects": [
+        "dental implant"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-03",
+      "category": "named",
+      "query": "Şimdi implant stabilitesine geçelim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Şimdi implant stabilitesine geçelim",
+      "subjects": [
+        "dental implant"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-03",
+      "category": "named",
+      "query": "Şimdi implant stabilitesine geçelim",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Şimdi implant stabilitesine geçelim",
+      "subjects": [
+        "dental implant"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-04",
+      "category": "named",
+      "query": "Zorbital sendromunu anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Zorbital sendromunu anlat",
+      "subjects": [
+        "Zorbital sendromunu"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-04",
+      "category": "named",
+      "query": "Zorbital sendromunu anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Zorbital sendromunu anlat",
+      "subjects": [
+        "Zorbital sendromunu"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-04",
+      "category": "named",
+      "query": "Zorbital sendromunu anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Zorbital sendromunu anlat",
+      "subjects": [
+        "Zorbital sendromunu"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-05",
+      "category": "named",
+      "query": "Flor ile pulpitis aynı şey mi",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Flor ile pulpitis aynı şey mi",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-05",
+      "category": "named",
+      "query": "Flor ile pulpitis aynı şey mi",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Flor ile pulpitis aynı şey mi",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-05",
+      "category": "named",
+      "query": "Flor ile pulpitis aynı şey mi",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Flor ile pulpitis aynı şey mi",
+      "subjects": [
+        "pulpitis"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-06",
+      "category": "named",
+      "query": "İkinci molar nedir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "İkinci molar nedir",
+      "subjects": [
+        "İkinci molar"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-06",
+      "category": "named",
+      "query": "İkinci molar nedir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "İkinci molar nedir",
+      "subjects": [
+        "İkinci molar"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-06",
+      "category": "named",
+      "query": "İkinci molar nedir",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "İkinci molar nedir",
+      "subjects": [
+        "İkinci molar"
+      ],
+      "task": null,
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-07",
+      "category": "named",
+      "query": "Doz tablolarındaki sodyum florürü anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Doz tablolarındaki sodyum florürü anlat",
+      "subjects": [
+        "Doz tablolarındaki sodyum florürü"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-07",
+      "category": "named",
+      "query": "Doz tablolarındaki sodyum florürü anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Doz tablolarındaki sodyum florürü anlat",
+      "subjects": [
+        "Doz tablolarındaki sodyum florürü"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-07",
+      "category": "named",
+      "query": "Doz tablolarındaki sodyum florürü anlat",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Doz tablolarındaki sodyum florürü anlat",
+      "subjects": [
+        "Doz tablolarındaki sodyum florürü"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-08",
+      "category": "named",
+      "query": "Apikal periodontitiste kalan başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "course",
+      "resolved": "Apikal periodontitiste kalan başlıkları açıkla",
+      "subjects": [
+        "apikal periodontitis"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-08",
+      "category": "named",
+      "query": "Apikal periodontitiste kalan başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "topic",
+      "resolved": "Apikal periodontitiste kalan başlıkları açıkla",
+      "subjects": [
+        "apikal periodontitis"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    },
+    {
+      "id": "named-08",
+      "category": "named",
+      "query": "Apikal periodontitiste kalan başlıkları açıkla",
+      "source": "hand-authored colloquial Turkish",
+      "history": "quiz",
+      "resolved": "Apikal periodontitiste kalan başlıkları açıkla",
+      "subjects": [
+        "apikal periodontitis"
+      ],
+      "task": "explain",
+      "course_scope": false,
+      "passed": true
+    }
+  ]
+}

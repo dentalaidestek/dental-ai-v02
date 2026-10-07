@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from playwright.async_api import async_playwright
 
 
 FAILURE_TEXT = (
+    'Bu bilgi yüklediğin ders notlarında bulunmuyor',
     'Bu soruyla ilişkilendirilebilecek ders notu bulunamadı',
     'yeterli not içeriğini henüz eşleştiremedim',
     'notların tümünden güvenilir içerik hazırlayamadım',
@@ -70,7 +72,15 @@ async def verify(args):
                 raise RuntimeError('Authorized login session is unavailable; no test requests sent.')
             await page.locator('#studySendButton').wait_for(state='visible')
             steps = [
-                {'preset': 'Özetle'}, {'preset': 'Bana Öğret'}, {'preset': 'Soru Hazırla'},
+                {'preset': 'Özetle'}, {'preset': 'Bana Öğret'},
+                {'message': 'Bu çok yüzeysel her başlığı açıkla'},
+                {'message': 'Diğer başlıklar nerede'},
+                {'message': 'Hoca nerden sorabilir'},
+                {'message': 'Bence burdan gelmez hocanın özellikle vurguladığı işaretli yerler var mı'},
+                {'message': 'Her başlığı tek bir oaragrafla anlat'},
+                {'message': 'Kral sen dalga mı geçiyorsun'},
+                {'message': 'Başlıkları atlama, her başlığı tek bir paragrafla anlat'},
+                {'preset': 'Soru Hazırla', 'question_count': 20, 'hide_answer_key': True},
                 {'message': 'Bu notlardan sınava çalışalım, önemli yerleri mantığıyla anlat.'},
                 {'message': 'Bana bu ders notlarından bir soru sor ve cevabımı bekle.'},
                 {'message': 'Cevabım A'},
@@ -104,14 +114,29 @@ async def verify(args):
                     not clarification or bool(step.get('allow_clarification')))
                 required = step.get('answer_contains', [])
                 success = success and all(term.casefold() in answer.casefold() for term in required)
+                question_numbers = [int(number) for number in re.findall(
+                    r'(?im)^\s*(?:\*\*)?Soru\s+(\d+)\b', answer)]
+                if step.get('question_count'):
+                    success = success and question_numbers == list(range(1, int(step['question_count']) + 1))
+                answer_key_visible = bool(re.search(
+                    r'(?im)^\s*(?:#+\s*|\*\*)?(?:cevap|yanıt|yanit)\s+anahtar(?:ı|i)\s*[:\n]'
+                    r'|^\s*(?:[-*]\s*)?(?:doğru\s+cevap|dogru\s+cevap|cevap|yanıt|yanit)\s*:\s*[A-E]\b', answer))
+                if step.get('hide_answer_key'):
+                    success = success and not answer_key_visible
                 await page.wait_for_function('!document.querySelector("#studySendButton").disabled',
                                              timeout=args.timeout_ms)
+                visible_text = await page.locator('.study-chat-message.assistant').all_inner_texts()
+                marker_visible = any('ACADEMIC_Q_CURSOR' in text for text in visible_text)
+                success = success and not marker_visible
                 timings = await page.evaluate('window.studyStreamTimings')
                 report['steps'].append({**step, 'http_status': response.status, 'done': done,
                     'delta_count': sum(event.get('type') == 'delta' for event in events),
                     'elapsed_ms': round((time.monotonic() - started) * 1000),
                     'stream_timing': timings[-1] if timings else None,
-                    'answer_preview': answer[:1200], 'errors': errors, 'passed': success})
+                    'answer_preview': answer[:1200], 'errors': errors,
+                    'internal_marker_visible': marker_visible,
+                    'question_numbers': question_numbers,
+                    'answer_key_visible': answer_key_visible, 'passed': success})
                 if not success:
                     raise RuntimeError('Stream did not complete with an answer; see step report.')
             report['passed'] = True

@@ -177,6 +177,14 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
+    # A requested definition is independent of treatment/cause clauses.
+    # Generic closing "nedir" still must not create a spurious definition.
+    if re.search(r'\btanim(?:ini|i|larini|lari)?\s+(?:anlat|acikla|ver|yap)\b', intent_clean):
+        natural_roles.add('definition')
+    if re.search(r'\b(?:doz|dozu|dozunu|miktari|miktarini)\b', intent_clean):
+        natural_roles.add('value')
+    if re.search(r'\bnasil\s+(?:uygulanir|uygulaniyor|uygulayacagiz|yapilir|yapiliyor)\b', intent_clean):
+        natural_roles.add('treatment')
     # A direct "how is X related to Y?" construction requests anatomical/
     # structural relation evidence. Subject recognition remains graph-bounded,
     # so this does not invent an anatomical entity from the wording alone.
@@ -326,12 +334,16 @@ def request_subject_text(query: str) -> str:
     """Remove request grammar from candidate search, preserving dental nouns."""
     from app.academic_task_language import strip_request_prefix, remove_source_reference
     text = remove_source_reference(strip_request_prefix((query or '').split(' — ', 1)[0]))
+    text = re.sub(r'(?iu)\b(?:\d+\s+)?(?:soru|sorular|test|quiz|questions?)\s+'
+                  r'(?:hazırla|hazirla|üret|uret|oluştur|olustur|sor|yap)\b', ' ', text)
+    text = re.sub(r'(?iu)\b(?:çalışabileceğim|calisabilecegim|çalışılabilir|calisilabilir)\s+'
+                  r'(?:bir\s+)?hale\s+(?:getir|çevir|cevir|dönüştür|donustur)\b', ' ', text)
     return _REQUEST_CONTROL_RE.sub(' ', text)
 
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
-    from app.academic_task_language import course_source_request, subjectless_study_request, comprehension_followup
-    if course_source_request(query) or subjectless_study_request(query) or comprehension_followup(query):
+    from app.academic_task_language import course_source_request, subjectless_study_request, comprehension_followup, elliptical_study_request
+    if course_source_request(query) or subjectless_study_request(query) or comprehension_followup(query) or elliptical_study_request(query):
         return ()
     # Resolver prefixes are user-owned topics or explicitly selected question
     # stems. Output controls in the suffix must not become lexical subjects.
@@ -372,12 +384,26 @@ _QUALIFIER_PATTERNS = (
     ("generalize", re.compile(r"\bgeneralize\b", re.I)),
     ("erken", re.compile(r"\berken\b", re.I)),
     ("geç", re.compile(r"\bgeç\b", re.I)),
-    ("çocuk", re.compile(r"\bçocuk(?:lar(?:a|da|dan)?|ta|tan)?\b", re.I)),
-    ("erişkin", re.compile(r"\berişkin(?:ler(?:e|de|den)?|de|den)?\b", re.I)),
+    ("çocuk", re.compile(r"\b(?:çocuk|cocuk)(?:lar(?:ı|i|a|da|dan)?|ta|tan)?\b", re.I)),
+    ("erişkin", re.compile(r"\b(?:erişkin|eriskin)(?:ler(?:i|e|de|den)?|de|den)?\b", re.I)),
 )
+def mentioned_qualifiers(query: str) -> tuple[str, ...]:
+    """Raw grammatical mentions, including a rejected side of a correction."""
+    return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(query or ''))
+
+
 def query_qualifiers(query: str) -> tuple[str, ...]:
     text = query or ""
-    return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(text))
+    found = list(mentioned_qualifiers(text))
+    folded = _intent_text(text)
+    # Explicit contrast replaces the age axis. Contraindication wording such
+    # as "çocuklarda uygulanmaz" retains its patient population.
+    contrast = re.search(r'\b(cocuk(?:lar(?:i|a|da|dan)?)?|eriskin(?:ler(?:i|e|de|den)?)?)'
+                         r'\s+degil\s+(cocuk(?:lar(?:i|a|da|dan)?)?|eriskin(?:ler(?:i|e|de|den)?)?)\b', folded)
+    if contrast and contrast.group(1).startswith('cocuk') != contrast.group(2).startswith('cocuk'):
+        rejected = 'çocuk' if contrast.group(1).startswith('cocuk') else 'erişkin'
+        found = [name for name in found if name != rejected]
+    return tuple(found)
 
 def qualifier_present(qualifier: str, text: str) -> bool:
     return any(name == qualifier and pattern.search(text or "") for name, pattern in _QUALIFIER_PATTERNS)
@@ -419,7 +445,10 @@ def _subject_qualifier_bindings(query: str, subject_nodes) -> tuple[tuple[str, t
     if not mentions:
         return ()
     bound: dict[str, list[str]] = {}
+    effective_qualifiers = set(query_qualifiers(query))
     for qualifier, pattern in _QUALIFIER_PATTERNS:
+        if qualifier not in effective_qualifiers:
+            continue
         for qmatch in pattern.finditer(query or ""):
             candidates: list[tuple[int, str]] = []
             for start, end, node_id in mentions:
@@ -540,13 +569,24 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         comparison_intent = DentalIntent("comparison", (), ("compared_with",))
         intents = tuple((*intents, comparison_intent))[:6]
     comparison_terms = _comparison_terms(clean, intents)
+    # An output manner adjunct ("verimli şekilde özetle") is not a figure
+    # reference. Keep actual "şekildeki ..." and direct figure requests intact.
+    visual_source_text = re.sub(
+        r'(?iu)\b(?:yüksek\s+)?(?:verimli|basit|sade|anlaşılır|anlasilir|ayrıntılı|ayrintili|detaylı|detayli|aynı|ayni|bu|o)\s+'
+        r'şekilde\s+(?=(?:özetle|ozetle|anlat|açıkla|acikla|öğret|ogret|hazırla|hazirla|yaz|sun|göster|goster)\b)',
+        ' ', clean)
     requires_visual_source = bool(re.search(
         r"(?iu)(?:\b(?:bu|şu)\s+(?:radyografi(?:de|da)?|röntgen(?:de|da)?|film(?:de|da)?|görüntü(?:de|da)?|fotoğraf(?:ta|da)?|panoramik(?:te|ta)?|şekil(?:de|da)?|tablo(?:da|de)?|grafik(?:te|de)?|cbct(?:de|da)?|opg(?:de|da)?)"
         r"|\b(?:radyografideki|radyografide|filmdeki|filmde|görüntüdeki|görüntüde|görüntüsünde|fotoğraftaki|fotoğrafta|panoramikte|bitewingde|bitewing görüntüsünde|cbctde|cbct'de|opgde|opg'de|şekildeki|şekilde|tablodaki|tabloda|grafikteki|grafikte)\b"
         r"|\b(?:gösterilen|işaretli|okla\s+gösterilen|görülen)\b"
         r"|\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b)",
-        clean,
+        visual_source_text,
     ))
+    from app.academic_task_language import study_priority_request
+    requires_visual_source = requires_visual_source or study_priority_request(clean.split(' — ')[-1]) == 'source_emphasis'
+    requires_visual_source = requires_visual_source or bool(re.search(
+        r'\b(?:kirmiziyla|maviyle|sariyla)\s+yazilan\b'
+        r'|\bkalin\s+yazilmis\b|\byildiz\s+konmus\b', _intent_text(clean)))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,
@@ -579,9 +619,10 @@ _STUDY_COVERAGE_RE = re.compile(
     r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
     re.I,
 )
-_STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
+_STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zorlayıcı|zorlayici|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
+from app.academic_task_language import STUDY_COUNT_PATTERN, study_count_value
 _STUDY_COUNT_RE = re.compile(
-    r"\b(\d{1,3})(?:\s+(?:adet|kolay|orta|zor|çok zor|ayırt edici|klinik|vaka|çoktan seçmeli|açık uçlu|doğru/?yanlış)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
+    r"\b(" + STUDY_COUNT_PATTERN + r")(?:\s+(?:adet|kolay|orta|zorlayici|zor|cok zor|ayirt edici|klinik|vaka|coktan secmeli|acik uclu|dogru/?yanlis)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
     re.I,
 )
 
@@ -598,10 +639,12 @@ class DentalStudyPlan:
 def classify_dental_study_plan(query: str) -> DentalStudyPlan | None:
     """Detect role-neutral academic generation requests without affecting normal QA."""
     clean = " ".join((query or "").split())
-    if not _STUDY_GENERATION_RE.search(clean):
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if not _STUDY_GENERATION_RE.search(clean) and not (operation and operation.generate):
         return None
-    count_match = _STUDY_COUNT_RE.search(clean)
-    count = min(200, int(count_match.group(1))) if count_match else None
+    count_match = _STUDY_COUNT_RE.search(clean.translate(_ASCII_FOLD).lower())
+    count = min(200, study_count_value(count_match.group(1))) if count_match else None
     difficulty_match = _STUDY_DIFFICULTY_RE.search(clean)
     kinds: list[str] = []
     lowered = clean.casefold()

@@ -13,7 +13,7 @@ import logging
 import re
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import text
@@ -97,7 +97,7 @@ def _requires_visual_source(query: str) -> bool:
     """True only when answering requires inspecting source pixels/layout."""
     return bool(_VISUAL_SOURCE_RE.search(query or ""))
 
-_EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
+_EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}\b(?:soru\w*|test\w*)\b|\b(?:soru\w*|test\w*)\b.{0,48}\b(?:çöz|coz|cevapla|yanıtla|yanitla)(?:sana|sene|in|ın|yabilir|abilir)?\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -473,6 +473,9 @@ def _has_same_way_cue(text: str) -> bool:
 
 
 def _incidental_turn(text: str) -> bool:
+    from app.academic_request_slots import conversational_repair
+    if conversational_repair(text):
+        return True
     folded = _state_text(text)
     return bool(re.search(
         r'^(?:onceden|eski sorum|alinti)\b|\baklimda\b|'
@@ -488,6 +491,9 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     clean = ' '.join(re.sub(r'"[^"\n]*"|“[^”\n]*”', '', text[:700]).split())
     if _incidental_turn(clean):
         return None
+    from app.academic_task_language import elliptical_study_request
+    if elliptical_study_request(clean):
+        return None
 
     # Strip only bounded discourse/correction prefixes before topic ownership
     # is evaluated. This keeps colloquial "ya ..." and repeated-letter
@@ -495,7 +501,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # dental vocabulary completely unfuzzied.
     from app.academic_task_language import strip_request_prefix
     remainder = strip_request_prefix(clean)
-    if (_STATE_EXPLAIN_RE.search(remainder) or re.search(r'\b(?:toparla|sikistir|yogunlastir|ogret|konusunda|hakkinda|icin)\b', _state_text(remainder))):
+    if (_STATE_EXPLAIN_RE.search(remainder) or re.search(r'\b(?:toparla|sikistir|yogunlastir|ogret|konusunda|hakkinda|icin|gecelim|bakalim)\b', _state_text(remainder))):
         clean = remainder
     folded = _state_text(clean)
     # Request suffixes change politeness, not the owned noun phrase.
@@ -514,6 +520,20 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return ConversationSubject((), source="course", history_index=history_index)
     from app.academic_task_language import remove_source_reference
     clean = ' '.join(remove_source_reference(clean).split())
+    # A named quiz request owns the noun phrase before its question-output
+    # argument, just as a named explanation owns the phrase before "anlat".
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if operation and operation.generate:
+        if re.match(r'(?iu)^(?:cevaplar[ıi]|yan[ıi]tlar[ıi]|cevap\s+anahtar[ıi]n[ıi])\s+', clean):
+            clean = strip_request_prefix(clean)
+        quiz_boundary = re.search(
+            r'(?iu)\b(?:(?:\d{1,3}|bir|bi)\s+)?(?:tane\s+)?'
+            r'(?:(?:zor|zorlayıcı|zorlayici|kolay)\s+)?(?:soru|test|quiz)\s+'
+            r'(?:sor|hazırla|hazirla|üret|uret|oluştur|olustur|yap)\b', clean)
+        if (quiz_boundary and clean[:quiz_boundary.start()].strip()
+                and not _has_anaphoric_topic_cue(clean)):
+            clean = clean[:quiz_boundary.start()].strip() + ' anlat'
     folded = _state_text(clean)
     folded = re.sub(r'\b(anlat|acikla|ozetle)(?:sana|sene|in|ir)\b', r'\1', folded)
     request_boundary = _STATE_EXPLAIN_RE.search(clean)
@@ -522,7 +542,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         # Preserve the user's named phrase rather than swapping it for a graph
         # label which may lose modifiers or scope (e.g. maximum dosage).
         end = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
-                        r'nasil|hangi|kac|niye|neden)\b', folded)
+                        r'nasil|hangi|kac|niye|neden|gecelim|bakalim)\b', folded)
         end_pos = min([m.start() for m in (end, request_boundary) if m], default=None)
         phrase = clean[:end_pos].strip(' .,;:') if end_pos is not None else ''
         if phrase and not dependent:
@@ -536,7 +556,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # Unknown dental terminology is retained only as a user-authored noun
     # phrase governed by a clear request, never arbitrary lexical leftovers.
     boundary = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
-                         r'mantigini|temel noktalarini|ne\s+ise\s+yarar|ne\s+anlama\s+gelir|ne\s+demek)\b', folded)
+                         r'mantigini|temel noktalarini|ne\s+ise\s+yarar|ne\s+anlama\s+gelir|ne\s+demek|gecelim|bakalim)\b', folded)
     if not boundary:
         return None
     # The folded string can be shorter after suffix normalization; use the
@@ -546,14 +566,17 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     words = re.findall(r'\w+', _state_text(phrase))
     # A qualifier correction changes the active topic's axis; it cannot own a
     # new dental noun phrase merely because it precedes an explanation verb.
-    qualifier_words = {word for q in query_qualifiers(phrase)
+    from app.dental_query_intent import mentioned_qualifiers, qualifier_present
+    raw_qualifiers = mentioned_qualifiers(phrase)
+    qualifier_words = {word for q in raw_qualifiers
                        for word in re.findall(r'\w+', _state_text(q))}
-    if qualifier_words and all(w in qualifier_words or w in {
+    if qualifier_words and all(any(qualifier_present(q, w) for q in raw_qualifiers) or w in {
         'degil', 'acisindan', 'olarak', 'icin', 'sadece', 'hastalarda',
-        'hastalar', 'hastada', 'hasta', 'larda', 'lerde',
+        'hastalar', 'hastada', 'hasta', 'larda', 'lerde', 'kastediyorum',
     } for w in words):
         return None
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
+                 'cikmis','gecmis',
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
                  'normal','kisa','kisaca','detayli','ayrintili','madde','mekanizmasiyla',
                  'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet',
@@ -605,6 +628,10 @@ def _conversation_state(
         counts = _STATE_QUESTION_RE.findall(value)
         if counts:
             count = int(counts[-1])
+        elif _has_question_task_cue(value):
+            study_plan = classify_dental_study_plan(value)
+            if study_plan and study_plan.count is not None:
+                count = study_plan.count
         if _STATE_CLEAR_COUNT_RE.search(value):
             count = None
         if _STATE_EXAM_RE.search(value) or _has_exam_cue(value):
@@ -747,7 +774,7 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
         # Remove superseded qualifiers from original phrases too, not only
         # from the parallel qualifier tuple. Keep unrelated dental nouns.
         words = [word for word in words if not any(
-            re.fullmatch(re.escape(_state_text(q)) + r"(?:larda|lerde|lar|ler|da|de)?[,.]?",
+            re.fullmatch(re.escape(_state_text(q)) + r"(?:larda|lerde|lardan|lerden|lari|leri|lara|lere|lar|ler|da|de)?[,.]?",
                          _state_text(word)) for q in removed)]
         terms.append(" ".join(words))
     text = " ".join(terms)
@@ -758,6 +785,9 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_request_slots import conversational_repair
+    if conversational_repair(clean):
+        return clean
     from app.academic_dialogue import conversational_acknowledgement
     if conversational_acknowledgement(clean):
         return clean
@@ -829,6 +859,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             r"sınav için|sinav icin|test şeklinde|test seklinde|klinikte neye dikkat|önemli sonuç|onemli sonuc)\w*\b", clean
         )
     )
+    from app.academic_task_language import elliptical_study_request
+    dependent = dependent or bool(elliptical_study_request(clean))
     current_qualifiers = set(query_qualifiers(clean))
 
     # Explicit ordinal list references are the only direct assistant-list lookup.
@@ -1245,10 +1277,14 @@ def _retrieval_terms(query: str) -> tuple[list[str], list[str]]:
         for term in values
         if " " not in term
     } if "_FACET_SEARCH_TERMS" in globals() else set()
+    # _normalize_dental_notation may ASCII-fold Turkish operators while the
+    # facet catalog keeps their native spelling (uygulanır -> uygulanir).
+    # Compare both forms so request verbs never become subject search terms.
+    facet_noise_folded = {item.translate(_STATE_FOLD) for item in facet_noise}
 
     def _is_facet_noise(token: str) -> bool:
         value = token.casefold()
-        if value in facet_noise:
+        if value in facet_noise or value.translate(_STATE_FOLD) in facet_noise_folded:
             return True
         # Turkish lecture questions inflect facet nouns heavily
         # (tedavisi, komplikasyonları, endikasyonları). Keep this bounded to
@@ -1494,12 +1530,22 @@ def _fts_rows(
 
 def _is_exhaustive_question_request(query: str) -> bool:
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if operation and operation.generate:
+        # Creating questions differs from solving source questions; grading
+        # instructions and all-course modifiers cannot steal generation intent.
+        return False
     return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
 
 
 def _continuation_cursor(query: str, recent_history: list[dict] | None) -> tuple[int, int] | None:
     """Read an internal continuation marker from the prior assistant turn only."""
     if not recent_history or not re.match(r"^(?:devam|devam et|kalan(?:ları)?|sonraki(?:ler)?)\b", (query or "").strip(), re.I):
+        return None
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(query)
+    if operation and operation.task and operation.task != 'past_question_explain':
         return None
     last = recent_history[-1]
     if str(last.get("role") or "").upper() != "ASSISTANT":
@@ -2043,6 +2089,24 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
                 imaging_types=tuple(meta.get("imaging") or ()),
                 negated_node_ids=tuple(meta.get("negated_nodes") or ()),
             )
+            # Additive vocabulary must also work on already-READY chunks.
+            # Preserve all indexed fields; enrich only registered new concepts
+            # that are explicitly present in the source, with source negation.
+            from app.dental_knowledge_graph import exact_nodes_in_subset
+            additions = ('dentigerous_cyst', 'maxillary_sinus')
+            absent = tuple(node_id for node_id in additions if node_id not in features.node_ids)
+            if absent:
+                source_text = f"{row[5] or ''}\n{row[7] or ''}"
+                extra = exact_nodes_in_subset(source_text, absent)
+                if extra:
+                    fresh = analyze_dental_text(source_text)
+                    extra_ids = tuple(node.id for node in extra)
+                    features = replace(features,
+                        node_ids=tuple(dict.fromkeys((*features.node_ids, *extra_ids))),
+                        specialties=tuple(dict.fromkeys((*features.specialties, *(node.specialty for node in extra)))),
+                        kinds=tuple(dict.fromkeys((*features.kinds, *(node.kind for node in extra)))),
+                        negated_node_ids=tuple(dict.fromkeys((*features.negated_node_ids,
+                            *(node_id for node_id in fresh.negated_node_ids if node_id in extra_ids)))))
             if cache is not None:
                 cache[row_id] = features
             return features
@@ -2422,8 +2486,8 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     """
     if not study_task:
         return False
-    from app.academic_task_language import course_source_request, comprehension_followup
-    if comprehension_followup(query):
+    from app.academic_task_language import course_source_request, comprehension_followup, elliptical_study_request
+    if comprehension_followup(query) or elliptical_study_request(query) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
         return False
     if course_source_request(query) and not requirement.subject_node_ids:
         return True
@@ -2436,6 +2500,26 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
             query or "",
         )
     ))
+
+
+def _missing_comparison_reference(query: str, history: list[dict] | None) -> bool:
+    """An omitted pair needs two identifiable antecedents, not a guessed second noun."""
+    from app.academic_task_language import strip_request_prefix
+    text = _state_text(strip_request_prefix(query)).strip(' .!?')
+    if not re.fullmatch(r'ikisinin\s+farki\s+ne(?:dir)?|ikisini\s+karsilastir', text):
+        return False
+    state = _conversation_state(history, subject_mode='all')
+    owned = [subject for subject in state.subjects if subject.terms]
+    if len({subject.terms for subject in owned}) >= 2:
+        return False
+    if owned and re.search(r'\b(?:ve|ile)\b|,', _state_text(' '.join(owned[-1].terms))):
+        return False
+    from app.academic_dialogue import numbered_items
+    assistant = next((item for item in reversed((history or [])[-8:])
+                      if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    if assistant and len(numbered_items(str(assistant.get('content') or ''))) == 2:
+        return False
+    return True
 
 
 def retrieve_course_context_v2(
@@ -2451,6 +2535,13 @@ def retrieve_course_context_v2(
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
+    from app.academic_request_slots import conversational_repair, REPAIR_RESPONSE
+    if conversational_repair(query):
+        return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
+                               clarification=REPAIR_RESPONSE)
+    if _missing_comparison_reference(query, recent_history):
+        return RetrievalResult(resolved_query=query, retrieval_mode="clarification",
+            clarification="Hangi iki kavramı karşılaştırmamı istiyorsun? İkisini yazarsan notlardan farklarını açıklayabilirim.")
     if conversational_acknowledgement(query):
         return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
                                clarification=ACKNOWLEDGEMENT_RESPONSE)
@@ -2459,6 +2550,10 @@ def retrieve_course_context_v2(
     if comprehension_followup(resolved):
         return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
             clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
+    from app.academic_task_language import elliptical_study_request
+    if elliptical_study_request(resolved) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
+        return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Hangi konudan bahsettiğini belirtir misin? Konu adını veya ilgili soruyu yazarsan onun üzerinden devam edebilirim.")
     from app.academic_dialogue import answer_needs_reference
     if answer_needs_reference(query, recent_history):
         return RetrievalResult(
@@ -2478,6 +2573,12 @@ def retrieve_course_context_v2(
             clarification="Hangi konuyu veya soruyu kastettiğini belirtir misin? Birkaç konu varsa hangisini açıklamamı istediğini yazabilirsin.",
         )
     requirement = build_dental_requirement_plan(resolved)
+    from app.academic_task_language import wants_deeper_evidence
+    deeper_evidence = wants_deeper_evidence(query)
+    # Depth is an evidence-allocation axis, separate from subject and scorer.
+    # The normal fast path retains its existing budget.
+    if deeper_evidence:
+        limit = max(limit, 16)
     query_features = analyze_dental_text(resolved)
     # Request-local semantic memo: bounded by this retrieval's candidate rows,
     # discarded immediately after the request. Avoid repeated JSON parsing/text
@@ -2510,20 +2611,20 @@ def retrieve_course_context_v2(
     course_wide_coverage = _course_coverage_requested(resolved, requirement, study_task)
     logging.getLogger("uvicorn.error.academic_retrieval").info(
         "Academic retrieval route owner=%s course=%s history_turns=%s "
-        "resolved_changed=%s task=%s subject_count=%s course_wide=%s",
+        "resolved_changed=%s task=%s subject_count=%s course_wide=%s depth=%s topic_budget=%s",
         owner_user_id, course_id, len(recent_history or []), resolved != query,
         study_task.task if study_task else "qa",
-        len(requirement.subject_terms), course_wide_coverage,
+        len(requirement.subject_terms), course_wide_coverage, deeper_evidence, limit,
     )
     if course_wide_coverage and not study_question_task and not exhaustive_questions:
         # Broad course-wide summary/explanation/generation must sample the whole published
         # course deterministically instead of collapsing back to a normal top-k
         # lexical query. Metadata scanning is lightweight; only bounded selected
         # representatives are hydrated.
-        requested_count = 24
+        requested_count = 48 if deeper_evidence else 24
         study_plan = classify_dental_study_plan(resolved)
         if study_plan and study_plan.count:
-            requested_count = min(48, max(8, study_plan.count))
+            requested_count = min(48, max(48 if deeper_evidence else 8, study_plan.count))
         coverage_plan = get_or_build_coverage_plan(
             session, owner_user_id=owner_user_id, course_id=course_id,
             requested_count=requested_count,
@@ -2724,6 +2825,8 @@ def retrieve_course_context_v2(
         }
         fast_direct = bool(requirement_names) and requirement_names.issubset(_FAST_INTENTS)
         context_target = min(10, limit + 2) if _needs_multi_evidence(resolved, requirement=requirement) else max(4, limit)
+        if deeper_evidence:
+            context_target = min(24, limit + 4)
         # Fast questions skip the neighbor query only when the selected evidence
         # already passes the same local sufficiency gate used before generation.
         # A hit at a chunk boundary therefore gets bounded adjacent context,
@@ -2731,8 +2834,8 @@ def retrieve_course_context_v2(
         provisional = _evidence_sufficiency(resolved, rows, requirement=requirement, feature_cache=row_feature_cache, query_features=query_features)
         neighbor_limit = (
             0
-            if provisional.sufficient
-            else min(2, max(0, context_target - len(rows)))
+            if provisional.sufficient and not deeper_evidence
+            else min(4 if deeper_evidence else 2, max(0, context_target - len(rows)))
         )
         if neighbor_limit:
             neighbor_rows = _neighbor_rows(

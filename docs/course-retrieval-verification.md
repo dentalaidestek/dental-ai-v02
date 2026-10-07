@@ -1,8 +1,10 @@
 # Course retrieval and conversational study verification
 
-Status: draft implementation; production verification is pending. No deployment,
-successful authenticated browser stream, indexing speedup, or model fine-tuning
-is claimed.
+Status: current improvements are draft; authenticated production verification
+is pending. Render records show the earlier `08a53d9` recovery implementation
+went live on 2026-10-06 at 21:13:43 UTC. The later dialogue/screenshot fixes are
+not in that deployed commit. No successful authenticated browser stream,
+indexing speedup, or model fine-tuning is claimed.
 
 ## Observed production failure
 
@@ -76,7 +78,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-31 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+58 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -86,6 +88,118 @@ Conversational control checks additionally cover learner-practice requests,
 study-program requests, comprehension repair with/without prior topic, courtesy
 messages that bypass candidate retrieval, and pending-question continuity across
 a courtesy exchange. These routes do not classify every message as a new topic.
+
+The 2026-10-07 natural-dialogue pass additionally covers 64 topic/wording pairs
+(eight medical topics and eight omitted-subject requests), missing-context
+clarifications without candidate SQL, successive facet changes, explicit known
+and unknown topic switches, course exam preparation over stale topic history,
+and follow-ups during a pending quiz. Example/procedure/dose/cause requests
+retain the active user-owned subject. They cannot be graded as free-text quiz
+answers. Request grammar is matched as full clauses; named new topics and
+clinical nouns are not globally fuzzy-matched. Synthesized question-generation
+controls are removed from subject search terms. Evidence thresholds are intact.
+
+Study-artifact transformations such as "Notları çalışabileceğim hale getir"
+also retain course scope while named topics remain named topics.
+Known remaining limits include unrestricted indirect study transformations,
+some quiz preference-only commands,
+long-range references outside the eight-message window, and ambiguous pronouns.
+These checks do not establish model-level understanding for arbitrary dialogue.
+
+## Screenshot root-cause regressions (2026-10-07)
+
+The exact Soru Hazırla request incorrectly matched `cevapla` inside
+`cevaplarımı`, selecting `questions_exhaustive` instead of note-backed new
+question generation. Complete predicate boundaries and explicit generation
+precedence repair this shared routing defect; explicit source-question solving
+and plain cursor continuation still work. A mocked candidate-access test runs
+the real retrieval orchestration and asserts coverage hydration, sufficient
+selected evidence, owner/course arguments, and no source-question-page query.
+
+"Bu çok yüzeysel her başlığı açıkla" and "Diğer başlıklar nerede" were lexical
+subjects. They now continue the existing user-owned course/topic scope; unknown
+referents clarify rather than fabricate a medical topic. Source-backed outline
+feedback instructs final generation to address each hydrated heading with
+supported detail and to disclose incomplete scope, without claiming unseen
+sections were covered. Final answer completeness still needs live verification.
+
+`ACADEMIC_Q_CURSOR` was emitted into stored assistant history for pagination,
+then HTML-escaped into visible text. The shared UI normalizer removes the
+metadata before escaping on both initial history rendering and streaming while
+leaving server continuation intact. Node execution of the actual template
+renderer verifies marker hiding, question formatting and HTML escaping. The
+browser verifier now rejects the screenshot's provider refusal text, includes
+both outline feedback requests, and checks rendered assistant text for leaked
+pagination markers. It has not been run authenticated against production.
+
+## Depth versus basic sufficiency
+
+Previously detail/outline feedback reused the normal eight-chunk topic limit
+and 24-chunk course hydration budget. A provisional sufficient result skipped
+neighbor retrieval even when the user explicitly requested more depth. Thus a
+basic answer sufficiency decision did not imply evidence completeness for a
+detailed explanation. This is a code-level cause, not proof of the actual chunk
+payload used in any screenshot request.
+
+Explicit depth/completeness requests now allocate a topic limit of at least 16
+and course hydration budget of 48. Topic queries inspect up to four relevant
+neighbors even when initial evidence passes basic sufficiency; resulting rows
+still re-enter unchanged relevance, coverage and final sufficiency gates.
+Ordinary short questions retain existing budgets, and negated detail requests
+do not widen them. There is no extra provider call in this policy. Four tests
+exercise budget selection, course hydration, neighbor behavior and failure on
+empty expanded evidence. Candidate SQL/provider behavior and live answer depth
+remain unverified; increased budgets are bounded settings, not latency or answer
+quality guarantees. Routing logs include requested depth and topic budget.
+
+## Three quick-study buttons
+
+Tests extract the actual UI data-prompt values and run shared retrieval routing
+for three prompts, two material counts (one/six), and three conversation histories
+(empty, prior clinical topic, prior source-question cursor): 18 combinations.
+Candidate hydration is mocked, not actual PostgreSQL/READY verification.
+
+Two additional defects surfaced: "yüksek verimli şekilde özetle" incorrectly
+required a source figure because of "şekilde", and "20 zorlayıcı çoktan seçmeli
+soru" lost its count because the count modifier grammar omitted "zorlayıcı".
+Bounded output-manner normalization now distinguishes figure references from
+rendering style; actual "şekildeki"/table requests retain visual requirements.
+Shared count/difficulty grammar preserves both Turkish and ASCII wording.
+
+The teaching button now explicitly requests all course topics in detail, reaching
+the shared deeper-evidence policy without a preset-specific route. The shared
+study output contract applies equally to natural requests: summary headings and
+key points, supported teaching rationale/details, and source-backed new question
+generation with requested count and hidden answer key. It never claims unseen
+sections were read. The browser verifier additionally requires exactly Soru
+1..20 and rejects visible answer-key headings/per-question answer labels for
+the question preset. Prompt contracts and local routing do not certify actual
+generated count, teaching completeness, latency or authenticated streaming.
+
+## Compositional Turkish language pass
+
+Independent politeness, source, scope and operation slots are varied across
+288 requests, with another 48 uppercase/ASCII variants. Additional checks cover
+54 feedback/outline combinations, 12 known/unknown named-topic contrasts, and
+written-count carry-over. These are synthetically composed grammar cases, not
+an exhaustive natural-language benchmark or a production quality rate.
+
+The shared language layer now strips polite request adjuncts, recognizes
+source-wide manner constructions (from beginning to end, point by point, step
+by step), and composes a complaint clause with an outline-follow-up clause.
+It retains named medical nouns rather than globally repairing them. Cardinal
+count grammar handles digit and supported Turkish compound forms such as
+"yirmi üç", feeding the same study plan and conversation count axis. Inflected
+question-generation predicates reach the shared study-plan parser. Explicit
+depth remains a separate evidence-allocation axis.
+
+No neural model training or automatic rule promotion took place. Transformer
+language models infer meaning through learned contextual representations;
+these changes improve deterministic request decomposition and bounded state,
+not equivalent general language understanding. Image checkpoints still flow
+through the existing extraction/OCR pipeline, and selected visual source pages are
+materialized for visual generation after DB retrieval. No OCR, Modal or visual
+indexing code changed; no new image-quality validation is claimed.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable
@@ -134,7 +248,28 @@ The current environment has no usable authenticated DentalAI session or shared
 interactive browser. Previous browser execution attempts were blocked. The
 verifier has been syntax/CLI checked, but has not been run against production.
 
-## Indexing duration
+## Additional exam-priority and source-emphasis screenshots
+
+The requests `Hoca nerden sorabilir` and `Bence burdan gelmez hocanın özellikle
+vurguladığı işaretli yerler var mı` were still interpreted as lexical medical
+subjects. Full-clause grammar now separates subject-omitted exam selection from
+source-emphasis verification. Discourse rejection of the previous selection is
+not a new topic. Twenty examiner/question combinations retain the active owned
+course or clinical topic; named and unknown medical nouns remain subjects.
+
+Exam suggestions are not assertions about what a teacher will ask. Marked or
+underlined passages require actual visual/source evidence; output rules prohibit
+calling clinically important text a teacher's mark. Existing visual hydration
+remains bounded to three selected pages, so this does not implement an exhaustive
+all-page annotation search. Failure to see a mark cannot establish that none
+exists in the whole file. Both screenshot prompts are in the browser verifier.
+
+At that stage, focused validation: 72 unittest methods pass, plus 59 existing continuity
+checks. Retrieval execution uses the existing AST harness and mocked candidates;
+no PostgreSQL, provider answer, or authenticated production stream was tested.
+Render still reports live commit `08a53d9`; these later fixes are draft PR changes.
+
+## Indexing duration measurements
 
 The observed `Academic Modal wake ... elapsed_ms=4020` is dispatch duration only.
 It is not upload-to-READY indexing time. Later status requests do not expose
@@ -146,3 +281,139 @@ session during cleanup. OCR, Modal scheduling and indexing logic are unchanged.
 Measure upload, dispatch, worker start, extraction/OCR, persistence/publication
 and READY separately before selecting a performance change. A 1.55 MB size alone
 does not establish page count or OCR workload, and a 4–5 second total is unproven.
+
+## Colloquial study requests and compound output controls
+
+The frozen authored corpus has 70 requests in seven categories: outline/format,
+comprehension/depth, frustration, course scope, quiz controls, exam priorities,
+and named-topic contrasts. Three histories (course, clinical topic, pending quiz)
+give 210 route/context checks. The current report is
+`artifacts/colloquial-study-after.json`; reproduce with:
+
+```sh
+python scripts/audit_colloquial_study.py --language-only
+```
+
+All 210 checks pass their stated expectations, including requesting two names
+when an omitted comparison pair has only one identifiable antecedent. The initial
+exploratory report used strict task/scope gold even for this ambiguous case; it
+is not a directly comparable success score. The cases are manually authored,
+with user screenshot wording/typos retained. ChatGPT private conversation data
+was not accessed. The Hugging Face conversational dataset search was attempted
+but disabled by server configuration; no external conversation dataset was used.
+
+New shared output slots compose scope, manner and positive task clauses. They
+retain paragraph/table/bullet and per-heading sentence requests through topic
+resolution. `Her başlığı tek bir oaragrafla anlat` repairs a format slot without
+changing the stored request or fuzzing medical nouns. Bare frustration is a
+conversation turn rather than a search topic or quiz answer; the owned topic
+and pending question survive that exchange. A complaint followed by a complete
+format request runs the request. An explicit new quiz with `cevabımı bekle` does
+not become a response to the previous quiz. Named quiz requests can establish a
+user-owned topic without losing later reference chains.
+
+The broader work exposed two regressions in old selected-question reference
+chains. Historical question operators and noisy anaphoric controls were then
+excluded from new noun ownership; the existing 59 continuity checks pass again.
+New regression tests include 160 format/scope/verb combinations across three
+histories (480 composed checks), frustration with a pending quiz, free-text
+answers, source-scope overrides and unknown/clinical noun contrasts. The focused
+suite now contains 81 passing unittest methods, with 59 continuity checks.
+
+These are language/orchestration checks using the explicit AST harness and
+mocked storage where needed. They do not measure PostgreSQL candidate quality,
+Gemini factual accuracy, answer completeness, indexing latency or authenticated
+production streams. The browser verifier now includes the two newest screenshot
+messages plus a task after frustration. It remains unexecuted because this
+session has no usable authenticated browser. Thresholds, indexing, OCR and Modal
+scheduling are unchanged. This is shared parsing logic, not model fine-tuning or
+proof that arbitrary natural language is fully understood.
+
+## Frozen 1000-scenario baseline (draft code, not production accuracy)
+
+`tests/academic_v2/study_1000_cases.json` freezes 1000 distinct query/history/gold
+scenarios across 20 behavior families and 50 clinical subject/count/reference
+positions. The full evaluator is `scripts/evaluate_study_1000.py`; reproduce with
+`python scripts/evaluate_study_1000.py --language-only`. The corpus hash is
+`313e20c22e05063943eab72c6082fc7d2376b985283638ae4754fc0ead4424f5`.
+
+The current local result is **663/1000 (66.3%)**, with **337 flagged scenarios**.
+Every assertion must pass for a scenario to pass. Inputs and expectations were
+frozen before evaluation, and application code was not modified during this
+measurement. Eight initial flags were scorer alias mismatches (MTA canonical
+node IDs and sefalometri/cephalometry), not product changes; the initial score
+was 655/1000. The scorer now checks exact aliases and finite Turkish nominal
+endings, and continues rejecting generic cyst for dentigerous cyst and SNA for
+maxillary sinus. Unbound controls assert that candidate SQL is not attempted;
+they do not run live SQL.
+
+The broad audit exposes gaps despite the earlier narrow regression suites:
+all 50 `using the notes` course-wide quiz requests fail scope assertions; all
+50 multipart cases miss the explicitly requested definition facet; all 50
+plural-object age corrections miss the adult qualifier; all 50 requests to
+return to the preceding topic fail reference binding. Other flagged samples
+include dentigerous cyst collapsing to generic cyst and maxillary sinus
+resolving to SNA. These are local plan/reference findings and must not be
+represented as actual generated answers. Some authored clinical requests are
+naive or medically inapplicable; the audit measures recognition of requested
+facets, not whether such clinical premises should be accepted or answered.
+
+The full JSON records every query, history, expected plan, actual plan, failed
+checks, frozen corpus/scorer/component hashes, and category counts. The CSV
+includes question text, history, expectations and outcomes. The summary is
+`artifacts/study-1000-report.md`; the full report is
+`artifacts/study-1000-report.json`. Repeated short answers/commands occur in
+different histories; count distinct scenario inputs rather than claiming 1000
+independent product features. Question-text diversity is explicit in the report.
+
+**Production /ask-stream requests sent: 0.** Live candidate selection, owner/READY
+SQL restrictions, actual material hydration, coverage gates, Gemini factual
+quality, source citations and stream completion remain unverified for these
+1000 scenarios. The environment still has no authorized shared DentalAI browser
+session or bound database/provider credentials. Therefore no whole-system or
+production retrieval accuracy percentage is available. Do not label 66.3% as
+production accuracy or replace it with the earlier 210-case score.
+
+## Corrections for the frozen 1000-case findings
+
+The same frozen corpus now passes **1000/1000** local plan/reference checks;
+all **337** previously flagged cases pass, and none of the **663** previously
+passing cases regressed. The original baseline report remains unchanged.
+`artifacts/study-1000-after-fixes.json` stores all final per-case results and
+measured component hashes. `artifacts/study-1000-fix-comparison.json` compares IDs
+against the original baseline and checks the identical corpus SHA-256.
+
+Fixes compose source-use/completeness/style adjuncts without erasing named or
+unknown subjects; retain explicitly requested definitions alongside cause and
+treatment while suppressing generic closing `nedir`; recognize plural-object
+age corrections and separate raw modifier mentions from effective requested
+populations; preserve relative topic navigation; share bounded polite/discourse
+prefixes across output and feedback parsing; and distinguish exam-study
+suggestions from source annotation/typography requests. Source marking requests
+never prove what a teacher will ask or that every page was inspected.
+
+Dentigerous cyst and maxillary sinus now have exact vocabulary entries instead
+of collapsing to a generic cyst or inheriting SNA. Because existing READY chunks
+may predate those entries, their metadata is supplemented only when one of
+these newly registered concepts appears literally in the actual chunk. Existing
+fields and source negation are preserved; unrelated chunks keep indexed features
+without a full semantic rescan, and the per-request feature cache is retained.
+There is no forced reindex, source-scope widening, score/threshold relaxation,
+new provider call or indexing/Modal scheduling change.
+
+Validation: **89 focused unittest methods**, **59 existing continuity checks**,
+and the earlier **210 colloquial context checks** pass. New held-out contrasts
+cover named/unknown topics inside source-use commands, positive/negated
+independent definition facets, age replacement through the next turn, modifier
+binding, clinical colors versus actual typography, relative navigation versus
+new named topics, nested politeness, subtype/generic distinctions, and
+already-indexed metadata including negative source mentions. A regression in
+old age-state continuity and a retained plural age word in a held-out followup
+were caught and corrected before completing these checks.
+
+This is a local regression result on authored scenarios, not whole-system or
+production accuracy. SQL candidate access is mocked/excluded, actual uploaded
+notes and provider answer quality are not measured, and authenticated
+production `/ask-stream` still has **0/1000** verified runs in this environment.
+Live validation remains necessary. The draft PR contains the fixes; they have
+not been deployed by this session.
