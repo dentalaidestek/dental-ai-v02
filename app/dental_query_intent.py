@@ -177,6 +177,10 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
+    if re.search(r'\b(?:doz|dozu|dozunu|miktari|miktarini)\b', intent_clean):
+        natural_roles.add('value')
+    if re.search(r'\bnasil\s+(?:uygulanir|uygulaniyor|uygulayacagiz|yapilir|yapiliyor)\b', intent_clean):
+        natural_roles.add('treatment')
     # A direct "how is X related to Y?" construction requests anatomical/
     # structural relation evidence. Subject recognition remains graph-bounded,
     # so this does not invent an anatomical entity from the wording alone.
@@ -326,12 +330,16 @@ def request_subject_text(query: str) -> str:
     """Remove request grammar from candidate search, preserving dental nouns."""
     from app.academic_task_language import strip_request_prefix, remove_source_reference
     text = remove_source_reference(strip_request_prefix((query or '').split(' — ', 1)[0]))
+    text = re.sub(r'(?iu)\b(?:\d+\s+)?(?:soru|sorular|test|quiz|questions?)\s+'
+                  r'(?:hazırla|hazirla|üret|uret|oluştur|olustur|sor|yap)\b', ' ', text)
+    text = re.sub(r'(?iu)\b(?:çalışabileceğim|calisabilecegim|çalışılabilir|calisilabilir)\s+'
+                  r'(?:bir\s+)?hale\s+(?:getir|çevir|cevir|dönüştür|donustur)\b', ' ', text)
     return _REQUEST_CONTROL_RE.sub(' ', text)
 
 def _lexical_subject_terms(query: str, *, limit: int = 4) -> tuple[str, ...]:
     """Keep unknown dental subjects searchable without inventing graph nodes."""
-    from app.academic_task_language import course_source_request, subjectless_study_request, comprehension_followup
-    if course_source_request(query) or subjectless_study_request(query) or comprehension_followup(query):
+    from app.academic_task_language import course_source_request, subjectless_study_request, comprehension_followup, elliptical_study_request
+    if course_source_request(query) or subjectless_study_request(query) or comprehension_followup(query) or elliptical_study_request(query):
         return ()
     # Resolver prefixes are user-owned topics or explicitly selected question
     # stems. Output controls in the suffix must not become lexical subjects.

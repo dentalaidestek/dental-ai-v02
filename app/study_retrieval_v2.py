@@ -488,6 +488,9 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     clean = ' '.join(re.sub(r'"[^"\n]*"|“[^”\n]*”', '', text[:700]).split())
     if _incidental_turn(clean):
         return None
+    from app.academic_task_language import elliptical_study_request
+    if elliptical_study_request(clean):
+        return None
 
     # Strip only bounded discourse/correction prefixes before topic ownership
     # is evaluated. This keeps colloquial "ya ..." and repeated-letter
@@ -495,7 +498,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # dental vocabulary completely unfuzzied.
     from app.academic_task_language import strip_request_prefix
     remainder = strip_request_prefix(clean)
-    if (_STATE_EXPLAIN_RE.search(remainder) or re.search(r'\b(?:toparla|sikistir|yogunlastir|ogret|konusunda|hakkinda|icin)\b', _state_text(remainder))):
+    if (_STATE_EXPLAIN_RE.search(remainder) or re.search(r'\b(?:toparla|sikistir|yogunlastir|ogret|konusunda|hakkinda|icin|gecelim|bakalim)\b', _state_text(remainder))):
         clean = remainder
     folded = _state_text(clean)
     # Request suffixes change politeness, not the owned noun phrase.
@@ -522,7 +525,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         # Preserve the user's named phrase rather than swapping it for a graph
         # label which may lose modifiers or scope (e.g. maximum dosage).
         end = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
-                        r'nasil|hangi|kac|niye|neden)\b', folded)
+                        r'nasil|hangi|kac|niye|neden|gecelim|bakalim)\b', folded)
         end_pos = min([m.start() for m in (end, request_boundary) if m], default=None)
         phrase = clean[:end_pos].strip(' .,;:') if end_pos is not None else ''
         if phrase and not dependent:
@@ -536,7 +539,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     # Unknown dental terminology is retained only as a user-authored noun
     # phrase governed by a clear request, never arbitrary lexical leftovers.
     boundary = re.search(r'\b(?:konusunda|hakkinda|icin|anlat|acikla|ozetle|toparla|sikistir|yogunlastir|ogret|nedir|'
-                         r'mantigini|temel noktalarini|ne\s+ise\s+yarar|ne\s+anlama\s+gelir|ne\s+demek)\b', folded)
+                         r'mantigini|temel noktalarini|ne\s+ise\s+yarar|ne\s+anlama\s+gelir|ne\s+demek|gecelim|bakalim)\b', folded)
     if not boundary:
         return None
     # The folded string can be shorter after suffix normalization; use the
@@ -829,6 +832,8 @@ def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str
             r"sınav için|sinav icin|test şeklinde|test seklinde|klinikte neye dikkat|önemli sonuç|onemli sonuc)\w*\b", clean
         )
     )
+    from app.academic_task_language import elliptical_study_request
+    dependent = dependent or bool(elliptical_study_request(clean))
     current_qualifiers = set(query_qualifiers(clean))
 
     # Explicit ordinal list references are the only direct assistant-list lookup.
@@ -2426,8 +2431,8 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     """
     if not study_task:
         return False
-    from app.academic_task_language import course_source_request, comprehension_followup
-    if comprehension_followup(query):
+    from app.academic_task_language import course_source_request, comprehension_followup, elliptical_study_request
+    if comprehension_followup(query) or elliptical_study_request(query) in {'explain', 'procedure', 'cause', 'value'}:
         return False
     if course_source_request(query) and not requirement.subject_node_ids:
         return True
@@ -2463,6 +2468,10 @@ def retrieve_course_context_v2(
     if comprehension_followup(resolved):
         return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
             clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
+    from app.academic_task_language import elliptical_study_request
+    if elliptical_study_request(resolved) in {'explain', 'procedure', 'cause', 'value'}:
+        return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
+            clarification="Hangi konudan bahsettiğini belirtir misin? Konu adını veya ilgili soruyu yazarsan onun üzerinden devam edebilirim.")
     from app.academic_dialogue import answer_needs_reference
     if answer_needs_reference(query, recent_history):
         return RetrievalResult(

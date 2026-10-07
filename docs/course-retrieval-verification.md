@@ -76,7 +76,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-31 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+38 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -86,6 +86,23 @@ Conversational control checks additionally cover learner-practice requests,
 study-program requests, comprehension repair with/without prior topic, courtesy
 messages that bypass candidate retrieval, and pending-question continuity across
 a courtesy exchange. These routes do not classify every message as a new topic.
+
+The 2026-10-07 natural-dialogue pass additionally covers 64 topic/wording pairs
+(eight medical topics and eight omitted-subject requests), missing-context
+clarifications without candidate SQL, successive facet changes, explicit known
+and unknown topic switches, course exam preparation over stale topic history,
+and follow-ups during a pending quiz. Example/procedure/dose/cause requests
+retain the active user-owned subject. They cannot be graded as free-text quiz
+answers. Request grammar is matched as full clauses; named new topics and
+clinical nouns are not globally fuzzy-matched. Synthesized question-generation
+controls are removed from subject search terms. Evidence thresholds are intact.
+
+Study-artifact transformations such as "Notları çalışabileceğim hale getir"
+also retain course scope while named topics remain named topics.
+Known remaining limits include unrestricted indirect study transformations,
+some quiz preference-only commands,
+long-range references outside the eight-message window, and ambiguous pronouns.
+These checks do not establish model-level understanding for arbitrary dialogue.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

@@ -60,9 +60,11 @@ def _free_answer_intent(query: str) -> bool:
     not classify a response as factually correct; generation must grade it
     against the selected question and retrieved note evidence.
     """
-    from app.academic_task_language import parse_study_operation
+    from app.academic_task_language import parse_study_operation, elliptical_study_request
     text = ' '.join((query or '').translate(_FOLD).lower().split())
     if not text or len(text) > 600 or '?' in text:
+        return False
+    if elliptical_study_request(query):
         return False
     if re.fullmatch(r'(?:tamam|tesekkurler|tesekkur ederim|sag ol)[.! ]*', text):
         return False
