@@ -373,3 +373,47 @@ quality, source citations and stream completion remain unverified for these
 session or bound database/provider credentials. Therefore no whole-system or
 production retrieval accuracy percentage is available. Do not label 66.3% as
 production accuracy or replace it with the earlier 210-case score.
+
+## Corrections for the frozen 1000-case findings
+
+The same frozen corpus now passes **1000/1000** local plan/reference checks;
+all **337** previously flagged cases pass, and none of the **663** previously
+passing cases regressed. The original baseline report remains unchanged.
+`artifacts/study-1000-after-fixes.json` stores all final per-case results and
+measured component hashes. `artifacts/study-1000-fix-comparison.json` compares IDs
+against the original baseline and checks the identical corpus SHA-256.
+
+Fixes compose source-use/completeness/style adjuncts without erasing named or
+unknown subjects; retain explicitly requested definitions alongside cause and
+treatment while suppressing generic closing `nedir`; recognize plural-object
+age corrections and separate raw modifier mentions from effective requested
+populations; preserve relative topic navigation; share bounded polite/discourse
+prefixes across output and feedback parsing; and distinguish exam-study
+suggestions from source annotation/typography requests. Source marking requests
+never prove what a teacher will ask or that every page was inspected.
+
+Dentigerous cyst and maxillary sinus now have exact vocabulary entries instead
+of collapsing to a generic cyst or inheriting SNA. Because existing READY chunks
+may predate those entries, their metadata is supplemented only when one of
+these newly registered concepts appears literally in the actual chunk. Existing
+fields and source negation are preserved; unrelated chunks keep indexed features
+without a full semantic rescan, and the per-request feature cache is retained.
+There is no forced reindex, source-scope widening, score/threshold relaxation,
+new provider call or indexing/Modal scheduling change.
+
+Validation: **89 focused unittest methods**, **59 existing continuity checks**,
+and the earlier **210 colloquial context checks** pass. New held-out contrasts
+cover named/unknown topics inside source-use commands, positive/negated
+independent definition facets, age replacement through the next turn, modifier
+binding, clinical colors versus actual typography, relative navigation versus
+new named topics, nested politeness, subtype/generic distinctions, and
+already-indexed metadata including negative source mentions. A regression in
+old age-state continuity and a retained plural age word in a held-out followup
+were caught and corrected before completing these checks.
+
+This is a local regression result on authored scenarios, not whole-system or
+production accuracy. SQL candidate access is mocked/excluded, actual uploaded
+notes and provider answer quality are not measured, and authenticated
+production `/ask-stream` still has **0/1000** verified runs in this environment.
+Live validation remains necessary. The draft PR contains the fixes; they have
+not been deployed by this session.

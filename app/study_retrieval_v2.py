@@ -13,7 +13,7 @@ import logging
 import re
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import text
@@ -566,11 +566,13 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     words = re.findall(r'\w+', _state_text(phrase))
     # A qualifier correction changes the active topic's axis; it cannot own a
     # new dental noun phrase merely because it precedes an explanation verb.
-    qualifier_words = {word for q in query_qualifiers(phrase)
+    from app.dental_query_intent import mentioned_qualifiers, qualifier_present
+    raw_qualifiers = mentioned_qualifiers(phrase)
+    qualifier_words = {word for q in raw_qualifiers
                        for word in re.findall(r'\w+', _state_text(q))}
-    if qualifier_words and all(w in qualifier_words or w in {
+    if qualifier_words and all(any(qualifier_present(q, w) for q in raw_qualifiers) or w in {
         'degil', 'acisindan', 'olarak', 'icin', 'sadece', 'hastalarda',
-        'hastalar', 'hastada', 'hasta', 'larda', 'lerde',
+        'hastalar', 'hastada', 'hasta', 'larda', 'lerde', 'kastediyorum',
     } for w in words):
         return None
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
@@ -772,7 +774,7 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
         # Remove superseded qualifiers from original phrases too, not only
         # from the parallel qualifier tuple. Keep unrelated dental nouns.
         words = [word for word in words if not any(
-            re.fullmatch(re.escape(_state_text(q)) + r"(?:larda|lerde|lar|ler|da|de)?[,.]?",
+            re.fullmatch(re.escape(_state_text(q)) + r"(?:larda|lerde|lardan|lerden|lari|leri|lara|lere|lar|ler|da|de)?[,.]?",
                          _state_text(word)) for q in removed)]
         terms.append(" ".join(words))
     text = " ".join(terms)
@@ -2087,6 +2089,24 @@ def _row_semantic_features(row, cache: dict[int, DentalSemanticFeatures] | None 
                 imaging_types=tuple(meta.get("imaging") or ()),
                 negated_node_ids=tuple(meta.get("negated_nodes") or ()),
             )
+            # Additive vocabulary must also work on already-READY chunks.
+            # Preserve all indexed fields; enrich only registered new concepts
+            # that are explicitly present in the source, with source negation.
+            from app.dental_knowledge_graph import exact_nodes_in_subset
+            additions = ('dentigerous_cyst', 'maxillary_sinus')
+            absent = tuple(node_id for node_id in additions if node_id not in features.node_ids)
+            if absent:
+                source_text = f"{row[5] or ''}\n{row[7] or ''}"
+                extra = exact_nodes_in_subset(source_text, absent)
+                if extra:
+                    fresh = analyze_dental_text(source_text)
+                    extra_ids = tuple(node.id for node in extra)
+                    features = replace(features,
+                        node_ids=tuple(dict.fromkeys((*features.node_ids, *extra_ids))),
+                        specialties=tuple(dict.fromkeys((*features.specialties, *(node.specialty for node in extra)))),
+                        kinds=tuple(dict.fromkeys((*features.kinds, *(node.kind for node in extra)))),
+                        negated_node_ids=tuple(dict.fromkeys((*features.negated_node_ids,
+                            *(node_id for node_id in fresh.negated_node_ids if node_id in extra_ids)))))
             if cache is not None:
                 cache[row_id] = features
             return features

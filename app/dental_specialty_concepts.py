@@ -27,6 +27,7 @@ SPECIALTY_CONCEPTS = {
         ("plaque", "dental plak", ("dental plaque", "bakteriyel plak"), "finding"),
     ),
     "oral_surgery": (
+        ("maxillary_sinus", "maksiller sinüs", ("maxillary sinus", "maksiller sinus"), "anatomy"),
         ("extraction", "diş çekimi", ("tooth extraction", "ekstraksiyon"), "procedure"),
         ("dry_socket", "alveolit", ("dry socket", "alveolar osteitis"), "complication"),
         ("oroantral_communication", "oroantral açıklık", ("oroantral communication", "OAC"), "complication"),
@@ -55,6 +56,7 @@ SPECIALTY_CONCEPTS = {
         ("space_maintainer", "yer tutucu", ("space maintainer",), "appliance"),
     ),
     "oral_pathology": (
+        ("dentigerous_cyst", "dentigeröz kist", ("dentigerous cyst", "dentigeroz kist", "foliküler kist"), "diagnosis"),
         ("cyst", "kist", ("odontogenic cyst", "cyst"), "diagnosis"),
         ("odontogenic_tumor", "odontojenik tümör", ("odontogenic tumor",), "diagnosis"),
         ("leukoplakia", "lökoplaki", ("leukoplakia",), "diagnosis"),

@@ -542,6 +542,29 @@ def explicit_node_mentions(query: str) -> tuple[tuple[int, int, DentalNode], ...
             selected.append((start, end, node))
     return tuple(sorted(selected, key=lambda item: item[0]))
 
+
+@functools.lru_cache(maxsize=8)
+def _subset_mention_patterns(node_ids: tuple[str, ...]) -> tuple:
+    selected = frozenset(node_ids)
+    return tuple(entry for entry in (*_compiled_mention_patterns(), *_compiled_folded_patterns())
+                 if entry[0].id in selected)
+
+
+def exact_nodes_in_subset(query: str, node_ids: tuple[str, ...]) -> tuple[DentalNode, ...]:
+    """Bounded literal evidence for vocabulary added after a chunk was indexed.
+
+    No fuzzy rescue and no unrelated ontology scan per chunk.
+    """
+    clean = _match_text(query)
+    folded = clean.translate(_ASCII_FOLD)
+    found: dict[str, DentalNode] = {}
+    for node, term, pattern in _subset_mention_patterns(tuple(sorted(node_ids))):
+        for source in (clean, folded):
+            for match in pattern.finditer(source):
+                if _term_context_ok(clean, match.start(), match.end(), term):
+                    found[node.id] = node
+    return tuple(found.values())
+
 def matched_nodes(query: str) -> list[DentalNode]:
     """Find explicit entities using longest non-overlapping mentions.
 

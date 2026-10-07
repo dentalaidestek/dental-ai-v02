@@ -172,6 +172,7 @@ def run(cases):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--freeze',action='store_true')
+    ap.add_argument('--code-revision',default='working tree; measured application files identified by component_sha256')
     ap.add_argument('--language-only',action='store_true');ap.add_argument('--cases',default='tests/academic_v2/study_1000_cases.json')
     ap.add_argument('--report',default='artifacts/study-1000-report.json');args=ap.parse_args()
     path=ROOT/args.cases
@@ -186,7 +187,7 @@ def main():
     report=run(cases);report['unique_query_texts']=len({case['query'] for case in cases})
     report['unique_scenarios']=len({json.dumps([case['query'],case['history'],case['gold']],ensure_ascii=False,sort_keys=True) for case in cases})
     report['scorer_revision']='3: exact canonical aliases, finite Turkish nominal suffixes, explicit unbound candidate-access assertion; no app/gold changes'
-    report['code_commit']='94e4154836085e32444d19de2ea4b6814ca78f4e (draft; app code unchanged during measurement)'
+    report['code_commit']=args.code_revision
     report['scorer_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     report['component_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (ROOT/'app').glob('*.py')}
     report['corpus_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()

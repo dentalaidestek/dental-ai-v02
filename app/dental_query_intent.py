@@ -177,6 +177,10 @@ def classify_dental_intents(query: str, *, limit: int = 6) -> tuple[DentalIntent
     intent_clean = _repair_intent_operators(_intent_text(clean))
     found: list[DentalIntent] = []
     natural_roles = {name for name, pattern in _NATURAL_ROLE_PATTERNS if pattern.search(intent_clean)}
+    # A requested definition is independent of treatment/cause clauses.
+    # Generic closing "nedir" still must not create a spurious definition.
+    if re.search(r'\btanim(?:ini|i|larini|lari)?\s+(?:anlat|acikla|ver|yap)\b', intent_clean):
+        natural_roles.add('definition')
     if re.search(r'\b(?:doz|dozu|dozunu|miktari|miktarini)\b', intent_clean):
         natural_roles.add('value')
     if re.search(r'\bnasil\s+(?:uygulanir|uygulaniyor|uygulayacagiz|yapilir|yapiliyor)\b', intent_clean):
@@ -380,12 +384,26 @@ _QUALIFIER_PATTERNS = (
     ("generalize", re.compile(r"\bgeneralize\b", re.I)),
     ("erken", re.compile(r"\berken\b", re.I)),
     ("geç", re.compile(r"\bgeç\b", re.I)),
-    ("çocuk", re.compile(r"\bçocuk(?:lar(?:a|da|dan)?|ta|tan)?\b", re.I)),
-    ("erişkin", re.compile(r"\berişkin(?:ler(?:e|de|den)?|de|den)?\b", re.I)),
+    ("çocuk", re.compile(r"\b(?:çocuk|cocuk)(?:lar(?:ı|i|a|da|dan)?|ta|tan)?\b", re.I)),
+    ("erişkin", re.compile(r"\b(?:erişkin|eriskin)(?:ler(?:i|e|de|den)?|de|den)?\b", re.I)),
 )
+def mentioned_qualifiers(query: str) -> tuple[str, ...]:
+    """Raw grammatical mentions, including a rejected side of a correction."""
+    return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(query or ''))
+
+
 def query_qualifiers(query: str) -> tuple[str, ...]:
     text = query or ""
-    return tuple(name for name, pattern in _QUALIFIER_PATTERNS if pattern.search(text))
+    found = list(mentioned_qualifiers(text))
+    folded = _intent_text(text)
+    # Explicit contrast replaces the age axis. Contraindication wording such
+    # as "çocuklarda uygulanmaz" retains its patient population.
+    contrast = re.search(r'\b(cocuk(?:lar(?:i|a|da|dan)?)?|eriskin(?:ler(?:i|e|de|den)?)?)'
+                         r'\s+degil\s+(cocuk(?:lar(?:i|a|da|dan)?)?|eriskin(?:ler(?:i|e|de|den)?)?)\b', folded)
+    if contrast and contrast.group(1).startswith('cocuk') != contrast.group(2).startswith('cocuk'):
+        rejected = 'çocuk' if contrast.group(1).startswith('cocuk') else 'erişkin'
+        found = [name for name in found if name != rejected]
+    return tuple(found)
 
 def qualifier_present(qualifier: str, text: str) -> bool:
     return any(name == qualifier and pattern.search(text or "") for name, pattern in _QUALIFIER_PATTERNS)
@@ -427,7 +445,10 @@ def _subject_qualifier_bindings(query: str, subject_nodes) -> tuple[tuple[str, t
     if not mentions:
         return ()
     bound: dict[str, list[str]] = {}
+    effective_qualifiers = set(query_qualifiers(query))
     for qualifier, pattern in _QUALIFIER_PATTERNS:
+        if qualifier not in effective_qualifiers:
+            continue
         for qmatch in pattern.finditer(query or ""):
             candidates: list[tuple[int, str]] = []
             for start, end, node_id in mentions:
@@ -563,6 +584,9 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
     ))
     from app.academic_task_language import study_priority_request
     requires_visual_source = requires_visual_source or study_priority_request(clean.split(' — ')[-1]) == 'source_emphasis'
+    requires_visual_source = requires_visual_source or bool(re.search(
+        r'\b(?:kirmiziyla|maviyle|sariyla)\s+yazilan\b'
+        r'|\bkalin\s+yazilmis\b|\byildiz\s+konmus\b', _intent_text(clean)))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,

@@ -14,7 +14,11 @@ REPAIR_RESPONSE = ('Yanıt beklentini karşılamamış. Önceki ders veya konu b
 
 def control_text(query: str) -> str:
     text = ' '.join((query or '').translate(_FOLD).lower().split()).strip(' .!?')
-    text = re.sub(r'^(?:(?:kral|hocam|abi|dostum|baskan|ya|lutfen|bana|simdi)[,;:]?\s+){1,3}', '', text)
+    for _ in range(4):
+        shorter = re.sub(r'^(?:rica\s+etsem|mumkunse|kral|hocam|abi|dostum|baskan|ya|lutfen|bana|simdi)[,;:]?\s+', '', text)
+        if shorter == text:
+            break
+        text = shorter
     # Colloquial determiner, not a correction of an arbitrary noun.
     text = re.sub(r'\bbi\b', 'bir', text)
     # One keyboard-neighbor error only in the paragraph output-manner slot.
@@ -26,7 +30,7 @@ def conversational_repair(query: str) -> bool:
     text = control_text(query)
     return bool(re.fullmatch(
         r'(?:sen\s+)?dalga\s+mi\s+geciy(?:or|o)?sun'
-        r'|(?:sen\s+)?beni\s+anlamiy(?:or)?sun'
+        r'|(?:sen\s+)?beni\s+anlamiy(?:or|o)?sun'
         r'|(?:yine\s+)?(?:ayni|alakasiz|yanlis)\s+(?:seyi|cevabi|cevap)\s+'
         r'(?:yazip\s+duruyorsun|verdin|verdiniz|yazdin)'
         r'|(?:ben\s+)?(?:bunu|bu\s+cevabi|boyle)\s+istemedim'

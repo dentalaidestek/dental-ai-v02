@@ -33,6 +33,9 @@ def comprehension_followup(query: str) -> bool:
 def elliptical_study_request(query: str) -> str | None:
     """Closed grammatical clauses with an omitted subject, never noun fuzzing."""
     text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split()).strip(' .!?')
+    if re.fullmatch(r'(?:bir\s+|ondan\s+bir\s+)?onceki\s+(?:konuya|basliga)\s+don'
+                    r'(?:[,;]\s+(?:daha\s+)?(?:basit|sade|detayli|ayrintili)\s+(?:anlat|acikla))?', text):
+        return 'explain'
     from app.academic_request_slots import output_slots
     slots = output_slots(query)
     if slots:
@@ -87,8 +90,18 @@ def study_priority_request(query: str) -> str | None:
                   r'(?:gelmez|cikmaz|sorulmaz)[,;.!? ]+','', text)
     text = ' '.join(remove_source_reference(text).split()).strip(' .!?')
     examiner = r'(?:hoca|hocanin|hocamiz|hocamizin|ogretmen|ogretmenin)'
-    if re.fullmatch(r'(?:' + examiner + r'\s+)?(?:nereden|nerden|ne|neler|hangi\s+konulardan)'
+    if re.fullmatch(r'(?:' + examiner + r'\s+)?(?:nereden|nerden|ne|neler|nasil|hangi\s+konulardan)'
                    r'\s+(?:sorabilir|sorar|soracak)', text):
+        return 'exam_points'
+    selection = (r'(?:en\s+)?(?:kritik|onemli|oncelikli)\s+(?:yerleri|noktalari|konulari|basliklari)'
+                 r'\s+(?:ayir|sec|belirle|bul|listele|goster|cikar)')
+    if re.fullmatch(selection, text):
+        return 'exam_points'
+    if re.fullmatch(r'(?:' + examiner + r'\s+)?(?:nereden|nerden|nasil|ne)\s+'
+                   r'sorabilecegini\s+(?:anlat|acikla|goster)', text):
+        return 'exam_points'
+    if re.fullmatch(r'(?:buradan|burdan|bundan)\s+nasil\s+soru\s+(?:cikar|sorulur)'
+                   r'|neye\s+(?:daha\s+)?(?:cok\s+)?calisayim', text):
         return 'exam_points'
     if re.fullmatch(r'(?:sinavda\s+)?(?:nereden|nerden|ne|neler)\s+'
                    r'(?:cikabilir|cikar|sorulabilir|sorulur)', text):
@@ -100,6 +113,16 @@ def study_priority_request(query: str) -> str | None:
     if (re.search(r'\b(?:vurguladigi|isaretledigi|cizdigi|durdugu|isaretli|vurgulu|vurgulanan|isaretlenmis|cizili)\b', text)
             and re.fullmatch(emphasis + r'\s+(?:var\s+mi|nerede|nereler|hangileri|'
                              r'goster|bul|listele|gosterir\s+misin)', text)):
+        return 'source_emphasis'
+    # Locate actual annotations/typography, not clinical color findings or
+    # an arbitrary noun phrase containing "important".
+    appearance = (r'(?:kirmiziyla|maviyle|sariyla)\s+yazilan|kalin\s+yazilmis|'
+                  r'yildiz\s+konmus|(?:' + examiner + r')\s+onemli\s+dedigi')
+    if re.fullmatch(r'(?:' + appearance + r')\s+(?:yerleri|basliklar|kisimlari|noktalari)'
+                   r'\s+(?:getir|bul|goster|hangileri|nerede)', text):
+        return 'source_emphasis'
+    if re.fullmatch(r'hangi\s+sayfalarda\s+(?:' + examiner + r')\s+'
+                   r'(?:isaret|yildiz)\s+koymus', text):
         return 'source_emphasis'
     return None
 
@@ -129,6 +152,10 @@ def strip_request_prefix(query: str) -> str:
                    r'\s+(?:söyleme|soyleme|gösterme|gosterme)[,;:.]?\s+', '', clean)
     clean = re.sub(r'(?iu)^(?:rica\s+etsem|mümkünse|mumkunse)[,;:]?\s+', '', clean)
     for _ in range(3):
+        polite = re.match(r'(?iu)^(?:rica\s+etsem|mümkünse|mumkunse)[,;:]?\s+(.+)$', clean)
+        if polite:
+            clean = polite.group(1).strip()
+            continue
         first = re.match(r'^(\S+)[,;:]?\s+(.+)$', clean)
         if first is None:
             break
@@ -201,7 +228,7 @@ def course_source_request(query: str) -> bool:
     modifiers = {
         'konu', 'konuyu', 'konulari', 'konularini', 'icerigi', 'icerigini',
         'bana', 'beni', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak', 'tum', 'butun',
-        'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade',
+        'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade', 'anlasilir',
         'yuksek', 'verimli', 'zor', 'zorlayici', 'kolay', 'orta',
         'soru', 'sorular', 'sorulari', 'test', 'tane', 'adet',
         'kritik', 'onemli', 'yerleri', 'yerlerini', 'noktalar', 'noktalari', 'noktalarini',
@@ -209,6 +236,7 @@ def course_source_request(query: str) -> bool:
         'calisma', 'plani', 'planini', 'programi', 'programini', 'mantigiyla', 'her', 'tek',
         'sinava', 'finale', 'vizeye',
         'tamami', 'tamamini', 'ozetini', 'okuyup',
+        'hepsini', 'kullanarak', 'ana', 'atlamadan', 'ayrintilariyla',
     }
     return all(token in modifiers or token in _STUDY_COUNT_WORDS or token.isdigit() for token in tokens)
 
