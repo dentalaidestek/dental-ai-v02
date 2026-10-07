@@ -608,6 +608,10 @@ def _conversation_state(
         counts = _STATE_QUESTION_RE.findall(value)
         if counts:
             count = int(counts[-1])
+        elif _has_question_task_cue(value):
+            study_plan = classify_dental_study_plan(value)
+            if study_plan and study_plan.count is not None:
+                count = study_plan.count
         if _STATE_CLEAR_COUNT_RE.search(value):
             count = None
         if _STATE_EXAM_RE.search(value) or _has_exam_cue(value):

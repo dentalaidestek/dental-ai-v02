@@ -594,8 +594,9 @@ _STUDY_COVERAGE_RE = re.compile(
     re.I,
 )
 _STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zorlayıcı|zorlayici|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
+from app.academic_task_language import STUDY_COUNT_PATTERN, study_count_value
 _STUDY_COUNT_RE = re.compile(
-    r"\b(\d{1,3})(?:\s+(?:adet|kolay|orta|zorlayıcı|zorlayici|zor|çok zor|ayırt edici|klinik|vaka|çoktan seçmeli|açık uçlu|doğru/?yanlış)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
+    r"\b(" + STUDY_COUNT_PATTERN + r")(?:\s+(?:adet|kolay|orta|zorlayici|zor|cok zor|ayirt edici|klinik|vaka|coktan secmeli|acik uclu|dogru/?yanlis)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
     re.I,
 )
 
@@ -612,10 +613,12 @@ class DentalStudyPlan:
 def classify_dental_study_plan(query: str) -> DentalStudyPlan | None:
     """Detect role-neutral academic generation requests without affecting normal QA."""
     clean = " ".join((query or "").split())
-    if not _STUDY_GENERATION_RE.search(clean):
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if not _STUDY_GENERATION_RE.search(clean) and not (operation and operation.generate):
         return None
-    count_match = _STUDY_COUNT_RE.search(clean)
-    count = min(200, int(count_match.group(1))) if count_match else None
+    count_match = _STUDY_COUNT_RE.search(clean.translate(_ASCII_FOLD).lower())
+    count = min(200, study_count_value(count_match.group(1))) if count_match else None
     difficulty_match = _STUDY_DIFFICULTY_RE.search(clean)
     kinds: list[str] = []
     lowered = clean.casefold()

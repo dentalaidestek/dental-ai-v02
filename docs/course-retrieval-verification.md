@@ -78,7 +78,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-53 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+58 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -175,6 +175,31 @@ sections were read. The browser verifier additionally requires exactly Soru
 1..20 and rejects visible answer-key headings/per-question answer labels for
 the question preset. Prompt contracts and local routing do not certify actual
 generated count, teaching completeness, latency or authenticated streaming.
+
+## Compositional Turkish language pass
+
+Independent politeness, source, scope and operation slots are varied across
+288 requests, with another 48 uppercase/ASCII variants. Additional checks cover
+54 feedback/outline combinations, 12 known/unknown named-topic contrasts, and
+written-count carry-over. These are synthetically composed grammar cases, not
+an exhaustive natural-language benchmark or a production quality rate.
+
+The shared language layer now strips polite request adjuncts, recognizes
+source-wide manner constructions (from beginning to end, point by point, step
+by step), and composes a complaint clause with an outline-follow-up clause.
+It retains named medical nouns rather than globally repairing them. Cardinal
+count grammar handles digit and supported Turkish compound forms such as
+"yirmi üç", feeding the same study plan and conversation count axis. Inflected
+question-generation predicates reach the shared study-plan parser. Explicit
+depth remains a separate evidence-allocation axis.
+
+No neural model training or automatic rule promotion took place. Transformer
+language models infer meaning through learned contextual representations;
+these changes improve deterministic request decomposition and bounded state,
+not equivalent general language understanding. Image checkpoints still flow
+through the existing extraction/OCR pipeline, and selected visual source pages are
+materialized for visual generation after DB retrieval. No OCR, Modal or visual
+indexing code changed; no new image-quality validation is claimed.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

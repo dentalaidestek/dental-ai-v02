@@ -9,7 +9,17 @@ from functools import lru_cache
 import re
 
 _FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
-_STUDY_COUNT_WORDS = frozenset('bir iki uc dort bes alti yedi sekiz dokuz on yirmi otuz kirk elli'.split())
+STUDY_NUMBER_WORDS = dict(zip('bir iki uc dort bes alti yedi sekiz dokuz on yirmi otuz kirk elli altmis yetmis seksen doksan yuz'.split(),
+                            (1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100)))
+_STUDY_COUNT_WORDS = frozenset(STUDY_NUMBER_WORDS)
+STUDY_COUNT_PATTERN = (r'(?:\d{1,3}|(?:on|yirmi|otuz|kirk|elli|altmis|yetmis|seksen|doksan)'
+                       r'(?:\s+(?:bir|iki|uc|dort|bes|alti|yedi|sekiz|dokuz))?'
+                       r'|(?:bir|iki|uc|dort|bes|alti|yedi|sekiz|dokuz|yuz))')
+
+
+def study_count_value(value: str) -> int:
+    folded = value.translate(_FOLD).lower().strip()
+    return int(folded) if folded.isdigit() else sum(STUDY_NUMBER_WORDS[word] for word in folded.split())
 
 
 def comprehension_followup(query: str) -> bool:
@@ -27,10 +37,23 @@ def elliptical_study_request(query: str) -> str | None:
         return 'explain'
     # Dissatisfaction/outline completion modifies the existing study output.
     # Full clauses protect explicit clinical nouns from being erased.
+    feedback = r'(?:(?:bu|bu\s+anlattigin|anlattiklarin|yanitin|cevabin)\s+)?(?:cok\s+)?(?:yuzeysel|kisa|eksik|yetersiz)'
+    clauses = [clause.strip() for clause in re.split(r'[.!?;,]+', text) if clause.strip()]
+    if len(clauses) > 1 and all(re.fullmatch(feedback, clause) for clause in clauses[:-1]):
+        text = clauses[-1]
     outline = r'(?:her|tum|butun|diger|kalan)\s+(?:baslik|basligi|basliklari|basliklar|konu|konuyu|konulari|konular)'
     text = re.sub(r'^(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|kisa|eksik|yetersiz)[,;:]?\s+', '', text)
-    if re.fullmatch(outline + r'\s+(?:acikla|anlat|detaylandir|nerede|neredeler)', text):
+    predicate = (r'(?:acikla|anlat|detaylandir)' + _REQUEST_END
+                 + r'(?:\s+(?:misin|misiniz))?'
+                 + r'|(?:acikla|anlat|detaylandir)(?:r|ir|ar|er)\s+(?:misin|misiniz)'
+                 + r'|nerede|neredeler|goremedim')
+    if re.fullmatch(outline + r'\s+(?:(?:da|de|tek\s+tek|ayri\s+ayri)\s+)?(?:' + predicate + ')', text):
         return 'outline'
+    if re.fullmatch(r'(?:biraz\s+)?(?:daha\s+)?(?:detayli|ayrintili|derinlemesine|basit|sade|anlasilir)'
+                    r'\s+(?:' + predicate + ')', text):
+        return 'explain'
+    if re.fullmatch(feedback, text):
+        return 'explain'
     if re.fullmatch(r'(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|kisa|eksik|yetersiz)', text):
         return 'explain'
     if re.fullmatch(r'(?:bir\s+)?ornek\s+(?:ver|versene|verir\s+misin|goster)', text):
@@ -55,6 +78,8 @@ def wants_deeper_evidence(query: str) -> bool:
         return False
     if elliptical_study_request(query) == 'outline':
         return True
+    if elliptical_study_request(query) == 'explain' and re.search(r'\b(?:yuzeysel|eksik|yetersiz)\b', text):
+        return True
     if re.fullmatch(r'(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|eksik|yetersiz)[.!? ]*',
                     strip_request_prefix(query).translate(_FOLD).lower()):
         return True
@@ -65,13 +90,14 @@ def wants_deeper_evidence(query: str) -> bool:
 def strip_request_prefix(query: str) -> str:
     """Strip bounded discourse prefixes without fuzzy matching medical nouns."""
     clean = (query or '').strip()
+    clean = re.sub(r'(?iu)^(?:rica\s+etsem|mümkünse|mumkunse)[,;:]?\s+', '', clean)
     for _ in range(3):
         first = re.match(r'^(\S+)[,;:]?\s+(.+)$', clean)
         if first is None:
             break
         token = first.group(1).strip(',;:').translate(_FOLD).lower()
         token = re.sub(r'(.)\1+', r'\1', token)
-        if token not in {'ya', 'yok', 'hayir', 'kral', 'hocam', 'abi', 'lutfen', 'bana', 'simdi', 'peki'}:
+        if token not in {'ya', 'yok', 'hayir', 'kral', 'hocam', 'abi', 'lutfen', 'bana', 'simdi', 'peki', 'acaba', 'dostum', 'baskan'}:
             break
         clean = first.group(2).strip()
     return clean
@@ -130,6 +156,7 @@ def course_source_request(query: str) -> bool:
         r'|\b(?:gerektiginde\s+)?orneklerle\b'
         r'|\b(?:basit|sade|anlasilir)\s+bir\s+dille\b'
         r'|\b(?:calisabilecegim|calisilabilir)\s+(?:bir\s+)?hale\b'
+        r'|\b(?:bastan\s+sona|madde\s+madde|tek\s+tek|adim\s+adim)\b'
         r'|\b(?:coktan\s+secmeli|acik\s+uclu|dogru\s+yanlis)\b',
         ' ', argument,
     )
@@ -325,7 +352,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     summary = summary or any(_action(c, 'getir|cevir|donustur') and re.search(
         r'\b(?:calisabilecegim|calisilabilir)\s+(?:bir\s+)?hale\b', c) for c in clauses)
     generation=any((_action(c,'uret|hazirla|olustur|yaz|sor') and bool(re.search(r'\b(?:soru\w*|test\w*|alistirma\w*|quiz|deneme)\b',c))) or bool(re.search(r'\b(?:kendimi test|calismami sina|mini deneme|quiz)\b',c)) or bool(re.search(r'\byeni\b.*\bsoru\w*\b.*\bistiyorum\b',c)) for c in clauses)
-    count_argument = r'(?:\d{1,3}|' + '|'.join(sorted(_STUDY_COUNT_WORDS)) + r')'
+    count_argument = STUDY_COUNT_PATTERN
     generation = generation or any(re.search(
         r'\b' + count_argument + r'\s+(?:soru|test|quiz|questions?)\s+(?:olsun|istiyorum|lazim)\b', c)
         for c in clauses)
