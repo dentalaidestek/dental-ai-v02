@@ -58,6 +58,7 @@ def _response_contract(question: str) -> str:
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
     from app.academic_dialogue import dialogue_rules
+    from app.academic_study_contract import study_output_rules
     context = "\n\n---\n\n".join(retrieval.note_context)
     understood_question = (retrieval.resolved_query or question).strip()
     from app.academic_task_language import elliptical_study_request
@@ -89,6 +90,8 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         f"Ders: {course_title}\n\n"
         "DERS NOTU KANITLARI:\n" + context + "\n\n"
         "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n" + outline_rule +
+        "ÇALIŞMA ÇIKTISI:\n" + study_output_rules(understood_question,
+            [item.section_title for item in retrieval.evidence if item.section_title]) + "\n\n"
         "ÇALIŞMA ETKİLEŞİMİ:\n" + dialogue_rules(question, history) + "\n\n"
         "KANIT DURUMU:\n"
         f"Retrieval modu: {retrieval.retrieval_mode}. "

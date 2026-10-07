@@ -548,12 +548,18 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         comparison_intent = DentalIntent("comparison", (), ("compared_with",))
         intents = tuple((*intents, comparison_intent))[:6]
     comparison_terms = _comparison_terms(clean, intents)
+    # An output manner adjunct ("verimli şekilde özetle") is not a figure
+    # reference. Keep actual "şekildeki ..." and direct figure requests intact.
+    visual_source_text = re.sub(
+        r'(?iu)\b(?:yüksek\s+)?(?:verimli|basit|sade|anlaşılır|anlasilir|ayrıntılı|ayrintili|detaylı|detayli|aynı|ayni|bu|o)\s+'
+        r'şekilde\s+(?=(?:özetle|ozetle|anlat|açıkla|acikla|öğret|ogret|hazırla|hazirla|yaz|sun|göster|goster)\b)',
+        ' ', clean)
     requires_visual_source = bool(re.search(
         r"(?iu)(?:\b(?:bu|şu)\s+(?:radyografi(?:de|da)?|röntgen(?:de|da)?|film(?:de|da)?|görüntü(?:de|da)?|fotoğraf(?:ta|da)?|panoramik(?:te|ta)?|şekil(?:de|da)?|tablo(?:da|de)?|grafik(?:te|de)?|cbct(?:de|da)?|opg(?:de|da)?)"
         r"|\b(?:radyografideki|radyografide|filmdeki|filmde|görüntüdeki|görüntüde|görüntüsünde|fotoğraftaki|fotoğrafta|panoramikte|bitewingde|bitewing görüntüsünde|cbctde|cbct'de|opgde|opg'de|şekildeki|şekilde|tablodaki|tabloda|grafikteki|grafikte)\b"
         r"|\b(?:gösterilen|işaretli|okla\s+gösterilen|görülen)\b"
         r"|\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b)",
-        clean,
+        visual_source_text,
     ))
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
@@ -587,9 +593,9 @@ _STUDY_COVERAGE_RE = re.compile(
     r"eksiksiz|kapsamlı|sınavlık|sınav noktaları)\b",
     re.I,
 )
-_STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
+_STUDY_DIFFICULTY_RE = re.compile(r"\b(?:kolay|orta|zorlayıcı|zorlayici|zor|çok zor|ayırt edici|klinik|vaka)\b", re.I)
 _STUDY_COUNT_RE = re.compile(
-    r"\b(\d{1,3})(?:\s+(?:adet|kolay|orta|zor|çok zor|ayırt edici|klinik|vaka|çoktan seçmeli|açık uçlu|doğru/?yanlış)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
+    r"\b(\d{1,3})(?:\s+(?:adet|kolay|orta|zorlayıcı|zorlayici|zor|çok zor|ayırt edici|klinik|vaka|çoktan seçmeli|açık uçlu|doğru/?yanlış)){0,4}\s+(?:soru|test|quiz|flashcard|kart)\b",
     re.I,
 )
 

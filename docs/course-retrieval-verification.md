@@ -78,7 +78,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-47 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+53 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -151,6 +151,30 @@ exercise budget selection, course hydration, neighbor behavior and failure on
 empty expanded evidence. Candidate SQL/provider behavior and live answer depth
 remain unverified; increased budgets are bounded settings, not latency or answer
 quality guarantees. Routing logs include requested depth and topic budget.
+
+## Three quick-study buttons
+
+Tests extract the actual UI data-prompt values and run shared retrieval routing
+for three prompts, two material counts (one/six), and three conversation histories
+(empty, prior clinical topic, prior source-question cursor): 18 combinations.
+Candidate hydration is mocked, not actual PostgreSQL/READY verification.
+
+Two additional defects surfaced: "yüksek verimli şekilde özetle" incorrectly
+required a source figure because of "şekilde", and "20 zorlayıcı çoktan seçmeli
+soru" lost its count because the count modifier grammar omitted "zorlayıcı".
+Bounded output-manner normalization now distinguishes figure references from
+rendering style; actual "şekildeki"/table requests retain visual requirements.
+Shared count/difficulty grammar preserves both Turkish and ASCII wording.
+
+The teaching button now explicitly requests all course topics in detail, reaching
+the shared deeper-evidence policy without a preset-specific route. The shared
+study output contract applies equally to natural requests: summary headings and
+key points, supported teaching rationale/details, and source-backed new question
+generation with requested count and hidden answer key. It never claims unseen
+sections were read. The browser verifier additionally requires exactly Soru
+1..20 and rejects visible answer-key headings/per-question answer labels for
+the question preset. Prompt contracts and local routing do not certify actual
+generated count, teaching completeness, latency or authenticated streaming.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 
@@ -74,7 +75,7 @@ async def verify(args):
                 {'preset': 'Özetle'}, {'preset': 'Bana Öğret'},
                 {'message': 'Bu çok yüzeysel her başlığı açıkla'},
                 {'message': 'Diğer başlıklar nerede'},
-                {'preset': 'Soru Hazırla'},
+                {'preset': 'Soru Hazırla', 'question_count': 20, 'hide_answer_key': True},
                 {'message': 'Bu notlardan sınava çalışalım, önemli yerleri mantığıyla anlat.'},
                 {'message': 'Bana bu ders notlarından bir soru sor ve cevabımı bekle.'},
                 {'message': 'Cevabım A'},
@@ -108,6 +109,15 @@ async def verify(args):
                     not clarification or bool(step.get('allow_clarification')))
                 required = step.get('answer_contains', [])
                 success = success and all(term.casefold() in answer.casefold() for term in required)
+                question_numbers = [int(number) for number in re.findall(
+                    r'(?im)^\s*(?:\*\*)?Soru\s+(\d+)\b', answer)]
+                if step.get('question_count'):
+                    success = success and question_numbers == list(range(1, int(step['question_count']) + 1))
+                answer_key_visible = bool(re.search(
+                    r'(?im)^\s*(?:#+\s*|\*\*)?(?:cevap|yanıt|yanit)\s+anahtar(?:ı|i)\s*[:\n]'
+                    r'|^\s*(?:[-*]\s*)?(?:doğru\s+cevap|dogru\s+cevap|cevap|yanıt|yanit)\s*:\s*[A-E]\b', answer))
+                if step.get('hide_answer_key'):
+                    success = success and not answer_key_visible
                 await page.wait_for_function('!document.querySelector("#studySendButton").disabled',
                                              timeout=args.timeout_ms)
                 visible_text = await page.locator('.study-chat-message.assistant').all_inner_texts()
@@ -119,7 +129,9 @@ async def verify(args):
                     'elapsed_ms': round((time.monotonic() - started) * 1000),
                     'stream_timing': timings[-1] if timings else None,
                     'answer_preview': answer[:1200], 'errors': errors,
-                    'internal_marker_visible': marker_visible, 'passed': success})
+                    'internal_marker_visible': marker_visible,
+                    'question_numbers': question_numbers,
+                    'answer_key_visible': answer_key_visible, 'passed': success})
                 if not success:
                     raise RuntimeError('Stream did not complete with an answer; see step report.')
             report['passed'] = True

@@ -136,7 +136,7 @@ def course_source_request(query: str) -> bool:
     tokens = re.findall(r'\w+', argument)
     modifiers = {
         'konu', 'konuyu', 'konulari', 'konularini', 'icerigi', 'icerigini',
-        'bana', 'beni', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak',
+        'bana', 'beni', 'benim', 'icin', 've', 'bir', 'sekilde', 'olarak', 'tum', 'butun',
         'kisa', 'kisaca', 'detayli', 'ayrintili', 'basit', 'sade',
         'yuksek', 'verimli', 'zor', 'zorlayici', 'kolay', 'orta',
         'soru', 'sorular', 'sorulari', 'test', 'tane', 'adet',
