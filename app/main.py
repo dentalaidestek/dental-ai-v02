@@ -9450,8 +9450,19 @@ def tooth_chart(request: Request, patient_id: int):
             "31", "32", "33", "34", "35", "36", "37", "38"
         ]
 
+        primary_upper_numbers = [
+            "55", "54", "53", "52", "51",
+            "61", "62", "63", "64", "65"
+        ]
+        primary_lower_numbers = [
+            "85", "84", "83", "82", "81",
+            "71", "72", "73", "74", "75"
+        ]
+
         upper_teeth = [tooth_data(n) for n in upper_numbers]
         lower_teeth = [tooth_data(n) for n in lower_numbers]
+        primary_upper_teeth = [tooth_data(n) for n in primary_upper_numbers]
+        primary_lower_teeth = [tooth_data(n) for n in primary_lower_numbers]
 
         return templates.TemplateResponse(
             request=request,
@@ -9460,6 +9471,8 @@ def tooth_chart(request: Request, patient_id: int):
                 "patient": patient,
                 "upper_teeth": upper_teeth,
                 "lower_teeth": lower_teeth,
+                "primary_upper_teeth": primary_upper_teeth,
+                "primary_lower_teeth": primary_lower_teeth,
             },
         )
 
