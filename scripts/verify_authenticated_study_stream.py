@@ -16,6 +16,7 @@ from playwright.async_api import async_playwright
 
 
 FAILURE_TEXT = (
+    'Bu bilgi yüklediğin ders notlarında bulunmuyor',
     'Bu soruyla ilişkilendirilebilecek ders notu bulunamadı',
     'yeterli not içeriğini henüz eşleştiremedim',
     'notların tümünden güvenilir içerik hazırlayamadım',
@@ -70,7 +71,10 @@ async def verify(args):
                 raise RuntimeError('Authorized login session is unavailable; no test requests sent.')
             await page.locator('#studySendButton').wait_for(state='visible')
             steps = [
-                {'preset': 'Özetle'}, {'preset': 'Bana Öğret'}, {'preset': 'Soru Hazırla'},
+                {'preset': 'Özetle'}, {'preset': 'Bana Öğret'},
+                {'message': 'Bu çok yüzeysel her başlığı açıkla'},
+                {'message': 'Diğer başlıklar nerede'},
+                {'preset': 'Soru Hazırla'},
                 {'message': 'Bu notlardan sınava çalışalım, önemli yerleri mantığıyla anlat.'},
                 {'message': 'Bana bu ders notlarından bir soru sor ve cevabımı bekle.'},
                 {'message': 'Cevabım A'},
@@ -106,12 +110,16 @@ async def verify(args):
                 success = success and all(term.casefold() in answer.casefold() for term in required)
                 await page.wait_for_function('!document.querySelector("#studySendButton").disabled',
                                              timeout=args.timeout_ms)
+                visible_text = await page.locator('.study-chat-message.assistant').all_inner_texts()
+                marker_visible = any('ACADEMIC_Q_CURSOR' in text for text in visible_text)
+                success = success and not marker_visible
                 timings = await page.evaluate('window.studyStreamTimings')
                 report['steps'].append({**step, 'http_status': response.status, 'done': done,
                     'delta_count': sum(event.get('type') == 'delta' for event in events),
                     'elapsed_ms': round((time.monotonic() - started) * 1000),
                     'stream_timing': timings[-1] if timings else None,
-                    'answer_preview': answer[:1200], 'errors': errors, 'passed': success})
+                    'answer_preview': answer[:1200], 'errors': errors,
+                    'internal_marker_visible': marker_visible, 'passed': success})
                 if not success:
                     raise RuntimeError('Stream did not complete with an answer; see step report.')
             report['passed'] = True

@@ -1,8 +1,10 @@
 # Course retrieval and conversational study verification
 
-Status: draft implementation; production verification is pending. No deployment,
-successful authenticated browser stream, indexing speedup, or model fine-tuning
-is claimed.
+Status: current improvements are draft; authenticated production verification
+is pending. Render records show the earlier `08a53d9` recovery implementation
+went live on 2026-10-06 at 21:13:43 UTC. The later dialogue/screenshot fixes are
+not in that deployed commit. No successful authenticated browser stream,
+indexing speedup, or model fine-tuning is claimed.
 
 ## Observed production failure
 
@@ -76,7 +78,7 @@ outcomes describe evidence recovery, not answer correctness or browser success.
 
 ## Local validation and its limits
 
-38 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
+43 focused source/dialogue tests, ten recovery tests and 59 existing continuity checks pass. Two
 benchmark audit checks pass, and changed Python files compile. Focused tests
 include source requests with spelled counts, unknown named topics inside notes,
 free-text quiz answers, task rejection, clinical noun protection, compound
@@ -103,6 +105,32 @@ Known remaining limits include unrestricted indirect study transformations,
 some quiz preference-only commands,
 long-range references outside the eight-message window, and ambiguous pronouns.
 These checks do not establish model-level understanding for arbitrary dialogue.
+
+## Screenshot root-cause regressions (2026-10-07)
+
+The exact Soru Hazırla request incorrectly matched `cevapla` inside
+`cevaplarımı`, selecting `questions_exhaustive` instead of note-backed new
+question generation. Complete predicate boundaries and explicit generation
+precedence repair this shared routing defect; explicit source-question solving
+and plain cursor continuation still work. A mocked candidate-access test runs
+the real retrieval orchestration and asserts coverage hydration, sufficient
+selected evidence, owner/course arguments, and no source-question-page query.
+
+"Bu çok yüzeysel her başlığı açıkla" and "Diğer başlıklar nerede" were lexical
+subjects. They now continue the existing user-owned course/topic scope; unknown
+referents clarify rather than fabricate a medical topic. Source-backed outline
+feedback instructs final generation to address each hydrated heading with
+supported detail and to disclose incomplete scope, without claiming unseen
+sections were covered. Final answer completeness still needs live verification.
+
+`ACADEMIC_Q_CURSOR` was emitted into stored assistant history for pagination,
+then HTML-escaped into visible text. The shared UI normalizer removes the
+metadata before escaping on both initial history rendering and streaming while
+leaving server continuation intact. Node execution of the actual template
+renderer verifies marker hiding, question formatting and HTML escaping. The
+browser verifier now rejects the screenshot's provider refusal text, includes
+both outline feedback requests, and checks rendered assistant text for leaked
+pagination markers. It has not been run authenticated against production.
 
 SQLModel and SQLAlchemy are unavailable in the local execution environment.
 Language/resolver tests therefore use an AST harness that removes unavailable

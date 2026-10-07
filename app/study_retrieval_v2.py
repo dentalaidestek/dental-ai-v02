@@ -97,7 +97,7 @@ def _requires_visual_source(query: str) -> bool:
     """True only when answering requires inspecting source pixels/layout."""
     return bool(_VISUAL_SOURCE_RE.search(query or ""))
 
-_EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}(?:soru|test)|(?:soru|test).{0,48}(?:çöz|cevapla|yanıtla)", re.I)
+_EXHAUSTIVE_QUESTION_RE = re.compile(r"(?:tüm|bütün|hepsi|tamamı|dosyadaki|pdf.deki).{0,48}\b(?:soru\w*|test\w*)\b|\b(?:soru\w*|test\w*)\b.{0,48}\b(?:çöz|coz|cevapla|yanıtla|yanitla)(?:sana|sene|in|ın|yabilir|abilir)?\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -1503,12 +1503,22 @@ def _fts_rows(
 
 def _is_exhaustive_question_request(query: str) -> bool:
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if operation and operation.generate:
+        # Creating questions differs from solving source questions; grading
+        # instructions and all-course modifiers cannot steal generation intent.
+        return False
     return bool(clean and _EXHAUSTIVE_QUESTION_RE.search(clean))
 
 
 def _continuation_cursor(query: str, recent_history: list[dict] | None) -> tuple[int, int] | None:
     """Read an internal continuation marker from the prior assistant turn only."""
     if not recent_history or not re.match(r"^(?:devam|devam et|kalan(?:ları)?|sonraki(?:ler)?)\b", (query or "").strip(), re.I):
+        return None
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(query)
+    if operation and operation.task and operation.task != 'past_question_explain':
         return None
     last = recent_history[-1]
     if str(last.get("role") or "").upper() != "ASSISTANT":
@@ -2432,7 +2442,7 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     if not study_task:
         return False
     from app.academic_task_language import course_source_request, comprehension_followup, elliptical_study_request
-    if comprehension_followup(query) or elliptical_study_request(query) in {'explain', 'procedure', 'cause', 'value'}:
+    if comprehension_followup(query) or elliptical_study_request(query) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
         return False
     if course_source_request(query) and not requirement.subject_node_ids:
         return True
@@ -2469,7 +2479,7 @@ def retrieve_course_context_v2(
         return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
             clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
     from app.academic_task_language import elliptical_study_request
-    if elliptical_study_request(resolved) in {'explain', 'procedure', 'cause', 'value'}:
+    if elliptical_study_request(resolved) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
         return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
             clarification="Hangi konudan bahsettiğini belirtir misin? Konu adını veya ilgili soruyu yazarsan onun üzerinden devam edebilirim.")
     from app.academic_dialogue import answer_needs_reference

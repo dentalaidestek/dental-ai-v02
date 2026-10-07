@@ -25,6 +25,14 @@ def elliptical_study_request(query: str) -> str | None:
     text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split()).strip(' .!?')
     if comprehension_followup(query):
         return 'explain'
+    # Dissatisfaction/outline completion modifies the existing study output.
+    # Full clauses protect explicit clinical nouns from being erased.
+    outline = r'(?:her|tum|butun|diger|kalan)\s+(?:baslik|basligi|basliklari|basliklar|konu|konuyu|konulari|konular)'
+    text = re.sub(r'^(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|kisa|eksik|yetersiz)[,;:]?\s+', '', text)
+    if re.fullmatch(outline + r'\s+(?:acikla|anlat|detaylandir|nerede|neredeler)', text):
+        return 'outline'
+    if re.fullmatch(r'(?:bu\s+)?(?:cok\s+)?(?:yuzeysel|kisa|eksik|yetersiz)', text):
+        return 'explain'
     if re.fullmatch(r'(?:bir\s+)?ornek\s+(?:ver|versene|verir\s+misin|goster)', text):
         return 'explain'
     if re.fullmatch(r'nasil\s+(?:uygulanir|uygulaniyor|uygulayacagiz|yapilir|yapiliyor)', text):
@@ -311,7 +319,7 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     similarity=bool(re.search(r'\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:tarz\w*|tip\w*|manti[kg]\w*))\b',text))
     explain=any(_action(c,'acikla|anlat|ogret') or bool(re.search(r'\bcalisalim\b|\b(?:mantig\w*|mantik|baglanti\w*)\b.{0,48}\bkur\b|\b(?:ders|ogrenciye)\b.{0,16}\banlatir gibi\b',c)) for c in clauses)
     explain = explain or any(re.search(r'\b(?:anlamadim|anlayamadim|kafam\s+karisti)\b', c) for c in clauses)
-    explain = explain or elliptical_study_request(query) == 'explain'
+    explain = explain or elliptical_study_request(query) in {'explain', 'outline'}
     explain = explain or any(_action(c, 'hazirla') and re.search(r'\b(?:beni|bizi)\b', c)
                             and re.search(r'\b(?:sinava|finale|vizeye)\b', c) for c in clauses)
     if re.search(r'\b(?:veya|yahut|ya da)\b',text) and sum((summary,generation,explain))>1:
