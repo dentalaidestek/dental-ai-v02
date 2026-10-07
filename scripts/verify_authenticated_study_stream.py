@@ -75,6 +75,8 @@ async def verify(args):
                 {'preset': 'Özetle'}, {'preset': 'Bana Öğret'},
                 {'message': 'Bu çok yüzeysel her başlığı açıkla'},
                 {'message': 'Diğer başlıklar nerede'},
+                {'message': 'Hoca nerden sorabilir'},
+                {'message': 'Bence burdan gelmez hocanın özellikle vurguladığı işaretli yerler var mı'},
                 {'preset': 'Soru Hazırla', 'question_count': 20, 'hide_answer_key': True},
                 {'message': 'Bu notlardan sınava çalışalım, önemli yerleri mantığıyla anlat.'},
                 {'message': 'Bana bu ders notlarından bir soru sor ve cevabımı bekle.'},

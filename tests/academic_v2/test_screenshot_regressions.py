@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from app import study_retrieval_v2 as retrieval
 from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task
+from app.academic_task_language import study_priority_request
+from app.academic_study_contract import study_output_rules
 
 
 PRESET = ('Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. '
@@ -14,6 +16,49 @@ HISTORY = [{'role': 'USER', 'content': 'Bu ders notlarını sınav odaklı özet
 
 
 class ScreenshotRegressions(unittest.TestCase):
+    def test_exam_selection_is_a_task_with_owned_course_or_topic(self):
+        for who in ('Hoca', 'Hocamız', 'Öğretmen', ''):
+            for where in ('nerden', 'nereden', 'ne', 'neler', 'hangi konulardan'):
+                query = f'{who} {where} sorabilir'.strip()
+                self.assertEqual(study_priority_request(query), 'exam_points', query)
+                for history, course_scope in ((HISTORY, True),
+                        ([{'role': 'USER', 'content': 'Pulpitis anlat'}], False)):
+                    resolved = retrieval.resolve_followup_query(query, history)
+                    requirement = build_dental_requirement_plan(resolved)
+                    task = classify_academic_study_task(resolved)
+                    self.assertEqual(task.task, 'exam_points')
+                    self.assertEqual(retrieval._course_coverage_requested(resolved, requirement, task), course_scope)
+                    if not course_scope:
+                        self.assertIn('pulpitis', requirement.subject_terms)
+                    self.assertFalse(requirement.requires_visual_source)
+
+    def test_selection_rejection_requests_real_source_emphasis(self):
+        for query in ('Bence burdan gelmez hocanın özellikle vurguladığı işaretli yerler var mı',
+                      'Hocanın altını çizdiği yerler nerede',
+                      'Notlarda altı çizili yerler var mı',
+                      'Slaytlarda işaretlenmiş kısımlar hangileri',
+                      'Öğretmenin üzerinde durduğu noktaları göster'):
+            self.assertEqual(study_priority_request(query), 'source_emphasis', query)
+            resolved = retrieval.resolve_followup_query(query, HISTORY)
+            plan = build_dental_requirement_plan(resolved)
+            self.assertFalse(plan.subject_terms)
+            self.assertTrue(plan.requires_visual_source)
+            self.assertTrue(retrieval._course_coverage_requested(resolved, plan, classify_academic_study_task(resolved)))
+
+    def test_source_emphasis_is_not_a_claim_about_exam_predictions(self):
+        exam = study_output_rules('Hoca nerden sorabilir', ['Downs analizi'])
+        marked = study_output_rules('Bu ders notlarını açıkla — Notlarda altı çizili yerler var mı', ['Downs analizi'])
+        self.assertIn('çalışma önerisi', exam)
+        self.assertIn('tüm dosyada yok deme', marked)
+        self.assertIn('gerçekten görülüyorsa', marked)
+
+    def test_priority_grammar_does_not_erase_unknown_or_named_subjects(self):
+        for query in ('Pulpitis nereden sorulabilir', 'Nance apareyinde işaretli yerler var mı',
+                      'Zorbital sendromunda hoca ne sorabilir', 'Hocanın işaretlediği pulpitis ne demek'):
+            self.assertIsNone(study_priority_request(query), query)
+            self.assertTrue(build_dental_requirement_plan(query).subject_terms, query)
+            self.assertEqual(retrieval.resolve_followup_query(query, HISTORY), query)
+
     def test_outline_feedback_continues_course_scope(self):
         for query in ('Bu çok yüzeysel her başlığı açıkla', 'Diğer başlıklar nerede',
                       'Eksik kalan başlıkları anlat', 'Bu yetersiz bütün konuları detaylandır'):

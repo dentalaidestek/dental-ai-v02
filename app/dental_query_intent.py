@@ -561,6 +561,8 @@ def build_dental_requirement_plan(query: str) -> DentalRequirementPlan:
         r"|\b(?:radyografi|film|görüntü|şekil|tablo|grafik)(?:de|da)\s+(?:ne|neyi|hangi|nerede)\b)",
         visual_source_text,
     ))
+    from app.academic_task_language import study_priority_request
+    requires_visual_source = requires_visual_source or study_priority_request(clean.split(' — ')[-1]) == 'source_emphasis'
     facets = tuple(intent.name for intent in intents if intent.name != "general")
     return DentalRequirementPlan(
         subject_node_ids=subject_ids,

@@ -248,7 +248,28 @@ The current environment has no usable authenticated DentalAI session or shared
 interactive browser. Previous browser execution attempts were blocked. The
 verifier has been syntax/CLI checked, but has not been run against production.
 
-## Indexing duration
+## Additional exam-priority and source-emphasis screenshots
+
+The requests `Hoca nerden sorabilir` and `Bence burdan gelmez hocanın özellikle
+vurguladığı işaretli yerler var mı` were still interpreted as lexical medical
+subjects. Full-clause grammar now separates subject-omitted exam selection from
+source-emphasis verification. Discourse rejection of the previous selection is
+not a new topic. Twenty examiner/question combinations retain the active owned
+course or clinical topic; named and unknown medical nouns remain subjects.
+
+Exam suggestions are not assertions about what a teacher will ask. Marked or
+underlined passages require actual visual/source evidence; output rules prohibit
+calling clinically important text a teacher's mark. Existing visual hydration
+remains bounded to three selected pages, so this does not implement an exhaustive
+all-page annotation search. Failure to see a mark cannot establish that none
+exists in the whole file. Both screenshot prompts are in the browser verifier.
+
+Current focused validation: 72 unittest methods pass, plus 59 existing continuity
+checks. Retrieval execution uses the existing AST harness and mocked candidates;
+no PostgreSQL, provider answer, or authenticated production stream was tested.
+Render still reports live commit `08a53d9`; these later fixes are draft PR changes.
+
+## Indexing duration measurements
 
 The observed `Academic Modal wake ... elapsed_ms=4020` is dispatch duration only.
 It is not upload-to-READY indexing time. Later status requests do not expose

@@ -33,6 +33,9 @@ def comprehension_followup(query: str) -> bool:
 def elliptical_study_request(query: str) -> str | None:
     """Closed grammatical clauses with an omitted subject, never noun fuzzing."""
     text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split()).strip(' .!?')
+    priority = study_priority_request(query)
+    if priority:
+        return priority
     if comprehension_followup(query):
         return 'explain'
     # Dissatisfaction/outline completion modifies the existing study output.
@@ -66,6 +69,34 @@ def elliptical_study_request(query: str) -> str | None:
         return 'value'
     if re.fullmatch(r'(?:bir|\d{1,2})\s+(?:tane\s+)?daha\s+sor(?:sana|sene)?', text):
         return 'generate_questions'
+    return None
+
+
+def study_priority_request(query: str) -> str | None:
+    """Subject-omitted exam selection versus verifiable source emphasis.
+
+    Full clause matching leaves named and unknown clinical subjects intact.
+    Feedback rejects a prior selection; it never supplies a new medical noun.
+    """
+    text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split()).strip(' .!?')
+    text = re.sub(r'^(?:bence\s+)?(?:buradan|burdan|bundan|bunlardan)\s+'
+                  r'(?:gelmez|cikmaz|sorulmaz)[,;.!? ]+','', text)
+    text = ' '.join(remove_source_reference(text).split()).strip(' .!?')
+    examiner = r'(?:hoca|hocanin|hocamiz|hocamizin|ogretmen|ogretmenin)'
+    if re.fullmatch(r'(?:' + examiner + r'\s+)?(?:nereden|nerden|ne|neler|hangi\s+konulardan)'
+                   r'\s+(?:sorabilir|sorar|soracak)', text):
+        return 'exam_points'
+    if re.fullmatch(r'(?:sinavda\s+)?(?:nereden|nerden|ne|neler)\s+'
+                   r'(?:cikabilir|cikar|sorulabilir|sorulur)', text):
+        return 'exam_points'
+    emphasis = (r'(?:(?:' + examiner + r')\s+)?(?:ozellikle\s+)?'
+                r'(?:(?:vurguladigi|isaretledigi|altini\s+cizdigi|uzerinde\s+durdugu)\s+)?'
+                r'(?:(?:isaretli|vurgulu|vurgulanan|isaretlenmis|altı\s+cizili|alti\s+cizili)\s+)?'
+                r'(?:yerler|yerleri|noktalar|noktalari|kisimlar|kisimlari|bolumler|bolumleri)')
+    if (re.search(r'\b(?:vurguladigi|isaretledigi|cizdigi|durdugu|isaretli|vurgulu|vurgulanan|isaretlenmis|cizili)\b', text)
+            and re.fullmatch(emphasis + r'\s+(?:var\s+mi|nerede|nereler|hangileri|'
+                             r'goster|bul|listele|gosterir\s+misin)', text)):
+        return 'source_emphasis'
     return None
 
 
@@ -402,7 +433,8 @@ def parse_study_operation(query: str) -> StudyOperation | None:
     # Salience is a requested selection, not a passing exam/persona mention.
     salience=any((_action(c,'goster|belirle|sec|ayir|cikar|bul|listele|ayikla') and bool(re.search(r'\b(?:kritik|onem\w*|oncelik\w*|sorabil\w*|sorul\w*|soru kur\w*|ezberle\w*|gozden kacir\w*)\b',c))) or bool(re.search(r'\b(?:mutlaka kontrol)\b',c)) for c in clauses)
     if broad and any(_action(c,'cikar|listele|sirala|derle|topla') and bool(re.search(r'\b(?:deger\w*|olcum\w*|oran\w*|siniflama\w*|bulgu\w*|tani\w*|tedavi\w*)\b',c)) for c in clauses):return StudyOperation('summarize',False,False,True)
-    if salience:return StudyOperation('exam_points',False,False,True)
+    if salience or study_priority_request(query.split(' — ')[-1]):
+        return StudyOperation('exam_points',False,False,True)
     if explain:return StudyOperation('explain',False,False,broad)
     if any(re.search(r'\b(?:'+ '|'.join(_ACTION_ROOTS) +r')(?:r|ir)\b',c) for c in clauses):
         return StudyOperation(None)
