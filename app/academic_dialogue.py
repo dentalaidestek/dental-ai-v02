@@ -21,15 +21,18 @@ def conversational_acknowledgement(query: str) -> bool:
 
 def _latest_assistant(history: list[dict] | None) -> dict | None:
     # A deterministic courtesy exchange does not replace a pending question.
+    from app.academic_request_slots import REPAIR_RESPONSE
     return next((item for item in reversed((history or [])[-8:])
                  if str(item.get('role') or '').casefold() in {'assistant', 'ai'}
-                 and str(item.get('content') or '').strip() != ACKNOWLEDGEMENT_RESPONSE), None)
+                 and str(item.get('content') or '').strip() not in {ACKNOWLEDGEMENT_RESPONSE, REPAIR_RESPONSE}), None)
 
 
 def _latest_study_user(history: list[dict] | None) -> dict | None:
+    from app.academic_request_slots import conversational_repair
     return next((item for item in reversed((history or [])[-8:])
                  if str(item.get('role') or '').casefold() in {'user', 'human'}
-                 and not conversational_acknowledgement(str(item.get('content') or ''))), None)
+                 and not conversational_acknowledgement(str(item.get('content') or ''))
+                 and not conversational_repair(str(item.get('content') or ''))), None)
 
 
 def numbered_items(body: str) -> list[tuple[int, str]]:
@@ -64,6 +67,9 @@ def _free_answer_intent(query: str) -> bool:
     text = ' '.join((query or '').translate(_FOLD).lower().split())
     if not text or len(text) > 600 or '?' in text:
         return False
+    from app.academic_request_slots import conversational_repair
+    if conversational_repair(query):
+        return False
     if elliptical_study_request(query):
         return False
     if re.fullmatch(r'(?:tamam|tesekkurler|tesekkur ederim|sag ol)[.! ]*', text):
@@ -73,7 +79,7 @@ def _free_answer_intent(query: str) -> bool:
         return False
     return not re.search(
         r'\b(?:nedir|nasil|neden|niye|hangi|kac|ne|devam|baska|yeni|degistir|'
-        r'birak|bosver|onceki|sonraki|konu|konuyu|don|gec|hazirla|anlat|acikla|'
+        r'birak|bosver|onceki|sonraki|konu|konuyu|don|gec|gecelim|bakalim|ogret|ozetle|hazirla|anlat|acikla|'
         r'tablo|format|ayni|anlamadim|tekrar)\b|\bdaha\s+(?:basit|detayli|kisa)\b', text)
 
 
@@ -108,6 +114,12 @@ def evidence_followup(*, resolved_query: str, retrieval_mode: str,
 def active_question_reference(query: str, history: list[dict] | None) -> QuestionReference | None:
     """Bind short answers only to a single actual question, never guess a batch item."""
     folded = ' '.join((query or '').translate(_FOLD).lower().split())
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(query)
+    if operation and operation.generate:
+        # A wait-for-my-answer instruction controls a NEW quiz; it is not
+        # a reference to the old question just because it says "cevabımı".
+        return None
     answer = bool(_ANSWER.fullmatch(folded))
     reference = bool(re.search(
         r'\b(?:bu|onceki|bir onceki|son|az onceki)\s+soru\w*\b|'

@@ -33,6 +33,10 @@ def comprehension_followup(query: str) -> bool:
 def elliptical_study_request(query: str) -> str | None:
     """Closed grammatical clauses with an omitted subject, never noun fuzzing."""
     text = ' '.join(strip_request_prefix(query).translate(_FOLD).lower().split()).strip(' .!?')
+    from app.academic_request_slots import output_slots
+    slots = output_slots(query)
+    if slots:
+        return slots.kind
     priority = study_priority_request(query)
     if priority:
         return priority
@@ -121,6 +125,8 @@ def wants_deeper_evidence(query: str) -> bool:
 def strip_request_prefix(query: str) -> str:
     """Strip bounded discourse prefixes without fuzzy matching medical nouns."""
     clean = (query or '').strip()
+    clean = re.sub(r'(?iu)^(?:cevapları|cevaplari|yanıtları|yanitlari|cevap\s+anahtarını|cevap\s+anahtarini)'
+                   r'\s+(?:söyleme|soyleme|gösterme|gosterme)[,;:.]?\s+', '', clean)
     clean = re.sub(r'(?iu)^(?:rica\s+etsem|mümkünse|mumkunse)[,;:]?\s+', '', clean)
     for _ in range(3):
         first = re.match(r'^(\S+)[,;:]?\s+(.+)$', clean)
@@ -172,7 +178,7 @@ def course_source_request(query: str) -> bool:
     if prefix and not re.fullmatch(r'(?:lutfen|bana|simdi|peki)(?:\s+(?:lutfen|bana|simdi|peki))*', prefix):
         return False
     tail = text[source.end():]
-    action_roots = r'(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|cikar|listele|sirala|goster|belirle|sec|ayir|bul|ayikla|getir|donustur|cevir|sor|calisalim|calistir|sina)'
+    action_roots = r'(?:ozetle|toparla|acikla|anlat|ogret|hazirla|uret|olustur|yaz|yap|cikar|listele|sirala|goster|belirle|sec|ayir|bul|ayikla|getir|donustur|cevir|sor|calisalim|calistir|sina)'
     action = re.search(r'\b' + action_roots + _REQUEST_END
                        + r'|\b' + action_roots + r'(?:r|ir|ar|er)\s+(?:misin|misiniz)\b', tail)
     if action is None:
@@ -202,6 +208,7 @@ def course_source_request(query: str) -> bool:
         'baslik', 'basliklari', 'basliklarini',
         'calisma', 'plani', 'planini', 'programi', 'programini', 'mantigiyla', 'her', 'tek',
         'sinava', 'finale', 'vizeye',
+        'tamami', 'tamamini', 'ozetini', 'okuyup',
     }
     return all(token in modifiers or token in _STUDY_COUNT_WORDS or token.isdigit() for token in tokens)
 
@@ -211,7 +218,7 @@ def subjectless_study_request(query: str) -> bool:
     operation = parse_study_operation(query)
     if operation is None or operation.task is None or operation.past:
         return False
-    text = (query or '').translate(_FOLD).lower()
+    text = strip_request_prefix(query).translate(_FOLD).lower()
     text = re.sub(r'\b(' + '|'.join(_ACTION_ROOTS | {'sor'})
                   + r')(?:r|ir|ar|er)\s+(?:misin|misiniz)\b', r'\1', text)
     # Remove complete control constructions rather than dental noun stems.
@@ -382,18 +389,19 @@ def parse_study_operation(query: str) -> StudyOperation | None:
         r'\b(?:tekrar kag[i]?d\w*|tekrar kagit\w*|ders fis\w*|calisma sayfa\w*)\b',c) for c in clauses)
     summary = summary or any(_action(c, 'getir|cevir|donustur') and re.search(
         r'\b(?:calisabilecegim|calisilabilir)\s+(?:bir\s+)?hale\b', c) for c in clauses)
-    generation=any((_action(c,'uret|hazirla|olustur|yaz|sor') and bool(re.search(r'\b(?:soru\w*|test\w*|alistirma\w*|quiz|deneme)\b',c))) or bool(re.search(r'\b(?:kendimi test|calismami sina|mini deneme|quiz)\b',c)) or bool(re.search(r'\byeni\b.*\bsoru\w*\b.*\bistiyorum\b',c)) for c in clauses)
+    generation=any((_action(c,'uret|hazirla|olustur|yaz|sor|yap') and bool(re.search(r'\b(?:soru\w*|test\w*|alistirma\w*|quiz|deneme)\b',c))) or bool(re.search(r'\b(?:kendimi test|calismami sina|mini deneme|quiz)\b',c)) or bool(re.search(r'\byeni\b.*\bsoru\w*\b.*\bistiyorum\b',c)) for c in clauses)
     count_argument = STUDY_COUNT_PATTERN
     generation = generation or any(re.search(
         r'\b' + count_argument + r'\s+(?:soru|test|quiz|questions?)\s+(?:olsun|istiyorum|lazim)\b', c)
         for c in clauses)
     generation = generation or any(_action(c, 'calistir|sina')
                                   and re.search(r'\b(?:beni|bizi|kendimi)\b', c) for c in clauses)
-    generation = generation or elliptical_study_request(query) == 'generate_questions'
+    omitted_request = elliptical_study_request(query.split(' — ')[-1])
+    generation = generation or omitted_request == 'generate_questions'
     similarity=bool(re.search(r'\b(?:benzer\w*|benzeyen\w*|ayni\s+(?:tarz\w*|tip\w*|manti[kg]\w*))\b',text))
     explain=any(_action(c,'acikla|anlat|ogret') or bool(re.search(r'\bcalisalim\b|\b(?:mantig\w*|mantik|baglanti\w*)\b.{0,48}\bkur\b|\b(?:ders|ogrenciye)\b.{0,16}\banlatir gibi\b',c)) for c in clauses)
     explain = explain or any(re.search(r'\b(?:anlamadim|anlayamadim|kafam\s+karisti)\b', c) for c in clauses)
-    explain = explain or elliptical_study_request(query) in {'explain', 'outline'}
+    explain = explain or omitted_request in {'explain', 'outline'}
     explain = explain or any(_action(c, 'hazirla') and re.search(r'\b(?:beni|bizi)\b', c)
                             and re.search(r'\b(?:sinava|finale|vizeye)\b', c) for c in clauses)
     if re.search(r'\b(?:veya|yahut|ya da)\b',text) and sum((summary,generation,explain))>1:

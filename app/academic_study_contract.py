@@ -8,6 +8,10 @@ def study_output_rules(question: str, headings: list[str]) -> str:
     if not operation or operation.past:
         return ''
     rules = []
+    from app.academic_request_slots import output_slot_rules
+    slot_rules = output_slot_rules(question)
+    if slot_rules:
+        rules.append(slot_rules)
     priority = study_priority_request(question.split(' — ')[-1])
     if priority == 'source_emphasis':
         rules.append('Kaynak vurguları: hocanın işaretlediği, altını çizdiği veya özellikle '

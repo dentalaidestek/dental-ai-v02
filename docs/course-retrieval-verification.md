@@ -264,7 +264,7 @@ remains bounded to three selected pages, so this does not implement an exhaustiv
 all-page annotation search. Failure to see a mark cannot establish that none
 exists in the whole file. Both screenshot prompts are in the browser verifier.
 
-Current focused validation: 72 unittest methods pass, plus 59 existing continuity
+At that stage, focused validation: 72 unittest methods pass, plus 59 existing continuity
 checks. Retrieval execution uses the existing AST harness and mocked candidates;
 no PostgreSQL, provider answer, or authenticated production stream was tested.
 Render still reports live commit `08a53d9`; these later fixes are draft PR changes.
@@ -281,3 +281,50 @@ session during cleanup. OCR, Modal scheduling and indexing logic are unchanged.
 Measure upload, dispatch, worker start, extraction/OCR, persistence/publication
 and READY separately before selecting a performance change. A 1.55 MB size alone
 does not establish page count or OCR workload, and a 4–5 second total is unproven.
+
+## Colloquial study requests and compound output controls
+
+The frozen authored corpus has 70 requests in seven categories: outline/format,
+comprehension/depth, frustration, course scope, quiz controls, exam priorities,
+and named-topic contrasts. Three histories (course, clinical topic, pending quiz)
+give 210 route/context checks. The current report is
+`artifacts/colloquial-study-after.json`; reproduce with:
+
+```sh
+python scripts/audit_colloquial_study.py --language-only
+```
+
+All 210 checks pass their stated expectations, including requesting two names
+when an omitted comparison pair has only one identifiable antecedent. The initial
+exploratory report used strict task/scope gold even for this ambiguous case; it
+is not a directly comparable success score. The cases are manually authored,
+with user screenshot wording/typos retained. ChatGPT private conversation data
+was not accessed. The Hugging Face conversational dataset search was attempted
+but disabled by server configuration; no external conversation dataset was used.
+
+New shared output slots compose scope, manner and positive task clauses. They
+retain paragraph/table/bullet and per-heading sentence requests through topic
+resolution. `Her başlığı tek bir oaragrafla anlat` repairs a format slot without
+changing the stored request or fuzzing medical nouns. Bare frustration is a
+conversation turn rather than a search topic or quiz answer; the owned topic
+and pending question survive that exchange. A complaint followed by a complete
+format request runs the request. An explicit new quiz with `cevabımı bekle` does
+not become a response to the previous quiz. Named quiz requests can establish a
+user-owned topic without losing later reference chains.
+
+The broader work exposed two regressions in old selected-question reference
+chains. Historical question operators and noisy anaphoric controls were then
+excluded from new noun ownership; the existing 59 continuity checks pass again.
+New regression tests include 160 format/scope/verb combinations across three
+histories (480 composed checks), frustration with a pending quiz, free-text
+answers, source-scope overrides and unknown/clinical noun contrasts. The focused
+suite now contains 81 passing unittest methods, with 59 continuity checks.
+
+These are language/orchestration checks using the explicit AST harness and
+mocked storage where needed. They do not measure PostgreSQL candidate quality,
+Gemini factual accuracy, answer completeness, indexing latency or authenticated
+production streams. The browser verifier now includes the two newest screenshot
+messages plus a task after frustration. It remains unexecuted because this
+session has no usable authenticated browser. Thresholds, indexing, OCR and Modal
+scheduling are unchanged. This is shared parsing logic, not model fine-tuning or
+proof that arbitrary natural language is fully understood.

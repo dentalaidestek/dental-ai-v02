@@ -473,6 +473,9 @@ def _has_same_way_cue(text: str) -> bool:
 
 
 def _incidental_turn(text: str) -> bool:
+    from app.academic_request_slots import conversational_repair
+    if conversational_repair(text):
+        return True
     folded = _state_text(text)
     return bool(re.search(
         r'^(?:onceden|eski sorum|alinti)\b|\baklimda\b|'
@@ -517,6 +520,20 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
         return ConversationSubject((), source="course", history_index=history_index)
     from app.academic_task_language import remove_source_reference
     clean = ' '.join(remove_source_reference(clean).split())
+    # A named quiz request owns the noun phrase before its question-output
+    # argument, just as a named explanation owns the phrase before "anlat".
+    from app.academic_task_language import parse_study_operation
+    operation = parse_study_operation(clean)
+    if operation and operation.generate:
+        if re.match(r'(?iu)^(?:cevaplar[ıi]|yan[ıi]tlar[ıi]|cevap\s+anahtar[ıi]n[ıi])\s+', clean):
+            clean = strip_request_prefix(clean)
+        quiz_boundary = re.search(
+            r'(?iu)\b(?:(?:\d{1,3}|bir|bi)\s+)?(?:tane\s+)?'
+            r'(?:(?:zor|zorlayıcı|zorlayici|kolay)\s+)?(?:soru|test|quiz)\s+'
+            r'(?:sor|hazırla|hazirla|üret|uret|oluştur|olustur|yap)\b', clean)
+        if (quiz_boundary and clean[:quiz_boundary.start()].strip()
+                and not _has_anaphoric_topic_cue(clean)):
+            clean = clean[:quiz_boundary.start()].strip() + ' anlat'
     folded = _state_text(clean)
     folded = re.sub(r'\b(anlat|acikla|ozetle)(?:sana|sene|in|ir)\b', r'\1', folded)
     request_boundary = _STATE_EXPLAIN_RE.search(clean)
@@ -557,6 +574,7 @@ def _conversation_subject(text: str, *, source: str, history_index: int) -> Conv
     } for w in words):
         return None
     operators = {'soru','sorunun','sorular','test','sinav','tanim','tanimi','tedavisi',
+                 'cikmis','gecmis',
                  'komplikasyonlari','riskleri','nedenleri','bulgulari','format','sayisi',
                  'normal','kisa','kisaca','detayli','ayrintili','madde','mekanizmasiyla',
                  'sadece','konusunu','en','onemli','yerleri','ezberlemek','ozet',
@@ -765,6 +783,9 @@ def _subject_text(subject: ConversationSubject, current_qualifiers: set[str], cl
 def resolve_followup_query(query: str, recent_history: list[dict] | None) -> str:
     """Resolve bounded multi-turn state without allowing stale assistant prose."""
     clean = re.sub(r"\s+", " ", query or "").strip()
+    from app.academic_request_slots import conversational_repair
+    if conversational_repair(clean):
+        return clean
     from app.academic_dialogue import conversational_acknowledgement
     if conversational_acknowledgement(clean):
         return clean
@@ -2461,6 +2482,26 @@ def _course_coverage_requested(query: str, requirement, study_task) -> bool:
     ))
 
 
+def _missing_comparison_reference(query: str, history: list[dict] | None) -> bool:
+    """An omitted pair needs two identifiable antecedents, not a guessed second noun."""
+    from app.academic_task_language import strip_request_prefix
+    text = _state_text(strip_request_prefix(query)).strip(' .!?')
+    if not re.fullmatch(r'ikisinin\s+farki\s+ne(?:dir)?|ikisini\s+karsilastir', text):
+        return False
+    state = _conversation_state(history, subject_mode='all')
+    owned = [subject for subject in state.subjects if subject.terms]
+    if len({subject.terms for subject in owned}) >= 2:
+        return False
+    if owned and re.search(r'\b(?:ve|ile)\b|,', _state_text(' '.join(owned[-1].terms))):
+        return False
+    from app.academic_dialogue import numbered_items
+    assistant = next((item for item in reversed((history or [])[-8:])
+                      if str(item.get('role') or '').casefold() in {'assistant', 'ai'}), None)
+    if assistant and len(numbered_items(str(assistant.get('content') or ''))) == 2:
+        return False
+    return True
+
+
 def retrieve_course_context_v2(
     session: Session,
     *,
@@ -2474,6 +2515,13 @@ def retrieve_course_context_v2(
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
     from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
+    from app.academic_request_slots import conversational_repair, REPAIR_RESPONSE
+    if conversational_repair(query):
+        return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
+                               clarification=REPAIR_RESPONSE)
+    if _missing_comparison_reference(query, recent_history):
+        return RetrievalResult(resolved_query=query, retrieval_mode="clarification",
+            clarification="Hangi iki kavramı karşılaştırmamı istiyorsun? İkisini yazarsan notlardan farklarını açıklayabilirim.")
     if conversational_acknowledgement(query):
         return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
                                clarification=ACKNOWLEDGEMENT_RESPONSE)
