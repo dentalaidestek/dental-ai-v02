@@ -1332,3 +1332,11 @@ def test_course_wide_coverage_operator_has_real_word_boundaries():
         assert matcher.search(query), query
     for query in ("SNA normal değerini anlat", "tamamıyla bu kavramı açıkla"):
         assert not matcher.search(query), query
+
+
+def test_material_subject_is_distinct_from_course_material_reference():
+    from app.academic_task_language import remove_source_reference
+    for query in ("ABC materyali hangi durumda uygulanır?", "kompozit materyalini açıkla"):
+        assert remove_source_reference(query) == query
+    for query in ("bu materyali özetle", "ders materyalini açıkla", "materyali özetle"):
+        assert "materyal" not in remove_source_reference(query)

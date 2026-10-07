@@ -182,6 +182,12 @@ def remove_source_reference(query: str) -> str:
                          + r'(?:\s+(?:gore|gecen|bahsedilen|anlatilan|yer\s+alan))?')
     clean = query or ''
     for match in reversed(list(pattern.finditer(folded))):
+        # An unqualified material noun after a subject denotes that clinical
+        # material (ABC materyali), whereas bu/ders materyali owns source scope.
+        if match.group(0).startswith('materyal'):
+            prefix = folded[:match.start()].strip(' ,;:.!?')
+            if prefix and not re.fullmatch(r'(?:lutfen|bana|simdi|peki)(?:\s+(?:lutfen|bana|simdi|peki))*', prefix):
+                continue
         clean = clean[:match.start()] + ' ' + clean[match.end():]
     return clean
 
