@@ -211,7 +211,7 @@ def mobile_analysis_image(
             ".png": "image/png",
             ".webp": "image/webp",
         }.get(path.suffix.lower(), "application/octet-stream")
-        return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+        return FileResponse(path, media_type=media_type, filename=asset.original_filename, headers={"Cache-Control": "private, no-store"})
 
 @router.get("/analyses")
 def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None):
