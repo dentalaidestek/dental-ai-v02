@@ -53,6 +53,7 @@ from app.upload_io import copy_image
 from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
+from app.request_limits import RequestLimits
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -13468,10 +13469,6 @@ Hekimin sorusu:
         },
     )
 
-
-# Outermost admission includes middleware/authentication and multipart intake.
-from app.request_limits import RequestLimits
-app.add_middleware(RequestLimits)
 
 # Native Android JSON API
 from app.mobile_api import router as mobile_router
