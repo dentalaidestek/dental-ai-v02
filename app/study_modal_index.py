@@ -55,15 +55,15 @@ def ocr_page(pdf_name: str, page_number: int) -> dict:
 def benchmark(pdf: str):
     started = time.perf_counter()
     source = Path(pdf)
-    pdf_name = source.name
-    remote_path = PDF_ROOT / pdf_name
-    with volume.batch_upload(force=True) as batch:
-        batch.put_file(source, str(remote_path))
     if not source.is_file() or source.suffix.lower() != ".pdf":
         raise ValueError("A local PDF file is required for the isolated benchmark")
     page_count = len(PdfReader(str(source)).pages)
     if page_count < 1:
         raise ValueError("The input PDF has no pages")
+    pdf_name = source.name
+    remote_path = PDF_ROOT / pdf_name
+    with volume.batch_upload(force=True) as batch:
+        batch.put_file(source, str(remote_path))
     extracted = list(extract_page.map([pdf_name] * page_count, range(1, page_count + 1)))
     need_ocr = [x["page"] for x in extracted if not x["quality_ok"]]
     ocr = list(ocr_page.map([pdf_name] * len(need_ocr), need_ocr)) if need_ocr else []
