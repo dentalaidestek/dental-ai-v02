@@ -3667,7 +3667,7 @@ def reset_password(
     )
 
 
-@app.get("/logout")
+@app.post("/logout")
 def logout_user(request: Request):
     # A Web Push subscription belongs to this browser/device. Disable only this
     # device on logout so shared devices do not receive the account's later pushes.
