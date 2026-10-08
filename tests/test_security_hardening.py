@@ -285,3 +285,36 @@ def test_native_media_file_enforces_media_owner_as_well_as_patient_owner():
     assert 'media.patient_id!=patient_id' in block
     assert 'media.owner_user_id!=user.id' in block
     assert 'Cache-Control":"private, no-store' in block
+
+def test_e2ee_message_storage_has_ciphertext_envelopes_without_forcing_plaintext():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    consultation = source.split("class ConsultationMessage", 1)[1].split("class ConsultationEvent", 1)[0]
+    support = source.split("class SupportTicketMessage", 1)[1].split("class SupportTicketReadState", 1)[0]
+    for block in (consultation, support):
+        assert "e2ee_ciphertext" in block
+        assert "e2ee_ephemeral_public_key" in block
+        assert "e2ee_key_version" in block
+    assert "message: Optional[str] = None" in support
+
+
+def test_e2ee_device_keys_are_client_public_keys_and_migration_is_versioned():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "class E2EEDeviceKey" in source
+    assert "public_key: str" in source
+    assert "revoked_at" in source
+    migration = (ROOT / "app/migrate.py").read_text(encoding="utf-8")
+    assert "REVISION = 8" in migration
+    assert "e2eedevicekey" in migration
+    assert "consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
+    assert "supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
+
+
+def test_mobile_e2ee_uses_x25519_and_authenticated_xchacha_and_device_only_storage():
+    source = (ROOT / "mobile/src/e2ee.ts").read_text(encoding="utf-8")
+    assert '@noble/curves/ed25519.js' in source
+    assert "x25519.getSharedSecret" in source
+    assert '@noble/ciphers/chacha.js' in source
+    assert "xchacha20poly1305" in source
+    assert "WHEN_UNLOCKED_THIS_DEVICE_ONLY" in source
+    assert "Math.random" not in source
+
