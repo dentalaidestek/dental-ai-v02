@@ -89,6 +89,21 @@ def test_admin_login_uses_same_brute_force_throttle():
     assert "_clear_web_login_failures" in block
 
 
+def test_session_cookie_has_explicit_root_path_and_logout_clears_same_path():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    session_block = source.split("def create_user_session", 1)[1].split("def delete_user_session", 1)[0]
+    assert 'path="/"' in session_block
+    logout_block = source.split('@app.post("/logout")', 1)[1].split('app.mount("/static"', 1)[0]
+    assert 'delete_cookie(SESSION_COOKIE, path="/")' in logout_block
+    assert 'delete_cookie("dai_push_subscription_id", path="/")' in logout_block
+
+
+def test_password_change_clears_browser_session_cookie_after_revocation():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/account/password"', 1)[1].split('def _safe_login_next', 1)[0]
+    assert 'response.delete_cookie(SESSION_COOKIE, path="/")' in block
+
+
 def test_password_change_revokes_existing_sessions():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split('@app.post("/account/password"', 1)[1].split('def _safe_login_next', 1)[0]
