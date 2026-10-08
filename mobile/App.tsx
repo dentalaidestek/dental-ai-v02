@@ -6,6 +6,7 @@ import{createNativeStackNavigator}from"@react-navigation/native-stack";
 import*as SecureStore from"expo-secure-store";
 import*as ImagePicker from"expo-image-picker";
 import{createPatient,createSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,logout,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
+import{createAnalysis,getAnalysis,startAnalysisAI,MobileAnalysis}from"./src/analysisApi";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
 
