@@ -27,3 +27,24 @@ export async function createSchedule(token:string,payload:{event_type:string;tit
 export type ToothStatusCode="HEALTHY"|"CARIES"|"FILLING"|"CROWN"|"ROOT_CANAL"|"EXTRACTED"|"IMPLANT"|"OTHER";
 export type ToothSurfaceCode="OCCLUSAL"|"INCISAL"|"MESIAL"|"DISTAL"|"BUCCAL"|"LINGUAL";
 export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode}){return request<{ok:boolean;tooth_number:string;status:string;surface?:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+
+export type NotificationItem={id:number;title:string;message:string;notice_type?:string;target_url?:string|null;is_read:boolean;created_at:string};
+export type Expert={id:number;display_name:string;specialty?:string|null;academic_title?:string|null;institution?:string|null;availability:string;consultation_price?:number|null};
+export type Consultation={id:number;status:string;specialty?:string|null;tooth_region?:string|null;question:string;requested_at:string;other_user_id:number;other_display_name:string;last_message?:string|null;last_message_at?:string|null};
+export type ConsultationDetail={case:{id:number;status:string;specialty?:string|null;tooth_region?:string|null;clinical_summary?:string|null;requester_opinion?:string|null;question:string;requested_at:string;expert_user_id:number;requester_user_id:number};messages:Array<{id:number;sender_user_id:number;message_type:string;content?:string|null;reply_to_message_id?:number|null;created_at:string}>};
+export type AcademicCourse={id:number;title:string;created_at:string};
+export type AcademicMessage={id:number;role:string;content:string;created_at:string};
+
+export const getNotifications=(token:string)=>request<{unread_count:number;notifications:NotificationItem[]}>("/notifications",token);
+export const markNotificationRead=(token:string,id:number)=>request<{ok:boolean}>(`/notifications/${id}/read`,token,{method:"POST"});
+export const getExperts=(token:string,available=false)=>request<{items:Expert[]}>(`/consultations/experts?available=${available}`,token);
+export const getConsultations=(token:string)=>request<{items:Consultation[]}>("/consultations",token);
+export const getConsultation=(token:string,id:number)=>request<ConsultationDetail>(`/consultations/${id}`,token);
+export const getAcademicCourses=(token:string)=>request<{items:AcademicCourse[]}>("/academic/courses",token);
+export const getAcademicMessages=(token:string,id:number)=>request<{items:AcademicMessage[]}>(`/academic/courses/${id}/messages`,token);
+export const askAcademic=(token:string,id:number,message:string)=>request<any>(`/academic/courses/${id}/ask`,token,{method:"POST",body:JSON.stringify({message})});
+export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:string;name:string;type:string},toothNumber?:string)=>{
+ const body=new FormData(); body.append("image",{uri:file.uri,name:file.name,type:file.type} as any); if(toothNumber) body.append("tooth_number",toothNumber);
+ const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body});
+ const raw=await response.text(); let data:any={}; try{data=raw?JSON.parse(raw):{}}catch{} if(!response.ok)throw new Error(data.detail||"Görüntü yüklenemedi."); return data;
+};
