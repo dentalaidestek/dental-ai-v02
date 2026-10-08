@@ -37,6 +37,7 @@ from app.main import (
     ToothSurfaceStatus,
     Treatment,
     User,
+    EmailVerificationChallenge,
     PROGRAM_EVENT_TYPES,
     _find_duplicate_patient,
     _validate_schedule_input,
@@ -50,6 +51,7 @@ from app.main import (
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
+    _ensure_email_verification_challenge, _verify_email_code,
 )
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
@@ -124,7 +126,7 @@ class LoginRequest(BaseModel):
 
 
 class MobileToken(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "Bearer"
     expires_at: datetime
 
@@ -217,6 +219,14 @@ def mobile_login(payload: LoginRequest):
                 detail="Kullanıcı adı/e-posta veya şifre hatalı.",
             )
 
+        if not user.email:
+            raise HTTPException(status_code=403, detail='EMAIL_REQUIRED')
+        if not user.email_verified_at:
+            try:
+                challenge = _ensure_email_verification_challenge(session, user)
+            except Exception:
+                raise HTTPException(status_code=503, detail='EMAIL_VERIFICATION_SEND_FAILED')
+            return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at)
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0)
         from datetime import timedelta
@@ -233,6 +243,20 @@ def mobile_login(payload: LoginRequest):
 
     _clear_login_failures(login)
     return MobileToken(access_token=token, expires_at=expires_at)
+
+
+@router.post('/auth/verify-email')
+def mobile_verify_email(challenge_id: int = Form(...), code: str = Form(...)):
+    with Session(engine, expire_on_commit=False) as session:
+        challenge = session.get(EmailVerificationChallenge, challenge_id)
+        user = session.get(User, challenge.user_id) if challenge else None
+        if not challenge or not user or not _verify_email_code(session, user, challenge, code):
+            raise HTTPException(status_code=400, detail='Kod hatalı, süresi dolmuş veya daha önce kullanılmış.')
+        token = create_session_token()
+        expires_at = datetime.utcnow().replace(microsecond=0) + timedelta(days=7)
+        session.add(SessionToken(token_hash=hash_session_token(token), user_id=user.id, expires_at=expires_at))
+        session.commit()
+        return MobileToken(access_token=token, expires_at=expires_at)
 
 
 @router.post("/auth/logout")
