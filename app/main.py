@@ -2417,18 +2417,44 @@ def _ensure_email_verification_challenge(session: Session, user: User) -> EmailV
 
 
 def _verify_email_code(session: Session, user: User, challenge: EmailVerificationChallenge, code: str) -> bool:
-    now = _utcnow_naive()
-    if challenge.user_id != user.id or challenge.verified_at or challenge.expires_at <= now or challenge.attempts >= 5:
+    # Serialize verification attempts so concurrent requests cannot both consume
+    # the same one-time code or race the five-attempt ceiling.
+    locked_challenge = session.exec(
+        select(EmailVerificationChallenge)
+        .where(EmailVerificationChallenge.id == challenge.id)
+        .with_for_update()
+    ).first()
+    if not locked_challenge:
         return False
-    if not re.fullmatch(r"\d{6}", code.strip()) or not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
-        challenge.attempts += 1
-        session.add(challenge)
+
+    now = _utcnow_naive()
+    if (
+        locked_challenge.user_id != user.id
+        or locked_challenge.verified_at
+        or locked_challenge.expires_at <= now
+        or locked_challenge.attempts >= 5
+    ):
+        return False
+
+    normalized_code = code.strip()
+    if (
+        not re.fullmatch(r"\d{6}", normalized_code)
+        or not secrets.compare_digest(
+            locked_challenge.code_hash,
+            hash_session_token(normalized_code),
+        )
+    ):
+        locked_challenge.attempts += 1
+        session.add(locked_challenge)
         session.commit()
         return False
-    challenge.verified_at = now
-    challenge.code_hash = secrets.token_urlsafe(32)
+
+    locked_challenge.verified_at = now
+    # Destroy the verifier secret after successful consumption so replay fails
+    # even if a stale challenge object is reused by the caller.
+    locked_challenge.code_hash = secrets.token_urlsafe(32)
     user.email_verified_at = now
-    session.add(challenge)
+    session.add(locked_challenge)
     session.add(user)
     session.commit()
     return True
@@ -3811,10 +3837,15 @@ def reset_password(
         s.add(reset_token)
         s.commit()
 
-    return RedirectResponse(
+    response = RedirectResponse(
         url="/login?reset=success",
         status_code=303,
     )
+    # Password reset revokes every server-side session; expire the browser
+    # cookie with the exact same root path as the login cookie as well.
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
+    return response
 
 
 @app.post("/logout")
@@ -11652,6 +11683,9 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
             _record_web_login_failure(login_rate_key)
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
+        if not user.email or not user.email_verified_at:
+            _clear_web_login_failures(login_rate_key)
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici hesabının doğrulanmış e-posta adresi bulunmuyor."}, status_code=403)
         _clear_web_login_failures(login_rate_key)
         response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
         create_user_session(response,user.id)
@@ -12205,8 +12239,8 @@ def delete_own_account(
             logger.exception("Self-deleted account storage cleanup failed")
 
     response = RedirectResponse(url="/login?account_deleted=1", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
-    response.delete_cookie("dai_push_subscription_id")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
     return response
 
 
