@@ -38,7 +38,7 @@ def begin_account_erasure(
     from app.main import (
         AdminAuditLog, DeletedAccountEmail, ExpertDeviceChallenge,
         ExpertProfile, ExpertTrustedDevice, PasswordResetToken,
-        SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User,
+        SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User, EmailVerificationChallenge,
         WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent,
     )
 
@@ -69,7 +69,7 @@ def begin_account_erasure(
         profile.updated_at = utcnow_naive()
         session.add(profile)
 
-    for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge):
+    for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge, EmailVerificationChallenge):
         for row in session.exec(select(model).where(model.user_id == user_id)).all():
             session.delete(row)
 
