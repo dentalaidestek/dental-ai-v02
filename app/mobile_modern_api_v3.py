@@ -6,7 +6,8 @@ create a second business-logic stack or introduce polling.
 """
 from datetime import datetime, timedelta
 from pathlib import Path
-import json, shutil, uuid
+import json, uuid
+import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
