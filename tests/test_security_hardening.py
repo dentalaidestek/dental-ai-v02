@@ -318,3 +318,24 @@ def test_mobile_e2ee_uses_x25519_and_authenticated_xchacha_and_device_only_stora
     assert "WHEN_UNLOCKED_THIS_DEVICE_ONLY" in source
     assert "Math.random" not in source
 
+
+
+def test_e2ee_device_key_lifecycle_has_peer_scope_rotation_and_revocation():
+    source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    assert 'def _e2ee_peer_allowed' in source
+    assert '@router.get("/e2ee/users/{user_id}/keys")' in source
+    assert '@router.delete("/e2ee/device/{device_id}")' in source
+    keys_block = source.split('@router.get("/e2ee/users/{user_id}/keys")', 1)[1].split('@router.get("/e2ee/users/{user_id}/key")', 1)[0]
+    assert "revoked_at == None" in keys_block
+    assert "ConsultationCase" in source
+    revoke_block = source.split('@router.delete("/e2ee/device/{device_id}")', 1)[1].split('@router.post("/auth/login")', 1)[0]
+    assert "E2EEDeviceKey.user_id == user.id" in revoke_block
+    assert "row.revoked_at = datetime.utcnow()" in revoke_block
+
+
+def test_mobile_api_exposes_e2ee_device_rotation_contract():
+    source = (ROOT / "mobile/src/api.ts").read_text(encoding="utf-8")
+    assert "registerE2EEDevice" in source
+    assert "getE2EEUserKeys" in source
+    assert "revokeE2EEDevice" in source
+    assert "/e2ee/users/" in source
