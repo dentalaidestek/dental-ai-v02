@@ -2302,7 +2302,7 @@ def create_user_session(response: RedirectResponse, user_id: int) -> None:
         max_age=SESSION_DAYS * 24 * 60 * 60,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=True,
     )
 
 
