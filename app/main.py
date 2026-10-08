@@ -665,6 +665,18 @@ class UserReport(SQLModel, table=True):
     status: str = Field(default="OPEN", index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
+class E2EEDeviceKey(SQLModel, table=True):
+    """Public device identity key; private key never leaves the client."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True, unique=True)
+    algorithm: str = Field(default="X25519")
+    public_key: str
+    key_version: str = Field(default="v1", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    revoked_at: Optional[datetime] = Field(default=None, index=True)
+
+
 class ConsultationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True)
