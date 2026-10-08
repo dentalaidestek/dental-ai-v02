@@ -8,7 +8,7 @@ export type PatientDetail={patient:Patient;teeth:Array<{id:number;tooth_number:s
 async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
  const response=await fetch(API_BASE+path,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
  const raw=await response.text(); let body:any={}; try{body=raw?JSON.parse(raw):{}}catch{}
- if(!response.ok)throw new Error(body.detail||"İstek başarısız.");
+ if(!response.ok){const detail=body.detail;throw new Error(typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
  return body as T;
 }
 export function login(loginValue:string,password:string){return request<{access_token:string;token_type:string;expires_at:string}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password})});}
