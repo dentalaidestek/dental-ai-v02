@@ -246,3 +246,32 @@ def test_selected_get_handlers_are_side_effect_free():
         block = source[start:end if end != -1 else len(source)]
         assert "_consultation_event(" not in block
         assert "_expire_pending_expert_requests(" not in block
+
+
+def test_email_verification_serializes_replay_and_attempt_races():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split("def _verify_email_code", 1)[1].split("def send_expert_device_code", 1)[0]
+    assert "select(EmailVerificationChallenge)" in block
+    assert "with_for_update()" in block
+    assert "locked_challenge.verified_at" in block
+    assert "locked_challenge.attempts >= 5" in block
+
+
+def test_admin_login_requires_verified_email_before_session_creation():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split("def admin_center_login(", 1)[1].split("def _admin_user_storage_summaries", 1)[0]
+    assert "user.email_verified_at" in block
+    assert "create_user_session(response,user.id)" in block
+
+
+def test_password_reset_expires_browser_session_cookie_after_server_revocation():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/reset-password")', 1)[1].split('@app.post("/logout")', 1)[0]
+    assert "select(SessionToken).where(SessionToken.user_id == user.id)" in block
+    assert 'response.delete_cookie(SESSION_COOKIE, path="/")' in block
+
+
+def test_account_deletion_expires_browser_cookies_with_root_path():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/account/delete")', 1)[1]
+    assert 'response.delete_cookie(SESSION_COOKIE, path="/")' in block
