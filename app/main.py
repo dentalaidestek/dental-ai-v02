@@ -6358,7 +6358,6 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
@@ -6382,7 +6381,6 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
         performance = _expert_performance(s, expert_user_id)
         policy_state = _expert_policy_state(s, expert_user_id)
         rating_avg = performance["rating_avg"]
-        s.commit()
     return templates.TemplateResponse(request=request, name="expert_public_profile.html", context={
         "user": user, "profile": profile, "expert": expert, "active_count": active_count,
         "completed_count": completed_count, "rating_avg": rating_avg, "review_count": len(reviews),
@@ -7023,18 +7021,8 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc())).all()
         rows = _consultation_inbox_rows(s, cases, user.id, now)
-        missed_case_ids = [row["case"].id for row in rows if row["status_key"] == "MISSED"]
-        recorded_missed_ids = set()
-        if missed_case_ids:
-            recorded_missed_ids = set(s.exec(
-                select(ConsultationEvent.case_id).where(
-                    ConsultationEvent.case_id.in_(missed_case_ids),
-                    ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "PROPOSAL_EXPIRED", "INBOX_MISSED_RECORDED"]),
-                ).distinct()
-            ).all())
-        for case_id in missed_case_ids:
-            if case_id not in recorded_missed_ids:
-                _consultation_event(s, case_id, "INBOX_MISSED_RECORDED", None)
+        # GET remains side-effect free; missed-event persistence belongs to
+        # consultation state-transition paths.
         if filter == "unread":
             rows = [row for row in rows if row["unread"] > 0]
         elif filter == "waiting":
@@ -7047,7 +7035,6 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             row["status_key"] != "NEW_REQUEST",
             -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
         ))
-        s.commit()
     return templates.TemplateResponse(request=request, name="messages.html", context={
         "user": user, "rows": rows, "selected_filter": filter, "now": now,
     })
