@@ -148,7 +148,6 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                 "clinical_notes": analysis.clinical_notes,
                 "status": analysis.status,
                 "created_at": analysis.created_at,
-                "result_path": analysis.result_path,
             },
             "patient": _patient_payload(patient),
             "assets": [
