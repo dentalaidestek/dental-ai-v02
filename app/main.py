@@ -2498,6 +2498,7 @@ def send_brevo_password_reset_email(
 
 
 app = FastAPI(title="DENTAL-AI", version="0.1.0")
+app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BYTES", str(128 * 1024 * 1024))))
 
 from app.object_cache import StorageScopeMiddleware
 app.add_middleware(StorageScopeMiddleware)
