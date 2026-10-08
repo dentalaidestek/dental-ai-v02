@@ -17,3 +17,8 @@ export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
 export function getPatients(token:string,q=""){return request<{items:Patient[];total:number}>("/patients?q="+encodeURIComponent(q),token);}
 export function getPatient(token:string,id:number){return request<PatientDetail>("/patients/"+id,token);}
+
+export type ScheduleEvent={id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;notes?:string|null;status:string;reminder_minutes?:number|null;notification_enabled?:boolean;recurrence_rule?:string};
+export async function createPatient(token:string,payload:{first_name:string;last_name:string;birth_date?:string;phone?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;force_create?:boolean}){return request<{patient:Patient}>("/patients",token,{method:"POST",body:JSON.stringify(payload)});}
+export async function getSchedule(token:string){return request<{items:ScheduleEvent[];event_types:Record<string,string>}>("/schedule",token);}
+export async function createSchedule(token:string,payload:{event_type:string;title:string;start_at:string;end_at?:string;patient_id?:number;location?:string;notes?:string;reminder_minutes?:number;notification_enabled?:boolean;recurrence_rule?:string;recurrence_until?:string}){return request<{event:ScheduleEvent}>("/schedule",token,{method:"POST",body:JSON.stringify(payload)});}
