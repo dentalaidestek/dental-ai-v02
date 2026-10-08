@@ -2347,6 +2347,61 @@ def delete_user_session(request: Request) -> None:
             s.commit()
 
 
+def send_email_verification_code(recipient_email: str, code: str) -> None:
+    api_key = os.getenv("BREVO_API_KEY")
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY tanımlı değil.")
+    payload = {
+        "sender": {"name": os.getenv("BREVO_SENDER_NAME", "DENTAL AI Destek"), "email": os.getenv("BREVO_SENDER_EMAIL", "destek@dentalai.tr")},
+        "to": [{"email": recipient_email}],
+        "subject": "DENTAL AI - E-posta doğrulama kodunuz",
+        "htmlContent": f"<div style='font-family:Arial,sans-serif'><h2>DENTAL AI</h2><p>Hesabınızı doğrulamak için kodunuz:</p><p style='font-size:28px;font-weight:700;letter-spacing:5px'>{code}</p><p>Kod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir.</p></div>",
+        "textContent": f"DENTAL AI e-posta doğrulama kodunuz: {code}\nKod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir.",
+    }
+    req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=json.dumps(payload).encode("utf-8"), method="POST", headers={"accept": "application/json", "api-key": api_key, "content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as response:
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError("Doğrulama e-postası gönderilemedi.")
+
+
+def _ensure_email_verification_challenge(session: Session, user: User) -> EmailVerificationChallenge:
+    if user.email_verified_at or not user.email:
+        raise ValueError("EMAIL_ALREADY_VERIFIED")
+    challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.user_id == user.id)).first()
+    if challenge:
+        return challenge
+    now = _utcnow_naive()
+    code = f"{secrets.randbelow(1000000):06d}"
+    challenge = EmailVerificationChallenge(user_id=user.id, code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+    session.add(challenge)
+    session.commit()
+    session.refresh(challenge)
+    try:
+        send_email_verification_code(user.email, code)
+    except Exception:
+        session.delete(challenge)
+        session.commit()
+        raise
+    return challenge
+
+
+def _verify_email_code(session: Session, user: User, challenge: EmailVerificationChallenge, code: str) -> bool:
+    now = _utcnow_naive()
+    if challenge.user_id != user.id or challenge.verified_at or challenge.expires_at <= now or challenge.attempts >= 5:
+        return False
+    if not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
+        challenge.attempts += 1
+        session.add(challenge)
+        session.commit()
+        return False
+    challenge.verified_at = now
+    user.email_verified_at = now
+    session.add(challenge)
+    session.add(user)
+    session.commit()
+    return True
+
+
 def send_expert_device_code(recipient_email: str, code: str) -> None:
     api_key=os.getenv("BREVO_API_KEY")
     if not api_key: raise RuntimeError("BREVO_API_KEY tanımlı değil.")
