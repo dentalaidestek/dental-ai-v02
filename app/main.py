@@ -3471,6 +3471,7 @@ def forgot_password_request(
     email: str = Form(...),
 ):
     email = email.strip().lower()
+    reset_rate_key = _check_web_login_rate(request, "password-reset:" + email)
 
     generic_message = (
         "Eğer bu e-posta adresi kayıtlıysa, "
@@ -3528,6 +3529,7 @@ def forgot_password_request(
                 # Gerçek hata ayrıntısı kullanıcıya gösterilmez.
                 pass
 
+    _record_web_login_failure(reset_rate_key)
     return templates.TemplateResponse(
         request=request,
         name="forgot_password.html",
