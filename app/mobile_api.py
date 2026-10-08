@@ -889,10 +889,10 @@ def mobile_patient_media(patient_id:int,user:User=Depends(_mobile_user)):
 def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
-        if not patient or not media or media.patient_id!=patient_id or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
+        if not patient or not media or media.patient_id!=patient_id or (user.role!="ADMIN" and (patient.owner_user_id!=user.id or media.owner_user_id!=user.id)):
             raise HTTPException(status_code=404,detail="Görüntü bulunamadı.")
         try:path=storage_ensure_local(media.file_path)
         except FileNotFoundError:raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
         from fastapi.responses import FileResponse
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
-        return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, max-age=31536000, immutable"})
+        return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
