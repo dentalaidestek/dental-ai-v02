@@ -149,3 +149,9 @@ def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
     assert response.status_code == 409
     with Session(engine) as session:
         assert session.get(main.User, user.id).display_name == "Verified Name"
+
+
+def test_profile_mobile_edit_controls_are_present():
+    assert 'action="/account/display-name"' in ACCOUNT_TEMPLATE
+    assert 'name="display_name"' in ACCOUNT_TEMPLATE
+    assert '.account-container{max-width:820px;' in ACCOUNT_TEMPLATE
