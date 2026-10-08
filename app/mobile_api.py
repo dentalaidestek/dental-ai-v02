@@ -124,6 +124,10 @@ class LoginRequest(BaseModel):
     login: str
     password: str
 
+class EmailVerifyRequest(BaseModel):
+    challenge_id: int
+    code: str
+
 
 class MobileToken(BaseModel):
     access_token: Optional[str] = None
@@ -247,11 +251,11 @@ def mobile_login(payload: LoginRequest):
 
 
 @router.post('/auth/verify-email')
-def mobile_verify_email(challenge_id: int = Form(...), code: str = Form(...)):
+def mobile_verify_email(payload: EmailVerifyRequest):
     with Session(engine, expire_on_commit=False) as session:
-        challenge = session.get(EmailVerificationChallenge, challenge_id)
+        challenge = session.get(EmailVerificationChallenge, payload.challenge_id)
         user = session.get(User, challenge.user_id) if challenge else None
-        if not challenge or not user or not _verify_email_code(session, user, challenge, code):
+        if not challenge or not user or not _verify_email_code(session, user, challenge, payload.code):
             raise HTTPException(status_code=400, detail='Kod hatalı, süresi dolmuş veya daha önce kullanılmış.')
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0) + timedelta(days=7)
