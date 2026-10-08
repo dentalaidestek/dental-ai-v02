@@ -5976,3 +5976,5 @@ Hekimin sorusu:
 # Native Android JSON API
 from app.mobile_api import router as mobile_router
 app.include_router(mobile_router)
+from app.mobile_analysis_api import router as mobile_analysis_router
+app.include_router(mobile_analysis_router)
