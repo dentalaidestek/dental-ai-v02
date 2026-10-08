@@ -6,9 +6,13 @@ mobile clients do not create a second authentication system.
 """
 
 from datetime import datetime
+from pathlib import Path
+import json
+import shutil
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
@@ -16,6 +20,7 @@ from sqlmodel import Session, func, select
 from app.auth import create_session_token, hash_session_token, verify_password
 from app.main import (
     Analysis,
+    ImageAsset,
     PatientProfile,
     DoctorProfile,
     Patient,
@@ -31,6 +36,9 @@ from app.main import (
     _validate_schedule_input,
     UserAccountMeta,
     engine,
+    _run_analysis_vision,
+    _run_preliminary_ai,
+    classify_dental_image,
 )
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
