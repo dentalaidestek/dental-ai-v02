@@ -195,3 +195,20 @@ def test_registration_has_ip_abuse_rate_limit():
     assert "_check_registration_rate(request)" in block
     assert "_record_registration_attempt(registration_rate_key)" in block
     assert "REGISTRATION_MAX_ATTEMPTS" in source
+
+
+def test_email_verification_is_single_use_and_strictly_bounded():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split("def _verify_email_code", 1)[1].split("def send_expert_device_code", 1)[0]
+    assert 're.fullmatch(r"\\d{6}", code.strip())' in block
+    assert "challenge.verified_at" in block
+    assert "challenge.code_hash = secrets.token_urlsafe(32)" in block
+    assert "challenge.attempts >= 5" in block
+
+
+def test_native_and_web_share_email_verification_state():
+    main = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    mobile = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    assert "email_verified_at" in main
+    assert "/auth/verify-email" in mobile
+    assert "EmailVerificationChallenge" in mobile
