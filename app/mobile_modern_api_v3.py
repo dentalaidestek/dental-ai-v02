@@ -193,7 +193,7 @@ class MobileMessage:
 
 @router.post("/consultations/{case_id}/messages")
 def mobile_consultation_message(case_id:int,content:str=Form(...),reply_to_message_id:int|None=Form(None),user=Depends(_mobile_user)):
-    from app.main import _users_blocked, _contains_profanity, _consultation_event, _record_message_realtime_events, _record_case_status_realtime_events, _resolve_notifications, _record_realtime_event, _publish_realtime_event, _utcnow_naive
+    from app.main import _users_blocked, _contains_profanity, _consultation_event, _record_message_realtime_events, _record_case_status_realtime_events, _resolve_notifications, _utcnow_naive, on_loop, _publish_realtime_event
     text_value=content.strip()
     if not text_value or len(text_value)>4000: raise HTTPException(status_code=422,detail="Mesaj 1-4000 karakter olmalıdır.")
     now=_utcnow_naive()
@@ -201,6 +201,8 @@ def mobile_consultation_message(case_id:int,content:str=Form(...),reply_to_messa
         c=s.get(ConsultationCase,case_id)
         if not c or user.id not in {c.requester_user_id,c.expert_user_id}: raise HTTPException(status_code=404,detail="Danışmanlık bulunamadı.")
         if c.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}: raise HTTPException(status_code=409,detail="Bu danışmanlık şu anda mesajlaşmaya açık değil.")
+        if c.status=="WAITING_START" and user.id==c.requester_user_id and c.consultation_start_deadline and now<c.consultation_start_deadline: raise HTTPException(status_code=423,detail="Uzmanın belirlediği başlangıç süresi henüz dolmadı.")
+        if c.status=="WAITING_START" and user.id==c.requester_user_id and (not c.consultation_start_deadline or now>=c.consultation_start_deadline): c.status="ACTIVE"; s.add(c)
         if _users_blocked(s,user.id,c.expert_user_id if user.id==c.requester_user_id else c.requester_user_id): raise HTTPException(status_code=403,detail="Bu kullanıcıyla mesajlaşma engellenmiş.")
         if _contains_profanity(text_value): raise HTTPException(status_code=422,detail="Mesaj içerik filtresine takıldı.")
         if reply_to_message_id:
@@ -209,6 +211,11 @@ def mobile_consultation_message(case_id:int,content:str=Form(...),reply_to_messa
         m=ConsultationMessage(case_id=case_id,sender_user_id=user.id,content=text_value,reply_to_message_id=reply_to_message_id)
         s.add(m); s.commit(); s.refresh(m)
         sender=s.get(User,user.id)
+        if user.id==c.expert_user_id and c.expert_started_at is None:
+            c.expert_started_at=now
+            if c.status=="WAITING_START": c.status="ACTIVE"
+            s.add(c)
+            _consultation_event(s,c.id,"EXPERT_FIRST_RESPONSE",user.id)
         events=_record_message_realtime_events(s,c,m,sender)
         s.commit()
     for e in events: 
