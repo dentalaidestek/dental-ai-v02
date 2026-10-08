@@ -124,6 +124,7 @@ from app.auth import (
     verify_password,
     create_session_token,
     hash_session_token,
+    needs_password_rehash,
 )
 from app.object_storage import (
     check_connection as storage_check_connection,
@@ -3576,6 +3577,11 @@ def login_user(
                 },
                 status_code=401,
             )
+
+        if needs_password_rehash(user.password_hash):
+            user.password_hash = hash_password(password)
+            s.add(user)
+            s.flush()
 
         if not user.email:
             return templates.TemplateResponse(request=request, name="login.html", context={"error": "Hesabınızda e-posta adresi bulunmuyor.", "next_url": safe_next}, status_code=403)
