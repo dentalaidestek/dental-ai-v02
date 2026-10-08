@@ -285,7 +285,7 @@
             <p class="account-delete-note">Bu cihazdaki oturumunuzu kapatabilir veya hesabınızın silinmesini başlatabilirsiniz.</p>
         </div>
         <div class="account-action-row">
-            <a class="account-action-button account-logout-button" href="/logout">Çıkış Yap</a>
+            <form class="account-logout-form" method="post" action="/logout"><button class="account-action-button account-logout-button" type="submit">Çıkış Yap</button></form>
             {% if user.role != 'ADMIN' %}
             <button class="account-action-button account-delete-trigger" id="accountDeleteTrigger" type="button">Hesabımı Sil</button>
             {% endif %}
