@@ -161,7 +161,7 @@ def _mobile_user(
             raise _unauthorized()
 
         user = session.get(User, session_token.user_id)
-        if not user or not user.is_active:
+        if not user or not user.is_active or not user.email_verified_at:
             raise _unauthorized()
         return user
 
