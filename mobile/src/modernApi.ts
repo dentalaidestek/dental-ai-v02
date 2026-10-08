@@ -21,10 +21,11 @@ export const createConsultation=(t:string,payload:{expert_user_id:number;clinica
 export const getConsultations=(t:string)=>req<{items:Consultation[]}>("/consultations",t);
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
 export const sendConsultationMessage=(t:string,id:number,content:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content})});
-export const getCourses=(t:string)=>req<{items:Course[]}>("/academic/courses",t);\nexport const getAcademicMessages=(t:string,id:number)=>req<{items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`,t);
+export const getCourses=(t:string)=>req<{items:Course[]}>("/academic/courses",t);
+export const getAcademicMessages=(t:string,id:number)=>req<{items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`,t);
 export async function askAcademic(t:string,courseId:number,message:string){
- const body=JSON.stringify({message});
- const r=await fetch(API_BASE+`/academic/courses/${courseId}/ask`,{method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/x-www-form-urlencoded",Accept:"application/json"},body:body.toString()});
+ const body=new URLSearchParams({message});
+ const r=await fetch(API_BASE+`/academic/courses/${courseId}/ask`,{method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/x-www-form-urlencoded",Accept:"application/json"},body});
  const raw=await r.text(); if(!r.ok){let b:any={};try{b=JSON.parse(raw)}catch{};throw new Error(typeof b.detail==="string"?b.detail:(b.error||"Akademik AI isteği başarısız."));}
  try{return JSON.parse(raw)}catch{return {ok:true,raw};}
 }
