@@ -2352,6 +2352,7 @@ def create_user_session(response: RedirectResponse, user_id: int) -> None:
         httponly=True,
         samesite="lax",
         secure=True,
+        path="/",
     )
 
 
@@ -3827,8 +3828,8 @@ def logout_user(request: Request):
     delete_user_session(request)
 
     response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
-    response.delete_cookie("dai_push_subscription_id")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
     return response
 
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
