@@ -318,7 +318,7 @@ class GeminiStudyProvider(StudyProvider):
                     return result
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
-                logger.warning("Gemini Academic provider HTTP %s: %s", exc.code, body[:2200])
+                logger.warning("Gemini Academic provider HTTP %s", exc.code)
                 record_api_result(
                     provider=self.name, model=model, operation=operation, success=False,
                     status_code=exc.code,
@@ -634,7 +634,7 @@ class CohereStudyProvider(StudyProvider):
                 return result
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("Cohere Academic provider HTTP %s: %s", exc.code, body[:1800])
+            logger.warning("Cohere Academic provider HTTP %s", exc.code)
             record_api_result(
                 provider=self.name, model=model, operation=operation, success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
@@ -815,7 +815,7 @@ class OpenAICompatibleStudyProvider(StudyProvider):
                 return result
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("%s Academic provider HTTP %s: %s", self.name, exc.code, body[:1800])
+            logger.warning("%s Academic provider HTTP %s", self.name, exc.code)
             record_api_result(
                 provider=self.name, model=model, operation=operation, success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
