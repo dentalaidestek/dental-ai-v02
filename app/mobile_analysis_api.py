@@ -21,6 +21,7 @@ from app.mobile_api import _mobile_user
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-analysis"])
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
+MOBILE_MAX_ANALYSIS_PIXELS = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_PIXELS", "40000000")))
 
 def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> None:
     total = 0
@@ -35,6 +36,9 @@ def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> Non
                     raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
                 out.write(chunk)
         with Image.open(destination) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MOBILE_MAX_ANALYSIS_PIXELS:
+                raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
             image.verify()
     except HTTPException:
         destination.unlink(missing_ok=True)
