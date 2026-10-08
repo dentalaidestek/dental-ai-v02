@@ -3444,7 +3444,7 @@ def verify_email(request: Request, challenge_id: int = Form(...), code: str = Fo
         challenge = s.get(EmailVerificationChallenge, challenge_id)
         user = s.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(s, user, challenge, code):
-            return templates.TemplateResponse(request=request, name="verify_email.html", context={"email": user.email if user else "", "challenge_id": challenge_id, "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_id": challenge_id, "verification_mode": True, "next_url": "/", "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
         response = RedirectResponse(url="/", status_code=303)
         create_user_session(response, user.id)
         return response
@@ -3494,7 +3494,7 @@ def login_user(
                 challenge = _ensure_email_verification_challenge(s, user)
             except Exception:
                 return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
-            return templates.TemplateResponse(request=request, name="verify_email.html", context={"email": user.email, "challenge_id": challenge.id, "next_url": safe_next}, status_code=200)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_id": challenge.id, "verification_mode": True, "next_url": safe_next}, status_code=200)
 
         response = RedirectResponse(
             url=safe_next,
