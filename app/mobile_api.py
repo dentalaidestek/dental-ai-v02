@@ -125,7 +125,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class EmailVerifyRequest(BaseModel):
-    challenge_id: int
+    challenge_token: str
     code: str
 
 
@@ -133,7 +133,7 @@ class MobileToken(BaseModel):
     access_token: Optional[str] = None
     token_type: str = "Bearer"
     expires_at: datetime
-    challenge_id: Optional[int] = None
+    challenge_token: Optional[str] = None
 
 
 def _unauthorized() -> HTTPException:
@@ -231,7 +231,7 @@ def mobile_login(payload: LoginRequest):
                 challenge = _ensure_email_verification_challenge(session, user)
             except Exception:
                 raise HTTPException(status_code=503, detail='EMAIL_VERIFICATION_SEND_FAILED')
-            return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_id=challenge.id)
+            return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_token=challenge.public_token)
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0)
         from datetime import timedelta
@@ -253,7 +253,7 @@ def mobile_login(payload: LoginRequest):
 @router.post('/auth/verify-email')
 def mobile_verify_email(payload: EmailVerifyRequest):
     with Session(engine, expire_on_commit=False) as session:
-        challenge = session.get(EmailVerificationChallenge, payload.challenge_id)
+        challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == payload.challenge_token)).first()
         user = session.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(session, user, challenge, payload.code):
             raise HTTPException(status_code=400, detail='Kod hatalı, süresi dolmuş veya daha önce kullanılmış.')
