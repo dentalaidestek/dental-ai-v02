@@ -692,6 +692,8 @@ async def mobile_patient_media_upload(
             file_path=str(destination),media_type="PHOTO",
             tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
         session.add(media);session.commit();session.refresh(media)
+        realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
+        session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"media":{"id":media.id,"original_filename":media.original_filename,
             "media_type":media.media_type,"tooth_number":media.tooth_number,
             "note":media.note,"uploaded_at":media.uploaded_at}}
