@@ -8,6 +8,7 @@ mobile clients do not create a second authentication system.
 from datetime import datetime
 from pathlib import Path
 import json
+import os
 import shutil
 import uuid
 from typing import Optional
@@ -16,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
+from PIL import Image
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -50,6 +52,29 @@ from app.main import (
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
 bearer = HTTPBearer(auto_error=False)
+MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
+MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
+
+def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int) -> None:
+    total = 0
+    try:
+        with destination.open("wb") as out:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
+                out.write(chunk)
+        with Image.open(destination) as image:
+            image.verify()
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.") from exc
 
 
 class LoginRequest(BaseModel):
@@ -684,8 +709,7 @@ async def mobile_patient_media_upload(
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         destination=Path("uploads")/"patient-media"/stored
         destination.parent.mkdir(parents=True,exist_ok=True)
-        with destination.open("wb") as out:
-            shutil.copyfileobj(image.file,out)
+        _copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)
         storage_persist_file(destination)
         media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
             original_filename=Path(image.filename).name,stored_filename=stored,
