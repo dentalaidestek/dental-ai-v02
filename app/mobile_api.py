@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from app.auth import create_session_token, hash_session_token, verify_password
 from app.main import (
     Analysis,
+    PatientProfile,
     DoctorProfile,
     Patient,
     PatientMedia,
@@ -25,6 +26,9 @@ from app.main import (
     ToothSurfaceStatus,
     Treatment,
     User,
+    PROGRAM_EVENT_TYPES,
+    _find_duplicate_patient,
+    _validate_schedule_input,
     UserAccountMeta,
     engine,
 )
@@ -263,6 +267,124 @@ def mobile_patients(
             "limit": limit,
             "offset": offset,
         }
+
+
+class MobilePatientCreate(BaseModel):
+    first_name: str
+    last_name: str
+    birth_date: Optional[str] = None
+    phone: Optional[str] = None
+    tc_kimlik_no: Optional[str] = None
+    address: Optional[str] = None
+    chief_complaint: Optional[str] = None
+    force_create: bool = False
+
+
+class MobileScheduleCreate(BaseModel):
+    event_type: str
+    title: str
+    start_at: str
+    end_at: str = ""
+    patient_id: Optional[int] = None
+    location: str = ""
+    notes: str = ""
+    reminder_minutes: int = 30
+    notification_enabled: bool = True
+    recurrence_rule: str = "NONE"
+    recurrence_until: str = ""
+
+
+@router.post("/patients")
+def mobile_create_patient(payload: MobilePatientCreate, user: User = Depends(_mobile_user)):
+    first_name = payload.first_name.strip()
+    last_name = payload.last_name.strip()
+    phone = payload.phone.strip() if payload.phone else None
+    if not first_name or not last_name:
+        raise HTTPException(status_code=422, detail="Ad ve soyad zorunludur.")
+    if phone and (not phone.isdigit() or len(phone) != 11 or not phone.startswith("05")):
+        raise HTTPException(status_code=422, detail="Telefon 05 ile başlamalı ve 11 rakam olmalıdır.")
+
+    calculated_age = None
+    if payload.birth_date:
+        try:
+            birth = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
+            today = datetime.utcnow().date()
+            calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Doğum tarihi geçersiz.")
+
+    with Session(engine, expire_on_commit=False) as session:
+        duplicate, reason = _find_duplicate_patient(
+            session, user.id, first_name, last_name, payload.birth_date, calculated_age, phone
+        )
+        if duplicate and not payload.force_create:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "Benzer bir hasta zaten kayıtlı.", "patient_id": duplicate.id, "reason": reason},
+            )
+        patient = Patient(
+            anonymous_id=f"PAT-{__import__('uuid').uuid4().hex[:10].upper()}",
+            owner_user_id=user.id,
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+            tc_kimlik_no=payload.tc_kimlik_no.strip() if payload.tc_kimlik_no else None,
+            birth_date=payload.birth_date,
+            age=calculated_age,
+            chief_complaint=payload.chief_complaint.strip() if payload.chief_complaint else None,
+        )
+        session.add(patient)
+        session.commit()
+        session.refresh(patient)
+        session.add(PatientProfile(patient_id=patient.id, address=payload.address.strip() if payload.address else None))
+        session.commit()
+        return {"patient": _patient_payload(patient)}
+
+
+@router.get("/schedule")
+def mobile_schedule(user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        events = session.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.owner_user_id == user.id, ScheduleEvent.status != "DELETED")
+            .order_by(ScheduleEvent.start_at.asc())
+            .limit(100)
+        ).all()
+        return {
+            "items": [
+                {
+                    "id": e.id, "event_type": e.event_type, "title": e.title,
+                    "start_at": e.start_at, "end_at": e.end_at,
+                    "patient_id": e.patient_id, "location": e.location,
+                    "notes": e.notes, "status": e.status,
+                    "reminder_minutes": e.reminder_minutes,
+                    "notification_enabled": e.notification_enabled,
+                    "recurrence_rule": e.recurrence_rule,
+                }
+                for e in events
+            ],
+            "event_types": PROGRAM_EVENT_TYPES,
+        }
+
+
+@router.post("/schedule")
+def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        values, error = _validate_schedule_input(
+            session, user, payload.event_type, payload.title, payload.start_at, payload.end_at,
+            str(payload.patient_id or ""), payload.location, payload.notes,
+            str(payload.reminder_minutes), "1" if payload.notification_enabled else None,
+            payload.recurrence_rule, payload.recurrence_until,
+        )
+        if error:
+            raise HTTPException(status_code=422, detail=error)
+        event = ScheduleEvent(owner_user_id=user.id, **values)
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+        return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
+                          "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
+                          "location": event.location, "status": event.status}}
 
 
 @router.get("/patients/{patient_id}")
