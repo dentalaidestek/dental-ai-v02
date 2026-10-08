@@ -5,7 +5,7 @@ data. It deliberately reuses the same session-token records as the web app so
 mobile clients do not create a second authentication system.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import os
