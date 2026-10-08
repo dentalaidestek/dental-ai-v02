@@ -9,6 +9,7 @@ import hmac
 import base64
 import binascii
 import io
+from collections import deque
 import urllib.request
 import urllib.error
 import select as select_module
@@ -2189,6 +2190,48 @@ def init_db():
 
 SESSION_COOKIE = "dental_ai_session"
 SESSION_DAYS = 7
+WEB_LOGIN_RATE_WINDOW_SECONDS = max(60, int(os.getenv("WEB_LOGIN_RATE_WINDOW_SECONDS", "600")))
+WEB_LOGIN_RATE_MAX_FAILURES = max(3, int(os.getenv("WEB_LOGIN_RATE_MAX_FAILURES", "8")))
+_WEB_LOGIN_FAILURES: dict[str, deque[float]] = {}
+_WEB_LOGIN_FAILURES_MAX_KEYS = 20000
+
+
+def _web_login_key(request: Request, login: str) -> str:
+    client = request.client.host if request.client else "unknown"
+    return f"{client}:{login}"
+
+
+def _check_web_login_rate(request: Request, login: str) -> str:
+    import time as _rate_time
+    key = _web_login_key(request, login)
+    now = _rate_time.monotonic()
+    attempts = _WEB_LOGIN_FAILURES.get(key)
+    if attempts is None:
+        return key
+    while attempts and now - attempts[0] >= WEB_LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    if not attempts:
+        _WEB_LOGIN_FAILURES.pop(key, None)
+        return key
+    if len(attempts) >= WEB_LOGIN_RATE_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Çok fazla başarısız giriş denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(max(1, int(WEB_LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0]))))})
+    return key
+
+
+def _record_web_login_failure(key: str) -> None:
+    import time as _rate_time
+    now = _rate_time.monotonic()
+    attempts = _WEB_LOGIN_FAILURES.setdefault(key, deque())
+    while attempts and now - attempts[0] >= WEB_LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    attempts.append(now)
+    if len(_WEB_LOGIN_FAILURES) > _WEB_LOGIN_FAILURES_MAX_KEYS:
+        oldest = min(_WEB_LOGIN_FAILURES, key=lambda k: _WEB_LOGIN_FAILURES[k][0] if _WEB_LOGIN_FAILURES[k] else now)
+        _WEB_LOGIN_FAILURES.pop(oldest, None)
+
+
+def _clear_web_login_failures(key: str) -> None:
+    _WEB_LOGIN_FAILURES.pop(key, None)
 
 
 def get_current_user(request: Request) -> Optional[User]:
@@ -2911,6 +2954,7 @@ def register_user(
         )
 
         create_user_session(response, user.id)
+        _clear_web_login_failures(login_key)
 
         return response
 
@@ -3321,6 +3365,7 @@ def login_user(
 ):
     login = login.strip().lower()
     safe_next = _safe_login_next(next_url)
+    login_key = _check_web_login_rate(request, login)
 
     with Session(engine, expire_on_commit=False) as s:
         user = s.exec(
@@ -3336,6 +3381,7 @@ def login_user(
             or not user.password_hash
             or not verify_password(password, user.password_hash)
         ):
+            _record_web_login_failure(login_key)
             return templates.TemplateResponse(
                 request=request,
                 name="login.html",
