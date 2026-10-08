@@ -13,13 +13,26 @@ from sqlmodel import Session, select
 
 from app.main import (
     Analysis, ImageAsset, Patient, User, engine,
-    _enqueue_work, _latest_work, _patient_payload,
+    _enqueue_work, _latest_work,
     classify_dental_image, storage_ensure_local, storage_persist_file,
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
 from app.mobile_api import _mobile_user
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-analysis"])
+
+def _patient_payload(patient: Patient) -> dict:
+    return {
+        "id": patient.id,
+        "anonymous_id": patient.anonymous_id,
+        "first_name": patient.first_name,
+        "last_name": patient.last_name,
+        "phone": patient.phone,
+        "birth_date": patient.birth_date,
+        "age": patient.age,
+        "chief_complaint": patient.chief_complaint,
+        "created_at": patient.created_at,
+    }
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
 MOBILE_MAX_ANALYSIS_PIXELS = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_PIXELS", "40000000")))
 
