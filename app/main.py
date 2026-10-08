@@ -11485,7 +11485,7 @@ def admin_center_login_get():
 
 @app.post(ADMIN_CENTER_PATH + "/login")
 def admin_center_login(request: Request, username: str = Form(...), password: str = Form(...)):
-    username = username.strip().lower()
+    username = username.strip()
     login_rate_key = _check_web_login_rate(request, username)
     with Session(engine, expire_on_commit=False) as s:
         user=s.exec(select(User).where(User.username == username.strip())).first()
