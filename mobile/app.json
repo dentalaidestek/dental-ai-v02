@@ -8,7 +8,9 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "tr.dentalai.app",
-      "versionCode": 1
+      "versionCode": 1,
+      "allowBackup": false,
+      "usesCleartextTraffic": false
     }
   }
 }
