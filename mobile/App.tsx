@@ -1,143 +1,49 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { getDashboard, getPatient, getPatients, login, Patient, User } from "./src/api";
+import React,{useCallback,useEffect,useState}from"react";
+import{ActivityIndicator,FlatList,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
+import{NavigationContainer,useNavigation}from"@react-navigation/native";
+import{createBottomTabNavigator}from"@react-navigation/bottom-tabs";
+import{createNativeStackNavigator}from"@react-navigation/native-stack";
+import*as SecureStore from"expo-secure-store";
+import{getDashboard,getMe,getPatient,getPatients,login,logout,Patient,PatientDetail,User}from"./src/api";
 
-const navy = "#071B35";
-const bg = "#F5F7FA";
+const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
 
-function LoginScreen({ onLogin }: { onLogin: (token: string, user: User) => void }) {
-  const [loginValue, setLoginValue] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    setBusy(true); setError("");
-    try {
-      const result = await login(loginValue, password);
-      const me = await (await fetch("https://dentalai.tr/api/mobile/v1/me", {
-        headers: { Authorization: "Bearer " + result.access_token },
-      })).json();
-      onLogin(result.access_token, me.user);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Giriş başarısız.");
-    } finally { setBusy(false); }
-  }
-
-  return <SafeAreaView style={styles.login}>
-    <View style={styles.logo}><Text style={styles.logoText}>🦷</Text></View>
-    <Text style={styles.title}>DENTAL AI</Text>
-    <Text style={styles.subtitle}>Diş hekimliği için akıllı çalışma alanı</Text>
-    <TextInput style={styles.input} placeholder="Kullanıcı adı veya e-posta" autoCapitalize="none" value={loginValue} onChangeText={setLoginValue}/>
-    <TextInput style={styles.input} placeholder="Şifre" secureTextEntry value={password} onChangeText={setPassword}/>
-    {error ? <Text style={styles.error}>{error}</Text> : null}
-    <Pressable style={styles.primary} onPress={submit} disabled={busy}>
-      {busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Giriş Yap</Text>}
-    </Pressable>
-  </SafeAreaView>;
+function Icon({n,a=false}:{n:string;a?:boolean}){const m:any={home:"⌂",patients:"♙",ai:"✦",calendar:"□",profile:"○",plus:"+",search:"⌕",chevron:"›",clock:"◷"};return <Text style={[s.icon,{color:a?C.navy:C.muted}]}>{m[n]||"•"}</Text>}
+function Logo({small=false}){return <View style={[s.logo,{width:small?42:70,height:small?42:70,borderRadius:small?14:22}]}><Text style={{fontSize:small?22:36}}>🦷</Text></View>}
+function Splash(){return <View style={s.splash}><Logo/><Text style={s.brand}>DENTAL AI</Text><Text style={s.splashSub}>Diş hekimliği için akıllı çalışma alanı</Text></View>}
+function Login({done}:{done:(t:string,u:User)=>void}){
+ const[l,setL]=useState(""),[p,setP]=useState(""),[busy,setBusy]=useState(false),[err,setErr]=useState("");
+ async function go(){if(!l.trim()||!p)return setErr("Kullanıcı adı/e-posta ve şifre gerekli.");setBusy(true);setErr("");try{const r=await login(l,p);const me=await getMe(r.access_token);await SecureStore.setItemAsync("dentalai_token",r.access_token);done(r.access_token,me.user)}catch(e){setErr(e instanceof Error?e.message:"Giriş başarısız.")}finally{setBusy(false)}}
+ return <KeyboardAvoidingView style={s.login} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView contentContainerStyle={s.loginInner}><Logo/><Text style={s.title}>DENTAL AI</Text><Text style={s.sub}>Kliniğin cebinde. Hızlı, sade, güvenli.</Text><View style={s.form}><Text style={s.label}>Kullanıcı adı veya e-posta</Text><TextInput style={s.input} placeholder="Hesabın" placeholderTextColor={C.muted} autoCapitalize="none" value={l} onChangeText={setL}/><Text style={s.label}>Şifre</Text><TextInput style={s.input} placeholder="Şifren" placeholderTextColor={C.muted} secureTextEntry value={p} onChangeText={setP}/>{!!err&&<Text style={s.err}>{err}</Text>}<Pressable style={s.primary} onPress={go} disabled={busy}>{busy?<ActivityIndicator color="#fff"/>:<Text style={s.primaryText}>Giriş Yap</Text>}</Pressable></View></ScrollView></KeyboardAvoidingView>
 }
+function Header({title,sub,action}:{title:string;sub?:string;action?:React.ReactNode}){return <View style={s.header}><View style={{flex:1}}><Text style={s.hTitle}>{title}</Text>{sub&&<Text style={s.hSub}>{sub}</Text>}</View>{action}</View>}
+function Stat({v,l}:{v:any;l:string}){return <View style={s.stat}><Text style={s.statV}>{v}</Text><Text style={s.statL}>{l}</Text></View>}
+function Quick({title,sub,icon}:{title:string;sub:string;icon:string}){return <Pressable style={s.quick}><View style={s.quickIcon}><Icon n={icon}/></View><Text style={s.cardTitle}>{title}</Text><Text style={s.cardSub}>{sub}</Text></Pressable>}
+function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H";return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text><Text style={s.cardSub}>{p.phone||p.anonymous_id}</Text></View><Icon n="chevron"/></Pressable>}
 
-function Home({ token, user }: { token: string; user: User }) {
-  const [data, setData] = useState<any>(null);
-  useEffect(() => { getDashboard(token).then(setData).catch(() => {}); }, [token]);
-  return <SafeAreaView style={styles.screen}>
-    <Text style={styles.greeting}>Merhaba, {user.display_name}</Text>
-    <Text style={styles.sectionTitle}>Bugün</Text>
-    <View style={styles.stats}>
-      <Stat label="Hastalar" value={data?.stats?.patient_count ?? "—"}/>
-      <Stat label="Analizler" value={data?.stats?.analysis_count ?? "—"}/>
-      <Stat label="Program" value={data?.stats?.upcoming_event_count ?? "—"}/>
-    </View>
-    <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
-    <View style={styles.card}><Text style={styles.cardTitle}>🦷 Dental AI Analizi</Text><Text style={styles.cardSub}>Yeni görüntü analizi başlat</Text></View>
-    <View style={styles.card}><Text style={styles.cardTitle}>👤 Yeni Hasta</Text><Text style={styles.cardSub}>Hasta kaydını yönet</Text></View>
-    <View style={styles.card}><Text style={styles.cardTitle}>📅 Programım</Text><Text style={styles.cardSub}>Yaklaşan randevu ve görevler</Text></View>
-  </SafeAreaView>;
+function Home({token,user}:{token:string;user:User}){
+ const[d,setD]=useState<any>();const[r,setR]=useState(false);const load=useCallback(async()=>{try{setD(await getDashboard(token))}catch{}},[token]);useEffect(()=>{load()},[load]);
+ return <ScrollView style={s.page} contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={r} onRefresh={async()=>{setR(true);await load();setR(false)}}/>}>
+  <View style={s.top}><View><Text style={s.muted}>Merhaba 👋</Text><Text style={s.userName}>{user.display_name}</Text></View><Logo small/></View>
+  <View style={s.hero}><View style={{flex:1}}><Text style={s.eyebrow}>DENTAL AI</Text><Text style={s.heroTitle}>Bugün kliniğinde ne var?</Text><Text style={s.heroSub}>Hastalarını, analizlerini ve programını tek yerden yönet.</Text></View><Text style={s.heroTooth}>🦷</Text></View>
+  <View style={s.stats}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
+  <Text style={s.section}>Hızlı işlemler</Text><View style={s.grid}><Quick icon="ai" title="Dental AI" sub="Görüntü analizi"/><Quick icon="patients" title="Yeni hasta" sub="Kayıt oluştur"/><Quick icon="calendar" title="Program" sub="Bugünkü plan"/><Quick icon="plus" title="Daha fazla" sub="Tüm işlemler"/></View>
+  <Text style={s.section}>Son hastalar</Text>{(d?.recent_patients||[]).slice(0,5).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>{}}/>)}
+  <Text style={s.section}>Yaklaşan</Text>{(d?.upcoming_events||[]).slice(0,4).map((e:any)=><View style={s.event} key={e.id}><View style={s.eventIcon}><Icon n="clock"/></View><View><Text style={s.cardTitle}>{e.title}</Text><Text style={s.cardSub}>{new Date(e.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</Text></View></View>)}
+ </ScrollView>
 }
+function Patients({token}:{token:string}){const nav:any=useNavigation();const[x,setX]=useState<Patient[]>([]),[q,setQ]=useState(""),[loading,setLoading]=useState(true),[refresh,setRefresh]=useState(false);const load=useCallback(async(v=q)=>{setLoading(true);try{setX((await getPatients(token,v)).items)}catch{}finally{setLoading(false)}},[token,q]);useEffect(()=>{load("")},[token]);return <View style={s.page}><View style={s.content}><Header title="Hastalar" sub={x.length+" kayıt"} action={<Pressable style={s.add}><Icon n="plus" a/></Pressable>}/><View style={s.search}><Icon n="search"/><TextInput style={s.searchInput} placeholder="Hasta ara..." placeholderTextColor={C.muted} value={q} onChangeText={setQ} onSubmitEditing={()=>load(q)}/></View></View>{loading?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:<FlatList data={x} keyExtractor={p=>String(p.id)} contentContainerStyle={{padding:18,paddingTop:0}} renderItem={({item})=><PatientRow p={item} on={()=>nav.navigate("PatientDetail",{id:item.id})}/>} refreshControl={<RefreshControl refreshing={refresh} onRefresh={async()=>{setRefresh(true);await load(q);setRefresh(false)}}/>}/>}</View>}
+function PatientDetailScreen({token,route}:{token:string;route:any}){const[d,setD]=useState<PatientDetail|null>(null);const load=useCallback(async()=>{try{setD(await getPatient(token,route.params.id))}catch{}},[token,route.params.id]);useEffect(()=>{load()},[load]);if(!d)return <View style={s.center}><ActivityIndicator color={C.navy}/></View>;const p=d.patient;return <ScrollView style={s.page} contentContainerStyle={s.content}><View style={s.patientHero}><View style={s.heroAvatar}><Text style={s.heroAvatarT}>{((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H"}</Text></View><Text style={s.patientHeroName}>{p.first_name} {p.last_name}</Text><Text style={s.cardSub}>{p.age?p.age+" yaş · ":""}{p.phone||"Telefon bilgisi yok"}</Text></View><Text style={s.section}>Klinik özet</Text><View style={s.card}><Text style={s.cardTitle}>Şikayet</Text><Text style={s.cardSub}>{p.chief_complaint||"Kayıtlı şikayet yok."}</Text></View><View style={s.metrics}><Stat v={d.teeth.length} l="Diş"/><Stat v={d.surfaces.length} l="Yüzey"/><Stat v={d.treatments.length} l="Tedavi"/><Stat v={d.media.length} l="Medya"/></View><Text style={s.section}>Diş durumu</Text><View style={s.card}>{d.teeth.slice(0,14).map(t=><View key={t.id} style={s.line}><Text style={s.cardTitle}>{t.tooth_number}</Text><Text style={s.badge}>{t.status}</Text></View>)}{!d.teeth.length&&<Text style={s.cardSub}>Henüz diş kaydı yok.</Text>}</View><Text style={s.section}>Tedaviler</Text><View style={s.card}>{d.treatments.slice(0,8).map(t=><View key={t.id} style={s.treat}><Text style={s.cardTitle}>{t.treatment_name}</Text><Text style={s.cardSub}>{t.tooth_number?"Diş "+t.tooth_number+" · ":""}{t.treatment_date||"Tarih yok"}</Text></View>)}{!d.treatments.length&&<Text style={s.cardSub}>Henüz tedavi kaydı yok.</Text>}</View></ScrollView>}
+function AI(){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Dental AI" sub="Görüntü analizi"/><View style={s.aiHero}><Text style={s.aiStar}>✦</Text><Text style={s.aiTitle}>Klinik görüntünü analiz et</Text><Text style={s.aiSub}>Mevcut Dental AI analiz akışını mobil deneyime taşıyan native ekran.</Text><Pressable style={s.primary}><Text style={s.primaryText}>Yeni AI Analizi</Text></Pressable></View><Text style={s.section}>Güvenli akış</Text>{["Görüntü hasta kaydına bağlanır","AI bulguları ayrı tutulur","Son klinik karar hekimindir"].map(x=><View style={s.check} key={x}><Text style={s.checkMark}>✓</Text><Text style={s.cardSub}>{x}</Text></View>)}</ScrollView>}
+function Program(){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Programım" sub="Ders, klinik, randevu ve görevler"/><View style={s.empty}><Text style={s.emptyIcon}>◷</Text><Text style={s.emptyTitle}>Program ekranı</Text><Text style={s.cardSub}>Aynı hesabındaki program kayıtlarını native takvim deneyimine taşıyacak altyapı hazır.</Text></View></ScrollView>}
+function Profile({user,signOut}:{user:User;signOut:()=>void}){return <ScrollView style={s.page} contentContainerStyle={s.content}><View style={s.profile}><View style={s.profileAvatar}><Text style={s.profileAvatarT}>{user.display_name?.[0]||"D"}</Text></View><Text style={s.profileName}>{user.display_name}</Text><Text style={s.profileRole}>{user.professional_title||"Diş hekimliği kullanıcısı"}</Text></View><View style={s.card}><Text style={s.cardSub}>E-posta</Text><Text style={s.value}>{user.email||"—"}</Text><Text style={s.cardSub}>Kullanıcı adı</Text><Text style={s.value}>{user.username}</Text><Text style={s.cardSub}>Uzmanlık</Text><Text style={s.value}>{user.specialty||"—"}</Text></View><Pressable style={s.logout} onPress={signOut}><Text style={s.logoutT}>Çıkış Yap</Text></Pressable></ScrollView>}
+const Tabs=createBottomTabNavigator(),Stack=createNativeStackNavigator();
+function PatientStack({token}:{token:string}){return <Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="PatientsList" options={{title:"Hastalar"}}>{()=> <Patients token={token}/>}</Stack.Screen><Stack.Screen name="PatientDetail" options={{title:"Hasta"}}>{(p:any)=><PatientDetailScreen {...p} token={token}/>}</Stack.Screen></Stack.Navigator>}
+function Main({token,user,signOut}:{token:string;user:User;signOut:()=>void}){return <NavigationContainer><Tabs.Navigator screenOptions={{headerShown:false,tabBarActiveTintColor:C.navy,tabBarInactiveTintColor:C.muted,tabBarStyle:{height:70,paddingTop:7,paddingBottom:10,borderTopColor:C.line},tabBarLabelStyle:{fontSize:11,fontWeight:"700"}}}><Tabs.Screen name="Home" options={{tabBarLabel:"Anasayfa",tabBarIcon:({focused})=><Icon n="home" a={focused}/>}}>{()=> <Home token={token} user={user}/>}</Tabs.Screen><Tabs.Screen name="Patients" options={{tabBarLabel:"Hastalar",tabBarIcon:({focused})=><Icon n="patients" a={focused}/>}}>{()=> <PatientStack token={token}/>}</Tabs.Screen><Tabs.Screen name="AI" options={{tabBarLabel:"Dental AI",tabBarIcon:()=> <View style={s.aiTab}><Text style={s.aiTabT}>✦</Text></View>}}>{()=> <AI/>}</Tabs.Screen><Tabs.Screen name="Program" options={{tabBarLabel:"Program",tabBarIcon:({focused})=><Icon n="calendar" a={focused}/>}}>{()=> <Program/>}</Tabs.Screen><Tabs.Screen name="Profile" options={{tabBarLabel:"Profil",tabBarIcon:({focused})=><Icon n="profile" a={focused}/>}}>{()=> <Profile user={user} signOut={signOut}/>}</Tabs.Screen></Tabs.Navigator></NavigationContainer>}
+export default function App(){const[session,setSession]=useState<{token:string;user:User}|null>(null),[boot,setBoot]=useState(true);useEffect(()=>{(async()=>{try{const t=await SecureStore.getItemAsync("dentalai_token");if(t){const m=await getMe(t);setSession({token:t,user:m.user})}}catch{await SecureStore.deleteItemAsync("dentalai_token")}finally{setBoot(false)}})()},[]);async function signOut(){if(session)try{await logout(session.token)}catch{}await SecureStore.deleteItemAsync("dentalai_token");setSession(null)}if(boot)return <Splash/>;return session?<Main token={session.token} user={session.user} signOut={signOut}/>:<Login done={(token,user)=>setSession({token,user})}/>}
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return <View style={styles.stat}><Text style={styles.statValue}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View>;
-}
-
-function Patients({ token, navigation }: any) {
-  const [items, setItems] = useState<Patient[]>([]);
-  const [q, setQ] = useState("");
-  async function load(value = q) { try { setItems((await getPatients(token, value)).items); } catch {} }
-  useEffect(() => { load(""); }, []);
-  return <SafeAreaView style={styles.screen}>
-    <Text style={styles.pageTitle}>Hastalar</Text>
-    <TextInput style={styles.search} placeholder="Hasta ara..." value={q} onChangeText={setQ} onSubmitEditing={() => load()}/>
-    {items.map(p => <Pressable key={p.id} style={styles.patient} onPress={() => navigation.navigate("PatientDetail", { id: p.id })}>
-      <View style={styles.avatar}><Text style={styles.avatarText}>{(p.first_name?.[0] || "?") + (p.last_name?.[0] || "")}</Text></View>
-      <View style={{ flex: 1 }}><Text style={styles.patientName}>{p.first_name} {p.last_name}</Text><Text style={styles.cardSub}>{p.phone || p.anonymous_id || "Hasta kaydı"}</Text></View>
-      <Text style={styles.chevron}>›</Text>
-    </Pressable>)}
-  </SafeAreaView>;
-}
-
-function PatientDetail({ token, route }: any) {
-  const [data, setData] = useState<any>(null);
-  useEffect(() => { getPatient(token, route.params.id).then(setData).catch(() => {}); }, [token, route.params.id]);
-  if (!data) return <View style={styles.center}><ActivityIndicator/></View>;
-  const p = data.patient;
-  return <SafeAreaView style={styles.screen}>
-    <Text style={styles.pageTitle}>{p.first_name} {p.last_name}</Text>
-    <Text style={styles.cardSub}>{p.phone || "Telefon yok"} · {p.age ? p.age + " yaş" : "Yaş bilgisi yok"}</Text>
-    <View style={styles.card}><Text style={styles.cardTitle}>Diş Şeması</Text><Text style={styles.cardSub}>{data.teeth.length} diş kaydı · {data.surfaces.length} yüzey kaydı</Text></View>
-    <View style={styles.card}><Text style={styles.cardTitle}>Tedaviler</Text><Text style={styles.cardSub}>{data.treatments.length} kayıt</Text></View>
-    <View style={styles.card}><Text style={styles.cardTitle}>Medya</Text><Text style={styles.cardSub}>{data.media.length} dosya</Text></View>
-  </SafeAreaView>;
-}
-
-function Profile({ user, onLogout }: { user: User; onLogout: () => void }) {
-  return <SafeAreaView style={styles.screen}>
-    <Text style={styles.pageTitle}>Profilim</Text>
-    <View style={styles.profile}><View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{user.display_name?.[0] || "D"}</Text></View><Text style={styles.profileName}>{user.display_name}</Text><Text style={styles.cardSub}>{user.professional_title || "Diş hekimliği kullanıcısı"}</Text></View>
-    <View style={styles.card}><Text style={styles.cardTitle}>Hesap</Text><Text style={styles.cardSub}>{user.email}</Text></View>
-    <Pressable style={styles.logout} onPress={onLogout}><Text style={styles.logoutText}>Çıkış Yap</Text></Pressable>
-  </SafeAreaView>;
-}
-
-const Tabs = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
-
-function PatientStack({ token }: { token: string }) {
-  return <Stack.Navigator screenOptions={{ headerTintColor: navy, headerTitleStyle: { fontWeight: "700" } }}>
-    <Stack.Screen name="PatientsList" options={{ title: "Hastalar" }}>{props => <Patients {...props} token={token}/>}</Stack.Screen>
-    <Stack.Screen name="PatientDetail" options={{ title: "Hasta" }}>{props => <PatientDetail {...props} token={token}/>}</Stack.Screen>
-  </Stack.Navigator>;
-}
-
-function MainApp({ token, user, onLogout }: { token: string; user: User; onLogout: () => void }) {
-  return <NavigationContainer>
-    <Tabs.Navigator screenOptions={{ tabBarActiveTintColor: navy, headerShown: false }}>
-      <Tabs.Screen name="Home" options={{ title: "Anasayfa", tabBarLabel: "Anasayfa" }}>{() => <Home token={token} user={user}/>}</Tabs.Screen>
-      <Tabs.Screen name="Patients" options={{ title: "Hastalar", tabBarLabel: "Hastalar" }}>{() => <PatientStack token={token}/>}</Tabs.Screen>
-      <Tabs.Screen name="AI" options={{ title: "Dental AI", tabBarLabel: "AI" }}>{() => <SafeAreaView style={styles.center}><Text style={styles.pageTitle}>Dental AI</Text><Text style={styles.cardSub}>Görüntü analizi ekranı burada native olacak.</Text></SafeAreaView>}</Tabs.Screen>
-      <Tabs.Screen name="Program" options={{ title: "Program", tabBarLabel: "Program" }}>{() => <SafeAreaView style={styles.center}><Text style={styles.pageTitle}>Programım</Text></SafeAreaView>}</Tabs.Screen>
-      <Tabs.Screen name="Profile" options={{ title: "Profil", tabBarLabel: "Profil" }}>{() => <Profile user={user} onLogout={onLogout}/>}</Tabs.Screen>
-    </Tabs.Navigator>
-  </NavigationContainer>;
-}
-
-export default function App() {
-  const [session, setSession] = useState<{ token: string; user: User } | null>(null);
-  if (!session) return <LoginScreen onLogin={(token, user) => setSession({ token, user })}/>;
-  return <MainApp token={session.token} user={session.user} onLogout={() => setSession(null)}/>;
-}
-
-const styles = StyleSheet.create({
-  login: { flex: 1, backgroundColor: bg, padding: 24, justifyContent: "center" },
-  logo: { width: 72, height: 72, borderRadius: 22, backgroundColor: navy, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 14 },
-  logoText: { fontSize: 36 }, title: { textAlign: "center", fontSize: 28, fontWeight: "800", color: navy }, subtitle: { textAlign: "center", color: "#687386", marginBottom: 28, marginTop: 6 },
-  input: { backgroundColor: "#fff", borderRadius: 14, padding: 15, marginBottom: 12, borderWidth: 1, borderColor: "#E1E6ED" },
-  primary: { backgroundColor: navy, borderRadius: 14, padding: 16, alignItems: "center", marginTop: 8 }, primaryText: { color: "#fff", fontWeight: "800", fontSize: 16 }, error: { color: "#B42318", marginBottom: 8 },
-  screen: { flex: 1, backgroundColor: bg, padding: 18 }, greeting: { fontSize: 25, fontWeight: "800", color: navy, marginTop: 8 }, pageTitle: { fontSize: 28, fontWeight: "800", color: navy, marginBottom: 16 },
-  sectionTitle: { fontSize: 17, fontWeight: "800", color: navy, marginTop: 24, marginBottom: 10 }, stats: { flexDirection: "row", gap: 10 }, stat: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 15 }, statValue: { fontSize: 25, fontWeight: "800", color: navy }, statLabel: { color: "#687386", marginTop: 3 },
-  card: { backgroundColor: "#fff", borderRadius: 17, padding: 17, marginBottom: 11 }, cardTitle: { fontSize: 16, fontWeight: "800", color: navy }, cardSub: { color: "#687386", marginTop: 5 }, search: { backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "#E1E6ED" },
-  patient: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 16, padding: 12, marginBottom: 9 }, avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: "#E9EEF5", alignItems: "center", justifyContent: "center", marginRight: 12 }, avatarText: { color: navy, fontWeight: "800" }, patientName: { fontSize: 16, fontWeight: "800", color: navy }, chevron: { fontSize: 28, color: "#9AA3B2" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: bg, padding: 24 }, profile: { alignItems: "center", marginBottom: 22 }, bigAvatar: { width: 82, height: 82, borderRadius: 41, backgroundColor: navy, alignItems: "center", justifyContent: "center", marginBottom: 10 }, bigAvatarText: { color: "#fff", fontSize: 32, fontWeight: "800" }, profileName: { color: navy, fontSize: 22, fontWeight: "800" }, logout: { borderRadius: 14, padding: 15, alignItems: "center", borderWidth: 1, borderColor: "#D6DCE5" }, logoutText: { color: "#B42318", fontWeight: "800" }
+const s=StyleSheet.create({
+ splash:{flex:1,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},brand:{color:C.white,fontSize:25,fontWeight:"900",marginTop:14,letterSpacing:1},splashSub:{color:"#B9C7D8",marginTop:7},
+ login:{flex:1,backgroundColor:C.bg},loginInner:{flexGrow:1,justifyContent:"center",padding:22},title:{fontSize:30,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:15},sub:{color:C.muted,textAlign:"center",marginTop:5,marginBottom:25},form:{backgroundColor:C.white,borderRadius:24,padding:18,borderWidth:1,borderColor:C.line},label:{fontSize:12,fontWeight:"800",color:C.text,marginBottom:6},input:{height:52,borderWidth:1,borderColor:C.line,borderRadius:14,paddingHorizontal:14,color:C.text,marginBottom:12},primary:{height:52,borderRadius:15,backgroundColor:C.navy,alignItems:"center",justifyContent:"center",marginTop:6},primaryText:{color:C.white,fontWeight:"800",fontSize:15},err:{color:C.red,marginBottom:8},
+ page:{flex:1,backgroundColor:C.bg},content:{padding:18,paddingBottom:110},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:16},muted:{color:C.muted,fontSize:14},userName:{fontSize:25,fontWeight:"900",color:C.navy,marginTop:2},logo:{backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},hero:{backgroundColor:C.navy,borderRadius:24,padding:20,minHeight:150,flexDirection:"row",overflow:"hidden"},eyebrow:{color:"#A8BED4",fontSize:11,fontWeight:"900"},heroTitle:{color:C.white,fontSize:23,fontWeight:"900",marginTop:8,maxWidth:240},heroSub:{color:"#C6D2DE",fontSize:13,lineHeight:19,marginTop:8,maxWidth:250},heroTooth:{fontSize:55,alignSelf:"flex-end"},stats:{flexDirection:"row",gap:9,marginTop:11},stat:{flex:1,backgroundColor:C.white,borderRadius:17,padding:14,borderWidth:1,borderColor:C.line},statV:{fontSize:24,fontWeight:"900",color:C.navy},statL:{fontSize:12,color:C.muted,marginTop:3},section:{fontSize:17,fontWeight:"900",color:C.navy,marginTop:24,marginBottom:10},grid:{flexDirection:"row",flexWrap:"wrap",gap:9},quick:{width:"48%",backgroundColor:C.white,borderRadius:17,padding:14,borderWidth:1,borderColor:C.line},quickIcon:{width:38,height:38,borderRadius:12,backgroundColor:C.soft,alignItems:"center",justifyContent:"center"},cardTitle:{fontSize:15,fontWeight:"800",color:C.text},cardSub:{fontSize:13,color:C.muted,lineHeight:19,marginTop:3},icon:{fontSize:23,fontWeight:"700"},event:{backgroundColor:C.white,borderRadius:16,padding:13,flexDirection:"row",alignItems:"center",marginBottom:9,borderWidth:1,borderColor:C.line},eventIcon:{width:42,height:42,borderRadius:13,backgroundColor:C.soft,alignItems:"center",justifyContent:"center",marginRight:11},header:{flexDirection:"row",alignItems:"center",marginBottom:14},hTitle:{fontSize:28,fontWeight:"900",color:C.navy},hSub:{fontSize:12,color:C.muted,marginTop:2},add:{width:42,height:42,borderRadius:14,backgroundColor:C.white,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:C.line},search:{height:50,backgroundColor:C.white,borderRadius:15,borderWidth:1,borderColor:C.line,flexDirection:"row",alignItems:"center",paddingHorizontal:12},searchInput:{flex:1,height:48,paddingHorizontal:8,color:C.text},center:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:C.bg},patient:{backgroundColor:C.white,borderRadius:17,padding:12,marginBottom:9,flexDirection:"row",alignItems:"center",borderWidth:1,borderColor:C.line},avatar:{width:46,height:46,borderRadius:23,backgroundColor:C.soft,alignItems:"center",justifyContent:"center",marginRight:12},avatarT:{color:C.navy,fontWeight:"900"},pName:{fontSize:15,fontWeight:"800",color:C.text},patientHero:{backgroundColor:C.white,borderRadius:22,padding:20,alignItems:"center",borderWidth:1,borderColor:C.line},heroAvatar:{width:82,height:82,borderRadius:41,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},heroAvatarT:{color:C.white,fontSize:30,fontWeight:"900"},patientHeroName:{fontSize:23,fontWeight:"900",color:C.navy,marginTop:10},card:{backgroundColor:C.white,borderRadius:18,padding:16,borderWidth:1,borderColor:C.line,marginBottom:10},metrics:{flexDirection:"row",flexWrap:"wrap",gap:9},line:{flexDirection:"row",justifyContent:"space-between",paddingVertical:10,borderBottomWidth:1,borderBottomColor:C.line},badge:{fontSize:11,fontWeight:"800",color:C.navy,backgroundColor:C.soft,paddingHorizontal:9,paddingVertical:5,borderRadius:9},treat:{paddingVertical:10,borderBottomWidth:1,borderBottomColor:C.line},aiHero:{backgroundColor:C.navy,borderRadius:24,padding:22},aiStar:{color:"#BFD1E4",fontSize:25},aiTitle:{color:C.white,fontSize:24,fontWeight:"900",marginTop:7},aiSub:{color:"#C3D0DE",fontSize:13,lineHeight:20,marginTop:8,marginBottom:18},check:{flexDirection:"row",alignItems:"center",gap:10,backgroundColor:C.white,borderRadius:14,padding:14,marginBottom:8,borderWidth:1,borderColor:C.line},checkMark:{color:C.green,fontWeight:"900",fontSize:18},empty:{backgroundColor:C.white,borderRadius:22,padding:25,alignItems:"center",borderWidth:1,borderColor:C.line},emptyIcon:{fontSize:44,color:C.navy},emptyTitle:{fontSize:19,fontWeight:"900",color:C.navy},profile:{alignItems:"center",paddingVertical:10},profileAvatar:{width:96,height:96,borderRadius:48,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},profileAvatarT:{color:C.white,fontSize:38,fontWeight:"900"},profileName:{fontSize:23,fontWeight:"900",color:C.navy,marginTop:12},profileRole:{fontSize:13,color:C.muted,marginTop:3},value:{fontSize:14,fontWeight:"800",color:C.text,marginTop:3,marginBottom:13},logout:{height:52,borderRadius:15,borderWidth:1,borderColor:"#E2C9C9",alignItems:"center",justifyContent:"center",backgroundColor:C.white},logoutT:{color:C.red,fontWeight:"800"},aiTab:{width:42,height:42,borderRadius:21,backgroundColor:C.navy,alignItems:"center",justifyContent:"center",marginBottom:12},aiTabT:{color:C.white,fontSize:21}
 });
