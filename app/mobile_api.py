@@ -44,7 +44,8 @@ from app.main import (
     AdminNotice, StudyCourse, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ExpertProfile,
     expert_support_request_create, expert_support_message, study_ai_ask,
-    SESSION_COOKIE, storage_persist_file, storage_ensure_local,
+    SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
+    _record_realtime_event, _publish_realtime_event, on_loop,
 )
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
@@ -361,9 +362,11 @@ def mobile_create_patient(payload: MobilePatientCreate, user: User = Depends(_mo
         session.add(patient)
         session.commit()
         session.refresh(patient)
-        session.add(PatientProfile(patient_id=patient.id, address=payload.address.strip() if payload.address else None))
-        session.commit()
-        return {"patient": _patient_payload(patient)}
+        profile=PatientProfile(patient_id=patient.id, address=payload.address.strip() if payload.address else None)
+        session.add(profile); session.commit(); session.refresh(profile)
+        events=_record_patient_realtime_events(session,patient,"PATIENT_CREATED",profile); session.commit()
+    for event in events: on_loop(_publish_realtime_event,event)
+    return {"patient": _patient_payload(patient)}
 
 
 @router.get("/schedule")
@@ -407,6 +410,8 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
         session.add(event)
         session.commit()
         session.refresh(event)
+        realtime=_record_realtime_event(session,user.id,"PROGRAM_CREATED","schedule_event",event.id,{"event_id":event.id,"status":event.status})
+        session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
                           "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
                           "location": event.location, "status": event.status}}
@@ -460,7 +465,8 @@ def mobile_update_tooth(
             )).first()
             if not existing_treatment:
                 session.add(Treatment(patient_id=patient_id,tooth_number=tooth_number,treatment_name=treatment_name,treatment_date=treatment_date,doctor_note=note))
-        session.commit()
+        realtime=_record_realtime_event(session,user.id,"TOOTH_UPDATED","patient",patient_id,{"patient_id":patient_id,"tooth_number":tooth_number,"status":payload.status,"surface":payload.surface,"note":note})
+        session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"ok": True, "tooth_number": tooth_number, "status": payload.status, "surface": payload.surface}
 
 
