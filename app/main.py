@@ -5972,3 +5972,7 @@ Hekimin sorusu:
             "ai_error": error,
         },
     )
+
+# Native Android JSON API
+from app.mobile_api import router as mobile_router
+app.include_router(mobile_router)
