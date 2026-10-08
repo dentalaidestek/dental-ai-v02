@@ -713,3 +713,15 @@ def mobile_send_consultation_message(case_id:int,payload:MobileMessage,token:str
     if hasattr(response,"status_code") and response.status_code>=400:
         raise HTTPException(status_code=response.status_code,detail=data.get("error","Mesaj gönderilemedi."))
     return data
+
+class MobileAcademicAsk(BaseModel):
+    message:str
+
+@router.post("/academic/courses/{course_id}/ask")
+def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,token:str=Depends(_mobile_access_token)):
+    response=study_ai_ask(_mobile_request(token,"POST",f"/notes/courses/{course_id}/ai/ask"),
+        course_id,BackgroundTasks(),payload.message)
+    data=_response_json(response)
+    if hasattr(response,"status_code") and response.status_code>=400:
+        raise HTTPException(status_code=response.status_code,detail=data.get("error","Akademik AI yanıt veremedi."))
+    return data
