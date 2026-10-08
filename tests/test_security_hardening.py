@@ -124,3 +124,13 @@ def test_clinical_ai_router_redacts_direct_patient_identifiers():
     assert "_PROVIDER_EMAIL_RE" in source
     assert "_PROVIDER_PHONE_RE" in source
     assert "_PROVIDER_TC_RE" in source
+
+
+def test_websocket_endpoints_enforce_browser_origin_policy():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "def _socket_origin_allowed" in source
+    sync = source.split('@app.websocket("/ws/sync")', 1)[1].split('@app.websocket("/ws/expert-support/cases/{case_id}")', 1)[0]
+    expert = source.split('@app.websocket("/ws/expert-support/cases/{case_id}")', 1)[1].split('@app.post("/expert-support/cases/{case_id}/review")', 1)[0]
+    assert "_socket_origin_allowed(websocket)" in sync
+    assert "_socket_origin_allowed(websocket)" in expert
+    assert "WEB_ALLOWED_ORIGINS" in source
