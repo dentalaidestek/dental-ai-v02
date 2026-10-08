@@ -47,7 +47,7 @@ from app.main import (
     _run_preliminary_ai,
     classify_dental_image,
     AdminNotice, StudyCourse, StudyChatMessage,
-    ConsultationCase, ConsultationMessage, ExpertProfile,
+    ConsultationCase, ConsultationMessage, ExpertProfile, E2EEDeviceKey,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -129,6 +129,13 @@ class EmailVerifyRequest(BaseModel):
     code: str
 
 
+class E2EEDeviceKeyRequest(BaseModel):
+    device_id: str
+    public_key: str
+    algorithm: str = "X25519"
+    key_version: str = "v1"
+
+
 class MobileToken(BaseModel):
     access_token: Optional[str] = None
     token_type: str = "Bearer"
@@ -198,6 +205,58 @@ def _patient_payload(patient: Patient) -> dict:
         "chief_complaint": patient.chief_complaint,
         "created_at": patient.created_at,
     }
+
+
+@router.put("/e2ee/device")
+def register_e2ee_device(payload: E2EEDeviceKeyRequest, user: User = Depends(_mobile_user)):
+    device_id = payload.device_id.strip()[:128]
+    public_key = payload.public_key.strip().lower()
+    algorithm = payload.algorithm.strip().upper()
+    key_version = payload.key_version.strip()[:32]
+    if len(device_id) < 8 or len(public_key) != 64 or algorithm != "X25519" or key_version != "v1":
+        raise HTTPException(status_code=422, detail="Geçersiz E2EE cihaz anahtarı.")
+    try:
+        bytes.fromhex(public_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Geçersiz E2EE açık anahtarı.") from exc
+    with Session(engine, expire_on_commit=False) as session:
+        row = session.exec(select(E2EEDeviceKey).where(E2EEDeviceKey.device_id == device_id)).first()
+        if row and row.user_id != user.id:
+            raise HTTPException(status_code=409, detail="Cihaz kimliği başka bir hesaba bağlı.")
+        if row:
+            row.public_key = public_key
+            row.algorithm = algorithm
+            row.key_version = key_version
+            row.revoked_at = None
+            session.add(row)
+        else:
+            row = E2EEDeviceKey(user_id=user.id, device_id=device_id, public_key=public_key, algorithm=algorithm, key_version=key_version)
+            session.add(row)
+        session.commit()
+    return {"ok": True, "device_id": device_id, "public_key": public_key, "algorithm": algorithm, "key_version": key_version}
+
+
+@router.get("/e2ee/users/{user_id}/key")
+def get_e2ee_user_key(user_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        if user_id != user.id:
+            allowed = session.exec(
+                select(ConsultationCase).where(
+                    ((ConsultationCase.requester_user_id == user.id) & (ConsultationCase.expert_user_id == user_id)) |
+                    ((ConsultationCase.expert_user_id == user.id) & (ConsultationCase.requester_user_id == user_id))
+                )
+            ).first()
+            if not allowed:
+                raise HTTPException(status_code=403, detail="Bu kullanıcının E2EE anahtarına erişemezsiniz.")
+        row = session.exec(
+            select(E2EEDeviceKey).where(
+                E2EEDeviceKey.user_id == user_id,
+                E2EEDeviceKey.revoked_at == None,
+            ).order_by(E2EEDeviceKey.created_at.desc())
+        ).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Kullanıcının aktif E2EE cihaz anahtarı bulunamadı.")
+        return {"device_id": row.device_id, "public_key": row.public_key, "algorithm": row.algorithm, "key_version": row.key_version}
 
 
 @router.post("/auth/login", response_model=MobileToken)
