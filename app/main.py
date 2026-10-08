@@ -2365,19 +2365,20 @@ def send_email_verification_code(recipient_email: str, code: str) -> None:
 
 
 def _ensure_email_verification_challenge(session: Session, user: User) -> EmailVerificationChallenge:
-    if user.email_verified_at or not user.email:
+    locked_user = session.exec(select(User).where(User.id == user.id).with_for_update()).first()
+    if not locked_user or locked_user.email_verified_at or not locked_user.email:
         raise ValueError("EMAIL_ALREADY_VERIFIED")
-    challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.user_id == user.id)).first()
+    challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.user_id == locked_user.id)).first()
     if challenge:
         return challenge
     now = _utcnow_naive()
     code = f"{secrets.randbelow(1000000):06d}"
-    challenge = EmailVerificationChallenge(user_id=user.id, code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+    challenge = EmailVerificationChallenge(user_id=locked_user.id, code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
     session.add(challenge)
     session.commit()
     session.refresh(challenge)
     try:
-        send_email_verification_code(user.email, code)
+        send_email_verification_code(locked_user.email, code)
     except Exception:
         session.delete(challenge)
         session.commit()
