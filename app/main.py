@@ -6129,7 +6129,7 @@ def admin_consultation_report_media(request: Request, case_id: int, message_id: 
         path=storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.",status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/admin/consultation-disputes/{case_id}", response_class=HTMLResponse)
@@ -6170,7 +6170,7 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
@@ -9848,7 +9848,7 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/patients/{patient_id}/media/{media_id}/delete")
