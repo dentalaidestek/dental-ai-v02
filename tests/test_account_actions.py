@@ -105,14 +105,19 @@ def test_deleted_account_login_page_confirms_completion():
     assert "Hesabınız silindi" in response.text
 
 
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
 def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
-    engine = create_engine("sqlite://")
-    SQLModel.metadata.create_all(engine)
-    monkeypatch.setattr(main, "engine", engine)
-    with Session(engine) as session:
-        user = main.User(username="display-user", role="DOCTOR", display_name="Old Name")
+    engine = _engine()
+    token = "display-name-token"
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username="displayuser", role="DOCTOR", display_name="Old Name")
         session.add(user); session.commit(); session.refresh(user)
-        token = main.create_session_token(user.id)
+        session.add(main.SessionToken(
+            token_hash=main.hash_session_token(token), user_id=user.id,
+            expires_at=main._utcnow_naive() + main.timedelta(days=1),
+        ))
+        session.commit()
+    monkeypatch.setattr(main, "engine", engine)
     with TestClient(main.app) as client:
         response = client.post("/account/display-name", data={"display_name": "  New   Name  "}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
     assert response.status_code == 303
@@ -120,16 +125,25 @@ def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
         assert session.get(main.User, user.id).display_name == "New Name"
 
 
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
 def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
-    engine = create_engine("sqlite://")
-    SQLModel.metadata.create_all(engine)
-    monkeypatch.setattr(main, "engine", engine)
-    with Session(engine) as session:
-        user = main.User(username="verified-user", role="DOCTOR", display_name="Verified Name")
+    engine = _engine()
+    token = "verified-display-name-token"
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username="verifieduser", role="DOCTOR", display_name="Verified Name")
         session.add(user); session.flush()
-        session.add(main.ExpertProfile(user_id=user.id, application_status="APPROVED", verification_status="VERIFIED", credential_document_path="r2/key", specialty="Ortodonti"))
-        session.commit(); session.refresh(user)
-        token = main.create_session_token(user.id)
+        session.add(main.ExpertProfile(
+            user_id=user.id, specialty="Endodonti", application_status="APPROVED",
+            verification_status="VERIFIED", specialty_verified=True,
+            credential_document_path="r2/key", phone="05000000000",
+            availability="AVAILABLE", consultation_price=200,
+        ))
+        session.add(main.SessionToken(
+            token_hash=main.hash_session_token(token), user_id=user.id,
+            expires_at=main._utcnow_naive() + main.timedelta(days=1),
+        ))
+        session.commit()
+    monkeypatch.setattr(main, "engine", engine)
     with TestClient(main.app) as client:
         response = client.post("/account/display-name", data={"display_name": "Changed Name"}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
     assert response.status_code == 409
