@@ -224,10 +224,11 @@ def register_e2ee_device(payload: E2EEDeviceKeyRequest, user: User = Depends(_mo
         if row and row.user_id != user.id:
             raise HTTPException(status_code=409, detail="Cihaz kimliği başka bir hesaba bağlı.")
         if row:
+            if row.revoked_at is not None:
+                raise HTTPException(status_code=409, detail="İptal edilmiş E2EE cihazı yeniden etkinleştirilemez; yeni bir cihaz kimliği oluşturun.")
             row.public_key = public_key
             row.algorithm = algorithm
             row.key_version = key_version
-            row.revoked_at = None
             session.add(row)
         else:
             row = E2EEDeviceKey(user_id=user.id, device_id=device_id, public_key=public_key, algorithm=algorithm, key_version=key_version)
