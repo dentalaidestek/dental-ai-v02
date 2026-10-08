@@ -134,3 +134,31 @@ def test_websocket_endpoints_enforce_browser_origin_policy():
     assert "_socket_origin_allowed(websocket)" in sync
     assert "_socket_origin_allowed(websocket)" in expert
     assert "WEB_ALLOWED_ORIGINS" in source
+
+
+def test_email_verification_is_one_time_and_has_no_resend_contract():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "class EmailVerificationChallenge" in source
+    assert "user_id: int = Field(index=True, unique=True)" in source
+    assert "email_verified_at" in source
+    assert "def _ensure_email_verification_challenge" in source
+    assert "def _verify_email_code" in source
+    assert "attempts >= 5" in source
+    assert "timedelta(minutes=10)" in source
+    assert "def resend_email" not in source
+
+
+def test_web_login_blocks_unverified_users_before_session_creation():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/login")', 1)[1].split('@app.post("/api/mobile/expert/device/check")', 1)[0]
+    assert "if not user.email_verified_at" in block
+    assert "_ensure_email_verification_challenge" in block
+    assert "create_user_session(response, user.id)" in block
+
+
+def test_native_login_requires_shared_email_verification():
+    source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    block = source.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/logout")', 1)[0]
+    assert "if not user.email_verified_at" in block
+    assert "_ensure_email_verification_challenge" in block
+    assert "challenge_id=challenge.id" in block
