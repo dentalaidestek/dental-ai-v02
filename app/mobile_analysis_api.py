@@ -193,7 +193,7 @@ def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Opti
         if patient_id:
             q = q.where(Analysis.patient_id == patient_id)
         rows = session.exec(q.order_by(Analysis.created_at.desc()).limit(100)).all()
-        return {"items": [{
+        return {"total": len(rows), "items": [{
             "id": a.id, "patient_id": a.patient_id, "patient_name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
             "tooth_number": a.tooth_number, "clinical_notes": a.clinical_notes,
             "status": a.status, "created_at": a.created_at
