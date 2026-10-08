@@ -120,6 +120,15 @@ def test_anatomy_direct_service_requires_internal_key_and_bounds_upload():
     assert "probe.verify()" in source
 
 
+def test_password_reset_link_does_not_trust_request_host_header():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/forgot-password")', 1)[1].split('@app.get("/reset-password"', 1)[0]
+    assert 'request.base_url' not in block
+    assert 'os.getenv("PUBLIC_BASE_URL") or "https://dentalai.tr"' in block
+    assert 'public_base.username' in block
+    assert 'public_base.password' in block
+
+
 def test_password_reset_requests_are_throttled():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split('@app.post("/forgot-password")', 1)[1].split('@app.get("/reset-password"', 1)[0]
