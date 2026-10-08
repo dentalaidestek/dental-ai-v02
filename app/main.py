@@ -3437,7 +3437,9 @@ def change_password(
         s.commit()
     _clear_web_login_failures(password_rate_key)
 
-    return render_account(success="Şifreniz başarıyla değiştirildi.")
+    response = render_account(success="Şifreniz başarıyla değiştirildi.")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
 
 
 def _safe_login_next(next_url: str) -> str:
