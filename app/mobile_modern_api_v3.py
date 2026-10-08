@@ -23,7 +23,7 @@ from app.main import (
 )
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
-from app.mobile_api import _mobile_user, _copy_validated_image
+from app.mobile_api import _mobile_user, _copy_validated_image, _copy_validated_image
 from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
@@ -60,14 +60,14 @@ def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,
 
 @router.post("/patients/{patient_id}/media")
 async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:UploadFile=File(...),tooth_number:str=Form(""),note:str=Form(""),media_type:str=Form("PHOTO")):
-    allowed={".jpg",".jpeg",".png",".webp",".heic"}
+    allowed={".jpg",".jpeg",".png",".webp"}
     name=Path(file.filename or "").name; ext=Path(name).suffix.lower()
     if ext not in allowed: raise HTTPException(status_code=422,detail="Desteklenmeyen görüntü formatı.")
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         dest=Path("uploads")/stored; dest.parent.mkdir(parents=True,exist_ok=True)
-        with dest.open("wb") as out: shutil.copyfileobj(file.file,out)
+        _copy_validated_image(file, dest)
         storage_persist_file(dest)
         row=PatientMedia(patient_id=patient_id,owner_user_id=user.id,original_filename=name,stored_filename=stored,file_path=str(dest),media_type=(media_type or "PHOTO")[:40],tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
         s.add(row); s.commit(); s.refresh(row)
@@ -83,7 +83,7 @@ def mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):
         try: path=storage_ensure_local(row.file_path)
         except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")
         types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}
-        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename)
+        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename,headers={"Cache-Control":"private, no-store"})
 
 @router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
@@ -91,7 +91,7 @@ def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
         _user_owned_patient(s,user,patient_id)
         row=s.get(PatientMedia,media_id)
         if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")
-        return {"id":row.id,"filename":row.original_filename,"media_type":row.media_type,"tooth_number":row.tooth_number,"note":row.note,"uploaded_at":row.uploaded_at,"path":row.file_path}
+        return {"id":row.id,"filename":row.original_filename,"media_type":row.media_type,"tooth_number":row.tooth_number,"note":row.note,"uploaded_at":row.uploaded_at,"url":f"/api/mobile/v1/patients/{patient_id}/media/{row.id}/file"}
 
 
 @router.get("/notifications")
