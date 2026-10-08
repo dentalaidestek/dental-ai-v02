@@ -1,17 +1,20 @@
-import React,{createContext,useContext,useEffect,useRef,useState}from"react";
-import*as SecureStore from"expo-secure-store";
-type EventPayload={type?:string;event_type?:string;event_id?:number;[key:string]:any};
-const C=createContext({tick:0,lastEvent:null as EventPayload|null});
-export function RealtimeProvider({token,children}:{token:string;children:React.ReactNode}){
- const[tick,setTick]=useState(0);const[lastEvent,setLastEvent]=useState<EventPayload|null>(null);const ws=useRef<WebSocket|null>(null);
- useEffect(()=>{let dead=false;let timer:any;let backoff=1000;
-  const connect=()=>{if(dead)return;const url="wss://dentalai.tr/ws/sync?access_token="+encodeURIComponent(token);const socket=new WebSocket(url);ws.current=socket;
-   socket.onopen=async()=>{backoff=1000;const raw=await SecureStore.getItemAsync("dentalai_last_event_id");socket.send(JSON.stringify({type:"resume",after_id:Number(raw||0)}));};
-   socket.onmessage=async e=>{try{const data=JSON.parse(e.data) as EventPayload;if(data.event_id){await SecureStore.setItemAsync("dentalai_last_event_id",String(data.event_id));}if(data.type!=="ready"&&data.type!=="resume_complete"&&data.type!=="pong"){setLastEvent(data);setTick(v=>v+1);}}catch{}};
-   socket.onclose=()=>{if(dead)return;timer=setTimeout(connect,backoff);backoff=Math.min(backoff*2,15000);};
-   socket.onerror=()=>{try{socket.close()}catch{}};
-  };connect();return()=>{dead=true;clearTimeout(timer);try{ws.current?.close()}catch{}};
+import React,{createContext,useCallback,useContext,useEffect,useMemo,useRef,useState}from"react";
+import * as SecureStore from"expo-secure-store";
+export type RealtimeEvent={id?:number;event_type?:string;entity_type?:string;entity_id?:number|string;payload?:any;replay?:boolean;type?:string;[k:string]:any};
+type Ctx={lastEvent:RealtimeEvent|null;connected:boolean;lastEventId:number;invalidate:(types?:string[])=>void};
+const Context=createContext<Ctx>({lastEvent:null,connected:false,lastEventId:0,invalidate:()=>{}});
+export function RealtimeProvider({token,children,userId:_userId}:{token:string;children:React.ReactNode;userId?:number}){
+ const[lastEvent,setLastEvent]=useState<RealtimeEvent|null>(null),[connected,setConnected]=useState(false),[lastEventId,setLastEventId]=useState(0);
+ const socket=useRef<WebSocket|null>(null),timer=useRef<any>(null),closed=useRef(false),eventId=useRef(0);
+ const connect=useCallback(()=>{if(closed.current||!token||socket.current&&(socket.current.readyState===WebSocket.OPEN||socket.current.readyState===WebSocket.CONNECTING))return;
+  const ws=new WebSocket("wss://dentalai.tr/ws/sync?access_token="+encodeURIComponent(token));socket.current=ws;
+  ws.onopen=async()=>{if(closed.current||socket.current!==ws)return;setConnected(true);clearTimeout(timer.current);let after=eventId.current;try{after=Math.max(after,Number(await SecureStore.getItemAsync("dai.realtime.last_id")||0))}catch{}eventId.current=after;ws.send(JSON.stringify({type:"visibility",visible:true}));ws.send(JSON.stringify({type:"resume",after_id:after}))};
+  ws.onmessage=async e=>{let evt:RealtimeEvent;try{evt=JSON.parse(e.data)}catch{return}if(evt.type==="ready"||evt.type==="pong")return;if(evt.type==="resume_complete"){if(evt.has_more)ws.send(JSON.stringify({type:"resume",after_id:Number(evt.last_event_id||eventId.current)}));return}if(evt.type==="resync"){ws.send(JSON.stringify({type:"resume",after_id:eventId.current}));return}if(typeof evt.id==="number"){eventId.current=Math.max(eventId.current,evt.id);setLastEventId(eventId.current);try{await SecureStore.setItemAsync("dai.realtime.last_id",String(eventId.current))}catch{}}setLastEvent(evt)};
+  ws.onerror=()=>{try{ws.close()}catch{}};ws.onclose=()=>{if(socket.current===ws)socket.current=null;setConnected(false);if(!closed.current){clearTimeout(timer.current);timer.current=setTimeout(connect,Math.min(15000,1000+Math.random()*2500))}};
  },[token]);
- return <C.Provider value={{tick,lastEvent}}>{children}</C.Provider>;
+ useEffect(()=>{closed.current=false;eventId.current=0;connect();return()=>{closed.current=true;clearTimeout(timer.current);try{socket.current?.send(JSON.stringify({type:"visibility",visible:false}));socket.current?.close()}catch{}socket.current=null}},[connect]);
+ const invalidate=useCallback((types?:string[])=>setLastEvent({type:"invalidate",event_type:types?.[0]}),[]);
+ const value=useMemo(()=>({lastEvent,connected,lastEventId,invalidate}),[lastEvent,connected,lastEventId,invalidate]);
+ return <Context.Provider value={value}>{children}</Context.Provider>;
 }
-export const useRealtime=()=>useContext(C);
+export function useRealtime(){return useContext(Context);}
