@@ -2454,6 +2454,16 @@ def _verify_email_code(session: Session, user: User, challenge: EmailVerificatio
     # even if a stale challenge object is reused by the caller.
     locked_challenge.code_hash = secrets.token_urlsafe(32)
     user.email_verified_at = now
+
+    # Email verification is an authentication boundary. Revoke any token
+    # issued before verification so a stale pre-verification session cannot
+    # become valid immediately after the account is verified.
+    stale_sessions = session.exec(
+        select(SessionToken).where(SessionToken.user_id == user.id)
+    ).all()
+    for stale_session in stale_sessions:
+        session.delete(stale_session)
+
     session.add(locked_challenge)
     session.add(user)
     session.commit()
