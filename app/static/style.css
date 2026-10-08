@@ -5373,3 +5373,9 @@ button.dai-submit-loading::after {
   animation: dai-submit-spin .7s linear infinite;
 }
 @keyframes dai-submit-spin { to { transform: rotate(360deg); } }
+
+/* Program form mobile frame: give the template breathing room without changing fields/actions. */
+.program-form-page{width:min(100%,560px);padding-left:16px;padding-right:16px}
+.program-form-card{width:100%;box-sizing:border-box}
+.program-field input,.program-field select,.program-field textarea{border-width:1.5px!important}
+@media(max-width:520px){.program-form-page{padding-left:16px;padding-right:16px}.program-form-grid{gap:11px!important}.program-field input,.program-field select,.program-field textarea{min-height:48px!important}}
