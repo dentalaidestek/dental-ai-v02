@@ -6,7 +6,7 @@ check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 from sqlalchemy import text
 
-REVISION = 7
+REVISION = 8
 
 
 def require_schema(engine):
@@ -46,6 +46,18 @@ def apply():
                     "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext TEXT",
                     "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ephemeral_public_key TEXT",
                     "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_key_version VARCHAR",
+                    """CREATE TABLE IF NOT EXISTS e2eedevicekey (
+                        id INTEGER PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        device_id VARCHAR NOT NULL UNIQUE,
+                        algorithm VARCHAR NOT NULL DEFAULT 'X25519',
+                        public_key TEXT NOT NULL,
+                        key_version VARCHAR NOT NULL DEFAULT 'v1',
+                        created_at TIMESTAMP NOT NULL,
+                        revoked_at TIMESTAMP NULL
+                    )""",
+                    "CREATE INDEX IF NOT EXISTS ix_e2eedevicekey_user_id ON e2eedevicekey(user_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_e2eedevicekey_revoked_at ON e2eedevicekey(revoked_at)",
                 ):
                     connection.execute(text(ddl))
             if main.engine.dialect.name == "postgresql":
