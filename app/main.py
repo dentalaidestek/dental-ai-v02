@@ -2223,6 +2223,33 @@ def _web_login_key(request: Request, login: str) -> str:
     return f"{client}:{login}"
 
 
+_REGISTRATION_ATTEMPTS: dict[str, deque[float]] = {}
+_REGISTRATION_WINDOW_SECONDS = max(60, int(os.getenv("REGISTRATION_RATE_WINDOW_SECONDS", "600")))
+_REGISTRATION_MAX_ATTEMPTS = max(2, int(os.getenv("REGISTRATION_RATE_MAX_ATTEMPTS", "10")))
+
+def _check_registration_rate(request: Request) -> str:
+    key = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    attempts = _REGISTRATION_ATTEMPTS.get(key)
+    if attempts is not None:
+        while attempts and now - attempts[0] >= _REGISTRATION_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= _REGISTRATION_MAX_ATTEMPTS:
+            retry_after = max(1, int(_REGISTRATION_WINDOW_SECONDS - (now - attempts[0])))
+            raise HTTPException(status_code=429, detail="Çok fazla kayıt denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(retry_after)})
+    return key
+
+def _record_registration_attempt(key: str) -> None:
+    now = time.monotonic()
+    attempts = _REGISTRATION_ATTEMPTS.setdefault(key, deque())
+    while attempts and now - attempts[0] >= _REGISTRATION_WINDOW_SECONDS:
+        attempts.popleft()
+    attempts.append(now)
+    if len(_REGISTRATION_ATTEMPTS) > 20000:
+        oldest = min(_REGISTRATION_ATTEMPTS, key=lambda k: _REGISTRATION_ATTEMPTS[k][0] if _REGISTRATION_ATTEMPTS[k] else now)
+        _REGISTRATION_ATTEMPTS.pop(oldest, None)
+
+
 def _check_web_login_rate(request: Request, login: str) -> str:
     import time as _rate_time
     key = _web_login_key(request, login)
@@ -2865,6 +2892,8 @@ def register_user(
     kvkk_informed: Optional[str] = Form(None),
     accept_clinical: Optional[str] = Form(None),
 ):
+    registration_rate_key = _check_registration_rate(request)
+    _record_registration_attempt(registration_rate_key)
     display_name = display_name.strip()
     email = email.strip().lower()
     username = username.strip().lower()
