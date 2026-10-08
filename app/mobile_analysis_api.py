@@ -1,6 +1,7 @@
 """Native Dental AI API using the production storage and durable work queue."""
 from pathlib import Path
 import json
+import os
 import shutil
 import uuid
 from typing import Optional
@@ -18,6 +19,28 @@ from app.main import (
 from app.mobile_api import _mobile_user
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-analysis"])
+MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
+
+def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> None:
+    total = 0
+    try:
+        with destination.open("wb") as out:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MOBILE_MAX_ANALYSIS_BYTES:
+                    raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
+                out.write(chunk)
+        with Image.open(destination) as image:
+            image.verify()
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.") from exc
 
 
 def _access(session: Session, user: User, analysis_id: int):
@@ -65,8 +88,7 @@ async def create_mobile_analysis(
             stored = f"analysis_{analysis.id}_{uuid.uuid4().hex}{ext}"
             destination = Path("uploads") / stored
             destination.parent.mkdir(parents=True, exist_ok=True)
-            with destination.open("wb") as out:
-                shutil.copyfileobj(image.file, out)
+            _copy_validated_analysis_image(image, destination)
             storage_persist_file(destination)
             assets.append(ImageAsset(
                 analysis_id=analysis.id,
