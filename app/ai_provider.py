@@ -153,8 +153,8 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None, stru
             return answer
 
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("Clinical AI HTTP error model=%s status=%s attempt=%s body=%s", GEMINI_MODEL, exc.code, attempt, body[:1200])
+            exc.read()  # Consume the response body without logging provider payload/error content.
+            logger.warning("Clinical AI HTTP error model=%s status=%s attempt=%s", GEMINI_MODEL, exc.code, attempt)
             last_error = GeminiAPIError(_safe_http_error_message(exc.code))
             if exc.code not in RETRYABLE_HTTP_CODES or attempt >= GEMINI_MAX_ATTEMPTS:
                 raise last_error
