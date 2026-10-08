@@ -277,3 +277,11 @@ def test_account_deletion_expires_browser_cookies_with_root_path():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split('@app.post("/account/delete")', 1)[1]
     assert 'response.delete_cookie(SESSION_COOKIE, path="/")' in block
+
+
+def test_native_media_file_enforces_media_owner_as_well_as_patient_owner():
+    source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    block = source.split('def mobile_patient_media_file', 1)[1].split('def _mobile_access_token', 1)[0]
+    assert 'media.patient_id!=patient_id' in block
+    assert 'media.owner_user_id!=user.id' in block
+    assert 'Cache-Control":"private, no-store' in block
