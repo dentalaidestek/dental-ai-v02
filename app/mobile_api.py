@@ -129,6 +129,7 @@ class MobileToken(BaseModel):
     access_token: Optional[str] = None
     token_type: str = "Bearer"
     expires_at: datetime
+    challenge_id: Optional[int] = None
 
 
 def _unauthorized() -> HTTPException:
@@ -226,7 +227,7 @@ def mobile_login(payload: LoginRequest):
                 challenge = _ensure_email_verification_challenge(session, user)
             except Exception:
                 raise HTTPException(status_code=503, detail='EMAIL_VERIFICATION_SEND_FAILED')
-            return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at)
+            return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_id=challenge.id)
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0)
         from datetime import timedelta
