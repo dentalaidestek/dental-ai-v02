@@ -4560,7 +4560,7 @@ def study_material_file(request: Request, course_id: int, material_id: int):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Not dosyası sunucuda bulunamadı.", status_code=404)
-    return FileResponse(path, media_type=mime_type)
+    return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/notes/courses/{course_id}/materials/{material_id}/delete")
@@ -6460,7 +6460,7 @@ def admin_expert_credential_document(request: Request, profile_id: int):
     except Exception:
         logger.exception("Admin expert credential could not be loaded from storage: profile_id=%s", profile_id)
         return HTMLResponse("Belge depodan yüklenemedi.", status_code=503)
-    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline", headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
