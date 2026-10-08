@@ -23,7 +23,7 @@ from app.main import (
 )
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
-from app.mobile_api import _mobile_user, _copy_validated_image, _copy_validated_image
+from app.mobile_api import _mobile_user, _copy_validated_image, MOBILE_MAX_IMAGE_BYTES, _copy_validated_image
 from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
@@ -67,7 +67,7 @@ async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:Upl
         _user_owned_patient(s,user,patient_id)
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         dest=Path("uploads")/stored; dest.parent.mkdir(parents=True,exist_ok=True)
-        _copy_validated_image(file, dest)
+        _copy_validated_image(file, dest, MOBILE_MAX_IMAGE_BYTES)
         storage_persist_file(dest)
         row=PatientMedia(patient_id=patient_id,owner_user_id=user.id,original_filename=name,stored_filename=stored,file_path=str(dest),media_type=(media_type or "PHOTO")[:40],tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
         s.add(row); s.commit(); s.refresh(row)
