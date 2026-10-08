@@ -25,7 +25,7 @@ def _engine():
 
 
 def test_profile_exposes_logout_and_guarded_account_deletion():
-    assert 'href="/logout"' in ACCOUNT_TEMPLATE
+    assert 'method="post" action="/logout"' in ACCOUNT_TEMPLATE
     assert 'action="/account/delete"' in ACCOUNT_TEMPLATE
     assert 'name="confirm_username"' in ACCOUNT_TEMPLATE
     assert 'name="password"' in ACCOUNT_TEMPLATE
