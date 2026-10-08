@@ -3,11 +3,15 @@ name: Mobile Android CI
 on:
   push:
     branches:
-      - "mobile/**"
+      - 'mobile/**'
   pull_request:
     paths:
-      - "mobile/**"
-      - "app/mobile_api.py"\n      - "app/mobile_analysis_api.py"\n      - "app/mobile_modern_api.py"\n      - "app/main.py"
+      - 'mobile/**'
+      - 'app/mobile_api.py'
+      - 'app/mobile_analysis_api.py'
+      - 'app/mobile_modern_api.py'
+      - 'app/main.py'
+  workflow_dispatch:
 
 jobs:
   typecheck:
