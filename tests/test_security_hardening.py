@@ -111,3 +111,8 @@ def test_password_reset_requests_are_throttled():
     assert "_check_web_login_rate" in block
     assert "_record_web_login_failure" in block
     assert "password-reset:" in block
+
+
+def test_native_analysis_assets_are_not_browser_cached():
+    source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
+    assert 'Cache-Control": "private, no-store"' in source
