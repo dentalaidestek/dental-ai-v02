@@ -103,3 +103,35 @@ def test_deleted_account_login_page_confirms_completion():
         response = client.get("/login?account_deleted=1")
     assert response.status_code == 200
     assert "Hesabınız silindi" in response.text
+
+
+def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    with Session(engine) as session:
+        user = main.User(username="display-user", role="DOCTOR", display_name="Old Name")
+        session.add(user); session.commit(); session.refresh(user)
+        token = main.create_session_token(user.id)
+    with TestClient(main.app) as client:
+        response = client.post("/account/display-name", data={"display_name": "  New   Name  "}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
+    assert response.status_code == 303
+    with Session(engine) as session:
+        assert session.get(main.User, user.id).display_name == "New Name"
+
+
+def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    with Session(engine) as session:
+        user = main.User(username="verified-user", role="DOCTOR", display_name="Verified Name")
+        session.add(user); session.flush()
+        session.add(main.ExpertProfile(user_id=user.id, application_status="APPROVED", verification_status="VERIFIED", credential_document_path="r2/key", specialty="Ortodonti"))
+        session.commit(); session.refresh(user)
+        token = main.create_session_token(user.id)
+    with TestClient(main.app) as client:
+        response = client.post("/account/display-name", data={"display_name": "Changed Name"}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
+    assert response.status_code == 409
+    with Session(engine) as session:
+        assert session.get(main.User, user.id).display_name == "Verified Name"
