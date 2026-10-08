@@ -691,8 +691,8 @@ class MobileConsultationRequest(BaseModel):
     urgency:str="NORMAL"
 
 @router.post("/consultations")
-def mobile_create_consultation(payload:MobileConsultationRequest,token:str=Depends(_mobile_access_token)):
-    response=expert_support_request_create(_mobile_request(token),payload.expert_user_id,
+async def mobile_create_consultation(payload:MobileConsultationRequest,token:str=Depends(_mobile_access_token)):
+    response=await expert_support_request_create(_mobile_request(token),payload.expert_user_id,
         payload.clinical_summary,payload.requester_opinion,payload.question,payload.tooth_region,
         payload.patient_id,payload.media_ids,payload.urgency)
     if hasattr(response,"status_code") and response.status_code>=400:
