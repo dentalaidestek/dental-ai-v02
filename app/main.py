@@ -2424,6 +2424,7 @@ def _verify_email_code(session: Session, user: User, challenge: EmailVerificatio
         session.commit()
         return False
     challenge.verified_at = now
+    challenge.code_hash = secrets.token_urlsafe(32)
     user.email_verified_at = now
     session.add(challenge)
     session.add(user)
