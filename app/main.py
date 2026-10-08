@@ -1867,7 +1867,7 @@ def init_db():
     with engine.begin() as conn:
         if engine.dialect.name == "postgresql":
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP')
-            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS emailverificationchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMP NOT NULL, verified_at TIMESTAMP)')
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS emailverificationchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, public_token VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMP NOT NULL, verified_at TIMESTAMP)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_emailverificationchallenge_expires_at ON emailverificationchallenge (expires_at)')
         elif engine.dialect.name == "sqlite":
             cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
