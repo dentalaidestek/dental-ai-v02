@@ -1,5 +1,6 @@
 """Native Dental AI API using the production storage and durable work queue."""
 from pathlib import Path
+from PIL import Image
 import json
 import os
 import shutil
