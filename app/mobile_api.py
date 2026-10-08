@@ -775,7 +775,7 @@ def mobile_patient_media(patient_id:int,user:User=Depends(_mobile_user)):
             "tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,
             "url":f"/patients/{patient_id}/media/{m.id}"} for m in rows]}
 
-@router.get("/patients/{patient_id}/media/{media_id}")
+@router.get("/patients/{patient_id}/media/{media_id}/file")
 def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
