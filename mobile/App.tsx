@@ -19,16 +19,16 @@ function Login({done}:{done:(t:string,u:User)=>void}){
 }
 function Header({title,sub,action}:{title:string;sub?:string;action?:React.ReactNode}){return <View style={s.header}><View style={{flex:1}}><Text style={s.hTitle}>{title}</Text>{sub&&<Text style={s.hSub}>{sub}</Text>}</View>{action}</View>}
 function Stat({v,l}:{v:any;l:string}){return <View style={s.stat}><Text style={s.statV}>{v}</Text><Text style={s.statL}>{l}</Text></View>}
-function Quick({title,sub,icon}:{title:string;sub:string;icon:string}){return <Pressable style={s.quick}><View style={s.quickIcon}><Icon n={icon}/></View><Text style={s.cardTitle}>{title}</Text><Text style={s.cardSub}>{sub}</Text></Pressable>}
+function Quick({title,sub,icon,onPress}:{title:string;sub:string;icon:string;onPress?:()=>void}){return <Pressable style={s.quick} onPress={onPress}><View style={s.quickIcon}><Icon n={icon}/></View><Text style={s.cardTitle}>{title}</Text><Text style={s.cardSub}>{sub}</Text></Pressable>}
 function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H";return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text><Text style={s.cardSub}>{p.phone||p.anonymous_id}</Text></View><Icon n="chevron"/></Pressable>}
 
-function Home({token,user}:{token:string;user:User}){
+function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation();
  const[d,setD]=useState<any>();const[r,setR]=useState(false);const load=useCallback(async()=>{try{setD(await getDashboard(token))}catch{}},[token]);useEffect(()=>{load()},[load]);
  return <ScrollView style={s.page} contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={r} onRefresh={async()=>{setR(true);await load();setR(false)}}/>}>
   <View style={s.top}><View><Text style={s.muted}>Merhaba 👋</Text><Text style={s.userName}>{user.display_name}</Text></View><Logo small/></View>
   <View style={s.hero}><View style={{flex:1}}><Text style={s.eyebrow}>DENTAL AI</Text><Text style={s.heroTitle}>Bugün kliniğinde ne var?</Text><Text style={s.heroSub}>Hastalarını, analizlerini ve programını tek yerden yönet.</Text></View><Text style={s.heroTooth}>🦷</Text></View>
   <View style={s.stats}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
-  <Text style={s.section}>Hızlı işlemler</Text><View style={s.grid}><Quick icon="ai" title="Dental AI" sub="Görüntü analizi"/><Quick icon="patients" title="Yeni hasta" sub="Hastayı kaydet"/><Quick icon="calendar" title="Program" sub="Bugünkü plan"/><Quick icon="plus" title="Daha fazla" sub="Tüm işlemler"/></View>
+  <Text style={s.section}>Hızlı işlemler</Text><View style={s.grid}><Quick icon="ai" title="Dental AI" sub="Görüntü analizi" onPress={()=>nav.navigate("AI")}/><Quick icon="patients" title="Yeni hasta" sub="Hastayı kaydet" onPress={()=>nav.navigate("Patients",{screen:"NewPatient"})}/><Quick icon="calendar" title="Program" sub="Bugünkü plan" onPress={()=>nav.navigate("Program")}/><Quick icon="plus" title="Hastalar" sub="Hasta listesini aç" onPress={()=>nav.navigate("Patients")}/></View>
   <Text style={s.section}>Son hastalar</Text>{(d?.recent_patients||[]).slice(0,5).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>{}}/>)}
   <Text style={s.section}>Yaklaşan</Text>{(d?.upcoming_events||[]).slice(0,4).map((e:any)=><View style={s.event} key={e.id}><View style={s.eventIcon}><Icon n="clock"/></View><View><Text style={s.cardTitle}>{e.title}</Text><Text style={s.cardSub}>{new Date(e.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</Text></View></View>)}
  </ScrollView>
