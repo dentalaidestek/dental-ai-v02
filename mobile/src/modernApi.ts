@@ -17,6 +17,7 @@ export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/noti
 export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:number}>("/analyses",t);
 export const getMedia=(t:string,p:number)=>req<{items:Array<{id:number;filename:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at:string;url:string}>}>(`/patients/${p}/media`,t);
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
+export const createConsultation=async(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>{const b=new URLSearchParams();Object.entries(payload).forEach(([k,v])=>{if(v!==undefined)b.set(k,String(v))});return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b.toString()});};
 export const getConsultations=(t:string)=>req<{items:Consultation[]}>("/consultations",t);
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
 export const sendConsultationMessage=(t:string,id:number,content:string)=>{const body=new URLSearchParams();body.set("content",content);return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});};
