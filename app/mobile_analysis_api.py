@@ -183,3 +183,18 @@ def mobile_analysis_image(
             ".webp": "image/webp",
         }.get(path.suffix.lower(), "application/octet-stream")
         return FileResponse(path, media_type=media_type, filename=asset.original_filename)
+
+@router.get("/analyses")
+def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None):
+    with Session(engine, expire_on_commit=False) as session:
+        q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id).where(
+            Patient.owner_user_id == user.id
+        )
+        if patient_id:
+            q = q.where(Analysis.patient_id == patient_id)
+        rows = session.exec(q.order_by(Analysis.created_at.desc()).limit(100)).all()
+        return {"items": [{
+            "id": a.id, "patient_id": a.patient_id, "patient_name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
+            "tooth_number": a.tooth_number, "clinical_notes": a.clinical_notes,
+            "status": a.status, "created_at": a.created_at
+        } for a, p in rows]}
