@@ -12610,7 +12610,7 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         ".png": "image/png",
         ".webp": "image/webp",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media_type, filename=original_filename)
+    return FileResponse(path, media_type=media_type, filename=original_filename, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
