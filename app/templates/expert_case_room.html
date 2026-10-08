@@ -57,6 +57,19 @@ const chatReconnectBaseMs=1000,chatReconnectMaxMs=30000;let chatReconnectDelayMs
 function resetChatReconnect(){chatReconnectDelayMs=chatReconnectBaseMs;clearTimeout(reconnectTimer);reconnectTimer=null}
 function scheduleChatReconnect(){clearTimeout(reconnectTimer);const delay=chatReconnectDelayMs;chatReconnectDelayMs=Math.min(chatReconnectMaxMs,chatReconnectDelayMs*2);reconnectTimer=setTimeout(connectChat,delay)}
 const currentComposerError=()=>document.getElementById("composerInlineError"),currentConsultationFile=()=>document.getElementById("consultationFile"),currentAttachmentPreview=()=>document.getElementById("attachmentPreview"),currentAttachmentThumb=()=>document.getElementById("attachmentThumb"),currentAttachmentName=()=>document.getElementById("attachmentName");
+function syncKeyboardComposer(){
+ const composer=currentComposer();if(!composer)return;
+ const vv=window.visualViewport;
+ if(!vv){composer.style.removeProperty("bottom");return}
+ const offset=Math.max(0,Math.round(window.innerHeight-vv.height-vv.offsetTop));
+ composer.style.setProperty("bottom","calc(max(8px, env(safe-area-inset-bottom)) + "+offset+"px)");
+}
+if(window.visualViewport){
+ window.visualViewport.addEventListener("resize",syncKeyboardComposer,{signal:roomSignal});
+ window.visualViewport.addEventListener("scroll",syncKeyboardComposer,{signal:roomSignal});
+}
+window.addEventListener("resize",syncKeyboardComposer,{signal:roomSignal});
+requestAnimationFrame(syncKeyboardComposer);
 function esc(v){const d=document.createElement("div");d.textContent=v||"";return d.innerHTML}
 function addMessage(m){if(!chat)return;let pending=null;if(m.client_message_id){pending=pendingTextSends.get(m.client_message_id)||pendingMediaSends.get(m.client_message_id)||null;if(pending){pendingTextSends.delete(m.client_message_id);pendingMediaSends.delete(m.client_message_id)}}const existing=document.getElementById("msg-"+m.id);if(existing){if(pending?.el&&pending.el!==existing)pending.el.remove();return}chat.querySelector(".expert-empty")?.remove();const mine=Number(m.sender_user_id)===Number(chat.dataset.userId),d=pending?.el||document.createElement("div"),url=m.media_url||("/expert-support/cases/{{ case.id }}/message-media/"+m.id);d.className="expert-bubble"+(mine?" mine":"");d.id="msg-"+m.id;d.dataset.messageId=m.id;let body="";if(m.message_type==="IMAGE")body='<div class="chat-image-wrap"><img class="chat-clinical-image" src="'+url+'" alt="Klinik görüntü"><button class="annotation-launch" type="button" data-message="'+m.id+'" data-src="'+url+'" aria-label="Görseli düzenle" title="Görseli düzenle">✎</button></div>';else if(m.message_type==="VOICE")body='<audio controls src="'+url+'"></audio>';else if(m.message_type==="FILE")body='<a href="'+url+'" target="_blank">Dosya · '+esc(m.content||"Belge")+'</a>';else if(m.message_type==="ANNOTATION")body='<div class="annotation-note">✎ İşaretlenmiş görüntü</div>';else body='<p>'+esc(m.content)+'</p>';d.innerHTML=(m.reply_to_message_id?'<a class="expert-reply-ref" href="#msg-'+m.reply_to_message_id+'">↩ Yanıtlanan mesaj</a>':"")+body+'<small>'+new Date(m.created_at+"Z").toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})+(mine?' <span class="message-receipt">✓ Gönderildi</span>':"")+'</small>';if(!pending?.el)chat.appendChild(d);lastMessageId=Math.max(lastMessageId,Number(m.id));bindSwipe(d);bindAnnotation(d);scrollChatToBottom(!pending?.el)}
 let caseRefreshTimer=null,caseRefreshPromise=null,pendingCaseStatus=null;
