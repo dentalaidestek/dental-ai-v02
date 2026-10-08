@@ -7,6 +7,7 @@ import tempfile
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
+from PIL import Image
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
 from vision_service.bitewing_ensemble import BitewingEngineError, analyze_bitewing, configured as bitewing_configured
@@ -76,6 +77,7 @@ def motor_catalog(_:None=Depends(require_vision_key)):
 # One process and one in-flight local inference until model concurrency is tested.
 _vision_gate = WorkGate(1)
 _MAX_IMAGE_BYTES = int(os.getenv("VISION_MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
+_MAX_IMAGE_PIXELS = int(os.getenv("VISION_MAX_IMAGE_PIXELS", "40000000"))
 
 
 @contextmanager
@@ -106,6 +108,16 @@ def _saved_image(image, default_name):
                 target.write(part)
         if not total:
             raise HTTPException(400, "Empty image")
+        try:
+            with Image.open(path) as probe:
+                width, height = probe.size
+                if width <= 0 or height <= 0 or width * height > _MAX_IMAGE_PIXELS:
+                    raise HTTPException(422, "Image resolution exceeds the configured limit")
+                probe.verify()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(422, "Invalid image") from exc
         yield str(path)
 
 
