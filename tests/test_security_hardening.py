@@ -79,3 +79,27 @@ def test_protected_clinical_media_is_not_browser_cached():
     start = source.index("def patient_media_file")
     block = source[start:source.index("def delete_patient_media", start)]
     assert 'Cache-Control":"private, no-store' in block
+
+
+def test_admin_login_uses_same_brute_force_throttle():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('def admin_center_login', 1)[1].split('def _admin_user_storage_summaries', 1)[0]
+    assert "_check_web_login_rate" in block
+    assert "_record_web_login_failure" in block
+    assert "_clear_web_login_failures" in block
+
+
+def test_password_change_revokes_existing_sessions():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('def account_settings', 1)[1].split('def _safe_login_next', 1)[0]
+    assert "select(SessionToken).where(SessionToken.user_id == user.id)" in block
+    assert "s.delete(session_token)" in block
+
+
+def test_anatomy_direct_service_requires_internal_key_and_bounds_upload():
+    source = (ROOT / "vision_service/anatomy3d_direct_app.py").read_text(encoding="utf-8")
+    assert "require_anatomy_key" in source
+    assert 'Depends(require_anatomy_key)' in source
+    assert "MAX_IMAGE_BYTES" in source
+    assert "MAX_IMAGE_PIXELS" in source
+    assert "probe.verify()" in source
