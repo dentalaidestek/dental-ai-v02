@@ -6,7 +6,7 @@ check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 from sqlalchemy import text
 
-REVISION = 6
+REVISION = 7
 
 
 def require_schema(engine):
@@ -38,6 +38,16 @@ def apply():
         for index in WorkJob.__table__.indexes:
             index.create(main.engine, checkfirst=True)
         with main.engine.begin() as connection:
+            if main.engine.dialect.name == "postgresql":
+                for ddl in (
+                    "ALTER TABLE consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext TEXT",
+                    "ALTER TABLE consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ephemeral_public_key TEXT",
+                    "ALTER TABLE consultationmessage ADD COLUMN IF NOT EXISTS e2ee_key_version VARCHAR",
+                    "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext TEXT",
+                    "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ephemeral_public_key TEXT",
+                    "ALTER TABLE supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_key_version VARCHAR",
+                ):
+                    connection.execute(text(ddl))
             if main.engine.dialect.name == "postgresql":
                 connection.execute(text("ALTER TABLE studyindexchunk ADD COLUMN IF NOT EXISTS retrieval_terms TEXT"))
                 connection.execute(text("ALTER TABLE studyindexchunk ADD COLUMN IF NOT EXISTS semantic_json TEXT"))
