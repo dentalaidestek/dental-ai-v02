@@ -116,3 +116,11 @@ def test_password_reset_requests_are_throttled():
 def test_native_analysis_assets_are_not_browser_cached():
     source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
     assert 'Cache-Control": "private, no-store"' in source
+
+
+def test_clinical_ai_router_redacts_direct_patient_identifiers():
+    source = (ROOT / "app/clinical_rag_router.py").read_text(encoding="utf-8")
+    assert "_provider_safe_text" in source
+    assert "_PROVIDER_EMAIL_RE" in source
+    assert "_PROVIDER_PHONE_RE" in source
+    assert "_PROVIDER_TC_RE" in source
