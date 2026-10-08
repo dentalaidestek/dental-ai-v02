@@ -8,7 +8,7 @@ import*as ImagePicker from"expo-image-picker";
 import{createPatient,createSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,logout,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
 import NativeDentalAI from"./src/NativeDentalAI";
 import NativeToothChart from"./src/NativeToothChart";
-import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,RealtimeBadge,MediaGallery,NewConsultation}from"./src/ModernScreens";
+import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,MediaGallery,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 import{getNotifications,NotificationItem,getExperts,Expert,getConsultations,Consultation,getAcademicCourses,AcademicCourse,getAcademicMessages,AcademicMessage,askAcademic,uploadPatientMedia}from"./src/api";
 import{getAnalysisHistory,AnalysisHistoryItem}from"./src/analysisApi";
