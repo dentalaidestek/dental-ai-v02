@@ -1863,6 +1863,16 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP')
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS emailverificationchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMP NOT NULL, verified_at TIMESTAMP)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_emailverificationchallenge_expires_at ON emailverificationchallenge (expires_at)')
+        elif engine.dialect.name == "sqlite":
+            cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
+            if "email_verified_at" not in cols:
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email_verified_at DATETIME')
+
     # create_all() does not add columns to existing tables. Keep this additive,
     # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
     with engine.begin() as conn:
