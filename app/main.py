@@ -3435,6 +3435,41 @@ def change_username(request: Request, username: str = Form(...)):
         return render_account(success="Kullanıcı adınız başarıyla değiştirildi. 15 gün boyunca tekrar değiştirilemez.")
 
 
+@app.post("/account/display-name", response_class=HTMLResponse)
+@offload
+def change_display_name(request: Request, display_name: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    normalized = " ".join(display_name.split()).strip()
+    if len(normalized) < 2:
+        return HTMLResponse("Ad soyad en az 2 karakter olmalıdır.", status_code=400)
+    if len(normalized) > 120:
+        return HTMLResponse("Ad soyad en fazla 120 karakter olabilir.", status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        db_user = s.get(User, user.id)
+        if not db_user:
+            return RedirectResponse("/login", status_code=303)
+        # A verified expert's displayed identity is tied to the reviewed profile;
+        # changing it silently would invalidate that verification boundary.
+        expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        if (expert_profile and expert_profile.application_status == "APPROVED"
+                and expert_profile.verification_status == "VERIFIED"
+                and expert_profile.credential_document_path):
+            return HTMLResponse("Doğrulanmış uzman profilindeki ad soyad, belge doğrulamasıyla bağlıdır; değişiklik yeniden doğrulama akışından yapılmalıdır.", status_code=409)
+        if db_user.display_name == normalized:
+            return RedirectResponse("/account?profile_updated=1", status_code=303)
+        db_user.display_name = normalized
+        s.add(db_user)
+        event = _record_realtime_event(s, user.id, "PROFILE_UPDATED", "user", user.id,
+            {"user_id": user.id, "display_name": normalized})
+        s.commit()
+    on_loop(_publish_realtime_event, event)
+    return RedirectResponse("/account?profile_updated=1", status_code=303)
+
+
 @app.post("/account/password", response_class=HTMLResponse)
 def change_password(
     request: Request,
