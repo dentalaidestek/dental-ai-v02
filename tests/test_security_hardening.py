@@ -181,3 +181,9 @@ def test_public_vision_health_does_not_fingerprint_models():
     assert '"service": "dental-ai-vision"' in block
     assert "catalog_total" not in block
     assert "implementation_total" not in block
+
+
+def test_main_app_has_global_request_admission_limits():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    assert "from app.request_limits import RequestLimits" in source
+    assert "app.add_middleware(RequestLimits" in source
