@@ -8569,8 +8569,6 @@ def _socket_current_user(websocket):
         auth = websocket.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
             token = auth[7:].strip()
-        if not token:
-            token = (websocket.query_params.get("access_token") or "").strip()
     if token:
         token_hash = hash_session_token(token)
         with Session(engine, expire_on_commit=False) as s:
@@ -8617,18 +8615,6 @@ def _socket_case_authorized(user_id, case_id, *, mark_read=False):
 @app.websocket("/ws/sync")
 async def realtime_sync_socket(websocket: WebSocket):
     user=await run_in_threadpool(_socket_current_user, websocket)
-    if not user:
-        mobile_token = websocket.query_params.get("access_token")
-        if mobile_token:
-            try:
-                token_hash = hash_session_token(mobile_token)
-                with Session(engine, expire_on_commit=False) as session:
-                    session_token = session.exec(select(SessionToken).where(SessionToken.token_hash == token_hash)).first()
-                    candidate = session.get(User, session_token.user_id) if session_token else None
-                    if session_token and session_token.expires_at > _utcnow_naive() and candidate and candidate.is_active:
-                        user = candidate
-            except Exception:
-                user = None
     if not user:
         await websocket.close(code=4401); return
     connected_user_id = user.id
@@ -8744,18 +8730,6 @@ def _socket_message_sync(user, case_id, data, text_value):
 @app.websocket("/ws/expert-support/cases/{case_id}")
 async def expert_support_case_socket(websocket: WebSocket, case_id: int):
     user = await run_in_threadpool(_socket_current_user, websocket)
-    if not user:
-        mobile_token = websocket.query_params.get("access_token")
-        if mobile_token:
-            try:
-                token_hash = hash_session_token(mobile_token)
-                with Session(engine, expire_on_commit=False) as session:
-                    session_token = session.exec(select(SessionToken).where(SessionToken.token_hash == token_hash)).first()
-                    candidate = session.get(User, session_token.user_id) if session_token else None
-                    if session_token and session_token.expires_at > _utcnow_naive() and candidate and candidate.is_active:
-                        user = candidate
-            except Exception:
-                user = None
     if not user:
         await websocket.close(code=4401); return
     if not await run_in_threadpool(_socket_case_authorized, user.id, case_id):
