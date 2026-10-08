@@ -1,0 +1,23 @@
+import React,{useCallback,useEffect,useState}from"react";
+import{ActivityIndicator,Image,Pressable,ScrollView,Text,View}from"react-native";
+import*as ImagePicker from"expo-image-picker";
+import{getPatients,Patient}from"./api";
+import{createAnalysis,getAnalysis,startAnalysisAI,MobileAnalysis}from"./analysisApi";
+
+export default function NativeDentalAI({token}:{token:string}){
+ const[patients,setPatients]=useState<Patient[]>([]),[patientId,setPatientId]=useState<number|null>(null),[image,setImage]=useState<{uri:string;name?:string;type?:string}|null>(null),[analysis,setAnalysis]=useState<MobileAnalysis|null>(null),[busy,setBusy]=useState(false),[err,setErr]=useState("");
+ const load=useCallback(()=>{getPatients(token).then(r=>setPatients(r.items)).catch(()=>{})},[token]);useEffect(load,[load]);
+ async function pick(){const p=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!p.granted){setErr("Galeri izni gerekli.");return}const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],quality:.9,allowsMultipleSelection:false});if(!r.canceled&&r.assets[0]?.uri){const a=r.assets[0];setImage({uri:a.uri,name:a.fileName||"dental-image.jpg",type:a.mimeType||"image/jpeg"});setAnalysis(null)}}
+ async function send(){if(!patientId||!image){setErr("Hasta ve görüntü seçmelisin.");return}setBusy(true);setErr("");try{const r=await createAnalysis(token,{patientId,images:[image]});setAnalysis(await getAnalysis(token,r.analysis_id))}catch(e:any){setErr(e?.message||"Görüntü gönderilemedi.")}finally{setBusy(false)}}
+ async function refresh(){if(!analysis)return;setBusy(true);try{setAnalysis(await getAnalysis(token,analysis.analysis.id))}catch(e:any){setErr(e?.message||"Durum alınamadı.")}finally{setBusy(false)}}
+ async function start(){if(!analysis)return;setBusy(true);setErr("");try{await startAnalysisAI(token,analysis.analysis.id);setAnalysis(await getAnalysis(token,analysis.analysis.id))}catch(e:any){setErr(e?.message||"Analiz başlatılamadı.")}finally{setBusy(false)}}
+ return <ScrollView contentContainerStyle={{paddingBottom:30}}>
+  <Text style={{fontSize:13,fontWeight:"800",color:"#718096",marginBottom:8}}>Hasta seç</Text>
+  <ScrollView horizontal showsHorizontalScrollIndicator={false}>{patients.slice(0,12).map(p=><Pressable key={p.id} onPress={()=>setPatientId(p.id)} style={{paddingHorizontal:12,paddingVertical:9,borderRadius:12,backgroundColor:patientId===p.id?"#071B35":"#FFF",borderWidth:1,borderColor:"#E5EAF0",marginRight:7}}><Text style={{fontSize:12,fontWeight:"700",color:patientId===p.id?"#FFF":"#102033"}}>{p.first_name} {p.last_name}</Text></Pressable>)}</ScrollView>
+  <Pressable onPress={pick} style={{height:50,borderRadius:15,backgroundColor:"#FFF",borderWidth:1,borderColor:"#E5EAF0",alignItems:"center",justifyContent:"center",marginTop:14}}><Text style={{color:"#071B35",fontWeight:"800"}}>{image?"Görüntüyü Değiştir":"Galeriden Görüntü Seç"}</Text></Pressable>
+  {image&&<Image source={{uri:image.uri}} style={{width:"100%",height:210,borderRadius:16,marginTop:12}} resizeMode="contain"/>}
+  <Pressable onPress={send} disabled={busy||!image||!patientId} style={{height:52,borderRadius:15,backgroundColor:"#071B35",alignItems:"center",justifyContent:"center",marginTop:10}}>{busy?<ActivityIndicator color="#fff"/>:<Text style={{color:"#FFF",fontWeight:"800"}}>Görüntüyü Gönder</Text>}</Pressable>
+  {!!err&&<Text style={{color:"#B42318",marginTop:8}}>{err}</Text>}
+  {analysis&&<View style={{backgroundColor:"#FFF",borderRadius:18,padding:16,borderWidth:1,borderColor:"#E5EAF0",marginTop:16}}><Text style={{fontSize:16,fontWeight:"900",color:"#102033"}}>Analiz #{analysis.analysis.id}</Text><Text style={{fontSize:13,color:"#718096",marginTop:4}}>Durum: {analysis.analysis.status}</Text>{analysis.assets.map(a=><Text key={a.id} style={{fontSize:13,color:"#718096",marginTop:4}}>{a.original_filename} · {a.has_vision?"Görüntü hazır":"Görüntü işleniyor"}</Text>)}{analysis.analysis.status==="VISION_READY"&&<Pressable onPress={start} disabled={busy} style={{height:50,borderRadius:14,backgroundColor:"#071B35",alignItems:"center",justifyContent:"center",marginTop:12}}><Text style={{color:"#FFF",fontWeight:"800"}}>Klinik AI'yi Başlat</Text></Pressable>}{analysis.analysis.status==="AI_ANALYZING"&&<Pressable onPress={refresh} disabled={busy} style={{height:50,borderRadius:14,backgroundColor:"#FFF",borderWidth:1,borderColor:"#E5EAF0",alignItems:"center",justifyContent:"center",marginTop:12}}><Text style={{color:"#071B35",fontWeight:"800"}}>Sonucu Yenile</Text></Pressable>}{analysis.ai_result&&<Text style={{fontSize:12,color:"#102033",marginTop:12}}>{JSON.stringify(analysis.ai_result)}</Text>}</View>}
+ </ScrollView>
+}
