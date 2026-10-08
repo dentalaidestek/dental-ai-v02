@@ -293,6 +293,12 @@ class MobilePatientCreate(BaseModel):
     force_create: bool = False
 
 
+class MobileToothUpdate(BaseModel):
+    status: str
+    note: Optional[str] = None
+    surface: Optional[str] = None
+
+
 class MobileScheduleCreate(BaseModel):
     event_type: str
     title: str
@@ -398,6 +404,49 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
         return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
                           "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
                           "location": event.location, "status": event.status}}
+
+
+@router.post("/patients/{patient_id}/teeth/{tooth_number}")
+def mobile_update_tooth(
+    patient_id: int,
+    tooth_number: str,
+    payload: MobileToothUpdate,
+    user: User = Depends(_mobile_user),
+):
+    allowed_statuses = {"HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"}
+    allowed_surfaces = {"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}
+    if payload.status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
+    if payload.surface and payload.surface not in allowed_surfaces:
+        raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        note = payload.note.strip() if payload.note else None
+        tooth = session.exec(select(ToothStatus).where(
+            ToothStatus.patient_id == patient_id,
+            ToothStatus.tooth_number == tooth_number,
+        )).first()
+        if tooth:
+            tooth.status, tooth.note, tooth.updated_at = payload.status, note, datetime.utcnow()
+        else:
+            session.add(ToothStatus(patient_id=patient_id,tooth_number=tooth_number,status=payload.status,note=note))
+        if payload.surface:
+            surface = session.exec(select(ToothSurfaceStatus).where(
+                ToothSurfaceStatus.patient_id == patient_id,
+                ToothSurfaceStatus.tooth_number == tooth_number,
+                ToothSurfaceStatus.surface == payload.surface,
+            )).first()
+            if surface:
+                surface.status, surface.note, surface.updated_at = payload.status, note, datetime.utcnow()
+            else:
+                session.add(ToothSurfaceStatus(patient_id=patient_id,tooth_number=tooth_number,surface=payload.surface,status=payload.status,note=note))
+        treatment_names = {"CARIES":"Çürük","FILLING":"Dolgu","CROWN":"Kron","ROOT_CANAL":"Kanal Tedavisi","EXTRACTED":"Diş Çekimi","IMPLANT":"İmplant","OTHER":"Diğer"}
+        if payload.status in treatment_names:
+            session.add(Treatment(patient_id=patient_id,tooth_number=tooth_number,treatment_name=treatment_names[payload.status],treatment_date=datetime.utcnow().strftime("%Y-%m-%d"),doctor_note=note))
+        session.commit()
+        return {"ok": True, "tooth_number": tooth_number, "status": payload.status, "surface": payload.surface}
 
 
 @router.get("/patients/{patient_id}")
