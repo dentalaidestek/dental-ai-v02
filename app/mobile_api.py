@@ -236,27 +236,59 @@ def register_e2ee_device(payload: E2EEDeviceKeyRequest, user: User = Depends(_mo
     return {"ok": True, "device_id": device_id, "public_key": public_key, "algorithm": algorithm, "key_version": key_version}
 
 
-@router.get("/e2ee/users/{user_id}/key")
-def get_e2ee_user_key(user_id: int, user: User = Depends(_mobile_user)):
+def _e2ee_peer_allowed(session: Session, user_id: int, peer_user_id: int) -> bool:
+    if user_id == peer_user_id:
+        return True
+    return session.exec(
+        select(ConsultationCase).where(
+            ((ConsultationCase.requester_user_id == user_id) & (ConsultationCase.expert_user_id == peer_user_id)) |
+            ((ConsultationCase.expert_user_id == user_id) & (ConsultationCase.requester_user_id == peer_user_id))
+        )
+    ).first() is not None
+
+
+@router.get("/e2ee/users/{user_id}/keys")
+def get_e2ee_user_keys(user_id: int, user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
-        if user_id != user.id:
-            allowed = session.exec(
-                select(ConsultationCase).where(
-                    ((ConsultationCase.requester_user_id == user.id) & (ConsultationCase.expert_user_id == user_id)) |
-                    ((ConsultationCase.expert_user_id == user.id) & (ConsultationCase.requester_user_id == user_id))
-                )
-            ).first()
-            if not allowed:
-                raise HTTPException(status_code=403, detail="Bu kullanıcının E2EE anahtarına erişemezsiniz.")
-        row = session.exec(
+        if not _e2ee_peer_allowed(session, user.id, user_id):
+            raise HTTPException(status_code=403, detail="Bu kullanıcının E2EE anahtarlarına erişemezsiniz.")
+        rows = session.exec(
             select(E2EEDeviceKey).where(
                 E2EEDeviceKey.user_id == user_id,
                 E2EEDeviceKey.revoked_at == None,
             ).order_by(E2EEDeviceKey.created_at.desc())
+        ).all()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Kullanıcının aktif E2EE cihaz anahtarı bulunamadı.")
+        return {"items": [
+            {"device_id": row.device_id, "public_key": row.public_key, "algorithm": row.algorithm, "key_version": row.key_version}
+            for row in rows
+        ]}
+
+
+@router.get("/e2ee/users/{user_id}/key")
+def get_e2ee_user_key(user_id: int, user: User = Depends(_mobile_user)):
+    data = get_e2ee_user_keys(user_id, user)
+    return data["items"][0]
+
+
+@router.delete("/e2ee/device/{device_id}")
+def revoke_e2ee_device(device_id: str, user: User = Depends(_mobile_user)):
+    device_id = device_id.strip()
+    with Session(engine, expire_on_commit=False) as session:
+        row = session.exec(
+            select(E2EEDeviceKey).where(
+                E2EEDeviceKey.device_id == device_id,
+                E2EEDeviceKey.user_id == user.id,
+            )
         ).first()
         if not row:
-            raise HTTPException(status_code=404, detail="Kullanıcının aktif E2EE cihaz anahtarı bulunamadı.")
-        return {"device_id": row.device_id, "public_key": row.public_key, "algorithm": row.algorithm, "key_version": row.key_version}
+            raise HTTPException(status_code=404, detail="E2EE cihazı bulunamadı.")
+        if row.revoked_at is None:
+            row.revoked_at = datetime.utcnow()
+            session.add(row)
+            session.commit()
+    return {"ok": True, "device_id": device_id, "revoked": True}
 
 
 @router.post("/auth/login", response_model=MobileToken)
