@@ -10318,7 +10318,19 @@ def _publish_clinical_result(session, analysis, serialized, *, status):
         if previous and previous != str(path):
             session.add(work_jobs.WorkGarbage(reference=previous))
         session.exec(__import__("sqlalchemy").delete(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == str(path)))
+        owner_id = None
+        if guest:
+            owner_id = getattr(live, "owner_user_id", None)
+        else:
+            patient = session.get(Patient, getattr(live, "patient_id", None))
+            owner_id = patient.owner_user_id if patient else None
+        realtime_event = _record_realtime_event(session, int(owner_id), "ANALYSIS_UPDATED", "analysis", live.id, {
+            "analysis_id": live.id, "patient_id": getattr(live, "patient_id", None),
+            "status": live.status, "result_ready": True, "stage": (json.loads(serialized).get("stage") or None),
+        }) if owner_id else None
         session.commit()
+        if realtime_event:
+            on_loop(_publish_realtime_event, realtime_event)
     except BaseException:
         session.rollback()
         session.close()
