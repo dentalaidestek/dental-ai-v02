@@ -2418,7 +2418,7 @@ def _verify_email_code(session: Session, user: User, challenge: EmailVerificatio
     now = _utcnow_naive()
     if challenge.user_id != user.id or challenge.verified_at or challenge.expires_at <= now or challenge.attempts >= 5:
         return False
-    if not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
+    if not re.fullmatch(r"\d{6}", code.strip()) or not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
         challenge.attempts += 1
         session.add(challenge)
         session.commit()
