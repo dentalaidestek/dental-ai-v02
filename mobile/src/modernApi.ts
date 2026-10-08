@@ -17,13 +17,13 @@ export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/noti
 export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:number}>("/analyses",t);
 export const getMedia=(t:string,p:number)=>req<{items:Array<{id:number;filename:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at:string;url:string}>}>(`/patients/${p}/media`,t);
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
-export const createConsultation=async(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>{const b=new URLSearchParams();Object.entries(payload).forEach(([k,v])=>{if(v!==undefined)b.set(k,String(v))});return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b.toString()});};
+export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
 export const getConsultations=(t:string)=>req<{items:Consultation[]}>("/consultations",t);
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
-export const sendConsultationMessage=(t:string,id:number,content:string)=>{const body=new URLSearchParams();body.set("content",content);return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()});};
+export const sendConsultationMessage=(t:string,id:number,content:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content})});
 export const getCourses=(t:string)=>req<{items:Course[]}>("/academic/courses",t);
 export async function askAcademic(t:string,courseId:number,message:string){
- const body=new URLSearchParams();body.set("message",message);
+ const body=JSON.stringify({message});
  const r=await fetch(API_BASE+`/academic/courses/${courseId}/ask`,{method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/x-www-form-urlencoded",Accept:"application/json"},body:body.toString()});
  const raw=await r.text(); if(!r.ok){let b:any={};try{b=JSON.parse(raw)}catch{};throw new Error(typeof b.detail==="string"?b.detail:(b.error||"Akademik AI isteği başarısız."));}
  try{return JSON.parse(raw)}catch{return {ok:true,raw};}
