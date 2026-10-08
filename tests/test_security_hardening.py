@@ -103,3 +103,11 @@ def test_anatomy_direct_service_requires_internal_key_and_bounds_upload():
     assert "MAX_IMAGE_BYTES" in source
     assert "MAX_IMAGE_PIXELS" in source
     assert "probe.verify()" in source
+
+
+def test_password_reset_requests_are_throttled():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/forgot-password")', 1)[1].split('@app.get("/reset-password"', 1)[0]
+    assert "_check_web_login_rate" in block
+    assert "_record_web_login_failure" in block
+    assert "password-reset:" in block
