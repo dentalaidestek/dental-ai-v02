@@ -1,4 +1,5 @@
-import React,{useCallback,useEffect,useRef,useState}from"react";\nimport * as ImagePicker from"expo-image-picker";
+import React,{useCallback,useEffect,useRef,useState}from"react";
+import * as ImagePicker from"expo-image-picker";
 import{ActivityIndicator,FlatList,Image,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
 import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getExperts,getMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,mediaUploadUrl,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C"};
