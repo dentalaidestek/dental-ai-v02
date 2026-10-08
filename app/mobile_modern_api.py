@@ -8,8 +8,8 @@ from datetime import datetime
 from pathlib import Path
 import json, shutil, uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile\nfrom fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select, func
 from starlette.requests import Request
@@ -22,7 +22,7 @@ from app.main import (
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
 from app.mobile_api import _mobile_user
-from app.main import study_ai_ask, SESSION_COOKIE
+from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
 
@@ -72,7 +72,7 @@ async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:Upl
         return {"ok":True,"media":{"id":row.id,"filename":row.original_filename,"media_type":row.media_type}}
 
 
-@router.get("/patients/{patient_id}/media/{media_id}")
+@router.get("/patients/{patient_id}/media/{media_id}/file")\ndef mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):\n    with Session(engine,expire_on_commit=False) as s:\n        _user_owned_patient(s,user,patient_id)\n        row=s.get(PatientMedia,media_id)\n        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")\n        try: path=storage_ensure_local(row.file_path)\n        except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")\n        types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}\n        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename)\n\n@router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
@@ -176,7 +176,7 @@ def mobile_academic_courses(user=Depends(_mobile_user)):
 
 
 @router.post("/academic/courses/{course_id}/ask")
-def mobile_academic_ask(course_id:int,message:str=Form(...),credentials:HTTPAuthorizationCredentials=Depends(__import__("fastapi").security.HTTPBearer(auto_error=False)),user=Depends(_mobile_user)):
+def mobile_academic_ask(course_id:int,message:str=Form(...),credentials:HTTPAuthorizationCredentials=Depends(HTTPBearer(auto_error=False)),user=Depends(_mobile_user)):
     if not credentials: raise HTTPException(status_code=401,detail="Oturum geçersiz.")
     token=credentials.credentials
     scope={"type":"http","method":"POST","path":f"/notes/courses/{course_id}/ai/ask","headers":[(b"cookie",f"{SESSION_COOKIE}={token}".encode()),(b"accept",b"application/json")],"query_string":b"","server":("mobile",443)}
