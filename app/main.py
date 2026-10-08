@@ -3403,17 +3403,22 @@ def login_user(
 
 
 @app.post("/api/mobile/expert/device/check")
-def mobile_expert_device_check(login: str = Form(...), password: str = Form(...), device_key: str = Form(...), device_name: str = Form("Mobil cihaz"), platform: str = Form("mobile"), public_key: str = Form("")):
+def mobile_expert_device_check(request: Request, login: str = Form(...), password: str = Form(...), device_key: str = Form(...), device_name: str = Form("Mobil cihaz"), platform: str = Form("mobile"), public_key: str = Form("")):
     login=login.strip().lower(); device_key=device_key.strip()
+    login_rate_key=_check_web_login_rate(request, login)
     if len(device_key)<24:return JSONResponse({"ok":False,"error":"Geçersiz cihaz anahtarı."},status_code=400)
     device_hash=hash_session_token(device_key)
     with Session(engine,expire_on_commit=False) as s:
         user=s.exec(select(User).where((User.username==login)|(User.email==login))).first()
         if not user or not user.is_active or not user.password_hash or not verify_password(password,user.password_hash):
+            _record_web_login_failure(login_rate_key)
             return JSONResponse({"ok":False,"error":"Giriş bilgileri hatalı."},status_code=401)
-        if not _is_verified_expert(s,user.id):return JSONResponse({"ok":True,"device_verification_required":False})
+        if not _is_verified_expert(s,user.id):
+            _clear_web_login_failures(login_rate_key)
+            return JSONResponse({"ok":True,"device_verification_required":False})
         trusted=s.exec(select(ExpertTrustedDevice).where(ExpertTrustedDevice.user_id==user.id,ExpertTrustedDevice.device_key_hash==device_hash,ExpertTrustedDevice.is_active==True)).first()
         if trusted:
+            _clear_web_login_failures(login_rate_key)
             trusted.last_seen_at=_utcnow_naive();s.add(trusted);s.commit()
             return JSONResponse({"ok":True,"device_verification_required":False})
         if not user.email:return JSONResponse({"ok":False,"error":"Uzman hesabında doğrulanmış e-posta bulunamadı."},status_code=409)
@@ -3425,6 +3430,7 @@ def mobile_expert_device_check(login: str = Form(...), password: str = Form(...)
         s.add(ch);s.commit();s.refresh(ch)
         try:send_expert_device_code(user.email,code)
         except Exception:return JSONResponse({"ok":False,"error":"Doğrulama kodu gönderilemedi. Lütfen daha sonra tekrar deneyin."},status_code=503)
+        _clear_web_login_failures(login_rate_key)
         return JSONResponse({"ok":True,"device_verification_required":True,"challenge_id":ch.id,"code_sent":True})
 
 @app.post("/api/mobile/expert/device/verify")
@@ -3787,7 +3793,7 @@ def protected_upload(request: Request, filename: str):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 def template_user_context(request: Request):
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
