@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - "mobile/**"
-      - "app/mobile_api.py"
+      - "app/mobile_api.py"\n      - "app/mobile_analysis_api.py"\n      - "app/mobile_modern_api.py"\n      - "app/main.py"
 
 jobs:
   typecheck:
