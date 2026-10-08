@@ -162,3 +162,21 @@ def test_native_login_requires_shared_email_verification():
     assert "if not user.email_verified_at" in block
     assert "_ensure_email_verification_challenge" in block
     assert "challenge_id=challenge.id" in block
+
+
+def test_existing_web_and_native_sessions_cannot_bypass_email_verification():
+    main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    web_block = main_source.split("def get_current_user", 1)[1].split("def create_user_session", 1)[0]
+    assert "not user.email_verified_at" in web_block
+
+    mobile_source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    mobile_block = mobile_source.split("def _mobile_user", 1)[1].split("def _user_payload", 1)[0]
+    assert "not user.email_verified_at" in mobile_block
+
+
+def test_public_vision_health_does_not_fingerprint_models():
+    source = (ROOT / "vision_service/app.py").read_text(encoding="utf-8")
+    block = source.split('@app.get("/health")', 1)[1].split('@app.get("/viewer")', 1)[0]
+    assert '"service": "dental-ai-vision"' in block
+    assert "catalog_total" not in block
+    assert "implementation_total" not in block
