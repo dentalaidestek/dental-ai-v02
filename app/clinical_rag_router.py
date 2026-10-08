@@ -206,6 +206,21 @@ def _resolved_image_types(ai_types: list[str], stored_types: list[str]) -> list[
     return ai_clean or stored_clean or ["OTHER"]
 
 
+import re
+
+_PROVIDER_EMAIL_RE = re.compile(r"\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b", re.I)
+_PROVIDER_TC_RE = re.compile(r"(?<!\\d)\\d{11}(?!\\d)")
+_PROVIDER_PHONE_RE = re.compile(r"(?<!\\d)(?:\\+?90[ -]?)?(?:0?5\\d{2})[ -]?\\d{3}[ -]?\\d{2}[ -]?\\d{2}(?!\\d)")
+_PROVIDER_PII_LABEL_RE = re.compile(r"(?im)\\b(?:ad\\s*soyad|hasta\\s*ad(?:ı|i)|telefon|tel|e[- ]?posta|email|tc(?:\\s*kimlik)?(?:\\s*no)?|kimlik(?:\\s*no)?|hasta(?:\\s*no|\\s*id)|dosya\\s*no|doğum\\s*tarihi|dogum\\s*tarihi)\\s*[:=-]\\s*[^\\n,;]+")
+
+def _provider_safe_text(value: str | None) -> str:
+    text = str(value or "")
+    text = _PROVIDER_PII_LABEL_RE.sub("[REDACTED]", text)
+    text = _PROVIDER_EMAIL_RE.sub("[REDACTED]", text)
+    text = _PROVIDER_TC_RE.sub("[REDACTED]", text)
+    text = _PROVIDER_PHONE_RE.sub("[REDACTED]", text)
+    return text.strip()
+
 def _build_router_prompt(
     *,
     age,
@@ -218,6 +233,9 @@ def _build_router_prompt(
 ) -> str:
     allowed_specialties = ", ".join(SPECIALTIES.keys())
     allowed_signals = ", ".join(sorted(_ALLOWED_SIGNALS))
+    safe_clinical_notes = _provider_safe_text(clinical_notes)
+    safe_chief_complaint = _provider_safe_text(chief_complaint)
+    safe_extra_text = _provider_safe_text(extra_text)
     return f"""
 Sen Dental AI için yalnız RAG yönlendirmesi yapan kısa bir klinik triage katmanısın.
 Tanı veya tedavi yazma. Yüklenen dental görüntüleri ve klinik bilgiyi birlikte anlayarak
