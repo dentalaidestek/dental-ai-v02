@@ -22,7 +22,7 @@ from app.main import (
 )
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
-from app.mobile_api import _mobile_user
+from app.mobile_api import _mobile_user, _copy_validated_image
 from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
@@ -247,5 +247,11 @@ def mobile_academic_ask(course_id:int,message:str=Form(...),credentials:HTTPAuth
 def mobile_consultation_message_media(case_id:int,message_id:int,user=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as s:
         c=s.get(ConsultationCase,case_id); m=s.get(ConsultationMessage,message_id)
-        if not c or user.id not in {c.requester_user_id,c.expert_user_id} or not m or m.case_id!=case_id or not m.media_path: raise HTTPException(status_code=404,detail="Medya bulunamadı.")
-        return {"ok":True,"path":m.media_path}
+        if not c or user.id not in {c.requester_user_id,c.expert_user_id} or not m or m.case_id!=case_id or not m.media_path:
+            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        try:
+            path=storage_ensure_local(m.media_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404,detail="Medya dosyası bulunamadı.") from exc
+        media_type={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".pdf":"application/pdf"}.get(path.suffix.lower(),"application/octet-stream")
+        return FileResponse(path,media_type=media_type,filename=path.name)
