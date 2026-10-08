@@ -674,3 +674,42 @@ async def mobile_patient_media_upload(
         return {"media":{"id":media.id,"original_filename":media.original_filename,
             "media_type":media.media_type,"tooth_number":media.tooth_number,
             "note":media.note,"uploaded_at":media.uploaded_at}}
+
+def _mobile_access_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> str:
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise _unauthorized()
+    return credentials.credentials
+
+class MobileConsultationRequest(BaseModel):
+    expert_user_id:int
+    clinical_summary:str
+    requester_opinion:str=""
+    question:str
+    tooth_region:str=""
+    patient_id:Optional[int]=None
+    media_ids:str=""
+    urgency:str="NORMAL"
+
+@router.post("/consultations")
+def mobile_create_consultation(payload:MobileConsultationRequest,token:str=Depends(_mobile_access_token)):
+    response=expert_support_request_create(_mobile_request(token),payload.expert_user_id,
+        payload.clinical_summary,payload.requester_opinion,payload.question,payload.tooth_region,
+        payload.patient_id,payload.media_ids,payload.urgency)
+    if hasattr(response,"status_code") and response.status_code>=400:
+        data=_response_json(response);raise HTTPException(status_code=response.status_code,detail=data.get("error","Danışmanlık oluşturulamadı."))
+    location=getattr(response,"headers",{}).get("location")
+    return {"ok":True,"case_id":int(location.rsplit("/",1)[-1]) if location else None}
+
+class MobileMessage(BaseModel):
+    content:str
+    reply_to_message_id:Optional[int]=None
+    client_message_id:str=""
+
+@router.post("/consultations/{case_id}/messages")
+def mobile_send_consultation_message(case_id:int,payload:MobileMessage,token:str=Depends(_mobile_access_token)):
+    response=expert_support_message(_mobile_request(token),case_id,payload.content,
+        payload.reply_to_message_id,payload.client_message_id)
+    data=_response_json(response)
+    if hasattr(response,"status_code") and response.status_code>=400:
+        raise HTTPException(status_code=response.status_code,detail=data.get("error","Mesaj gönderilemedi."))
+    return data
