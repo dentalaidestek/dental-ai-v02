@@ -1,7 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState}from"react";
 import * as ImagePicker from"expo-image-picker";
 import{ActivityIndicator,FlatList,Image,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
-import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getExperts,getMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,createConsultation,mediaUploadUrl,Expert,Consultation,Course,ChatMessage}from"./modernApi";
+import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,createConsultation,mediaUploadUrl,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
