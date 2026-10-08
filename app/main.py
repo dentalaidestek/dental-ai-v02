@@ -3643,10 +3643,17 @@ def forgot_password_request(
             s.add(reset_token)
             s.commit()
 
-            public_base_url = os.getenv(
-                "PUBLIC_BASE_URL",
-                str(request.base_url).rstrip("/"),
-            ).rstrip("/")
+            public_base_url = (os.getenv("PUBLIC_BASE_URL") or "https://dentalai.tr").strip().rstrip("/")
+            public_base = urlparse(public_base_url)
+            if (
+                public_base.scheme not in {"https", "http"}
+                or not public_base.netloc
+                or public_base.username
+                or public_base.password
+                or public_base.query
+                or public_base.fragment
+            ):
+                raise RuntimeError("PUBLIC_BASE_URL güvenli bir mutlak URL olmalıdır.")
 
             reset_link = (
                 f"{public_base_url}/reset-password"
