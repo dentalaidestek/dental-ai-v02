@@ -44,7 +44,7 @@ from app.main import (
     AdminNotice, StudyCourse, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ExpertProfile,
     expert_support_request_create, expert_support_message, study_ai_ask,
-    SESSION_COOKIE,
+    SESSION_COOKIE, storage_persist_file,
 )
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
