@@ -171,6 +171,7 @@ class User(SQLModel, table=True):
 class EmailVerificationChallenge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True, unique=True)
+    public_token: str = Field(index=True, unique=True)
     code_hash: str
     expires_at: datetime = Field(index=True)
     attempts: int = 0
@@ -2373,7 +2374,7 @@ def _ensure_email_verification_challenge(session: Session, user: User) -> EmailV
         return challenge
     now = _utcnow_naive()
     code = f"{secrets.randbelow(1000000):06d}"
-    challenge = EmailVerificationChallenge(user_id=locked_user.id, code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+    challenge = EmailVerificationChallenge(user_id=locked_user.id, public_token=secrets.token_urlsafe(32), code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
     session.add(challenge)
     session.commit()
     session.refresh(challenge)
@@ -3440,12 +3441,12 @@ def login_page(
 
 
 @app.post("/verify-email")
-def verify_email(request: Request, challenge_id: int = Form(...), code: str = Form(...)):
+def verify_email(request: Request, challenge_token: str = Form(...), code: str = Form(...)):
     with Session(engine, expire_on_commit=False) as s:
-        challenge = s.get(EmailVerificationChallenge, challenge_id)
+        challenge = s.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == challenge_token)).first()
         user = s.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(s, user, challenge, code):
-            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_id": challenge_id, "verification_mode": True, "next_url": "/", "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_token": challenge_token, "verification_mode": True, "next_url": "/", "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
         response = RedirectResponse(url="/", status_code=303)
         create_user_session(response, user.id)
         return response
@@ -3495,7 +3496,7 @@ def login_user(
                 challenge = _ensure_email_verification_challenge(s, user)
             except Exception:
                 return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
-            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_id": challenge.id, "verification_mode": True, "next_url": safe_next}, status_code=200)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
 
         response = RedirectResponse(
             url=safe_next,
