@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.auth import create_session_token, hash_session_token, verify_password
 from app.main import (
@@ -181,23 +181,29 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
             .where(Patient.owner_user_id == user.id)
             .order_by(Patient.created_at.desc())
         )
-        patients = session.exec(patient_query).all()
-        recent_patients = [_patient_payload(p) for p in patients[:8]]
+        recent_patients = [_patient_payload(p) for p in session.exec(patient_query.limit(8)).all()]
 
-        analyses = session.exec(
-            select(Analysis)
+        patient_count = session.exec(
+            select(func.count()).select_from(Patient).where(Patient.owner_user_id == user.id)
+        ).one()
+        analysis_count = session.exec(
+            select(func.count())
+            .select_from(Analysis)
             .join(Patient, Patient.id == Analysis.patient_id)
             .where(Patient.owner_user_id == user.id)
-            .order_by(Analysis.created_at.desc())
-        ).all()
-
-        events = session.exec(
-            select(ScheduleEvent)
-            .where(ScheduleEvent.owner_user_id == user.id)
-            .order_by(ScheduleEvent.start_at.asc())
-        ).all()
+        ).one()
 
         now = datetime.utcnow()
+        upcoming_events = session.exec(
+            select(ScheduleEvent)
+            .where(
+                ScheduleEvent.owner_user_id == user.id,
+                ScheduleEvent.status == "ACTIVE",
+                ScheduleEvent.start_at >= now,
+            )
+            .order_by(ScheduleEvent.start_at.asc())
+            .limit(8)
+        ).all()
         upcoming = [
             {
                 "id": e.id,
@@ -211,15 +217,14 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
                 "reminder_minutes": e.reminder_minutes,
                 "notification_enabled": e.notification_enabled,
             }
-            for e in events
-            if e.status == "ACTIVE" and e.start_at >= now
-        ][:8]
+            for e in upcoming_events
+        ]
 
         return {
             "user": _user_payload(session, user),
             "stats": {
-                "patient_count": len(patients),
-                "analysis_count": len(analyses),
+                "patient_count": int(patient_count),
+                "analysis_count": int(analysis_count),
                 "upcoming_event_count": len(upcoming),
             },
             "recent_patients": recent_patients,
@@ -259,7 +264,7 @@ def mobile_patients(
                 | (Patient.phone.ilike(pattern))
                 | (Patient.anonymous_id.ilike(pattern))
             )
-        total = len(session.exec(total_query).all())
+        total = int(session.exec(select(func.count()).select_from(total_query.subquery())).one())
 
         return {
             "items": [_patient_payload(p) for p in patients],
