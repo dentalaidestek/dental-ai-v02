@@ -13,6 +13,7 @@ from app.main import (
     Analysis, ImageAsset, Patient, User, engine,
     _enqueue_work, _latest_work, _patient_payload,
     classify_dental_image, storage_ensure_local, storage_persist_file,
+    _record_realtime_event, _publish_realtime_event, on_loop,
 )
 from app.mobile_api import _mobile_user
 
@@ -83,7 +84,8 @@ async def create_mobile_analysis(
         session.add_all(assets)
         session.flush()
         job = _enqueue_work(session, "VISION", "ANALYSIS", analysis.id)
-        session.commit()
+        realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
+        session.commit(); on_loop(_publish_realtime_event,realtime)
         return {
             "ok": True,
             "analysis_id": analysis.id,
@@ -157,7 +159,8 @@ def start_mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                 detail=f"Görüntü analizi henüz hazır değil: {analysis.status}",
             )
         job = _enqueue_work(session, "PRELIMINARY", "ANALYSIS", analysis_id)
-        session.commit()
+        realtime=_record_realtime_event(session,user.id,"ANALYSIS_UPDATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":analysis.patient_id,"status":analysis.status,"stage":"PRELIMINARY_QUEUED"})
+        session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"ok": True, "status": analysis.status, "job_id": job.id}
 
 
