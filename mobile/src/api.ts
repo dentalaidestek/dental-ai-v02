@@ -11,8 +11,8 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
  if(!response.ok){const detail=body.detail;throw new Error(typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
  return body as T;
 }
-export function login(loginValue:string,password:string){return request<{access_token:string|null;token_type:string;expires_at:string;challenge_id?:number}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password})});}
-export function verifyEmail(challengeId:number,code:string){return request<{access_token:string;token_type:string;expires_at:string}>("/auth/verify-email",undefined,{method:"POST",body:JSON.stringify({challenge_id:challengeId,code})});}
+export function login(loginValue:string,password:string){return request<{access_token:string|null;token_type:string;expires_at:string;challenge_token?:string}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password})});}
+export function verifyEmail(challengeToken:string,code:string){return request<{access_token:string;token_type:string;expires_at:string}>("/auth/verify-email",undefined,{method:"POST",body:JSON.stringify({challenge_token:challengeToken,code})});}
 export function logout(token:string){return request<{ok:boolean}>("/auth/logout",token,{method:"POST"});}
 export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
