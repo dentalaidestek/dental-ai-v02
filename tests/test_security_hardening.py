@@ -212,3 +212,13 @@ def test_native_and_web_share_email_verification_state():
     assert "email_verified_at" in main
     assert "/auth/verify-email" in mobile
     assert "EmailVerificationChallenge" in mobile
+
+
+def test_selected_get_handlers_are_side_effect_free():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    for route in ['@app.get("/messages"', '@app.get("/expert-support/expert/{expert_user_id}"']:
+        start = source.index(route)
+        end = source.find("\n@app.", start + 10)
+        block = source[start:end if end != -1 else len(source)]
+        assert "_consultation_event(" not in block
+        assert "_expire_pending_expert_requests(" not in block
