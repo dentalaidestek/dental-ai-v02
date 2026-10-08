@@ -29,3 +29,6 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
 
 export function getAnalysis(token:string,id:number){return call<MobileAnalysis>("/analyses/"+id,token);}
 export function startAnalysisAI(token:string,id:number){return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
+
+export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
+export function getAnalysisHistory(token:string,patientId?:number){return request<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId?"?patient_id="+patientId:""),token);}
