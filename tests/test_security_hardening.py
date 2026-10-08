@@ -255,6 +255,8 @@ def test_email_verification_serializes_replay_and_attempt_races():
     assert "with_for_update()" in block
     assert "locked_challenge.verified_at" in block
     assert "locked_challenge.attempts >= 5" in block
+    assert "select(SessionToken).where(SessionToken.user_id == user.id)" in block
+    assert "session.delete(stale_session)" in block
 
 
 def test_admin_login_requires_verified_email_before_session_creation():
