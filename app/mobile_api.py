@@ -55,6 +55,7 @@ from app.main import (
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
 bearer = HTTPBearer(auto_error=False)
 MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
+MOBILE_MAX_IMAGE_PIXELS = max(1, int(os.getenv("MOBILE_MAX_IMAGE_PIXELS", "40000000")))
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
 LOGIN_RATE_WINDOW_SECONDS = max(60, int(os.getenv("MOBILE_LOGIN_RATE_WINDOW_SECONDS", "600")))
 LOGIN_RATE_MAX_FAILURES = max(3, int(os.getenv("MOBILE_LOGIN_RATE_MAX_FAILURES", "8")))
@@ -105,6 +106,9 @@ def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int)
                     raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
                 out.write(chunk)
         with Image.open(destination) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MOBILE_MAX_IMAGE_PIXELS:
+                raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
             image.verify()
     except HTTPException:
         destination.unlink(missing_ok=True)
