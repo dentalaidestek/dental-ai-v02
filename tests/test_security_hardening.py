@@ -91,7 +91,7 @@ def test_admin_login_uses_same_brute_force_throttle():
 
 def test_password_change_revokes_existing_sessions():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
-    block = source.split('def account_settings', 1)[1].split('def _safe_login_next', 1)[0]
+    block = source.split('@app.post("/account/password"', 1)[1].split('def _safe_login_next', 1)[0]
     assert "select(SessionToken).where(SessionToken.user_id == user.id)" in block
     assert "s.delete(session_token)" in block
 
