@@ -99,7 +99,7 @@
         {% if verification_mode %}
         <p>E-posta adresinize gönderilen 6 haneli kodu girin.</p>
         <form method="post" action="/verify-email">
-            <input type="hidden" name="challenge_id" value="{{ challenge_id }}">
+            <input type="hidden" name="challenge_token" value="{{ challenge_token }}">
             <input type="hidden" name="next_url" value="{{ next_url or '/' }}">
             <label>Doğrulama kodu</label>
             <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
