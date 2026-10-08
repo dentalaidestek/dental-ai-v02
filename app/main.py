@@ -230,7 +230,10 @@ class SupportTicketMessage(SQLModel, table=True):
     ticket_id: int = Field(index=True)
     sender_user_id: int = Field(index=True)
     sender_role: str = Field(index=True)
-    message: str
+    message: Optional[str] = None
+    e2ee_ciphertext: Optional[str] = None
+    e2ee_ephemeral_public_key: Optional[str] = None
+    e2ee_key_version: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -668,6 +671,9 @@ class ConsultationMessage(SQLModel, table=True):
     sender_user_id: int = Field(index=True)
     message_type: str = Field(default="TEXT", index=True)
     content: Optional[str] = None
+    e2ee_ciphertext: Optional[str] = None
+    e2ee_ephemeral_public_key: Optional[str] = None
+    e2ee_key_version: Optional[str] = Field(default=None, index=True)
     media_path: Optional[str] = None
     annotation_json: Optional[str] = None
     reply_to_message_id: Optional[int] = Field(default=None, index=True)
