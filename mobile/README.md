@@ -25,3 +25,5 @@ Production Play Store artifact:
     eas build --platform android --profile production
 
 No production deployment or main-branch merge is performed by this branch.
+
+Native workspace: realtime, notifications, consultation, Academic AI, analysis history and patient media are wired on the current branch.
