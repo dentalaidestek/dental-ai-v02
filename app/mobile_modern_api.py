@@ -8,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 import json, shutil, uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile\nfrom fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select, func
@@ -72,7 +73,18 @@ async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:Upl
         return {"ok":True,"media":{"id":row.id,"filename":row.original_filename,"media_type":row.media_type}}
 
 
-@router.get("/patients/{patient_id}/media/{media_id}/file")\ndef mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):\n    with Session(engine,expire_on_commit=False) as s:\n        _user_owned_patient(s,user,patient_id)\n        row=s.get(PatientMedia,media_id)\n        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")\n        try: path=storage_ensure_local(row.file_path)\n        except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")\n        types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}\n        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename)\n\n@router.get("/patients/{patient_id}/media/{media_id}")
+@router.get("/patients/{patient_id}/media/{media_id}/file")
+def mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as s:
+        _user_owned_patient(s,user,patient_id)
+        row=s.get(PatientMedia,media_id)
+        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        try: path=storage_ensure_local(row.file_path)
+        except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")
+        types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}
+        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename)
+
+@router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
