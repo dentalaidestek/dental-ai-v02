@@ -8570,6 +8570,31 @@ def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
             "last_event_id":events[-1].id if events else after_id,"has_more":len(events)==limit}
 
 
+def _socket_origin_allowed(websocket) -> bool:
+    origin = (websocket.headers.get("origin") or "").strip()
+    authorization = (websocket.headers.get("authorization") or "").strip()
+    if not origin:
+        # Native clients authenticate with an explicit Bearer token and do not
+        # need browser Origin semantics. Cookie-authenticated browser sockets
+        # must always provide Origin so cross-site WebSocket hijacking is blocked.
+        return bool(authorization.lower().startswith("bearer "))
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return False
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return False
+    configured = {
+        item.strip().rstrip("/")
+        for item in os.getenv(
+            "WEB_ALLOWED_ORIGINS",
+            "https://dentalai.tr,https://www.dentalai.tr,http://localhost,http://127.0.0.1",
+        ).split(",")
+        if item.strip()
+    }
+    return origin.rstrip("/") in configured
+
+
 def _socket_current_user(websocket):
     websocket.state._dai_current_user_checked = False
     token = websocket.cookies.get(SESSION_COOKIE)
@@ -8622,6 +8647,8 @@ def _socket_case_authorized(user_id, case_id, *, mark_read=False):
 
 @app.websocket("/ws/sync")
 async def realtime_sync_socket(websocket: WebSocket):
+    if not _socket_origin_allowed(websocket):
+        await websocket.close(code=4403); return
     user=await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
@@ -8737,6 +8764,8 @@ def _socket_message_sync(user, case_id, data, text_value):
 
 @app.websocket("/ws/expert-support/cases/{case_id}")
 async def expert_support_case_socket(websocket: WebSocket, case_id: int):
+    if not _socket_origin_allowed(websocket):
+        await websocket.close(code=4403); return
     user = await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
