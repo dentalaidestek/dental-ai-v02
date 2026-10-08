@@ -2288,7 +2288,7 @@ def get_current_user(request: Request) -> Optional[User]:
             user = None
         else:
             user = s.get(User, session_token.user_id)
-            if not user or not user.is_active:
+            if not user or not user.is_active or not user.email_verified_at:
                 user = None
 
     if state is not None:
