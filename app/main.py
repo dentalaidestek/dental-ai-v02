@@ -162,9 +162,20 @@ class User(SQLModel, table=True):
     display_name: str
     password_hash: Optional[str] = None
     email: Optional[str] = Field(default=None, index=True)
+    email_verified_at: Optional[datetime] = None
     profile_photo_path: Optional[str] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class EmailVerificationChallenge(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, unique=True)
+    code_hash: str
+    expires_at: datetime = Field(index=True)
+    attempts: int = 0
+    sent_at: datetime = Field(default_factory=_utcnow_naive)
+    verified_at: Optional[datetime] = None
 
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
