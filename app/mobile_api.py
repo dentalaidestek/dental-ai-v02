@@ -16,6 +16,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
+from starlette.requests import Request
+from fastapi.responses import JSONResponse
 
 from app.auth import create_session_token, hash_session_token, verify_password
 from app.main import (
@@ -39,6 +41,10 @@ from app.main import (
     _run_analysis_vision,
     _run_preliminary_ai,
     classify_dental_image,
+    AdminNotice, StudyCourse, StudyChatMessage,
+    ConsultationCase, ConsultationMessage, ExpertProfile,
+    expert_support_request_create, expert_support_message, study_ai_ask,
+    SESSION_COOKIE,
 )
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
@@ -532,3 +538,107 @@ def mobile_patient_detail(
                 for m in media
             ],
         }
+
+
+# Native feature adapters. These reuse the production handlers where possible.
+def _mobile_request(token: str, method: str = "POST", path: str = "/api/mobile/v1") -> Request:
+    return Request({
+        "type": "http", "http_version": "1.1", "method": method, "scheme": "https",
+        "path": path, "raw_path": path.encode(), "query_string": b"",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode()),
+                    (b"accept", b"application/json"), (b"x-requested-with", b"XMLHttpRequest")],
+        "client": ("mobile", 0), "server": ("dentalai.tr", 443),
+    })
+
+def _response_json(response):
+    if isinstance(response, JSONResponse):
+        try:
+            return json.loads(response.body.decode("utf-8"))
+        except Exception:
+            return {"ok": False, "error": "Sunucu yanıtı okunamadı."}
+    return response
+
+@router.get("/notifications")
+def mobile_notifications(user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        rows = session.exec(select(AdminNotice).where(
+            AdminNotice.user_id == user.id, AdminNotice.status == "ACTIVE"
+        ).order_by(AdminNotice.created_at.desc()).limit(20)).all()
+        return {"unread_count": sum(not n.is_read for n in rows),
+                "notifications": [{"id":n.id,"title":n.title,"message":n.message,
+                "notice_type":n.notice_type,"target_url":n.target_url,
+                "is_read":bool(n.is_read),"created_at":n.created_at} for n in rows]}
+
+@router.post("/notifications/{notice_id}/read")
+def mobile_notification_read(notice_id:int,user:User=Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        n=session.get(AdminNotice,notice_id)
+        if not n or n.user_id!=user.id or n.status!="ACTIVE":
+            raise HTTPException(status_code=404,detail="Bildirim bulunamadı.")
+        n.is_read=True;n.read_at=datetime.utcnow();session.add(n);session.commit()
+        return {"ok":True}
+
+@router.get("/consultations/experts")
+def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_length=100),available:bool=False):
+    with Session(engine,expire_on_commit=False) as session:
+        q=select(ExpertProfile).where(
+            ExpertProfile.user_id!=user.id,ExpertProfile.application_status=="APPROVED",
+            ExpertProfile.verification_status=="VERIFIED",ExpertProfile.specialty_verified==True,
+            ExpertProfile.credential_document_path!=None,ExpertProfile.phone!=None)
+        if specialty:q=q.where(ExpertProfile.specialty==specialty)
+        if available:q=q.where(ExpertProfile.availability=="AVAILABLE")
+        rows=session.exec(q.order_by(ExpertProfile.updated_at.desc()).limit(50)).all()
+        items=[]
+        for p in rows:
+            u=session.get(User,p.user_id)
+            if u: items.append({"id":u.id,"display_name":u.display_name,"specialty":p.specialty,
+                "academic_title":p.academic_title,"institution":p.institution,
+                "availability":p.availability,"consultation_price":p.consultation_price})
+        return {"items":items}
+
+@router.get("/consultations")
+def mobile_consultations(user:User=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as session:
+        cases=session.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
+        ).order_by(ConsultationCase.requested_at.desc()).limit(50)).all()
+        items=[]
+        for c in cases:
+            other_id=c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id
+            other=session.get(User,other_id)
+            last=session.exec(select(ConsultationMessage).where(
+                ConsultationMessage.case_id==c.id).order_by(ConsultationMessage.created_at.desc()).limit(1)).first()
+            items.append({"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
+                "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
+                "other_display_name":other.display_name if other else "Kullanıcı",
+                "last_message":last.content if last else None,"last_message_at":last.created_at if last else None})
+        return {"items":items}
+
+@router.get("/consultations/{case_id}")
+def mobile_consultation(case_id:int,user:User=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as session:
+        c=session.get(ConsultationCase,case_id)
+        if not c or user.id not in {c.requester_user_id,c.expert_user_id}:
+            raise HTTPException(status_code=404,detail="Vaka bulunamadı.")
+        msgs=session.exec(select(ConsultationMessage).where(
+            ConsultationMessage.case_id==c.id).order_by(ConsultationMessage.created_at.asc())).all()
+        return {"case":{"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
+            "clinical_summary":c.clinical_summary,"requester_opinion":c.requester_opinion,"question":c.question,
+            "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id},
+            "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
+            "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at} for m in msgs]}
+
+@router.get("/academic/courses")
+def mobile_academic_courses(user:User=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as session:
+        rows=session.exec(select(StudyCourse).where(
+            StudyCourse.owner_user_id==user.id).order_by(StudyCourse.created_at.desc()).limit(50)).all()
+        return {"items":[{"id":c.id,"title":c.title,"created_at":c.created_at} for c in rows]}
+
+@router.get("/academic/courses/{course_id}/messages")
+def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as session:
+        rows=session.exec(select(StudyChatMessage).where(
+            StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id
+        ).order_by(StudyChatMessage.id.asc()).limit(100)).all()
+        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in rows]}
