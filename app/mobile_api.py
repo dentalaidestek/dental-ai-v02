@@ -564,10 +564,13 @@ def mobile_notifications(user: User = Depends(_mobile_user)):
         rows = session.exec(select(AdminNotice).where(
             AdminNotice.user_id == user.id, AdminNotice.status == "ACTIVE"
         ).order_by(AdminNotice.created_at.desc()).limit(20)).all()
-        return {"unread_count": sum(not n.is_read for n in rows),
+        return {"unread_count": sum(not n.is_read for n in rows), "unread": sum(not n.is_read for n in rows),
                 "notifications": [{"id":n.id,"title":n.title,"message":n.message,
                 "notice_type":n.notice_type,"target_url":n.target_url,
-                "is_read":bool(n.is_read),"created_at":n.created_at} for n in rows]}
+                "is_read":bool(n.is_read),"read_at":n.read_at,"created_at":n.created_at} for n in rows],
+                "items": [{"id":n.id,"title":n.title,"message":n.message,
+                "notice_type":n.notice_type,"target_url":n.target_url,
+                "read_at":n.read_at,"created_at":n.created_at} for n in rows]}
 
 @router.post("/notifications/{notice_id}/read")
 def mobile_notification_read(notice_id:int,user:User=Depends(_mobile_user)):
@@ -633,7 +636,8 @@ def mobile_academic_courses(user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         rows=session.exec(select(StudyCourse).where(
             StudyCourse.owner_user_id==user.id).order_by(StudyCourse.created_at.desc()).limit(50)).all()
-        return {"items":[{"id":c.id,"title":c.title,"created_at":c.created_at} for c in rows]}
+        return {"items":[{"id":c.id,"title":c.title,"description":getattr(c,"description",None),
+            "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":session.exec(select(func.count()).select_from(StudyMaterial).where(StudyMaterial.course_id==c.id,StudyMaterial.owner_user_id==user.id)).one()} for c in rows]}
 
 @router.get("/academic/courses/{course_id}/messages")
 def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):
@@ -725,3 +729,37 @@ def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,token:str=Depend
     if hasattr(response,"status_code") and response.status_code>=400:
         raise HTTPException(status_code=response.status_code,detail=data.get("error","Akademik AI yanıt veremedi."))
     return data
+
+@router.get("/experts")
+def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_length=120)):
+    with Session(engine,expire_on_commit=False) as session:
+        profiles=session.exec(select(ExpertProfile).where(
+            ExpertProfile.user_id!=user.id,ExpertProfile.application_status=="APPROVED",
+            ExpertProfile.verification_status=="VERIFIED",ExpertProfile.specialty_verified==True,
+            ExpertProfile.credential_document_path!=None,ExpertProfile.phone!=None
+        ).order_by(ExpertProfile.updated_at.desc()).limit(50)).all()
+        items=[]
+        needle=q.strip().casefold()
+        for p in profiles:
+            u=session.get(User,p.user_id)
+            if not u: continue
+            hay=" ".join(filter(None,[u.display_name,p.specialty,p.institution,p.academic_title])).casefold()
+            if needle and needle not in hay: continue
+            items.append({"user_id":u.id,"id":u.id,"display_name":u.display_name,"specialty":p.specialty,
+                "academic_title":p.academic_title,"institution":p.institution,
+                "availability":p.availability,"consultation_price":p.consultation_price,
+                "bio":getattr(p,"bio",None),"rating_avg":None,"review_count":0})
+        return {"items":items}
+
+@router.get("/patients/{patient_id}/media")
+def mobile_patient_media(patient_id:int,user:User=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as session:
+        patient=session.get(Patient,patient_id)
+        if not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+        rows=session.exec(select(PatientMedia).where(
+            PatientMedia.patient_id==patient_id,PatientMedia.owner_user_id==user.id
+        ).order_by(PatientMedia.uploaded_at.desc()).limit(100)).all()
+        return {"items":[{"id:m.id,"filename":m.original_filename,"media_type":m.media_type,
+            "tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,
+            "url":f"/patients/{patient_id}/media/{m.id}"} for m in rows]}
