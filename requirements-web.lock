@@ -1,6 +1,8 @@
 # Resolved from the verified Python 3.12.14 Linux web/OCR environment.
 # Does not install local inference models, Torch, or test tooling.
 aiohappyeyeballs==2.7.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
 aiohttp==3.14.3
 aiosignal==1.4.0
 annotated-doc==0.0.5
