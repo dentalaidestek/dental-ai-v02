@@ -741,14 +741,19 @@ class MobileAcademicAsk(BaseModel):
     message:str
 
 @router.post("/academic/courses/{course_id}/ask")
-def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,token:str=Depends(_mobile_access_token)):
+def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,token:str=Depends(_mobile_access_token),user:User=Depends(_mobile_user)):
     response=study_ai_ask(_mobile_request(token,"POST",f"/notes/courses/{course_id}/ai/ask"),
         course_id,BackgroundTasks(),payload.message)
     data=_response_json(response)
     if hasattr(response,"status_code") and response.status_code>=400:
         raise HTTPException(status_code=response.status_code,detail=data.get("error","Akademik AI yanıt veremedi."))
+    with Session(engine,expire_on_commit=False) as session:
+        course=session.get(StudyCourse,course_id)
+        if course and course.owner_user_id==user.id:
+            event=_record_realtime_event(session,user.id,"ACADEMIC_MESSAGE_CREATED","study_course",course_id,{"course_id":course_id})
+            session.commit()
+            on_loop(_publish_realtime_event,event)
     return data
-
 @router.get("/experts")
 def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_length=120)):
     with Session(engine,expire_on_commit=False) as session:
