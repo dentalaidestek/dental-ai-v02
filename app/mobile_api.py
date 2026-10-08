@@ -642,3 +642,35 @@ def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):
             StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id
         ).order_by(StudyChatMessage.id.asc()).limit(100)).all()
         return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in rows]}
+
+@router.post("/patients/{patient_id}/media")
+async def mobile_patient_media_upload(
+    patient_id:int,
+    image:UploadFile=File(...),
+    tooth_number:Optional[str]=Form(None),
+    note:Optional[str]=Form(None),
+    user:User=Depends(_mobile_user),
+):
+    if not image.filename:
+        raise HTTPException(status_code=422,detail="Görüntü seçin.")
+    ext=Path(image.filename).suffix.lower()
+    if ext not in {".jpg",".jpeg",".png",".webp"}:
+        raise HTTPException(status_code=422,detail="Desteklenmeyen görüntü formatı.")
+    with Session(engine,expire_on_commit=False) as session:
+        patient=session.get(Patient,patient_id)
+        if not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+        stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
+        destination=Path("uploads")/"patient-media"/stored
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        with destination.open("wb") as out:
+            shutil.copyfileobj(image.file,out)
+        storage_persist_file(destination)
+        media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
+            original_filename=Path(image.filename).name,stored_filename=stored,
+            file_path=str(destination),media_type="PHOTO",
+            tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
+        session.add(media);session.commit();session.refresh(media)
+        return {"media":{"id":media.id,"original_filename":media.original_filename,
+            "media_type":media.media_type,"tooth_number":media.tooth_number,
+            "note":media.note,"uploaded_at":media.uploaded_at}}
