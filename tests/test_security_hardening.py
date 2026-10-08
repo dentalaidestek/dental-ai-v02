@@ -187,3 +187,11 @@ def test_main_app_has_global_request_admission_limits():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert "from app.request_limits import RequestLimits" in source
     assert "app.add_middleware(RequestLimits" in source
+
+
+def test_registration_has_ip_abuse_rate_limit():
+    source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    block = source.split('@app.post("/register")', 1)[1].split('@app.post("/login")', 1)[0]
+    assert "_check_registration_rate(request)" in block
+    assert "_record_registration_attempt(registration_rate_key)" in block
+    assert "REGISTRATION_MAX_ATTEMPTS" in source
