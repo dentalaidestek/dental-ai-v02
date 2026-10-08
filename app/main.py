@@ -3306,7 +3306,9 @@ def change_password(
             status_code=status_code,
         )
 
+    password_rate_key = _check_web_login_rate(request, user.username)
     if not user.password_hash or not verify_password(current_password, user.password_hash):
+        _record_web_login_failure(password_rate_key)
         return render_account("Mevcut şifreniz hatalı.", status_code=400)
     if len(new_password) < 8:
         return render_account("Yeni şifre en az 8 karakter olmalıdır.", status_code=400)
@@ -3318,8 +3320,12 @@ def change_password(
         if not db_user:
             return RedirectResponse("/login", status_code=303)
         db_user.password_hash = hash_password(new_password)
+        session_tokens = s.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all()
+        for session_token in session_tokens:
+            s.delete(session_token)
         s.add(db_user)
         s.commit()
+    _clear_web_login_failures(password_rate_key)
 
     return render_account(success="Şifreniz başarıyla değiştirildi.")
 
@@ -11479,10 +11485,14 @@ def admin_center_login_get():
 
 @app.post(ADMIN_CENTER_PATH + "/login")
 def admin_center_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    username = username.strip().lower()
+    login_rate_key = _check_web_login_rate(request, username)
     with Session(engine, expire_on_commit=False) as s:
         user=s.exec(select(User).where(User.username == username.strip())).first()
         if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
+            _record_web_login_failure(login_rate_key)
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
+        _clear_web_login_failures(login_rate_key)
         response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
         create_user_session(response,user.id)
         return response
