@@ -8512,6 +8512,23 @@ def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
 
 def _socket_current_user(websocket):
     websocket.state._dai_current_user_checked = False
+    token = websocket.cookies.get(SESSION_COOKIE)
+    if not token:
+        auth = websocket.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+        if not token:
+            token = (websocket.query_params.get("access_token") or "").strip()
+    if token:
+        token_hash = hash_session_token(token)
+        with Session(engine, expire_on_commit=False) as s:
+            session_token = s.exec(select(SessionToken).where(SessionToken.token_hash == token_hash)).first()
+            if session_token and session_token.expires_at > _utcnow_naive():
+                user = s.get(User, session_token.user_id)
+                if user and user.is_active:
+                    websocket.state._dai_current_user_checked = True
+                    websocket.state._dai_current_user = user
+                    return user
     return get_current_user(websocket)
 
 
