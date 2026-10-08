@@ -10,7 +10,9 @@ from pathlib import Path
 import json
 import os
 import shutil
+import time
 import uuid
+from collections import deque
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
@@ -54,6 +56,41 @@ router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
 bearer = HTTPBearer(auto_error=False)
 MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
+LOGIN_RATE_WINDOW_SECONDS = max(60, int(os.getenv("MOBILE_LOGIN_RATE_WINDOW_SECONDS", "600")))
+LOGIN_RATE_MAX_FAILURES = max(3, int(os.getenv("MOBILE_LOGIN_RATE_MAX_FAILURES", "8")))
+_LOGIN_FAILURES: dict[str, deque[float]] = {}
+_LOGIN_FAILURES_MAX_KEYS = 10000
+
+
+def _check_login_rate(login: str) -> None:
+    now = time.monotonic()
+    attempts = _LOGIN_FAILURES.get(login)
+    if attempts is None:
+        return
+    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    if not attempts:
+        _LOGIN_FAILURES.pop(login, None)
+        return
+    if len(attempts) >= LOGIN_RATE_MAX_FAILURES:
+        retry_after = max(1, int(LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0])))
+        raise HTTPException(status_code=429, detail="Çok fazla başarısız giriş denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(retry_after)})
+
+
+def _record_login_failure(login: str) -> None:
+    now = time.monotonic()
+    attempts = _LOGIN_FAILURES.setdefault(login, deque())
+    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    attempts.append(now)
+    if len(_LOGIN_FAILURES) > _LOGIN_FAILURES_MAX_KEYS:
+        oldest_key = min(_LOGIN_FAILURES, key=lambda key: _LOGIN_FAILURES[key][0] if _LOGIN_FAILURES[key] else now)
+        _LOGIN_FAILURES.pop(oldest_key, None)
+
+
+def _clear_login_failures(login: str) -> None:
+    _LOGIN_FAILURES.pop(login, None)
+
 
 def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int) -> None:
     total = 0
@@ -155,6 +192,7 @@ def _patient_payload(patient: Patient) -> dict:
 @router.post("/auth/login", response_model=MobileToken)
 def mobile_login(payload: LoginRequest):
     login = payload.login.strip().lower()
+    _check_login_rate(login)
 
     with Session(engine, expire_on_commit=False) as session:
         user = session.exec(
@@ -169,6 +207,7 @@ def mobile_login(payload: LoginRequest):
             or not user.password_hash
             or not verify_password(payload.password, user.password_hash)
         ):
+            _record_login_failure(login)
             raise HTTPException(
                 status_code=401,
                 detail="Kullanıcı adı/e-posta veya şifre hatalı.",
@@ -188,6 +227,7 @@ def mobile_login(payload: LoginRequest):
         )
         session.commit()
 
+    _clear_login_failures(login)
     return MobileToken(access_token=token, expires_at=expires_at)
 
 
