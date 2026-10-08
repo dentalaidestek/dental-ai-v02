@@ -140,6 +140,7 @@ def test_email_verification_is_one_time_and_has_no_resend_contract():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert "class EmailVerificationChallenge" in source
     assert "user_id: int = Field(index=True, unique=True)" in source
+    assert "public_token: str = Field(index=True, unique=True)" in source
     assert "email_verified_at" in source
     assert "def _ensure_email_verification_challenge" in source
     assert "def _verify_email_code" in source
@@ -161,7 +162,7 @@ def test_native_login_requires_shared_email_verification():
     block = source.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/logout")', 1)[0]
     assert "if not user.email_verified_at" in block
     assert "_ensure_email_verification_challenge" in block
-    assert "challenge_id=challenge.id" in block
+    assert "challenge_token=challenge.public_token" in block
 
 
 def test_existing_web_and_native_sessions_cannot_bypass_email_verification():
