@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+import re
 import time
 
 logger = logging.getLogger('uvicorn.error.academic_request_understanding')
@@ -17,13 +18,14 @@ SCHEMA = {
     'type': 'object',
     'properties': {
         'resolved_query': {'type': 'string'},
+        'retrieval_queries': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 4},
         'operation': {'type': 'string', 'enum': list(OPERATIONS)},
         'scope': {'type': 'string', 'enum': ['topic', 'course']},
         'count': {'type': ['integer', 'null']},
         'difficulty': {'type': ['string', 'null']},
         'clarification': {'type': 'string'},
     },
-    'required': ['resolved_query', 'operation', 'scope', 'count', 'difficulty', 'clarification'],
+    'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification'],
     'additionalProperties': False,
 }
 SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
@@ -35,6 +37,13 @@ Return only the required JSON. resolved_query is a short self-contained Turkish
 restatement of the complete request. Preserve ALL explicit subjects, numbers,
 units, brands, comparisons, exclusions, negations, conditions, requested order,
 source selection, output format and who/what each modifier belongs to.
+retrieval_queries contains up to four short, independent source search phrases.
+Use the actual dental subject nouns, relevant qualifiers and source terminology,
+not request verbs, output counts, difficulty, order or excluded subjects. For a
+comparison provide a separate phrase for EACH compared subject so one chunk need
+not mention both. Preserve clinical numbers/units when relevant. Do not invent
+synonyms or facts. Use [] for course scope or clarify; topic scope needs at least
+one phrase. Full exclusions, relations and ordering remain in resolved_query.
 Output length/difficulty/count are instructions, never clinical search subjects.
 Resolve referents only when their actual antecedent is identifiable in dialogue.
 A previous assistant assertion is context, NOT evidence or a verified fact.
@@ -63,6 +72,7 @@ class StudyRequest:
     count: int | None
     difficulty: str | None
     clarification: str
+    retrieval_queries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,16 @@ def parse_request(raw: str) -> StudyRequest:
     for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise ValueError('invalid planner text')
+    searches = data['retrieval_queries']
+    if (not isinstance(searches, list) or len(searches) > 4
+            or any(not isinstance(x, str) or not x.strip() or len(x) > 160
+                   or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
+        raise ValueError('invalid retrieval queries')
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches:
+        raise ValueError('missing topic search')
+    if (data['scope'] == 'course' or data['operation'] == 'clarify') and searches:
+        raise ValueError('unexpected topic search')
+    data['retrieval_queries'] = tuple(dict.fromkeys(x.strip() for x in searches))
     count = data['count']
     if count is not None and (type(count) is not int or not 1 <= count <= 200):
         raise ValueError('invalid requested count')

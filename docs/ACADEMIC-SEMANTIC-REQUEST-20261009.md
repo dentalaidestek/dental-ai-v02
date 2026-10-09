@@ -41,3 +41,22 @@ A separate 20-case real-model smoke evaluator covers varied study operations and
 No live Gemini evaluation was run: local GEMINI_API_KEY is absent. No fabricated accuracy/latency/cost result. Production enablement/deploy is blocked on this real-model check and end-to-end evidence regression. Synthetic contract stubs do not prove model competence.
 
 Earlier prepared chat reply/read fixes remain on parent commits; production remains a58ed18. OCR configuration and Modal resources were not changed.
+
+
+## Direct planned source searches
+
+The planner contract now requires `retrieval_queries`: at most four source phrases,
+with topic tasks requiring nonempty phrases and course/clarification using none.
+The original resolved request still preserves exclusions, relations, ordering and
+output instructions. Independent comparison subjects become separate alternatives
+in one primary FTS lookup; quoted Unicode tokens prevent FTS operator injection.
+The topic primary query bypasses the old request-word/subject parser and its
+canonical-subject additions. Authenticated owner/course filters and evidence
+sufficiency/reranking remain enforced. No additional provider call or per-chunk
+LLM call is added, and the feature remains disabled pending actual-model evaluation.
+
+This does not turn lexical FTS into vector search. Existing semantic ranking and
+requirement gates still need end-to-end evaluation for recall, comparisons and
+exclusions; no claim of production accuracy or complete Turkish understanding is
+made. No chunks are deleted or reindexed, no migration is required, and no
+production settings are changed.

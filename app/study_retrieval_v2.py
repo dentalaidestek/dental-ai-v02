@@ -1388,6 +1388,22 @@ def _facet_present(
     return bool(allowed.intersection(preferred).intersection(semantic_kinds))
 
 
+def _semantic_fts_query(searches: tuple[str, ...]) -> str:
+    """Use planned source phrases directly, without request-language heuristics.
+
+    Quoting each token prevents user/model text from becoming FTS operators.
+    Independent subjects are OR alternatives, tokens within a subject use AND.
+    SQL ownership and course filters remain in _fts_rows.
+    """
+    phrases = []
+    for search in searches:
+        tokens = re.findall(r"[^\W_]+", search, flags=re.UNICODE)
+        if not tokens:
+            raise ValueError("empty semantic search terms")
+        phrases.append(" ".join('"' + token + '"' for token in tokens))
+    return " OR ".join(dict.fromkeys(phrases))
+
+
 def _fts_query(query: str, *, broad: bool = False) -> str:
     original, extras = _retrieval_terms(query)
     terms = original + (extras if broad else [])
@@ -2689,7 +2705,11 @@ def retrieve_course_context_v2(
         rows = question_rows + note_rows
         has_more_questions = False
     else:
-        precise_query = _fts_query(resolved, broad=False)
+        precise_query = (
+            _semantic_fts_query(request_plan.retrieval_queries)
+            if request_plan is not None and request_plan.retrieval_queries
+            else _fts_query(resolved, broad=False)
+        )
         # Recovery may propose bounded alternate search phrases, never change
         # the resolved request, scope, requirements, ranking or evidence gate.
         if recovery_terms:
@@ -2702,7 +2722,7 @@ def retrieve_course_context_v2(
         # are OR-ed with the user's precise lexical form, so typo rescue and
         # curated aliases can recover the right chunk without broadening scope.
         canonical_subjects = []
-        for term in requirement.subject_terms:
+        for term in (() if request_plan is not None else requirement.subject_terms):
             normalized = " ".join((term or "").split()).strip()
             if not normalized or len(normalized) > 80:
                 continue

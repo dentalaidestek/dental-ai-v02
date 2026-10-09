@@ -8,8 +8,10 @@ from app.academic_request_understanding import interpret_request, parse_request,
 
 def raw(**overrides):
     data = dict(resolved_query='Downs analizindeki yüz tiplerini açıkla', operation='explain',
-                scope='topic', count=None, difficulty=None, clarification='')
+                scope='topic', count=None, difficulty=None, clarification='', retrieval_queries=['Downs analiz yüz tipleri'])
     data.update(overrides)
+    if data['scope'] == 'course' or data['operation'] == 'clarify':
+        data['retrieval_queries'] = overrides.get('retrieval_queries', [])
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -101,7 +103,7 @@ def test_topic_plan_reaches_owned_lookup_and_does_not_expand_to_course(monkeypat
     session = Mock(); session.get_bind.return_value.dialect.name = 'postgresql'
     lookup = Mock(return_value=[])
     monkeypatch.setattr(retrieval,'_fts_rows',lookup)
-    plan = parse_request(raw(resolved_query='Florun kullanımını ayrıntılı açıkla', operation='explain'))
+    plan = parse_request(raw(resolved_query='Florun kullanımını ayrıntılı açıkla', operation='explain', retrieval_queries=['Flor kullanım']))
     out = retrieval.retrieve_course_context_v2(session, owner_user_id=17, course_id=23,
         query='Bunu ayrıntılı öğret', recent_history=[{'role':'user','content':'Pulpitis tedavisi'}],
         request_plan=plan)
@@ -132,3 +134,31 @@ def test_course_plan_selects_coverage_with_owned_scope_and_count(monkeypatch):
     assert catalog.call_args.kwargs['owner_user_id']==17
     assert catalog.call_args.kwargs['course_id']==23
     assert catalog.call_args.kwargs['requested_count']==20
+
+
+@pytest.mark.parametrize('searches', [[], [''], ['---'], ['x'*161], ['A']*5, [123]])
+def test_topic_search_contract_rejects_unbounded_or_empty_search(searches):
+    with pytest.raises(ValueError):
+        parse_request(raw(retrieval_queries=searches))
+
+
+def test_semantic_search_keeps_independent_comparison_subjects_and_quotes_operators():
+    from app.study_retrieval_v2 import _semantic_fts_query
+    assert _semantic_fts_query(('Süt dişi', 'Kalıcı dişi')) == '"Süt" "dişi" OR "Kalıcı" "dişi"'
+    assert _semantic_fts_query(('A OR B -C',)) == '"A" "OR" "B" "C"'
+
+
+def test_planned_search_bypasses_old_subject_parser(monkeypatch):
+    import app.study_retrieval_v2 as retrieval
+    session = Mock(); session.get_bind.return_value.dialect.name = 'postgresql'
+    lookup = Mock(return_value=[])
+    monkeypatch.setattr(retrieval, '_fts_rows', lookup)
+    monkeypatch.setattr(retrieval, '_fts_query', Mock(side_effect=AssertionError('old parser called')))
+    plan = parse_request(raw(resolved_query='Downs analizinden 15 zor soru üret',
+                            operation='generate_questions', count=15,
+                            retrieval_queries=['Downs analiz']))
+    retrieval.retrieve_course_context_v2(session, owner_user_id=17, course_id=23,
+                                        query='15 zor soru', request_plan=plan)
+    assert lookup.call_args.kwargs['lexical_query'] == '"Downs" "analiz"'
+    assert lookup.call_args.kwargs['owner_user_id'] == 17
+    assert lookup.call_args.kwargs['course_id'] == 23
