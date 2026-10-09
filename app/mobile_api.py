@@ -849,8 +849,8 @@ def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         rows=session.exec(select(StudyChatMessage).where(
             StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id
-        ).order_by(StudyChatMessage.id.asc()).limit(100)).all()
-        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in rows]}
+        ).order_by(StudyChatMessage.id.desc()).limit(100)).all()
+        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in reversed(rows)]}
 
 @router.post("/patients/{patient_id}/media")
 async def mobile_patient_media_upload(

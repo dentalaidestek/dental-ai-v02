@@ -62,3 +62,26 @@ def test_empty_lists_do_not_run_secondary_queries(mobile_db):
     queries.clear()
     assert mobile_api.mobile_academic_courses(owner) == {'items': []}
     assert len(queries) == 1
+
+
+def test_academic_history_keeps_latest_answers_in_display_order(mobile_db):
+    engine, (owner, _, outsider), queries = mobile_db
+    with Session(engine, expire_on_commit=False) as session:
+        course = main.StudyCourse(owner_user_id=owner.id, title='Synthetic')
+        session.add(course); session.commit()
+        course_id = course.id
+        for i in range(105):
+            session.add(main.StudyChatMessage(owner_user_id=owner.id, course_id=course_id, role='ASSISTANT', content=f'answer-{i}'))
+        session.add(main.StudyChatMessage(owner_user_id=outsider.id, course_id=course_id, role='ASSISTANT', content='other-user-answer'))
+        session.commit()
+    queries.clear()
+    items = mobile_api.mobile_academic_messages(course_id, owner)['items']
+    assert len(queries) == 1
+    assert len(items) == 100
+    assert items[0]['content'] == 'answer-5'
+    assert items[-1]['content'] == 'answer-104'
+    assert [item['id'] for item in items] == sorted(item['id'] for item in items)
+    assert not any(item['content'] == 'other-user-answer' for item in items)
+    with Session(engine) as session:
+        from sqlmodel import select
+        assert len(session.exec(select(main.StudyChatMessage).where(main.StudyChatMessage.owner_user_id == owner.id)).all()) == 105

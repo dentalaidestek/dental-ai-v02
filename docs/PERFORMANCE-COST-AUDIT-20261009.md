@@ -37,9 +37,10 @@ Bu değişiklikler yeni servis veya migration gerektirmez.
 | Orta | Academic V2 output üst sınırı 7000 token | Uzun çıktıların gecikme/ücreti artar; bu her cevapta 7000 tüketildiği anlamına gelmez | Soru türüne göre ölçülmüş sınır; kapsamlı ders yanıtı/klinik kaliteyi bozacak kör azaltma yapma |
 | Orta | Request bütçesi isteğe bağlı STUDY_ROUTER_REQUEST_BUDGETS_JSON; repo Render template'inde tanımlı değil | Concurrency sınırı toplam aylık harcamaya üst sınır değildir | Canlı env doğrulandıktan sonra gerçek plan bazlı gün/ay request ve token/para ölçümü; kullanıcı/kurum admission. Canlı ayarın yok olduğu iddia edilmez |
 
-Academic history endpoint'i ilk 100 mesajı getiriyor; ekran son 20'yi gösteriyor.
-Uzun ders geçmişinde en yeni cevaplar görünmeyebilir. Bu hem işlevsel hem yük
-sorunu: son sayfa/cursor+delta sözleşmesi birlikte düzeltilmeli.
+Kullanıcı akışı kontrolünde Academic history endpoint'inin ilk 100 mesajı
+getirerek yeni cevapları görünmez bıraktığı doğrulandı ve düzeltildi. Artık en
+yeni 100 mesaj ekrana kronolojik sırayla verilir; depolanmış eski mesajlar
+silinmez. Daha eski geçmiş için tam cursor/sayfalama işlevi hâlâ açıktır.
 Native hasta listesi yalnız ilk 30 kaydı alıyor; devam sayfalaması yok. Analiz
 hasta seçiminde gelen listenin ilk 12'si gösteriliyor. Büyük klinikte görünmeyen
 hastaları arama/cursor olmadan seçmek mümkün olmayabilir.
@@ -90,3 +91,20 @@ kontrolleri deploy gate olmaya devam eder.
   effect'ini çalıştırır ve state replacement sonrası request loop olmadığını kontrol eder.
 - Android Metro/Hermes export başarılı: 843 modül. Fiziksel cihaz / APK / üretim p95
   ve gerçek fatura tasarrufu bu testlerin kapsamı değildir.
+
+## Kullanıcı etkisi ve ana site regresyon kontrolü
+
+Son maliyet düzeltmeleri kullanıcı akışı açısından yeniden kontrol edildi.
+Native analiz effect cleanup'ının ilgisiz event geldiğinde bekleyen sonucu
+iptal ettiği bulundu ve request-generation kontrolüne taşındı. Yeni ilgili
+istek eski yanıtı geçersiz kılar; ilgisiz event doğru sonucu kaybettirmez.
+Analiz/token değişimi ve unmount hâlâ eski sonucu reddeder. İstek döngüsü geri
+getirilmedi. Academic son 100 mesaj düzeltmesi 105 mesaj ve başka kullanıcı
+mesajıyla test edildi; tüm 105 kullanıcı mesajı DB'de kaldı.
+
+58 backend testi başarılı: query-count/sahiplik, vaka lifecycle, realtime,
+account/login, profil/hasta işlemleri, destek ve partial-navigation regresyonları.
+TypeScript ve 19 mobil davranış testi başarılı. Bu kapsamda web regresyonu
+bulunmadı; bütün site/production/cihaz için sıfır hata garantisi değildir.
+Kullanıcı akışını etkilemeyen worker interval, model/output sınırları, altyapı ve
+bütçe ayarları değiştirilmedi. Main ve production'a müdahale/deploy yapılmadı.

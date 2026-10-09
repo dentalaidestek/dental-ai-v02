@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useState}from"react";
+import React,{useCallback,useEffect,useRef,useState}from"react";
 import{ActivityIndicator,Image,Pressable,ScrollView,Text,View}from"react-native";
 import*as ImagePicker from"expo-image-picker";
 import{getPatients,Patient}from"./api";
@@ -11,7 +11,9 @@ export default function NativeDentalAI({token}:{token:string}){
  const load=useCallback(()=>{getPatients(token).then(r=>setPatients(r.items)).catch(()=>{})},[token]);useEffect(load,[load]);useEffect(()=>{const e:any=lastEvent;if(!e)return;const t=String(e.event_type||e.type||"");if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(t))load()},[lastEvent,load]);
  async function pick(){const p=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!p.granted){setErr("Galeri izni gerekli.");return}const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],quality:.9,allowsMultipleSelection:false});if(!r.canceled&&r.assets[0]?.uri){const a=r.assets[0];setImage({uri:a.uri,name:a.fileName||"dental-image.jpg",type:a.mimeType||"image/jpeg"});setAnalysis(null)}}
  async function send(){if(!patientId||!image){setErr("Hasta ve görüntü seçmelisin.");return}setBusy(true);setErr("");try{const r=await createAnalysis(token,{patientId,images:[image]});setAnalysis(await getAnalysis(token,r.analysis_id))}catch(e:any){setErr(e?.message||"Görüntü gönderilemedi.")}finally{setBusy(false)}}
- useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){let active=true;getAnalysis(token,analysis.analysis.id).then(result=>{if(active)setAnalysis(result)}).catch(()=>{});return()=>{active=false}}},[lastEvent,analysis?.analysis.id,token]);
+ const refreshGeneration=useRef(0);
+ useEffect(()=>()=>{refreshGeneration.current++},[token,analysis?.analysis.id]);
+ useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current;getAnalysis(token,analysis.analysis.id).then(result=>{if(generation===refreshGeneration.current)setAnalysis(result)}).catch(()=>{})}},[lastEvent,analysis?.analysis.id,token]);
  async function refresh(){if(!analysis)return;setBusy(true);try{setAnalysis(await getAnalysis(token,analysis.analysis.id))}catch(e:any){setErr(e?.message||"Durum alınamadı.")}finally{setBusy(false)}}
  async function start(){if(!analysis)return;setBusy(true);setErr("");try{await startAnalysisAI(token,analysis.analysis.id);setAnalysis(await getAnalysis(token,analysis.analysis.id))}catch(e:any){setErr(e?.message||"Analiz başlatılamadı.")}finally{setBusy(false)}}
  return <ScrollView contentContainerStyle={{paddingBottom:30}}>
