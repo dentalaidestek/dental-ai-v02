@@ -3528,6 +3528,7 @@ def login_page(
     reset: str = "",
     account_deleted: str = "",
     next: str = "",
+    renew: str = "",
 ):
     message = (
         "Şifreniz başarıyla değiştirildi. Yeni şifrenizle giriş yapabilirsiniz."
@@ -3539,7 +3540,7 @@ def login_page(
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={"error": None, "message": message, "next_url": _safe_login_next(next)},
+        context={"error": None, "message": message, "next_url": _safe_login_next(next), "renewal_mode": renew == "1"},
     )
 
 
@@ -3550,6 +3551,10 @@ def verify_email(request: Request, challenge_token: str = Form(...), code: str =
         challenge = s.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == challenge_token)).first()
         user = s.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(s, user, challenge, code):
+            if user:
+                s.refresh(user)
+                if user.is_active and user.email_verified_at:
+                    return templates.TemplateResponse(request=request, name="login.html", context={"next_url": safe_next, "message": "E-postanız doğrulandı. Hesabınıza giriş yapabilirsiniz."}, status_code=200)
             return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_token": challenge_token, "verification_mode": True, "next_url": safe_next, "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
         response = RedirectResponse(url=safe_next, status_code=303)
         create_user_session(response, user.id)
@@ -3588,7 +3593,7 @@ def login_user(
                 name="login.html",
                 context={
                     "error": "Kullanıcı adı/e-posta veya şifre hatalı.",
-                    "next_url": safe_next,
+                    "next_url": safe_next, "renewal_mode": renew_email_code == "1",
                 },
                 status_code=401,
             )
@@ -3606,7 +3611,7 @@ def login_user(
             try:
                 challenge = _ensure_email_verification_challenge(s, user, renew=renew_email_code == "1")
             except Exception:
-                return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
+                return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next, "renewal_mode": renew_email_code == "1"}, status_code=503)
             return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
 
         response = RedirectResponse(
