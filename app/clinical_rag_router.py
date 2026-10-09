@@ -206,6 +206,19 @@ def _resolved_image_types(ai_types: list[str], stored_types: list[str]) -> list[
     return ai_clean or stored_clean or ["OTHER"]
 
 
+import re
+
+from app.clinical_privacy import (
+    _PROVIDER_EMAIL_RE, _PROVIDER_TC_RE, _PROVIDER_PHONE_RE,
+    redact_direct_identifiers,
+)
+_PROVIDER_PII_LABEL_RE = re.compile(r"(?im)(?:ad[ \t]*soyad|hasta[ \t]*ad(?:ı|i)|telefon|tel|e[- ]?posta|email|tc(?:[ \t]*kimlik)?(?:[ \t]*no)?|kimlik(?:[ \t]*no)?|hasta(?:[ \t]*no|[ \t]*id)|dosya[ \t]*no|doğum[ \t]*tarihi|dogum[ \t]*tarihi)[ \t]*[:=-][ \t]*[^,;\r\n]+")
+
+def _provider_safe_text(value: str | None) -> str:
+    text = str(value or "")
+    text = _PROVIDER_PII_LABEL_RE.sub("[REDACTED]", text)
+    text = redact_direct_identifiers(text)
+    return text.strip()
 def _build_router_prompt(
     *,
     age,
@@ -218,6 +231,9 @@ def _build_router_prompt(
 ) -> str:
     allowed_specialties = ", ".join(SPECIALTIES.keys())
     allowed_signals = ", ".join(sorted(_ALLOWED_SIGNALS))
+    safe_clinical_notes = _provider_safe_text(clinical_notes)
+    safe_chief_complaint = _provider_safe_text(chief_complaint)
+    safe_extra_text = _provider_safe_text(extra_text)
     return f"""
 Sen Dental AI için yalnız RAG yönlendirmesi yapan kısa bir klinik triage katmanısın.
 Tanı veya tedavi yazma. Yüklenen dental görüntüleri ve klinik bilgiyi birlikte anlayarak
@@ -255,9 +271,9 @@ KRİTİK KURALLAR:
 VAKA METADATASI:
 Yaş: {age if age is not None else "bilinmiyor"}
 Diş: {tooth_number or "belirtilmemiş"}
-Şikayet: {chief_complaint or ""}
-Klinik not: {clinical_notes or ""}
-Ek hekim bilgisi: {extra_text or ""}
+Şikayet: {safe_chief_complaint}
+Klinik not: {safe_clinical_notes}
+Ek hekim bilgisi: {safe_extra_text}
 Yüklenen gerçek görüntü sayısı: {int(image_count or 0)}
 Sistemde kayıtlı görüntü tipi: {", ".join(stored_image_types) or "OTHER"}
 """.strip()

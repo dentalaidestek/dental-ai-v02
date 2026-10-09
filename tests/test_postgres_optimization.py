@@ -110,3 +110,43 @@ def test_migration_repeat_and_old_result_paths(pg, monkeypatch):
     migrate.require_schema(engine)
     with Session(engine) as s:
         assert s.get(main.GuestAnalysis, resources[0].id).result_path is None
+
+
+def test_authentication_admission_is_atomic_on_postgres(pg):
+    from app.auth_rate import admit, bucket_key, clear
+    from fastapi import HTTPException
+    engine, _, _ = pg
+    def attempt(_):
+        try:
+            admit(engine, 'login', 'synthetic-auth-user', limit=8, window=600)
+            return 200
+        except HTTPException as exc:
+            return exc.status_code
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        statuses = list(pool.map(attempt, range(24)))
+    assert statuses.count(200) == 8
+    assert statuses.count(429) == 16
+    key = bucket_key('login', 'synthetic-auth-user')
+    with engine.connect() as conn:
+        row = conn.execute(text('SELECT attempts FROM authratebucket WHERE bucket_key=:key'), {'key': key}).one()
+        assert row.attempts == 24
+    clear(engine, key)
+    admit(engine, 'login', 'synthetic-auth-user', limit=8, window=600)
+
+
+def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg):
+    from app import migrate
+    engine, _, resources = pg
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,8)'))
+        before = connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all()
+    migrate.apply()
+    migrate.require_schema(engine)
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
+        assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 9
+        assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None

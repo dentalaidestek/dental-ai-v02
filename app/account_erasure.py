@@ -38,8 +38,8 @@ def begin_account_erasure(
     from app.main import (
         AdminAuditLog, DeletedAccountEmail, ExpertDeviceChallenge,
         ExpertProfile, ExpertTrustedDevice, PasswordResetToken,
-        SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User,
-        WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent,
+        SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User, EmailVerificationChallenge,
+        WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent, E2EEDeviceKey,
     )
 
     user = session.get(User, user_id)
@@ -69,9 +69,16 @@ def begin_account_erasure(
         profile.updated_at = utcnow_naive()
         session.add(profile)
 
-    for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge):
+    for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge, EmailVerificationChallenge):
         for row in session.exec(select(model).where(model.user_id == user_id)).all():
             session.delete(row)
+
+    # Retain the public-key history needed to identify old envelopes, but never
+    # advertise an erased account as an active message recipient.
+    for device in session.exec(select(E2EEDeviceKey).where(E2EEDeviceKey.user_id == user_id)).all():
+        if device.revoked_at is None:
+            device.revoked_at = utcnow_naive()
+            session.add(device)
 
     # Remove per-user realtime/push traces. Delivery rows reference subscriptions
     # and notices; delete the per-device delivery records before subscriptions.

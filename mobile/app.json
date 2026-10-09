@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "DENTAL AI",
+    "slug": "dental-ai",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "dentalai",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "tr.dentalai.app",
+      "versionCode": 1,
+      "allowBackup": false,
+      "usesCleartextTraffic": false
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}

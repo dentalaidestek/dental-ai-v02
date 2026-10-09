@@ -9,6 +9,7 @@ import hmac
 import base64
 import binascii
 import io
+from collections import deque
 import urllib.request
 import urllib.error
 import select as select_module
@@ -47,11 +48,13 @@ from app.execution import offload, on_loop, LoopWakeup
 from app.realtime_io import PostgresNotices, socket_writes
 from starlette.concurrency import run_in_threadpool
 from app.database import create_app_engine
+from app.auth_rate import AuthRateBucket, LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt
 from app import work_jobs
 from app.upload_io import copy_image
 from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
+from app.request_limits import RequestLimits
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -95,6 +98,7 @@ from app.study_rag import (
 )
 from fastapi import (
     FastAPI,
+    HTTPException,
     Form,
     Request,
     UploadFile,
@@ -122,6 +126,7 @@ from app.auth import (
     verify_password,
     create_session_token,
     hash_session_token,
+    needs_password_rehash,
 )
 from app.object_storage import (
     check_connection as storage_check_connection,
@@ -161,9 +166,21 @@ class User(SQLModel, table=True):
     display_name: str
     password_hash: Optional[str] = None
     email: Optional[str] = Field(default=None, index=True)
+    email_verified_at: Optional[datetime] = None
     profile_photo_path: Optional[str] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class EmailVerificationChallenge(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, unique=True)
+    public_token: str = Field(index=True, unique=True)
+    code_hash: str
+    expires_at: datetime = Field(index=True)
+    attempts: int = 0
+    sent_at: datetime = Field(default_factory=_utcnow_naive)
+    verified_at: Optional[datetime] = None
 
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -216,7 +233,10 @@ class SupportTicketMessage(SQLModel, table=True):
     ticket_id: int = Field(index=True)
     sender_user_id: int = Field(index=True)
     sender_role: str = Field(index=True)
-    message: str
+    message: Optional[str] = None
+    e2ee_ciphertext: Optional[str] = None
+    e2ee_ephemeral_public_key: Optional[str] = None
+    e2ee_key_version: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
@@ -648,12 +668,27 @@ class UserReport(SQLModel, table=True):
     status: str = Field(default="OPEN", index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
+class E2EEDeviceKey(SQLModel, table=True):
+    """Public device identity key; private key never leaves the client."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True, unique=True)
+    algorithm: str = Field(default="X25519")
+    public_key: str
+    key_version: str = Field(default="v1", index=True)
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    revoked_at: Optional[datetime] = Field(default=None, index=True)
+
+
 class ConsultationMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     case_id: int = Field(index=True)
     sender_user_id: int = Field(index=True)
     message_type: str = Field(default="TEXT", index=True)
     content: Optional[str] = None
+    e2ee_ciphertext: Optional[str] = None
+    e2ee_ephemeral_public_key: Optional[str] = None
+    e2ee_key_version: Optional[str] = Field(default=None, index=True)
     media_path: Optional[str] = None
     annotation_json: Optional[str] = None
     reply_to_message_id: Optional[int] = Field(default=None, index=True)
@@ -1851,6 +1886,16 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP')
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS emailverificationchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, public_token VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMP NOT NULL, verified_at TIMESTAMP)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_emailverificationchallenge_expires_at ON emailverificationchallenge (expires_at)')
+        elif engine.dialect.name == "sqlite":
+            cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("user")').fetchall()}
+            if "email_verified_at" not in cols:
+                conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email_verified_at DATETIME')
+
     # create_all() does not add columns to existing tables. Keep this additive,
     # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
     with engine.begin() as conn:
@@ -2189,6 +2234,36 @@ def init_db():
 
 SESSION_COOKIE = "dental_ai_session"
 SESSION_DAYS = 7
+WEB_LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
+WEB_LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
+_REGISTRATION_WINDOW_SECONDS = max(60, int(os.getenv("REGISTRATION_RATE_WINDOW_SECONDS", "600")))
+_REGISTRATION_MAX_ATTEMPTS = max(2, int(os.getenv("REGISTRATION_RATE_MAX_ATTEMPTS", "10")))
+
+def _check_registration_rate(request: Request) -> str:
+    identity = request.client.host if request.client else "unknown"
+    return admit_auth_attempt(engine, "registration", identity,
+        limit=_REGISTRATION_MAX_ATTEMPTS, window=_REGISTRATION_WINDOW_SECONDS)
+
+
+def _record_registration_attempt(key: str) -> None:
+    # Attempts are counted atomically before password/registration processing.
+    pass
+
+
+def _check_web_login_rate(request: Request, login: str) -> str:
+    admit_auth_attempt(engine, "login-ip", request.client.host if request.client else "unknown",
+        limit=int(os.getenv("AUTH_IP_RATE_MAX_ATTEMPTS", "100")), window=WEB_LOGIN_RATE_WINDOW_SECONDS)
+    return admit_auth_attempt(engine, "login", login,
+        limit=WEB_LOGIN_RATE_MAX_FAILURES, window=WEB_LOGIN_RATE_WINDOW_SECONDS)
+
+
+def _record_web_login_failure(key: str) -> None:
+    # Admission already reserved this attempt, including concurrent requests.
+    pass
+
+
+def _clear_web_login_failures(key: str) -> None:
+    clear_auth_attempt(engine, key)
 
 
 def get_current_user(request: Request) -> Optional[User]:
@@ -2224,7 +2299,7 @@ def get_current_user(request: Request) -> Optional[User]:
             user = None
         else:
             user = s.get(User, session_token.user_id)
-            if not user or not user.is_active:
+            if not user or not user.is_active or not user.email_verified_at:
                 user = None
 
     if state is not None:
@@ -2259,7 +2334,8 @@ def create_user_session(response: RedirectResponse, user_id: int) -> None:
         max_age=SESSION_DAYS * 24 * 60 * 60,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=True,
+        path="/",
     )
 
 
@@ -2281,6 +2357,115 @@ def delete_user_session(request: Request) -> None:
         if session_token:
             s.delete(session_token)
             s.commit()
+
+
+def send_email_verification_code(recipient_email: str, code: str) -> None:
+    api_key = os.getenv("BREVO_API_KEY")
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY tanımlı değil.")
+    payload = {
+        "sender": {"name": os.getenv("BREVO_SENDER_NAME", "DENTAL AI Destek"), "email": os.getenv("BREVO_SENDER_EMAIL", "destek@dentalai.tr")},
+        "to": [{"email": recipient_email}],
+        "subject": "DENTAL AI - E-posta doğrulama kodunuz",
+        "htmlContent": f"<div style='font-family:Arial,sans-serif'><h2>DENTAL AI</h2><p>Hesabınızı doğrulamak için kodunuz:</p><p style='font-size:28px;font-weight:700;letter-spacing:5px'>{code}</p><p>Kod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir.</p></div>",
+        "textContent": f"DENTAL AI e-posta doğrulama kodunuz: {code}\nKod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir.",
+    }
+    req = urllib.request.Request("https://api.brevo.com/v3/smtp/email", data=json.dumps(payload).encode("utf-8"), method="POST", headers={"accept": "application/json", "api-key": api_key, "content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as response:
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError("Doğrulama e-postası gönderilemedi.")
+
+
+def _ensure_email_verification_challenge(session: Session, user: User, *, renew: bool = False) -> EmailVerificationChallenge:
+    locked_user = session.exec(select(User).where(User.id == user.id).with_for_update()).first()
+    if not locked_user or not locked_user.is_active or locked_user.email_verified_at or not locked_user.email:
+        raise ValueError("EMAIL_ALREADY_VERIFIED")
+    challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.user_id == locked_user.id)).first()
+    now = _utcnow_naive()
+    if challenge:
+        if not challenge.verified_at and challenge.expires_at > now and challenge.attempts < 5:
+            return challenge
+        if not renew:
+            return challenge
+        # Only an explicit, credential-verified renewal replaces an unusable
+        # challenge, while reusing a valid one to avoid repeated email sends.
+        session.delete(challenge)
+        session.flush()
+    code = f"{secrets.randbelow(1000000):06d}"
+    challenge = EmailVerificationChallenge(user_id=locked_user.id, public_token=secrets.token_urlsafe(32), code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+    session.add(challenge)
+    session.commit()
+    session.refresh(challenge)
+    try:
+        send_email_verification_code(locked_user.email, code)
+    except Exception:
+        session.delete(challenge)
+        session.commit()
+        raise
+    return challenge
+
+
+def _verify_email_code(session: Session, user: User, challenge: EmailVerificationChallenge, code: str) -> bool:
+    # Use the same user -> challenge lock order as renewal. This avoids
+    # verification/renewal deadlocks and rechecks account state under the lock.
+    locked_user = session.exec(
+        select(User).where(User.id == user.id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
+    if not locked_user or not locked_user.is_active or locked_user.email_verified_at:
+        return False
+    # Serialize attempts so a one-time code cannot be consumed twice.
+    locked_challenge = session.exec(
+        select(EmailVerificationChallenge)
+        .where(EmailVerificationChallenge.id == challenge.id, EmailVerificationChallenge.public_token == challenge.public_token)
+        .with_for_update()
+    ).first()
+    if not locked_challenge:
+        return False
+
+    now = _utcnow_naive()
+    if (
+        not user.is_active
+        or user.email_verified_at
+        or locked_challenge.user_id != user.id
+        or locked_challenge.verified_at
+        or locked_challenge.expires_at <= now
+        or locked_challenge.attempts >= 5
+    ):
+        return False
+
+    normalized_code = code.strip()
+    if (
+        not re.fullmatch(r"\d{6}", normalized_code)
+        or not secrets.compare_digest(
+            locked_challenge.code_hash,
+            hash_session_token(normalized_code),
+        )
+    ):
+        locked_challenge.attempts += 1
+        session.add(locked_challenge)
+        session.commit()
+        return False
+
+    locked_challenge.verified_at = now
+    # Destroy the verifier secret after successful consumption so replay fails
+    # even if a stale challenge object is reused by the caller.
+    locked_challenge.code_hash = secrets.token_urlsafe(32)
+    user.email_verified_at = now
+
+    # Email verification is an authentication boundary. Revoke any token
+    # issued before verification so a stale pre-verification session cannot
+    # become valid immediately after the account is verified.
+    stale_sessions = session.exec(
+        select(SessionToken).where(SessionToken.user_id == user.id)
+    ).all()
+    for stale_session in stale_sessions:
+        session.delete(stale_session)
+
+    session.add(locked_challenge)
+    session.add(user)
+    session.commit()
+    return True
 
 
 def send_expert_device_code(recipient_email: str, code: str) -> None:
@@ -2377,6 +2562,7 @@ def send_brevo_password_reset_email(
 
 
 app = FastAPI(title="DENTAL-AI", version="0.1.0")
+app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BYTES", str(128 * 1024 * 1024))))
 
 from app.object_cache import StorageScopeMiddleware
 app.add_middleware(StorageScopeMiddleware)
@@ -2743,6 +2929,8 @@ def register_user(
     kvkk_informed: Optional[str] = Form(None),
     accept_clinical: Optional[str] = Form(None),
 ):
+    registration_rate_key = _check_registration_rate(request)
+    _record_registration_attempt(registration_rate_key)
     display_name = display_name.strip()
     email = email.strip().lower()
     username = username.strip().lower()
@@ -3225,6 +3413,41 @@ def change_username(request: Request, username: str = Form(...)):
         return render_account(success="Kullanıcı adınız başarıyla değiştirildi. 15 gün boyunca tekrar değiştirilemez.")
 
 
+@app.post("/account/display-name", response_class=HTMLResponse)
+@offload
+def change_display_name(request: Request, display_name: str = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    normalized = " ".join(display_name.split()).strip()
+    if len(normalized) < 2:
+        return HTMLResponse("Ad soyad en az 2 karakter olmalıdır.", status_code=400)
+    if len(normalized) > 120:
+        return HTMLResponse("Ad soyad en fazla 120 karakter olabilir.", status_code=400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        db_user = s.get(User, user.id)
+        if not db_user:
+            return RedirectResponse("/login", status_code=303)
+        # A verified expert's displayed identity is tied to the reviewed profile;
+        # changing it silently would invalidate that verification boundary.
+        expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+        if (expert_profile and expert_profile.application_status == "APPROVED"
+                and expert_profile.verification_status == "VERIFIED"
+                and expert_profile.credential_document_path):
+            return HTMLResponse("Doğrulanmış uzman profilindeki ad soyad, belge doğrulamasıyla bağlıdır; değişiklik yeniden doğrulama akışından yapılmalıdır.", status_code=409)
+        if db_user.display_name == normalized:
+            return RedirectResponse("/account?profile_updated=1", status_code=303)
+        db_user.display_name = normalized
+        s.add(db_user)
+        event = _record_realtime_event(s, user.id, "PROFILE_UPDATED", "user", user.id,
+            {"user_id": user.id, "display_name": normalized})
+        s.commit()
+    on_loop(_publish_realtime_event, event)
+    return RedirectResponse("/account?profile_updated=1", status_code=303)
+
+
 @app.post("/account/password", response_class=HTMLResponse)
 def change_password(
     request: Request,
@@ -3262,7 +3485,9 @@ def change_password(
             status_code=status_code,
         )
 
+    password_rate_key = _check_web_login_rate(request, user.username)
     if not user.password_hash or not verify_password(current_password, user.password_hash):
+        _record_web_login_failure(password_rate_key)
         return render_account("Mevcut şifreniz hatalı.", status_code=400)
     if len(new_password) < 8:
         return render_account("Yeni şifre en az 8 karakter olmalıdır.", status_code=400)
@@ -3274,10 +3499,16 @@ def change_password(
         if not db_user:
             return RedirectResponse("/login", status_code=303)
         db_user.password_hash = hash_password(new_password)
+        session_tokens = s.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all()
+        for session_token in session_tokens:
+            s.delete(session_token)
         s.add(db_user)
         s.commit()
+    _clear_web_login_failures(password_rate_key)
 
-    return render_account(success="Şifreniz başarıyla değiştirildi.")
+    response = render_account(success="Şifreniz başarıyla değiştirildi.")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
 
 
 def _safe_login_next(next_url: str) -> str:
@@ -3312,15 +3543,30 @@ def login_page(
     )
 
 
+@app.post("/verify-email")
+def verify_email(request: Request, challenge_token: str = Form(...), code: str = Form(...), next_url: str = Form("")):
+    safe_next = _safe_login_next(next_url)
+    with Session(engine, expire_on_commit=False) as s:
+        challenge = s.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == challenge_token)).first()
+        user = s.get(User, challenge.user_id) if challenge else None
+        if not challenge or not user or not _verify_email_code(s, user, challenge, code):
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_token": challenge_token, "verification_mode": True, "next_url": safe_next, "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
+        response = RedirectResponse(url=safe_next, status_code=303)
+        create_user_session(response, user.id)
+        return response
+
+
 @app.post("/login")
 def login_user(
     request: Request,
     login: str = Form(...),
     password: str = Form(...),
     next_url: str = Form(""),
+    renew_email_code: Optional[str] = Form(None),
 ):
     login = login.strip().lower()
     safe_next = _safe_login_next(next_url)
+    login_key = _check_web_login_rate(request, login)
 
     with Session(engine, expire_on_commit=False) as s:
         user = s.exec(
@@ -3336,6 +3582,7 @@ def login_user(
             or not user.password_hash
             or not verify_password(password, user.password_hash)
         ):
+            _record_web_login_failure(login_key)
             return templates.TemplateResponse(
                 request=request,
                 name="login.html",
@@ -3345,6 +3592,22 @@ def login_user(
                 },
                 status_code=401,
             )
+
+        _clear_web_login_failures(login_key)
+        if needs_password_rehash(user.password_hash):
+            user.password_hash = hash_password(password)
+            s.add(user)
+            s.flush()
+
+        if not user.email:
+            return templates.TemplateResponse(request=request, name="login.html", context={"error": "Hesabınızda e-posta adresi bulunmuyor.", "next_url": safe_next}, status_code=403)
+
+        if not user.email_verified_at:
+            try:
+                challenge = _ensure_email_verification_challenge(s, user, renew=renew_email_code == "1")
+            except Exception:
+                return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
 
         response = RedirectResponse(
             url=safe_next,
@@ -3357,17 +3620,22 @@ def login_user(
 
 
 @app.post("/api/mobile/expert/device/check")
-def mobile_expert_device_check(login: str = Form(...), password: str = Form(...), device_key: str = Form(...), device_name: str = Form("Mobil cihaz"), platform: str = Form("mobile"), public_key: str = Form("")):
+def mobile_expert_device_check(request: Request, login: str = Form(...), password: str = Form(...), device_key: str = Form(...), device_name: str = Form("Mobil cihaz"), platform: str = Form("mobile"), public_key: str = Form("")):
     login=login.strip().lower(); device_key=device_key.strip()
+    login_rate_key=_check_web_login_rate(request, login)
     if len(device_key)<24:return JSONResponse({"ok":False,"error":"Geçersiz cihaz anahtarı."},status_code=400)
     device_hash=hash_session_token(device_key)
     with Session(engine,expire_on_commit=False) as s:
         user=s.exec(select(User).where((User.username==login)|(User.email==login))).first()
         if not user or not user.is_active or not user.password_hash or not verify_password(password,user.password_hash):
+            _record_web_login_failure(login_rate_key)
             return JSONResponse({"ok":False,"error":"Giriş bilgileri hatalı."},status_code=401)
-        if not _is_verified_expert(s,user.id):return JSONResponse({"ok":True,"device_verification_required":False})
+        if not _is_verified_expert(s,user.id):
+            _clear_web_login_failures(login_rate_key)
+            return JSONResponse({"ok":True,"device_verification_required":False})
         trusted=s.exec(select(ExpertTrustedDevice).where(ExpertTrustedDevice.user_id==user.id,ExpertTrustedDevice.device_key_hash==device_hash,ExpertTrustedDevice.is_active==True)).first()
         if trusted:
+            _clear_web_login_failures(login_rate_key)
             trusted.last_seen_at=_utcnow_naive();s.add(trusted);s.commit()
             return JSONResponse({"ok":True,"device_verification_required":False})
         if not user.email:return JSONResponse({"ok":False,"error":"Uzman hesabında doğrulanmış e-posta bulunamadı."},status_code=409)
@@ -3379,6 +3647,7 @@ def mobile_expert_device_check(login: str = Form(...), password: str = Form(...)
         s.add(ch);s.commit();s.refresh(ch)
         try:send_expert_device_code(user.email,code)
         except Exception:return JSONResponse({"ok":False,"error":"Doğrulama kodu gönderilemedi. Lütfen daha sonra tekrar deneyin."},status_code=503)
+        _clear_web_login_failures(login_rate_key)
         return JSONResponse({"ok":True,"device_verification_required":True,"challenge_id":ch.id,"code_sent":True})
 
 @app.post("/api/mobile/expert/device/verify")
@@ -3413,6 +3682,7 @@ def forgot_password_request(
     email: str = Form(...),
 ):
     email = email.strip().lower()
+    reset_rate_key = _check_web_login_rate(request, "password-reset:" + email)
 
     generic_message = (
         "Eğer bu e-posta adresi kayıtlıysa, "
@@ -3450,10 +3720,17 @@ def forgot_password_request(
             s.add(reset_token)
             s.commit()
 
-            public_base_url = os.getenv(
-                "PUBLIC_BASE_URL",
-                str(request.base_url).rstrip("/"),
-            ).rstrip("/")
+            public_base_url = (os.getenv("PUBLIC_BASE_URL") or "https://dentalai.tr").strip().rstrip("/")
+            public_base = urlparse(public_base_url)
+            if (
+                public_base.scheme not in {"https", "http"}
+                or not public_base.netloc
+                or public_base.username
+                or public_base.password
+                or public_base.query
+                or public_base.fragment
+            ):
+                raise RuntimeError("PUBLIC_BASE_URL güvenli bir mutlak URL olmalıdır.")
 
             reset_link = (
                 f"{public_base_url}/reset-password"
@@ -3470,6 +3747,7 @@ def forgot_password_request(
                 # Gerçek hata ayrıntısı kullanıcıya gösterilmez.
                 pass
 
+    _record_web_login_failure(reset_rate_key)
     return templates.TemplateResponse(
         request=request,
         name="forgot_password.html",
@@ -3609,13 +3887,18 @@ def reset_password(
         s.add(reset_token)
         s.commit()
 
-    return RedirectResponse(
+    response = RedirectResponse(
         url="/login?reset=success",
         status_code=303,
     )
+    # Password reset revokes every server-side session; expire the browser
+    # cookie with the exact same root path as the login cookie as well.
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
+    return response
 
 
-@app.get("/logout")
+@app.post("/logout")
 def logout_user(request: Request):
     # A Web Push subscription belongs to this browser/device. Disable only this
     # device on logout so shared devices do not receive the account's later pushes.
@@ -3636,8 +3919,8 @@ def logout_user(request: Request):
     delete_user_session(request)
 
     response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
-    response.delete_cookie("dai_push_subscription_id")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
     return response
 
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
@@ -3741,7 +4024,7 @@ def protected_upload(request: Request, filename: str):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 def template_user_context(request: Request):
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
@@ -4258,7 +4541,7 @@ def study_material_file(request: Request, course_id: int, material_id: int):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Not dosyası sunucuda bulunamadı.", status_code=404)
-    return FileResponse(path, media_type=mime_type)
+    return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/notes/courses/{course_id}/materials/{material_id}/delete")
@@ -4643,11 +4926,10 @@ def study_ai_ask(
             course_id=course_id,
             layer="rag",
             error_type=type(exc).__name__,
-            error=str(exc)[:240],
             elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
         )
         # === TEMP_STUDY_TRACE_ASK_RAG_ERROR_END ===
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
     except StudyAIError as exc:
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_BEGIN ===
         trace_event(
@@ -4655,11 +4937,10 @@ def study_ai_ask(
             course_id=course_id,
             layer="generation",
             error_type=type(exc).__name__,
-            error=str(exc)[:240],
             elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
         )
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
 
     return JSONResponse({"ok": True, "answer": answer})
 
@@ -4809,8 +5090,8 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             # Client disconnected: incomplete answers are never persisted.
             return
         except Exception as exc:
-            logger.exception("Academic V2 streaming generation failed")
-            safe_error = str(exc) if isinstance(exc, StudyAIError) else "Akademik AI akışı tamamlanamadı."
+            logger.warning("Academic V2 streaming generation failed (%s)", type(exc).__name__)
+            safe_error = "Akademik AI akışı tamamlanamadı. Ders kaynaklarını kontrol edip tekrar deneyin."
             yield json.dumps({"type": "error", "error": safe_error}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(
@@ -6077,7 +6358,7 @@ def admin_consultation_report_media(request: Request, case_id: int, message_id: 
         path=storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.",status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/admin/consultation-disputes/{case_id}", response_class=HTMLResponse)
@@ -6118,7 +6399,7 @@ def admin_consultation_dispute_media(request: Request, case_id: int, message_id:
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/admin/expert-verifications", response_class=HTMLResponse)
@@ -6158,7 +6439,7 @@ def admin_expert_credential_document(request: Request, profile_id: int):
     except Exception:
         logger.exception("Admin expert credential could not be loaded from storage: profile_id=%s", profile_id)
         return HTMLResponse("Belge depodan yüklenemedi.", status_code=503)
-    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline", headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/expert-support/expert/{expert_user_id}", response_class=HTMLResponse)
@@ -6167,7 +6448,6 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        _expire_pending_expert_requests(s, expert_user_id)
         profile = s.exec(select(ExpertProfile).where(
             ExpertProfile.user_id == expert_user_id,
             ExpertProfile.application_status == "APPROVED",
@@ -6191,7 +6471,6 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
         performance = _expert_performance(s, expert_user_id)
         policy_state = _expert_policy_state(s, expert_user_id)
         rating_avg = performance["rating_avg"]
-        s.commit()
     return templates.TemplateResponse(request=request, name="expert_public_profile.html", context={
         "user": user, "profile": profile, "expert": expert, "active_count": active_count,
         "completed_count": completed_count, "rating_avg": rating_avg, "review_count": len(reviews),
@@ -6832,18 +7111,8 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc())).all()
         rows = _consultation_inbox_rows(s, cases, user.id, now)
-        missed_case_ids = [row["case"].id for row in rows if row["status_key"] == "MISSED"]
-        recorded_missed_ids = set()
-        if missed_case_ids:
-            recorded_missed_ids = set(s.exec(
-                select(ConsultationEvent.case_id).where(
-                    ConsultationEvent.case_id.in_(missed_case_ids),
-                    ConsultationEvent.event_type.in_(["EXPERT_TIMEOUT", "PROPOSAL_EXPIRED", "INBOX_MISSED_RECORDED"]),
-                ).distinct()
-            ).all())
-        for case_id in missed_case_ids:
-            if case_id not in recorded_missed_ids:
-                _consultation_event(s, case_id, "INBOX_MISSED_RECORDED", None)
+        # GET remains side-effect free; missed-event persistence belongs to
+        # consultation state-transition paths.
         if filter == "unread":
             rows = [row for row in rows if row["unread"] > 0]
         elif filter == "waiting":
@@ -6856,7 +7125,6 @@ def consultation_messages_inbox(request: Request, filter: str = "all"):
             row["status_key"] != "NEW_REQUEST",
             -(row["last_message"].created_at if row["last_message"] else row["case"].requested_at).timestamp(),
         ))
-        s.commit()
     return templates.TemplateResponse(request=request, name="messages.html", context={
         "user": user, "rows": rows, "selected_filter": filter, "now": now,
     })
@@ -8510,8 +8778,48 @@ def realtime_sync_events(request: Request, after_id: int = 0, limit: int = 200):
             "last_event_id":events[-1].id if events else after_id,"has_more":len(events)==limit}
 
 
+def _socket_origin_allowed(websocket) -> bool:
+    origin = (websocket.headers.get("origin") or "").strip()
+    authorization = (websocket.headers.get("authorization") or "").strip()
+    if not origin:
+        # Native clients authenticate with an explicit Bearer token and do not
+        # need browser Origin semantics. Cookie-authenticated browser sockets
+        # must always provide Origin so cross-site WebSocket hijacking is blocked.
+        return bool(authorization.lower().startswith("bearer "))
+    try:
+        parsed = urlparse(origin)
+    except Exception:
+        return False
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return False
+    configured = {
+        item.strip().rstrip("/")
+        for item in os.getenv(
+            "WEB_ALLOWED_ORIGINS",
+            "https://dentalai.tr,https://www.dentalai.tr,http://localhost,http://127.0.0.1",
+        ).split(",")
+        if item.strip()
+    }
+    return origin.rstrip("/") in configured
+
+
 def _socket_current_user(websocket):
     websocket.state._dai_current_user_checked = False
+    token = websocket.cookies.get(SESSION_COOKIE)
+    if not token:
+        auth = websocket.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+    if token:
+        token_hash = hash_session_token(token)
+        with Session(engine, expire_on_commit=False) as s:
+            session_token = s.exec(select(SessionToken).where(SessionToken.token_hash == token_hash)).first()
+            if session_token and session_token.expires_at > _utcnow_naive():
+                user = s.get(User, session_token.user_id)
+                if user and user.is_active and user.email_verified_at:
+                    websocket.state._dai_current_user_checked = True
+                    websocket.state._dai_current_user = user
+                    return user
     return get_current_user(websocket)
 
 
@@ -8547,6 +8855,8 @@ def _socket_case_authorized(user_id, case_id, *, mark_read=False):
 
 @app.websocket("/ws/sync")
 async def realtime_sync_socket(websocket: WebSocket):
+    if not _socket_origin_allowed(websocket):
+        await websocket.close(code=4403); return
     user=await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
@@ -8662,6 +8972,8 @@ def _socket_message_sync(user, case_id, data, text_value):
 
 @app.websocket("/ws/expert-support/cases/{case_id}")
 async def expert_support_case_socket(websocket: WebSocket, case_id: int):
+    if not _socket_origin_allowed(websocket):
+        await websocket.close(code=4403); return
     user = await run_in_threadpool(_socket_current_user, websocket)
     if not user:
         await websocket.close(code=4401); return
@@ -9781,7 +10093,7 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/patients/{patient_id}/media/{media_id}/delete")
@@ -10277,7 +10589,19 @@ def _publish_clinical_result(session, analysis, serialized, *, status):
         if previous and previous != str(path):
             session.add(work_jobs.WorkGarbage(reference=previous))
         session.exec(__import__("sqlalchemy").delete(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == str(path)))
+        owner_id = None
+        if guest:
+            owner_id = getattr(live, "owner_user_id", None)
+        else:
+            patient = session.get(Patient, getattr(live, "patient_id", None))
+            owner_id = patient.owner_user_id if patient else None
+        realtime_event = _record_realtime_event(session, int(owner_id), "ANALYSIS_UPDATED", "analysis", live.id, {
+            "analysis_id": live.id, "patient_id": getattr(live, "patient_id", None),
+            "status": live.status, "result_ready": True, "stage": (json.loads(serialized).get("stage") or None),
+        }) if owner_id else None
         session.commit()
+        if realtime_event:
+            on_loop(_publish_realtime_event, realtime_event)
     except BaseException:
         session.rollback()
         session.close()
@@ -11193,6 +11517,18 @@ def _maintenance_response(request):
 
 
 @app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), payment=()")
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+@app.middleware("http")
 async def admin_maintenance_guard(request: Request, call_next):
     path = request.url.path
     if path.startswith("/static") or path.startswith(ADMIN_CENTER_PATH) or path in {"/login", "/logout", "/site/runtime-config", "/healthz", "/readyz"}:
@@ -11388,10 +11724,17 @@ def admin_center_login_get():
 
 @app.post(ADMIN_CENTER_PATH + "/login")
 def admin_center_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    username = username.strip()
+    login_rate_key = _check_web_login_rate(request, username)
     with Session(engine, expire_on_commit=False) as s:
         user=s.exec(select(User).where(User.username == username.strip())).first()
         if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
+            _record_web_login_failure(login_rate_key)
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
+        if not user.email or not user.email_verified_at:
+            _clear_web_login_failures(login_rate_key)
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici hesabının doğrulanmış e-posta adresi bulunmuyor."}, status_code=403)
+        _clear_web_login_failures(login_rate_key)
         response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
         create_user_session(response,user.id)
         return response
@@ -11944,8 +12287,8 @@ def delete_own_account(
             logger.exception("Self-deleted account storage cleanup failed")
 
     response = RedirectResponse(url="/login?account_deleted=1", status_code=303)
-    response.delete_cookie(SESSION_COOKIE)
-    response.delete_cookie("dai_push_subscription_id")
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
     return response
 
 
@@ -12519,7 +12862,7 @@ def analysis_primary_asset(request: Request, analysis_id: int):
         ".png": "image/png",
         ".webp": "image/webp",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media_type, filename=original_filename)
+    return FileResponse(path, media_type=media_type, filename=original_filename, headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/analysis/{analysis_id}/viewer", response_class=HTMLResponse)
@@ -13209,6 +13552,13 @@ Hekimin sorusu:
     )
 
 
-# Outermost admission includes middleware/authentication and multipart intake.
-from app.request_limits import RequestLimits
-app.add_middleware(RequestLimits)
+# Native Android JSON API
+from app.mobile_api import router as mobile_router
+app.include_router(mobile_router)
+from app.mobile_analysis_api import router as mobile_analysis_router
+app.include_router(mobile_analysis_router)
+from app.mobile_modern_api_v3 import router as mobile_modern_router
+_mobile_mounted_routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", ())}
+mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
+    if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
+app.include_router(mobile_modern_router)

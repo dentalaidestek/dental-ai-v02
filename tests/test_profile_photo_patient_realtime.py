@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
@@ -26,9 +25,9 @@ PHOTO_TEMPLATES = [
 ]
 
 
-def _engine():
+def _engine(tmp_path):
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        "sqlite:///" + str(tmp_path / "patient-realtime.db"), connect_args={"check_same_thread": False}
     )
     SQLModel.metadata.create_all(engine)
     return engine
@@ -37,7 +36,7 @@ def _engine():
 def _user_and_token(engine, username="owner"):
     token = f"{username}-token"
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username=username, role="DOCTOR", display_name=username.title())
+        user = main.User(email_verified_at=main._utcnow_naive(), username=username, role="DOCTOR", display_name=username.title())
         session.add(user)
         session.commit()
         session.add(main.SessionToken(
@@ -64,13 +63,13 @@ def test_profile_photo_realtime_targets_only_matching_avatar():
     assert "Number(img.dataset.profileUserId)===Number(userId)" in BASE
     assert 'querySelectorAll("img[data-profile-user-id]")' in BASE
     assert "?v=" in main._profile_photo_url(
-        main.User(id=9, username="u", profile_photo_path="uploads/profile_photos/new.jpg")
+        main.User(email_verified_at=main._utcnow_naive(), id=9, username="u", profile_photo_path="uploads/profile_photos/new.jpg")
     )
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_profile_photo_replacement_commits_before_old_delete_and_emits_event(monkeypatch):
-    engine = _engine()
+def test_profile_photo_replacement_commits_before_old_delete_and_emits_event(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     user_id, token = _user_and_token(engine)
     with Session(engine) as session:
         user = session.get(main.User, user_id)
@@ -100,8 +99,8 @@ def test_profile_photo_replacement_commits_before_old_delete_and_emits_event(mon
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_failed_profile_upload_preserves_current_photo(monkeypatch):
-    engine = _engine()
+def test_failed_profile_upload_preserves_current_photo(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     user_id, token = _user_and_token(engine)
     with Session(engine) as session:
         user = session.get(main.User, user_id)
@@ -121,8 +120,8 @@ def test_failed_profile_upload_preserves_current_photo(monkeypatch):
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_patient_crud_records_owner_only_durable_events_and_enforces_isolation(monkeypatch):
-    engine = _engine()
+def test_patient_crud_records_owner_only_durable_events_and_enforces_isolation(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     owner_id, owner_token = _user_and_token(engine, "owner")
     other_id, other_token = _user_and_token(engine, "other")
     monkeypatch.setattr(main, "engine", engine)
@@ -134,6 +133,8 @@ def test_patient_crud_records_owner_only_durable_events_and_enforces_isolation(m
         )
         assert created.status_code == 303
         patient_id = int(created.headers["location"].rsplit("/", 1)[-1])
+        with Session(engine) as session:
+            assert session.get(main.Patient, patient_id).owner_user_id == owner_id
         assert client.get(
             f"/patients/{patient_id}/realtime", cookies={main.SESSION_COOKIE: other_token}
         ).status_code == 403

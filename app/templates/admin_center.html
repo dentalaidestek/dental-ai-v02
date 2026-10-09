@@ -107,7 +107,7 @@
 <a href="{{admin_path}}?section=stats">Site İstatistikleri</a><a href="{{admin_path}}?section=revenue">Gelir / Ödemeler</a><a href="{{admin_path}}?section=logs">Sistem Logları</a>
 <strong>AYARLAR</strong>
 <a href="{{admin_path}}?section=settings">Genel Ayarlar</a><a href="{{admin_path}}?section=security">Güvenlik</a><a href="{{admin_path}}?section=admins">Admin Hesapları</a><a href="{{admin_path}}?section=backup">Yedekleme</a>
-<a class="admin-logout" href="/logout">Çıkış Yap</a></aside>
+<form class="admin-logout-form" method="post" action="/logout"><button class="admin-logout" type="submit">Çıkış Yap</button></form></aside>
 <main class="admin-pro-main">
 {% if section=='home' %}
 <div class="admin-welcome"><div><small>Hoş geldin,</small><h1>{{user.display_name}}</h1><p>Dental AI Yönetim Merkezi</p></div><b>YÖNETİCİ</b></div>

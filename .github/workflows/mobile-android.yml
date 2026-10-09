@@ -1,0 +1,31 @@
+name: Mobile Android CI
+
+on:
+  push:
+    branches:
+      - 'mobile/**'
+      - 'work/security-privacy-*'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'app/mobile_api.py'
+      - 'app/mobile_analysis_api.py'
+      - 'app/mobile_modern_api.py'
+      - 'app/mobile_modern_api_v3.py'
+      - 'app/main.py'
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+      - run: npx expo export --platform android

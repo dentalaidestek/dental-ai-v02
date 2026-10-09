@@ -28,8 +28,8 @@ def test_distinct_expert_is_routed_by_profile_user_id_and_self_stays_blocked(mon
     now = main._utcnow_naive()
 
     with Session(engine, expire_on_commit=False) as session:
-        requester = main.User(username="requester", role="DOCTOR", display_name="A")
-        expert = main.User(username="expert", role="DOCTOR", display_name="B")
+        requester = main.User(email_verified_at=main._utcnow_naive(), username="requester", role="DOCTOR", display_name="A")
+        expert = main.User(email_verified_at=main._utcnow_naive(), username="expert", role="DOCTOR", display_name="B")
         session.add(requester)
         session.add(expert)
         session.commit()

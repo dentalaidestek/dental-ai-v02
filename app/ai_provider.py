@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from app.http_transport import urlopen
 from app.provider_budget import reservation
+from app.clinical_privacy import redact_direct_identifiers
 
 try:
     from app.xray_trace import xray_trace_event
@@ -76,7 +77,7 @@ def _build_payload(prompt: str, response_schema=None):
         generation_config["responseMimeType"] = "application/json"
         generation_config["responseSchema"] = response_schema
     payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"role": "user", "parts": [{"text": redact_direct_identifiers(prompt)}]}],
         "generationConfig": generation_config,
     }
     payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -153,8 +154,8 @@ def ask_ai(prompt, image_path=None, image_paths=None, response_schema=None, stru
             return answer
 
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("Clinical AI HTTP error model=%s status=%s attempt=%s body=%s", GEMINI_MODEL, exc.code, attempt, body[:1200])
+            exc.read()  # Consume the response body without logging provider payload/error content.
+            logger.warning("Clinical AI HTTP error model=%s status=%s attempt=%s", GEMINI_MODEL, exc.code, attempt)
             last_error = GeminiAPIError(_safe_http_error_message(exc.code))
             if exc.code not in RETRYABLE_HTTP_CODES or attempt >= GEMINI_MAX_ATTEMPTS:
                 raise last_error

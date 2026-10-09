@@ -5,6 +5,8 @@ import hmac
 import os
 import tempfile
 
+from PIL import Image
+
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
@@ -29,7 +31,7 @@ def require_vision_key(x_vision_key: str | None = Header(default=None, alias="X-
 
 @app.get("/health")
 def health():
-    ready=readiness_snapshot(); return {"ok":True,"service":"dental-ai-vision","engine":"dental_ai_panorama_48_v1","intraoral_engine":"alphadent_daath_resnet50_ensemble","intraoral_engine_role":"primary","intraoral_motors":["alphadent_9class_960","daath_caries","oral_diseases_resnet50"],"intraoral_ensemble_configured":intraoral_ensemble_configured(),"oraldetect_configured":oraldetect_configured(),"oraldetect_role":"fallback_when_available","bitewing_engine":"bitewing_8024_periodontal_v1","bitewing_motors":["yolov8_8024_seg","bitewing_periodontal_defect"],"bitewing_configured":bitewing_configured(),"periapical_engine":"periapical_pai_v1","periapical_motors":["pai_meets_ai"],"periapical_configured":periapical_configured(),"base_model_available":model_available(),"base_model_file":MODEL_PATH.name,"api_protected":bool(VISION_API_KEY),"catalog_total":len(FINDING_CATALOG),"implementation_total":ready["implementation_total"],"implementation_complete":ready["implementation_complete"],"runtime_validation_complete":ready["runtime_validation_complete"],"photo3d":True,"anatomy3d":True,"intraoral_photo_viewer":True}
+    return {"ok": True, "service": "dental-ai-vision"}
 
 @app.get("/viewer",response_class=HTMLResponse)
 def viewer():
@@ -76,6 +78,7 @@ def motor_catalog(_:None=Depends(require_vision_key)):
 # One process and one in-flight local inference until model concurrency is tested.
 _vision_gate = WorkGate(1)
 _MAX_IMAGE_BYTES = int(os.getenv("VISION_MAX_IMAGE_BYTES", str(25 * 1024 * 1024)))
+_MAX_IMAGE_PIXELS = int(os.getenv("VISION_MAX_IMAGE_PIXELS", "40000000"))
 
 
 @contextmanager
@@ -106,6 +109,18 @@ def _saved_image(image, default_name):
                 target.write(part)
         if not total:
             raise HTTPException(400, "Empty image")
+        try:
+            with Image.open(path) as decoded:
+                if decoded.format not in {"JPEG", "PNG", "WEBP", "BMP", "TIFF"}:
+                    raise HTTPException(422, "Unsupported image content")
+                width, height = decoded.size
+                if width <= 0 or height <= 0 or width * height > _MAX_IMAGE_PIXELS:
+                    raise HTTPException(422, "Image dimensions exceed the configured limit")
+                decoded.verify()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(422, "Invalid image content") from exc
         yield str(path)
 
 
@@ -115,7 +130,7 @@ def analyze_image(image: UploadFile = File(...), _: None = Depends(require_visio
         try:
             return analyze_panorama(path)
         except VisionError as exc:
-            raise HTTPException(503, str(exc)) from exc
+            raise HTTPException(503, "Görüntü analizi geçici olarak kullanılamıyor.") from exc
 
 
 @app.post("/analyze-intraoral")
@@ -130,7 +145,7 @@ def analyze_intraoral_image(image: UploadFile = File(...), _: None = Depends(req
                 return result
             raise IntraoralEnsembleError("INTRAORAL_ENSEMBLE_URL gerekli.")
         except (IntraoralEnsembleError, OralDetectError) as exc:
-            raise HTTPException(503, str(exc)) from exc
+            raise HTTPException(503, "Görüntü analizi geçici olarak kullanılamıyor.") from exc
 
 
 @app.post("/analyze-bitewing")
@@ -139,7 +154,7 @@ def analyze_bitewing_image(image: UploadFile = File(...), _: None = Depends(requ
         try:
             return analyze_bitewing(path)
         except BitewingEngineError as exc:
-            raise HTTPException(503, str(exc)) from exc
+            raise HTTPException(503, "Görüntü analizi geçici olarak kullanılamıyor.") from exc
 
 
 @app.post("/analyze-periapical")
@@ -148,7 +163,7 @@ def analyze_periapical_image(image: UploadFile = File(...), _: None = Depends(re
         try:
             return analyze_periapical(path)
         except PeriapicalPAIError as exc:
-            raise HTTPException(503, str(exc)) from exc
+            raise HTTPException(503, "Görüntü analizi geçici olarak kullanılamıyor.") from exc
 
 
 @app.post("/photo3d/reconstruct")
@@ -161,7 +176,7 @@ def photo3d_reconstruct(images: list[UploadFile] = File(...), _: None = Depends(
         try:
             return reconstruct(paths)
         except Photo3DError as exc:
-            raise HTTPException(422, str(exc)) from exc
+            raise HTTPException(422, "Fotoğraf rekonstrüksiyonu tamamlanamadı.") from exc
 
 
 @app.get("/diagnostics/runtime/{stage}")

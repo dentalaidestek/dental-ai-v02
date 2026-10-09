@@ -16,16 +16,16 @@ ROOM = (Path(__file__).resolve().parents[1] / "app" / "templates" / "expert_case
 
 
 @pytest.fixture()
-def consultation_app(monkeypatch):
+def consultation_app(monkeypatch, tmp_path):
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        "sqlite:///" + str(tmp_path / "consultation.db"), connect_args={"check_same_thread": False}
     )
     SQLModel.metadata.create_all(engine)
     monkeypatch.setattr(main, "engine", engine)
     now = main._utcnow_naive()
     with Session(engine, expire_on_commit=False) as session:
-        requester = main.User(username="requester", role="DOCTOR", display_name="Gönderen Hekim")
-        expert = main.User(username="expert", role="DOCTOR", display_name="Uzman Hekim")
+        requester = main.User(email_verified_at=main._utcnow_naive(), username="requester", role="DOCTOR", display_name="Gönderen Hekim")
+        expert = main.User(email_verified_at=main._utcnow_naive(), username="expert", role="DOCTOR", display_name="Uzman Hekim")
         session.add(requester)
         session.add(expert)
         session.commit()

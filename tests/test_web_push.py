@@ -75,10 +75,10 @@ class WebPushContractTests(unittest.TestCase):
         self.assertIn("subscription.user_id = user.id", subscribe)
 
     def test_logout_disables_only_this_browser_subscription(self):
-        logout = MAIN.split('@app.get("/logout")', 1)[1].split('app.mount("/static"', 1)[0]
+        logout = MAIN.split('@app.post("/logout")', 1)[1].split('app.mount("/static"', 1)[0]
         self.assertIn('request.cookies.get("dai_push_subscription_id")', logout)
         self.assertIn("subscription.user_id == user.id", logout)
-        self.assertIn('response.delete_cookie("dai_push_subscription_id")', logout)
+        self.assertIn('response.delete_cookie("dai_push_subscription_id", path="/")', logout)
         subscribe = MAIN.split('def account_push_subscribe', 1)[1].split('@app.post("/account/push/unsubscribe")', 1)[0]
         self.assertIn('response.set_cookie("dai_push_subscription_id"', subscribe)
         self.assertIn("httponly=True", subscribe)

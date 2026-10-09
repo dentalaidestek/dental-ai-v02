@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
+import os
+import hmac
 from pathlib import Path
+from PIL import Image
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from vision_service.anatomy_mesh import AnatomyMeshError, anatomy_obj
@@ -15,7 +18,16 @@ from vision_service.motors.impacted_tooth import normalize_class as normalize_im
 from vision_service.pipeline import _attach_fdi, _detector_outputs
 
 app = FastAPI(title="Dental AI Anatomy 3D Direct FDI Test")
+ANATOMY_API_KEY = os.getenv("DENTAL_VISION_API_KEY", "").strip()
+MAX_IMAGE_BYTES = max(1, int(os.getenv("VISION_MAX_IMAGE_BYTES", str(25 * 1024 * 1024))))
+MAX_IMAGE_PIXELS = max(1, int(os.getenv("VISION_MAX_IMAGE_PIXELS", "40000000")))
 _FDI_MODEL = None
+
+def require_anatomy_key(x_vision_key: str | None = Header(default=None, alias="X-Vision-Key")):
+    if not ANATOMY_API_KEY:
+        raise HTTPException(status_code=503, detail="Anatomy API güvenlik anahtarı yapılandırılmadı.")
+    if not x_vision_key or not hmac.compare_digest(x_vision_key, ANATOMY_API_KEY):
+        raise HTTPException(status_code=401, detail="Yetkisiz anatomy isteği.")
 
 
 def _get_fdi_model():
@@ -236,7 +248,7 @@ def health():
 
 
 @app.post("/analyze")
-async def analyze_image(image: UploadFile = File(...)):
+async def analyze_image(image: UploadFile = File(...), _: None = Depends(require_anatomy_key)):
     suffix = Path(image.filename or "image.jpg").suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
         raise HTTPException(status_code=400, detail="Desteklenmeyen görüntü formatı.")
@@ -244,8 +256,28 @@ async def analyze_image(image: UploadFile = File(...)):
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(image.file, tmp)
             temp_path = tmp.name
+            total = 0
+            while True:
+                chunk = image.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    raise HTTPException(413, "Image exceeds the configured upload limit")
+                tmp.write(chunk)
+            if total <= 0:
+                raise HTTPException(400, "Empty image")
+        try:
+            with Image.open(temp_path) as probe:
+                width, height = probe.size
+                if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                    raise HTTPException(422, "Image resolution exceeds the configured limit")
+                probe.verify()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(422, "Invalid image") from exc
 
         teeth, used_conf, raw = _predict_fdi(temp_path)
         findings, helpers, execution, warnings = _run_pinned_findings(temp_path, teeth)

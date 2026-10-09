@@ -302,7 +302,7 @@ class GeminiStudyProvider(StudyProvider):
                             provider=self.name, model=model, operation=operation, success=False,
                             status_code=getattr(response, "status", 200),
                             latency_ms=int((time.perf_counter() - started) * 1000),
-                            response_headers=response.headers, error_body=body,
+                            response_headers=response.headers, error_body=None,
                         )
                         raise StudyProviderError(
                             "Akademik AI sağlayıcı cevabı okunamadı.",
@@ -318,12 +318,12 @@ class GeminiStudyProvider(StudyProvider):
                     return result
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
-                logger.warning("Gemini Academic provider HTTP %s: %s", exc.code, body[:2200])
+                logger.warning("Gemini Academic provider HTTP %s", exc.code)
                 record_api_result(
                     provider=self.name, model=model, operation=operation, success=False,
                     status_code=exc.code,
                     latency_ms=int((time.perf_counter() - started) * 1000),
-                    response_headers=exc.headers, error_body=body,
+                    response_headers=exc.headers, error_body=None,
                 )
                 last_error = StudyProviderError(
                     self._safe_message(exc.code),
@@ -502,7 +502,7 @@ class GeminiStudyProvider(StudyProvider):
             record_api_result(
                 provider=self.name, model=model, operation="generation", success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
-                response_headers=exc.headers, error_body=body,
+                response_headers=exc.headers, error_body=None,
             )
             raise StudyProviderError(
                 self._safe_message(exc.code), code=exc.code,
@@ -622,7 +622,7 @@ class CohereStudyProvider(StudyProvider):
                         provider=self.name, model=model, operation=operation, success=False,
                         status_code=getattr(response, "status", 200),
                         latency_ms=int((time.perf_counter() - started) * 1000),
-                        response_headers=response.headers, error_body=body,
+                        response_headers=response.headers, error_body=None,
                     )
                     raise StudyProviderError("Cohere sağlayıcı cevabı okunamadı.", tracked=True) from exc
                 record_api_result(
@@ -634,11 +634,11 @@ class CohereStudyProvider(StudyProvider):
                 return result
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("Cohere Academic provider HTTP %s: %s", exc.code, body[:1800])
+            logger.warning("Cohere Academic provider HTTP %s", exc.code)
             record_api_result(
                 provider=self.name, model=model, operation=operation, success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
-                response_headers=exc.headers, error_body=body,
+                response_headers=exc.headers, error_body=None,
             )
             if exc.code == 429:
                 message = "Cohere ücretsiz/trial kullanım limiti dolu."
@@ -801,7 +801,7 @@ class OpenAICompatibleStudyProvider(StudyProvider):
                         provider=self.name, model=model, operation=operation, success=False,
                         status_code=getattr(response, "status", 200),
                         latency_ms=int((time.perf_counter() - started) * 1000),
-                        response_headers=response.headers, error_body=body,
+                        response_headers=response.headers, error_body=None,
                     )
                     raise StudyProviderError(
                         f"{self.name} sağlayıcı cevabı okunamadı.", tracked=True
@@ -815,11 +815,11 @@ class OpenAICompatibleStudyProvider(StudyProvider):
                 return result
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            logger.warning("%s Academic provider HTTP %s: %s", self.name, exc.code, body[:1800])
+            logger.warning("%s Academic provider HTTP %s", self.name, exc.code)
             record_api_result(
                 provider=self.name, model=model, operation=operation, success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
-                response_headers=exc.headers, error_body=body,
+                response_headers=exc.headers, error_body=None,
             )
             if exc.code == 429:
                 message = f"{self.name} ücretsiz kullanım limiti dolu."

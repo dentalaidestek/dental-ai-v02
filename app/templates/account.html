@@ -106,7 +106,7 @@
     }
 </style>
 <style>
-    .account-container{max-width:760px;margin:8px auto 90px;padding:0 12px 28px}
+    .account-container{max-width:820px;margin:8px auto 90px;padding:0 12px 28px}
     .account-card{border:1px solid #e2e8f0;border-radius:20px;padding:20px;margin-bottom:12px;box-shadow:0 8px 28px rgba(15,23,42,.055)}
     .account-profile-hero{display:flex;align-items:center;gap:14px;padding-bottom:18px;margin-bottom:16px;border-bottom:1px solid #eef2f7}
     .account-profile-avatar{width:62px;height:62px;flex:0 0 62px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#dbeafe,#e0e7ff);color:#1d4ed8;font-size:24px;font-weight:900}
@@ -115,7 +115,7 @@
     .account-card h2{font-size:18px;color:#0f172a}.account-card>p{color:#64748b;font-size:14px;line-height:1.5}
     .info-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.info-item{padding:12px 13px;background:#f8fafc;border:1px solid #f1f5f9;border-radius:13px}.info-label{font-size:11px}.info-value{font-size:14px}
     .password-form input,.password-form select{min-height:46px;border-radius:12px;background:#fff}.password-form button{min-height:46px;border-radius:12px}
-    @media(max-width:650px){.account-card{padding:15px}.account-profile-avatar{width:54px;height:54px;flex-basis:54px;border-radius:16px}.account-profile-copy h1{font-size:20px}.info-grid{grid-template-columns:1fr 1fr}.info-item:nth-child(2){grid-column:auto}.info-value{font-size:13px}.account-card h2{font-size:16px}}
+    @media(max-width:650px){.account-container{padding-left:16px;padding-right:16px}.account-card{padding:15px}.account-profile-avatar{width:54px;height:54px;flex-basis:54px;border-radius:16px}.account-profile-copy h1{font-size:20px}.info-grid{grid-template-columns:1fr 1fr}.info-item:nth-child(2){grid-column:auto}.info-value{font-size:13px}.account-card h2{font-size:16px}}
     .push-setting{display:flex;align-items:center;justify-content:space-between;gap:14px}.push-setting-copy{min-width:0}.push-setting-copy h2{margin-bottom:5px}.push-setting-copy p{margin:0!important}.push-setting-action{flex:0 0 auto;min-width:150px;min-height:42px;border:0;border-radius:11px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;padding:9px 13px}.push-setting-action.secondary{background:#f1f5f9;color:#334155}.push-setting-action:disabled{cursor:not-allowed;opacity:.6}.push-setting-status{display:block;margin-top:7px;font-size:12px;color:#64748b}
     .account-actions{display:grid;gap:13px}.account-action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.account-action-button{min-height:46px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:12px;padding:11px 14px;font-size:14px;font-weight:850;text-decoration:none;cursor:pointer}.account-logout-button{border:1px solid #0b2341;background:#0b2341;color:#fff}body #accountDeleteTrigger{border:1px solid #fecaca!important;background:#fff!important;color:#b42318!important}.account-delete-note{margin:0!important;font-size:12px!important;color:#64748b!important}.account-delete-dialog{width:min(480px,calc(100vw - 28px));box-sizing:border-box;border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px rgba(15,23,42,.28)}.account-delete-dialog::backdrop{background:rgba(15,23,42,.58)}.account-delete-dialog form{display:grid;gap:12px;padding:20px}.account-delete-dialog h2{margin:0;color:#991b1b}.account-delete-dialog p{margin:0;color:#475569;font-size:13px;line-height:1.55}.account-delete-dialog label{display:grid;gap:6px;color:#334155;font-size:13px;font-weight:750}.account-delete-dialog input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid #cbd5e1;border-radius:11px;padding:10px 12px;font-size:16px}.account-delete-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:4px}body #accountDeleteCancel{border:1px solid #cbd5e1!important;background:#fff!important;color:#334155!important}body #accountDeleteConfirm{border:1px solid #b42318!important;background:#b42318!important;color:#fff!important}body #accountDeleteConfirm:disabled{opacity:.55;cursor:not-allowed}
     @media(max-width:650px){.push-setting{align-items:stretch;flex-direction:column}.push-setting-action{width:100%}}
@@ -136,6 +136,16 @@
         {% if success %}
         <div class="success">{{ success }}</div>
         {% endif %}
+
+        <div class="account-card account-editable-card">
+            <h2>Kişisel Bilgiler</h2>
+            <p>Ad soyadınızı burada güncelleyebilirsiniz. E-posta adresiniz doğrulanmış hesap kimliği olduğu için ayrı doğrulama akışı olmadan değiştirilmez.</p>
+            <form method="post" action="/account/display-name" class="password-form" autocomplete="on">
+                <label for="display_name">Ad Soyad</label>
+                <input id="display_name" type="text" name="display_name" required minlength="2" maxlength="120" value="{{ user.display_name or '' }}" autocomplete="name">
+                <button type="submit">Ad Soyadımı Güncelle</button>
+            </form>
+        </div>
 
         <div class="info-grid">
             <div class="info-item">
@@ -285,7 +295,7 @@
             <p class="account-delete-note">Bu cihazdaki oturumunuzu kapatabilir veya hesabınızın silinmesini başlatabilirsiniz.</p>
         </div>
         <div class="account-action-row">
-            <a class="account-action-button account-logout-button" href="/logout">Çıkış Yap</a>
+            <form class="account-logout-form" method="post" action="/logout"><button class="account-action-button account-logout-button" type="submit">Çıkış Yap</button></form>
             {% if user.role != 'ADMIN' %}
             <button class="account-action-button account-delete-trigger" id="accountDeleteTrigger" type="button">Hesabımı Sil</button>
             {% endif %}
