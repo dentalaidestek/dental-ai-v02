@@ -205,6 +205,7 @@ class RetrievalResult:
     covered_facets: tuple[str, ...] = ()
     missing_facets: tuple[str, ...] = ()
     clarification: str = ""
+    semantic_planner_attempted: bool = False
 
 
 @dataclass(frozen=True)
@@ -2531,9 +2532,22 @@ def retrieve_course_context_v2(
     recent_history: list[dict] | None = None,
     limit: int = 8,
     recovery_terms: tuple[str, ...] = (),
+    request_plan=None,
 ) -> RetrievalResult:
     if session.get_bind().dialect.name != "postgresql":
         raise RuntimeError("Academic V2 hybrid retrieval requires PostgreSQL")
+    if request_plan is not None:
+        from app.academic_request_understanding import StudyRequest
+        if not isinstance(request_plan, StudyRequest):
+            raise ValueError("invalid semantic request contract")
+        if request_plan.operation == "clarify":
+            return RetrievalResult(resolved_query=request_plan.resolved_query,
+                                   retrieval_mode="clarification",
+                                   clarification=request_plan.clarification)
+        # The planner has resolved referents. Re-running reference heuristics
+        # against old dialogue can undo explicit topic changes.
+        query = request_plan.resolved_query
+        recent_history = []
     from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
     from app.academic_request_slots import conversational_repair, REPAIR_RESPONSE
     if conversational_repair(query):
@@ -2608,7 +2622,10 @@ def retrieve_course_context_v2(
     study_question_task = bool(
         study_task and study_task.requires_past_questions and not exhaustive_questions
     )
-    course_wide_coverage = _course_coverage_requested(resolved, requirement, study_task)
+    course_wide_coverage = (
+        request_plan.scope == "course" if request_plan is not None
+        else _course_coverage_requested(resolved, requirement, study_task)
+    )
     logging.getLogger("uvicorn.error.academic_retrieval").info(
         "Academic retrieval route owner=%s course=%s history_turns=%s "
         "resolved_changed=%s task=%s subject_count=%s course_wide=%s depth=%s topic_budget=%s",
@@ -2623,8 +2640,9 @@ def retrieve_course_context_v2(
         # representatives are hydrated.
         requested_count = 48 if deeper_evidence else 24
         study_plan = classify_dental_study_plan(resolved)
-        if study_plan and study_plan.count:
-            requested_count = min(48, max(48 if deeper_evidence else 8, study_plan.count))
+        count = request_plan.count if request_plan is not None else (study_plan.count if study_plan else None)
+        if count:
+            requested_count = min(48, max(48 if deeper_evidence else 8, count))
         coverage_plan = get_or_build_coverage_plan(
             session, owner_user_id=owner_user_id, course_id=course_id,
             requested_count=requested_count,

@@ -24,7 +24,7 @@ class AcademicRecoveryEvent(SQLModel, table=True):
 
 def recover_course_context(*, session_factory, owner_user_id: int, course_id: int,
                            question: str, history: list[dict], initial):
-    if initial.clarification or initial.evidence_sufficient:
+    if initial.clarification or initial.evidence_sufficient or getattr(initial, "semantic_planner_attempted", False):
         return initial
     from app.study_ai_v2 import ACADEMIC_V2_MODEL
     from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available

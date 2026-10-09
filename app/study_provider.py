@@ -397,6 +397,10 @@ class GeminiStudyProvider(StudyProvider):
                 "maxOutputTokens": max_output_tokens,
             },
         }
+        schema = getattr(self, "response_schema", None)
+        if schema is not None:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
+            payload["generationConfig"]["responseJsonSchema"] = schema
         result = self._request_json(f"{self.BASE_URL}/{model}:generateContent", payload, model=model, operation="generation")
         candidates = result.get("candidates") or []
         if not candidates:

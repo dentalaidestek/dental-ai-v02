@@ -4933,6 +4933,10 @@ def study_ai_ask(
             source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
             s.close()
+            # Language interpretation runs outside a DB transaction. It never
+            # receives source documents, credentials or ownership identifiers.
+            from app.academic_request_understanding import understand_study_request
+            understanding = understand_study_request(clean_message, history) if use_v2 else None
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 if use_v2:
                     rag_result = retrieve_course_context_v2(
@@ -4941,7 +4945,9 @@ def study_ai_ask(
                         course_id=course_id,
                         query=clean_message,
                         recent_history=history,
+                        request_plan=understanding.plan,
                     )
+                    rag_result.semantic_planner_attempted = understanding.attempted
                     if rag_result.visual_sources and rag_result.evidence_sufficient:
                         materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
                 else:
@@ -5137,11 +5143,18 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
                 "code": "ACADEMIC_SCOPE_OUTSIDE",
             }, status_code=400)
         source_versions = _study_source_versions(s, user.id, course_id)
+        course_title = course.title
+        s.close()
+        from app.academic_request_understanding import understand_study_request
+        understanding = understand_study_request(clean_message, history)
         try:
-            retrieval = retrieve_course_context_v2(
-                s, owner_user_id=user.id, course_id=course_id,
-                query=clean_message, recent_history=history,
-            )
+            with Session(engine, expire_on_commit=False) as retrieval_session:
+                retrieval = retrieve_course_context_v2(
+                    retrieval_session, owner_user_id=user.id, course_id=course_id,
+                    query=clean_message, recent_history=history,
+                    request_plan=understanding.plan,
+                )
+            retrieval.semantic_planner_attempted = understanding.attempted
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
@@ -7752,6 +7765,11 @@ def expert_support_cases(request: Request):
     return templates.TemplateResponse(request=request, name="expert_cases.html", context={"user": user, "cases": cases})
 
 
+def _consultation_reply_preview(message):
+    labels = {"IMAGE": "Görsel", "VOICE": "Sesli mesaj", "ANNOTATION": "İşaretlenmiş görüntü"}
+    return labels.get(message.message_type) or " ".join((message.content or "Mesaj").split())[:4000]
+
+
 @app.get("/expert-support/cases/{case_id}", response_class=HTMLResponse)
 @offload
 def expert_support_case_room(request: Request, case_id: int):
@@ -7764,13 +7782,12 @@ def expert_support_case_room(request: Request, case_id: int):
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
         state = _consultation_inbox_state(s, case.id, user.id)
-        state.last_read_at = now
         state.deleted_at = None
         state.recover_until = None
         s.add(state)
         # Deadline mutations are owned exclusively by the durable deadline worker.
-        # Opening the room is the authoritative read action. Persist it before
-        # rendering so unread reconciliation cannot race the WebSocket read.
+        # Rendering/prefetching a room does not prove the user viewed it.
+        # The visible, focused client acknowledges its rendered message cursor.
         s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
         case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
@@ -7804,6 +7821,7 @@ def expert_support_case_room(request: Request, case_id: int):
         ).order_by(UserReport.created_at.desc())).first()
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert, "patient": patient,
+        "reply_previews": {m.id: _consultation_reply_preview(m) for m in messages},
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
@@ -8974,17 +8992,25 @@ def _socket_replay(user_id, after_id):
         ).order_by(RealtimeEvent.id).limit(500)).all())
 
 
-def _socket_case_authorized(user_id, case_id, *, mark_read=False):
+def _socket_case_authorized(user_id, case_id, *, mark_read=False, through_id=None):
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user_id not in {case.requester_user_id, case.expert_user_id}:
             return False
         if mark_read:
             state = _consultation_inbox_state(session, case_id, user_id)
-            latest = session.exec(select(ConsultationMessage).where(
-                ConsultationMessage.case_id == case_id).order_by(ConsultationMessage.id.desc()).limit(1)).first()
+            query = select(ConsultationMessage).where(ConsultationMessage.case_id == case_id)
+            if through_id is not None:
+                try:
+                    through_id = int(through_id)
+                except (TypeError, ValueError):
+                    return False
+                if through_id <= 0:
+                    return False
+                query = query.where(ConsultationMessage.id <= through_id)
+            latest = session.exec(query.order_by(ConsultationMessage.id.desc()).limit(1)).first()
             events = []
-            read_at = _utcnow_naive()
+            read_at = latest.created_at if latest else _utcnow_naive()
             through = latest.id if latest else 0
             if latest and (state.last_read_at is None or latest.created_at > state.last_read_at):
                 state.last_read_at = read_at
@@ -9138,7 +9164,7 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     await websocket.close(code=4401)
                     break
             if kind == "read":
-                receipt = await run_in_threadpool(_socket_case_authorized, user.id, case_id, mark_read=True)
+                receipt = await run_in_threadpool(_socket_case_authorized, user.id, case_id, mark_read=True, through_id=data.get("through_id"))
                 if not receipt:
                     await websocket.close(code=4403)
                     break

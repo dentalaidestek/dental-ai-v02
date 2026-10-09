@@ -1,0 +1,43 @@
+# Turkish study request interpretation — prepared, not enabled or deployed
+
+## Decision
+
+Use one bounded pretrained language-model interpretation before retrieval for opt-in Academic V2. A morphological toolkit such as Zemberek can analyze suffixes/lemmas but does not supply a conversational study-task planner. A small local multilingual LLM is a candidate for later distillation, not a proven free/fast replacement on the present web host. No new GPU/service/model weights or training job were introduced.
+
+A dedicated Gemini 2.5 Flash-Lite instance returns a strict request contract: complete resolved question, operation, topic/course scope, count, difficulty and clarification. Input includes the original question and at most eight intact conversation messages; no PDF/chunk payloads, identifiers or credentials. The prompt requires clause ownership, exclusions, negation, order, brands, output constraints and grounded references. This is pretrained-model interpretation, not another regex sentence catalogue. Local evidence matching still exists and is not assumed flawless.
+
+## Integration and limits
+
+- Both normal and streamed V2 handlers invoke the interpreter after ownership, dental scope, READY-index checks and after closing their initial DB transaction.
+- The resolved question reaches the existing owned FTS retrieval. Explicit semantic course scope reaches coverage sampling; an explicit topic suppresses accidental course expansion. Requested count informs the existing bounded coverage budget.
+- Reference heuristics receive no old history after semantic resolution, preventing an earlier topic from overwriting the resolved topic. Original conversation remains available to final generation.
+- No authorization identifiers, source/chunk IDs or executable actions are accepted in the JSON contract. Existing server ownership, source version and factual evidence gates remain in force.
+- One planner transport attempt, 5-second timeout, 512 output token ceiling. The instance-local JSON schema never changes the shared answer provider. A semantic attempt suppresses the old second paid recovery-planning call, including on invalid output/timeouts.
+- Provider account reservations, request budgets, rate/health tracking are reused. This is a per-execution call bound, not a new cross-HTTP idempotency guarantee or monthly spend cap.
+- Oversized context is not silently truncated: interpretation is skipped and existing behavior retained. Invalid output/errors also retain the old retrieval behavior. Logs contain timing/error type, not transcripts/model output.
+- Default-off flag: `STUDY_ACADEMIC_SEMANTIC_PLANNER=1` enables it. Model override: `STUDY_ACADEMIC_PLANNER_MODEL`, default `gemini-2.5-flash-lite`. No env changes were made. Final answer model unchanged.
+- This is NOT a claim of perfect/general Turkish understanding. Model schema validity is not semantic accuracy. Existing lexical sufficiency and compound-constraint coverage require real evidence tests. Ambiguous/non-study requests request clarification rather than supplying invented note facts.
+
+## Cost assumptions, not measured usage
+
+Official Gemini pricing retrieved 9 October 2026: 2.5 Flash-Lite standard text input $0.10/M tokens and output $0.40/M tokens:
+https://ai.google.dev/gemini-api/docs/pricing
+
+1,000 input + 200 output tokens per interpretation gives $0.00018/request, $0.18/1,000 or $18/100,000. This excludes answer generation, OCR, R2, hosting, retries in other components and taxes. Actual history length and usage tokens change the amount; it is neither a measured average nor a guaranteed spend ceiling. Existing final generation can still be a second model call. Cheapest self-hosted versus API route cannot be concluded without throughput/quality measurements.
+
+Primary references:
+https://github.com/ahmetaa/zemberek-nlp/blob/master/morphology/README.md
+https://huggingface.co/Qwen/Qwen3-0.6B
+https://ai.google.dev/gemini-api/docs/structured-output
+
+## Validation and remaining gate
+
+20 targeted contract/provider/routing tests pass, plus 10 existing recovery tests (five subtests included). Tests check invalid schema/limits, prompt preservation, one attempt, no secret logging, default-off, large context, second-planner suppression, ambiguity without DB lookup, owned topic lookup and count-aware course routing. Python compilation and diff whitespace checks pass.
+
+A separate 20-case real-model smoke evaluator covers varied study operations and references. Its operation/term assertions are an initial signal, not a definitive semantic gold standard. Human review must check modifier ownership, exclusions/negation and complete requests, then actual note chunks and final answers. It defaults to estimation only. Run explicitly with an already configured secret in an approved shell:
+
+`python scripts/evaluate_academic_understanding.py --run`
+
+No live Gemini evaluation was run: local GEMINI_API_KEY is absent. No fabricated accuracy/latency/cost result. Production enablement/deploy is blocked on this real-model check and end-to-end evidence regression. Synthetic contract stubs do not prove model competence.
+
+Earlier prepared chat reply/read fixes remain on parent commits; production remains a58ed18. OCR configuration and Modal resources were not changed.
