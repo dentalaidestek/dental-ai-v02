@@ -5,10 +5,15 @@ export type Patient={id:number;anonymous_id:string;first_name?:string|null;last_
 export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>};
 export type PatientDetail={patient:Patient;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null}>;treatments:Array<{id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null}>;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
 
+export class ApiError extends Error {
+ readonly status:number;
+ constructor(status:number,message:string){super(message);this.name="ApiError";this.status=status;}
+}
+
 async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
  const response=await fetch(API_BASE+path,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
  const raw=await response.text(); let body:any={}; try{body=raw?JSON.parse(raw):{}}catch{}
- if(!response.ok){const detail=body.detail;throw new Error(typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
+ if(!response.ok){const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
  return body as T;
 }
 export function login(loginValue:string,password:string){return request<{access_token:string|null;token_type:string;expires_at:string;challenge_token?:string}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password})});}

@@ -208,17 +208,16 @@ def _resolved_image_types(ai_types: list[str], stored_types: list[str]) -> list[
 
 import re
 
-_PROVIDER_EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+[.][A-Z]{2,}", re.I)
-_PROVIDER_TC_RE = re.compile(r"(?<![0-9])[0-9]{11}(?![0-9])")
-_PROVIDER_PHONE_RE = re.compile(r"(?<![0-9])(?:[+]?90[ -]?)?(?:0?5[0-9]{2})[ -]?[0-9]{3}[ -]?[0-9]{2}[ -]?[0-9]{2}(?![0-9])")
-_PROVIDER_PII_LABEL_RE = re.compile(r"(?im)(?:ad[ \\t]*soyad|hasta[ \\t]*ad(?:ı|i)|telefon|tel|e[- ]?posta|email|tc(?:[ \\t]*kimlik)?(?:[ \\t]*no)?|kimlik(?:[ \\t]*no)?|hasta(?:[ \\t]*no|[ \\t]*id)|dosya[ \\t]*no|doğum[ \\t]*tarihi|dogum[ \\t]*tarihi)[ \\t]*[:=-][ \\t]*[^,;]+")
+from app.clinical_privacy import (
+    _PROVIDER_EMAIL_RE, _PROVIDER_TC_RE, _PROVIDER_PHONE_RE,
+    redact_direct_identifiers,
+)
+_PROVIDER_PII_LABEL_RE = re.compile(r"(?im)(?:ad[ \t]*soyad|hasta[ \t]*ad(?:ı|i)|telefon|tel|e[- ]?posta|email|tc(?:[ \t]*kimlik)?(?:[ \t]*no)?|kimlik(?:[ \t]*no)?|hasta(?:[ \t]*no|[ \t]*id)|dosya[ \t]*no|doğum[ \t]*tarihi|dogum[ \t]*tarihi)[ \t]*[:=-][ \t]*[^,;\r\n]+")
 
 def _provider_safe_text(value: str | None) -> str:
     text = str(value or "")
     text = _PROVIDER_PII_LABEL_RE.sub("[REDACTED]", text)
-    text = _PROVIDER_EMAIL_RE.sub("[REDACTED]", text)
-    text = _PROVIDER_TC_RE.sub("[REDACTED]", text)
-    text = _PROVIDER_PHONE_RE.sub("[REDACTED]", text)
+    text = redact_direct_identifiers(text)
     return text.strip()
 def _build_router_prompt(
     *,
@@ -272,9 +271,9 @@ KRİTİK KURALLAR:
 VAKA METADATASI:
 Yaş: {age if age is not None else "bilinmiyor"}
 Diş: {tooth_number or "belirtilmemiş"}
-Şikayet: {chief_complaint or ""}
-Klinik not: {clinical_notes or ""}
-Ek hekim bilgisi: {extra_text or ""}
+Şikayet: {safe_chief_complaint}
+Klinik not: {safe_clinical_notes}
+Ek hekim bilgisi: {safe_extra_text}
 Yüklenen gerçek görüntü sayısı: {int(image_count or 0)}
 Sistemde kayıtlı görüntü tipi: {", ".join(stored_image_types) or "OTHER"}
 """.strip()

@@ -97,6 +97,7 @@ from app.study_rag import (
 )
 from fastapi import (
     FastAPI,
+    HTTPException,
     Form,
     Request,
     UploadFile,
@@ -2415,12 +2416,17 @@ def send_email_verification_code(recipient_email: str, code: str) -> None:
 
 def _ensure_email_verification_challenge(session: Session, user: User) -> EmailVerificationChallenge:
     locked_user = session.exec(select(User).where(User.id == user.id).with_for_update()).first()
-    if not locked_user or locked_user.email_verified_at or not locked_user.email:
+    if not locked_user or not locked_user.is_active or locked_user.email_verified_at or not locked_user.email:
         raise ValueError("EMAIL_ALREADY_VERIFIED")
     challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.user_id == locked_user.id)).first()
-    if challenge:
-        return challenge
     now = _utcnow_naive()
+    if challenge:
+        if not challenge.verified_at and challenge.expires_at > now and challenge.attempts < 5:
+            return challenge
+        # Only credential-verified login calls this helper. Replace an unusable
+        # challenge, while reusing a valid one to avoid repeated email sends.
+        session.delete(challenge)
+        session.flush()
     code = f"{secrets.randbelow(1000000):06d}"
     challenge = EmailVerificationChallenge(user_id=locked_user.id, public_token=secrets.token_urlsafe(32), code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
     session.add(challenge)
@@ -2436,11 +2442,18 @@ def _ensure_email_verification_challenge(session: Session, user: User) -> EmailV
 
 
 def _verify_email_code(session: Session, user: User, challenge: EmailVerificationChallenge, code: str) -> bool:
-    # Serialize verification attempts so concurrent requests cannot both consume
-    # the same one-time code or race the five-attempt ceiling.
+    # Use the same user -> challenge lock order as renewal. This avoids
+    # verification/renewal deadlocks and rechecks account state under the lock.
+    locked_user = session.exec(
+        select(User).where(User.id == user.id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
+    if not locked_user or not locked_user.is_active or locked_user.email_verified_at:
+        return False
+    # Serialize attempts so a one-time code cannot be consumed twice.
     locked_challenge = session.exec(
         select(EmailVerificationChallenge)
-        .where(EmailVerificationChallenge.id == challenge.id)
+        .where(EmailVerificationChallenge.id == challenge.id, EmailVerificationChallenge.public_token == challenge.public_token)
         .with_for_update()
     ).first()
     if not locked_challenge:
@@ -2448,7 +2461,9 @@ def _verify_email_code(session: Session, user: User, challenge: EmailVerificatio
 
     now = _utcnow_naive()
     if (
-        locked_challenge.user_id != user.id
+        not user.is_active
+        or user.email_verified_at
+        or locked_challenge.user_id != user.id
         or locked_challenge.verified_at
         or locked_challenge.expires_at <= now
         or locked_challenge.attempts >= 5
@@ -3120,7 +3135,6 @@ def register_user(
         )
 
         create_user_session(response, user.id)
-        _clear_web_login_failures(login_key)
 
         return response
 
@@ -3566,13 +3580,14 @@ def login_page(
 
 
 @app.post("/verify-email")
-def verify_email(request: Request, challenge_token: str = Form(...), code: str = Form(...)):
+def verify_email(request: Request, challenge_token: str = Form(...), code: str = Form(...), next_url: str = Form("")):
+    safe_next = _safe_login_next(next_url)
     with Session(engine, expire_on_commit=False) as s:
         challenge = s.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == challenge_token)).first()
         user = s.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(s, user, challenge, code):
-            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_token": challenge_token, "verification_mode": True, "next_url": "/", "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
-        response = RedirectResponse(url="/", status_code=303)
+            return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email if user else "", "challenge_token": challenge_token, "verification_mode": True, "next_url": safe_next, "error": "Kod hatalı, süresi dolmuş veya daha önce kullanılmış."}, status_code=400)
+        response = RedirectResponse(url=safe_next, status_code=303)
         create_user_session(response, user.id)
         return response
 
@@ -8837,7 +8852,7 @@ def _socket_current_user(websocket):
             session_token = s.exec(select(SessionToken).where(SessionToken.token_hash == token_hash)).first()
             if session_token and session_token.expires_at > _utcnow_naive():
                 user = s.get(User, session_token.user_id)
-                if user and user.is_active:
+                if user and user.is_active and user.email_verified_at:
                     websocket.state._dai_current_user_checked = True
                     websocket.state._dai_current_user = user
                     return user

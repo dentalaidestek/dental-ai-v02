@@ -40,6 +40,7 @@ def test_self_delete_requires_password_then_revokes_account_and_session(monkeypa
     with Session(engine, expire_on_commit=False) as session:
         user = main.User(
             username="deleteowner",
+            email_verified_at=main._utcnow_naive(),
             email="delete@example.test",
             role="DOCTOR",
             display_name="Delete Owner",
@@ -110,7 +111,7 @@ def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
     engine = _engine()
     token = "display-name-token"
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username="displayuser", role="DOCTOR", display_name="Old Name")
+        user = main.User(username="displayuser", role="DOCTOR", display_name="Old Name", email_verified_at=main._utcnow_naive())
         session.add(user); session.commit(); session.refresh(user)
         session.add(main.SessionToken(
             token_hash=main.hash_session_token(token), user_id=user.id,
@@ -130,7 +131,7 @@ def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
     engine = _engine()
     token = "verified-display-name-token"
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username="verifieduser", role="DOCTOR", display_name="Verified Name")
+        user = main.User(username="verifieduser", role="DOCTOR", display_name="Verified Name", email_verified_at=main._utcnow_naive())
         session.add(user); session.flush()
         session.add(main.ExpertProfile(
             user_id=user.id, specialty="Endodonti", application_status="APPROVED",

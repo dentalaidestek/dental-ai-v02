@@ -11,6 +11,9 @@
       "versionCode": 1,
       "allowBackup": false,
       "usesCleartextTraffic": false
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

@@ -56,3 +56,8 @@ models/vision/oraldetect/
 
 vision_service/__pycache__/
 .vision_backups/
+
+# Native client local build artifacts
+mobile/node_modules/
+mobile/dist/
+mobile/.expo/

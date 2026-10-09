@@ -256,6 +256,7 @@ async def analyze_image(image: UploadFile = File(...), _: None = Depends(require
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
             total = 0
             while True:
                 chunk = image.file.read(1024 * 1024)
@@ -267,7 +268,6 @@ async def analyze_image(image: UploadFile = File(...), _: None = Depends(require
                 tmp.write(chunk)
             if total <= 0:
                 raise HTTPException(400, "Empty image")
-            temp_path = tmp.name
         try:
             with Image.open(temp_path) as probe:
                 width, height = probe.size

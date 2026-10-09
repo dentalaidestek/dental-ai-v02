@@ -105,7 +105,7 @@
             <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
             <button type="submit" class="auth-submit"><span class="auth-submit-label">E-postayı Doğrula</span></button>
         </form>
-        <div class="link">Kod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir.</div>
+        <div class="link">Kod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir. Süresi dolduysa <a href="/login?next={{ (next_url or '/')|urlencode }}">tekrar giriş yapın</a>.</div>
         {% else %}
         <form method="post" action="/login">
             <input type="hidden" name="next_url" value="{{ next_url or '/' }}">

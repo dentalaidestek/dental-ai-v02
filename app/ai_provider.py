@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from app.http_transport import urlopen
 from app.provider_budget import reservation
+from app.clinical_privacy import redact_direct_identifiers
 
 try:
     from app.xray_trace import xray_trace_event
@@ -76,7 +77,7 @@ def _build_payload(prompt: str, response_schema=None):
         generation_config["responseMimeType"] = "application/json"
         generation_config["responseSchema"] = response_schema
     payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"role": "user", "parts": [{"text": redact_direct_identifiers(prompt)}]}],
         "generationConfig": generation_config,
     }
     payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")

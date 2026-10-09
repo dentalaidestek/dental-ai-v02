@@ -65,7 +65,9 @@ def test_native_clinical_media_contract_is_bounded_and_does_not_expose_paths():
     assert "shutil.copyfileobj(file.file" not in source
     assert '"path":row.file_path' not in source
     assert 'Cache-Control":"private, no-store' in source
-    assert ".heic" not in source
+    block = source.split("async def mobile_upload_media", 1)[1].split("@router.get", 1)[0]
+    assert 'allowed={".jpg",".jpeg",".png",".webp"}' in block
+    assert "if ext not in allowed" in block
 
 
 def test_native_app_disables_backup_and_cleartext():
@@ -160,7 +162,7 @@ def test_websocket_endpoints_enforce_browser_origin_policy():
     assert "WEB_ALLOWED_ORIGINS" in source
 
 
-def test_email_verification_is_one_time_and_has_no_resend_contract():
+def test_email_verification_is_one_time_and_has_bounded_lifetime():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert "class EmailVerificationChallenge" in source
     assert "user_id: int = Field(index=True, unique=True)" in source
@@ -183,7 +185,7 @@ def test_web_login_blocks_unverified_users_before_session_creation():
 
 def test_native_login_requires_shared_email_verification():
     source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
-    block = source.split('@router.post("/auth/login")', 1)[1].split('@router.post("/auth/logout")', 1)[0]
+    block = source.split("def mobile_login(", 1)[1].split('@router.post("/auth/logout")', 1)[0]
     assert "if not user.email_verified_at" in block
     assert "_ensure_email_verification_challenge" in block
     assert "challenge_token=challenge.public_token" in block
@@ -224,7 +226,7 @@ def test_registration_has_ip_abuse_rate_limit():
 def test_email_verification_is_single_use_and_strictly_bounded():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split("def _verify_email_code", 1)[1].split("def send_expert_device_code", 1)[0]
-    assert 're.fullmatch(r"\\d{6}", code.strip())' in block
+    assert 're.fullmatch(r"\\d{6}", normalized_code)' in block
     assert "challenge.verified_at" in block
     assert "challenge.code_hash = secrets.token_urlsafe(32)" in block
     assert "challenge.attempts >= 5" in block
@@ -269,7 +271,8 @@ def test_admin_login_requires_verified_email_before_session_creation():
 def test_password_reset_expires_browser_session_cookie_after_server_revocation():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split('@app.post("/reset-password")', 1)[1].split('@app.post("/logout")', 1)[0]
-    assert "select(SessionToken).where(SessionToken.user_id == user.id)" in block
+    assert "select(SessionToken).where(SessionToken.user_id==user.id)" in "".join(block.split())
+    assert "s.delete(session_token)" in block
     assert 'response.delete_cookie(SESSION_COOKIE, path="/")' in block
 
 
@@ -347,5 +350,6 @@ def test_e2ee_device_migration_generates_primary_keys():
 
 
 def test_private_document_responses_are_not_cacheable():
+    MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert 'return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})' in MAIN
     assert 'content_disposition_type="inline", headers={"Cache-Control": "private, no-store"}' in MAIN
