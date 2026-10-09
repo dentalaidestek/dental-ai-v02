@@ -239,12 +239,12 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
             <button type="submit">Doğrula ve kaydet</button>
         </form>
         {% endif %}
-        <form method="post" action="/account/email" class="password-form">
+        <form method="post" action="/account/email" class="password-form" autocomplete="off">
             {% if email_change_pending %}<input type="hidden" name="renew" value="1">{% endif %}
             <label for="new_email">Yeni e-posta</label>
-            <input id="new_email" name="new_email" type="email" maxlength="254" autocomplete="email" required value="{{ email_change_pending or '' }}">
+            <input id="new_email" name="new_email" type="email" maxlength="254" autocomplete="off" required value="{{ email_change_pending or '' }}">
             <label for="email_change_password">Mevcut şifre</label>
-            <input id="email_change_password" name="password" type="password" autocomplete="current-password" required>
+            <input id="email_change_password" name="password" type="password" autocomplete="new-password" required>
             <button type="submit">{% if email_change_pending %}Yeni kod iste{% else %}Doğrulama kodu gönder{% endif %}</button>
         </form>
         <p>Değişiklik tamamlanınca güvenlik için tüm cihazlarda yeniden giriş yapmanız gerekir.</p>

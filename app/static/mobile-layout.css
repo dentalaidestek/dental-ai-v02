@@ -1,0 +1,104 @@
+/* Load after theme styles: scoped mobile geometry, no request or data changes. */
+:is(.messages-page,.program-form-page,.support-request-page,.expert-room),
+:is(.messages-page,.program-form-page,.support-request-page,.expert-room) * {
+    box-sizing: border-box;
+}
+:is(.messages-page,.program-form-page,.support-request-page,.expert-room) {
+    min-width: 0;
+    max-width: 100%;
+}
+.messages-list,.message-row,.message-row-main,.message-copy,.message-title,
+.expert-chat,.expert-composer,.expert-compose-stack,.support-thread,
+.program-field,.program-form-grid {
+    min-width: 0;
+}
+.message-title strong { min-width: 0; }
+.message-case,.support-ticket-main strong { overflow-wrap: anywhere; }
+.expert-chat img,.expert-chat video,.support-thread img,.support-thread video {
+    max-width: 100%;
+    height: auto;
+}
+.expert-chat :is(p,a),.support-bubble :is(p,a) { overflow-wrap: anywhere; }
+.expert-chat audio,.support-thread audio { width: 260px; max-width: 100%; }
+.expert-bubble { min-width: 0; overflow-wrap: anywhere; }
+.expert-chat pre { max-width: 100%; overflow-x: auto; }
+
+/* These list regions receive a border from the global design system. */
+body.dai-app-shell .support-request-page :is(#supportTicketsRegion,#supportReportsRegion) {
+    padding: 16px;
+    border-radius: 16px;
+    margin-bottom: 18px;
+}
+body.dai-app-shell .program-form-page .program-form-card {
+    padding: 20px !important;
+}
+.program-field :is(input,select,textarea) {
+    min-width: 0;
+    max-width: 100%;
+}
+.support-filter-row { min-width: 0; max-width: 100%; }
+
+@media (max-width: 760px) {
+    body.dai-app-shell > main {
+        min-width: 0;
+        margin-top: 0;
+        padding-top: 12px;
+    }
+    body.dai-app-shell .topbar {
+        padding-left: max(13px,env(safe-area-inset-left)) !important;
+        padding-right: max(13px,env(safe-area-inset-right)) !important;
+    }
+    body.dai-app-shell:has(main > :is(.messages-page,.program-form-page,.support-request-page)) > main {
+        width: 100%;
+        margin: 0 auto;
+        padding: 12px max(10px,env(safe-area-inset-left)) 24px max(10px,env(safe-area-inset-right));
+    }
+    body.dai-app-shell main > :is(.messages-page,.program-form-page,.support-request-page) {
+        width: 100%;
+        margin-top: 0;
+        padding: 0 0 calc(90px + env(safe-area-inset-bottom));
+    }
+    body.dai-app-shell .program-form-page .program-form-card {
+        padding: 16px !important;
+        margin-top: 12px;
+    }
+    .program-form-grid { grid-template-columns: minmax(0,1fr) !important; }
+    .program-form-actions {
+        position: sticky;
+        bottom: calc(76px + env(safe-area-inset-bottom));
+        z-index: 5;
+        padding: 8px 0;
+        gap: 10px;
+        background: #fff;
+    }
+    .program-form-header { margin-bottom: 12px; }
+    .program-form-header > h1 { grid-column: 2; grid-row: 1; min-width: 0; }
+    .program-field :is(input,select,textarea),
+    .support-request-form :is(input,select,textarea),
+    .support-reply-toggle textarea,.expert-composer :is(input,textarea) {
+        font-size: 16px !important; /* iOS focus zoom must not change the viewport. */
+    }
+    body.dai-app-shell .support-request-page > .info-card {
+        padding: 16px;
+        margin-bottom: 18px;
+    }
+    .messages-head { flex-wrap: wrap; gap: 8px; }
+    .messages-head > div { flex: 1 1 180px; min-width: 0; }
+    .messages-head > a { flex: 0 0 auto; }
+    .message-row-main { max-width: 100%; }
+    .message-side { min-width: 0; max-width: 72px; }
+    .message-side time { white-space: normal; overflow-wrap: anywhere; }
+    .message-title { min-width: 0; }
+    .message-title strong { flex: 1 1 auto; }
+    .message-status { flex: 0 1 auto; min-width: 0; }
+    .message-status { max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .message-case { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .expert-room :is(.expert-compose-stack,.expert-composer,.expert-chat,.expert-room-head) {
+        box-sizing: border-box;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .expert-composer :is(input,textarea) { width: 100%; min-width: 0; max-width: 100%; }
+    .support-bubble { min-width: 0; overflow-wrap: anywhere; }
+    .support-bubble-head { flex-wrap: wrap; gap: 4px; }
+}
