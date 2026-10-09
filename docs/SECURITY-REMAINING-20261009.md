@@ -184,3 +184,13 @@ sıkı E2EE modelini değiştirir; bu çelişki ayrı parola eklenerek giderilem
 - Yeni PostgreSQL concurrency testi mevcut PG CI job'una eklendi. Yerelde PG yok;
   gerçek PostgreSQL, Render/Brevo/R2, emulator/APK ve fiziksel cihaz doğrulaması
   yapılmış sayılmaz. Hiçbir yeni skip veya zayıflatılmış assertion eklenmedi.
+
+## Yayın hazırlığı — 9 Ekim sabahı
+
+Kullanıcı production deploy için yetki verdi; Render workspace doğrulandı (`My Workspace`). PR #61 release hazırlığı için taslak açıldı. Main ile merge-tree kod ağacı aynıdır; mevcut main'deki iki karşılıklı dosya ekleme/silme commit'i korunur.
+
+CI'da security job'un üç vision testi NumPy eksikliği nedeniyle import aşamasında başarısızdı. Vision test bağımlılıkları eklendi; sonraki Security recovery CI geçti. PostgreSQL 16 üzerinde ortak auth admission ve revision 8 -> 9 migration'ın iki kez çalışması / kullanıcı ve analiz kayıtlarının korunması testi de geçti.
+
+Tam yerel regresyonun ilk sonucu: 745 passed, 604 subtests passed, 5 PostgreSQL skip, 1 failed (452 saniye). Hasta realtime fixture'ı StaticPool ile bütün thread'lere aynı SQLite bağlantısını veriyordu; background transaction rollback'i oluşturulmuş hastayı yok edebiliyordu. Fixture file-backed SQLite'a taşındı, bağımsız bağlantıyla commit/sahiplik assertion'ı eklendi. Assertion/skip gevşetilmedi. Değişen alan ve ilgili regresyonlar: 60 passed. Native: 23 test + TypeScript geçti.
+
+Canlı web ve vision servisleri main autoDeploy kullanıyor. Web'in listelenen canlı ayarlarında preDeployCommand görünmüyor; startup loglarında require_schema yolu kullanılıyor. Yeni revision 9 yayınlanmadan production migration yolu doğrulanmalı/ayarlanmalı. Render hesabında PostgreSQL instance listesi boş; bu durum uygulamanın PostgreSQL kullanmadığını kanıtlamaz (harici DB olabilir). Production deploy henüz tetiklenmedi; CI/release kontrolleri bitmeden bu rapor başarılı yayın beyanı değildir.
