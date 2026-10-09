@@ -125,13 +125,42 @@ def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
     monkeypatch.setattr(main, "engine", engine)
     with TestClient(main.app) as client:
         response = client.post("/account/display-name", data={"display_name": "  New   Name  "}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
+        confirmation = client.get('/account?name_saved=1', cookies={main.SESSION_COOKIE: token})
+        unauthenticated = client.post('/account/display-name', data={'display_name': 'Intruder'}, follow_redirects=False)
     assert response.status_code == 303
+    assert unauthenticated.status_code == 303
+    assert unauthenticated.headers['location'] == '/login'
+    assert 'Ad soyadınız güncellendi.' in confirmation.text
+    assert 'Mesleki durumunuz güncellendi.' not in confirmation.text
+    from html.parser import HTMLParser
+    class ProfileSections(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.sections = 0
+            self.form_depth = 0
+            self.actions = []
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == 'details' and attrs.get('class') == 'account-section':
+                self.sections += 1
+            if tag == 'form':
+                assert self.form_depth == 0
+                self.form_depth += 1
+                self.actions.append(attrs.get('action'))
+        def handle_endtag(self, tag):
+            if tag == 'form':
+                self.form_depth -= 1
+    parser = ProfileSections()
+    parser.feed(confirmation.text)
+    assert parser.sections == 5
+    assert parser.form_depth == 0
+    assert {'/account/display-name', '/account/username', '/account/password', '/account/professional-title', '/account/profile-photo', '/logout', '/account/delete'} <= set(parser.actions)
     with Session(engine) as session:
         assert session.get(main.User, user.id).display_name == "New Name"
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
+def test_verified_expert_can_edit_display_name_without_reverification(monkeypatch):
     engine = _engine()
     token = "verified-display-name-token"
     with Session(engine, expire_on_commit=False) as session:
@@ -151,9 +180,15 @@ def test_verified_expert_display_name_is_not_changed_from_account(monkeypatch):
     monkeypatch.setattr(main, "engine", engine)
     with TestClient(main.app) as client:
         response = client.post("/account/display-name", data={"display_name": "Changed Name"}, cookies={main.SESSION_COOKIE: token}, follow_redirects=False)
-    assert response.status_code == 409
+    assert response.status_code == 303
+    assert response.headers['location'] == '/account?name_saved=1'
     with Session(engine) as session:
-        assert session.get(main.User, user.id).display_name == "Verified Name"
+        assert session.get(main.User, user.id).display_name == "Changed Name"
+        profile = session.exec(select(main.ExpertProfile).where(main.ExpertProfile.user_id == user.id)).one()
+        assert profile.verification_status == "VERIFIED"
+        assert profile.application_status == "APPROVED"
+        assert profile.credential_document_path == "r2/key"
+        assert profile.specialty_verified is True
 
 
 def test_profile_mobile_edit_controls_are_present():
