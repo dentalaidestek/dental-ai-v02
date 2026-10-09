@@ -791,11 +791,15 @@ def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_le
         return {"items":items}
 
 @router.get("/consultations")
-def mobile_consultations(user:User=Depends(_mobile_user)):
+def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=None):
     with Session(engine,expire_on_commit=False) as session:
-        cases=session.exec(select(ConsultationCase).where(
-            (ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
-        ).order_by(ConsultationCase.requested_at.desc()).limit(50)).all()
+        scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
+        query=select(ConsultationCase).where(scope)
+        if before is not None:
+            anchor=select(ConsultationCase.requested_at).where(ConsultationCase.id==before,scope).scalar_subquery()
+            query=query.where((ConsultationCase.requested_at<anchor)|((ConsultationCase.requested_at==anchor)&(ConsultationCase.id<before)))
+        page=session.exec(query.order_by(ConsultationCase.requested_at.desc(),ConsultationCase.id.desc()).limit(51)).all()
+        cases=page[:50]
         case_ids=[c.id for c in cases]
         other_ids={c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id for c in cases}
         peers={u.id:u for u in session.exec(select(User).where(User.id.in_(other_ids))).all()} if other_ids else {}
@@ -816,7 +820,7 @@ def mobile_consultations(user:User=Depends(_mobile_user)):
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None})
-        return {"items":items}
+        return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
 def mobile_consultation(case_id:int,user:User=Depends(_mobile_user)):
@@ -833,24 +837,30 @@ def mobile_consultation(case_id:int,user:User=Depends(_mobile_user)):
             "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at} for m in msgs]}
 
 @router.get("/academic/courses")
-def mobile_academic_courses(user:User=Depends(_mobile_user)):
+def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int]=None):
     with Session(engine,expire_on_commit=False) as session:
-        rows=session.exec(select(StudyCourse).where(
-            StudyCourse.owner_user_id==user.id).order_by(StudyCourse.created_at.desc()).limit(50)).all()
+        query=select(StudyCourse).where(StudyCourse.owner_user_id==user.id)
+        if before is not None:
+            anchor=select(StudyCourse.created_at).where(StudyCourse.id==before,StudyCourse.owner_user_id==user.id).scalar_subquery()
+            query=query.where((StudyCourse.created_at<anchor)|((StudyCourse.created_at==anchor)&(StudyCourse.id<before)))
+        page=session.exec(query.order_by(StudyCourse.created_at.desc(),StudyCourse.id.desc()).limit(51)).all()
+        rows=page[:50]
         course_ids=[c.id for c in rows]
         counts=dict(session.exec(select(StudyMaterial.course_id,func.count(StudyMaterial.id)).where(
             StudyMaterial.course_id.in_(course_ids),StudyMaterial.owner_user_id==user.id
         ).group_by(StudyMaterial.course_id)).all()) if course_ids else {}
         return {"items":[{"id":c.id,"title":c.title,"description":getattr(c,"description",None),
-            "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":counts.get(c.id,0)} for c in rows]}
+            "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":counts.get(c.id,0)} for c in rows],"next_before":rows[-1].id if len(page)>50 else None}
 
 @router.get("/academic/courses/{course_id}/messages")
-def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):
+def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user), before:Optional[int]=None):
     with Session(engine,expire_on_commit=False) as session:
-        rows=session.exec(select(StudyChatMessage).where(
-            StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id
-        ).order_by(StudyChatMessage.id.desc()).limit(100)).all()
-        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in reversed(rows)]}
+        query=select(StudyChatMessage).where(StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id)
+        if before is not None:
+            query=query.where(StudyChatMessage.id<before)
+        page=session.exec(query.order_by(StudyChatMessage.id.desc()).limit(101)).all()
+        rows=page[:100]
+        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in reversed(rows)],"next_before":rows[-1].id if len(page)>100 else None}
 
 @router.post("/patients/{patient_id}/media")
 async def mobile_patient_media_upload(

@@ -108,3 +108,13 @@ TypeScript ve 19 mobil davranış testi başarılı. Bu kapsamda web regresyonu
 bulunmadı; bütün site/production/cihaz için sıfır hata garantisi değildir.
 Kullanıcı akışını etkilemeyen worker interval, model/output sınırları, altyapı ve
 bütçe ayarları değiştirilmedi. Main ve production'a müdahale/deploy yapılmadı.
+
+## Kayıt erişimi tamamlandı — kullanıcı etkisi
+
+Önceki bölümlerde açık olarak belirtilen akademik geçmiş ve 50 kayıt üstü ders/vaka erişimi bu değişiklikle tamamlandı. Native API cevapları mevcut `items` alanını koruyup isteğe bağlı `before` ve `next_before` ekler. Ders ve vaka sırası tarih + ID ile kararlıdır; mesajlar ID cursor ile sayfalanır. Her sayfa en fazla 50 ders/vaka veya 100 mesajdır; toplam kayıt erişimine sınır konulmaz. Veriler silinmez, migration gerekmez.
+
+Android'de daha fazla ders/vaka ve önceki mesajlar düğmeleri vardır. Akademik ekranda yüklenen mesajların son 20 dışındakileri gizlenmez. Realtime yenileme açılmış eski sayfaları korur; büyük reconnect boşluğu olursa cursor yeniden açılır. Ağ hatasında içerik/cursor korunur, görünür hata ve tekrar deneme sunulur. Ders/hesap değişimi ve unmount sonrası eski yanıtlar uygulanmaz. Yeni akademik cevap, geçmiş isteği gecikse veya başarısız olsa bile görünür kalır.
+
+Doğrulama: 48 backend testi (sayfalama, aynı tarihli 205 kayıt, sahiplik, sorgu sınırları, hesap/hasta/destek/vaka/web realtime regresyonları). Mobil: 13 oturum ve 10 realtime/sayfalama davranış testi; TypeScript kontrolü ve Android Hermes export. Export gerçek cihaz/klavye/scroll testi yerine geçmez.
+
+Bu aşama tüm devir listesinin tamamlandığı anlamına gelmez: vaka sohbetinin full-history refetch maliyeti, worker boş sorguları, Academic sunucu idempotency ve önceki güvenlik/mobil parity açıkları ayrı doğrulanabilir iş olarak devam eder. Bildirim içeriği, AI çıktı limitleri, worker sıklığı ve production ayarları değiştirilmedi. Main/production deploy yapılmadı.

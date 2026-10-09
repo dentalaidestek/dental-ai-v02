@@ -1,0 +1,32 @@
+import {useCallback,useEffect,useRef,useState} from 'react';
+export type Page<T>={items:T[];next_before:number|null};
+export function mergeRecords<T extends {id:number}>(existing:T[],incoming:T[],ascending=false):T[]{
+ const byId=new Map(existing.map(item=>[item.id,item]));incoming.forEach(item=>byId.set(item.id,item));const incomingIds=new Set(incoming.map(item=>item.id));
+ return ascending?Array.from(byId.values()).sort((a,b)=>a.id-b.id):[...incoming,...existing.filter(item=>!incomingIds.has(item.id))];
+}
+export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false){
+ const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const fetchRef=useRef(fetchPage);fetchRef.current=fetchPage;
+ const generation=useRef(0),more=useRef(false),pending=useRef<number|null>(null),knownIds=useRef(new Set<number>());
+ const refresh=useCallback(async()=>{
+  const request=++generation.current;setBusy(true);setError('');
+  try{const page=await fetchRef.current();if(request!==generation.current)return;
+   const overlaps=page.items.some(item=>knownIds.current.has(item.id));
+   if(!page.items.length){knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
+   if(!overlaps)more.current=false;
+   page.items.forEach(item=>knownIds.current.add(item.id));
+   setItems(old=>mergeRecords(old,page.items,ascending));if(!more.current)setNext(page.next_before);
+  }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
+  finally{if(request===generation.current)setBusy(false);}
+ },[scope,ascending]);
+ const loadMore=async()=>{
+  if(next===null||pending.current===generation.current||busy)return;const request=generation.current;pending.current=request;setBusy(true);setError('');
+  try{const page=await fetchRef.current(next);if(request!==generation.current)return;
+   page.items.forEach(item=>knownIds.current.add(item.id));
+   setItems(old=>ascending?mergeRecords(old,page.items,true):mergeRecords(page.items,old));setNext(page.next_before);more.current=true;
+  }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
+  finally{if(pending.current===request)pending.current=null;if(request===generation.current)setBusy(false);}
+ };
+ useEffect(()=>{generation.current++;pending.current=null;more.current=false;knownIds.current.clear();setItems([]);setNext(null);refresh();return()=>{generation.current++;};},[refresh]);
+ return {items,setItems,refresh,loadMore,hasMore:next!==null,busy,error};
+}

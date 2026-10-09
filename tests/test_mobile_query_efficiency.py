@@ -57,10 +57,10 @@ def test_course_counts_are_batched_and_exclude_other_owners(mobile_db):
 def test_empty_lists_do_not_run_secondary_queries(mobile_db):
     _, (owner, _, _), queries = mobile_db
     queries.clear()
-    assert mobile_api.mobile_consultations(owner) == {'items': []}
+    assert mobile_api.mobile_consultations(owner) == {'items': [], 'next_before': None}
     assert len(queries) == 1
     queries.clear()
-    assert mobile_api.mobile_academic_courses(owner) == {'items': []}
+    assert mobile_api.mobile_academic_courses(owner) == {'items': [], 'next_before': None}
     assert len(queries) == 1
 
 
@@ -85,3 +85,44 @@ def test_academic_history_keeps_latest_answers_in_display_order(mobile_db):
     with Session(engine) as session:
         from sqlmodel import select
         assert len(session.exec(select(main.StudyChatMessage).where(main.StudyChatMessage.owner_user_id == owner.id)).all()) == 105
+
+
+@pytest.mark.parametrize('kind', ['courses', 'cases', 'messages'])
+def test_all_pages_accessible_without_duplicates_even_with_same_timestamps(mobile_db, kind):
+    engine, (owner, peer, outsider), queries = mobile_db
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        course = main.StudyCourse(owner_user_id=owner.id, title='History', created_at=now)
+        session.add(course); session.commit()
+        course_id = course.id
+        rows = []
+        for i in range(205):
+            if kind == 'courses':
+                row = main.StudyCourse(owner_user_id=owner.id, title=str(i), created_at=now)
+            elif kind == 'cases':
+                row = main.ConsultationCase(requester_user_id=owner.id, expert_user_id=peer.id, specialty='GENERAL', clinical_summary='Synthetic', question=str(i), requested_at=now, expert_response_deadline=now + main.timedelta(days=1))
+            else:
+                row = main.StudyChatMessage(owner_user_id=owner.id, course_id=course_id, role='ASSISTANT', content=str(i))
+            session.add(row); rows.append(row)
+        session.commit()
+        expected = {row.id for row in rows}
+        if kind == 'courses': expected.add(course_id)
+    call = (lambda before: mobile_api.mobile_academic_courses(owner, before)) if kind == 'courses' else (lambda before: mobile_api.mobile_consultations(owner, before)) if kind == 'cases' else (lambda before: mobile_api.mobile_academic_messages(course_id, owner, before))
+    seen = []; before = None
+    for _ in range(10):
+        queries.clear(); page = call(before)
+        assert len(queries) <= (3 if kind == 'cases' else 2 if kind == 'courses' else 1)
+        assert len(page['items']) <= (100 if kind == 'messages' else 50)
+        seen.extend(item['id'] for item in page['items'])
+        before = page['next_before']
+        if before is None: break
+    else: pytest.fail('Pagination did not terminate')
+    assert len(seen) == len(set(seen))
+    assert set(seen) == expected
+    if kind == 'messages':
+        assert mobile_api.mobile_academic_messages(course_id, outsider)['items'] == []
+    else:
+        foreign = mobile_api.mobile_academic_courses(outsider) if kind == 'courses' else mobile_api.mobile_consultations(outsider)
+        assert foreign['items'] == []
+        foreign_cursor = mobile_api.mobile_academic_courses(outsider, seen[0]) if kind == 'courses' else mobile_api.mobile_consultations(outsider, seen[0])
+        assert foreign_cursor['items'] == []

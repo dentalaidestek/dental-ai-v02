@@ -18,11 +18,11 @@ export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:n
 export const getMedia=async(t:string,p:number)=>{const r=await req<{items:any[]}>(`/patients/${p}/media`,t);return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename,url:`${API_BASE}/patients/${p}/media/${m.id}/file`}))}};
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
-export const getConsultations=async(t:string)=>{const r=await req<{items:any[]}>("/consultations",t);return {items:r.items.map(c=>({...c,other_name:c.other_name||c.other_display_name||"",clinical_summary:c.clinical_summary||""})) as Consultation[]}};
+export const getConsultations=async(t:string,before?:number)=>{const r=await req<{items:any[];next_before:number|null}>("/consultations"+(before?"?before="+before:""),t);return {next_before:r.next_before,items:r.items.map(c=>({...c,other_name:c.other_name||c.other_display_name||"",clinical_summary:c.clinical_summary||""})) as Consultation[]}};
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
-export const getCourses=(t:string)=>req<{items:Course[]}>("/academic/courses",t);
-export const getAcademicMessages=(t:string,id:number)=>req<{items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`,t);
+export const getCourses=(t:string,before?:number)=>req<{items:Course[];next_before:number|null}>("/academic/courses"+(before?"?before="+before:""),t);
+export const getAcademicMessages=(t:string,id:number,before?:number)=>req<{next_before:number|null;items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`+(before?"?before="+before:""),t);
 export function askAcademic(t:string,courseId:number,message:string){
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
