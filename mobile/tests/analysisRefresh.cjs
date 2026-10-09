@@ -1,0 +1,21 @@
+const ts=require('typescript');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const assert=require('node:assert/strict');
+const {test}=require('node:test');
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('one analysis event fetches once; state replacement does not trigger a request loop',async()=>{
+ const result=()=>({analysis:{id:7,status:'VISION_READY'},assets:[],ai_result:null});
+ const states=[[],null,null,result(),false,''];
+ const previous=[];let stateIndex=0,effectIndex=0,event={entity_type:'analysis',entity_id:7,event_type:'ANALYSIS_UPDATED',event_id:100};
+ let requests=0;const effects=[];
+ const react={useCallback:f=>f,useState:()=>{const i=stateIndex++;return [states[i],value=>{states[i]=value}]},useEffect:(f,deps)=>{const i=effectIndex++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i][j]))){previous[i]=deps;effects.push(f)}},createElement:()=>null};react.default=react;
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ const exports={};
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?react:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:async()=>{requests++;return result()}}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:{}});
+ const render=()=>{stateIndex=0;effectIndex=0;exports.default({token:'synthetic-token'});while(effects.length)effects.shift()();};
+ render();await tick();assert.equal(requests,1);
+ render();await tick();render();await tick();assert.equal(requests,1);
+ event={...event,event_id:101};render();await tick();assert.equal(requests,2);
+ event={...event,entity_id:8,event_id:102};render();await tick();assert.equal(requests,2);
+});

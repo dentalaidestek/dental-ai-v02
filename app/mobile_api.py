@@ -47,7 +47,7 @@ from app.main import (
     _run_analysis_vision,
     _run_preliminary_ai,
     classify_dental_image,
-    AdminNotice, StudyCourse, StudyChatMessage,
+    AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ExpertProfile, E2EEDeviceKey,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
@@ -796,12 +796,22 @@ def mobile_consultations(user:User=Depends(_mobile_user)):
         cases=session.exec(select(ConsultationCase).where(
             (ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
         ).order_by(ConsultationCase.requested_at.desc()).limit(50)).all()
+        case_ids=[c.id for c in cases]
+        other_ids={c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id for c in cases}
+        peers={u.id:u for u in session.exec(select(User).where(User.id.in_(other_ids))).all()} if other_ids else {}
+        last_by_case={}
+        if case_ids:
+            ranked=select(ConsultationMessage.id,func.row_number().over(
+                partition_by=ConsultationMessage.case_id,
+                order_by=(ConsultationMessage.created_at.desc(),ConsultationMessage.id.desc())
+            ).label("position")).where(ConsultationMessage.case_id.in_(case_ids)).subquery()
+            latest=session.exec(select(ConsultationMessage).join(ranked,ranked.c.id==ConsultationMessage.id).where(ranked.c.position==1)).all()
+            last_by_case={message.case_id:message for message in latest}
         items=[]
         for c in cases:
             other_id=c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id
-            other=session.get(User,other_id)
-            last=session.exec(select(ConsultationMessage).where(
-                ConsultationMessage.case_id==c.id).order_by(ConsultationMessage.created_at.desc()).limit(1)).first()
+            other=peers.get(other_id)
+            last=last_by_case.get(c.id)
             items.append({"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
@@ -827,8 +837,12 @@ def mobile_academic_courses(user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         rows=session.exec(select(StudyCourse).where(
             StudyCourse.owner_user_id==user.id).order_by(StudyCourse.created_at.desc()).limit(50)).all()
+        course_ids=[c.id for c in rows]
+        counts=dict(session.exec(select(StudyMaterial.course_id,func.count(StudyMaterial.id)).where(
+            StudyMaterial.course_id.in_(course_ids),StudyMaterial.owner_user_id==user.id
+        ).group_by(StudyMaterial.course_id)).all()) if course_ids else {}
         return {"items":[{"id":c.id,"title":c.title,"description":getattr(c,"description",None),
-            "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":session.exec(select(func.count()).select_from(StudyMaterial).where(StudyMaterial.course_id==c.id,StudyMaterial.owner_user_id==user.id)).one()} for c in rows]}
+            "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":counts.get(c.id,0)} for c in rows]}
 
 @router.get("/academic/courses/{course_id}/messages")
 def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user)):

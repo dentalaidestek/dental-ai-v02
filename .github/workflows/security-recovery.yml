@@ -18,6 +18,7 @@ on:
       - 'tests/test_security*.py'
       - 'tests/test_account_actions.py'
       - 'tests/test_auth_rate_shared.py'
+      - 'tests/test_mobile_query_efficiency.py'
       - 'tests/test_web_push.py'
       - '.github/workflows/security-recovery.yml'
   workflow_dispatch:
@@ -40,4 +41,4 @@ jobs:
       - name: Install web and test dependencies
         run: python -m pip install -r requirements-web.lock pytest httpx
       - name: Validate security and identity recovery
-        run: python -m pytest tests/test_security_recovery.py tests/test_security_hardening.py tests/test_account_actions.py tests/test_web_push.py tests/test_auth_rate_shared.py -q
+        run: python -m pytest tests/test_security_recovery.py tests/test_security_hardening.py tests/test_account_actions.py tests/test_web_push.py tests/test_auth_rate_shared.py tests/test_mobile_query_efficiency.py -q
