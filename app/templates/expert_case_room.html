@@ -67,10 +67,12 @@ function updateReplyPreview(id){
 const currentComposerError=()=>document.getElementById("composerInlineError"),currentConsultationFile=()=>document.getElementById("consultationFile"),currentAttachmentPreview=()=>document.getElementById("attachmentPreview"),currentAttachmentThumb=()=>document.getElementById("attachmentThumb"),currentAttachmentName=()=>document.getElementById("attachmentName");
 function syncKeyboardComposer(){
  const composer=currentComposer();if(!composer)return;
+ const main=composer.closest("main");
  const vv=window.visualViewport;
- if(!vv){composer.style.removeProperty("bottom");return}
+ if(!vv||window.innerWidth>700){composer.style.removeProperty("bottom");main?.style.removeProperty("height");return}
  const offset=Math.max(0,Math.round(window.innerHeight-vv.height-vv.offsetTop));
- composer.style.setProperty("bottom","calc(max(8px, env(safe-area-inset-bottom)) + "+offset+"px)");
+ composer.style.setProperty("bottom","calc(max(8px, env(safe-area-inset-bottom)) + "+offset+"px)","important");
+ if(main){const height=Math.max(0,Math.round(vv.height+vv.offsetTop-main.getBoundingClientRect().top));main.style.setProperty("height",height+"px","important")}
 }
 if(window.visualViewport){
  window.visualViewport.addEventListener("resize",syncKeyboardComposer,{signal:roomSignal});

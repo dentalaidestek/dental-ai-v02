@@ -9848,28 +9848,6 @@ def tooth_chart(request: Request, patient_id: int):
             for item in statuses
         }
 
-        # Diş bazlı tedavi geçmişi
-        treatments = s.exec(
-            select(Treatment).where(
-                Treatment.patient_id == patient_id
-            )
-        ).all()
-
-        treatment_map = {}
-        for treatment in treatments:
-            treatment_map.setdefault(treatment.tooth_number, []).append(treatment)
-
-        # Diş bazlı analiz geçmişi
-        analyses = s.exec(
-            select(Analysis).where(
-                Analysis.patient_id == patient_id
-            )
-        ).all()
-
-        analysis_map = {}
-        for analysis in analyses:
-            analysis_map.setdefault(analysis.tooth_number, []).append(analysis)
-
         status_info = {
             "HEALTHY": ("Sağlıklı", "healthy"),
             "CARIES": ("Çürük", "caries"),
@@ -9892,8 +9870,6 @@ def tooth_chart(request: Request, patient_id: int):
                 "number": number,
                 "status": label,
                 "css_class": css_class,
-                "treatments": treatment_map.get(number, []),
-                "analyses": analysis_map.get(number, []),
             }
 
         upper_numbers = [
@@ -9915,6 +9891,19 @@ def tooth_chart(request: Request, patient_id: int):
             "71", "72", "73", "74", "75"
         ]
 
+        latest_analysis_tooth = s.exec(
+            select(Analysis.tooth_number)
+            .where(
+                Analysis.patient_id == patient_id,
+                Analysis.status.in_(["AI_ANALYZED", "AI_FINAL", "VISION_READY"]),
+                Analysis.tooth_number.in_(
+                    upper_numbers + lower_numbers + primary_upper_numbers + primary_lower_numbers
+                ),
+            )
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        ).first()
+
         upper_teeth = [tooth_data(n) for n in upper_numbers]
         lower_teeth = [tooth_data(n) for n in lower_numbers]
         primary_upper_teeth = [tooth_data(n) for n in primary_upper_numbers]
@@ -9929,6 +9918,8 @@ def tooth_chart(request: Request, patient_id: int):
                 "lower_teeth": lower_teeth,
                 "primary_upper_teeth": primary_upper_teeth,
                 "primary_lower_teeth": primary_lower_teeth,
+                "latest_analysis_tooth": latest_analysis_tooth,
+                "tooth_notes": {item.tooth_number: item.note or "" for item in statuses},
             },
         )
 
