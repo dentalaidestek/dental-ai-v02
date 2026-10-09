@@ -132,3 +132,21 @@ def test_authentication_admission_is_atomic_on_postgres(pg):
         assert row.attempts == 24
     clear(engine, key)
     admit(engine, 'login', 'synthetic-auth-user', limit=8, window=600)
+
+
+def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg):
+    from app import migrate
+    engine, _, resources = pg
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,8)'))
+        before = connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all()
+    migrate.apply()
+    migrate.require_schema(engine)
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
+        assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 9
+        assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
