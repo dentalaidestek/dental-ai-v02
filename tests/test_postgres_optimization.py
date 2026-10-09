@@ -148,5 +148,36 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 9
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 10
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
+        assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
+
+
+def test_email_change_code_is_consumed_once_under_concurrent_confirmation(pg, monkeypatch):
+    from starlette.requests import Request
+    engine, _, resources = pg
+    uid = resources[0].owner_user_id
+    with Session(engine) as s:
+        user = s.get(main.User, uid)
+        user.email = 'old@example.test'
+        user.email_verified_at = main._utcnow_naive()
+        user.password_hash = 'synthetic-password-verifier'
+        s.add(user)
+        s.add(main.SessionToken(user_id=uid, token_hash=main.hash_session_token('email-token'), expires_at=main._utcnow_naive() + timedelta(days=1)))
+        s.add(main.EmailChangeChallenge(user_id=uid, new_email='new@example.test', old_email=user.email,
+            password_snapshot=main.hash_session_token(user.password_hash), session_hash=main.hash_session_token('email-token'),
+            code_hash=main.hash_session_token('123456'), expires_at=main._utcnow_naive() + timedelta(minutes=10)))
+        s.commit()
+    monkeypatch.setattr(main, 'on_loop', lambda *args: None)
+    def confirm(_):
+        request = Request({'type': 'http', 'method': 'POST', 'path': '/account/email/confirm',
+            'scheme': 'https', 'headers': [(b'cookie', f'{main.SESSION_COOKIE}=email-token'.encode())]})
+        return main.confirm_email_change.__wrapped__(request, '123456').headers.get('location')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        locations = list(pool.map(confirm, range(2)))
+    assert locations.count('/login?email_changed=1') == 1
+    assert locations.count('/login') == 1
+    with Session(engine) as s:
+        assert s.get(main.User, uid).email == 'new@example.test'
+        assert s.get(main.EmailChangeChallenge, uid) is None
+        assert not s.exec(select(main.SessionToken).where(main.SessionToken.user_id == uid)).all()

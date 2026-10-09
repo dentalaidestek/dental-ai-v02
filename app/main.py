@@ -182,6 +182,17 @@ class EmailVerificationChallenge(SQLModel, table=True):
     sent_at: datetime = Field(default_factory=_utcnow_naive)
     verified_at: Optional[datetime] = None
 
+
+class EmailChangeChallenge(SQLModel, table=True):
+    user_id: int = Field(primary_key=True)
+    new_email: str
+    old_email: Optional[str] = None
+    password_snapshot: str
+    session_hash: str
+    code_hash: str
+    expires_at: datetime
+    attempts: int = 0
+
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True, unique=True)
@@ -3005,6 +3016,7 @@ def register_user(
         )
 
     with Session(engine, expire_on_commit=False) as s:
+        _lock_email_changes(s, email)
         if _email_is_permanently_blocked(s, email):
             return templates.TemplateResponse(
                 request=request,
@@ -3105,6 +3117,10 @@ def register_user(
 
 @app.get("/account", response_class=HTMLResponse)
 def account_page(request: Request):
+    return _account_page_response(request)
+
+
+def _account_page_response(request: Request, *, error=None, pending=None, status=200):
     user = get_current_user(request)
 
     if not user:
@@ -3118,6 +3134,14 @@ def account_page(request: Request):
             select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)
         ).first()
 
+        challenge = s.get(EmailChangeChallenge, user.id)
+
+    pending_email = None
+    if (challenge and challenge.expires_at > _utcnow_naive() and challenge.attempts < 5
+            and challenge.session_hash == hash_session_token(request.cookies.get(SESSION_COOKIE, ""))
+            and challenge.old_email == user.email and challenge.password_snapshot == hash_session_token(user.password_hash or "")):
+        pending_email = challenge.new_email
+
     next_username_change_at = None
     if account_meta and account_meta.username_changed_at:
         next_username_change_at = account_meta.username_changed_at + timedelta(days=15)
@@ -3130,14 +3154,18 @@ def account_page(request: Request):
             "doctor_profile": doctor_profile,
             "account_meta": account_meta,
             "next_username_change_at": next_username_change_at,
-            "error": None,
+            "email_change_pending": pending if pending is not None else pending_email,
+            "error": error,
             "success": (
                 "Profil fotoğrafınız güncellendi."
                 if request.query_params.get("photo_saved") == "1"
+                else "Ad soyadınız güncellendi."
+                if request.query_params.get("name_saved") == "1"
                 else "Mesleki durumunuz güncellendi. Ana ekran öncelikleriniz yeni durumunuza göre düzenlendi; mevcut kayıtlarınız silinmedi."
                 if request.query_params.get("profile_updated") == "1" else None
             ),
         },
+        status_code=status,
     )
 
 
@@ -3430,22 +3458,131 @@ def change_display_name(request: Request, display_name: str = Form(...)):
         db_user = s.get(User, user.id)
         if not db_user:
             return RedirectResponse("/login", status_code=303)
-        # A verified expert's displayed identity is tied to the reviewed profile;
-        # changing it silently would invalidate that verification boundary.
-        expert_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
-        if (expert_profile and expert_profile.application_status == "APPROVED"
-                and expert_profile.verification_status == "VERIFIED"
-                and expert_profile.credential_document_path):
-            return HTMLResponse("Doğrulanmış uzman profilindeki ad soyad, belge doğrulamasıyla bağlıdır; değişiklik yeniden doğrulama akışından yapılmalıdır.", status_code=409)
         if db_user.display_name == normalized:
-            return RedirectResponse("/account?profile_updated=1", status_code=303)
+            return RedirectResponse("/account?name_saved=1", status_code=303)
         db_user.display_name = normalized
         s.add(db_user)
         event = _record_realtime_event(s, user.id, "PROFILE_UPDATED", "user", user.id,
             {"user_id": user.id, "display_name": normalized})
         s.commit()
     on_loop(_publish_realtime_event, event)
-    return RedirectResponse("/account?profile_updated=1", status_code=303)
+    return RedirectResponse("/account?name_saved=1", status_code=303)
+
+
+def _lock_email_changes(session, email):
+    # Registration and email changes share a transaction lock across instances.
+    if engine.dialect.name == "postgresql":
+        key = int.from_bytes(hashlib.sha256(_canonical_registration_email(email).encode()).digest()[:8], "big", signed=True)
+        session.exec(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=key))
+
+
+def _email_change_taken(session, email, user_id):
+    canonical = _canonical_registration_email(email)
+    if canonical.endswith("@gmail.com"):
+        query = select(User.email).where(User.id != user_id, func.lower(User.email).like("%@gmail.com") | func.lower(User.email).like("%@googlemail.com"))
+        return any(_canonical_registration_email(row) == canonical for row in session.exec(query))
+    return session.exec(select(User.id).where(User.id != user_id, func.lower(User.email) == email)).first() is not None
+
+
+def _email_change_page(request, *, error=None, pending=None, status=200):
+    return _account_page_response(request, error=error, pending=pending, status=status)
+
+
+@app.post("/account/email", response_class=HTMLResponse)
+@offload
+def begin_email_change(request: Request, new_email: str = Form(...), password: str = Form(...), renew: str = Form("")):
+    if request.headers.get("sec-fetch-site") == "cross-site" or not _push_request_same_origin(request):
+        return HTMLResponse("İstek kaynağı doğrulanamadı.", status_code=403)
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    _check_web_login_rate(request, "email-change:" + str(user.id))
+    email = new_email.strip().lower()
+    if len(email) > 254 or not re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", email):
+        return _email_change_page(request, error="Geçerli bir e-posta adresi girin.", status=400)
+    with Session(engine, expire_on_commit=False) as session:
+        db_user = session.exec(select(User).where(User.id == user.id).with_for_update()).one()
+        active_session = session.exec(select(SessionToken).where(SessionToken.user_id == user.id,
+            SessionToken.token_hash == hash_session_token(request.cookies.get(SESSION_COOKIE, "")),
+            SessionToken.expires_at > _utcnow_naive())).first()
+        if not active_session:
+            return RedirectResponse("/login", status_code=303)
+        if not db_user.is_active or not verify_password(password, db_user.password_hash or ""):
+            return _email_change_page(request, error="Mevcut şifreniz hatalı.", status=400)
+        if _canonical_registration_email(email) == _canonical_registration_email(db_user.email or ""):
+            return _email_change_page(request, error="Yeni adres mevcut adresinizden farklı olmalıdır.", status=400)
+        if _email_change_taken(session, email, user.id) or _email_is_permanently_blocked(session, email):
+            return _email_change_page(request, error="Bu e-posta adresi kullanılamıyor.", status=400)
+        old = session.get(EmailChangeChallenge, user.id)
+        now = _utcnow_naive()
+        token_hash = hash_session_token(request.cookies.get(SESSION_COOKIE, ""))
+        if old and old.new_email == email and old.expires_at > now and old.attempts < 5 and old.session_hash == token_hash and old.password_snapshot == hash_session_token(db_user.password_hash or "") and old.old_email == db_user.email and renew != "1":
+            return _email_change_page(request, pending=email)
+        # Explicit sends are bounded separately; correct passwords cannot spam mail.
+        admit_auth_attempt(engine, "email-change-send", str(user.id), limit=3, window=600)
+        code = f"{secrets.randbelow(1000000):06d}"
+        if old:
+            session.delete(old); session.flush()
+        challenge = EmailChangeChallenge(user_id=user.id, new_email=email, old_email=db_user.email,
+            password_snapshot=hash_session_token(db_user.password_hash or ""), session_hash=token_hash,
+            code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+        session.add(challenge)
+        try:
+            send_email_verification_code(email, code)
+        except Exception:
+            session.rollback()
+            return _email_change_page(request, error="Kod gönderilemedi. Mevcut e-posta adresiniz değişmedi; tekrar deneyebilirsiniz.", status=503)
+        session.commit()
+    return _email_change_page(request, pending=email)
+
+
+@app.post("/account/email/confirm", response_class=HTMLResponse)
+@offload
+def confirm_email_change(request: Request, code: str = Form(...)):
+    if request.headers.get("sec-fetch-site") == "cross-site" or not _push_request_same_origin(request):
+        return HTMLResponse("İstek kaynağı doğrulanamadı.", status_code=403)
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    _check_web_login_rate(request, "email-change-confirm:" + str(user.id))
+    with Session(engine, expire_on_commit=False) as session:
+        db_user = session.exec(select(User).where(User.id == user.id).with_for_update()).one()
+        active_session = session.exec(select(SessionToken).where(SessionToken.user_id == user.id,
+            SessionToken.token_hash == hash_session_token(request.cookies.get(SESSION_COOKIE, "")),
+            SessionToken.expires_at > _utcnow_naive())).first()
+        if not active_session:
+            return RedirectResponse("/login", status_code=303)
+        challenge = session.get(EmailChangeChallenge, user.id)
+        now = _utcnow_naive()
+        if (not challenge or not db_user.is_active or challenge.expires_at <= now or challenge.attempts >= 5
+                or challenge.old_email != db_user.email or challenge.password_snapshot != hash_session_token(db_user.password_hash or "")
+                or challenge.session_hash != hash_session_token(request.cookies.get(SESSION_COOKIE, ""))):
+            return _email_change_page(request, error="İşlemin süresi dolmuş veya geçersiz. Yeni kod isteyebilirsiniz.", status=400)
+        if not re.fullmatch(r"[0-9]{6}", code.strip()) or not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
+            challenge.attempts += 1
+            session.add(challenge); session.commit()
+            return _email_change_page(request, error="Kod hatalı. Lütfen kontrol edin.", pending=challenge.new_email, status=400)
+        _lock_email_changes(session, challenge.new_email)
+        if _email_change_taken(session, challenge.new_email, user.id) or _email_is_permanently_blocked(session, challenge.new_email):
+            return _email_change_page(request, error="Bu e-posta adresi artık kullanılamıyor. Başka bir adres deneyin.", status=400)
+        db_user.email = challenge.new_email
+        db_user.email_verified_at = now
+        session.add(db_user)
+        session.delete(challenge)
+        for token in session.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all():
+            session.delete(token)
+        # Recovery links/device challenges sent to the previous address must
+        # never retain authority over the newly verified account identity.
+        for model in (PasswordResetToken, ExpertDeviceChallenge, ExpertTrustedDevice):
+            for credential in session.exec(select(model).where(model.user_id == user.id)).all():
+                session.delete(credential)
+        event = _record_realtime_event(session, user.id, "PROFILE_UPDATED", "user", user.id, {"user_id": user.id})
+        session.commit()
+    on_loop(_publish_realtime_event, event)
+    response = RedirectResponse("/login?email_changed=1", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie("dai_push_subscription_id", path="/")
+    return response
 
 
 @app.post("/account/password", response_class=HTMLResponse)
@@ -3527,6 +3664,7 @@ def login_page(
     request: Request,
     reset: str = "",
     account_deleted: str = "",
+    email_changed: str = "",
     next: str = "",
     renew: str = "",
 ):
@@ -3535,7 +3673,8 @@ def login_page(
         if reset == "success"
         else "Hesabınız silindi ve bu cihazdaki oturumunuz kapatıldı."
         if account_deleted == "1"
-        else None
+        else "E-posta adresiniz güncellendi. Yeni adresinizle giriş yapabilirsiniz."
+        if email_changed == "1" else None
     )
     return templates.TemplateResponse(
         request=request,
@@ -11524,6 +11663,9 @@ def _maintenance_response(request):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    # Never let a shared browser cache account HTML. No extra auth/DB lookup.
+    if request.cookies.get(SESSION_COOKIE) and "text/html" in response.headers.get("content-type", ""):
+        response.headers["Cache-Control"] = "private, no-store"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
