@@ -110,3 +110,25 @@ def test_migration_repeat_and_old_result_paths(pg, monkeypatch):
     migrate.require_schema(engine)
     with Session(engine) as s:
         assert s.get(main.GuestAnalysis, resources[0].id).result_path is None
+
+
+def test_authentication_admission_is_atomic_on_postgres(pg):
+    from app.auth_rate import admit, bucket_key, clear
+    from fastapi import HTTPException
+    engine, _, _ = pg
+    def attempt(_):
+        try:
+            admit(engine, 'login', 'synthetic-auth-user', limit=8, window=600)
+            return 200
+        except HTTPException as exc:
+            return exc.status_code
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        statuses = list(pool.map(attempt, range(24)))
+    assert statuses.count(200) == 8
+    assert statuses.count(429) == 16
+    key = bucket_key('login', 'synthetic-auth-user')
+    with engine.connect() as conn:
+        row = conn.execute(text('SELECT attempts FROM authratebucket WHERE bucket_key=:key'), {'key': key}).one()
+        assert row.attempts == 24
+    clear(engine, key)
+    admit(engine, 'login', 'synthetic-auth-user', limit=8, window=600)

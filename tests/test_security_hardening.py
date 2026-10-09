@@ -26,18 +26,15 @@ def test_security_headers_are_present_on_http_responses():
 
 
 def test_web_login_rate_limiter_blocks_repeated_failures(monkeypatch):
-    request = Request({
-        "type": "http",
-        "method": "POST",
-        "path": "/login",
-        "headers": [],
-        "client": ("127.0.0.1", 44321),
-    })
+    from sqlalchemy.pool import StaticPool
+    from sqlmodel import SQLModel, create_engine
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    request = Request({"type": "http", "method": "POST", "path": "/login", "headers": [], "client": ("127.0.0.1", 44321)})
     monkeypatch.setattr(main, "WEB_LOGIN_RATE_MAX_FAILURES", 3)
-    monkeypatch.setattr(main, "_WEB_LOGIN_FAILURES", {})
-    key = main._web_login_key(request, "doctor@example.test")
     for _ in range(3):
-        main._record_web_login_failure(key)
+        main._check_web_login_rate(request, "doctor@example.test")
     with pytest.raises(HTTPException) as exc:
         main._check_web_login_rate(request, "doctor@example.test")
     assert exc.value.status_code == 429
@@ -306,7 +303,7 @@ def test_e2ee_device_keys_are_client_public_keys_and_migration_is_versioned():
     assert "public_key: str" in source
     assert "revoked_at" in source
     migration = (ROOT / "app/migrate.py").read_text(encoding="utf-8")
-    assert "REVISION = 8" in migration
+    assert "REVISION = 9" in migration
     assert "e2eedevicekey" in migration
     assert "consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
     assert "supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration

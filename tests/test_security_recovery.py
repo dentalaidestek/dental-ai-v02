@@ -43,7 +43,7 @@ def test_credentials_can_replace_unusable_challenge_without_replay(identity_db, 
         old.attempts = 5
     session.add(old)
     session.commit()
-    new = main._ensure_email_verification_challenge(session, user)
+    new = main._ensure_email_verification_challenge(session, user, renew=True)
     assert new.public_token != old_token
     assert new.attempts == 0
     assert len(sent) == 2
@@ -158,8 +158,6 @@ def test_login_renews_expired_code_only_after_correct_password(identity_db, monk
     from app import mobile_api
     session, user, sent = identity_db
     monkeypatch.setattr(mobile_api, 'engine', main.engine)
-    monkeypatch.setattr(mobile_api, '_LOGIN_FAILURES', {})
-    monkeypatch.setattr(main, '_WEB_LOGIN_FAILURES', {})
     old = main._ensure_email_verification_challenge(session, user)
     old_token = old.public_token
     old.expires_at = main._utcnow_naive() - main.timedelta(seconds=1)
@@ -175,13 +173,113 @@ def test_login_renews_expired_code_only_after_correct_password(identity_db, monk
         assert error.value.status_code == 401
     assert len(sent) == 1
     if client_kind == 'web':
-        accepted = main.login_user(request, user.username, 'correct-password', '/patients')
+        accepted = main.login_user(request, user.username, 'correct-password', '/patients', renew_email_code='1')
         assert accepted.context['challenge_token'] != old_token
         assert accepted.context['next_url'] == '/patients'
         assert 'set-cookie' not in accepted.headers
     else:
-        accepted = mobile_api.mobile_login(mobile_api.LoginRequest(login=user.username, password='correct-password'))
+        accepted = mobile_api.mobile_login(mobile_api.LoginRequest(login=user.username, password='correct-password', renew_email_code=True))
         assert accepted.challenge_token != old_token
         assert accepted.access_token is None
     assert len(sent) == 2
     assert not session.exec(select(main.SessionToken).where(main.SessionToken.user_id == user.id)).all()
+
+@pytest.mark.parametrize('client_kind', ['web', 'native'])
+def test_expired_login_does_not_send_code_without_explicit_request(identity_db, monkeypatch, client_kind):
+    from app import mobile_api
+    session, user, sent = identity_db
+    monkeypatch.setattr(mobile_api, 'engine', main.engine)
+    old = main._ensure_email_verification_challenge(session, user)
+    token = old.public_token
+    old.expires_at = main._utcnow_naive() - main.timedelta(seconds=1)
+    session.add(old)
+    session.commit()
+    if client_kind == 'web':
+        request = Request({'type': 'http', 'method': 'POST', 'path': '/login', 'headers': [], 'client': ('127.0.0.1', 1)})
+        result = main.login_user(request, user.username, 'correct-password', '/')
+        assert result.context['challenge_token'] == token
+        assert 'set-cookie' not in result.headers
+    else:
+        result = mobile_api.mobile_login(mobile_api.LoginRequest(login=user.username, password='correct-password'))
+        assert result.challenge_token == token
+        assert result.access_token is None
+    assert len(sent) == 1
+
+
+def test_mobile_router_has_unique_operation_contracts():
+    operations = [(method, route.path) for route in main.app.routes for method in getattr(route, 'methods', ()) if route.path.startswith('/api/mobile/')]
+    assert len(operations) == len(set(operations))
+
+
+def test_web_and_native_share_the_same_principal_rate_bucket(identity_db, monkeypatch):
+    from app import mobile_api
+    _, user, _ = identity_db
+    monkeypatch.setattr(mobile_api, 'engine', main.engine)
+    monkeypatch.setattr(mobile_api, 'LOGIN_RATE_MAX_FAILURES', 2)
+    monkeypatch.setattr(main, 'WEB_LOGIN_RATE_MAX_FAILURES', 2)
+    request = Request({'type': 'http', 'method': 'POST', 'path': '/login', 'headers': [], 'client': ('127.0.0.1', 1)})
+    assert main.login_user(request, user.username, 'wrong-password', '/').status_code == 401
+    with pytest.raises(HTTPException) as native:
+        mobile_api.mobile_login(mobile_api.LoginRequest(login=user.username, password='wrong-password'))
+    assert native.value.status_code == 401
+    with pytest.raises(HTTPException) as web:
+        main.login_user(request, user.username, 'wrong-password', '/')
+    assert web.value.status_code == 429
+
+
+def test_patient_and_durable_event_are_one_transaction(identity_db, monkeypatch):
+    from app import mobile_api
+    _, user, _ = identity_db
+    monkeypatch.setattr(mobile_api, 'engine', main.engine)
+    def fail_event(*args):
+        raise RuntimeError('synthetic event storage failure')
+    monkeypatch.setattr(mobile_api, '_record_patient_realtime_events', fail_event)
+    with pytest.raises(RuntimeError):
+        mobile_api.mobile_create_patient(mobile_api.MobilePatientCreate(first_name='Synthetic', last_name='Patient'), user)
+    with Session(main.engine) as session:
+        assert not session.exec(select(main.Patient).where(main.Patient.owner_user_id == user.id)).all()
+        assert not session.exec(select(main.PatientProfile)).all()
+
+
+@pytest.mark.parametrize('payload', [b'<html>not an image</html>', b'GIF89a\x00\x00'])
+def test_vision_rejects_spoofed_image_content(payload):
+    from vision_service import app as vision
+    with pytest.raises(HTTPException) as error:
+        with vision._saved_image(UploadFile(io.BytesIO(payload), filename='scan.png'), 'scan.png'):
+            pytest.fail('spoofed image accepted')
+    assert error.value.status_code == 422
+
+
+def test_vision_does_not_return_provider_secrets(monkeypatch):
+    from vision_service import app as vision
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new('RGB', (2, 2)).save(image, format='PNG')
+    def unavailable(_):
+        raise vision.VisionError('provider token=secret patient=Synthetic')
+    monkeypatch.setattr(vision, 'analyze_panorama', unavailable)
+    with pytest.raises(HTTPException) as error:
+        vision.analyze_image(UploadFile(io.BytesIO(image.getvalue()), filename='scan.png'))
+    assert error.value.status_code == 503
+    assert 'secret' not in error.value.detail
+    assert 'Synthetic' not in error.value.detail
+
+
+@pytest.mark.parametrize('error_class', [main.StudyRAGError, main.StudyAIError])
+def test_academic_provider_errors_never_echo_secrets(identity_db, monkeypatch, error_class):
+    from fastapi import BackgroundTasks
+    import json
+    _, user, _ = identity_db
+    events = []
+    monkeypatch.setattr(main, 'get_current_user', lambda request: user)
+    monkeypatch.setattr(main, 'begin_trace', lambda *args: 'synthetic-trace')
+    monkeypatch.setattr(main, 'trace_event', lambda *args, **kwargs: events.append(kwargs))
+    def fail(*args):
+        raise error_class('provider token=synthetic-secret patient=Synthetic Patient')
+    monkeypatch.setattr(main, '_owned_study_course', fail)
+    request = Request({'type': 'http', 'method': 'POST', 'path': '/notes/courses/1/ai/ask', 'headers': []})
+    response = main.study_ai_ask(request, 1, BackgroundTasks(), 'synthetic question')
+    assert response.status_code == 502
+    emitted = response.body.decode() + json.dumps(events)
+    assert 'synthetic-secret' not in emitted
+    assert 'Synthetic Patient' not in emitted

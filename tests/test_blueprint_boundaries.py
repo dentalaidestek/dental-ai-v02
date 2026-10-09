@@ -90,7 +90,15 @@ def test_atomic_publication_has_no_connection_during_blob_io(database, monkeypat
     try:
         with Session(engine, expire_on_commit=False) as s:
             analysis = s.get(main.Analysis, ids.analysis)
-            main._publish_clinical_result(s, analysis, json.dumps({'ai_result': {'status': 'OK'}}), status='AI_ANALYZED')
+            def publish():
+                with Session(engine, expire_on_commit=False) as worker_session:
+                    target = worker_session.get(main.Analysis, ids.analysis)
+                    main._publish_clinical_result(worker_session, target, json.dumps({'ai_result': {'status': 'OK'}}), status='AI_ANALYZED')
+            async def execute():
+                from anyio import to_thread
+                await to_thread.run_sync(publish)
+            s.close()
+            asyncio.run(execute())
         with Session(engine) as s:
             assert s.get(main.Analysis, ids.analysis).result_path == writes[0]
             assert s.get(work_jobs.WorkJob, job.id).status == 'DONE'

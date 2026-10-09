@@ -74,8 +74,8 @@ def test_message_event_payloads_cover_sender_and_recipient():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
     with Session(engine, expire_on_commit=False) as session:
-        sender = main.User(username="sender", role="DOCTOR", display_name="Gönderen")
-        recipient = main.User(username="recipient", role="DOCTOR", display_name="Alıcı")
+        sender = main.User(email_verified_at=main._utcnow_naive(), username="sender", role="DOCTOR", display_name="Gönderen")
+        recipient = main.User(email_verified_at=main._utcnow_naive(), username="recipient", role="DOCTOR", display_name="Alıcı")
         session.add(sender)
         session.add(recipient)
         session.commit()
@@ -111,8 +111,8 @@ def test_http_message_reaches_room_and_both_global_sessions(monkeypatch):
     SQLModel.metadata.create_all(test_engine)
     monkeypatch.setattr(main, "engine", test_engine)
     with Session(test_engine, expire_on_commit=False) as session:
-        sender = main.User(username="a", role="DOCTOR", display_name="A")
-        recipient = main.User(username="b", role="DOCTOR", display_name="B")
+        sender = main.User(email_verified_at=main._utcnow_naive(), username="a", role="DOCTOR", display_name="A")
+        recipient = main.User(email_verified_at=main._utcnow_naive(), username="b", role="DOCTOR", display_name="B")
         session.add(sender)
         session.add(recipient)
         session.commit()
@@ -137,7 +137,7 @@ def test_http_message_reaches_room_and_both_global_sessions(monkeypatch):
         ))
         session.commit()
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, headers={"Origin": "https://dentalai.tr"}) as client:
         with client.websocket_connect(
             f"/ws/expert-support/cases/{case.id}", cookies={main.SESSION_COOKIE: recipient_token}
         ) as recipient_room, client.websocket_connect(
@@ -179,8 +179,8 @@ def test_inbox_server_order_keeps_new_requests_first_then_latest_message(monkeyp
     monkeypatch.setattr(main, "engine", test_engine)
     now = main._utcnow_naive()
     with Session(test_engine, expire_on_commit=False) as session:
-        viewer = main.User(username="viewer", role="DOCTOR", display_name="Viewer")
-        other = main.User(username="other", role="DOCTOR", display_name="Other")
+        viewer = main.User(email_verified_at=main._utcnow_naive(), username="viewer", role="DOCTOR", display_name="Viewer")
+        other = main.User(email_verified_at=main._utcnow_naive(), username="other", role="DOCTOR", display_name="Other")
         session.add(viewer)
         session.add(other)
         session.commit()
@@ -213,7 +213,7 @@ def test_inbox_server_order_keeps_new_requests_first_then_latest_message(monkeyp
         ))
         session.commit()
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, headers={"Origin": "https://dentalai.tr"}) as client:
         response = client.get("/messages", cookies={main.SESSION_COOKIE: token})
     assert response.status_code == 200
     html = response.text
@@ -256,7 +256,7 @@ def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active
     engine = _engine()
     now = main._utcnow_naive()
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username="notice-owner", role="DOCTOR", display_name="Notice Owner")
+        user = main.User(email_verified_at=main._utcnow_naive(), username="notice-owner", role="DOCTOR", display_name="Notice Owner")
         session.add(user)
         session.commit()
         notice = main.AdminNotice(
@@ -273,13 +273,15 @@ def test_notification_read_all_route_persists_seen_state_and_keeps_notice_active
         notice_id = notice.id
         user_id = user.id
     monkeypatch.setattr(main, "engine", engine)
-    with TestClient(main.app) as client:
+    with TestClient(main.app, headers={"Origin": "https://dentalai.tr"}) as client:
         response = client.post("/account/notifications/read-all", cookies={main.SESSION_COOKIE: token})
         refreshed = client.get("/account/notifications", cookies={main.SESSION_COOKIE: token})
     assert response.status_code == 200
     assert response.json()["read_count"] == 1
     assert refreshed.status_code == 200
-    assert refreshed.json()["notifications"] == []
+    assert refreshed.json()["unread_count"] == 0
+    assert len(refreshed.json()["notifications"]) == 1
+    assert refreshed.json()["notifications"][0]["is_read"] is True
     assert refreshed.json()["unread_count"] == 0
     with Session(engine) as session:
         notice = session.get(main.AdminNotice, notice_id)

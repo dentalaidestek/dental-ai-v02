@@ -11,16 +11,16 @@ from app import main
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
-def test_support_ticket_full_user_admin_turn_lifecycle(monkeypatch):
+def test_support_ticket_full_user_admin_turn_lifecycle(monkeypatch, tmp_path):
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        "sqlite:///" + str(tmp_path / "support.db"), connect_args={"check_same_thread": False}
     )
     SQLModel.metadata.create_all(engine)
     monkeypatch.setattr(main, "engine", engine)
     now = main._utcnow_naive()
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username="support-user", role="DOCTOR", display_name="Kullanıcı")
-        admin = main.User(username="support-admin", role="ADMIN", display_name="Yönetici")
+        user = main.User(email_verified_at=main._utcnow_naive(), username="support-user", role="DOCTOR", display_name="Kullanıcı")
+        admin = main.User(email_verified_at=main._utcnow_naive(), username="support-admin", role="ADMIN", display_name="Yönetici")
         session.add(user)
         session.add(admin)
         session.commit()
@@ -60,7 +60,7 @@ def test_support_ticket_full_user_admin_turn_lifecycle(monkeypatch):
             f"{main.ADMIN_CENTER_PATH}/support/{ticket_id}/conversation",
             cookies=admin_cookie,
         )
-        assert admin_view.status_code == 200
+        assert admin_view.status_code == 200, admin_view.text
         assert admin_view.json()["ticket"]["initial_message"] == "İlk talep metni"
         assert admin_view.json()["unread_count"] == 1
 

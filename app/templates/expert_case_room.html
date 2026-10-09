@@ -257,7 +257,7 @@ function showEditorWhenReady(){
  if(!modal.open)modal.showModal();requestAnimationFrame(()=>requestAnimationFrame(setupEditorCanvas));
 }
 function openImageEditor({file=null,src="",messageId=""}={}){
- resetEditor();editorFile=file;editorReplyId=messageId||"";
+ resetEditor();editorFile=file;editorReplyId=messageId||currentReplyInput()?.value||"";
  let readyHandled=false;
  const ready=()=>{if(readyHandled)return;readyHandled=true;img.onload=null;showEditorWhenReady()};
  img.onload=ready;

@@ -11,7 +11,7 @@ No production deployment or modification of the original mobile branch.
 - All clinical provider payloads now remove direct email, Turkish mobile phone and 11-digit identity tokens, including embedded structured vision text. Response schemas and image pipeline are unchanged.
 - Registration referenced an undefined `login_key`, returning 500 after account creation. Removed that misplaced failure-reset call.
 - Rate limit branches referenced an unimported `HTTPException`. They now return the intended HTTP 429.
-- An expired/exhausted email verification challenge permanently blocked login. Credential-verified login replaces unusable challenges; a usable challenge is reused without another email. Web/native interfaces permit returning to login. Successful verification remains single-use and revokes earlier sessions.
+- An expired/exhausted email verification challenge permanently blocked login. Explicit credential-verified renewal replaces unusable challenges; normal login does not resend, and a usable challenge is reused without another email. Web/native interfaces permit returning to login. Successful verification remains single-use and revokes earlier sessions.
 - Verification and renewal use the same user-before-challenge lock order. Verification also checks challenge token identity, active state and current verification state.
 - Socket authentication accepted unverified users. It now enforces the same verification requirement as HTTP/native sessions.
 - Web verification dropped the intended destination. It now preserves only destinations accepted by the existing safe-redirect validator.
@@ -28,7 +28,7 @@ No production deployment or modification of the original mobile branch.
 
 ## Remaining limits and priorities
 
-- Previous Codex snapshots and the claimed "29 failures" list remain unavailable. PR #60 contains historical overlapping findings; they are not a current count of open security bugs.
+- Previous Codex snapshots remain unavailable. The handoff follow-up recovered the original CI log containing 29 failing tests; see SECURITY-REMAINING-20261009.md. This is not a current count of distinct security vulnerabilities.
 - Regex minimization does not guarantee full anonymization: unlabeled names, addresses, uncommon telephone formats and re-identification from clinical context need a separate provider-data audit. Academic provider and stored records were not comprehensively audited here.
 - PostgreSQL concurrent race/deadlock behavior, actual Brevo delivery and Render migration behavior require integration validation. Local SQLite tests do not prove row-lock behavior.
 - No physical-device APK test, end-to-end realtime audit, complete E2EE integration audit or account-erasure retention audit was performed in this batch.

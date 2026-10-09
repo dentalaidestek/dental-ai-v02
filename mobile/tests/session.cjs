@@ -38,3 +38,69 @@ test('API error retains HTTP status for session policy',async()=>{
   await assert.rejects(()=>getMe('stored-token'),error=>error instanceof ApiError&&error.status===401);
  }finally{global.fetch=original;}
 });
+
+const {RealtimeCursor} = require('../src/realtimeCursor.ts');
+test('durable event_id advances cursor, replay deduplicates and delayed events survive',()=>{
+ const c=new RealtimeCursor(900);
+ assert.equal(c.resumeAfter(),400);
+ assert.equal(c.accept({event_id:1000}),true);
+ assert.equal(c.accept({event_id:1000}),false);
+ assert.equal(c.accept({event_id:950}),true);
+ assert.equal(c.current,1000);
+ assert.equal(c.accept({id:1001}),true);
+ assert.equal(c.current,1001);
+});
+test('invalid stored and event cursors cannot poison recovery',()=>{
+ for(const saved of ['NaN',-1,Infinity])assert.equal(new RealtimeCursor(saved).current,0);
+ const c=new RealtimeCursor();
+ for(const id of [0,-1,'200',NaN,Infinity,1.5])assert.equal(c.accept({event_id:id}),false);
+ assert.equal(c.current,0);
+});
+
+const modernApi=require('../src/modernApi.ts');
+test('academic request uses the authoritative JSON contract',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async(url,init)=>{
+   assert.equal(url,'https://dentalai.tr/api/mobile/v1/academic/courses/12/ask');
+   assert.equal(init.headers['Content-Type'],'application/json');
+   assert.deepEqual(JSON.parse(init.body),{message:'Synthetic question'});
+   return new Response(JSON.stringify({ok:true,answer:'Synthetic answer'}));
+  };
+  assert.equal((await modernApi.askAcademic('token',12,'Synthetic question')).answer,'Synthetic answer');
+ }finally{global.fetch=original;}
+});
+test('media URL remains on the authenticated native endpoint',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,original_filename:'scan.png',url:'https://untrusted.invalid/file'}]}));
+  const result=await modernApi.getMedia('token',7);
+  assert.equal(result.items[0].filename,'scan.png');
+  assert.equal(result.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/3/file');
+ }finally{global.fetch=original;}
+});
+test('message retries retain the server idempotency identity',async()=>{
+ const original=global.fetch;const ids=[];
+ try{
+  global.fetch=async(url,init)=>{ids.push(JSON.parse(init.body).client_message_id);return new Response(JSON.stringify({ok:true,message:{id:3}}));};
+  await modernApi.sendConsultationMessage('token',7,'Synthetic','stable-client-message-id');
+  await modernApi.sendConsultationMessage('token',7,'Synthetic','stable-client-message-id');
+  assert.deepEqual(ids,['stable-client-message-id','stable-client-message-id']);
+ }finally{global.fetch=original;}
+});
+test('patient photo upload uses image field and lets transport set multipart boundary',async()=>{
+ const originalFetch=global.fetch,originalForm=global.FormData;
+ const fields=[];
+ try{
+  global.FormData=class {append(name,value){fields.push([name,value]);}};
+  global.fetch=async(url,init)=>{
+   assert.equal(url,'https://dentalai.tr/api/mobile/v1/patients/7/media');
+   assert.equal(init.headers.Authorization,'Bearer token');
+   assert.equal(init.headers['Content-Type'],undefined);
+   return new Response(JSON.stringify({media:{id:3}}));
+  };
+  const {uploadPatientMedia}=require('../src/api.ts');
+  await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});
+  assert.equal(fields[0][0],'image');
+ }finally{global.fetch=originalFetch;global.FormData=originalForm;}
+});

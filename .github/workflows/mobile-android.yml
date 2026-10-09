@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'mobile/**'
+      - 'work/security-privacy-*'
   pull_request:
     paths:
       - 'mobile/**'

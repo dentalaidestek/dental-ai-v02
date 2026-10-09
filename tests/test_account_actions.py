@@ -56,6 +56,7 @@ def test_self_delete_requires_password_then_revokes_account_and_session(monkeypa
             user_id=user_id,
             expires_at=main._utcnow_naive() + main.timedelta(days=1),
         ))
+        session.add(main.E2EEDeviceKey(user_id=user_id, device_id="erase-test-device", public_key="synthetic-public-key"))
         session.commit()
 
     monkeypatch.setattr(main, "engine", engine)
@@ -93,6 +94,9 @@ def test_self_delete_requires_password_then_revokes_account_and_session(monkeypa
         assert deleted.display_name == "Silinmiş Kullanıcı"
         assert deleted.email is None
         assert deleted.password_hash is None
+        erased_key = session.exec(select(main.E2EEDeviceKey).where(main.E2EEDeviceKey.user_id == user_id)).one()
+        assert erased_key.revoked_at is not None
+
         assert not session.exec(
             select(main.SessionToken).where(main.SessionToken.user_id == user_id)
         ).first()

@@ -22,7 +22,7 @@ def test_new_patient_login_returns_user_to_requested_page(monkeypatch):
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        session.add(main.User(
+        session.add(main.User(email_verified_at=main._utcnow_naive(),
             username="doctor",
             email="doctor@example.test",
             role="DOCTOR",
@@ -32,7 +32,7 @@ def test_new_patient_login_returns_user_to_requested_page(monkeypatch):
         session.commit()
 
     monkeypatch.setattr(main, "engine", engine)
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="https://testserver") as client:
         guarded = client.get("/patients/new", follow_redirects=False)
         assert guarded.status_code == 303
         assert guarded.headers["location"] == "/login?next=%2Fpatients%2Fnew"

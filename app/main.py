@@ -48,6 +48,7 @@ from app.execution import offload, on_loop, LoopWakeup
 from app.realtime_io import PostgresNotices, socket_writes
 from starlette.concurrency import run_in_threadpool
 from app.database import create_app_engine
+from app.auth_rate import AuthRateBucket, LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt
 from app import work_jobs
 from app.upload_io import copy_image
 from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
@@ -2233,75 +2234,36 @@ def init_db():
 
 SESSION_COOKIE = "dental_ai_session"
 SESSION_DAYS = 7
-WEB_LOGIN_RATE_WINDOW_SECONDS = max(60, int(os.getenv("WEB_LOGIN_RATE_WINDOW_SECONDS", "600")))
-WEB_LOGIN_RATE_MAX_FAILURES = max(3, int(os.getenv("WEB_LOGIN_RATE_MAX_FAILURES", "8")))
-_WEB_LOGIN_FAILURES: dict[str, deque[float]] = {}
-_WEB_LOGIN_FAILURES_MAX_KEYS = 20000
-
-
-def _web_login_key(request: Request, login: str) -> str:
-    client = request.client.host if request.client else "unknown"
-    return f"{client}:{login}"
-
-
-_REGISTRATION_ATTEMPTS: dict[str, deque[float]] = {}
+WEB_LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
+WEB_LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
 _REGISTRATION_WINDOW_SECONDS = max(60, int(os.getenv("REGISTRATION_RATE_WINDOW_SECONDS", "600")))
 _REGISTRATION_MAX_ATTEMPTS = max(2, int(os.getenv("REGISTRATION_RATE_MAX_ATTEMPTS", "10")))
 
 def _check_registration_rate(request: Request) -> str:
-    key = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    attempts = _REGISTRATION_ATTEMPTS.get(key)
-    if attempts is not None:
-        while attempts and now - attempts[0] >= _REGISTRATION_WINDOW_SECONDS:
-            attempts.popleft()
-        if len(attempts) >= _REGISTRATION_MAX_ATTEMPTS:
-            retry_after = max(1, int(_REGISTRATION_WINDOW_SECONDS - (now - attempts[0])))
-            raise HTTPException(status_code=429, detail="Çok fazla kayıt denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(retry_after)})
-    return key
+    identity = request.client.host if request.client else "unknown"
+    return admit_auth_attempt(engine, "registration", identity,
+        limit=_REGISTRATION_MAX_ATTEMPTS, window=_REGISTRATION_WINDOW_SECONDS)
+
 
 def _record_registration_attempt(key: str) -> None:
-    now = time.monotonic()
-    attempts = _REGISTRATION_ATTEMPTS.setdefault(key, deque())
-    while attempts and now - attempts[0] >= _REGISTRATION_WINDOW_SECONDS:
-        attempts.popleft()
-    attempts.append(now)
-    if len(_REGISTRATION_ATTEMPTS) > 20000:
-        oldest = min(_REGISTRATION_ATTEMPTS, key=lambda k: _REGISTRATION_ATTEMPTS[k][0] if _REGISTRATION_ATTEMPTS[k] else now)
-        _REGISTRATION_ATTEMPTS.pop(oldest, None)
+    # Attempts are counted atomically before password/registration processing.
+    pass
 
 
 def _check_web_login_rate(request: Request, login: str) -> str:
-    import time as _rate_time
-    key = _web_login_key(request, login)
-    now = _rate_time.monotonic()
-    attempts = _WEB_LOGIN_FAILURES.get(key)
-    if attempts is None:
-        return key
-    while attempts and now - attempts[0] >= WEB_LOGIN_RATE_WINDOW_SECONDS:
-        attempts.popleft()
-    if not attempts:
-        _WEB_LOGIN_FAILURES.pop(key, None)
-        return key
-    if len(attempts) >= WEB_LOGIN_RATE_MAX_FAILURES:
-        raise HTTPException(status_code=429, detail="Çok fazla başarısız giriş denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(max(1, int(WEB_LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0]))))})
-    return key
+    admit_auth_attempt(engine, "login-ip", request.client.host if request.client else "unknown",
+        limit=int(os.getenv("AUTH_IP_RATE_MAX_ATTEMPTS", "100")), window=WEB_LOGIN_RATE_WINDOW_SECONDS)
+    return admit_auth_attempt(engine, "login", login,
+        limit=WEB_LOGIN_RATE_MAX_FAILURES, window=WEB_LOGIN_RATE_WINDOW_SECONDS)
 
 
 def _record_web_login_failure(key: str) -> None:
-    import time as _rate_time
-    now = _rate_time.monotonic()
-    attempts = _WEB_LOGIN_FAILURES.setdefault(key, deque())
-    while attempts and now - attempts[0] >= WEB_LOGIN_RATE_WINDOW_SECONDS:
-        attempts.popleft()
-    attempts.append(now)
-    if len(_WEB_LOGIN_FAILURES) > _WEB_LOGIN_FAILURES_MAX_KEYS:
-        oldest = min(_WEB_LOGIN_FAILURES, key=lambda k: _WEB_LOGIN_FAILURES[k][0] if _WEB_LOGIN_FAILURES[k] else now)
-        _WEB_LOGIN_FAILURES.pop(oldest, None)
+    # Admission already reserved this attempt, including concurrent requests.
+    pass
 
 
 def _clear_web_login_failures(key: str) -> None:
-    _WEB_LOGIN_FAILURES.pop(key, None)
+    clear_auth_attempt(engine, key)
 
 
 def get_current_user(request: Request) -> Optional[User]:
@@ -2414,7 +2376,7 @@ def send_email_verification_code(recipient_email: str, code: str) -> None:
             raise RuntimeError("Doğrulama e-postası gönderilemedi.")
 
 
-def _ensure_email_verification_challenge(session: Session, user: User) -> EmailVerificationChallenge:
+def _ensure_email_verification_challenge(session: Session, user: User, *, renew: bool = False) -> EmailVerificationChallenge:
     locked_user = session.exec(select(User).where(User.id == user.id).with_for_update()).first()
     if not locked_user or not locked_user.is_active or locked_user.email_verified_at or not locked_user.email:
         raise ValueError("EMAIL_ALREADY_VERIFIED")
@@ -2423,7 +2385,9 @@ def _ensure_email_verification_challenge(session: Session, user: User) -> EmailV
     if challenge:
         if not challenge.verified_at and challenge.expires_at > now and challenge.attempts < 5:
             return challenge
-        # Only credential-verified login calls this helper. Replace an unusable
+        if not renew:
+            return challenge
+        # Only an explicit, credential-verified renewal replaces an unusable
         # challenge, while reusing a valid one to avoid repeated email sends.
         session.delete(challenge)
         session.flush()
@@ -3598,6 +3562,7 @@ def login_user(
     login: str = Form(...),
     password: str = Form(...),
     next_url: str = Form(""),
+    renew_email_code: Optional[str] = Form(None),
 ):
     login = login.strip().lower()
     safe_next = _safe_login_next(next_url)
@@ -3628,6 +3593,7 @@ def login_user(
                 status_code=401,
             )
 
+        _clear_web_login_failures(login_key)
         if needs_password_rehash(user.password_hash):
             user.password_hash = hash_password(password)
             s.add(user)
@@ -3638,7 +3604,7 @@ def login_user(
 
         if not user.email_verified_at:
             try:
-                challenge = _ensure_email_verification_challenge(s, user)
+                challenge = _ensure_email_verification_challenge(s, user, renew=renew_email_code == "1")
             except Exception:
                 return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
             return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
@@ -4960,11 +4926,10 @@ def study_ai_ask(
             course_id=course_id,
             layer="rag",
             error_type=type(exc).__name__,
-            error=str(exc)[:240],
             elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
         )
         # === TEMP_STUDY_TRACE_ASK_RAG_ERROR_END ===
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
     except StudyAIError as exc:
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_BEGIN ===
         trace_event(
@@ -4972,11 +4937,10 @@ def study_ai_ask(
             course_id=course_id,
             layer="generation",
             error_type=type(exc).__name__,
-            error=str(exc)[:240],
             elapsed_ms=round((_study_trace_time.perf_counter() - _ask_trace_started) * 1000, 1),
         )
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
 
     return JSONResponse({"ok": True, "answer": answer})
 
@@ -5126,8 +5090,8 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             # Client disconnected: incomplete answers are never persisted.
             return
         except Exception as exc:
-            logger.exception("Academic V2 streaming generation failed")
-            safe_error = str(exc) if isinstance(exc, StudyAIError) else "Akademik AI akışı tamamlanamadı."
+            logger.warning("Academic V2 streaming generation failed (%s)", type(exc).__name__)
+            safe_error = "Akademik AI akışı tamamlanamadı. Ders kaynaklarını kontrol edip tekrar deneyin."
             yield json.dumps({"type": "error", "error": safe_error}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(
@@ -13594,4 +13558,7 @@ app.include_router(mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
+_mobile_mounted_routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", ())}
+mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
+    if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
 app.include_router(mobile_modern_router)

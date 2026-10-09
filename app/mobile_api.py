@@ -24,6 +24,7 @@ from starlette.requests import Request
 from fastapi.responses import JSONResponse
 
 from app.auth import create_session_token, hash_session_token, verify_password
+from app.auth_rate import LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt, bucket_key
 from app.main import (
     Analysis,
     ImageAsset,
@@ -59,40 +60,22 @@ bearer = HTTPBearer(auto_error=False)
 MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
 MOBILE_MAX_IMAGE_PIXELS = max(1, int(os.getenv("MOBILE_MAX_IMAGE_PIXELS", "40000000")))
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
-LOGIN_RATE_WINDOW_SECONDS = max(60, int(os.getenv("MOBILE_LOGIN_RATE_WINDOW_SECONDS", "600")))
-LOGIN_RATE_MAX_FAILURES = max(3, int(os.getenv("MOBILE_LOGIN_RATE_MAX_FAILURES", "8")))
-_LOGIN_FAILURES: dict[str, deque[float]] = {}
-_LOGIN_FAILURES_MAX_KEYS = 10000
+LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
+LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
 
 
 def _check_login_rate(login: str) -> None:
-    now = time.monotonic()
-    attempts = _LOGIN_FAILURES.get(login)
-    if attempts is None:
-        return
-    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
-        attempts.popleft()
-    if not attempts:
-        _LOGIN_FAILURES.pop(login, None)
-        return
-    if len(attempts) >= LOGIN_RATE_MAX_FAILURES:
-        retry_after = max(1, int(LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0])))
-        raise HTTPException(status_code=429, detail="Çok fazla başarısız giriş denemesi. Daha sonra tekrar deneyin.", headers={"Retry-After": str(retry_after)})
+    admit_auth_attempt(engine, "login", login,
+        limit=LOGIN_RATE_MAX_FAILURES, window=LOGIN_RATE_WINDOW_SECONDS)
 
 
 def _record_login_failure(login: str) -> None:
-    now = time.monotonic()
-    attempts = _LOGIN_FAILURES.setdefault(login, deque())
-    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
-        attempts.popleft()
-    attempts.append(now)
-    if len(_LOGIN_FAILURES) > _LOGIN_FAILURES_MAX_KEYS:
-        oldest_key = min(_LOGIN_FAILURES, key=lambda key: _LOGIN_FAILURES[key][0] if _LOGIN_FAILURES[key] else now)
-        _LOGIN_FAILURES.pop(oldest_key, None)
+    # Counted at admission, before password hashing, across all instances.
+    pass
 
 
 def _clear_login_failures(login: str) -> None:
-    _LOGIN_FAILURES.pop(login, None)
+    clear_auth_attempt(engine, bucket_key("login", login))
 
 
 def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int) -> None:
@@ -123,6 +106,7 @@ def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int)
 class LoginRequest(BaseModel):
     login: str
     password: str
+    renew_email_code: bool = False
 
 class EmailVerifyRequest(BaseModel):
     challenge_token: str
@@ -293,8 +277,11 @@ def revoke_e2ee_device(device_id: str, user: User = Depends(_mobile_user)):
 
 
 @router.post("/auth/login", response_model=MobileToken)
-def mobile_login(payload: LoginRequest):
+def mobile_login(payload: LoginRequest, request: Request = None):
     login = payload.login.strip().lower()
+    if request is not None:
+        admit_auth_attempt(engine, "login-ip", request.client.host if request.client else "unknown",
+            limit=int(os.getenv("AUTH_IP_RATE_MAX_ATTEMPTS", "100")), window=LOGIN_RATE_WINDOW_SECONDS)
     _check_login_rate(login)
 
     with Session(engine, expire_on_commit=False) as session:
@@ -316,11 +303,12 @@ def mobile_login(payload: LoginRequest):
                 detail="Kullanıcı adı/e-posta veya şifre hatalı.",
             )
 
+        _clear_login_failures(login)
         if not user.email:
             raise HTTPException(status_code=403, detail='EMAIL_REQUIRED')
         if not user.email_verified_at:
             try:
-                challenge = _ensure_email_verification_challenge(session, user)
+                challenge = _ensure_email_verification_challenge(session, user, renew=payload.renew_email_code)
             except Exception:
                 raise HTTPException(status_code=503, detail='EMAIL_VERIFICATION_SEND_FAILED')
             return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_token=challenge.public_token)
@@ -550,10 +538,9 @@ def mobile_create_patient(payload: MobilePatientCreate, user: User = Depends(_mo
             chief_complaint=payload.chief_complaint.strip() if payload.chief_complaint else None,
         )
         session.add(patient)
-        session.commit()
-        session.refresh(patient)
+        session.flush()
         profile=PatientProfile(patient_id=patient.id, address=payload.address.strip() if payload.address else None)
-        session.add(profile); session.commit(); session.refresh(profile)
+        session.add(profile); session.flush()
         events=_record_patient_realtime_events(session,patient,"PATIENT_CREATED",profile); session.commit()
     for event in events: on_loop(_publish_realtime_event,event)
     return {"patient": _patient_payload(patient)}
@@ -598,8 +585,7 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
             raise HTTPException(status_code=422, detail=error)
         event = ScheduleEvent(owner_user_id=user.id, **values)
         session.add(event)
-        session.commit()
-        session.refresh(event)
+        session.flush()
         realtime=_record_realtime_event(session,user.id,"PROGRAM_CREATED","schedule_event",event.id,{"event_id":event.id,"status":event.status})
         session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
@@ -880,7 +866,7 @@ async def mobile_patient_media_upload(
             original_filename=Path(image.filename).name,stored_filename=stored,
             file_path=str(destination),media_type="PHOTO",
             tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
-        session.add(media);session.commit();session.refresh(media)
+        session.add(media);session.flush()
         realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
         session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"media":{"id":media.id,"original_filename":media.original_filename,
@@ -930,9 +916,9 @@ class MobileAcademicAsk(BaseModel):
     message:str
 
 @router.post("/academic/courses/{course_id}/ask")
-def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,token:str=Depends(_mobile_access_token),user:User=Depends(_mobile_user)):
+def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,background_tasks:BackgroundTasks,token:str=Depends(_mobile_access_token),user:User=Depends(_mobile_user)):
     response=study_ai_ask(_mobile_request(token,"POST",f"/notes/courses/{course_id}/ai/ask"),
-        course_id,BackgroundTasks(),payload.message)
+        course_id,background_tasks,payload.message)
     data=_response_json(response)
     if hasattr(response,"status_code") and response.status_code>=400:
         raise HTTPException(status_code=response.status_code,detail=data.get("error","Akademik AI yanıt veremedi."))

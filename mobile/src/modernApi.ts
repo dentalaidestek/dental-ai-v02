@@ -12,21 +12,18 @@ export type Consultation={id:number;other_user_id:number;other_name:string;speci
 export type ChatMessage={id:number;sender_user_id:number;type:string;content:string;created_at:string};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
-export const getNotifications=(t:string)=>req<{items:Notice[];unread:number}>("/notifications",t);
+export const getNotifications=async(t:string)=>{const r=await req<any>("/notifications",t);return {items:(r.items||r.notifications||[]).map((n:any)=>({...n,read_at:n.read_at||(n.is_read? n.created_at:null)})) as Notice[],unread:Number(r.unread??r.unread_count??0)}};
 export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:number}>("/analyses",t);
-export const getMedia=(t:string,p:number)=>req<{items:Array<{id:number;filename:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at:string;url:string}>}>(`/patients/${p}/media`,t);
+export const getMedia=async(t:string,p:number)=>{const r=await req<{items:any[]}>(`/patients/${p}/media`,t);return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename,url:`${API_BASE}/patients/${p}/media/${m.id}/file`}))}};
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
-export const getConsultations=(t:string)=>req<{items:Consultation[]}>("/consultations",t);
+export const getConsultations=async(t:string)=>{const r=await req<{items:any[]}>("/consultations",t);return {items:r.items.map(c=>({...c,other_name:c.other_name||c.other_display_name||"",clinical_summary:c.clinical_summary||""})) as Consultation[]}};
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
-export const sendConsultationMessage=(t:string,id:number,content:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content})});
+export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
 export const getCourses=(t:string)=>req<{items:Course[]}>("/academic/courses",t);
 export const getAcademicMessages=(t:string,id:number)=>req<{items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`,t);
-export async function askAcademic(t:string,courseId:number,message:string){
- const body=new URLSearchParams({message});
- const r=await fetch(API_BASE+`/academic/courses/${courseId}/ask`,{method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/x-www-form-urlencoded",Accept:"application/json"},body});
- const raw=await r.text(); if(!r.ok){let b:any={};try{b=JSON.parse(raw)}catch{};throw new Error(typeof b.detail==="string"?b.detail:(b.error||"Akademik AI isteği başarısız."));}
- try{return JSON.parse(raw)}catch{return {ok:true,raw};}
+export function askAcademic(t:string,courseId:number,message:string){
+ return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}

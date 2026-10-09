@@ -37,7 +37,7 @@ def _engine():
 def _user_and_token(engine, username="owner"):
     token = f"{username}-token"
     with Session(engine, expire_on_commit=False) as session:
-        user = main.User(username=username, role="DOCTOR", display_name=username.title())
+        user = main.User(email_verified_at=main._utcnow_naive(), username=username, role="DOCTOR", display_name=username.title())
         session.add(user)
         session.commit()
         session.add(main.SessionToken(
@@ -64,7 +64,7 @@ def test_profile_photo_realtime_targets_only_matching_avatar():
     assert "Number(img.dataset.profileUserId)===Number(userId)" in BASE
     assert 'querySelectorAll("img[data-profile-user-id]")' in BASE
     assert "?v=" in main._profile_photo_url(
-        main.User(id=9, username="u", profile_photo_path="uploads/profile_photos/new.jpg")
+        main.User(email_verified_at=main._utcnow_naive(), id=9, username="u", profile_photo_path="uploads/profile_photos/new.jpg")
     )
 
 

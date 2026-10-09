@@ -111,17 +111,21 @@ def test_vision_busy_response_and_upload_cleanup(monkeypatch):
     from vision_service import app as vision
     entered, release = threading.Event(), threading.Event()
     paths = []
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(image, format="PNG")
+    image_bytes = image.getvalue()
     monkeypatch.setattr(vision, 'VISION_API_KEY', 'synthetic-test-key')
     def inference(path):
         paths.append(path)
-        assert Path(path).read_bytes() == b'synthetic-image'
+        assert Path(path).read_bytes() == image_bytes
         entered.set()
         assert release.wait(3)
         return {'ok': True}
     monkeypatch.setattr(vision, 'analyze_panorama', inference)
     with TestClient(vision.app) as client, ThreadPoolExecutor(1) as pool:
         def request():
-            return client.post('/analyze', headers={'X-Vision-Key': 'synthetic-test-key'}, files={'image': ('x.png', b'synthetic-image')})
+            return client.post('/analyze', headers={'X-Vision-Key': 'synthetic-test-key'}, files={'image': ('x.png', image_bytes)})
         first = pool.submit(request)
         try:
             assert entered.wait(2)
@@ -143,8 +147,12 @@ def test_vision_oversize_rejected_and_temp_files_removed(monkeypatch):
         with vision._saved_image(UploadFile(io.BytesIO(b'abcd'), filename='x.png'), 'x.png'):
             pytest.fail('oversized upload accepted')
     assert error.value.status_code == 413
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(image, format="PNG")
+    monkeypatch.setattr(vision, "_MAX_IMAGE_BYTES", len(image.getvalue()))
     with pytest.raises(RuntimeError):
-        with vision._saved_image(UploadFile(io.BytesIO(b'abc'), filename='x.png'), 'x.png') as path:
+        with vision._saved_image(UploadFile(io.BytesIO(image.getvalue()), filename="x.png"), "x.png") as path:
             raise RuntimeError('inference failed')
     assert not Path(path).exists()
 

@@ -5007,6 +5007,8 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .expert-room .expert-compose-stack{position:sticky;bottom:calc(64px + env(safe-area-inset-bottom));z-index:1100;width:100%;grid-template-columns:42px minmax(0,1fr);margin-top:8px}
 .expert-reply-preview{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-left:3px solid #2563eb;background:#eff6ff;border-radius:9px;color:#334155;font-size:11px}
 .expert-reply-preview[hidden]{display:none}
+.expert-reply-preview>span{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.expert-reply-preview>button{flex-shrink:0}
 .expert-reply-preview button{padding:2px 7px;background:transparent;color:#64748b;font-size:18px}
 .expert-wait-lock{position:sticky;bottom:calc(64px + env(safe-area-inset-bottom));z-index:1090;padding:11px 13px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;color:#475569;font-size:13px;text-align:center}
 @media(max-width:700px){
