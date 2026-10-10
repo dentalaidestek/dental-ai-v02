@@ -1,0 +1,22 @@
+[
+ {"query":"Bu dersin notlarını baştan sona kolay anlayacağım bir derse dönüştür.","history":[],"operation":"teach","scope":"course","count":null,"terms":[]},
+ {"query":"Yirmi tane zor test istiyorum, bütün başlıklardan dengeli gelsin.","history":[],"operation":"generate_questions","scope":"course","count":20,"terms":[]},
+ {"query":"Pulpitis ile apikal periodontitisi kıyasla ama tedaviye girme; sadece bulgularını tabloya koy.","history":[],"operation":"compare","scope":"topic","count":null,"terms":["pulpitis","periodontit","tedavi"]},
+ {"query":"Flor için önce neden kullanıldığını, ardından kullanılmaması gereken durumları açıkla.","history":[],"operation":"explain","scope":"topic","count":null,"terms":["flor","kullanılmaması"]},
+ {"query":"Başka marka ekleme, nottaki bonding markalarını listele.","history":[],"operation":"answer","scope":"topic","count":null,"terms":["bonding","marka"]},
+ {"query":"Dişin boyu 15 mm; bu ölçümü anlat, soru hazırlama.","history":[],"operation":"explain","scope":"topic","count":null,"terms":["15","mm"]},
+ {"query":"Sekiz soruluk mini sınav yap; açıklamaları cevabımdan sonra ver.","history":[],"operation":"generate_questions","scope":"course","count":8,"terms":["sonra"]},
+ {"query":"Bunu daha basit anlat.","history":[{"role":"user","content":"SNA açısı nasıl ölçülür?"},{"role":"assistant","content":"SNA, Sella-Nasion-A noktaları arasındaki açıdır."}],"operation":"explain","scope":"topic","count":null,"terms":["sna"]},
+ {"query":"Şimdi onu bırak, aljinatın saklama koşullarını anlat.","history":[{"role":"user","content":"Pulpitis tedavisi"},{"role":"assistant","content":"Pulpitis pulpa iltihabıdır."}],"operation":"explain","scope":"topic","count":null,"terms":["aljinat","saklama"]},
+ {"query":"İkincisini açıklar mısın?","history":[{"role":"assistant","content":"1. Süt dişleri\n2. Daimi dişler\n3. Karma dişlenme"}],"operation":"explain","scope":"topic","count":null,"terms":["daimi"]},
+ {"query":"İkincisini açıkla.","history":[],"operation":"clarify","scope":null,"count":null,"terms":[]},
+ {"query":"Bunlar dışında notta kalan başlıkları da işle.","history":[{"role":"user","content":"Notların tamamındaki ortodonti konularını anlat."},{"role":"assistant","content":"Şu ana kadar sefalometri ve büyüme başlıklarını anlattım."}],"operation":"teach","scope":"course","count":null,"terms":["sefalometri","büyüme"]},
+ {"query":"Aynı konuda beş tane daha olsun, bu sefer açık uçlu.","history":[{"role":"user","content":"Flor kullanımından çoktan seçmeli sorular hazırla."},{"role":"assistant","content":"Soru 1: Florun çürük önlemedeki rolü nedir?"}],"operation":"generate_questions","scope":"topic","count":5,"terms":["flor","açık"]},
+ {"query":"Detaylı olsun: yalnız Nance apareyinin endikasyonlarını anlat.","history":[],"operation":"explain","scope":"topic","count":null,"terms":["nance","endikasyon"]},
+ {"query":"Kaynakta güvenilir bilgi yoksa uydurma; iki materyal arasındaki fark nedir?","history":[],"operation":"clarify","scope":null,"count":null,"terms":[]},
+ {"query":"Ortodontik kuvvetin etkisini neden sonuç bağlantısıyla açıkla.","history":[],"operation":"explain","scope":"topic","count":null,"terms":["kuvvet","neden"]},
+ {"query":"Soruları çöz, yeni soru yazma.","history":[{"role":"user","content":"Dersin çıkmış sınav sorularını yükledim."}],"operation":"solve","scope":"course","count":null,"terms":["soru"]},
+ {"query":"Şu tabloyu anlat.","history":[],"operation":"clarify","scope":null,"count":null,"terms":[]},
+ {"query":"Mandibulada süt ikinci molar; kalıcı dişle karıştırma, anatomisini özetle.","history":[],"operation":"summarize","scope":"topic","count":null,"terms":["mandibula","süt","ikinci"]},
+ {"query":"Önce iki kavramın ortak tarafları, sonra farklılıkları; markalardan bahsetme.","history":[{"role":"user","content":"Aljinat ve silikon ölçü maddeleri"},{"role":"assistant","content":"Aljinat ve silikon ölçü materyalleridir."}],"operation":"compare","scope":"topic","count":null,"terms":["aljinat","silikon","marka"]}
+]

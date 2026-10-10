@@ -217,8 +217,13 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
     monkeypatch.setattr(main, 'engine', engine)
     monkeypatch.setattr(main, 'get_current_user', lambda request: SimpleNamespace(id=1, role="DOCTOR"))
     monkeypatch.setattr(main, 'classify_course_scope', lambda *args: 'DENTAL')
-    monkeypatch.setattr(main, 'study_v2_reads_enabled', lambda: False)
-    monkeypatch.setattr(main, 'course_index_ready', lambda *args, **kwargs: True)
+    monkeypatch.setattr(main, 'course_v2_ready', lambda *args, **kwargs: True)
+    from app import academic_request_understanding as gateway
+    from app.study_retrieval_v2 import RetrievalResult
+    def understand(*args):
+        assert engine.pool.checkedout() == 0
+        return object()
+    monkeypatch.setattr(gateway, 'understand_study_request', understand)
     with Session(engine) as session:
         session.add(main.User(id=1, username='synthetic', role='DOCTOR', display_name='Synthetic'))
         session.add(main.StudyCourse(id=1, owner_user_id=1, title='Ortodonti'))
@@ -228,9 +233,8 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
         session.commit()
     def retrieval(*args, **kwargs):
         assert engine.pool.checkedout() == 0
-        return SimpleNamespace(note_context=['source'], memory_context=[], attachments=[],
-                               source_material_ids=[1], used_semantic_search=False)
-    monkeypatch.setattr(main, 'retrieve_course_context', retrieval)
+        return RetrievalResult(note_context=['source'], source_material_ids=[1])
+    monkeypatch.setattr(gateway, 'retrieve_understood_course_context', retrieval)
     def generate(*args):
         assert engine.pool.checkedout() == 0
         if delete_during_generation:
@@ -238,7 +242,7 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
                 session.delete(session.get(main.StudyCourse, 1))
                 session.commit()
         return 'Synthetic answer'
-    monkeypatch.setattr(main, 'ask_study_ai', generate)
+    monkeypatch.setattr(main, 'ask_study_ai_v2', generate)
     try:
         response = main.study_ai_ask(None, 1, BackgroundTasks(), message='Angle sınıf II?')
         assert response.status_code == (409 if delete_during_generation else 200)

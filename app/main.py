@@ -65,21 +65,19 @@ from app.xray_trace import (
 # === TEMP_XRAY_TRACE_MAIN_IMPORT_END ===
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
-from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
+from app.study_ai import StudyAIError, delete_file as delete_study_ai_file
 from app.study_ai_v2 import ask_rag_v2 as ask_study_ai_v2, stream_rag_v2 as stream_study_ai_v2
-from app.dental_academic_scope import should_block_academic_question
 from app.study_index_jobs import (
     StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
     enqueue_material_deletion, tombstone_material,
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
-from app.academic_recovery_store import AcademicRecoveryEvent, recover_course_context
-from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
+from app.academic_recovery_store import AcademicRecoveryEvent
+from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
-    reads_enabled as study_v2_reads_enabled,
     streaming_enabled as study_v2_streaming_enabled,
 )
 from app.study_colocated_worker import start_colocated_worker_task
@@ -92,9 +90,7 @@ from app.study_rag import (
     delete_course_rag_memory,
     delete_material_rag_index,
     ensure_course_index,
-    course_index_ready,
     remember_exchange,
-    retrieve_course_context,
 )
 from fastapi import (
     FastAPI,
@@ -592,6 +588,8 @@ class ConsultationCase(SQLModel, table=True):
     expert_completed_at: Optional[datetime] = None
     requester_completed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = Field(default=None, index=True)
+    chat_retention_started_at: Optional[datetime] = None
+    messages_deleted_at: Optional[datetime] = None
     dispute_opened_at: Optional[datetime] = None
     completion_confirmation_deadline: Optional[datetime] = Field(default=None, index=True)
     urgency: str = "NORMAL"
@@ -705,6 +703,13 @@ class ConsultationMessage(SQLModel, table=True):
     reply_to_message_id: Optional[int] = Field(default=None, index=True)
     original_media_path: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class ConsultationMediaDeletion(SQLModel, table=True):
+    """Committed outbox: retry attachment removal after message deletion commits."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    reference: str
 
 
 class ConsultationEvent(SQLModel, table=True):
@@ -1333,11 +1338,13 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
         .astimezone(timezone.utc)
         .replace(tzinfo=None)
     )
+    range_start_utc = range_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
     events = session.exec(
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
         .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(sa_or(ScheduleEvent.recurrence_rule == "WEEKLY", ScheduleEvent.start_at >= range_start_utc, ScheduleEvent.end_at >= range_start_utc))
         .where(
             sa_or(
                 ScheduleEvent.recurrence_rule != "WEEKLY",
@@ -1444,7 +1451,7 @@ def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
     """Small owner-scoped snapshot used to patch the dashboard without a follow-up GET."""
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
     next_event = _dashboard_next_schedule_occurrence(
-        session, user_id, local_now, local_now + timedelta(days=90)
+        session, user_id, _date_to_local_start(local_now.date()), _date_to_local_end(local_now.date())
     )
     snapshot = None
     if next_event:
@@ -1462,11 +1469,7 @@ def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
     return {
         "payload_version": 1,
         "dashboard_event": snapshot,
-        "dashboard_event_label": (
-            "Bugün"
-            if next_event and next_event["start_local"].date() == local_now.date()
-            else "Yaklaşan"
-        ),
+        "dashboard_event_label": "Bugün",
     }
 
 
@@ -1957,6 +1960,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
+            conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS messages_deleted_at TIMESTAMP')
+            conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS chat_retention_started_at TIMESTAMP')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
@@ -2006,6 +2011,10 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
+            if "chat_retention_started_at" not in consultation_cols:
+                conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN chat_retention_started_at TIMESTAMP')
+            if "messages_deleted_at" not in consultation_cols:
+                conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN messages_deleted_at TIMESTAMP')
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
             support_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("supportticket")').fetchall()}
@@ -3279,7 +3288,7 @@ def change_professional_title(request: Request, professional_title: str = Form(.
             ).order_by(ExpertTitleChange.created_at.desc())).first()
             if pending and pending.status == "PENDING_REVIEW":
                 if pending.requested_title == professional_title:
-                    return RedirectResponse("/expert-support/profile", status_code=303)
+                    return RedirectResponse("/account?section=professional#professional-info", status_code=303)
                 return HTMLResponse("İncelenmekte olan unvan değişikliği sonuçlanmadan yeni bir unvan değişikliği başlatılamaz.", status_code=409)
             if not pending:
                 pending = ExpertTitleChange(
@@ -3315,15 +3324,7 @@ def professional_title_document_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    with Session(engine, expire_on_commit=False) as s:
-        pending = s.exec(select(ExpertTitleChange).where(
-            ExpertTitleChange.user_id == user.id,
-            ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
-        ).order_by(ExpertTitleChange.created_at.desc())).first()
-    if not pending:
-        return RedirectResponse("/account", status_code=303)
-    return templates.TemplateResponse(request=request, name="professional_title_document.html",
-        context={"user": user, "pending": pending})
+    return profile_document_page(request, purpose='title')
 
 
 @app.post("/account/professional-title/document")
@@ -3368,7 +3369,7 @@ def professional_title_document_upload(request: Request, credential_document: Up
         s.commit()
     if notice_event:
         on_loop(_publish_realtime_event, notice_event)
-    return RedirectResponse("/expert-support/profile?title_change_submitted=1", status_code=303)
+    return RedirectResponse("/account?section=professional#professional-info", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
@@ -4170,16 +4171,29 @@ def protected_upload(request: Request, filename: str):
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
     return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 def template_user_context(request: Request):
+    if request.url.path == "/program" and request.headers.get("x-program-fragment") == "1":
+        return {}
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
+    membership = {"status": "NONE"}
+    account_expert = None
+    account_title_change = None
     if user:
         meta_checked = getattr(request.state, "_dai_account_meta_checked", False)
         meta = getattr(request.state, "_dai_account_meta", None) if meta_checked else None
         with Session(engine, expire_on_commit=False) as s:
             if not meta_checked:
                 meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+            if request.url.path.startswith("/account"):
+                membership = membership_state(s, user)
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+            if request.url.path.startswith("/account"):
+                account_expert = profile
+                account_title_change = s.exec(select(ExpertTitleChange).where(
+                    ExpertTitleChange.user_id == user.id,
+                    ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+                ).order_by(ExpertTitleChange.created_at.desc()).limit(1)).first()
             profile_verified = bool(
                 profile
                 and profile.application_status == "APPROVED"
@@ -4198,16 +4212,20 @@ def template_user_context(request: Request):
                 expert_nav["label"] = "Uzman Profilim"
             elif profile and profile.application_status == "APPROVED":
                 expert_nav["state"] = "APPROVED"
-                expert_nav["label"] = "Belge İnceleniyor"
+                expert_nav["label"] = "Uzman Profilim"
             elif profile and profile.application_status == "SUBMITTED":
                 expert_nav["state"] = "PENDING"
-                expert_nav["label"] = "Başvurum"
+                expert_nav["label"] = "Uzman Profilim"
             else:
                 expert_nav["state"] = "ELIGIBLE"
-                expert_nav["label"] = "Uzman Ağına Katıl"
+                expert_nav["label"] = "Uzman Profilim"
     return {
         "user": user,
         "expert_nav": expert_nav,
+        "membership": membership,
+        "account_expert": account_expert,
+        "account_title_change": account_title_change,
+        "expert_verified": profile_verified,
         "professional_name": _professional_display_name,
         "profile_photo_url": _profile_photo_url,
     }
@@ -4753,7 +4771,6 @@ def study_ai_page(request: Request, course_id: int):
                 s, material_model=StudyMaterial,
                 owner_user_id=user.id, course_id=course_id,
             )
-            if study_v2_reads_enabled() else True
         )
 
     return templates.TemplateResponse(
@@ -4876,8 +4893,6 @@ def study_ai_ask(
                     "error": "Bu ders Dental AI Akademik'in diş hekimliği çalışma alanı dışında görünüyor.",
                 }, status_code=400)
 
-            use_v2 = study_v2_reads_enabled()
-
             # Upload normally prepares the index in background. Existing courses
             # get one lazy migration only when no usable index exists yet.
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_BEGIN ===
@@ -4886,17 +4901,9 @@ def study_ai_ask(
                     s, material_model=StudyMaterial,
                     owner_user_id=user.id, course_id=course_id,
                 )
-                if use_v2 else
-                course_index_ready(s, owner_user_id=user.id, course_id=course_id)
             )
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_END ===
-            if not use_v2 and not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
-                s.close()
-                job = _queue_work("LEGACY_INDEX", "COURSE", course_id)
-                return JSONResponse({"ok": False, "error": "Ders notları hazırlanıyor.",
-                                     "code": "INDEX_PENDING", "job_id": job.id}, status_code=409)
-
             history_rows = s.exec(
                 select(StudyChatMessage)
                 .where(StudyChatMessage.course_id == course_id)
@@ -4908,20 +4915,13 @@ def study_ai_ask(
                 for row in reversed(history_rows)
             ]
 
-            if should_block_academic_question(clean_message, recent_history=history):
-                return JSONResponse({
-                    "ok": False,
-                    "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
-                    "code": "ACADEMIC_SCOPE_OUTSIDE",
-                }, status_code=400)
-
             # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
             trace_event("ask.history.ready", course_id=course_id, history_count=len(history))
             _rag_started = _study_trace_time.perf_counter()
             trace_event("ask.rag.begin", course_id=course_id)
             # === TEMP_STUDY_TRACE_ASK_HISTORY_END ===
 
-            if use_v2 and not _trace_index_ready:
+            if not _trace_index_ready:
                 return JSONResponse({
                     "ok": False,
                     "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
@@ -4933,27 +4933,21 @@ def study_ai_ask(
             source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
             s.close()
+            # Language interpretation runs outside a DB transaction. It never
+            # receives source documents, credentials or ownership identifiers.
+            from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
+            understanding = understand_study_request(clean_message, history)
             with Session(engine, expire_on_commit=False) as retrieval_session:
-                if use_v2:
-                    rag_result = retrieve_course_context_v2(
-                        retrieval_session,
-                        owner_user_id=user.id,
-                        course_id=course_id,
-                        query=clean_message,
-                        recent_history=history,
-                    )
-                    if rag_result.visual_sources and rag_result.evidence_sufficient:
-                        materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
-                else:
-                    rag_result = retrieve_course_context(
-                        retrieval_session,
-                        owner_user_id=user.id,
-                        course_id=course_id,
-                        query=clean_message,
-                        materials=materials,
-                        recent_history=history,
-                    )
-
+                rag_result = retrieve_understood_course_context(
+                    retrieval_session,
+                    understanding=understanding,
+                    owner_user_id=user.id,
+                    course_id=course_id,
+                    query=clean_message,
+                    recent_history=history,
+                )
+                if rag_result.visual_sources and rag_result.evidence_sufficient:
+                    materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
                 "ask.rag.success",
@@ -4970,31 +4964,16 @@ def study_ai_ask(
 
             # Generation may take minutes; it must not occupy a DB connection.
             s.close()
-            if use_v2:
-                rag_result = recover_course_context(
-                    session_factory=lambda: Session(engine, expire_on_commit=False),
-                    owner_user_id=user.id, course_id=course_id,
-                    question=clean_message, history=history, initial=rag_result,
+            if rag_result.visual_sources and rag_result.evidence_sufficient and not rag_result.attachments:
+                materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), rag_result,
                 )
-                if rag_result.visual_sources and rag_result.evidence_sufficient and not rag_result.attachments:
-                    materialize_visual_sources(
-                        lambda: Session(engine, expire_on_commit=False), rag_result,
-                    )
-                answer = ask_study_ai_v2(
-                    course_title,
-                    clean_message,
-                    history,
-                    rag_result,
-                )
-            else:
-                answer = ask_study_ai(
-                    course_title,
-                    clean_message,
-                    history,
-                    rag_result.note_context,
-                    rag_result.memory_context,
-                    rag_result.attachments,
-                )
+            answer = ask_study_ai_v2(
+                course_title,
+                clean_message,
+                history,
+                rag_result,
+            )
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
                 "ask.generation.success",
@@ -5016,7 +4995,6 @@ def study_ai_ask(
                     }
                     for item in rag_result.evidence
                 ], ensure_ascii=False)
-                if use_v2 else None
             )
 
             # Re-authorize and persist in a fresh short transaction after the
@@ -5039,7 +5017,7 @@ def study_ai_ask(
                     content=clean_message,
                     source_ids_json=source_json,
                     source_evidence_json=evidence_json,
-                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                    mode="RAG_V2_HYBRID",
                 ))
                 save_session.add(StudyChatMessage(
                     course_id=course_id,
@@ -5048,7 +5026,7 @@ def study_ai_ask(
                     content=answer,
                     source_ids_json=source_json,
                     source_evidence_json=evidence_json,
-                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                    mode="RAG_V2_HYBRID",
                 ))
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
@@ -5130,18 +5108,18 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
-        if should_block_academic_question(clean_message, recent_history=history):
-            return JSONResponse({
-                "ok": False,
-                "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
-                "code": "ACADEMIC_SCOPE_OUTSIDE",
-            }, status_code=400)
         source_versions = _study_source_versions(s, user.id, course_id)
+        course_title = course.title
+        s.close()
+        from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
+        understanding = understand_study_request(clean_message, history)
         try:
-            retrieval = retrieve_course_context_v2(
-                s, owner_user_id=user.id, course_id=course_id,
-                query=clean_message, recent_history=history,
-            )
+            with Session(engine, expire_on_commit=False) as retrieval_session:
+                retrieval = retrieve_understood_course_context(
+                    retrieval_session, understanding=understanding,
+                    owner_user_id=user.id, course_id=course_id,
+                    query=clean_message, recent_history=history,
+                )
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
@@ -5179,11 +5157,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
     def generate_stream():
         pieces: list[str] = []
         try:
-            prepared = recover_course_context(
-                session_factory=lambda: Session(engine, expire_on_commit=False),
-                owner_user_id=owner_user_id, course_id=course_id,
-                question=clean_message, history=history, initial=retrieval,
-            )
+            prepared = retrieval
             if prepared.visual_sources and prepared.evidence_sufficient and not prepared.attachments:
                 materialize_visual_sources(
                     lambda: Session(engine, expire_on_commit=False), prepared,
@@ -5351,6 +5325,7 @@ def program_page(
         request=request,
         name="program.html",
         context={
+            "program_fragment": request.headers.get("x-program-fragment") == "1",
             "view": view,
             "focus_date": focus_date,
             "today_date": today_local,
@@ -5789,7 +5764,7 @@ def home(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    upcoming_end = local_now + timedelta(days=90)
+    upcoming_end = _date_to_local_end(local_now.date())
 
     with Session(engine, expire_on_commit=False) as s:
         patient_query = select(Patient).order_by(Patient.id.desc())
@@ -5816,7 +5791,7 @@ def home(request: Request):
         # from the full Program page so opening the home screen does not load
         # the user's complete schedule history and patient map.
         dashboard_event = _dashboard_next_schedule_occurrence(
-            s, user.id, local_now, upcoming_end
+            s, user.id, _date_to_local_start(local_now.date()), upcoming_end
         )
 
     professional_title = (
@@ -5828,11 +5803,7 @@ def home(request: Request):
     # shared template context builds the expert navigation.
     request.state._dai_account_meta = account_meta
     request.state._dai_account_meta_checked = True
-    dashboard_event_label = (
-        "Bugün"
-        if dashboard_event and dashboard_event["start_local"].date() == local_now.date()
-        else "Yaklaşan"
-    )
+    dashboard_event_label = "Bugün"
 
     return templates.TemplateResponse(
         request=request,
@@ -6127,6 +6098,59 @@ def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: 
     _enqueue_deadline_job(session, case_id, f"{kind}_DUE", deadline, cycle)
 
 
+CONSULTATION_REPORT_DAYS = 3
+CONSULTATION_CHAT_RETENTION_DAYS = 7
+
+
+def _locked_consultation_case(session: Session, case_id: int):
+    stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+    if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+    return session.exec(stmt).first()
+
+
+def _consultation_has_report(session: Session, case: ConsultationCase) -> bool:
+    # Even a resolved report preserves the evidence until an administrator deletes it.
+    return bool(case.dispute_opened_at or case.status == "DISPUTE"
+                or session.exec(select(UserReport.id).where(UserReport.case_id == case.id).limit(1)).first()
+                or session.exec(select(SupportTicket.id).where(SupportTicket.case_id == case.id).limit(1)).first())
+
+
+def _consultation_retention_start(case: ConsultationCase):
+    return case.chat_retention_started_at or case.completed_at
+
+
+def _enqueue_chat_retention(session: Session, case: ConsultationCase) -> None:
+    if case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at:
+        if not case.chat_retention_started_at:
+            case.chat_retention_started_at = case.completed_at
+            session.add(case)
+        _enqueue_deadline_job(session, case.id, "CHAT_PURGE", case.chat_retention_started_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS), case.chat_retention_started_at.isoformat())
+
+
+def _purge_consultation_messages(session: Session, case: ConsultationCase, now: datetime, actor_id=None) -> list[RealtimeEvent]:
+    if case.messages_deleted_at:
+        return []
+    messages = session.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id)).all()
+    references = {ref for message in messages for ref in (message.media_path, message.original_media_path) if ref}
+    for reference in references:
+        session.add(ConsultationMediaDeletion(case_id=case.id, reference=reference))
+    message_ids = [str(message.id) for message in messages]
+    if message_ids:
+        event_ids = select(RealtimeEvent.id).where(RealtimeEvent.entity_type == "consultation_message", RealtimeEvent.entity_id.in_(message_ids))
+        session.exec(delete(WebPushMessageDelivery).where(WebPushMessageDelivery.realtime_event_id.in_(event_ids)))
+        session.exec(delete(RealtimeEvent).where(RealtimeEvent.entity_type == "consultation_message", RealtimeEvent.entity_id.in_(message_ids)))
+    session.exec(delete(ConsultationMessage).where(ConsultationMessage.case_id == case.id))
+    # Patient originals belong to the patient record, not to the chat.
+    session.exec(delete(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id))
+    case.messages_deleted_at = now
+    session.add(case)
+    _consultation_event(session, case.id, "CHAT_PERMANENTLY_DELETED", actor_id)
+    if references:
+        _enqueue_deadline_job(session, case.id, "CHAT_MEDIA_PURGE", now, now.isoformat())
+    return [_record_realtime_event(session, uid, "CASE_MESSAGES_DELETED", "consultation_case", case.id, {"case_id": case.id})
+            for uid in {case.requester_user_id, case.expert_user_id}]
+
+
 def _backfill_legacy_deadline_jobs_if_needed() -> None:
     """One-time bridge for active cases created before the durable queue existed."""
     with Session(engine) as s:
@@ -6145,7 +6169,20 @@ def _backfill_legacy_deadline_jobs_if_needed() -> None:
             for case in cases:
                 deadline = getattr(case, column.key)
                 if deadline:
+                    if kind == "COMPLETION" and deadline <= _utcnow_naive() and not case.chat_retention_started_at:
+                        case.chat_retention_started_at = _utcnow_naive()
+                        s.add(case)
                     _enqueue_deadline_pair(s, case.id, kind, deadline)
+        for case in s.exec(select(ConsultationCase).where(ConsultationCase.status == "COMPLETED", ConsultationCase.completed_at != None, ConsultationCase.messages_deleted_at == None)).all():
+            if not case.chat_retention_started_at:
+                # Previously completed conversations never received this policy.
+                # Give their participants a fresh report/deletion window once.
+                case.chat_retention_started_at = _utcnow_naive()
+                s.add(case)
+            _enqueue_chat_retention(s, case)
+        # Correct legacy auto-busy profiles using the new active-only capacity definition.
+        for profile in s.exec(select(ExpertProfile).where(ExpertProfile.capacity_auto_busy == True)).all():
+            _sync_expert_capacity(s, profile.user_id)
         s.commit()
 
 
@@ -6197,6 +6234,18 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     if engine.dialect.name == "postgresql":
         case_stmt = case_stmt.with_for_update()
     case = session.exec(case_stmt).first()
+    if job.job_type == "CHAT_MEDIA_PURGE":
+        for item in session.exec(select(ConsultationMediaDeletion).where(ConsultationMediaDeletion.case_id == job.case_id)).all():
+            storage_delete(item.reference)
+            session.delete(item)
+        return notices, case_events
+    if job.job_type == "CHAT_PURGE":
+        if (case and case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at
+                and _consultation_retention_start(case).isoformat() in job.dedup_key
+                and now >= _consultation_retention_start(case) + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS)
+                and not _consultation_has_report(session, case)):
+            case_events.extend(_purge_consultation_messages(session, case, now))
+        return notices, case_events
     if not case or not _deadline_job_is_current(case, job):
         return notices, case_events
     jt = job.job_type
@@ -6246,7 +6295,9 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     elif jt == "COMPLETION_DUE":
         # No requester decision within 24h: finalize exactly like requester confirmation.
         case.status = "COMPLETED"
-        case.completed_at = now
+        case.completed_at = deadline
+        case.chat_retention_started_at = case.chat_retention_started_at or deadline
+        _enqueue_chat_retention(session, case)
         case.completion_confirmation_deadline = None
         session.add(case)
         payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -6485,6 +6536,27 @@ def admin_consultation_report_review(request: Request, case_id: int):
     with Session(engine, expire_on_commit=False) as s:
         participants={u.id:u for u in s.exec(select(User).where(User.id.in_(participant_ids))).all()}
     return templates.TemplateResponse(request=request,name="admin_consultation_dispute.html",context={"user":user,"case":case,"messages":messages,"participants":participants,"review_mode":"REPORT"})
+
+@app.post("/admin/consultation-review/{case_id}/delete-messages")
+@offload
+def admin_delete_consultation_messages(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+        case = s.exec(stmt).first()
+        if not case or not _consultation_has_report(s, case):
+            return HTMLResponse("Bu sohbet için bildirim veya inceleme bulunamadı.", status_code=403)
+        events = _purge_consultation_messages(s, case, _utcnow_naive(), user.id)
+        s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="DELETE_MESSAGES"))
+        s.commit()
+    _wake_consultation_deadline_worker()
+    for event in events: on_loop(_publish_realtime_event, event)
+    target = "consultation-disputes" if case.status == "DISPUTE" else "consultation-review"
+    return RedirectResponse(f"/admin/{target}/{case_id}", status_code=303)
+
 
 @app.get("/admin/consultation-review/{case_id}/message-media/{message_id}")
 def admin_consultation_report_media(request: Request, case_id: int, message_id: int):
@@ -7334,6 +7406,7 @@ def consultation_deleted_messages(request: Request):
 
 @app.post("/messages/{case_id}/delete")
 def consultation_message_delete_for_user(request: Request, case_id: int):
+    wants_json = "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -7358,6 +7431,11 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
         return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.messages_deleted_at:
+            return HTMLResponse("Bu sohbet kalıcı olarak silinmiş.", status_code=410)
         state = _consultation_inbox_state(s, case_id, user.id)
         if not state or not state.deleted_at or not state.recover_until or state.recover_until < now:
             return HTMLResponse("Bu sohbet artık geri yüklenemez.", status_code=410)
@@ -7752,6 +7830,11 @@ def expert_support_cases(request: Request):
     return templates.TemplateResponse(request=request, name="expert_cases.html", context={"user": user, "cases": cases})
 
 
+def _consultation_reply_preview(message):
+    labels = {"IMAGE": "Görsel", "VOICE": "Sesli mesaj", "ANNOTATION": "İşaretlenmiş görüntü"}
+    return labels.get(message.message_type) or " ".join((message.content or "Mesaj").split())[:4000]
+
+
 @app.get("/expert-support/cases/{case_id}", response_class=HTMLResponse)
 @offload
 def expert_support_case_room(request: Request, case_id: int):
@@ -7764,13 +7847,11 @@ def expert_support_case_room(request: Request, case_id: int):
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
         state = _consultation_inbox_state(s, case.id, user.id)
-        state.last_read_at = now
-        state.deleted_at = None
-        state.recover_until = None
-        s.add(state)
+        if state.deleted_at:
+            return RedirectResponse("/messages/deleted", status_code=303)
         # Deadline mutations are owned exclusively by the durable deadline worker.
-        # Opening the room is the authoritative read action. Persist it before
-        # rendering so unread reconciliation cannot race the WebSocket read.
+        # Rendering/prefetching a room does not prove the user viewed it.
+        # The visible, focused client acknowledges its rendered message cursor.
         s.commit()
         messages = s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id).order_by(ConsultationMessage.created_at)).all()
         case_media_links = s.exec(select(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id).order_by(ConsultationCaseMedia.id)).all()
@@ -7796,6 +7877,7 @@ def expert_support_case_room(request: Request, case_id: int):
         review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
+        chat_reported = _consultation_has_report(s, case)
         visible_report = s.exec(select(UserReport).where(
             UserReport.case_id==case.id,
             UserReport.reporter_user_id==other_id,
@@ -7804,10 +7886,15 @@ def expert_support_case_room(request: Request, case_id: int):
         ).order_by(UserReport.created_at.desc())).first()
     return templates.TemplateResponse(request=request, name="expert_case_room.html", context={
         "user": user, "case": case, "messages": messages, "requester": requester, "expert": expert, "patient": patient,
+        "reply_previews": {m.id: _consultation_reply_preview(m) for m in messages},
         "start_options": EXPERT_START_OPTIONS, "now": now, "shared_media": shared_media,
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
         "review": review, "visible_report": visible_report,
+        "chat_reported": chat_reported,
+        "chat_report_deadline": _utc_to_local(_consultation_retention_start(case) + timedelta(days=3)) if case.completed_at else None,
+        "chat_delete_deadline": _utc_to_local(_consultation_retention_start(case) + timedelta(days=7)) if case.completed_at else None,
+        "can_report_completed": bool(user.id == case.requester_user_id and case.completed_at and now <= _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS) and not case.messages_deleted_at),
         "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
@@ -7859,6 +7946,8 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
                 end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
                 minutes = max(1, int(((end_of_day - now).total_seconds() + 59) // 60))
             if start_option == "NOW":
+                if _consultation_capacity_full(s, case.expert_user_id):
+                    return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Bir vaka tamamlandıktan sonra yeniden deneyin."}, status_code=409)
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
                 if payment: payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
@@ -7934,6 +8023,8 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
         if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return JSONResponse({"ok": False, "error": "Süre önerisinin onay süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
         rejected = decision != "ACCEPT"
         if not rejected:
+            if _consultation_capacity_full(s, case.expert_user_id):
+                return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Bir vaka tamamlandıktan sonra yeniden deneyin."}, status_code=409)
             case.status = "WAITING_START"; case.requester_accepted_at = now
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -7986,8 +8077,8 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
     if not user:
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        case = _locked_consultation_case(s, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
         notification_events: list[RealtimeEvent] = []
@@ -8020,7 +8111,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 case_query = case_query.with_for_update()
             case = s.exec(case_query).first()
             now = _utcnow_naive()
-            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
                 s.rollback(); s.close()
                 storage_delete(path)
                 return upload_error("Bu vakaya dosya gönderilemez.")
@@ -8091,11 +8182,11 @@ def expert_support_annotate_message(request: Request, case_id: int, message_id: 
     if len(annotation_json) > 100000:
         return HTMLResponse("İşaretleme verisi çok büyük.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case = _locked_consultation_case(s, case_id)
         original = s.get(ConsultationMessage, message_id)
         if not case or not original or original.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or original.message_type != "IMAGE":
             return HTMLResponse("Bu görüntü işaretlenemez.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return HTMLResponse("Bu danışmanlık mesajlaşmaya kapalı.", status_code=409)
         s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type="ANNOTATION", content="Görüntü işaretlemesi", original_media_path=original.media_path, annotation_json=annotation_json, reply_to_message_id=original.id))
         _consultation_event(s, case.id, "IMAGE_ANNOTATED", user.id)
@@ -8155,8 +8246,13 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
     realtime_event=None;admin_events=[]
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
-        case=s.get(ConsultationCase,case_id)
+        stmt=select(ConsultationCase).where(ConsultationCase.id==case_id)
+        if engine.dialect.name=="postgresql":stmt=stmt.with_for_update()
+        case=s.exec(stmt).first()
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu görüşme henüz bildirim yapılabilecek bir mesajlaşma içermiyor.",status_code=403)
+        if case.messages_deleted_at:return HTMLResponse("Bu sohbet kalıcı olarak silinmiş.",status_code=410)
+        if case.status=="COMPLETED" and (user.id!=case.requester_user_id or not case.completed_at or _utcnow_naive() > _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS)):
+            return HTMLResponse("Tamamlanan danışmanlık için sorun bildirme süresi 3 gündür ve yalnız gönderen hekime açıktır.",status_code=409)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
         if existing:
@@ -8194,12 +8290,12 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case = _locked_consultation_case(s, case_id)
         notification_events: list[RealtimeEvent] = []
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -8262,7 +8358,7 @@ def expert_support_messages_live(request: Request, case_id: int, after_id: int =
         case=s.get(ConsultationCase,case_id)
         if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
         rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id).limit(500)).all()
-        return {"ok":True,"has_more":len(rows)==500,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+        return {"ok":True,"has_more":len(rows)==500,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"messages_deleted_at":case.messages_deleted_at.isoformat() if case.messages_deleted_at else None,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
 
 class UserRealtimeSocketHub:
     """Authenticated per-user realtime channel backed by a durable event log."""
@@ -8650,7 +8746,7 @@ def _resolve_notifications(
     return events
 
 
-CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")
+CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START")
 
 
 def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
@@ -8661,6 +8757,15 @@ def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
             ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
         )
     ).one() or 0)
+
+
+def _consultation_capacity_full(session: Session, expert_user_id: int) -> bool:
+    # All transitions that acquire a slot serialize on the same expert profile.
+    stmt = select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)
+    if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+    profile = session.exec(stmt).first()
+    limit = max(1, min(int(profile.max_active_cases or 5), 5)) if profile else 5
+    return _expert_open_case_count(session, expert_user_id) >= limit
 
 
 def _sync_expert_capacity(
@@ -8762,6 +8867,7 @@ def _case_status_socket_payload(case: ConsultationCase) -> dict:
         "case_id": case.id,
         "patient_id": case.patient_id,
         "status": case.status,
+        "messages_deleted_at": case.messages_deleted_at.isoformat() if case.messages_deleted_at else None,
         "proposed_start_label": case.proposed_start_label,
         "proposal_note": case.expert_proposal_note,
         "requester_decision_deadline": case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None,
@@ -8974,17 +9080,25 @@ def _socket_replay(user_id, after_id):
         ).order_by(RealtimeEvent.id).limit(500)).all())
 
 
-def _socket_case_authorized(user_id, case_id, *, mark_read=False):
+def _socket_case_authorized(user_id, case_id, *, mark_read=False, through_id=None):
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user_id not in {case.requester_user_id, case.expert_user_id}:
             return False
         if mark_read:
             state = _consultation_inbox_state(session, case_id, user_id)
-            latest = session.exec(select(ConsultationMessage).where(
-                ConsultationMessage.case_id == case_id).order_by(ConsultationMessage.id.desc()).limit(1)).first()
+            query = select(ConsultationMessage).where(ConsultationMessage.case_id == case_id)
+            if through_id is not None:
+                try:
+                    through_id = int(through_id)
+                except (TypeError, ValueError):
+                    return False
+                if through_id <= 0:
+                    return False
+                query = query.where(ConsultationMessage.id <= through_id)
+            latest = session.exec(query.order_by(ConsultationMessage.id.desc()).limit(1)).first()
             events = []
-            read_at = _utcnow_naive()
+            read_at = latest.created_at if latest else _utcnow_naive()
             through = latest.id if latest else 0
             if latest and (state.last_read_at is None or latest.created_at > state.last_read_at):
                 state.last_read_at = read_at
@@ -9076,7 +9190,7 @@ def _socket_message_sync(user, case_id, data, text_value):
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return {"type":"error","error":"Yetkisiz işlem."}, [], []
-        if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
             return {"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}, [], []
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
             return {"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}, [], []
@@ -9138,7 +9252,7 @@ async def expert_support_case_socket(websocket: WebSocket, case_id: int):
                     await websocket.close(code=4401)
                     break
             if kind == "read":
-                receipt = await run_in_threadpool(_socket_case_authorized, user.id, case_id, mark_read=True)
+                receipt = await run_in_threadpool(_socket_case_authorized, user.id, case_id, mark_read=True, through_id=data.get("through_id"))
                 if not receipt:
                     await websocket.close(code=4403)
                     break
@@ -9216,6 +9330,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"
+            case.chat_retention_started_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
@@ -9224,8 +9339,10 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "CONTINUE":
+            if _consultation_capacity_full(s, case.expert_user_id):
+                return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Devam etmek için bir vakanın tamamlanmasını bekleyin."}, status_code=409)
             case.status = "ACTIVE"; case.completion_confirmation_deadline = None; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
-        elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "DISPUTE":
+        elif user.id == case.requester_user_id and action == "DISPUTE" and (case.status == "EXPERT_COMPLETED" or (case.status == "COMPLETED" and case.completed_at and now <= _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS))) and not case.messages_deleted_at:
             case.status = "DISPUTE"
             case.completion_confirmation_deadline = None
             case.dispute_opened_at = now
@@ -9290,11 +9407,12 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
         realtime_events = _record_case_status_realtime_events(s, case)
         if case.status == "EXPERT_COMPLETED" and case.completion_confirmation_deadline:
             _enqueue_deadline_pair(s, case.id, "COMPLETION", case.completion_confirmation_deadline)
+        _enqueue_chat_retention(s, case)
         s.commit()
         status = case.status
         response_state = _case_status_realtime_payload(case, user.id)
         socket_state = _case_status_socket_payload(case)
-    if status == "EXPERT_COMPLETED":
+    if status in {"EXPERT_COMPLETED", "COMPLETED"}:
         _wake_consultation_deadline_worker()
     on_loop(consultation_socket_hub.broadcast, case_id, socket_state)
     for realtime_event in realtime_events:
@@ -12485,7 +12603,9 @@ def admin_center_verify(request: Request, profile_id: int, decision: str = Form(
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if decision not in {"APPROVE","REJECT","SUBMITTED"}: return HTMLResponse("Geçersiz karar.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        profile=s.get(ExpertProfile,profile_id)
+        profile_stmt=select(ExpertProfile).where(ExpertProfile.id==profile_id)
+        if engine.dialect.name=="postgresql": profile_stmt=profile_stmt.with_for_update()
+        profile=s.exec(profile_stmt).first()
         if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
         if decision=="APPROVE":
             expert=s.get(User,profile.user_id)
@@ -13689,6 +13809,11 @@ Hekimin sorusu:
         },
     )
 
+
+from app.membership_verification import register as register_membership_verification, state as membership_state
+register_membership_verification(app)
+from app.profile_hub import register as register_profile_hub, document_page as profile_document_page
+register_profile_hub(app)
 
 # Native Android JSON API
 from app.mobile_api import router as mobile_router

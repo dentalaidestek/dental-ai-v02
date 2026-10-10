@@ -1,0 +1,442 @@
+{
+  "source": "01-Ali Kiki toplu 2023.pdf",
+  "physical_pages": 505,
+  "original_textless_pages": [
+    26,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    36,
+    37,
+    40,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    89,
+    129,
+    130,
+    131,
+    132,
+    135,
+    136,
+    158,
+    191,
+    192,
+    193,
+    196,
+    210,
+    219,
+    305,
+    307,
+    361,
+    395,
+    424,
+    436,
+    437,
+    503,
+    504,
+    505
+  ],
+  "engine": "production_local_ocr",
+  "results": [
+    {
+      "page": 26,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2189,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 29,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1710,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 30,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2317,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 31,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1667,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 32,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1568,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 33,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1830,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 34,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2065,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 36,
+      "confidence": 88,
+      "visual_only": false,
+      "elapsed_ms": 859,
+      "retried": false,
+      "layout_kind": "single_block",
+      "recognized_characters": 385
+    },
+    {
+      "page": 37,
+      "confidence": 93,
+      "visual_only": false,
+      "elapsed_ms": 638,
+      "retried": false,
+      "layout_kind": "single_block",
+      "recognized_characters": 127
+    },
+    {
+      "page": 40,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2298,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 42,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1652,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 43,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1416,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 44,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1963,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 45,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1821,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 46,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2003,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 47,
+      "confidence": 40,
+      "visual_only": false,
+      "elapsed_ms": 3097,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 329
+    },
+    {
+      "page": 48,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1573,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 49,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1684,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 50,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1933,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 89,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2383,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 129,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1767,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 130,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1913,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 131,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1719,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 132,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2174,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 135,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1729,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 136,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1840,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 158,
+      "confidence": 58,
+      "visual_only": false,
+      "elapsed_ms": 802,
+      "retried": false,
+      "layout_kind": "single_block",
+      "recognized_characters": 326
+    },
+    {
+      "page": 191,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1924,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 192,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1693,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 193,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2077,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 196,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2149,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 210,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1883,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 219,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1870,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 305,
+      "confidence": 39,
+      "visual_only": false,
+      "elapsed_ms": 2966,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 154
+    },
+    {
+      "page": 307,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1974,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 361,
+      "confidence": 93,
+      "visual_only": false,
+      "elapsed_ms": 908,
+      "retried": false,
+      "layout_kind": "single_block",
+      "recognized_characters": 1
+    },
+    {
+      "page": 395,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1821,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 424,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2272,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 436,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1793,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 437,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1931,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 503,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 2289,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 504,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1635,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    },
+    {
+      "page": 505,
+      "confidence": 95,
+      "visual_only": true,
+      "elapsed_ms": 1317,
+      "retried": true,
+      "layout_kind": "single_block",
+      "recognized_characters": 0
+    }
+  ],
+  "production_index_modified": false,
+  "ocr_text_semantically_reviewed": false,
+  "raw_ocr_text_retained": false
+}

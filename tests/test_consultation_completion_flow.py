@@ -218,10 +218,10 @@ def test_dispute_chat_stays_open_but_completed_chat_is_closed_on_every_write_pat
     assert '"COMPLETED"' not in annotation
 
 
-def test_dispute_is_open_for_capacity_and_inbox_not_history():
+def test_dispute_remains_in_inbox_but_releases_capacity():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     messages_template = (Path(__file__).resolve().parents[1] / "app" / "templates" / "messages.html").read_text(encoding="utf-8")
-    assert 'CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")' in source
+    assert 'CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START")' in source
     assert 'ConsultationCase.status.in_(["ACTIVE", "WAITING_START", "EXPERT_COMPLETED"])' not in source
     assert 'if case.status == "DISPUTE":\n        return "ACTIVE", "Sorun Bildirildi"' in source
     assert '["HISTORY","CLOSED","DISPUTE"]' not in messages_template

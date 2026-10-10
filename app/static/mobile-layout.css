@@ -102,3 +102,6 @@ body.dai-app-shell .program-form-page .program-form-card {
     .support-bubble { min-width: 0; overflow-wrap: anywhere; }
     .support-bubble-head { flex-wrap: wrap; gap: 4px; }
 }
+
+/* Reply content remains readable without widening the message bubble. */
+.expert-reply-ref{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

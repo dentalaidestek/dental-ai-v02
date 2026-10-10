@@ -1,11 +1,12 @@
 {% extends "base.html" %}{% block content %}
 <div class="expert-shell expert-profile-page">
+<a class="expert-secondary" href="/account#expert-info">‹ Profilim</a>
 {% if pending_title_change %}
 <section class="expert-status-banner {{ 'is-rejected' if pending_title_change.status == 'REJECTED' else 'is-review' }}">
 <strong>Yeni unvan: {{ pending_title_change.requested_title }}</strong>
 {% if pending_title_change.status == 'PENDING_REVIEW' %}<span>Belgeniz inceleniyor. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.</span>
-{% elif pending_title_change.status == 'REJECTED' %}<span>Yeni unvan doğrulanamadı. Mevcut unvanınız değişmedi. <a href="/account/professional-title/document">Belgeyi yeniden gönder</a></span>
-{% else %}<span>Doğrulayıcı belge bekleniyor. Mevcut unvanınız değişmedi. <a href="/account/professional-title/document">Belge yükle</a></span>{% endif %}
+{% elif pending_title_change.status == 'REJECTED' %}<span>Yeni unvan doğrulanamadı. Mevcut unvanınız değişmedi. <a href="/account/documents?purpose=title">Belgeyi yeniden gönder</a></span>
+{% else %}<span>Doğrulayıcı belge bekleniyor. Mevcut unvanınız değişmedi. <a href="/account/documents?purpose=title">Belge yükle</a></span>{% endif %}
 </section>
 {% endif %}
 {% if request.query_params.get('saved') and profile and profile.application_status == 'SUBMITTED' %}
@@ -47,14 +48,14 @@
   <header class="expert-profile-empty-head"><span class="expert-kicker">Uzman profili</span><h1>Uzman Profilinizi Oluşturun</h1><p>Profil yalnızca doğrulama tamamlandıktan sonra uzman listesinde yayınlanır.</p></header>
   {% endif %}
 
-  <details class="expert-edit-panel" id="profileEdit" {% if not profile %}open{% endif %}>
+  <details class="expert-edit-panel" id="profileEdit" {% if not profile or request.query_params.get("edit") == "1" %}open{% endif %}>
     <summary><span><strong>Profili Düzenle</strong><small>Fotoğraf, mesleki bilgiler, hakkında ve akademik çalışmalar</small></span><b>⌄</b></summary>
     <form class="expert-form expert-form-compact" method="post" enctype="multipart/form-data">
-      <div class="expert-photo-field"><span>Profil fotoğrafı <b>*</b></span><div class="expert-photo-picker"><div class="expert-photo-preview" id="expertPhotoPreview">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div><label class="expert-secondary" for="expertPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></div><input id="expertPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><input id="profilePhotoData" type="hidden" name="profile_photo_data"></div>
-      <label>Mesleki unvan<input value="{{ professional_title }}" disabled><small>Unvan değişikliği Hesabım bölümünden yapılır ve doğrulama gerektirebilir.</small></label>
+      {% if not user.profile_photo_path %}      <div class="expert-photo-field"><span>Profil fotoğrafı <b>*</b></span><div class="expert-photo-picker"><div class="expert-photo-preview" id="expertPhotoPreview">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or '?')[:1] }}{% endif %}</div><label class="expert-secondary" for="expertPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></div><input id="expertPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><input id="profilePhotoData" type="hidden" name="profile_photo_data"></div>{% else %}<p class="expert-shared-identity">Fotoğraf ve ad soyad <a href="/account?section=personal#personal-info">Bilgilerim</a> bölümünden düzenlenir.</p>{% endif %}
+      <p class="expert-shared-identity">{{ professional_title }} · <a href="/account?section=professional#professional-info">Mesleki durum ve belgelerim</a></p>
       <label>Telefon numarası<input name="phone" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX" value="{{ profile.phone if profile and profile.phone else '' }}" required><small>{% if sms_provider_enabled %}Numaranızı SMS koduyla doğrulayacaksınız.{% else %}Numaranız kaydedilir. Uygun maliyetli SMS sağlayıcısı bağlandığında doğrulama açılacaktır.{% endif %}</small></label>
       <label>Branş<select name="specialty" required>{% for s in specialties %}<option value="{{ s }}" {% if profile and profile.specialty==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select><small>Uzmanlık alanı doğrulama belgesine göre yayınlanır.</small></label>
-      <label>e-Devlet mesleki belge <input type="file" name="credential_document" accept="application/pdf,image/jpeg,image/png" {% if not profile or not profile.credential_document_path %}required{% endif %}><small>Unvanınızı ve branşınızı gösteren PDF/JPG/PNG belge · en fazla 10 MB.{% if profile and profile.credential_document_name %} Yüklü: {{ profile.credential_document_name }}{% endif %}</small></label>
+      {% if profile and profile.credential_document_path %}<p class="expert-shared-identity">{% if profile.application_status=='SUBMITTED' %}Mesleki belgeniz incelemede. Sonucu <a href="/account?section=professional#professional-info">Mesleki durum ve belgelerim</a> bölümünden takip edin.{% else %}Mesleki belgeniz kayıtlı. <a href="/account/documents?purpose=expert">Yeni belge gönder</a>{% endif %}</p>{% else %}      <label>e-Devlet mesleki belge <input type="file" name="credential_document" accept="application/pdf,image/jpeg,image/png" {% if not profile or not profile.credential_document_path %}required{% endif %}><small>Unvanınızı ve branşınızı gösteren PDF/JPG/PNG belge · en fazla 10 MB.{% if profile and profile.credential_document_name %} Yüklü: {{ profile.credential_document_name }}{% endif %}</small></label>{% endif %}
       <label>Kurum<input name="institution" value="{{ profile.institution if profile and profile.institution else '' }}"></label>
       <label>Hakkında<textarea name="bio" rows="3">{{ profile.bio if profile and profile.bio else '' }}</textarea></label>
       <label>Yayınlar / tezler<textarea name="publications_text" rows="3" placeholder="Makale, tez, DOI veya akademik çalışma">{{ profile.publications_text if profile and profile.publications_text else '' }}</textarea></label>
@@ -69,6 +70,7 @@
 </div>
 <dialog class="expert-crop-dialog" id="expertCropDialog"><form method="dialog"><header><strong>Profil fotoğrafı</strong><button value="cancel" aria-label="Kapat">×</button></header><canvas id="expertCropCanvas" width="640" height="640"></canvas><label>Yakınlaştır<input id="expertCropZoom" type="range" min="1" max="3" value="1" step="0.01"></label><div><button value="cancel" class="expert-secondary">Vazgeç</button><button type="button" id="expertCropApply" class="expert-primary">Kullan</button></div></form></dialog>
 <script>
+document.addEventListener('DOMContentLoaded',()=>{if(location.hash==='#profileEdit')document.getElementById('profileEdit').open=true;});
 async function syncExpertAvailability(on){
   const toggle=document.getElementById("availabilityToggle"),input=document.getElementById("availabilitySelect"),text=document.getElementById("availabilityText");
   const previous=input&&input.value==="AVAILABLE";

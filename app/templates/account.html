@@ -149,11 +149,12 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
 .account-container .info-value{text-align:right;overflow-wrap:anywhere;max-width:65%}
 @media(max-width:650px){body.dai-app-shell .account-container{padding:0 12px}.account-section summary{padding:16px}.account-section-content{padding:0 16px 16px}}
 </style>
+<link rel="stylesheet" href="/static/membership-verification.css">
 <div class="account-container">
 
     <div class="account-card">
         <div class="account-profile-hero"><div class="account-profile-avatar" data-profile-avatar-user-id="{{ user.id }}">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or user.username or '?')[:1] }}{% endif %}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>
-        <form method="post" action="/account/profile-photo" id="accountPhotoForm" class="account-photo-form"><input type="file" id="accountPhotoInput" accept="image/jpeg,image/png,image/webp" hidden><input type="hidden" name="profile_photo_data" id="accountPhotoData"><label for="accountPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></form>
+
 
         {% if error %}
         <div class="error">{{ error }}</div>
@@ -164,7 +165,8 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
         {% endif %}
 
     </div>
-        <details class="account-section" id="personal-info"{% if email_change_pending or request.url.path.startswith("/account/email") or request.url.path == "/account/username" or request.query_params.get("name_saved") == "1" %} open{% endif %}><summary><span>Kişisel bilgiler<small>Ad soyad, e-posta ve kullanıcı adı</small></span></summary><div class="account-section-content">
+        <details class="account-section" id="personal-info"{% if request.query_params.get("section") == "personal" or email_change_pending or request.url.path.startswith("/account/email") or request.url.path == "/account/username" or request.query_params.get("name_saved") == "1" or request.query_params.get("photo_saved") == "1" %} open{% endif %}><summary><span>Bilgilerim<small>Fotoğraf, ad soyad ve iletişim bilgileri</small></span></summary><div class="account-section-content">
+        <form method="post" action="/account/profile-photo" id="accountPhotoForm" class="account-photo-form"><input type="file" id="accountPhotoInput" accept="image/jpeg,image/png,image/webp" hidden><input type="hidden" name="profile_photo_data" id="accountPhotoData"><label for="accountPhotoInput">{% if user.profile_photo_path %}Profil fotoğrafını değiştir{% else %}Profil fotoğrafı ekle{% endif %}</label></form>
             <p>Ad soyadınızı doğrudan güncelleyebilirsiniz.</p>
             <form method="post" action="/account/display-name" class="password-form" autocomplete="on">
                 <label for="display_name">Ad Soyad</label>
@@ -172,64 +174,9 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
                 <button type="submit">Kaydet</button>
             </form>
 
-        <div class="info-grid">
-            <div class="info-item">
-                <div class="info-label">Ad Soyad</div>
-                <div class="info-value">{{ user.display_name or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">E-posta</div>
-                <div class="info-value">{{ user.email or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">Kullanıcı Adı</div>
-                <div class="info-value">{{ user.username or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">Hesap Türü</div>
-                <div class="info-value">{% if user.role == 'ADMIN' %}Yönetici{% elif user.role == 'DOCTOR' %}Hekim hesabı{% else %}{{ user.role or '-' }}{% endif %}</div>
-            </div>
-
-            {% if doctor_profile %}
-            <div class="info-item">
-                <div class="info-label">Mesleki Durum / Unvan</div>
-                <div class="info-value">{{ account_meta.professional_title if account_meta and account_meta.professional_title else doctor_profile.graduation_status or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">Üniversite</div>
-                <div class="info-value">{{ doctor_profile.university or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">Mezuniyet Durumu</div>
-                <div class="info-value">{{ doctor_profile.graduation_status or "-" }}</div>
-            </div>
-
-            <div class="info-item">
-                <div class="info-label">Uzmanlık Durumu</div>
-                <div class="info-value">
-                    {% if doctor_profile.is_specialist %}
-                        Uzman
-                    {% else %}
-                        Uzman değil
-                    {% endif %}
-                </div>
-            </div>
-
-            {% if doctor_profile.is_specialist %}
-            <div class="info-item">
-                <div class="info-label">Uzmanlık Alanı</div>
-                <div class="info-value">{{ doctor_profile.specialty or "-" }}</div>
-            </div>
-            {% endif %}
-            {% endif %}
-        </div>
     <div class="account-subsection">
         <h2>E-posta adresi</h2>
+        <p>Mevcut adres: {{ user.email or "Belirtilmemiş" }}</p>
         <p>Yeni adresinizi kodla doğrulayın. Doğrulama tamamlanana kadar mevcut adresiniz geçerlidir.</p>
         {% if email_change_pending %}
         <p><strong>{{ email_change_pending }}</strong> adresine gönderilen 6 haneli kodu girin. Kod 10 dakika geçerlidir.</p>
@@ -263,8 +210,11 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
     </div>
         </div></details>
 
-    <details class="account-section"{% if request.query_params.get("profile_updated") == "1" %} open{% endif %}><summary><span>Uzmanlık ve mesleki durum<small>Unvanınız ve uzman profiliniz</small></span></summary><div class="account-section-content">
-        <p>Dental AI ana ekranını ve öncelikli araçları bu seçime göre düzenler. Mesleki durumunuzu değiştirmeniz mevcut hasta, program, Notlarım veya Akademik AI kayıtlarınızı silmez.</p>
+    <details class="account-section" id="professional-info"{% if request.query_params.get("section") == "professional" or request.query_params.get("profile_updated") == "1" %} open{% endif %}><summary><span>Mesleki durum ve belgelerim<small>Unvanınız, doğrulama durumunuz ve bekleyen işlemler</small></span></summary><div class="account-section-content">
+        {% include "profile_verification_summary.html" %}
+        {% if doctor_profile and doctor_profile.university %}<p>Üniversite: {{ doctor_profile.university }}</p>{% endif %}
+        {% if account_expert %}<p>Branş: {{ account_expert.specialty }}</p>{% elif doctor_profile and doctor_profile.specialty %}<p>Branş: {{ doctor_profile.specialty }}</p>{% endif %}
+        <p>Mesleki durumunuz ana ekran önceliklerinizi düzenler. Mevcut kayıtlarınız korunur.</p>
         <form method="post" action="/account/professional-title" class="password-form" id="professionalTitleForm" onsubmit="return confirmProfessionalTitleChange(this)">
             <input type="hidden" name="confirm_change" id="confirmProfessionalChange" value="">
             <label for="professional_title">Mesleki Durum / Unvan</label>
@@ -280,8 +230,16 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
             </select>
             <button type="submit">Kaydet</button>
         </form>
-        {% if expert_nav and expert_nav.eligible %}<a class="reset-link" href="{{ expert_nav.href }}">Uzman profilini yönet →</a>{% endif %}
+
     </div></details>
+
+    {% if expert_nav and expert_nav.eligible %}
+    <section class="account-card account-expert-entry" id="expert-info">
+      <h2>Uzman profilim</h2>
+      <p>{% if expert_verified %}Uzman profiliniz doğrulandı. Danışmanlık bilgilerinizi ve müsaitliğinizi yönetin.{% elif account_expert and account_expert.application_status=='SUBMITTED' %}Başvurunuz incelemede. Bilgilerinizi ve başvuru durumunu buradan takip edin.{% elif account_expert and account_expert.application_status=='REJECTED' %}Başvurunuz onaylanmadı. Bilgilerinizi kontrol edip belgenizi yeniden gönderebilirsiniz.{% else %}Uzman olarak danışmanlık vermek için profilinizi oluşturun.{% endif %}</p>
+      <div class="account-action-row"><a class="account-action-button account-logout-button" href="/expert-support/profile">{{ 'Uzman profilimi yönet' if account_expert else 'Uzman olarak başvur' }}</a>{% if expert_verified %}<a class="account-action-button member-secondary" href="/expert-support/expert/{{ user.id }}">Yayınlanan profilimi gör</a>{% endif %}</div>
+    </section>
+    {% endif %}
 
 
     <details class="account-section"><summary><span>Bildirimler<small>Bu cihazın bildirim tercihleri</small></span></summary><div class="account-section-content">
@@ -395,6 +353,8 @@ document.addEventListener('DOMContentLoaded', function() {
     setupAccountPhotoCrop();
     setupDevicePushSetting();
     setupAccountActions();
+    const target=document.getElementById(location.hash.slice(1));
+    if(target?.tagName==='DETAILS')target.open=true;
 });
 function setupAccountActions(){
     const dialog=document.getElementById('accountDeleteDialog'),trigger=document.getElementById('accountDeleteTrigger'),cancel=document.getElementById('accountDeleteCancel'),form=document.getElementById('accountDeleteForm'),username=document.getElementById('deleteConfirmUsername'),confirmButton=document.getElementById('accountDeleteConfirm');

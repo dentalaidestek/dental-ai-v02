@@ -303,7 +303,7 @@ def test_e2ee_device_keys_are_client_public_keys_and_migration_is_versioned():
     assert "public_key: str" in source
     assert "revoked_at" in source
     migration = (ROOT / "app/migrate.py").read_text(encoding="utf-8")
-    assert "REVISION = 10" in migration
+    assert "REVISION = 12" in migration
     assert "e2eedevicekey" in migration
     assert "consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
     assert "supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration

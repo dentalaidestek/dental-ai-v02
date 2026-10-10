@@ -441,7 +441,7 @@ def test_multi_facet_sufficiency_is_hard_complete():
 def test_rescue_path_is_single_bounded_round_trip():
     # The normal retrieval branch must contain one primary FTS call and at most
     # one rescue FTS call; old per-facet probe loops/broad fallback are gone.
-    branch = source.split("precise_query = _fts_query(resolved, broad=False)", 1)[1]
+    branch = source.split("precise_query =", 1)[1]
     branch = branch.split("rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)", 1)[0]
     assert branch.count("_fts_rows(") == 2
     assert "for evidence_query in evidence_queries" not in branch
@@ -777,10 +777,13 @@ def test_semantic_overlap_handles_positive_nodes_without_runtime_error():
 
 
 def test_multi_intent_generation_contract_keeps_all_requested_facets():
-    from app.study_ai_v2 import _response_contract
-    contract = _response_contract("Pulpitisin tanısı ve tedavisi nedir?")
-    assert "Tanı" in contract or "tanı" in contract
-    assert "tedavi" in contract.casefold()
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    question = 'Pulpitisin tanısı ve tedavisi nedir?'
+    prompt = _prompt('Ders', question, RetrievalResult(resolved_query=question, note_context=['Kaynak']))
+    assert question in prompt
+    assert 'bütün işlemlerini' in prompt
+    assert 'kendi bilginle doldurma' in prompt
 
 
 def test_visual_source_need_is_part_of_canonical_plan():

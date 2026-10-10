@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="/static/design-system.css?v=20260927-notification-controls-v1">
     <link rel="stylesheet" href="/static/dashboard-v2.css?v=20260927-mobile-fluid-v1">
     <link rel="stylesheet" href="/static/button-theme.css?v=20260930-navy-v4">
-    <link rel="stylesheet" href="/static/mobile-layout.css?v=20261009-layout-v1">
+    <link rel="stylesheet" href="/static/mobile-layout.css?v=20261009-chat-v2">
 </head>
 <body class="dai-app-shell">
 <nav class="topbar">
@@ -61,7 +61,7 @@
         <a href="/tooth-charts"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 3.5c1.4 0 2.4.7 3.8.7s2.4-.7 3.8-.7c3 0 4.7 2.4 4.2 5.5-.4 2.4-1.5 4-2.1 6.1-.7 2.6-1.1 5.4-2.8 5.4-1.5 0-1.5-4.3-3.1-4.3s-1.6 4.3-3.1 4.3c-1.7 0-2.1-2.8-2.8-5.4C5.5 13 4.4 11.4 4 9c-.5-3.1 1.2-5.5 4.2-5.5Z"/></svg> Diş Şemaları</a>
         <a href="/analyses"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.3A3.5 3.5 0 0 0 4.5 15 3.5 3.5 0 0 0 9 18.4V20"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.3a3.5 3.5 0 0 1 1.5 6.7 3.5 3.5 0 0 1-4.5 3.4V20"/></svg> Tüm Analizler</a>
         <a href="/notes"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg> Notlarım</a>
-        <a href="/account"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg> Hesabım</a>
+        <a href="/account"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg> Profilim</a>
         <div class="workspace-menu-divider"></div>
         <a href="/about"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg> Hakkında</a>
         <a href="/support-request"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z"/><path d="M8 9h8M8 12h5"/></svg> Destek Talebi Oluştur</a>
@@ -91,7 +91,7 @@
     <a href="/messages" class="mobile-nav-item mobile-nav-messages{% if request.url.path.startswith('/messages') or request.url.path.startswith('/expert-support/cases') %} active{% endif %}"{% if request.url.path.startswith('/messages') %} aria-current="page"{% endif %}>
         <span class="mobile-nav-icon-wrap"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z"/><path d="M8 9h8M8 12h5"/></svg><b id="mobileMessagesBadge" class="mobile-messages-badge" hidden></b></span><span>Mesajlar</span>
     </a>
-    <a href="/account" class="mobile-nav-item{% if request.url.path.startswith('/account') %} active{% endif %}"{% if request.url.path.startswith('/account') %} aria-current="page"{% endif %}>
+    <a href="/account" class="mobile-nav-item{% if (request.url.path.startswith('/account') or request.url.path == '/expert-support/profile') %} active{% endif %}"{% if (request.url.path.startswith('/account') or request.url.path == '/expert-support/profile') %} aria-current="page"{% endif %}>
         <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><span>Profilim</span>
     </a>
 </nav>

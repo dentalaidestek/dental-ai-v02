@@ -16,7 +16,6 @@ from app.study_provider import (
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
-from app.dental_query_intent import build_dental_requirement_plan
 
 logger = logging.getLogger(__name__)
 
@@ -29,98 +28,38 @@ def _generation_targets() -> list[ProviderTarget]:
     return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
 
 
-_INTENT_RESPONSE_RULES = {
-    "value": "İstenen değeri/ölçümü kanıtta varsa ilk cümlede doğrudan ver; sonra yalnız gerekli bağlamı ekle.",
-    "definition": "Önce kısa ve doğrudan tanımı ver; ardından kanıttaki ayırt edici özellikleri ekle.",
-    "measurement": "Neyin, nasıl ve hangi referansla ölçüldüğünü kanıtın desteklediği sırayla açıkla.",
-    "comparison": "Karşılaştırılan kavramları aynı ölçütler üzerinden yan yana ve tekrar etmeden karşılaştır.",
-    "classification": "Sınıflamayı kaynak yapısını bozmadan düzenli ver; sınıf/evre ölçütlerini birbirine karıştırma.",
-    "diagnosis": "Tanı, bulgu ve ayırıcı tanı ifadelerini kanıtta nasıl ayrılmışsa öyle tut; yeni tanı çıkarımı yapma.",
-    "treatment": "Tedaviyi; endikasyon, işlem ve sonuç/izlem bilgisini kanıt destekliyorsa mantıksal sırada birleştir.",
-    "complication": "Komplikasyon ile risk/neden/önleme bilgisini kanıtta desteklenen ilişkilerle eşleştir.",
-    "cause": "Neden, risk faktörü ve mekanizmayı kanıtta desteklenen neden-sonuç yönünü bozmadan açıkla.",
-    "visual": "Yalnız ekli kaynak sayfasında gerçekten görülebilen ve metin kanıtıyla desteklenen özellikleri yorumla.",
-}
-
-
-def _response_contract(question: str) -> str:
-    plan = build_dental_requirement_plan(question)
-    names = [item.name for item in plan.intents if item.name != "general"]
-    rules = [_INTENT_RESPONSE_RULES[name] for name in names if name in _INTENT_RESPONSE_RULES]
-    if not rules:
-        rules = ["Sorunun istediği bilgiye doğrudan cevap ver; kanıt dışı ayrıntıyla cevabı genişletme."]
-    if len(rules) > 1:
-        return (
-            "Sorudaki her açık isteği ayrı ayrı karşıla ve hiçbirini atlama. "
-            + " ".join(rules)
-        )
-    return rules[0]
-
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
-    from app.academic_dialogue import dialogue_rules
-    from app.academic_study_contract import study_output_rules
     context = "\n\n---\n\n".join(retrieval.note_context)
-    understood_question = (retrieval.resolved_query or question).strip()
-    from app.academic_task_language import elliptical_study_request
-    outline_rule = ''
-    if elliptical_study_request(question) == 'outline':
-        headings = list(dict.fromkeys(item.section_title for item in retrieval.evidence if item.section_title))
-        outline_rule = (
-            'Kullanıcı önceki yanıtın kapsamını veya derinliğini yetersiz buldu. '
-            'Aşağıdaki kanıtlarda bulunan başlıkları tek bir başlığa indirgeme. '
-            'Her başlığı ayrı işle; kanıt destekliyorsa tanımını, mantığını ve önemli '
-            'ayrıntılarını açıkla. Önceki yanıtı yalnız tekrar etme. '
-            'Kanıt verilmeyen başlıkları açıklanmış veya incelenmiş gibi gösterme. '
-            'Tam ders kapsamı sağlanmıyorsa mevcut kapsamın sınırını açıkça belirt. '
-            f'Getirilen kanıtların bölüm başlıkları: {", ".join(headings) or "etiketlenmemiş"}.\n\n'
-        )
-    exhaustive_rule = ""
-    if retrieval.retrieval_mode == "questions_exhaustive":
-        exhaustive_rule = (
-            "Bu istek kaynak içindeki soruları çözme isteğidir. Verilen soru/şıkları kaynak sırasını "
-            "koruyarak çöz; soru kökü ile A-E seçeneklerini birbirinden ayırma. Kaynakta görünmeyen "
-            "seçenek veya soru uydurma. Her soru için seçtiğin cevabı ve kısa gerekçeyi ver. "
-        )
-        if retrieval.has_more:
-            exhaustive_rule += (
-                "Bu turda güvenli bağlam sınırı nedeniyle kaynaktaki soruların yalnız ilk bölümü "
-                "verildi; yanıtın sonunda daha fazla soru bulunduğunu açıkça belirt. "
-            )
+    understood = retrieval.resolved_query or question
+    continuation = (
+        "Kaynak sorularını kaynak sırasıyla çöz. Kaynakta olmayan soru veya şık üretme. "
+        + ("Bu turda yalnız ilk bölüm getirildi; devamının bulunduğunu belirt. " if retrieval.has_more else "")
+        if retrieval.retrieval_mode == 'questions_exhaustive' else ""
+    )
     return (
-        f"Ders: {course_title}\n\n"
-        "DERS NOTU KANITLARI:\n" + context + "\n\n"
-        "CEVAP BİÇİMİ:\n" + _response_contract(understood_question) + "\n\n" + outline_rule +
-        "ÇALIŞMA ÇIKTISI:\n" + study_output_rules(understood_question,
-            [item.section_title for item in retrieval.evidence if item.section_title]) + "\n\n"
-        "ÇALIŞMA ETKİLEŞİMİ:\n" + dialogue_rules(question, history) + "\n\n"
-        "KANIT DURUMU:\n"
-        f"Retrieval modu: {retrieval.retrieval_mode}. "
-        f"Yerel kanıt güveni: {retrieval.evidence_confidence:.2f}. "
-        + (
-            "Bu mod tüm READY ders indeksinden seçilmiş sınırlı temsili kapsam kanıtıdır; "
-            "seçilmeyen bölümleri görmüş gibi davranma. "
-            if retrieval.retrieval_mode == "coverage" else ""
-        )
-        + f"Kapsanan başlıklar: {', '.join(retrieval.covered_facets) or 'doğrudan kanıt'}. "
-        f"Eksik başlıklar: {', '.join(retrieval.missing_facets) or 'yok'}. "
-        "Eksik başlıklar tamamlama görevi değildir; kanıtta yoksa onları kendi bilginle doldurma.\n\n"
-        "KANIT KURALI:\n"
-        + exhaustive_rule +
-        "Sen arama/retrieval yapma ve kendi genel bilginden yeni akademik bilgi ekleme. "
-        "Görevin yalnız sistemin seçtiği kanıtları kullanıcının sorusuna göre seçmek, "
-        "birleştirmek ve doğal, anlaşılır bir cevaba dönüştürmektir. Aynı bilgiyi gereksiz "
-        "tekrarlama; farklı kanıtlar birbirini tamamlıyorsa anlamını değiştirmeden birleştir. "
-        "Kanıtların desteklemediği boşlukları tahmin ederek doldurma. "
-        "Yalnız yukarıdaki kanıtlara ve ekli kaynak sayfalarına dayan. Kanıt yetersizse bunu açıkça söyle. "
-        "Sayfa ya da dosya adını yalnız kullanıcı kaynak istediğinde, sadece verilen INTERNAL_SOURCE "
-        "bilgisinden aktar; uydurma. Tablo/şekil eki varsa metin çıkarımıyla birlikte incele.\n\n"
-        "SORU YÖNÜ KURALI:\n"
-        "- 'değildir', 'yanlış', 'önerilmez', 'tercih edilmez' gibi negatif bilgi yönlerini tersine çevirme.\n"
-        "- 'hariç', 'girme', 'bahsetme' gibi açık dışlama ifadelerini negatif bulguya dönüştürme; dışlanan kapsamı cevaba ekleme.\n"
-        "- Karşılaştırmada adı geçen her tarafı ayrı ayrı kanıta bağla; bir tarafın bilgisini diğerine genelleme.\n"
-        "- Çene/yön/diş/akut-kronik gibi niteleyicileri cevap boyunca koru.\n\n"
-        f"SİSTEMİN ÇÖZÜMLEDiĞİ SORU:\n{understood_question}\n\n"
-        f"KULLANICININ BU TURDAKİ MESAJI:\n{question.strip()}"
+        f"Ders: {course_title}\n\nDERS NOTU KANITLARI:\n{context}\n\n"
+        "İSTEĞİ YERİNE GETİR:\n"
+        "Yorumlanmış isteğin bütün işlemlerini, karşılaştırma taraflarını, koşullarını, "
+        "dışlamalarını, sayılarını, birimlerini, adet/zorluk/biçim/uzunluk ve sırasını koru. "
+        "Özgün mesajı ve son konuşmayı da dikkate al; önceki cevapları akademik kaynak sayma.\n\n"
+        "KAYNAK DESTEĞİNİ DEĞERLENDİR:\n"
+        "Bunlar aramayla getirilen aday kaynaklardır. Yerel bir kural motoru sorunun "
+        "tamamını desteklediklerini doğrulamış değildir. Her istek ve karşılaştırma "
+        "tarafı için yeterli bilgi var mı kontrol et. Desteklenen kısmı cevapla; "
+        "desteklenmeyen kısmın kaynak eksiğini açıkça belirt. Eksik başlıklar tamamlama görevi değildir. Eksik bilgiyi kendi "
+        "bilginle doldurma veya notların tamamında yokmuş gibi konuşma. "
+        "Sen arama/retrieval yapma; verilen kaynakları değerlendir. "
+        "'değildir', 'yanlış', 'önerilmez', 'tercih edilmez' gibi negatif ifadeleri tersine çevirme. "
+        "'hariç', 'girme', 'bahsetme' gibi dışlamaları negatif bulguya dönüştürme; dışlanan kapsamı cevaba ekleme. "
+        "Niteleyicileri koru. Kaynak dışı bilgi ekleme. "
+        "Tablo/şekil/görsel yorumunda gerçek kaynak ekini incele; görmediğin şeyi tarif etme. "
+        "Kaynak soruları örüntü olarak verilmişse cevaplarını yeni akademik bilgiye kanıt sayma. "
+        + ("Ders kapsamı sınırlı temsili parçalardan oluşur; tüm notları okumuş gibi davranma. "
+           if retrieval.retrieval_mode == 'coverage' else "")
+        + continuation + "\n\n"
+        "Sayfa/dosya atıflarını yalnız verilen KANIT/INTERNAL_SOURCE bilgisinden aktar; uydurma.\n\n"
+        f"GEMINI'NİN YORUMLADIĞI İSTEK:\n{understood}\n\n"
+        f"KULLANICININ ÖZGÜN MESAJI:\n{question}"
     )
 
 
@@ -134,13 +73,7 @@ def stream_rag_v2(
         yield retrieval.clarification
         return
     if (not retrieval.note_context and not retrieval.attachments) or not retrieval.evidence_sufficient:
-        from app.academic_dialogue import evidence_followup
-        yield evidence_followup(
-            resolved_query=retrieval.resolved_query or question,
-            retrieval_mode=retrieval.retrieval_mode,
-            has_evidence=bool(retrieval.note_context or retrieval.attachments),
-            missing_facets=retrieval.missing_facets,
-        )
+        yield f'«{retrieval.resolved_query or question}» için kaynak içeriğini henüz eşleştiremedim. Bu, bilginin notlarda bulunmadığı anlamına gelmez.'
         return
     required_attachment_types = {
         item.get("mime_type")

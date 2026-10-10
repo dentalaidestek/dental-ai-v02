@@ -84,7 +84,7 @@ only a catalog, not factual evidence. Your diagnosis is an unverified hypothesis
 def recover_once(*, question: str, history: list[dict], initial,
                  load_catalog: Callable, plan_call: Callable,
                  retrieve: Callable, record: Callable):
-    if initial.clarification or initial.evidence_sufficient:
+    if initial.clarification or initial.evidence_sufficient or getattr(initial, "semantic_planner_attempted", False):
         return initial
     started = time.perf_counter()
     event = {"schema_version": 1, "query": question[:8000],

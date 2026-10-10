@@ -9,12 +9,13 @@ RAG = (ROOT / "app" / "study_rag.py").read_text(encoding="utf-8")
 NOTES_AI = (ROOT / "app" / "templates" / "notes_ai.html").read_text(encoding="utf-8")
 
 
-def test_v2_worker_is_not_wired_into_live_v1_yet():
-    # Worker processes remain isolated from web workers. V2 reads are protected
-    # by a default-off flag and never run_one_slice inside a request.
+def test_v2_reads_do_not_run_index_worker_inside_web_requests():
+    # Mandatory V2 reads still keep indexing workers out of request execution.
     assert "from app.study_index_worker import" not in MAIN
     assert "run_one_slice(" not in MAIN
-    assert "study_v2_reads_enabled()" in MAIN
+    assert "study_v2_reads_enabled()" not in MAIN
+    assert "course_v2_ready(" in MAIN
+    assert "retrieve_understood_course_context(" in MAIN
 
 
 def test_live_v1_rag_does_not_read_building_v2_chunks():
