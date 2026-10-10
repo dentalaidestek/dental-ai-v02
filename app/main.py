@@ -588,6 +588,7 @@ class ConsultationCase(SQLModel, table=True):
     expert_completed_at: Optional[datetime] = None
     requester_completed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = Field(default=None, index=True)
+    chat_retention_started_at: Optional[datetime] = None
     messages_deleted_at: Optional[datetime] = None
     dispute_opened_at: Optional[datetime] = None
     completion_confirmation_deadline: Optional[datetime] = Field(default=None, index=True)
@@ -1960,6 +1961,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS messages_deleted_at TIMESTAMP')
+            conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS chat_retention_started_at TIMESTAMP')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
@@ -2009,6 +2011,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
+            if "chat_retention_started_at" not in consultation_cols:
+                conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN chat_retention_started_at TIMESTAMP')
             if "messages_deleted_at" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN messages_deleted_at TIMESTAMP')
             if "expert_proposal_note" not in consultation_cols:
@@ -6104,9 +6108,16 @@ def _consultation_has_report(session: Session, case: ConsultationCase) -> bool:
                 or session.exec(select(SupportTicket.id).where(SupportTicket.case_id == case.id).limit(1)).first())
 
 
+def _consultation_retention_start(case: ConsultationCase):
+    return case.chat_retention_started_at or case.completed_at
+
+
 def _enqueue_chat_retention(session: Session, case: ConsultationCase) -> None:
     if case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at:
-        _enqueue_deadline_job(session, case.id, "CHAT_PURGE", case.completed_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS), case.completed_at.isoformat())
+        if not case.chat_retention_started_at:
+            case.chat_retention_started_at = case.completed_at
+            session.add(case)
+        _enqueue_deadline_job(session, case.id, "CHAT_PURGE", case.chat_retention_started_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS), case.chat_retention_started_at.isoformat())
 
 
 def _purge_consultation_messages(session: Session, case: ConsultationCase, now: datetime, actor_id=None) -> list[RealtimeEvent]:
@@ -6151,8 +6162,16 @@ def _backfill_legacy_deadline_jobs_if_needed() -> None:
             for case in cases:
                 deadline = getattr(case, column.key)
                 if deadline:
+                    if kind == "COMPLETION" and deadline <= _utcnow_naive() and not case.chat_retention_started_at:
+                        case.chat_retention_started_at = _utcnow_naive()
+                        s.add(case)
                     _enqueue_deadline_pair(s, case.id, kind, deadline)
         for case in s.exec(select(ConsultationCase).where(ConsultationCase.status == "COMPLETED", ConsultationCase.completed_at != None, ConsultationCase.messages_deleted_at == None)).all():
+            if not case.chat_retention_started_at:
+                # Previously completed conversations never received this policy.
+                # Give their participants a fresh report/deletion window once.
+                case.chat_retention_started_at = _utcnow_naive()
+                s.add(case)
             _enqueue_chat_retention(s, case)
         # Correct legacy auto-busy profiles using the new active-only capacity definition.
         for profile in s.exec(select(ExpertProfile).where(ExpertProfile.capacity_auto_busy == True)).all():
@@ -6215,8 +6234,8 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
         return notices, case_events
     if job.job_type == "CHAT_PURGE":
         if (case and case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at
-                and case.completed_at.isoformat() in job.dedup_key
-                and now >= case.completed_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS)
+                and _consultation_retention_start(case).isoformat() in job.dedup_key
+                and now >= _consultation_retention_start(case) + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS)
                 and not _consultation_has_report(session, case)):
             case_events.extend(_purge_consultation_messages(session, case, now))
         return notices, case_events
@@ -6270,6 +6289,7 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
         # No requester decision within 24h: finalize exactly like requester confirmation.
         case.status = "COMPLETED"
         case.completed_at = deadline
+        case.chat_retention_started_at = case.chat_retention_started_at or deadline
         _enqueue_chat_retention(session, case)
         case.completion_confirmation_deadline = None
         session.add(case)
@@ -7865,7 +7885,9 @@ def expert_support_case_room(request: Request, case_id: int):
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
         "review": review, "visible_report": visible_report,
         "chat_reported": chat_reported,
-        "can_report_completed": bool(user.id == case.requester_user_id and case.completed_at and now <= case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS) and not case.messages_deleted_at),
+        "chat_report_deadline": _utc_to_local(_consultation_retention_start(case) + timedelta(days=3)) if case.completed_at else None,
+        "chat_delete_deadline": _utc_to_local(_consultation_retention_start(case) + timedelta(days=7)) if case.completed_at else None,
+        "can_report_completed": bool(user.id == case.requester_user_id and case.completed_at and now <= _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS) and not case.messages_deleted_at),
         "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
@@ -8222,7 +8244,7 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
         case=s.exec(stmt).first()
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu görüşme henüz bildirim yapılabilecek bir mesajlaşma içermiyor.",status_code=403)
         if case.messages_deleted_at:return HTMLResponse("Bu sohbet kalıcı olarak silinmiş.",status_code=410)
-        if case.status=="COMPLETED" and (user.id!=case.requester_user_id or not case.completed_at or _utcnow_naive() > case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS)):
+        if case.status=="COMPLETED" and (user.id!=case.requester_user_id or not case.completed_at or _utcnow_naive() > _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS)):
             return HTMLResponse("Tamamlanan danışmanlık için sorun bildirme süresi 3 gündür ve yalnız gönderen hekime açıktır.",status_code=409)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
@@ -9301,6 +9323,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
         if user.id == case.requester_user_id and case.status in {"ACTIVE", "EXPERT_COMPLETED"} and action == "COMPLETE":
             case.requester_completed_at = now; case.completed_at = now; case.completion_confirmation_deadline = None; case.status = "COMPLETED"
+            case.chat_retention_started_at = now
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
             if payment and payment.status in PAYMENT_FUNDED_STATUSES:
                 payment.status = "PAYOUT_ELIGIBLE"; payment.updated_at = now; s.add(payment)
@@ -9312,7 +9335,7 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             if _consultation_capacity_full(s, case.expert_user_id):
                 return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Devam etmek için bir vakanın tamamlanmasını bekleyin."}, status_code=409)
             case.status = "ACTIVE"; case.completion_confirmation_deadline = None; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
-        elif user.id == case.requester_user_id and action == "DISPUTE" and (case.status == "EXPERT_COMPLETED" or (case.status == "COMPLETED" and case.completed_at and now <= case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS))) and not case.messages_deleted_at:
+        elif user.id == case.requester_user_id and action == "DISPUTE" and (case.status == "EXPERT_COMPLETED" or (case.status == "COMPLETED" and case.completed_at and now <= _consultation_retention_start(case) + timedelta(days=CONSULTATION_REPORT_DAYS))) and not case.messages_deleted_at:
             case.status = "DISPUTE"
             case.completion_confirmation_deadline = None
             case.dispute_opened_at = now

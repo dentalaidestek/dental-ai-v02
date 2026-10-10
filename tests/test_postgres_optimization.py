@@ -148,7 +148,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 10
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 11
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
 
@@ -233,3 +233,27 @@ def test_report_transaction_serializes_with_chat_purge(pg):
     with Session(engine) as s:
         assert not s.get(main.ConsultationCase,case_id).messages_deleted_at
         assert s.exec(select(main.ConsultationMessage).where(main.ConsultationMessage.case_id==case_id)).one().content=='Preserve this evidence'
+
+
+def test_retention_migration_preserves_old_messages_and_grants_grace(pg):
+    from app import migrate
+    engine,_,_=pg;before=main._utcnow_naive()
+    with Session(engine,expire_on_commit=False) as s:
+        case=main.ConsultationCase(requester_user_id=1,expert_user_id=2,specialty='Endodonti',clinical_summary='Old conversation',question='Question',status='COMPLETED',completed_at=before-timedelta(days=30),expert_response_deadline=before-timedelta(days=31))
+        s.add(case);s.flush();case_id=case.id
+        s.add(main.ConsultationMessage(case_id=case_id,sender_user_id=1,content='Pre-policy evidence'));s.commit()
+    with engine.begin() as c:
+        c.execute(text('ALTER TABLE consultationcase DROP COLUMN messages_deleted_at'))
+        c.execute(text('ALTER TABLE consultationcase DROP COLUMN chat_retention_started_at'))
+        c.execute(text('DROP TABLE consultationmediadeletion'))
+    migrate.apply();migrate.require_schema(engine)
+    with Session(engine) as s:
+        anchor=s.get(main.ConsultationCase,case_id).chat_retention_started_at
+        assert anchor>=before
+        assert s.exec(select(main.ConsultationMessage).where(main.ConsultationMessage.case_id==case_id)).one().content=='Pre-policy evidence'
+        job=s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.case_id==case_id,main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).one()
+        assert job.run_at==anchor+timedelta(days=7)
+    migrate.apply()
+    with Session(engine) as s:
+        assert s.get(main.ConsultationCase,case_id).chat_retention_started_at==anchor
+        assert len(s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.case_id==case_id,main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).all())==1

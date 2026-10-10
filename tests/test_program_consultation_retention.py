@@ -177,3 +177,37 @@ def test_delayed_auto_confirmation_uses_deadline_not_worker_run_time(setup):
         assert case.completed_at==now-timedelta(days=2)
         purge=s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).one()
         assert purge.run_at==now+timedelta(days=5)
+
+
+def test_old_conversations_receive_one_transition_window(setup):
+    engine,now,users,client=setup
+    with Session(engine,expire_on_commit=False) as s:
+        case=main.ConsultationCase(requester_user_id=users['requester'].id,expert_user_id=users['expert'].id,specialty='Endodonti',clinical_summary='Old conversation',question='Question',status='COMPLETED',completed_at=now-timedelta(days=30),expert_response_deadline=now-timedelta(days=31))
+        s.add(case);s.flush();case_id=case.id
+        s.add(main.ConsultationMessage(case_id=case_id,sender_user_id=users['requester'].id,content='Old evidence'));s.commit()
+    main._backfill_legacy_deadline_jobs_if_needed()
+    main._backfill_legacy_deadline_jobs_if_needed()
+    with Session(engine) as s:
+        case=s.get(main.ConsultationCase,case_id)
+        assert case.chat_retention_started_at==now
+        assert case.completed_at==now-timedelta(days=30)
+        job=s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.case_id==case_id,main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).one()
+        assert job.run_at==now+timedelta(days=7)
+        assert main._process_deadline_job(s,job,now)==([],[])
+        assert len(s.exec(select(main.ConsultationMessage)).all())==1
+    # Report window is renewed only for these pre-policy conversations.
+    assert client.post(f'/expert-support/cases/{case_id}/complete',data={'action':'DISPUTE'},headers={'Accept':'application/json'}).status_code==200
+
+
+def test_legacy_overdue_confirmation_does_not_trigger_immediate_deletion(setup):
+    engine,now,_,_=setup;case_id=add_case(setup,'EXPERT_COMPLETED')
+    with Session(engine) as s:
+        case=s.get(main.ConsultationCase,case_id);case.completion_confirmation_deadline=now-timedelta(days=30);s.add(case);s.commit()
+    main._backfill_legacy_deadline_jobs_if_needed()
+    with Session(engine) as s:
+        job=s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.job_type=='COMPLETION_DUE')).one()
+        main._process_deadline_job(s,job,now);s.commit()
+        assert s.get(main.ConsultationCase,case_id).chat_retention_started_at==now
+        purge=s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).one()
+        assert purge.run_at==now+timedelta(days=7)
+        assert main._process_deadline_job(s,purge,now)==([],[])
