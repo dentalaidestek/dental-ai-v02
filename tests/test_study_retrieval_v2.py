@@ -73,10 +73,14 @@ def test_visual_request_limits_original_pages_and_combined_payload(monkeypatch):
             retrieval._PAGE_PDF_CACHE[('17:1:v1:ref',source['page_number'])]=b'123'
     db=Mock(side_effect=AssertionError('cached pages must not perform storage or database I/O'))
     try:
-        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True)
+        result=retrieval.RetrievalResult(visual_sources=sources[:2],evidence_sufficient=True,source_coverage_complete=True)
+        retrieval.materialize_visual_sources(db,result)
+        assert result.source_coverage_complete and len(result.attachments)==2
+        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True,source_coverage_complete=True)
         retrieval.materialize_visual_sources(db,result)
         assert len(result.attachments)==3
         assert sum(len(a['data']) for a in result.attachments)==9
+        assert not result.source_coverage_complete
         monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',100)
         result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True)
         retrieval.materialize_visual_sources(db,result)

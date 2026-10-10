@@ -43,19 +43,40 @@ def lookup(db, groups=()):
         embedding_provider='', embedding_model='', limit=20, lexical_groups=groups)
 
 
-def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db):
+@pytest.mark.parametrize('scope',['topic','course'])
+def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db,monkeypatch,scope):
     from app.academic_request_understanding import StudyRequest
     from app.academic_semantic_retrieval import retrieve_semantic_context
     add(db,1,'hipofiz'); add(db,2,'hipofiz')
     db.exec(text("ALTER TABLE studymaterial ADD COLUMN file_path text DEFAULT 'private/source.pdf', ADD COLUMN mime_type text DEFAULT 'application/pdf'"))
     db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'v1',1,'LOCAL_OCR:test'), (17,23,1,'v1',2,'PDF_TEXT'), (17,23,1,'v0',2,'LOCAL_OCR:old'), (99,23,1,'v1',2,'LOCAL_OCR:foreign'), (17,99,1,'v1',2,'LOCAL_OCR:other-course')"))
-    plan=StudyRequest('Hipofiz anlat','answer','topic',None,None,'',('hipofiz',))
+    if scope=='course':
+        import app.academic_semantic_retrieval as current
+        monkeypatch.setattr(current,'get_or_build_coverage_plan',lambda *a,**k:None)
+        monkeypatch.setattr(current,'_coverage_hydration_ids',lambda *a,**k:[1,2])
+    plan=StudyRequest('Hipofiz anlat','answer',scope,None,None,'',('hipofiz',) if scope=='topic' else ())
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
     assert {(v['material_id'],v['page_number']) for v in result.visual_sources} == {(1,1)}
     assert result.visual_sources[0]['index_version']=='v1'
     assert 'OCR KAYNAK UYARISI' in result.note_context[0]
     assert '\n'.join(result.note_context).count('hipofiz') == 1  # Digital page survives; OCR does not compete.
     assert len(result.evidence) == 2
+    assert result.source_coverage_complete == (scope=='course')
+    if scope=='course':
+        # The original scan covers other chunks on that page, but a partial
+        # digital transcription does not cover omitted digital-page chunks.
+        add(db,3,'hidden OCR chunk')
+        db.exec(text('UPDATE studyindexchunk SET page_start=1,page_end=1 WHERE id=3'))
+        result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+        assert result.source_coverage_complete
+        db.exec(text('UPDATE studyindexchunk SET page_start=2,page_end=2 WHERE id=3'))
+        result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+        assert not result.source_coverage_complete
+        db.exec(text('DELETE FROM studyindexchunk WHERE id=3'))
+        # An indexed page with no selected chunk is not magically covered.
+        db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'v1',3,'EMPTY')"))
+        result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+        assert not result.source_coverage_complete
 
 
 def test_comparison_keeps_rare_subject_in_bounded_pool(db):

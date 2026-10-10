@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import logging
+import json
 from sqlalchemy import text
 from app.academic_request_understanding import StudyRequest
 from app.academic_chunk_links import get_course_links, source_nodes
@@ -123,7 +124,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.retrieval_mode = 'questions_exhaustive'
     elif request_plan.scope == 'course':
         count = min(48, max(24, request_plan.count or 0,
-                           48 if request_plan.depth == 'detailed' else 24))
+                           48 if request_plan.depth == 'detailed' or request_plan.operation == 'generate_questions' else 24))
         coverage = get_or_build_coverage_plan(session, owner_user_id=owner_user_id,
                                               course_id=course_id, requested_count=count)
         rows = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
@@ -232,4 +233,40 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 'doğrulanmış bilgi sayma.')
         logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
                     len(scanned_pages),len(result.visual_sources))
+    if request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
+        originals={(v['material_id'],v['page_number']) for v in result.visual_sources}
+        evidence_pages={(item.material_id,page) for item in result.evidence
+                        for page in range(item.page_start,item.page_end+1)}
+        totals=session.exec(text('''SELECT
+            (SELECT COUNT(*) FROM studyindexchunk c JOIN studymaterial m
+             ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+             AND m.course_id=c.course_id AND m.active_index_version=c.index_version
+             WHERE c.owner_user_id=:owner AND c.course_id=:course
+             AND m.index_status='READY' AND m.deleted_at IS NULL
+             AND c.id<>ALL(:chunks) AND
+             (c.page_start<1 OR c.page_end<c.page_start OR
+              (SELECT COUNT(*) FROM jsonb_to_recordset(CAST(:originals AS jsonb))
+               AS v(material_id integer,page_number integer)
+               WHERE v.material_id=c.material_id AND v.page_number BETWEEN c.page_start AND c.page_end)
+              < c.page_end-c.page_start+1)),
+            (SELECT COUNT(*) FROM studyindexpage p JOIN studymaterial m
+             ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id
+             AND m.course_id=p.course_id AND m.active_index_version=p.index_version
+             WHERE p.owner_user_id=:owner AND p.course_id=:course
+             AND m.index_status='READY' AND m.deleted_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(CAST(:evidence_pages AS jsonb))
+                 AS v(material_id integer,page_number integer)
+                 WHERE v.material_id=p.material_id AND v.page_number=p.page_number)),
+            (SELECT COUNT(*) FROM studyindexpage p JOIN studymaterial m
+             ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id
+             AND m.course_id=p.course_id AND m.active_index_version=p.index_version
+             WHERE p.owner_user_id=:owner AND p.course_id=:course
+             AND m.index_status='READY' AND m.deleted_at IS NULL)'''),
+            params={'owner':owner_user_id,'course':course_id,
+                    'chunks':[item.chunk_id for item in result.evidence],
+                    'originals':json.dumps([{'material_id':m,'page_number':p} for m,p in originals]),
+                    'evidence_pages':json.dumps([{'material_id':m,'page_number':p} for m,p in evidence_pages])}).first()
+        result.source_coverage_complete=bool(totals and int(totals[0])==0
+            and int(totals[1])==0 and int(totals[2])>0
+            and scanned_pages <= originals)
     return result

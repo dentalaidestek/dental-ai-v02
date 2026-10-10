@@ -16,6 +16,7 @@ def session():
     value = Mock()
     value.get_bind.return_value.dialect.name = 'postgresql'
     value.exec.return_value.all.return_value = []
+    value.exec.return_value.first.return_value = (0,0,0)
     return value
 
 
@@ -128,7 +129,7 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,total,expected', [('topic',12,8),('course',35,32)])
+@pytest.mark.parametrize('scope,total,expected', [('topic',12,8),('course',12,12),('course',35,32)])
 def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,total,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
@@ -140,6 +141,7 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     session.exec.side_effect = [
         Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)])),
         Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')])),
+        Mock(first=Mock(return_value=(0,0,total))),
     ]
     plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
     result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
@@ -150,7 +152,18 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     assert len(result.evidence)==total  # OCR remains usable for search and provenance.
     assert sum('ekli orijinal sayfayı incele' in c for c in result.note_context)==expected
     assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==total-expected
+    assert result.source_coverage_complete == (scope=='course' and total==expected)
     assert session.exec.call_args_list[0].kwargs['params']['course']==23
+
+
+@pytest.mark.parametrize('complete',[False,True])
+def test_prompt_describes_actual_coverage_without_inventing_missing_sources(complete):
+    from app.study_retrieval_v2 import RetrievalResult
+    from app.study_ai_v2 import _prompt
+    result=RetrievalResult(note_context=['Source'],source_coverage_complete=complete,retrieval_mode='coverage')
+    prompt=_prompt('Course','20 soru hazırla',result)
+    assert ('bütün parçalar ve sayfalar' in prompt)==complete
+    assert ('Ders kapsamı sınırlı temsili parçalardan oluşur' in prompt)==(not complete)
 
 
 def test_current_request_and_provider_output_are_preserved_and_traceable(monkeypatch, caplog):
