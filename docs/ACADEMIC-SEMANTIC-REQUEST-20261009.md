@@ -60,3 +60,48 @@ requirement gates still need end-to-end evaluation for recall, comparisons and
 exclusions; no claim of production accuracy or complete Turkish understanding is
 made. No chunks are deleted or reindexed, no migration is required, and no
 production settings are changed.
+
+## 10 October continuation: balanced candidates and actual note replay
+
+Independent planner searches now receive separate bounded candidate shares in
+one PostgreSQL LATERAL statement. Each subject is ranked inside its own pool;
+duplicate chunks retain their best rank before fusion. This prevents a frequent
+comparison subject from consuming all 20 returned candidates. Single-phrase and
+legacy retrieval retain their existing SQL, title bonus and evidence gates.
+Every group keeps the authenticated owner/course and active READY source filters.
+No provider call, new model, migration or reindex is added.
+
+`scripts/evaluate_academic_note_flow.py` inspects the actual Ali Kiki source PDF
+and can run the interpreter -> owned FTS -> reranking -> sufficiency -> final
+answer flow against temporary tables in a dedicated PostgreSQL test database.
+`--run` requires preconfigured GEMINI_API_KEY and ACADEMIC_TEST_DATABASE_URL;
+`--answers` explicitly includes final generation. At most eight cases run.
+Temporary tables are rolled back; production enablement is never changed.
+Generated answers still require semantic review; schema/page recall cannot
+prove factual correctness. Live mode reproduces chunking/enrichment, not the
+worker's OCR or batched repeated-margin cleanup, and is not a production index
+health check.
+
+Actual source replay: downloaded `01-Ali Kiki toplu 2023.pdf` has 505 physical
+pages (the extracted Library text reports 502). Text-only extraction gives
+477 chunks and 43 empty-text pages; OCR was NOT run and completeness is NOT
+claimed. Eight hand-authored planner-contract replays passed expected page
+recall through production reranking/sufficiency and prompt construction:
+hipofiz p64, tiroid p66, comparison p64+p66, prenatal p101, organogenez p105+p107,
+five-question request, resolved follow-up and ambiguous clarification. Replay
+uses an explicitly labelled token matcher, NOT real PostgreSQL/model accuracy,
+and generated no answers or paid calls.
+
+The new Academic semantic flow CI uses real PostgreSQL temporary-table tests
+to reproduce common/rare-subject starvation and verify owner/course/version,
+READY/deletion filters and duplicate removal. Local focused checks: 140 passed,
+5 subtests passed, 3 PostgreSQL tests skipped because no local server is present.
+No real Gemini evaluation: this environment has no configured key. The planner
+therefore remains default-off; the completion gate is real-model + PostgreSQL
+note-flow evaluation and semantic answer review. No deploy performed.
+
+Two existing source-location assertions still searched for the pre-planner
+literal `precise_query = _fts_query`; they failed on parent 720f361's conditional
+assignment before this continuation. Their anchors now use `precise_query =`.
+The same exhaustive/primary/rescue invariants and exact call-count assertions
+remain in place; no scorer, threshold or behavior gate was relaxed.

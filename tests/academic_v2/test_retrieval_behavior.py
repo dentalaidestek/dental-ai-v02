@@ -441,7 +441,7 @@ def test_multi_facet_sufficiency_is_hard_complete():
 def test_rescue_path_is_single_bounded_round_trip():
     # The normal retrieval branch must contain one primary FTS call and at most
     # one rescue FTS call; old per-facet probe loops/broad fallback are gone.
-    branch = source.split("precise_query = _fts_query(resolved, broad=False)", 1)[1]
+    branch = source.split("precise_query =", 1)[1]
     branch = branch.split("rows = _coverage_select(resolved, rows, limit=limit, requirement=requirement)", 1)[0]
     assert branch.count("_fts_rows(") == 2
     assert "for evidence_query in evidence_queries" not in branch

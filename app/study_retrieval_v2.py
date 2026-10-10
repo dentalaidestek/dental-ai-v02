@@ -1430,6 +1430,7 @@ def _fts_rows(
     embedding_provider: str,
     embedding_model: str,
     limit: int,
+    lexical_groups: tuple[str, ...] = (),
 ) -> list:
     candidate_limit = max(20, min(120, limit * 8))
     common = """
@@ -1487,8 +1488,38 @@ def _fts_rows(
         semantic_fusion = "0"
         vector_params = {}
 
-    sql = f"""
-        WITH lexical AS (
+    # Independently planned subjects need their own candidate share. An OR
+    # query alone can let a frequent subject consume the entire bounded pool.
+    # This remains one DB statement with the same owner/version/READY filters.
+    if lexical_groups:
+        if len(lexical_groups) > 4 or any(not x or len(x) > 1024 for x in lexical_groups):
+            raise ValueError("invalid lexical search groups")
+        lexical_cte = f"""
+            grouped_lexical AS (
+                SELECT hits.* FROM unnest(CAST(:lexical_groups AS TEXT[])) AS g(query)
+                CROSS JOIN LATERAL (
+                    SELECT c.id,
+                           ts_rank_cd(
+                             to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
+                             websearch_to_tsquery('simple', g.query)
+                           ) AS raw_score,
+                           ROW_NUMBER() OVER (ORDER BY ts_rank_cd(
+                             to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
+                             websearch_to_tsquery('simple', g.query)
+                           ) DESC, c.id) AS rank
+                    {common}
+                      AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, ''))
+                          @@ websearch_to_tsquery('simple', g.query)
+                    ORDER BY raw_score DESC, c.id LIMIT :group_candidate_limit
+                ) hits
+            ), lexical AS (
+                SELECT DISTINCT ON (id) id, raw_score, rank
+                FROM grouped_lexical ORDER BY id, rank, raw_score DESC
+            )
+        """
+    else:
+        lexical_cte = f"""
+            lexical AS (
             SELECT c.id,
                    (
                      ts_rank_cd(
@@ -1510,7 +1541,10 @@ def _fts_rows(
                   @@ websearch_to_tsquery('simple', :lexical_query)
             ORDER BY raw_score DESC, c.id
             LIMIT :candidate_limit
-        ),
+        )
+        """
+    sql = f"""
+        WITH {lexical_cte},
         {semantic_cte}
         candidates AS (
             SELECT id FROM lexical
@@ -1531,6 +1565,8 @@ def _fts_rows(
         LIMIT :limit
     """
     params = {
+        "lexical_groups": list(dict.fromkeys(lexical_groups)),
+        "group_candidate_limit": max(1, candidate_limit // max(1, len(lexical_groups))),
         "owner": owner_user_id,
         "course": course_id,
         "lexical_query": lexical_query,
@@ -2745,6 +2781,9 @@ def retrieve_course_context_v2(
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
             limit=max(limit * 3, 18),
+            lexical_groups=tuple(
+                _semantic_fts_query((phrase,)) for phrase in request_plan.retrieval_queries
+            ) if request_plan is not None and len(request_plan.retrieval_queries) > 1 else (),
         )
         # Normal QA has one primary retrieval round-trip. Only a complex query
         # with an explicitly missing facet may spend one bounded rescue query.

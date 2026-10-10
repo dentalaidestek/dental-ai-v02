@@ -116,6 +116,20 @@ def test_topic_plan_reaches_owned_lookup_and_does_not_expand_to_course(monkeypat
     assert 'pulpitis' not in lookup.call_args.kwargs['lexical_query'].lower()
 
 
+def test_comparison_planned_phrases_get_independent_owned_candidate_groups(monkeypatch):
+    import app.study_retrieval_v2 as retrieval
+    session = Mock(); session.get_bind.return_value.dialect.name = 'postgresql'
+    lookup = Mock(return_value=[])
+    monkeypatch.setattr(retrieval, '_fts_rows', lookup)
+    plan = parse_request(raw(resolved_query='Hipofiz ile tiroid etkisini karşılaştır',
+        operation='compare', retrieval_queries=['hipofiz', 'tiroid']))
+    retrieval.retrieve_course_context_v2(session, owner_user_id=17, course_id=23,
+        query='İkisinin farkı ne?', request_plan=plan)
+    assert lookup.call_args_list[0].kwargs['lexical_groups'] == ('"hipofiz"', '"tiroid"')
+    assert lookup.call_args_list[0].kwargs['owner_user_id'] == 17
+    assert lookup.call_args_list[0].kwargs['course_id'] == 23
+
+
 def test_course_plan_selects_coverage_with_owned_scope_and_count(monkeypatch):
     import app.study_retrieval_v2 as retrieval
     from app.academic_coverage import build_coverage_plan

@@ -42,7 +42,7 @@ assert "question_limit = 16" in retrieval
 assert "limit=question_limit + 1" in retrieval
 assert "has_more_questions = len(question_rows) > question_limit" in retrieval
 assert "if exhaustive_questions:" in retrieval
-assert "else:" in retrieval[retrieval.index("if exhaustive_questions:"):retrieval.index("precise_query = _fts_query") + 80]
+assert "else:" in retrieval[retrieval.index("if exhaustive_questions:"):retrieval.index("precise_query =") + 80]
 assert "continuation_cursor" in retrieval
 assert "ACADEMIC_Q_CURSOR" in retrieval
 
