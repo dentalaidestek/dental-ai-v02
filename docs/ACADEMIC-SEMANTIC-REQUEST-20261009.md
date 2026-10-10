@@ -180,3 +180,7 @@ eight PostgreSQL cases are reserved for real CI. Ali Kiki 8/8 hand-authored
 contract replay also passes on the new retrieval path. The legacy static
 output-rule assertions were replaced with the new no-legacy-import/grounded
 compound-request contract; no scorer, benchmark threshold or access gate changed.
+
+Source pagination is also explicitly decided by Gemini (continue_source). A fresh
+request never inherits the prior source cursor. The cursor itself only comes
+from the server-persisted assistant message, not model/user-supplied identifiers.

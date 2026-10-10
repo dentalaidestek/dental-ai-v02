@@ -72,7 +72,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
     limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
     if request_plan.scope == 'course' and request_plan.source_kind == 'questions':
         rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
-                              limit=17, after_cursor=_source_cursor(recent_history))
+                              limit=17, after_cursor=_source_cursor(recent_history) if request_plan.continue_source else None)
         result.has_more = len(rows) > 16
         rows = rows[:16]
         result.retrieval_mode = 'questions_exhaustive'

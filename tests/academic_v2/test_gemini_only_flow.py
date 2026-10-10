@@ -93,3 +93,15 @@ def test_both_chat_endpoints_have_only_gemini_gateway():
             assert 'understand_study_request' in calls and 'retrieve_understood_course_context' in calls
             assert not calls & {'retrieve_course_context', 'retrieve_course_context_v2', 'ask_study_ai',
                                 'recover_course_context', 'should_block_academic_question', 'study_v2_reads_enabled'}
+
+
+@pytest.mark.parametrize('continuing,expected', [(False,None),(True,(1,5))])
+def test_source_pagination_is_a_gemini_decision_not_stale_history(monkeypatch, session, continuing, expected):
+    import app.academic_semantic_retrieval as current
+    lookup=Mock(return_value=[])
+    monkeypatch.setattr(current,'_question_rows',lookup)
+    plan=StudyRequest('Kaynak sorularını çöz','solve','course',None,None,'',(),
+        source_kind='questions',continue_source=continuing)
+    retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,
+        request_plan=plan,recent_history=[{'role':'assistant','content':'Sorular <!--ACADEMIC_Q_CURSOR:1:5-->'}])
+    assert lookup.call_args.kwargs['after_cursor'] == expected

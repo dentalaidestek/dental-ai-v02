@@ -8,7 +8,7 @@ from app.academic_request_understanding import interpret_request, parse_request,
 
 def raw(**overrides):
     data = dict(resolved_query='Downs analizindeki yüz tiplerini açıkla', operation='explain',
-                scope='topic', count=None, difficulty=None, clarification='', retrieval_queries=['Downs analiz yüz tipleri'], source_kind='notes', depth='standard', needs_visual=False)
+                scope='topic', count=None, difficulty=None, clarification='', retrieval_queries=['Downs analiz yüz tipleri'], source_kind='notes', depth='standard', needs_visual=False, continue_source=False)
     data.update(overrides)
     if data['scope'] == 'course' or data['operation'] == 'clarify':
         data['retrieval_queries'] = overrides.get('retrieval_queries', [])

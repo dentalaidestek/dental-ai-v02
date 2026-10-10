@@ -27,8 +27,9 @@ SCHEMA = {
         'source_kind': {'type': 'string', 'enum': ['notes', 'questions', 'question_patterns']},
         'depth': {'type': 'string', 'enum': ['standard', 'detailed']},
         'needs_visual': {'type': 'boolean'},
+        'continue_source': {'type': 'boolean'},
     },
-    'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual'],
+    'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
 }
 SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
@@ -68,7 +69,9 @@ actual questions in the uploaded source, or question_patterns when explicitly
 analysing/using past-exam patterns. Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
 requested. needs_visual is true when the task needs an actual source diagram,
-image, marked region or table. These fields control source retrieval directly.
+image, marked region or table. These fields control source retrieval directly. continue_source is true only
+for continuing the previously paginated SOURCE question list, never for a fresh
+request or a request to restart from the beginning.
 For an ordinary greeting/acknowledgement return clarify with a natural short
 conversational reply in clarification. Do not invent a study request.
 Never turn missing search results into a claim that the notes contain no facts.
@@ -87,6 +90,7 @@ class StudyRequest:
     source_kind: str = 'notes'
     depth: str = 'standard'
     needs_visual: bool = False
+    continue_source: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,7 +122,7 @@ def parse_request(raw: str) -> StudyRequest:
     if (data['scope'] == 'course' or data['operation'] == 'clarify') and searches:
         raise ValueError('unexpected topic search')
     data['retrieval_queries'] = tuple(dict.fromkeys(x.strip() for x in searches))
-    if not isinstance(data['source_kind'], str) or not isinstance(data['depth'], str) or data['source_kind'] not in {'notes', 'questions', 'question_patterns'} or data['depth'] not in {'standard', 'detailed'} or type(data['needs_visual']) is not bool:
+    if not isinstance(data['source_kind'], str) or not isinstance(data['depth'], str) or data['source_kind'] not in {'notes', 'questions', 'question_patterns'} or data['depth'] not in {'standard', 'detailed'} or type(data['needs_visual']) is not bool or type(data['continue_source']) is not bool:
         raise ValueError('invalid source/depth/visual contract')
     count = data['count']
     if count is not None and (type(count) is not int or not 1 <= count <= 200):
