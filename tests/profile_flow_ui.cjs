@@ -1,6 +1,39 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm');
+function expertForm(fetch){
+ const handlers={},windows={},error={hidden:true,textContent:'',focus(){this.focused=true}},submit={disabled:false};
+ const orcid={value:'0000-0001-8203-1176',setAttribute(k,v){this[k]=v},removeAttribute(k){delete this[k]}};
+ const form={action:'https://dental.test/expert-support/profile',bio:'Yazdıklarım',file:{name:'diploma.pdf'},querySelector:s=>s==='[type="submit"]'?submit:s==='[name="orcid_url"]'?orcid:error,addEventListener:(n,f)=>handlers[n]=f,setAttribute(){},removeAttribute(){}};
+ const location={href:form.action,origin:'https://dental.test',assign(url){this.assigned=url}};
+ vm.runInNewContext(fs.readFileSync('app/static/expert-profile-form.js','utf8'),{
+  document:{querySelector:()=>form},window:{addEventListener:(n,f)=>windows[n]=f},location,URL,fetch,
+  FormData:class{constructor(f){assert.equal(submit.disabled,false);this.bio=f.bio;this.file=f.file;this.orcid=f.querySelector('[name="orcid_url"]').value}},
+  DOMParser:class{parseFromString(text){return{body:{textContent:text}}}}
+ });return{handlers,windows,error,submit,orcid,form,location};
+}
+test('invalid ORCID stays on the form with the document and other input intact; retry works',async()=>{
+ let calls=0;const w=expertForm(async()=>{calls++;return{ok:false,status:400,text:async()=> 'ORCID iD doğrulama hanesi geçersiz.'}});
+ await w.handlers.submit({preventDefault(){}});
+ assert.equal(w.location.assigned,undefined);assert.equal(w.error.hidden,false);assert.equal(w.error.focused,true);
+ assert.match(w.error.textContent,/ORCID/);assert.equal(w.orcid['aria-invalid'],'true');assert.equal(w.orcid.value,'0000-0001-8203-1176');
+ assert.equal(w.form.bio,'Yazdıklarım');assert.equal(w.form.file.name,'diploma.pdf');assert.equal(w.submit.disabled,false);
+ await w.handlers.submit({preventDefault(){}});assert.equal(calls,2);
+});
+test('expert save blocks concurrent submissions and navigates after confirmed save',async()=>{
+ let finish,calls=0;const w=expertForm(()=>{calls++;return new Promise(r=>finish=r)});
+ const first=w.handlers.submit({preventDefault(){}});await w.handlers.submit({preventDefault(){}});assert.equal(calls,1);
+ finish({ok:true,redirected:true,url:'https://dental.test/expert-support/profile?saved=1'});await first;
+ assert.equal(w.location.assigned,'https://dental.test/expert-support/profile?saved=1');
+ w.windows.pageshow();assert.equal(w.submit.disabled,false);
+});
+test('expired session and server errors keep expert profile inputs on screen',async()=>{
+ for(const response of [{ok:true,redirected:true,url:'https://dental.test/login'},{ok:false,status:500,text:async()=> 'Internal traceback'}]){
+  const w=expertForm(async()=>response);await w.handlers.submit({preventDefault(){}});
+  assert.equal(w.location.assigned,undefined);assert.equal(w.error.hidden,false);assert.equal(w.submit.disabled,false);
+  assert.doesNotMatch(w.error.textContent,/traceback/);assert.equal(w.form.file.name,'diploma.pdf');
+ }
+});
 function wizard(fetch){
  const handlers={},windows={},elements=new Map();
  const element=key=>{if(!elements.has(key))elements.set(key,{hidden:false,disabled:false,textContent:'',dataset:{},style:{},classList:{toggle(){}},setAttribute(){},removeAttribute(){}});return elements.get(key)};
