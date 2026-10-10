@@ -20,6 +20,9 @@ def db():
             id bigint, material_id bigint, owner_user_id bigint, course_id bigint,
             index_version text, section_title text, text_content text, retrieval_terms text,
             page_start int, page_end int, content_kind text, chunk_index int, semantic_json text)'''))
+        session.exec(text('''CREATE TEMP TABLE studyindexpage (
+            owner_user_id bigint,course_id bigint,material_id bigint,index_version text,
+            page_number int,extraction_method text)'''))
         session.exec(text("INSERT INTO studymaterial VALUES (1,17,'v1','READY',NULL,'fixture',23)"))
         from app.academic_chunk_links import _CACHE
         _CACHE.clear()
@@ -38,6 +41,19 @@ def lookup(db, groups=()):
     return _fts_rows(db, owner_user_id=17, course_id=23,
         lexical_query='"hipofiz" OR "tiroid"', query_vector=None,
         embedding_provider='', embedding_model='', limit=20, lexical_groups=groups)
+
+
+def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db):
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    add(db,1,'hipofiz'); add(db,2,'hipofiz')
+    db.exec(text("ALTER TABLE studymaterial ADD COLUMN file_path text DEFAULT 'private/source.pdf', ADD COLUMN mime_type text DEFAULT 'application/pdf'"))
+    db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'v1',1,'LOCAL_OCR:test'), (17,23,1,'v1',2,'PDF_TEXT'), (17,23,1,'v0',2,'LOCAL_OCR:old'), (99,23,1,'v1',2,'LOCAL_OCR:foreign'), (17,99,1,'v1',2,'LOCAL_OCR:other-course')"))
+    plan=StudyRequest('Hipofiz anlat','answer','topic',None,None,'',('hipofiz',))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+    assert {(v['material_id'],v['page_number']) for v in result.visual_sources} == {(1,1)}
+    assert result.visual_sources[0]['index_version']=='v1'
+    assert 'OCR KAYNAK UYARISI' in result.note_context[0]
 
 
 def test_comparison_keeps_rare_subject_in_bounded_pool(db):

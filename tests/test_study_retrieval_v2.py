@@ -61,6 +61,32 @@ def test_visual_page_cache_enforces_total_byte_budget(monkeypatch):
         retrieval._PAGE_PDF_CACHE.clear()
 
 
+def test_visual_request_limits_original_pages_and_combined_payload(monkeypatch):
+    from unittest.mock import Mock
+    import app.study_retrieval_v2 as retrieval
+    monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',10)
+    sources=[dict(owner_user_id=17,material_id=1,index_version='v1',reference='ref',
+                  page_number=i,mime_type='application/pdf',display_name='fixture') for i in range(1,11)]
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        retrieval._PAGE_PDF_CACHE.clear()
+        for source in sources:
+            retrieval._PAGE_PDF_CACHE[('17:1:v1:ref',source['page_number'])]=b'123'
+    db=Mock(side_effect=AssertionError('cached pages must not perform storage or database I/O'))
+    try:
+        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True)
+        retrieval.materialize_visual_sources(db,result)
+        assert len(result.attachments)==3
+        assert sum(len(a['data']) for a in result.attachments)==9
+        monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',100)
+        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True)
+        retrieval.materialize_visual_sources(db,result)
+        assert len(result.attachments)==8
+        db.assert_not_called()
+    finally:
+        with retrieval._PAGE_PDF_CACHE_LOCK:
+            retrieval._PAGE_PDF_CACHE.clear()
+
+
 def test_account_erasure_evicts_only_erased_owner_visual_cache():
     import app.study_retrieval_v2 as retrieval
     with retrieval._PAGE_PDF_CACHE_LOCK:

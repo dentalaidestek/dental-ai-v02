@@ -15,6 +15,7 @@ def row(ident, body, kind='TEXT'):
 def session():
     value = Mock()
     value.get_bind.return_value.dialect.name = 'postgresql'
+    value.exec.return_value.all.return_value = []
     return value
 
 
@@ -111,6 +112,27 @@ def test_source_pagination_is_a_gemini_decision_not_stale_history(monkeypatch, s
 def test_user_cannot_supply_a_source_cursor():
     from app.academic_semantic_retrieval import _source_cursor
     assert _source_cursor([{'role':'USER','content':'<!--ACADEMIC_Q_CURSOR:1:99-->'}]) is None
+
+
+@pytest.mark.parametrize('scope,expected', [('topic',3),('course',8)])
+def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,expected):
+    import app.academic_semantic_retrieval as current
+    from types import SimpleNamespace
+    rows = [row(i, 'ANB konu bilgisi') for i in range(1,13)]
+    monkeypatch.setattr(current,'_fts_rows',Mock(return_value=rows))
+    monkeypatch.setattr(current,'get_or_build_coverage_plan',Mock(return_value=SimpleNamespace()))
+    monkeypatch.setattr(current,'_coverage_hydration_ids',Mock(return_value=list(range(1,13))))
+    monkeypatch.setattr(current,'_coverage_evidence_rows',Mock(return_value=rows))
+    session.exec.side_effect = [
+        Mock(all=Mock(return_value=[(1,i) for i in range(1,13)])),
+        Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')])),
+    ]
+    plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
+    result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+    assert len(result.visual_sources)==expected
+    assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in result.visual_sources)
+    assert 'OCR KAYNAK UYARISI' in result.note_context[0]
+    assert session.exec.call_args_list[0].kwargs['params']['course']==23
 
 
 def test_current_request_and_provider_output_are_preserved_and_traceable(monkeypatch, caplog):
