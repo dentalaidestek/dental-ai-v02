@@ -46,7 +46,11 @@ def begin_account_erasure(
     if not user or user.role == "ADMIN":
         raise ValueError("ACCOUNT_NOT_ERASABLE")
 
+    from app.membership_verification import MembershipVerification
     extra_storage: list[str] = []
+    for verification in session.exec(select(MembershipVerification).where(MembershipVerification.user_id == user_id)).all():
+        extra_storage.append(verification.document_path)
+        session.delete(verification)
     if user.profile_photo_path:
         extra_storage.append(user.profile_photo_path)
 

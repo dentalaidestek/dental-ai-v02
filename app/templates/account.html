@@ -149,7 +149,9 @@ body.dai-app-shell .account-container .info-item{display:flex;justify-content:sp
 .account-container .info-value{text-align:right;overflow-wrap:anywhere;max-width:65%}
 @media(max-width:650px){body.dai-app-shell .account-container{padding:0 12px}.account-section summary{padding:16px}.account-section-content{padding:0 16px 16px}}
 </style>
+<link rel="stylesheet" href="/static/membership-verification.css">
 <div class="account-container">
+<a class="member-profile-card" href="/account/verification"><span class="member-document-icon" aria-hidden="true">✓</span><span><strong>{% if membership.status=='VERIFIED' %}{{ 'Öğrenci üyeliği doğrulandı' if membership.student else 'Üyelik belgesi doğrulandı' }}{% elif membership.status=='PENDING' %}Belgeniz İncelemede{% else %}Belge Yükle ve Doğrulan{% endif %}</strong><small>{% if membership.status=='PENDING' %}Yönetici incelemesinin sonucu bildirim olarak iletilecek.{% elif membership.status=='VERIFIED' %}{{ membership.label }} onaylandı.{% elif membership.status=='REJECTED' %}Belgeniz onaylanmadı. Açıklamayı görün ve yeniden gönderin.{% elif membership.status=='STALE' %}Profil bilgileriniz değişti. Belgenizi yeniden doğrulatın.{% else %}Diploma, mezuniyet belgesi, TDB kartı veya öğrenci belgesiyle başvurun.{% endif %}</small></span><b>›</b></a>
 
     <div class="account-card">
         <div class="account-profile-hero"><div class="account-profile-avatar" data-profile-avatar-user-id="{{ user.id }}">{% if user.profile_photo_path %}<img src="{{ profile_photo_url(user) }}" data-profile-user-id="{{ user.id }}" alt="Profil fotoğrafı">{% else %}{{ (user.display_name or user.username or '?')[:1] }}{% endif %}</div><div class="account-profile-copy"><span>Profilim</span><h1>{{ user.display_name or user.username }}</h1><p>{{ account_meta.professional_title if account_meta and account_meta.professional_title else (doctor_profile.graduation_status if doctor_profile else 'Dental AI kullanıcısı') }}</p></div></div>

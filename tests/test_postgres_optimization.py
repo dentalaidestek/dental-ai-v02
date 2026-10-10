@@ -148,7 +148,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 11
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 12
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
 
@@ -257,3 +257,59 @@ def test_retention_migration_preserves_old_messages_and_grants_grace(pg):
     with Session(engine) as s:
         assert s.get(main.ConsultationCase,case_id).chat_retention_started_at==anchor
         assert len(s.exec(select(main.ConsultationDeadlineJob).where(main.ConsultationDeadlineJob.case_id==case_id,main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).all())==1
+
+
+def test_membership_concurrent_submissions_and_reviews(pg, monkeypatch, tmp_path):
+    import io
+    from PIL import Image
+    from fastapi.testclient import TestClient
+    from app.membership_verification import MembershipVerification
+    engine, _, resources = pg
+    with Session(engine, expire_on_commit=False) as s:
+        owner=s.get(main.User,resources[0].owner_user_id)
+        admin=main.User(username='member-admin',role='ADMIN',display_name='Admin')
+        s.add(admin); s.commit()
+    monkeypatch.setattr(main,'get_current_user',lambda request: admin if request.headers.get('x-user')=='admin' else owner)
+    monkeypatch.setattr(main,'on_loop',lambda *a,**kw:None)
+    monkeypatch.setattr(main,'UPLOAD_DIR',tmp_path)
+    # Both external writes finish before either DB transaction: force the race.
+    import threading
+    barrier=threading.Barrier(2)
+    def write(path,data,**kw):
+        path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
+        barrier.wait(timeout=10)
+        return str(path)
+    monkeypatch.setattr(main,'storage_write_bytes',write)
+    monkeypatch.setattr(main,'storage_delete',lambda path:__import__('pathlib').Path(path).unlink(missing_ok=True))
+    buf=io.BytesIO();Image.new('RGB',(12,12)).save(buf,format='PNG')
+    # Avoid TestClient context: lifespan may backfill unrelated jobs during races.
+    def submit(_):
+        client=TestClient(main.app)
+        return client.post('/account/verification',data={'document_type':'DIPLOMA','consent':'yes'},files={'document':('doc.png',buf.getvalue(),'image/png')},follow_redirects=False).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(submit,range(2)))
+    assert sorted(results)==[303,409]
+    with Session(engine) as s:
+        rows=s.exec(select(MembershipVerification)).all()
+        assert len(rows)==1
+        verification_id=rows[0].id
+    assert len(list(tmp_path.rglob('*.png')))==1
+    def review(_):
+        return TestClient(main.app).post(f'/admin/member-verifications/{verification_id}',headers={'x-user':'admin'},data={'decision':'APPROVE','identity_checked':'yes'},follow_redirects=False).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(review,range(2)))
+    assert sorted(results)==[303,409]
+    with Session(engine) as s:
+        assert len(s.exec(select(main.AdminAuditLog).where(main.AdminAuditLog.action=='MEMBERSHIP_VERIFIED')).all())==1
+
+
+def test_membership_migration_creates_private_table(pg, monkeypatch):
+    from app import migrate
+    engine,_,_=pg
+    with engine.begin() as c:
+        c.execute(text('DROP TABLE membershipverification'))
+    monkeypatch.setattr(main,'_backfill_legacy_deadline_jobs_if_needed',lambda:None)
+    monkeypatch.setattr(main,'_backfill_program_reminder_jobs',lambda:None)
+    migrate.apply();migrate.apply();migrate.require_schema(engine)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT to_regclass('membershipverification')")).scalar()

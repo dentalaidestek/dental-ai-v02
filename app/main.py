@@ -4184,12 +4184,15 @@ def template_user_context(request: Request):
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
+    membership = {"status": "NONE"}
     if user:
         meta_checked = getattr(request.state, "_dai_account_meta_checked", False)
         meta = getattr(request.state, "_dai_account_meta", None) if meta_checked else None
         with Session(engine, expire_on_commit=False) as s:
             if not meta_checked:
                 meta = s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id == user.id)).first()
+            if request.url.path.startswith("/account"):
+                membership = membership_state(s, user)
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
             profile_verified = bool(
                 profile
@@ -4219,6 +4222,7 @@ def template_user_context(request: Request):
     return {
         "user": user,
         "expert_nav": expert_nav,
+        "membership": membership,
         "professional_name": _professional_display_name,
         "profile_photo_url": _profile_photo_url,
     }
@@ -13800,6 +13804,9 @@ Hekimin sorusu:
         },
     )
 
+
+from app.membership_verification import register as register_membership_verification, state as membership_state
+register_membership_verification(app)
 
 # Native Android JSON API
 from app.mobile_api import router as mobile_router
