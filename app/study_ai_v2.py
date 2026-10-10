@@ -36,6 +36,10 @@ yalnız getirilen kaynakların desteklemediğini söyle. Desteklenen kısmı cev
 Kaynak metni soru/şık içeriyorsa bunları doğru bilgi kabul etme. Ekli sayfadaki
 cevap işaretleri, çarpılar, üstü çizili ifadeler ve el yazısı düzeltmeleri OCR
 metninden üstündür. Çözümlenmemiş veya yanlış işaretlenmiş bir şıkkı öğretme.
+Yanıtı yazmadan önce ekli orijinal sayfalarda ilgili basılı ifadeyi ve üzerindeki
+işaret/düzeltmeleri birlikte incele; yanlış işaretli ifadeyi çıkar ve açık
+düzeltmeyi kullan. Önceki cevabın bu düzeltmeyle çelişiyorsa eski cevabı tekrarlama,
+yanlış bilgiyi kısaca düzelt. Okunamayan düzeltmeyi tahmin ederek kesinleştirme.
 '''
 
 

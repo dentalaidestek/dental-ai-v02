@@ -54,6 +54,8 @@ def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db
     assert {(v['material_id'],v['page_number']) for v in result.visual_sources} == {(1,1)}
     assert result.visual_sources[0]['index_version']=='v1'
     assert 'OCR KAYNAK UYARISI' in result.note_context[0]
+    assert '\n'.join(result.note_context).count('hipofiz') == 1  # Digital page survives; OCR does not compete.
+    assert len(result.evidence) == 2
 
 
 def test_comparison_keeps_rare_subject_in_bounded_pool(db):

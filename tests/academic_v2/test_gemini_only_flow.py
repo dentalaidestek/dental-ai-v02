@@ -75,7 +75,8 @@ def test_question_source_filter_obeys_gemini_instead_of_question_keyword(monkeyp
 def test_visual_material_lookup_is_owned_and_uses_materializer_contract(monkeypatch, session):
     import app.academic_semantic_retrieval as current
     monkeypatch.setattr(current, '_fts_rows', Mock(return_value=[row(1, 'hipofiz şekli')]))
-    session.exec.return_value.all.return_value = [(1, 'private/source.pdf', 'application/pdf', 'note', 'v1')]
+    session.exec.side_effect = [Mock(all=Mock(return_value=[])),
+        Mock(all=Mock(return_value=[(1, 'private/source.pdf', 'application/pdf', 'note', 'v1')]))]
     plan = StudyRequest('Hipofiz şeklini açıkla', 'explain', 'topic', None, None, '', ('hipofiz',), needs_visual=True)
     result = retrieve_semantic_context(session, owner_user_id=17, course_id=23, query=plan.resolved_query, request_plan=plan)
     assert result.visual_sources[0]['reference'] == 'private/source.pdf'
@@ -127,7 +128,7 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,expected', [('topic',3),('course',8)])
+@pytest.mark.parametrize('scope,expected', [('topic',8),('course',8)])
 def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
@@ -145,6 +146,10 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     assert len(result.visual_sources)==expected
     assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in result.visual_sources)
     assert 'OCR KAYNAK UYARISI' in result.note_context[0]
+    assert 'ANB konu bilgisi' not in '\n'.join(result.note_context)
+    assert len(result.evidence)==12  # OCR remains usable for search and provenance.
+    assert sum('ekli orijinal sayfayı incele' in c for c in result.note_context)==expected
+    assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==12-expected
     assert session.exec.call_args_list[0].kwargs['params']['course']==23
 
 
