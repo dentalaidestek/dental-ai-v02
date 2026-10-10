@@ -15,12 +15,14 @@ def db():
     with Session(engine) as session:
         session.exec(text('''CREATE TEMP TABLE studymaterial (
             id bigint, owner_user_id bigint, active_index_version text,
-            index_status text, deleted_at timestamp, display_name text)'''))
+            index_status text, deleted_at timestamp, display_name text, course_id bigint DEFAULT 23)'''))
         session.exec(text('''CREATE TEMP TABLE studyindexchunk (
             id bigint, material_id bigint, owner_user_id bigint, course_id bigint,
             index_version text, section_title text, text_content text, retrieval_terms text,
             page_start int, page_end int, content_kind text, chunk_index int, semantic_json text)'''))
-        session.exec(text("INSERT INTO studymaterial VALUES (1,17,'v1','READY',NULL,'fixture')"))
+        session.exec(text("INSERT INTO studymaterial VALUES (1,17,'v1','READY',NULL,'fixture',23)"))
+        from app.academic_chunk_links import _CACHE
+        _CACHE.clear()
         yield session
         session.rollback()
     engine.dispose()
@@ -54,7 +56,7 @@ def test_grouped_lookup_preserves_owner_course_version_and_ready_filters(db):
     add(db,3,'tiroid',owner=99)
     add(db,4,'tiroid',course=99)
     add(db,5,'tiroid',version='stale')
-    db.exec(text("INSERT INTO studymaterial VALUES (2,17,'v1','INDEXING',NULL,'pending'), (3,17,'v1','READY',now(),'deleted')"))
+    db.exec(text("INSERT INTO studymaterial VALUES (2,17,'v1','INDEXING',NULL,'pending',23), (3,17,'v1','READY',now(),'deleted',23)"))
     add(db,6,'tiroid',material=2); add(db,7,'tiroid',material=3)
     assert {r[0] for r in lookup(db, ('"hipofiz"','"tiroid"'))} == {1,2}
 
@@ -82,14 +84,54 @@ def test_gemini_only_retrieval_keeps_comparison_and_owned_ready_scope(db):
     for ident in range(1,41):
         add(db,ident,'hipofiz')
     add(db,100,'tiroid')
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["pituitary"]}\' WHERE id<100'))
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["thyroid"]}\' WHERE id=100'))
+    add(db,200,'Hipotalamo-hipofizer bölgenin devamı')
+    add(db,201,'Bu bezin hormon sentezi')
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["pituitary"]}\' WHERE id=200'))
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["thyroid"]}\' WHERE id=201'))
     add(db,101,'tiroid',owner=99)
     add(db,102,'tiroid',course=99)
     add(db,103,'tiroid',version='stale')
-    db.exec(text("INSERT INTO studymaterial VALUES (2,17,'v1','INDEXING',NULL,'pending'), (3,17,'v1','READY',now(),'deleted')"))
+    db.exec(text("INSERT INTO studymaterial VALUES (2,17,'v1','INDEXING',NULL,'pending',23), (3,17,'v1','READY',now(),'deleted',23)"))
     add(db,104,'tiroid',material=2); add(db,105,'tiroid',material=3)
     plan=StudyRequest('Hipofiz ve tiroidi karşılaştır','compare','topic',None,None,'',('hipofiz','tiroid'))
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
     ids={item.chunk_id for item in result.evidence}
-    assert 100 in ids and any(i < 100 for i in ids)
+    assert {100,200,201} <= ids and any(i < 100 for i in ids)
     assert not ids & {101,102,103,104,105}
     assert len(ids) <= 16
+
+
+def test_topic_links_find_distant_page_without_its_query_words(db):
+    import json
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    from app.academic_request_understanding import StudyRequest
+    add(db,1,'ANB açısının ölçümü')
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=:tags WHERE id=1'),
+            params={'tags':json.dumps({'nodes':['anb']})})
+    db.exec(text('''INSERT INTO studyindexchunk
+        SELECT n,1,17,23,'v1',NULL,'Bu ölçümün klinik yorumu','',n,
+               n,'TEXT',n,'{"nodes":["anb"]}' FROM generate_series(2,1000) AS n'''))
+    # Other user/course/generation and distractors never enter linked evidence.
+    for ident, kwargs in [(1001,{'owner':99}), (1002,{'course':99}),
+                          (1003,{'version':'old'})]:
+        add(db,ident,'Bu ölçümün klinik yorumu',**kwargs)
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["anb"]}\' WHERE id>=1001'))
+    add(db,1004,'Bağlı sorunun yanlış şıkkı')
+    db.exec(text('UPDATE studyindexchunk SET semantic_json=\'{"nodes":["anb"]}\', content_kind=\'QUESTION\' WHERE id=1004'))
+    plan=StudyRequest('ANB açısını açıkla','explain','topic',None,None,'',('ANB',))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    ids={r.chunk_id for r in result.evidence}
+    assert {1,501,1000} <= ids
+    assert not ids & {1001,1002,1003,1004}
+    assert len(ids) <= 16
+
+
+def test_published_version_change_invalidates_topic_link_cache(db):
+    from app.academic_chunk_links import get_course_links
+    add(db,1,'eski'); add(db,2,'yeni',version='v2')
+    assert set(get_course_links(db,owner_user_id=17,course_id=23).rows) == {1}
+    db.exec(text("UPDATE studymaterial SET active_index_version='v2'"))
+    assert set(get_course_links(db,owner_user_id=17,course_id=23).rows) == {2}

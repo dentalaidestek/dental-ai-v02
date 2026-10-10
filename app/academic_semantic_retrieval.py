@@ -6,13 +6,56 @@ question. Gemini assesses support in the final grounded response.
 from __future__ import annotations
 
 import re
+import logging
 from sqlalchemy import text
 from app.academic_request_understanding import StudyRequest
+from app.academic_chunk_links import get_course_links, source_nodes
 from app.study_retrieval_v2 import (
     Evidence, RetrievalResult, _fts_rows, _semantic_fts_query,
     _semantic_fts_fallback, _question_rows, _academic_question_rows,
     _coverage_evidence_rows, _coverage_hydration_ids, get_or_build_coverage_plan,
 )
+
+logger = logging.getLogger('uvicorn.error.academic_semantic_retrieval')
+
+
+def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit):
+    """Keep Gemini's independent subjects balanced while following source links."""
+    pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
+    seeds = []
+    for phrase, pool in zip(searches, pools):
+        wanted = set(re.findall(r'[^\W_]+', phrase.casefold()))
+        aligned = [row for row in pool if wanted.intersection(
+            re.findall(r'[^\W_]+', ((row[5] or '') + ' ' + (row[7] or '')).casefold()))]
+        seeds.append(aligned[:2])
+    if not any(source_nodes(row) or row[5] and len(str(row[5]).strip()) >= 6
+               for group in seeds for row in group):
+        return _balanced_candidates(rows, searches, limit)
+    links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+    linked_ids = [links.related_ids(group, max(2, limit // len(pools))) for group in seeds]
+    ids = list(dict.fromkeys(cid for group in linked_ids for cid in group))
+    hydrated = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
+        course_id=course_id, chunk_ids=ids, limit=min(48, len(ids))) if ids else []
+    by_id = {int(row[0]): row for row in hydrated}
+    combined = []
+    for pool, group in zip(pools, linked_ids):
+        related = [by_id[cid] for cid in group if cid in by_id]
+        merged = pool[:2]
+        for offset in range(max(len(pool)-2, len(related))):
+            if offset < len(related):
+                merged.append(related[offset])
+            if offset + 2 < len(pool):
+                merged.append(pool[offset + 2])
+        combined.append(merged)
+    selected, seen = [], set()
+    for offset in range(max((len(p) for p in combined), default=0)):
+        for pool in combined:
+            if offset < len(pool) and int(pool[offset][0]) not in seen:
+                row = pool[offset]
+                seen.add(int(row[0])); selected.append(row)
+                if len(selected) == limit:
+                    return selected
+    return selected
 
 
 def _balanced_candidates(rows, phrases, limit):
@@ -98,8 +141,13 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches))
         if request_plan.source_kind == 'questions':
             rows = [row for row in rows if row[6] == 'QUESTION']
-        rows = _balanced_candidates(rows, searches, limit)
+        rows = (_balanced_candidates(rows, searches, limit)
+                if request_plan.source_kind == 'questions' or not rows else
+                _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
+                                   course_id=course_id, limit=limit))
         result.retrieval_mode = 'semantic_candidates'
+    logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
+                result.retrieval_mode, len(rows), limit)
     seen = set()
     for row in rows:
         if int(row[0]) in seen:
