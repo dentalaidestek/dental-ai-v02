@@ -73,7 +73,7 @@ def stream_rag_v2(
         yield retrieval.clarification
         return
     if (not retrieval.note_context and not retrieval.attachments) or not retrieval.evidence_sufficient:
-        yield 'Bu isteği yanıtlayacak kaynak içeriğini henüz eşleştiremedim. Bu, bilginin notlarda bulunmadığı anlamına gelmez.'
+        yield f'«{retrieval.resolved_query or question}» için kaynak içeriğini henüz eşleştiremedim. Bu, bilginin notlarda bulunmadığı anlamına gelmez.'
         return
     required_attachment_types = {
         item.get("mime_type")
