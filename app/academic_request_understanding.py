@@ -49,6 +49,10 @@ not mention both. Preserve clinical numbers/units when relevant. Do not invent
 synonyms or facts. Use [] for course scope or clarify; topic scope needs at least
 one phrase. Full exclusions, relations and ordering remain in resolved_query.
 Output length/difficulty/count are instructions, never clinical search subjects.
+Contract invariants: if operation is not clarify, clarification MUST be the empty
+string. If operation is clarify, clarification MUST be nonempty. For course
+scope OR clarify, retrieval_queries MUST be [] (never generic note keywords).
+For a topic study task, retrieval_queries MUST contain at least one phrase.
 Resolve referents only when their actual antecedent is identifiable in dialogue.
 A previous assistant assertion is context, NOT evidence or a verified fact.
 For an ambiguous referent, missing topic or non-study/system request, operation
@@ -100,41 +104,45 @@ class UnderstandingResult:
     outcome: str = 'unavailable'
 
 
+class PlannerContractError(ValueError):
+    """A fixed validation reason; never contains model or user text."""
+
+
 def parse_request(raw: str) -> StudyRequest:
     if not isinstance(raw, str) or len(raw) > 10000:
-        raise ValueError('invalid planner output size')
+        raise PlannerContractError('invalid planner output size')
     data = json.loads(raw)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
-        raise ValueError('invalid planner schema')
+        raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
             or data['operation'] not in OPERATIONS or data['scope'] not in {'topic', 'course'}):
-        raise ValueError('invalid operation/scope')
+        raise PlannerContractError('invalid operation/scope')
     for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
-            raise ValueError('invalid planner text')
+            raise PlannerContractError('invalid planner text')
     searches = data['retrieval_queries']
     if (not isinstance(searches, list) or len(searches) > 4
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
-        raise ValueError('invalid retrieval queries')
+        raise PlannerContractError('invalid retrieval queries')
     if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches:
-        raise ValueError('missing topic search')
+        raise PlannerContractError('missing topic search')
     if (data['scope'] == 'course' or data['operation'] == 'clarify') and searches:
-        raise ValueError('unexpected topic search')
+        raise PlannerContractError('unexpected topic search')
     data['retrieval_queries'] = tuple(dict.fromkeys(x.strip() for x in searches))
     if not isinstance(data['source_kind'], str) or not isinstance(data['depth'], str) or data['source_kind'] not in {'notes', 'questions', 'question_patterns'} or data['depth'] not in {'standard', 'detailed'} or type(data['needs_visual']) is not bool or type(data['continue_source']) is not bool:
-        raise ValueError('invalid source/depth/visual contract')
+        raise PlannerContractError('invalid source/depth/visual contract')
     count = data['count']
     if count is not None and (type(count) is not int or not 1 <= count <= 200):
-        raise ValueError('invalid requested count')
+        raise PlannerContractError('invalid requested count')
     difficulty = data['difficulty']
     if difficulty is not None and (not isinstance(difficulty, str) or len(difficulty) > 80):
-        raise ValueError('invalid difficulty')
+        raise PlannerContractError('invalid difficulty')
     if data['operation'] == 'clarify':
         if not data['clarification'].strip():
-            raise ValueError('missing clarification')
+            raise PlannerContractError('missing clarification')
     elif not data['resolved_query'].strip() or data['clarification'].strip():
-        raise ValueError('inconsistent interpretation')
+        raise PlannerContractError('inconsistent interpretation')
     return StudyRequest(**data)
 
 
@@ -151,7 +159,9 @@ def interpret_request(question: str, history: list[dict], *, call) -> Understand
         return UnderstandingResult(plan=plan, attempted=True, outcome='interpreted')
     except Exception as exc:
         # No transcript, model output or exception text in public operational logs.
-        logger.warning('Semantic request failed type=%s', type(exc).__name__)
+        reason = (str(exc) if isinstance(exc, PlannerContractError) else
+                  'invalid_json' if isinstance(exc, json.JSONDecodeError) else 'call_failed')
+        logger.warning('Semantic request failed type=%s reason=%s', type(exc).__name__, reason)
         return UnderstandingResult(attempted=True, outcome='failed')
     finally:
         logger.info('Semantic request elapsed_ms=%s', round((time.perf_counter()-started)*1000))
@@ -159,7 +169,7 @@ def interpret_request(question: str, history: list[dict], *, call) -> Understand
 
 def understand_study_request(question: str, history: list[dict]) -> UnderstandingResult:
     from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
-    model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-2.5-flash-lite').strip()
+    model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-3.5-flash-lite').strip()
     provider = GeminiStudyProvider()
     if not provider.api_key or not target_available(ProviderTarget('gemini', model)):
         return UnderstandingResult(outcome='unavailable')

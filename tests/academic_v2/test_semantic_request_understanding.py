@@ -68,6 +68,34 @@ def test_old_disable_flag_cannot_switch_back_to_language_rules(monkeypatch):
     provider.generate.assert_called_once()
 
 
+def test_planner_defaults_to_current_answer_model(monkeypatch):
+    import app.study_provider as provider_module
+    from app.study_ai_v2 import ACADEMIC_V2_MODEL
+    provider = Mock(api_key='test-only')
+    provider.generate.return_value = raw()
+    monkeypatch.setattr(provider_module, 'GeminiStudyProvider', lambda: provider)
+    monkeypatch.setattr(provider_module, 'target_available', lambda target: True)
+    monkeypatch.delenv('STUDY_ACADEMIC_PLANNER_MODEL', raising=False)
+    assert understand_study_request('Bunu anlat', []).outcome == 'interpreted'
+    assert provider.generate.call_args.kwargs['model'] == ACADEMIC_V2_MODEL
+
+
+def test_safe_rejection_reason_does_not_log_source_or_model_output(caplog):
+    payload = raw(scope='course', retrieval_queries=['SECRET-PATIENT-TEXT'])
+    result = interpret_request('PRIVATE-QUESTION', [], call=Mock(return_value=payload))
+    assert result.outcome == 'failed'
+    assert 'reason=unexpected topic search' in caplog.text
+    assert 'SECRET-PATIENT-TEXT' not in caplog.text
+    assert 'PRIVATE-QUESTION' not in caplog.text
+
+
+def test_incomplete_json_logs_only_constant_reason(caplog):
+    result = interpret_request('PRIVATE-QUESTION', [], call=Mock(return_value='{"SECRET-PATIENT-TEXT":'))
+    assert result.outcome == 'failed'
+    assert 'reason=invalid_json' in caplog.text
+    assert 'SECRET-PATIENT-TEXT' not in caplog.text
+
+
 def test_semantic_attempt_prevents_second_paid_recovery_call():
     from app.academic_recovery import recover_once
     initial = SimpleNamespace(clarification='', evidence_sufficient=False, semantic_planner_attempted=True)
