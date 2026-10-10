@@ -93,12 +93,34 @@ def test_planner_defaults_to_current_answer_model(monkeypatch):
 
 
 def test_safe_rejection_reason_does_not_log_source_or_model_output(caplog):
-    payload = raw(scope='course', retrieval_queries=['SECRET-PATIENT-TEXT'])
+    payload = raw(count=201, retrieval_queries=['SECRET-PATIENT-TEXT'])
     result = interpret_request('PRIVATE-QUESTION', [], call=Mock(return_value=payload))
     assert result.outcome == 'failed'
-    assert 'reason=unexpected topic search' in caplog.text
+    assert 'reason=invalid requested count' in caplog.text
     assert 'SECRET-PATIENT-TEXT' not in caplog.text
     assert 'PRIVATE-QUESTION' not in caplog.text
+
+
+@pytest.mark.parametrize('overrides', [
+    {'scope':'course','operation':'generate_questions','count':20,
+     'resolved_query':'Tüm ders notlarından 20 soru hazırla'},
+    {'operation':'clarify','clarification':'Hangi konuyu kastediyorsun?'},
+])
+def test_valid_unused_search_field_cannot_block_course_or_clarification(overrides):
+    call = Mock(return_value=raw(**overrides,retrieval_queries=['unused subject']))
+    result = interpret_request('Current request', [], call=call)
+    assert result.outcome == 'interpreted'
+    assert result.plan.retrieval_queries == ()
+    for key,value in overrides.items():
+        assert getattr(result.plan,key) == value
+    call.assert_called_once()
+
+
+def test_unused_search_normalization_does_not_accept_invalid_data_or_invent_topic():
+    with pytest.raises(ValueError):
+        parse_request(raw(scope='course',retrieval_queries=[{'owner_user_id':99}]))
+    with pytest.raises(ValueError):
+        parse_request(raw(scope='topic',retrieval_queries=[]))
 
 
 def test_incomplete_json_logs_only_constant_reason(caplog):

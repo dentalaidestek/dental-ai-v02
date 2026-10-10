@@ -137,8 +137,11 @@ def parse_request(raw: str) -> StudyRequest:
         raise PlannerContractError('invalid retrieval queries')
     if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches:
         raise PlannerContractError('missing topic search')
-    if (data['scope'] == 'course' or data['operation'] == 'clarify') and searches:
-        raise PlannerContractError('unexpected topic search')
+    # These branches never consume search phrases. Canonicalize this unused
+    # field instead of discarding an otherwise usable model interpretation.
+    # No subject, operation or scope is inferred or changed here.
+    if data['scope'] == 'course' or data['operation'] == 'clarify':
+        searches = []
     data['retrieval_queries'] = tuple(dict.fromkeys(x.strip() for x in searches))
     if not isinstance(data['source_kind'], str) or not isinstance(data['depth'], str) or data['source_kind'] not in {'notes', 'questions', 'question_patterns'} or data['depth'] not in {'standard', 'detailed'} or type(data['needs_visual']) is not bool or type(data['continue_source']) is not bool:
         raise PlannerContractError('invalid source/depth/visual contract')
