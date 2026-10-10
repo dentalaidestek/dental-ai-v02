@@ -4,7 +4,10 @@ The existing idempotent baseline DDL is retained; revision 2 adds durable work, 
 revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
-from sqlalchemy import text
+import logging
+from sqlalchemy import text, inspect
+
+logger = logging.getLogger(__name__)
 
 REVISION = 12
 
@@ -19,8 +22,51 @@ def require_schema(engine):
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
 
 
+def _upgrade_recent_schema(main):
+    """Upgrade 10/11 without replaying historical DDL on busy production tables.
+
+    Transaction-scoped locking works with transaction-pooling proxies and cannot
+    leave a session advisory lock behind when a web container is replaced.
+    """
+    if main.engine.dialect.name != 'postgresql':
+        return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):
+            return False
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        logger.warning('migration.recent revision=%s', revision)
+        if revision == REVISION:
+            return True
+        if revision not in (10, 11):
+            return False
+        logger.warning('migration.recent begin=transaction_lock')
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
+        # Re-read after obtaining the lock: another deploy may have finished.
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision not in (10, 11):
+            raise RuntimeError('Schema changed during release migration')
+        logger.warning('migration.recent begin=retention_columns')
+        connection.execute(text('ALTER TABLE consultationcase ADD COLUMN IF NOT EXISTS messages_deleted_at TIMESTAMP'))
+        connection.execute(text('ALTER TABLE consultationcase ADD COLUMN IF NOT EXISTS chat_retention_started_at TIMESTAMP'))
+        logger.warning('migration.recent begin=private_tables')
+        from app.membership_verification import MembershipVerification
+        main.ConsultationMediaDeletion.__table__.create(connection, checkfirst=True)
+        MembershipVerification.__table__.create(connection, checkfirst=True)
+        logger.warning('migration.recent begin=retention_backfill')
+        main._backfill_legacy_deadline_jobs_if_needed(bind=connection)
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
+    logger.warning('migration.recent complete revision=%s', REVISION)
+    return True
+
+
 def apply():
     from app import main
+    if _upgrade_recent_schema(main):
+        return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
     lock = None
@@ -32,6 +78,7 @@ def apply():
             lock = psycopg2.connect(*args, **kwargs)
             lock.autocommit = True
             with lock.cursor() as cursor:
+                cursor.execute("SET statement_timeout = '60s'")
                 cursor.execute('SELECT pg_advisory_lock(71048232)')
         main.init_db()
         from app.work_jobs import WorkJob
@@ -83,7 +130,11 @@ def apply():
             connection.execute(text('INSERT INTO dental_schema_revision(id, version) VALUES(1, :version) ON CONFLICT(id) DO UPDATE SET version=excluded.version'), {'version': REVISION})
     finally:
         if lock:
-            lock.close()
+            try:
+                with lock.cursor() as cursor:
+                    cursor.execute('SELECT pg_advisory_unlock(71048232)')
+            finally:
+                lock.close()
 
 
 if __name__ == '__main__':

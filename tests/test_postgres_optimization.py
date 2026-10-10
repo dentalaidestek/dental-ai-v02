@@ -346,3 +346,32 @@ def test_profile_document_replacements_serialize_without_duplicate_review(pg, mo
         profile=s.get(main.ExpertProfile,profile_id)
         assert profile.application_status=='SUBMITTED' and profile.availability=='PASSIVE'
         assert profile.bio=='Preserve biography' and profile.specialty=='Endodonti'
+
+
+def test_recent_release_migration_avoids_legacy_session_lock(pg, monkeypatch):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as c:
+        c.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        c.execute(text('INSERT INTO dental_schema_revision VALUES (1, 10)'))
+        c.execute(text('DROP TABLE membershipverification'))
+        c.execute(text('DROP TABLE consultationmediadeletion'))
+        c.execute(text('ALTER TABLE consultationcase DROP COLUMN messages_deleted_at'))
+        c.execute(text('ALTER TABLE consultationcase DROP COLUMN chat_retention_started_at'))
+    def forbidden():
+        raise AssertionError('Recent release must not replay baseline DDL')
+    monkeypatch.setattr(main, 'init_db', forbidden)
+    # Model a stranded session lock behind a transaction-pooling proxy.
+    with engine.connect() as legacy:
+        legacy.execute(text('SELECT pg_advisory_lock(71048232)'))
+        try:
+            migrate.apply()
+            migrate.apply()
+            migrate.require_schema(engine)
+        finally:
+            legacy.execute(text('SELECT pg_advisory_unlock(71048232)'))
+    with engine.connect() as c:
+        assert c.execute(text("SELECT to_regclass('membershipverification')")).scalar()
+        assert c.execute(text("SELECT to_regclass('consultationmediadeletion')")).scalar()
+        cols = {row[0] for row in c.execute(text("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='consultationcase'"))}
+        assert {'messages_deleted_at', 'chat_retention_started_at'} <= cols

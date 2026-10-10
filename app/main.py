@@ -6151,12 +6151,13 @@ def _purge_consultation_messages(session: Session, case: ConsultationCase, now: 
             for uid in {case.requester_user_id, case.expert_user_id}]
 
 
-def _backfill_legacy_deadline_jobs_if_needed() -> None:
+def _backfill_legacy_deadline_jobs_if_needed(*, bind=None) -> None:
     """One-time bridge for active cases created before the durable queue existed."""
-    with Session(engine) as s:
+    database = bind if bind is not None else engine
+    with Session(database) as s:
         # Multiple ASGI workers may start together. Serialize the one-time legacy
         # bridge on PostgreSQL so two processes cannot race the unique job keys.
-        if engine.dialect.name == "postgresql":
+        if database.dialect.name == "postgresql":
             s.exec(text("SELECT pg_advisory_xact_lock(824260926)"))
         specs = (
             ("REQUESTED", "EXPERT_RESPONSE", ConsultationCase.expert_response_deadline),
