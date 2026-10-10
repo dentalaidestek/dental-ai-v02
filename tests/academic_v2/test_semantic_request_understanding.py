@@ -176,3 +176,41 @@ def test_planned_search_bypasses_old_subject_parser(monkeypatch):
     assert lookup.call_args.kwargs['lexical_query'] == '"Downs" "analiz"'
     assert lookup.call_args.kwargs['owner_user_id'] == 17
     assert lookup.call_args.kwargs['course_id'] == 23
+
+
+@pytest.mark.parametrize('outcome', ['unavailable', 'failed', 'input_budget'])
+def test_enabled_interpreter_failure_never_uses_legacy_retrieval(monkeypatch, outcome):
+    from app.academic_request_understanding import UnderstandingResult, retrieve_understood_course_context
+    import app.study_retrieval_v2 as retrieval
+    lookup = Mock(side_effect=AssertionError('legacy retrieval used'))
+    monkeypatch.setattr(retrieval, 'retrieve_course_context_v2', lookup)
+    result = retrieve_understood_course_context(Mock(), understanding=UnderstandingResult(outcome=outcome),
+        owner_user_id=17, course_id=23, query='İkisinin farkı?', recent_history=[])
+    assert result.clarification and result.semantic_planner_attempted
+    assert not result.evidence_sufficient
+    lookup.assert_not_called()
+
+
+def test_gemini_resolved_query_is_not_reinterpreted_by_followup_rules(monkeypatch):
+    import app.study_retrieval_v2 as retrieval
+    session = Mock(); session.get_bind.return_value.dialect.name = 'postgresql'
+    monkeypatch.setattr(retrieval, 'resolve_followup_query', Mock(side_effect=AssertionError('reference reinterpreted')))
+    monkeypatch.setattr(retrieval, '_fts_rows', Mock(return_value=[]))
+    plan = parse_request(raw())
+    result = retrieval.retrieve_course_context_v2(session, owner_user_id=17, course_id=23,
+        query='Onları anlat', request_plan=plan)
+    assert result.resolved_query == plan.resolved_query
+
+
+def test_final_prompt_keeps_interpreted_request_without_legacy_output_rules(monkeypatch):
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    for name in ('app.study_ai_v2._response_contract',
+                 'app.academic_study_contract.study_output_rules',
+                 'app.academic_dialogue.dialogue_rules'):
+        monkeypatch.setattr(name, Mock(side_effect=AssertionError('legacy output rule used')))
+    request = 'Hipofiz ve tiroidi karşılaştır; önce farklar, sonra 5 zor soru, cevapları en sona koy'
+    result = RetrievalResult(resolved_query=request, note_context=['Kaynak kanıtı'],
+        semantic_planner_attempted=True, evidence_sufficient=True)
+    prompt = _prompt('Ortodonti', 'İkisini karşılaştır', result, [])
+    assert request in prompt and 'Kaynak kanıtı' in prompt and 'İkisini karşılaştır' in prompt

@@ -2,8 +2,13 @@ name: Academic semantic flow
 on:
   push:
     branches: ['work/academic-semantic-*']
-    paths: ['app/**', 'tests/academic_v2/**', 'scripts/evaluate_academic_note_flow.py', '.github/workflows/academic-semantic-ci.yml']
+    paths: ['app/**', 'tests/academic_v2/**', 'evaluation/academic/**', 'scripts/evaluate_academic_note_flow.py', '.github/workflows/academic-semantic-ci.yml']
   workflow_dispatch:
+    inputs:
+      run_live:
+        description: 'Run at most eight real Gemini note-flow cases'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -33,4 +38,33 @@ jobs:
       - name: Verify planner, evidence gates and real owned FTS
         env:
           ACADEMIC_TEST_DATABASE_URL: postgresql+psycopg2://academic:academic-test-only@localhost:5432/academic
-        run: python -m pytest -q tests/academic_v2/test_semantic_request_understanding.py tests/academic_v2/test_semantic_postgres.py tests/academic_v2/test_retrieval_recovery.py tests/test_study_retrieval_v2.py tests/academic_v2/test_retrieval_behavior.py tests/academic_v2/test_static_invariants.py
+        run: python -m pytest -q tests/academic_v2/test_semantic_request_understanding.py tests/academic_v2/test_semantic_postgres.py tests/academic_v2/test_ali_kiki_flow.py tests/academic_v2/test_retrieval_recovery.py tests/test_study_retrieval_v2.py tests/academic_v2/test_retrieval_behavior.py tests/academic_v2/test_static_invariants.py
+      - name: Run authorized real Gemini note flow when secure key is configured
+        if: contains(github.event.head_commit.message, '[real-gemini]') || inputs.run_live == true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ACADEMIC_TEST_DATABASE_URL: postgresql+psycopg2://academic:academic-test-only@localhost:5432/academic
+        run: |
+          mkdir -p evaluation-output
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          out = Path('evaluation-output/real-note-flow.json')
+          if not os.getenv('GEMINI_API_KEY'):
+              out.write_text(json.dumps({'live_calls_made':False,'blocked':'GEMINI_API_KEY repository secret is not configured'}))
+              print('Real API evaluation blocked: no configured test key. No calls made.')
+              sys.exit(2)
+          else:
+              with out.open('w') as report:
+                  result = subprocess.run([sys.executable,'scripts/evaluate_academic_note_flow.py',
+                      '--source-fixture','evaluation/academic/ali_kiki_text_fixture.json',
+                      '--run','--answers','--limit','8'],stdout=report)
+              sys.exit(result.returncode)
+          PY
+      - name: Retain actual API and retrieval evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: academic-real-note-flow
+          path: evaluation-output/
+          retention-days: 7

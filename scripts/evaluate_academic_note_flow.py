@@ -17,7 +17,7 @@ from unittest.mock import patch, Mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from pypdf import PdfReader
-from app.academic_request_understanding import StudyRequest, understand_study_request
+from app.academic_request_understanding import StudyRequest, understand_study_request, retrieve_understood_course_context
 from app.study_chunking import chunk_dental_page
 from app.dental_semantics import analyze_dental_text, retrieval_enrichment_text
 from app.study_retrieval_v2 import retrieve_course_context_v2
@@ -122,8 +122,9 @@ def evaluate(db, rows, documents, cases, live, answers):
         if plan is None:
             reports.append(dict(case=index,passed=False,outcome=understanding.outcome))
             continue
-        retrieval = retrieve_course_context_v2(db,owner_user_id=17,course_id=23,
-            query=question,recent_history=history,request_plan=plan)
+        retrieval = retrieve_understood_course_context(db, understanding=understanding,
+            owner_user_id=17,course_id=23,query=question,recent_history=history) if live else retrieve_course_context_v2(
+            db,owner_user_id=17,course_id=23,query=question,recent_history=history,request_plan=plan)
         pages = sorted({e.page_start for e in retrieval.evidence})
         recall = all(p in pages for p in expected)
         contract = plan.operation == operation and plan.count == count
@@ -140,7 +141,9 @@ def evaluate(db, rows, documents, cases, live, answers):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--source-pdf',required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--source-pdf')
+    source.add_argument('--source-fixture',help='Text-only snapshot of actual PDF chunks; no patient data')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--run',action='store_true')
     mode.add_argument('--replay',action='store_true')
@@ -151,8 +154,15 @@ def main():
         parser.error('--answers requires --run')
     if args.run and (not os.getenv('GEMINI_API_KEY') or not os.getenv('ACADEMIC_TEST_DATABASE_URL')):
         parser.exit(2,'GEMINI_API_KEY and a dedicated ACADEMIC_TEST_DATABASE_URL are required; no calls made.\n')
-    rows, documents, pages, empty = note_rows(args.source_pdf)
-    output = dict(source_name=Path(args.source_pdf).name,physical_pdf_pages=pages,
+    if args.source_fixture:
+        fixture = json.loads(Path(args.source_fixture).read_text())
+        rows = [tuple(row) for row in fixture['rows']]
+        documents = {int(k):v for k,v in fixture['documents'].items()}
+        pages, empty, source_name = fixture['pages'], fixture['empty_pages'], fixture['source_name']
+    else:
+        rows, documents, pages, empty = note_rows(args.source_pdf)
+        source_name = Path(args.source_pdf).name
+    output = dict(source_name=source_name,physical_pdf_pages=pages,
         chunks=len(rows),pages_without_extracted_text=empty,
         production_ocr_or_margin_cleanup_reproduced=False,
         backend='postgresql' if args.run else 'token_replay_not_postgresql',

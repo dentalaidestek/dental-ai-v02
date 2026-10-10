@@ -62,3 +62,15 @@ def test_grouped_lookup_preserves_owner_course_version_and_ready_filters(db):
 def test_overlapping_groups_deduplicate_chunks(db):
     add(db,1,'hipofiz tiroid')
     assert [r[0] for r in lookup(db, ('"hipofiz"','"tiroid"'))] == [1]
+
+
+def test_partial_phrase_recovers_note_without_discarding_strict_preference(db):
+    add(db,1,'hipofiz ekstresi')
+    add(db,2,'hipofiz etkisi')
+    add(db,3,'etkisi farklıdır',owner=99)
+    rows = _fts_rows(db, owner_user_id=17, course_id=23,
+        lexical_query='"hipofiz" "etkisi"', query_vector=None,
+        embedding_provider='', embedding_model='', limit=20,
+        lexical_groups=('"hipofiz" "etkisi"',),
+        lexical_fallback_groups=('"hipofiz" OR "etkisi"',))
+    assert [r[0] for r in rows] == [2,1]

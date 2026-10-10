@@ -1404,6 +1404,19 @@ def _semantic_fts_query(searches: tuple[str, ...]) -> str:
     return " OR ".join(dict.fromkeys(phrases))
 
 
+def _semantic_fts_fallback(search: str) -> str:
+    """Bounded partial lexical recall; evidence gates still require full scope.
+
+    Planner qualifiers can have different surface forms in the notes. Matching
+    every token is a ranking preference, not a prerequisite for candidacy.
+    This adds no synonyms, facts, vector embeddings or provider calls.
+    """
+    tokens = tuple(dict.fromkeys(re.findall(r"[^\W_]+", search, flags=re.UNICODE)))
+    if not tokens:
+        raise ValueError("empty semantic search terms")
+    return " OR ".join('"' + token + '"' for token in tokens)
+
+
 def _fts_query(query: str, *, broad: bool = False) -> str:
     original, extras = _retrieval_terms(query)
     terms = original + (extras if broad else [])
@@ -1431,6 +1444,7 @@ def _fts_rows(
     embedding_model: str,
     limit: int,
     lexical_groups: tuple[str, ...] = (),
+    lexical_fallback_groups: tuple[str, ...] = (),
 ) -> list:
     candidate_limit = max(20, min(120, limit * 8))
     common = """
@@ -1494,23 +1508,31 @@ def _fts_rows(
     if lexical_groups:
         if len(lexical_groups) > 4 or any(not x or len(x) > 1024 for x in lexical_groups):
             raise ValueError("invalid lexical search groups")
+        if lexical_fallback_groups and (
+            len(lexical_fallback_groups) != len(lexical_groups)
+            or any(not x or len(x) > 2048 for x in lexical_fallback_groups)
+        ):
+            raise ValueError("invalid lexical fallback groups")
+        document = "to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, ''))"
+        strict_match = f"{document} @@ websearch_to_tsquery('simple', g.query)"
         lexical_cte = f"""
             grouped_lexical AS (
-                SELECT hits.* FROM unnest(CAST(:lexical_groups AS TEXT[])) AS g(query)
+                SELECT hits.* FROM unnest(CAST(:lexical_groups AS TEXT[]),
+                    CAST(:lexical_fallback_groups AS TEXT[])) AS g(query, fallback)
                 CROSS JOIN LATERAL (
                     SELECT c.id,
                            ts_rank_cd(
                              to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
                              websearch_to_tsquery('simple', g.query)
                            ) AS raw_score,
-                           ROW_NUMBER() OVER (ORDER BY ts_rank_cd(
+                           ROW_NUMBER() OVER (ORDER BY ({strict_match}) DESC, ts_rank_cd(
                              to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, '')),
-                             websearch_to_tsquery('simple', g.query)
+                             websearch_to_tsquery('simple', g.fallback)
                            ) DESC, c.id) AS rank
                     {common}
                       AND to_tsvector('simple', coalesce(c.section_title, '') || ' ' || c.text_content || ' ' || coalesce(c.retrieval_terms, ''))
-                          @@ websearch_to_tsquery('simple', g.query)
-                    ORDER BY raw_score DESC, c.id LIMIT :group_candidate_limit
+                          @@ websearch_to_tsquery('simple', g.fallback)
+                    ORDER BY rank LIMIT :group_candidate_limit
                 ) hits
             ), lexical AS (
                 SELECT DISTINCT ON (id) id, raw_score, rank
@@ -1565,7 +1587,8 @@ def _fts_rows(
         LIMIT :limit
     """
     params = {
-        "lexical_groups": list(dict.fromkeys(lexical_groups)),
+        "lexical_groups": list(lexical_groups),
+        "lexical_fallback_groups": list(lexical_fallback_groups or lexical_groups),
         "group_candidate_limit": max(1, candidate_limit // max(1, len(lexical_groups))),
         "owner": owner_user_id,
         "course": course_id,
@@ -2600,44 +2623,47 @@ def retrieve_course_context_v2(
         # against old dialogue can undo explicit topic changes.
         query = request_plan.resolved_query
         recent_history = []
-    from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
-    from app.academic_request_slots import conversational_repair, REPAIR_RESPONSE
-    if conversational_repair(query):
-        return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
-                               clarification=REPAIR_RESPONSE)
-    if _missing_comparison_reference(query, recent_history):
-        return RetrievalResult(resolved_query=query, retrieval_mode="clarification",
-            clarification="Hangi iki kavramı karşılaştırmamı istiyorsun? İkisini yazarsan notlardan farklarını açıklayabilirim.")
-    if conversational_acknowledgement(query):
-        return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
-                               clarification=ACKNOWLEDGEMENT_RESPONSE)
-    resolved = resolve_followup_query(query, recent_history)
-    from app.academic_task_language import comprehension_followup
-    if comprehension_followup(resolved):
-        return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
-            clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
-    from app.academic_task_language import elliptical_study_request
-    if elliptical_study_request(resolved) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
-        return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
-            clarification="Hangi konudan bahsettiğini belirtir misin? Konu adını veya ilgili soruyu yazarsan onun üzerinden devam edebilirim.")
-    from app.academic_dialogue import answer_needs_reference
-    if answer_needs_reference(query, recent_history):
-        return RetrievalResult(
-            resolved_query=resolved, retrieval_mode="clarification",
-            clarification="Hangi soruyu yanıtladığını belirtir misin? Soru numarasıyla birlikte cevabını yazabilirsin; örneğin 2B.",
-        )
-    if (_ordinal_reference_number(query) is not None
-            and _assistant_ordinal_subject(query, list(recent_history or [])) is None):
-        return RetrievalResult(
-            resolved_query=resolved, retrieval_mode="clarification",
-            clarification="Bahsettiğin soruyu son soru listesinde bulamadım. Soru metnini veya doğru numarasını paylaşır mısın?",
-        )
-    if (resolved == ' '.join((query or '').split()) and re.fullmatch(
-            r'(?iu)(?:bu|şu|o)\s+(?:nedir|ne\s+demek|ne\s+işe\s+yarar)[?.! ]*', resolved)):
-        return RetrievalResult(
-            resolved_query=resolved, retrieval_mode="clarification",
-            clarification="Hangi konuyu veya soruyu kastettiğini belirtir misin? Birkaç konu varsa hangisini açıklamamı istediğini yazabilirsin.",
-        )
+    if request_plan is not None:
+        resolved = query
+    else:
+        from app.academic_dialogue import conversational_acknowledgement, ACKNOWLEDGEMENT_RESPONSE
+        from app.academic_request_slots import conversational_repair, REPAIR_RESPONSE
+        if conversational_repair(query):
+            return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
+                                   clarification=REPAIR_RESPONSE)
+        if _missing_comparison_reference(query, recent_history):
+            return RetrievalResult(resolved_query=query, retrieval_mode="clarification",
+                clarification="Hangi iki kavramı karşılaştırmamı istiyorsun? İkisini yazarsan notlardan farklarını açıklayabilirim.")
+        if conversational_acknowledgement(query):
+            return RetrievalResult(resolved_query=query, retrieval_mode="conversation",
+                                   clarification=ACKNOWLEDGEMENT_RESPONSE)
+        resolved = resolve_followup_query(query, recent_history)
+        from app.academic_task_language import comprehension_followup
+        if comprehension_followup(resolved):
+            return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
+                clarification="Hangi konuyu anlamadığını belirtir misin? Konu adını veya ilgili kısmı yazarsan daha basit anlatabilirim.")
+        from app.academic_task_language import elliptical_study_request
+        if elliptical_study_request(resolved) in {'explain', 'outline', 'procedure', 'cause', 'value'}:
+            return RetrievalResult(resolved_query=resolved, retrieval_mode="clarification",
+                clarification="Hangi konudan bahsettiğini belirtir misin? Konu adını veya ilgili soruyu yazarsan onun üzerinden devam edebilirim.")
+        from app.academic_dialogue import answer_needs_reference
+        if answer_needs_reference(query, recent_history):
+            return RetrievalResult(
+                resolved_query=resolved, retrieval_mode="clarification",
+                clarification="Hangi soruyu yanıtladığını belirtir misin? Soru numarasıyla birlikte cevabını yazabilirsin; örneğin 2B.",
+            )
+        if (_ordinal_reference_number(query) is not None
+                and _assistant_ordinal_subject(query, list(recent_history or [])) is None):
+            return RetrievalResult(
+                resolved_query=resolved, retrieval_mode="clarification",
+                clarification="Bahsettiğin soruyu son soru listesinde bulamadım. Soru metnini veya doğru numarasını paylaşır mısın?",
+            )
+        if (resolved == ' '.join((query or '').split()) and re.fullmatch(
+                r'(?iu)(?:bu|şu|o)\s+(?:nedir|ne\s+demek|ne\s+işe\s+yarar)[?.! ]*', resolved)):
+            return RetrievalResult(
+                resolved_query=resolved, retrieval_mode="clarification",
+                clarification="Hangi konuyu veya soruyu kastettiğini belirtir misin? Birkaç konu varsa hangisini açıklamamı istediğini yazabilirsin.",
+            )
     requirement = build_dental_requirement_plan(resolved)
     from app.academic_task_language import wants_deeper_evidence
     deeper_evidence = wants_deeper_evidence(query)
@@ -2783,7 +2809,16 @@ def retrieve_course_context_v2(
             limit=max(limit * 3, 18),
             lexical_groups=tuple(
                 _semantic_fts_query((phrase,)) for phrase in request_plan.retrieval_queries
-            ) if request_plan is not None and len(request_plan.retrieval_queries) > 1 else (),
+            ) if request_plan is not None and (
+                len(request_plan.retrieval_queries) > 1
+                or any(len(re.findall(r"[^\W_]+", p)) > 1 for p in request_plan.retrieval_queries)
+            ) else (),
+            lexical_fallback_groups=tuple(
+                _semantic_fts_fallback(phrase) for phrase in request_plan.retrieval_queries
+            ) if request_plan is not None and (
+                len(request_plan.retrieval_queries) > 1
+                or any(len(re.findall(r"[^\W_]+", p)) > 1 for p in request_plan.retrieval_queries)
+            ) else (),
         )
         # Normal QA has one primary retrieval round-trip. Only a complex query
         # with an explicitly missing facet may spend one bounded rescue query.

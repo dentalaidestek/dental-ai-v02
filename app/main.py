@@ -4935,19 +4935,18 @@ def study_ai_ask(
             s.close()
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
-            from app.academic_request_understanding import understand_study_request
+            from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
             understanding = understand_study_request(clean_message, history) if use_v2 else None
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 if use_v2:
-                    rag_result = retrieve_course_context_v2(
+                    rag_result = retrieve_understood_course_context(
                         retrieval_session,
+                        understanding=understanding,
                         owner_user_id=user.id,
                         course_id=course_id,
                         query=clean_message,
                         recent_history=history,
-                        request_plan=understanding.plan,
                     )
-                    rag_result.semantic_planner_attempted = understanding.attempted
                     if rag_result.visual_sources and rag_result.evidence_sufficient:
                         materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
                 else:
@@ -5145,16 +5144,15 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
         source_versions = _study_source_versions(s, user.id, course_id)
         course_title = course.title
         s.close()
-        from app.academic_request_understanding import understand_study_request
+        from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
         understanding = understand_study_request(clean_message, history)
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
-                retrieval = retrieve_course_context_v2(
-                    retrieval_session, owner_user_id=user.id, course_id=course_id,
+                retrieval = retrieve_understood_course_context(
+                    retrieval_session, understanding=understanding,
+                    owner_user_id=user.id, course_id=course_id,
                     query=clean_message, recent_history=history,
-                    request_plan=understanding.plan,
                 )
-            retrieval.semantic_planner_attempted = understanding.attempted
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)

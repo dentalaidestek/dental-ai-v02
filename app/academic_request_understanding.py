@@ -149,10 +149,27 @@ def understand_study_request(question: str, history: list[dict]) -> Understandin
     provider = GeminiStudyProvider()
     if not provider.api_key or not target_available(ProviderTarget('gemini', model)):
         return UnderstandingResult(outcome='unavailable')
-    provider.timeout = 5
+    provider.timeout = 15
     provider.max_attempts = 1
     provider.response_schema = SCHEMA
     def call(prompt):
         return provider.generate(model=model, system_prompt=SYSTEM, history=[], prompt=prompt,
-                                 temperature=0, max_output_tokens=512)
+                                 temperature=0, max_output_tokens=1536)
     return interpret_request(question, history, call=call)
+
+
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, **kwargs):
+    """An enabled interpreter must never silently revert to language heuristics."""
+    from app.study_retrieval_v2 import RetrievalResult, retrieve_course_context_v2
+    if understanding.plan is None and understanding.outcome not in {'disabled', 'conversation'}:
+        message = (
+            'Konuşma bu turda işlenebilecek uzunluğu aşıyor. İlgili soruyu daha kısa bir mesajla tekrar gönderir misin?'
+            if understanding.outcome == 'input_budget' else
+            'Sorunu şu anda yorumlayamadım. Lütfen biraz sonra tekrar dene.'
+        )
+        return RetrievalResult(resolved_query=kwargs.get('query', ''),
+            retrieval_mode='interpretation_unavailable', clarification=message,
+            semantic_planner_attempted=True)
+    result = retrieve_course_context_v2(session, request_plan=understanding.plan, **kwargs)
+    result.semantic_planner_attempted = understanding.attempted
+    return result

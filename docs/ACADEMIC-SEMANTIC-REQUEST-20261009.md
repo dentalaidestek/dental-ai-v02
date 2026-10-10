@@ -105,3 +105,42 @@ literal `precise_query = _fts_query`; they failed on parent 720f361's conditiona
 assignment before this continuation. Their anchors now use `precise_query =`.
 The same exhaustive/primary/rescue invariants and exact call-count assertions
 remain in place; no scorer, threshold or behavior gate was relaxed.
+
+
+## 10 October: Gemini owns interpretation and final response
+
+The chosen flow is original question plus the last eight intact messages -> one
+Gemini interpretation -> owned note retrieval -> one Gemini final response. No
+local model training or per-chunk model calls are introduced. The final response
+retains the original message, dialogue and complete interpreted request. Legacy
+output/task heuristics no longer add competing instructions on this path.
+
+Both normal and streaming endpoints use the same interpretation gateway. When
+the enabled interpreter is unavailable, fails schema validation, or exceeds the
+input budget, the request gets a truthful retry/context message instead of
+silently returning to the old language rules. Disabled mode and simple
+acknowledgements retain their behavior. Successful interpretations bypass legacy
+reference rewriting. The interpreter has one attempt, a 15-second timeout and
+1536 output tokens to avoid squeezing complete compound requests into 512 tokens.
+
+Preserved pending work adds partial lexical candidate recall for model phrases
+and real PostgreSQL tests against the actual text-only Ali Kiki snapshot.
+Qualifiers remain mandatory at evidence sufficiency checks; partial lexical
+matches cannot authorize missing comparison subjects.
+
+Local focused verification: 145 tests and five subtests pass; seven PostgreSQL
+tests require CI. The CI live step is explicitly triggered by [real-gemini] in
+the commit message or manual run_live input and uses only the repository
+GEMINI_API_KEY secret. A missing key writes a blocked artifact and fails that
+step, rather than reporting a green real-model validation. At most eight
+interpretations and eight final responses can be requested. The source fixture
+contains no OCR text and cannot establish full source coverage. No production
+settings are changed and the feature stays disabled pending real-model semantic
+review.
+
+Ali Kiki empty-text-page audit: the production local OCR reader ran on all 43
+pages with no final errors. Five pages yielded more than 20 characters (36,37,
+47,158,305); 37 remain visual-only and page 361 yielded one character. OCR text
+has not been semantically validated or incorporated into the production index.
+The saved OCR audit records text/confidence per page; blank OCR output does not
+prove a source page is empty. Visual attachments are still required for diagrams.
