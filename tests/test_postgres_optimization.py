@@ -181,3 +181,55 @@ def test_email_change_code_is_consumed_once_under_concurrent_confirmation(pg, mo
         assert s.get(main.User, uid).email == 'new@example.test'
         assert s.get(main.EmailChangeChallenge, uid) is None
         assert not s.exec(select(main.SessionToken).where(main.SessionToken.user_id == uid)).all()
+
+
+def test_completed_chat_purge_is_idempotent_under_concurrent_workers(pg):
+    engine, _, _ = pg
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case = main.ConsultationCase(requester_user_id=1, expert_user_id=2, specialty='Endodonti', clinical_summary='Synthetic', question='Synthetic', status='COMPLETED', completed_at=now-timedelta(days=7), expert_response_deadline=now)
+        s.add(case); s.flush()
+        s.add(main.ConsultationMessage(case_id=case.id, sender_user_id=1, content='Synthetic retention check'))
+        main._enqueue_chat_retention(s, case); s.commit()
+        job_id=s.exec(select(main.ConsultationDeadlineJob.id).where(main.ConsultationDeadlineJob.case_id==case.id,main.ConsultationDeadlineJob.job_type=='CHAT_PURGE')).one()
+        case_id=case.id
+    def purge(_):
+        with Session(engine) as s:
+            job=s.get(main.ConsultationDeadlineJob,job_id)
+            _,events=main._process_deadline_job(s,job,now)
+            s.commit()
+            return len(events)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results=list(executor.map(purge, range(2)))
+    assert sorted(results)==[0,2]
+    with Session(engine) as s:
+        assert s.get(main.ConsultationCase,case_id).messages_deleted_at
+        assert not s.exec(select(main.ConsultationMessage).where(main.ConsultationMessage.case_id==case_id)).all()
+
+
+def test_report_transaction_serializes_with_chat_purge(pg):
+    from threading import Event
+    engine, _, _ = pg
+    now=main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as s:
+        case=main.ConsultationCase(requester_user_id=1,expert_user_id=2,specialty='Endodonti',clinical_summary='Synthetic',question='Synthetic',status='COMPLETED',completed_at=now-timedelta(days=7),expert_response_deadline=now)
+        s.add(case);s.flush();case_id=case.id
+        s.add(main.ConsultationMessage(case_id=case_id,sender_user_id=1,content='Preserve this evidence'))
+        main._enqueue_chat_retention(s,case);s.commit()
+        job_id=s.exec(select(main.ConsultationDeadlineJob.id).where(main.ConsultationDeadlineJob.case_id==case_id)).one()
+    started=Event()
+    def purge():
+        with Session(engine) as s:
+            job=s.get(main.ConsultationDeadlineJob,job_id);started.set()
+            result=main._process_deadline_job(s,job,now);s.commit();return result
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with Session(engine) as s:
+            main._locked_consultation_case(s,case_id)
+            future=executor.submit(purge)
+            assert started.wait(5)
+            s.add(main.UserReport(reporter_user_id=1,reported_user_id=2,case_id=case_id,reason='OTHER',status='CLOSED'))
+            s.commit()
+        assert future.result(timeout=10)==([],[])
+    with Session(engine) as s:
+        assert not s.get(main.ConsultationCase,case_id).messages_deleted_at
+        assert s.exec(select(main.ConsultationMessage).where(main.ConsultationMessage.case_id==case_id)).one().content=='Preserve this evidence'

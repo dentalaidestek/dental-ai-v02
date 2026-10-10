@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+{% extends "program_fragment.html" if program_fragment else "base.html" %}
 {% block content %}
-<div class="program-page">
+<div class="program-page" data-view="{{ view }}" data-previous="/program?view={{ view }}&amp;day={{ previous_day }}" data-next="/program?view={{ view }}&amp;day={{ next_day }}">
     <div class="program-header">
         <div>
             <h1><svg class="ui-icon program-title-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg> Program</h1>
@@ -14,10 +14,17 @@
 
     <div class="program-toolbar">
         <div class="program-view-tabs" aria-label="Program görünümü">
-            <a class="{% if view == 'today' %}active{% endif %}" href="/program?view=today&day={{ focus_date.isoformat() }}">Bugün</a>
+            <a class="{% if view == 'today' %}active{% endif %}" href="/program?view=today&day={{ today_date.isoformat() }}">Bugün</a>
             <a class="{% if view == 'week' %}active{% endif %}" href="/program?view=week&day={{ focus_date.isoformat() }}">Hafta</a>
             <a class="{% if view == 'month' %}active{% endif %}" href="/program?view=month&day={{ focus_date.isoformat() }}">Ay</a>
         </div>
+        {% if view != 'month' %}
+        <div class="program-period-nav">
+            <a href="/program?view={{ view }}&day={{ previous_day }}" aria-label="Önceki {{ 'hafta' if view == 'week' else 'gün' }}">‹</a>
+            <strong>{{ selected_date_title }}</strong>
+            <a href="/program?view={{ view }}&day={{ next_day }}" aria-label="Sonraki {{ 'hafta' if view == 'week' else 'gün' }}">›</a>
+        </div>
+        {% endif %}
         {% if view == 'month' %}
         <div class="program-month-nav">
             <a href="/program?view=month&day={{ previous_day }}" aria-label="Önceki ay">‹</a>
@@ -125,19 +132,56 @@
   function closeMenus() {
     programPage()?.querySelectorAll('.program-event-menu[open]').forEach((menu) => menu.removeAttribute('open'));
   }
-  async function swapProgram(url, pushHistory = false) {
-    const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
-    if (!response.ok) throw new Error('Program güncellenemedi');
-    const html = await response.text();
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const next = doc.querySelector('.program-page');
-    const current = programPage();
-    if (!next || !current) throw new Error('Program görünümü bulunamadı');
-    current.replaceWith(next);
-    if (pushHistory) history.pushState({}, '', response.url);
-    else history.replaceState({}, '', response.url);
-    window.dispatchEvent(new Event('program:updated'));
+  let navigationAbort = null, navigationVersion = 0;
+  const programCache = new Map();
+  function cacheProgram(url, html) {
+    const key = new URL(url, location.href).href;
+    programCache.delete(key); programCache.set(key, html);
+    if (programCache.size > 12) programCache.delete(programCache.keys().next().value);
   }
+  async function swapProgram(url, pushHistory = false) {
+    const version = ++navigationVersion;
+    navigationAbort?.abort(); navigationAbort = new AbortController();
+    const key = new URL(url, location.href).href;
+    programPage()?.setAttribute('aria-busy', 'true');
+    try {
+      let html = pushHistory ? programCache.get(key) : null, finalUrl = key;
+      if (!html) {
+        const response = await fetch(key, {headers: {'X-Requested-With': 'XMLHttpRequest', 'X-Program-Fragment': '1'}, signal: navigationAbort.signal});
+        if (!response.ok) throw new Error('Program güncellenemedi');
+        html = await response.text(); finalUrl = response.url;
+      }
+      if (version !== navigationVersion) return;
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const next = doc.querySelector('.program-page'), current = programPage();
+      if (!next || !current) throw new Error('Program görünümü bulunamadı');
+      cacheProgram(finalUrl, html);
+      current.replaceWith(next);
+      if (pushHistory) history.pushState({}, '', finalUrl);
+      else history.replaceState({}, '', finalUrl);
+      window.dispatchEvent(new Event('program:updated'));
+    } catch (error) { if (error.name !== 'AbortError') throw error; }
+    finally { if (version === navigationVersion) programPage()?.removeAttribute('aria-busy'); }
+  }
+
+  let touchStart = null;
+  document.addEventListener('touchstart', (event) => {
+    const page = programPage(), target = event.target;
+    if (!page?.contains(target) || target.closest('input, textarea, button, details, .program-copy-sheet')) return;
+    const touch = event.touches[0];
+    touchStart = {x: touch.clientX, y: touch.clientY};
+  }, {passive: true});
+  document.addEventListener('touchend', (event) => {
+    if (!touchStart) return;
+    const start = touchStart; touchStart = null;
+    const touch = event.changedTouches[0], page = programPage();
+    if (!touch || !page) return;
+    const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 65 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const url = dx < 0 ? page.dataset.next : page.dataset.previous;
+    swapProgram(url, true).catch(() => { location.href = url; });
+  }, {passive: true});
+  document.addEventListener('touchcancel', () => { touchStart = null; }, {passive: true});
 
   document.addEventListener('click', async (event) => {
     const page = programPage();
@@ -181,7 +225,7 @@
     }
 
     const nav = event.target.closest('.program-view-tabs a, .program-period-nav a, .program-week-strip a, .program-month-nav a, .program-month-grid a');
-    if (!nav) return;
+    if (!nav || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault();
     try { await swapProgram(nav.href, true); }
     catch (_) { location.href = nav.href; }
@@ -215,7 +259,8 @@
       try {
         const response = await fetch(copyForm.action, {method: 'POST', body: new FormData(copyForm), headers: {'X-Requested-With': 'XMLHttpRequest'}});
         if (!response.ok) throw new Error('Kopyalama tamamlanamadı');
-        await swapProgram(response.url || location.href);
+        programCache.clear();
+      await swapProgram(response.url || location.href);
       } catch (_) { HTMLFormElement.prototype.submit.call(copyForm); }
       return;
     }
@@ -227,6 +272,7 @@
     try {
       const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}});
       if (!response.ok) throw new Error('İşlem tamamlanamadı');
+      programCache.clear();
       await swapProgram(response.url || location.href);
     } catch (_) {
       HTMLFormElement.prototype.submit.call(form);
@@ -237,6 +283,7 @@
   window.addEventListener('dai:sync-event', (event) => {
     const sync = event.detail;
     if (!programPage() || !sync || !['PROGRAM_CREATED','PROGRAM_UPDATED','PROGRAM_COMPLETED','PROGRAM_DELETED'].includes(sync.event_type)) return;
+    programCache.clear();
     clearTimeout(programRealtimeRefresh);
     programRealtimeRefresh = setTimeout(() => {
       swapProgram(location.href).catch(() => {});

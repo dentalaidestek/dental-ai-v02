@@ -588,6 +588,7 @@ class ConsultationCase(SQLModel, table=True):
     expert_completed_at: Optional[datetime] = None
     requester_completed_at: Optional[datetime] = None
     completed_at: Optional[datetime] = Field(default=None, index=True)
+    messages_deleted_at: Optional[datetime] = None
     dispute_opened_at: Optional[datetime] = None
     completion_confirmation_deadline: Optional[datetime] = Field(default=None, index=True)
     urgency: str = "NORMAL"
@@ -701,6 +702,13 @@ class ConsultationMessage(SQLModel, table=True):
     reply_to_message_id: Optional[int] = Field(default=None, index=True)
     original_media_path: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+
+
+class ConsultationMediaDeletion(SQLModel, table=True):
+    """Committed outbox: retry attachment removal after message deletion commits."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    case_id: int = Field(index=True)
+    reference: str
 
 
 class ConsultationEvent(SQLModel, table=True):
@@ -1329,11 +1337,13 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
         .astimezone(timezone.utc)
         .replace(tzinfo=None)
     )
+    range_start_utc = range_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
     events = session.exec(
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
         .where(ScheduleEvent.start_at <= range_end_utc)
+        .where(sa_or(ScheduleEvent.recurrence_rule == "WEEKLY", ScheduleEvent.start_at >= range_start_utc, ScheduleEvent.end_at >= range_start_utc))
         .where(
             sa_or(
                 ScheduleEvent.recurrence_rule != "WEEKLY",
@@ -1440,7 +1450,7 @@ def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
     """Small owner-scoped snapshot used to patch the dashboard without a follow-up GET."""
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
     next_event = _dashboard_next_schedule_occurrence(
-        session, user_id, local_now, local_now + timedelta(days=90)
+        session, user_id, _date_to_local_start(local_now.date()), _date_to_local_end(local_now.date())
     )
     snapshot = None
     if next_event:
@@ -1458,11 +1468,7 @@ def _program_dashboard_realtime_payload(session: Session, user_id: int) -> dict:
     return {
         "payload_version": 1,
         "dashboard_event": snapshot,
-        "dashboard_event_label": (
-            "Bugün"
-            if next_event and next_event["start_local"].date() == local_now.date()
-            else "Yaklaşan"
-        ),
+        "dashboard_event_label": "Bugün",
     }
 
 
@@ -1953,6 +1959,7 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_run_at ON "consultationdeadlinejob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_consultationdeadlinejob_status_completed_at ON "consultationdeadlinejob" (status, completed_at)')
             conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS expert_proposal_note VARCHAR')
+            conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN IF NOT EXISTS messages_deleted_at TIMESTAMP')
             conn.exec_driver_sql('ALTER TABLE "supportticket" ADD COLUMN IF NOT EXISTS case_id INTEGER')
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR')
             for statement in (
@@ -2002,6 +2009,8 @@ def init_db():
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at ON "programreminderjob" (status, run_at)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_programreminderjob_event_status ON "programreminderjob" (schedule_event_id, status)')
             consultation_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("consultationcase")').fetchall()}
+            if "messages_deleted_at" not in consultation_cols:
+                conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN messages_deleted_at TIMESTAMP')
             if "expert_proposal_note" not in consultation_cols:
                 conn.exec_driver_sql('ALTER TABLE "consultationcase" ADD COLUMN expert_proposal_note VARCHAR')
             support_cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("supportticket")').fetchall()}
@@ -4166,6 +4175,8 @@ def protected_upload(request: Request, filename: str):
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
     return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 def template_user_context(request: Request):
+    if request.url.path == "/program" and request.headers.get("x-program-fragment") == "1":
+        return {}
     user = get_current_user(request)
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
@@ -5303,6 +5314,7 @@ def program_page(
         request=request,
         name="program.html",
         context={
+            "program_fragment": request.headers.get("x-program-fragment") == "1",
             "view": view,
             "focus_date": focus_date,
             "today_date": today_local,
@@ -5741,7 +5753,7 @@ def home(request: Request):
         return RedirectResponse("/login", status_code=303)
 
     local_now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    upcoming_end = local_now + timedelta(days=90)
+    upcoming_end = _date_to_local_end(local_now.date())
 
     with Session(engine, expire_on_commit=False) as s:
         patient_query = select(Patient).order_by(Patient.id.desc())
@@ -5768,7 +5780,7 @@ def home(request: Request):
         # from the full Program page so opening the home screen does not load
         # the user's complete schedule history and patient map.
         dashboard_event = _dashboard_next_schedule_occurrence(
-            s, user.id, local_now, upcoming_end
+            s, user.id, _date_to_local_start(local_now.date()), upcoming_end
         )
 
     professional_title = (
@@ -5780,11 +5792,7 @@ def home(request: Request):
     # shared template context builds the expert navigation.
     request.state._dai_account_meta = account_meta
     request.state._dai_account_meta_checked = True
-    dashboard_event_label = (
-        "Bugün"
-        if dashboard_event and dashboard_event["start_local"].date() == local_now.date()
-        else "Yaklaşan"
-    )
+    dashboard_event_label = "Bugün"
 
     return templates.TemplateResponse(
         request=request,
@@ -6079,6 +6087,52 @@ def _enqueue_deadline_pair(session: Session, case_id: int, kind: str, deadline: 
     _enqueue_deadline_job(session, case_id, f"{kind}_DUE", deadline, cycle)
 
 
+CONSULTATION_REPORT_DAYS = 3
+CONSULTATION_CHAT_RETENTION_DAYS = 7
+
+
+def _locked_consultation_case(session: Session, case_id: int):
+    stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+    if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+    return session.exec(stmt).first()
+
+
+def _consultation_has_report(session: Session, case: ConsultationCase) -> bool:
+    # Even a resolved report preserves the evidence until an administrator deletes it.
+    return bool(case.dispute_opened_at or case.status == "DISPUTE"
+                or session.exec(select(UserReport.id).where(UserReport.case_id == case.id).limit(1)).first()
+                or session.exec(select(SupportTicket.id).where(SupportTicket.case_id == case.id).limit(1)).first())
+
+
+def _enqueue_chat_retention(session: Session, case: ConsultationCase) -> None:
+    if case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at:
+        _enqueue_deadline_job(session, case.id, "CHAT_PURGE", case.completed_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS), case.completed_at.isoformat())
+
+
+def _purge_consultation_messages(session: Session, case: ConsultationCase, now: datetime, actor_id=None) -> list[RealtimeEvent]:
+    if case.messages_deleted_at:
+        return []
+    messages = session.exec(select(ConsultationMessage).where(ConsultationMessage.case_id == case.id)).all()
+    references = {ref for message in messages for ref in (message.media_path, message.original_media_path) if ref}
+    for reference in references:
+        session.add(ConsultationMediaDeletion(case_id=case.id, reference=reference))
+    message_ids = [str(message.id) for message in messages]
+    if message_ids:
+        event_ids = select(RealtimeEvent.id).where(RealtimeEvent.entity_type == "consultation_message", RealtimeEvent.entity_id.in_(message_ids))
+        session.exec(delete(WebPushMessageDelivery).where(WebPushMessageDelivery.realtime_event_id.in_(event_ids)))
+        session.exec(delete(RealtimeEvent).where(RealtimeEvent.entity_type == "consultation_message", RealtimeEvent.entity_id.in_(message_ids)))
+    session.exec(delete(ConsultationMessage).where(ConsultationMessage.case_id == case.id))
+    # Patient originals belong to the patient record, not to the chat.
+    session.exec(delete(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id))
+    case.messages_deleted_at = now
+    session.add(case)
+    _consultation_event(session, case.id, "CHAT_PERMANENTLY_DELETED", actor_id)
+    if references:
+        _enqueue_deadline_job(session, case.id, "CHAT_MEDIA_PURGE", now, now.isoformat())
+    return [_record_realtime_event(session, uid, "CASE_MESSAGES_DELETED", "consultation_case", case.id, {"case_id": case.id})
+            for uid in {case.requester_user_id, case.expert_user_id}]
+
+
 def _backfill_legacy_deadline_jobs_if_needed() -> None:
     """One-time bridge for active cases created before the durable queue existed."""
     with Session(engine) as s:
@@ -6098,6 +6152,11 @@ def _backfill_legacy_deadline_jobs_if_needed() -> None:
                 deadline = getattr(case, column.key)
                 if deadline:
                     _enqueue_deadline_pair(s, case.id, kind, deadline)
+        for case in s.exec(select(ConsultationCase).where(ConsultationCase.status == "COMPLETED", ConsultationCase.completed_at != None, ConsultationCase.messages_deleted_at == None)).all():
+            _enqueue_chat_retention(s, case)
+        # Correct legacy auto-busy profiles using the new active-only capacity definition.
+        for profile in s.exec(select(ExpertProfile).where(ExpertProfile.capacity_auto_busy == True)).all():
+            _sync_expert_capacity(s, profile.user_id)
         s.commit()
 
 
@@ -6149,6 +6208,18 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     if engine.dialect.name == "postgresql":
         case_stmt = case_stmt.with_for_update()
     case = session.exec(case_stmt).first()
+    if job.job_type == "CHAT_MEDIA_PURGE":
+        for item in session.exec(select(ConsultationMediaDeletion).where(ConsultationMediaDeletion.case_id == job.case_id)).all():
+            storage_delete(item.reference)
+            session.delete(item)
+        return notices, case_events
+    if job.job_type == "CHAT_PURGE":
+        if (case and case.status == "COMPLETED" and case.completed_at and not case.messages_deleted_at
+                and case.completed_at.isoformat() in job.dedup_key
+                and now >= case.completed_at + timedelta(days=CONSULTATION_CHAT_RETENTION_DAYS)
+                and not _consultation_has_report(session, case)):
+            case_events.extend(_purge_consultation_messages(session, case, now))
+        return notices, case_events
     if not case or not _deadline_job_is_current(case, job):
         return notices, case_events
     jt = job.job_type
@@ -6198,7 +6269,8 @@ def _process_deadline_job(session: Session, job: ConsultationDeadlineJob, now: d
     elif jt == "COMPLETION_DUE":
         # No requester decision within 24h: finalize exactly like requester confirmation.
         case.status = "COMPLETED"
-        case.completed_at = now
+        case.completed_at = deadline
+        _enqueue_chat_retention(session, case)
         case.completion_confirmation_deadline = None
         session.add(case)
         payment = session.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -6437,6 +6509,27 @@ def admin_consultation_report_review(request: Request, case_id: int):
     with Session(engine, expire_on_commit=False) as s:
         participants={u.id:u for u in s.exec(select(User).where(User.id.in_(participant_ids))).all()}
     return templates.TemplateResponse(request=request,name="admin_consultation_dispute.html",context={"user":user,"case":case,"messages":messages,"participants":participants,"review_mode":"REPORT"})
+
+@app.post("/admin/consultation-review/{case_id}/delete-messages")
+@offload
+def admin_delete_consultation_messages(request: Request, case_id: int):
+    user = get_current_user(request)
+    if not user or user.role != "ADMIN":
+        return HTMLResponse("Yetkisiz işlem.", status_code=403)
+    with Session(engine, expire_on_commit=False) as s:
+        stmt = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+        case = s.exec(stmt).first()
+        if not case or not _consultation_has_report(s, case):
+            return HTMLResponse("Bu sohbet için bildirim veya inceleme bulunamadı.", status_code=403)
+        events = _purge_consultation_messages(s, case, _utcnow_naive(), user.id)
+        s.add(DisputeAccessAudit(case_id=case.id, admin_user_id=user.id, action="DELETE_MESSAGES"))
+        s.commit()
+    _wake_consultation_deadline_worker()
+    for event in events: on_loop(_publish_realtime_event, event)
+    target = "consultation-disputes" if case.status == "DISPUTE" else "consultation-review"
+    return RedirectResponse(f"/admin/{target}/{case_id}", status_code=303)
+
 
 @app.get("/admin/consultation-review/{case_id}/message-media/{message_id}")
 def admin_consultation_report_media(request: Request, case_id: int, message_id: int):
@@ -7286,6 +7379,7 @@ def consultation_deleted_messages(request: Request):
 
 @app.post("/messages/{case_id}/delete")
 def consultation_message_delete_for_user(request: Request, case_id: int):
+    wants_json = "application/json" in request.headers.get("accept", "")
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -7310,6 +7404,11 @@ def consultation_message_restore_for_user(request: Request, case_id: int):
         return RedirectResponse("/login", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
+        case = s.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            return HTMLResponse("Yetkisiz işlem.", status_code=403)
+        if case.messages_deleted_at:
+            return HTMLResponse("Bu sohbet kalıcı olarak silinmiş.", status_code=410)
         state = _consultation_inbox_state(s, case_id, user.id)
         if not state or not state.deleted_at or not state.recover_until or state.recover_until < now:
             return HTMLResponse("Bu sohbet artık geri yüklenemez.", status_code=410)
@@ -7721,9 +7820,8 @@ def expert_support_case_room(request: Request, case_id: int):
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Vaka bulunamadı.", status_code=404)
         state = _consultation_inbox_state(s, case.id, user.id)
-        state.deleted_at = None
-        state.recover_until = None
-        s.add(state)
+        if state.deleted_at:
+            return RedirectResponse("/messages/deleted", status_code=303)
         # Deadline mutations are owned exclusively by the durable deadline worker.
         # Rendering/prefetching a room does not prove the user viewed it.
         # The visible, focused client acknowledges its rendered message cursor.
@@ -7752,6 +7850,7 @@ def expert_support_case_room(request: Request, case_id: int):
         review = s.exec(select(ExpertReview).where(ExpertReview.case_id == case.id)).first()
         blocked_by_me = s.exec(select(UserBlock).where(UserBlock.blocker_user_id==user.id, UserBlock.blocked_user_id==other_id)).first() is not None
         blocked_either = _users_blocked(s, user.id, other_id)
+        chat_reported = _consultation_has_report(s, case)
         visible_report = s.exec(select(UserReport).where(
             UserReport.case_id==case.id,
             UserReport.reporter_user_id==other_id,
@@ -7765,6 +7864,8 @@ def expert_support_case_room(request: Request, case_id: int):
         "blocked_by_me": blocked_by_me, "blocked_either": blocked_either,
         "other_read_at": other_read_at, "payment": payment, "iyzico_enabled": _iyzico_enabled(),
         "review": review, "visible_report": visible_report,
+        "chat_reported": chat_reported,
+        "can_report_completed": bool(user.id == case.requester_user_id and case.completed_at and now <= case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS) and not case.messages_deleted_at),
         "upload_max_mb": CONSULTATION_UPLOAD_MAX_BYTES // (1024 * 1024),
     })
 
@@ -7816,6 +7917,8 @@ def expert_support_expert_response(request: Request, case_id: int, decision: str
                 end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
                 minutes = max(1, int(((end_of_day - now).total_seconds() + 59) // 60))
             if start_option == "NOW":
+                if _consultation_capacity_full(s, case.expert_user_id):
+                    return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Bir vaka tamamlandıktan sonra yeniden deneyin."}, status_code=409)
                 case.status = "ACTIVE"; case.requester_accepted_at = now; case.expert_started_at = now
                 payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
                 if payment: payment.status = "AUTHORIZATION_REQUIRED" if _iyzico_enabled() else "INTEGRATION_PENDING"; payment.updated_at = now; s.add(payment)
@@ -7891,6 +7994,8 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
         if case.status != "PROPOSED" or not case.requester_decision_deadline or now > case.requester_decision_deadline: return JSONResponse({"ok": False, "error": "Süre önerisinin onay süresi dolmuş.", "status": case.status}, status_code=409) if wants_json else HTMLResponse("Süre önerisinin onay süresi dolmuş.", status_code=409)
         rejected = decision != "ACCEPT"
         if not rejected:
+            if _consultation_capacity_full(s, case.expert_user_id):
+                return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Bir vaka tamamlandıktan sonra yeniden deneyin."}, status_code=409)
             case.status = "WAITING_START"; case.requester_accepted_at = now
             case.consultation_start_deadline = now + timedelta(minutes=case.proposed_start_minutes or 0)
             payment = s.exec(select(ConsultationPayment).where(ConsultationPayment.case_id == case.id)).first()
@@ -7943,8 +8048,8 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
     if not user:
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        case = _locked_consultation_case(s, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return upload_error("Bu vakaya dosya gönderilemez.")
         now = _utcnow_naive()
         notification_events: list[RealtimeEvent] = []
@@ -7977,7 +8082,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 case_query = case_query.with_for_update()
             case = s.exec(case_query).first()
             now = _utcnow_naive()
-            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
                 s.rollback(); s.close()
                 storage_delete(path)
                 return upload_error("Bu vakaya dosya gönderilemez.")
@@ -8048,11 +8153,11 @@ def expert_support_annotate_message(request: Request, case_id: int, message_id: 
     if len(annotation_json) > 100000:
         return HTMLResponse("İşaretleme verisi çok büyük.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case = _locked_consultation_case(s, case_id)
         original = s.get(ConsultationMessage, message_id)
         if not case or not original or original.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or original.message_type != "IMAGE":
             return HTMLResponse("Bu görüntü işaretlenemez.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             return HTMLResponse("Bu danışmanlık mesajlaşmaya kapalı.", status_code=409)
         s.add(ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type="ANNOTATION", content="Görüntü işaretlemesi", original_media_path=original.media_path, annotation_json=annotation_json, reply_to_message_id=original.id))
         _consultation_event(s, case.id, "IMAGE_ANNOTATED", user.id)
@@ -8112,8 +8217,13 @@ def consultation_report_user(request: Request, case_id: int, reason: str = Form(
     realtime_event=None;admin_events=[]
     wants_json=request.headers.get("x-requested-with")=="XMLHttpRequest" or "application/json" in request.headers.get("accept","")
     with Session(engine, expire_on_commit=False) as s:
-        case=s.get(ConsultationCase,case_id)
+        stmt=select(ConsultationCase).where(ConsultationCase.id==case_id)
+        if engine.dialect.name=="postgresql":stmt=stmt.with_for_update()
+        case=s.exec(stmt).first()
         if not case or not _support_case_is_selectable(s,case,user.id):return HTMLResponse("Bu görüşme henüz bildirim yapılabilecek bir mesajlaşma içermiyor.",status_code=403)
+        if case.messages_deleted_at:return HTMLResponse("Bu sohbet kalıcı olarak silinmiş.",status_code=410)
+        if case.status=="COMPLETED" and (user.id!=case.requester_user_id or not case.completed_at or _utcnow_naive() > case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS)):
+            return HTMLResponse("Tamamlanan danışmanlık için sorun bildirme süresi 3 gündür ve yalnız gönderen hekime açıktır.",status_code=409)
         other=case.expert_user_id if user.id==case.requester_user_id else case.requester_user_id
         existing=s.exec(select(UserReport).where(UserReport.case_id==case.id,UserReport.reporter_user_id==user.id,UserReport.status!="CLOSED")).first()
         if existing:
@@ -8151,12 +8261,12 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
-        case = s.get(ConsultationCase, case_id)
+        case = _locked_consultation_case(s, case_id)
         notification_events: list[RealtimeEvent] = []
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -8219,7 +8329,7 @@ def expert_support_messages_live(request: Request, case_id: int, after_id: int =
         case=s.get(ConsultationCase,case_id)
         if not case or user.id not in {case.requester_user_id,case.expert_user_id}: return JSONResponse({"ok":False},status_code=403)
         rows=s.exec(select(ConsultationMessage).where(ConsultationMessage.case_id==case.id,ConsultationMessage.id>after_id).order_by(ConsultationMessage.id).limit(500)).all()
-        return {"ok":True,"has_more":len(rows)==500,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
+        return {"ok":True,"has_more":len(rows)==500,"messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,"content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at.isoformat()} for m in rows],"status":case.status,"messages_deleted_at":case.messages_deleted_at.isoformat() if case.messages_deleted_at else None,"start_deadline":case.consultation_start_deadline.isoformat() if case.consultation_start_deadline else None}
 
 class UserRealtimeSocketHub:
     """Authenticated per-user realtime channel backed by a durable event log."""
@@ -8607,7 +8717,7 @@ def _resolve_notifications(
     return events
 
 
-CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE")
+CONSULTATION_CAPACITY_STATUSES = ("ACTIVE", "WAITING_START")
 
 
 def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
@@ -8618,6 +8728,15 @@ def _expert_open_case_count(session: Session, expert_user_id: int) -> int:
             ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
         )
     ).one() or 0)
+
+
+def _consultation_capacity_full(session: Session, expert_user_id: int) -> bool:
+    # All transitions that acquire a slot serialize on the same expert profile.
+    stmt = select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)
+    if engine.dialect.name == "postgresql": stmt = stmt.with_for_update()
+    profile = session.exec(stmt).first()
+    limit = max(1, min(int(profile.max_active_cases or 5), 5)) if profile else 5
+    return _expert_open_case_count(session, expert_user_id) >= limit
 
 
 def _sync_expert_capacity(
@@ -8719,6 +8838,7 @@ def _case_status_socket_payload(case: ConsultationCase) -> dict:
         "case_id": case.id,
         "patient_id": case.patient_id,
         "status": case.status,
+        "messages_deleted_at": case.messages_deleted_at.isoformat() if case.messages_deleted_at else None,
         "proposed_start_label": case.proposed_start_label,
         "proposal_note": case.expert_proposal_note,
         "requester_decision_deadline": case.requester_decision_deadline.isoformat() if case.requester_decision_deadline else None,
@@ -9041,7 +9161,7 @@ def _socket_message_sync(user, case_id, data, text_value):
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return {"type":"error","error":"Yetkisiz işlem."}, [], []
-        if case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
+        if case.messages_deleted_at or case.status not in {"ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"}:
             return {"type":"error","error":"Bu vaka mesajlaşmaya açık değil."}, [], []
         if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
             return {"type":"error","error":"Uzmanın belirttiği başlangıç süresi henüz dolmadı."}, [], []
@@ -9189,8 +9309,10 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
             case.expert_completed_at = now; case.completion_confirmation_deadline = now + timedelta(hours=24); case.status = "EXPERT_COMPLETED"
             _consultation_event(s, case.id, "EXPERT_MARKED_COMPLETE", user.id)
         elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "CONTINUE":
+            if _consultation_capacity_full(s, case.expert_user_id):
+                return JSONResponse({"ok": False, "error": "Uzmanın 5 aktif vaka sınırı dolu. Devam etmek için bir vakanın tamamlanmasını bekleyin."}, status_code=409)
             case.status = "ACTIVE"; case.completion_confirmation_deadline = None; _consultation_event(s, case.id, "REQUESTER_CONTINUE", user.id)
-        elif user.id == case.requester_user_id and case.status == "EXPERT_COMPLETED" and action == "DISPUTE":
+        elif user.id == case.requester_user_id and action == "DISPUTE" and (case.status == "EXPERT_COMPLETED" or (case.status == "COMPLETED" and case.completed_at and now <= case.completed_at + timedelta(days=CONSULTATION_REPORT_DAYS))) and not case.messages_deleted_at:
             case.status = "DISPUTE"
             case.completion_confirmation_deadline = None
             case.dispute_opened_at = now
@@ -9255,11 +9377,12 @@ def expert_support_complete(request: Request, case_id: int, action: str = Form("
         realtime_events = _record_case_status_realtime_events(s, case)
         if case.status == "EXPERT_COMPLETED" and case.completion_confirmation_deadline:
             _enqueue_deadline_pair(s, case.id, "COMPLETION", case.completion_confirmation_deadline)
+        _enqueue_chat_retention(s, case)
         s.commit()
         status = case.status
         response_state = _case_status_realtime_payload(case, user.id)
         socket_state = _case_status_socket_payload(case)
-    if status == "EXPERT_COMPLETED":
+    if status in {"EXPERT_COMPLETED", "COMPLETED"}:
         _wake_consultation_deadline_worker()
     on_loop(consultation_socket_hub.broadcast, case_id, socket_state)
     for realtime_event in realtime_events:
