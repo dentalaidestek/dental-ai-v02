@@ -36,6 +36,10 @@ def test_verified_expert_is_not_asked_for_generic_membership_document(setup):
     assert 'id="expertPhotoInput"' not in html
     assert 'name="credential_document"' not in html
     assert '/account/documents?purpose=expert' in html
+    html=setup[2].get(f'/expert-support/expert/{setup[1]["owner"].id}').text
+    assert 'href="/account#expert-info"' in html
+    html=setup[2].get(f'/expert-support/expert/{setup[1]["owner"].id}',headers={'x-user':'other'}).text
+    assert 'href="/expert-support"' in html
 
 
 def test_first_expert_application_keeps_required_photo_and_document(setup):
