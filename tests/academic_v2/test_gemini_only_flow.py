@@ -128,17 +128,17 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,expected', [('topic',8),('course',8)])
-def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,expected):
+@pytest.mark.parametrize('scope,total,expected', [('topic',12,8),('course',35,32)])
+def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,total,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
-    rows = [row(i, 'ANB konu bilgisi') for i in range(1,13)]
+    rows = [row(i, 'ANB konu bilgisi') for i in range(1,total+1)]
     monkeypatch.setattr(current,'_fts_rows',Mock(return_value=rows))
     monkeypatch.setattr(current,'get_or_build_coverage_plan',Mock(return_value=SimpleNamespace()))
-    monkeypatch.setattr(current,'_coverage_hydration_ids',Mock(return_value=list(range(1,13))))
+    monkeypatch.setattr(current,'_coverage_hydration_ids',Mock(return_value=list(range(1,total+1))))
     monkeypatch.setattr(current,'_coverage_evidence_rows',Mock(return_value=rows))
     session.exec.side_effect = [
-        Mock(all=Mock(return_value=[(1,i) for i in range(1,13)])),
+        Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)])),
         Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')])),
     ]
     plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
@@ -147,9 +147,9 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in result.visual_sources)
     assert 'OCR KAYNAK UYARISI' in result.note_context[0]
     assert 'ANB konu bilgisi' not in '\n'.join(result.note_context)
-    assert len(result.evidence)==12  # OCR remains usable for search and provenance.
+    assert len(result.evidence)==total  # OCR remains usable for search and provenance.
     assert sum('ekli orijinal sayfayı incele' in c for c in result.note_context)==expected
-    assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==12-expected
+    assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==total-expected
     assert session.exec.call_args_list[0].kwargs['params']['course']==23
 
 

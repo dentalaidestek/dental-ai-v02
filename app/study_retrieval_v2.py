@@ -1113,7 +1113,7 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
     if not result.visual_sources or not result.evidence_sufficient:
         return
     attached_bytes = sum(len(item.get('data') or b'') for item in result.attachments)
-    for source in result.visual_sources[:8]:
+    for source in result.visual_sources[:32]:
         cache_key = (
             f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
             int(source["page_number"]),

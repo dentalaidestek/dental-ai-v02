@@ -66,7 +66,7 @@ def test_visual_request_limits_original_pages_and_combined_payload(monkeypatch):
     import app.study_retrieval_v2 as retrieval
     monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',10)
     sources=[dict(owner_user_id=17,material_id=1,index_version='v1',reference='ref',
-                  page_number=i,mime_type='application/pdf',display_name='fixture') for i in range(1,11)]
+                  page_number=i,mime_type='application/pdf',display_name='fixture') for i in range(1,41)]
     with retrieval._PAGE_PDF_CACHE_LOCK:
         retrieval._PAGE_PDF_CACHE.clear()
         for source in sources:
@@ -80,7 +80,8 @@ def test_visual_request_limits_original_pages_and_combined_payload(monkeypatch):
         monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',100)
         result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True)
         retrieval.materialize_visual_sources(db,result)
-        assert len(result.attachments)==8
+        assert len(result.attachments)==32
+        assert sum(len(a['data']) for a in result.attachments)==96
         db.assert_not_called()
     finally:
         with retrieval._PAGE_PDF_CACHE_LOCK:
