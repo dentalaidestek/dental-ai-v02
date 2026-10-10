@@ -107,7 +107,9 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
     if not isinstance(request_plan, StudyRequest):
         raise ValueError('Gemini request plan is required')
     result = RetrievalResult(resolved_query=request_plan.resolved_query,
-                             semantic_planner_attempted=True)
+                             semantic_planner_attempted=True,
+                             study_task={key:getattr(request_plan,key) for key in
+                                         ('operation','scope','count','difficulty','source_kind','depth')})
     if request_plan.operation == 'clarify':
         result.retrieval_mode = 'clarification'
         result.clarification = request_plan.clarification
@@ -165,15 +167,35 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             result.source_material_ids.append(evidence.material_id)
     # This means candidates exist, not that a rule engine proved factual support.
     result.evidence_sufficient = bool(result.evidence)
-    if request_plan.needs_visual and result.evidence:
+    # The planner has not seen the selected pages and cannot know whether OCR
+    # omitted crossed-out options, answer marks or handwritten corrections.
+    scanned_pages = set()
+    if result.evidence and not request_plan.needs_visual:
+        selected_pages = {(item.material_id, page) for item in result.evidence
+                          for page in range(item.page_start, item.page_end + 1)}
+        checkpoints = session.exec(text('''SELECT p.material_id,p.page_number
+            FROM studyindexpage p JOIN studymaterial m
+              ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id
+             AND m.course_id=p.course_id AND m.active_index_version=p.index_version
+            WHERE p.owner_user_id=:owner AND p.course_id=:course
+              AND m.index_status='READY' AND m.deleted_at IS NULL
+              AND p.material_id=ANY(:ids) AND p.page_number=ANY(:pages)
+              AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')'''),
+            params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids,
+                    'pages':list({page for _,page in selected_pages})}).all()
+        scanned_pages = {(int(row[0]),int(row[1])) for row in checkpoints} & selected_pages
+    if (request_plan.needs_visual or scanned_pages) and result.evidence:
         materials = session.exec(text('''SELECT id,file_path,mime_type,display_name,active_index_version
             FROM studymaterial WHERE owner_user_id=:owner AND course_id=:course
             AND index_status='READY' AND deleted_at IS NULL AND id=ANY(:ids)'''),
             params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids}).all()
         by_id = {int(row[0]):row for row in materials}
         pages = set()
+        page_limit = 8 if request_plan.scope == 'course' else 3
         for item in result.evidence:
             key = (item.material_id, item.page_start)
+            if not request_plan.needs_visual and key not in scanned_pages:
+                continue
             if key in pages or item.material_id not in by_id:
                 continue
             pages.add(key); material = by_id[item.material_id]
@@ -181,6 +203,16 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 material_id=item.material_id, page_number=item.page_start,
                 reference=material[1],mime_type=material[2],display_name=material[3],
                 index_version=material[4]))
-            if len(pages) == 3:
+            if len(pages) == page_limit:
                 break
+        if scanned_pages:
+            result.note_context.insert(0,
+                'OCR KAYNAK UYARISI: Seçilen taranmış sayfalarda metin çıkarımı işaretleri, '
+                'yanlış şıkları ve el yazısı düzeltmelerini kaybedebilir. Ekli sayfa görselleri '
+                'OCR metninden üstündür. Soru kökü/şık içindeki ifadeleri kendiliğinden bilgi '
+                'sayma; yalnız açıkça doğrulanan cevap ve açıklamaları kullan. Görseli '
+                'eklenmeyen taranmış sayfalardaki şıkları veya tartışmalı eşleştirmeleri '
+                'doğrulanmış bilgi sayma.')
+        logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
+                    len(scanned_pages),len(result.visual_sources))
     return result

@@ -33,6 +33,7 @@ _PAGE_PDF_CACHE: "OrderedDict[tuple[str, int], bytes]" = OrderedDict()
 _PAGE_PDF_CACHE_MAX = 12
 _PAGE_PDF_CACHE_MAX_BYTES = 32 * 1024 * 1024
 _PAGE_PDF_MAX_BYTES = 8 * 1024 * 1024
+_VISUAL_REQUEST_MAX_BYTES = 12 * 1024 * 1024
 
 
 def _cache_visual_page(cache_key: tuple[str, int], data: bytes) -> None:
@@ -207,6 +208,7 @@ class RetrievalResult:
     clarification: str = ""
     semantic_planner_attempted: bool = False
     semantic_trace_id: str = ''
+    study_task: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1110,7 +1112,8 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
     """DB read -> no-DB storage I/O -> short compare-and-set DB write."""
     if not result.visual_sources or not result.evidence_sufficient:
         return
-    for source in result.visual_sources[:3]:
+    attached_bytes = sum(len(item.get('data') or b'') for item in result.attachments)
+    for source in result.visual_sources[:8]:
         cache_key = (
             f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
             int(source["page_number"]),
@@ -1120,10 +1123,13 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
             if cached is not None:
                 _PAGE_PDF_CACHE.move_to_end(cache_key)
         if cached is not None:
+            if attached_bytes + len(cached) > _VISUAL_REQUEST_MAX_BYTES:
+                continue
             result.attachments.append({
                 "mime_type": source["mime_type"], "data": cached,
-                "label": f"INTERNAL_SOURCE: {source['display_name']}, sayfa {source['page_number']}",
+                "label": f"INTERNAL_SOURCE: material_id={source['material_id']}, {source['display_name']}, sayfa {source['page_number']}",
             })
+            attached_bytes += len(cached)
             continue
 
         with session_factory() as read_session:
@@ -1175,11 +1181,14 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
         except Exception:
             logger.exception("Academic V2 deferred visual source could not be prepared")
             continue
+        if attached_bytes + len(data) > _VISUAL_REQUEST_MAX_BYTES:
+            continue
         _cache_visual_page(cache_key, data)
         result.attachments.append({
             "mime_type": row[1], "data": data,
-            "label": f"INTERNAL_SOURCE: {row[2]}, sayfa {source['page_number']}",
+            "label": f"INTERNAL_SOURCE: material_id={source['material_id']}, {row[2]}, sayfa {source['page_number']}",
         })
+        attached_bytes += len(data)
     if not result.attachments:
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
