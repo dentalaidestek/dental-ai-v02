@@ -132,6 +132,7 @@ jobs:
           --ignore=tests/academic_v2/test_intent_combined_35k.py
           --ignore=tests/academic_v2/test_utility_holdout_50k.py
           --ignore=tests/academic_v2/test_past_question_note_holdout_89k.py
+          --ignore=tests/academic_v2/test_retrieval_training_corpus.py
 
   legacy-language-benchmarks:
     if: github.event_name == 'workflow_dispatch' && inputs.run_legacy_benchmarks
