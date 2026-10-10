@@ -209,6 +209,7 @@ class RetrievalResult:
     semantic_planner_attempted: bool = False
     semantic_trace_id: str = ''
     study_task: dict = field(default_factory=dict)
+    source_coverage_complete: bool = False
 
 
 @dataclass(frozen=True)
@@ -1113,6 +1114,8 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
     if not result.visual_sources or not result.evidence_sufficient:
         return
     attached_bytes = sum(len(item.get('data') or b'') for item in result.attachments)
+    prepared_pages = {(item.get('material_id'),item.get('page_number'))
+                      for item in result.attachments if item.get('data')}
     for source in result.visual_sources[:32]:
         cache_key = (
             f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
@@ -1128,7 +1131,9 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
             result.attachments.append({
                 "mime_type": source["mime_type"], "data": cached,
                 "label": f"INTERNAL_SOURCE: material_id={source['material_id']}, {source['display_name']}, sayfa {source['page_number']}",
+                "material_id": source['material_id'], "page_number": source['page_number'],
             })
+            prepared_pages.add((source['material_id'],source['page_number']))
             attached_bytes += len(cached)
             continue
 
@@ -1187,8 +1192,13 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
         result.attachments.append({
             "mime_type": row[1], "data": data,
             "label": f"INTERNAL_SOURCE: material_id={source['material_id']}, {row[2]}, sayfa {source['page_number']}",
+            "material_id": source['material_id'], "page_number": source['page_number'],
         })
+        prepared_pages.add((source['material_id'],source['page_number']))
         attached_bytes += len(data)
+    if result.source_coverage_complete:
+        required={(source['material_id'],source['page_number']) for source in result.visual_sources}
+        result.source_coverage_complete=required <= prepared_pages
     if not result.attachments:
         result.evidence_sufficient = False
         result.evidence_confidence = 0.0
