@@ -128,7 +128,7 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,expected', [('topic',3),('course',8)])
+@pytest.mark.parametrize('scope,expected', [('topic',8),('course',8)])
 def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace

@@ -191,7 +191,10 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids}).all()
         by_id = {int(row[0]):row for row in materials}
         pages = set()
-        page_limit = 8 if request_plan.scope == 'course' else 3
+        # Topic evidence can span more than three scanned pages (for example
+        # a definition after a formula or comparison). Share the materializer's
+        # eight-page/12 MiB budget rather than silently dropping that source.
+        page_limit = 8
         for item in result.evidence:
             key = (item.material_id, item.page_start)
             if not request_plan.needs_visual and key not in scanned_pages:
