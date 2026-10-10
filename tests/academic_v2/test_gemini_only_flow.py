@@ -95,13 +95,66 @@ def test_both_chat_endpoints_have_only_gemini_gateway():
                                 'recover_course_context', 'should_block_academic_question', 'study_v2_reads_enabled'}
 
 
+@pytest.mark.parametrize('role', ['assistant', 'ASSISTANT'])
 @pytest.mark.parametrize('continuing,expected', [(False,None),(True,(1,5))])
-def test_source_pagination_is_a_gemini_decision_not_stale_history(monkeypatch, session, continuing, expected):
+def test_source_pagination_is_a_gemini_decision_not_stale_history(monkeypatch, session, continuing, expected, role):
     import app.academic_semantic_retrieval as current
     lookup=Mock(return_value=[])
     monkeypatch.setattr(current,'_question_rows',lookup)
     plan=StudyRequest('Kaynak sorularını çöz','solve','course',None,None,'',(),
         source_kind='questions',continue_source=continuing)
     retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,
-        request_plan=plan,recent_history=[{'role':'assistant','content':'Sorular <!--ACADEMIC_Q_CURSOR:1:5-->'}])
+        request_plan=plan,recent_history=[{'role':role,'content':'Sorular <!--ACADEMIC_Q_CURSOR:1:5-->'}])
     assert lookup.call_args.kwargs['after_cursor'] == expected
+
+
+def test_user_cannot_supply_a_source_cursor():
+    from app.academic_semantic_retrieval import _source_cursor
+    assert _source_cursor([{'role':'USER','content':'<!--ACADEMIC_Q_CURSOR:1:99-->'}]) is None
+
+
+def test_current_request_and_provider_output_are_preserved_and_traceable(monkeypatch, caplog):
+    import logging
+    import app.study_ai_v2 as generation
+    from app.study_retrieval_v2 import RetrievalResult
+    result = RetrievalResult(note_context=['ANB kaynak bilgisi'], evidence_sufficient=True,
+                             resolved_query='Tüm ders notlarından 20 soru hazırla', semantic_trace_id='test-trace')
+    provider = Mock()
+    provider.generate_stream.return_value = iter(['actual provider output'])
+    monkeypatch.setattr(generation, 'target_available', lambda target: True)
+    monkeypatch.setattr(generation, 'get_provider', lambda name: provider)
+    monkeypatch.setattr(generation, 'report_target_success', lambda target: None)
+    history = [{'role':'USER','content':'20 soru hazırla'}, {'role':'ASSISTANT','content':'Eski cevap'}]
+    with caplog.at_level(logging.INFO):
+        answer = generation.ask_rag_v2('Ortoo', 'ANB açısı neyi gösterir?', history, result)
+    assert answer == 'actual provider output'
+    args = provider.generate_stream.call_args.kwargs
+    assert args['history'] == history
+    assert args['prompt'].endswith('ANB açısı neyi gösterir?')
+    assert 'özgün mesajı esas al' in args['system_prompt']
+    assert 'trace=test-trace stage=response origin=provider provider=gemini' in caplog.text
+    assert 'ANB' not in caplog.text and 'Eski cevap' not in caplog.text
+
+
+@pytest.mark.parametrize('reason,expected', [('STOP','STOP'), ('MAX_TOKENS','MAX_TOKENS'), ('PRIVATE-TEXT','UNKNOWN')])
+def test_gemini_stream_keeps_safe_completion_reason_without_repeating_call(monkeypatch, reason, expected):
+    import json
+    from contextlib import nullcontext
+    import app.study_provider as transport
+    provider = transport.GeminiStudyProvider()
+    provider.api_key = 'test-only'
+    response = Mock()
+    response.__iter__ = Mock(return_value=iter([
+        ('data: '+json.dumps({'candidates':[{'content':{'parts':[{'text':'Answer'}]}}]})+'\n').encode(),
+        ('data: '+json.dumps({'candidates':[{'finishReason':reason}]})+'\n').encode(),
+    ]))
+    response.status = 200
+    response.headers = {}
+    http = Mock(return_value=nullcontext(response))
+    monkeypatch.setattr(transport, 'urlopen', http)
+    monkeypatch.setattr(transport, 'router_target_available', lambda *args: True)
+    monkeypatch.setattr(transport, 'provider_reservation', lambda *args: nullcontext())
+    monkeypatch.setattr(transport, 'record_api_result', lambda **kwargs: None)
+    assert ''.join(provider.generate_stream(model='test-model',system_prompt='Test',history=[],prompt='Test')) == 'Answer'
+    assert provider.last_finish_reason == expected
+    http.assert_called_once()

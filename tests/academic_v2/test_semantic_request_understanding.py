@@ -24,7 +24,19 @@ def test_interpreter_passes_full_original_dialogue_and_calls_once():
     payload = json.loads(call.call_args.args[0])
     assert payload['recent_dialogue'] == history
     assert payload['request'] == 'Onlardan birini anlat ama ikinciye girme'
+    assert list(payload)[-1] == 'request'
     call.assert_called_once()
+
+
+def test_planner_metadata_trace_never_contains_request_history_or_search_text(caplog):
+    import logging
+    with caplog.at_level(logging.INFO):
+        result = interpret_request('PRIVATE-QUESTION',
+            [{'role':'ASSISTANT', 'content':'PRIVATE-HISTORY'}],
+            call=Mock(return_value=raw(resolved_query='PRIVATE-RESTATEMENT', retrieval_queries=['PRIVATE-SEARCH'])))
+    assert result.trace_id
+    assert f'trace={result.trace_id} stage=plan provider=gemini operation=explain scope=topic' in caplog.text
+    assert all(text not in caplog.text for text in ['PRIVATE-QUESTION','PRIVATE-HISTORY','PRIVATE-RESTATEMENT','PRIVATE-SEARCH'])
 
 
 @pytest.mark.parametrize('overrides', [

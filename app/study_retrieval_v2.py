@@ -206,6 +206,7 @@ class RetrievalResult:
     missing_facets: tuple[str, ...] = ()
     clarification: str = ""
     semantic_planner_attempted: bool = False
+    semantic_trace_id: str = ''
 
 
 @dataclass(frozen=True)
