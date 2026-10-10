@@ -5,6 +5,26 @@ from app.profile_hub import PROFILE_DOCUMENTS
 from tests.test_membership_verification import setup, png, submit
 
 
+def test_reported_orcid_rejected_without_saving_and_official_samples_accepted(setup):
+    profile_id = expert(setup)
+    client = setup[2]
+    data = dict(specialty='Endodonti', phone='05000000000', consultation_price=200,
+                availability='AVAILABLE', bio='Changed biography', orcid_url='0000-0001-8203-1176')
+    response = client.post('/expert-support/profile', data=data, follow_redirects=False)
+    assert response.status_code == 400
+    assert 'doğrulama hanesi' in response.text
+    with Session(setup[0]) as session:
+        profile = session.get(main.ExpertProfile, profile_id)
+        assert profile.bio == 'Keep this biography'
+        assert profile.orcid_url is None
+    for number in ['0000-0002-1825-0097', '0000-0001-5109-3700', '0000-0002-1694-233X']:
+        data['orcid_url'] = 'https://orcid.org/' + number
+        response = client.post('/expert-support/profile', data=data, follow_redirects=False)
+        assert response.status_code == 303
+        with Session(setup[0]) as session:
+            assert session.get(main.ExpertProfile, profile_id).orcid_url == data['orcid_url']
+
+
 def expert(setup, status='APPROVED'):
     with Session(setup[0], expire_on_commit=False) as s:
         owner=s.get(main.User,setup[1]['owner'].id)
