@@ -42,7 +42,11 @@ def begin_account_erasure(
         WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent, E2EEDeviceKey,
     )
 
-    user = session.get(User, user_id)
+    user_stmt = select(User).where(User.id == user_id)
+    if session.get_bind().dialect.name == 'postgresql':
+        user_stmt = user_stmt.with_for_update()
+    # Serialize erasure with private membership submissions/reviews.
+    user = session.exec(user_stmt.execution_options(populate_existing=True)).first()
     if not user or user.role == "ADMIN":
         raise ValueError("ACCOUNT_NOT_ERASABLE")
 

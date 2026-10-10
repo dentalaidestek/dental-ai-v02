@@ -138,3 +138,18 @@ def test_erasure_removes_document_metadata_and_returns_storage_reference(setup):
         refs=begin_account_erasure(s,user_id=setup[1]['owner'].id,actor='user'); s.commit()
         assert path in refs
         assert not s.exec(select(MembershipVerification)).all()
+
+
+def test_account_erased_during_upload_leaves_no_document(setup, monkeypatch):
+    from app.account_erasure import begin_account_erasure
+    original_write = main.storage_write_bytes
+    def erase_during_write(path, data, **kwargs):
+        reference = original_write(path, data, **kwargs)
+        with Session(setup[0]) as s:
+            begin_account_erasure(s, user_id=setup[1]['owner'].id, actor='user')
+            s.commit()
+        return reference
+    monkeypatch.setattr(main, 'storage_write_bytes', erase_during_write)
+    assert submit(setup).status_code == 403
+    assert row(setup) is None
+    assert not list(setup[3].rglob('*.png'))
