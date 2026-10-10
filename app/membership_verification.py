@@ -139,7 +139,7 @@ def register(app):
                     events.append(m._record_realtime_event(session, admin.id, 'MEMBERSHIP_SUBMITTED', 'membership_verification', row.id, {'verification_id': row.id, 'target_url': '/admin/member-verifications'}))
                 session.commit(); committed = True
             for event in events: m.on_loop(m._publish_realtime_event, event)
-            return RedirectResponse('/account?section=professional#professional-info', status_code=303)
+            return RedirectResponse('/account/documents?purpose=membership&submitted=1', status_code=303)
         finally:
             if not committed:
                 try: m.storage_delete(reference)

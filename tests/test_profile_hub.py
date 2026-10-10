@@ -20,7 +20,7 @@ def test_profile_sections_and_generic_document_entry(setup):
     assert 'id="professional-info" open' in html
     assert '/account/documents?purpose=membership' in html
     assert 'Uzman olarak başvur' not in html
-    assert submit(setup).headers['location']==PROFILE_DOCUMENTS
+    assert submit(setup).headers['location']=='/account/documents?purpose=membership&submitted=1'
 
 
 def test_verified_expert_is_not_asked_for_generic_membership_document(setup):
@@ -111,3 +111,47 @@ def test_pending_expert_does_not_receive_a_second_document_prompt(setup):
     assert 'Uzmanlık belgesi inceleniyor' in html
     assert 'Belge Yükle ve Doğrulan' not in html
     assert 'Yeni belge gönder' not in html
+
+
+def test_membership_upload_stays_on_clear_status_page(setup):
+    response=submit(setup)
+    html=setup[2].get(response.headers['location']).text
+    assert 'Belgeniz başarıyla gönderildi' in html
+    assert 'İnceleme devam ederken yeni belge gönderemezsiniz' in html
+    assert 'Gönderdiğim belgeyi indir' in html
+    assert 'id="memberForm"' not in html
+    assert 'Belgeniz başarıyla gönderildi' in setup[2].get('/account/documents?purpose=membership').text
+
+
+def test_noneligible_profile_shows_photo_entry_and_expert_requirements(setup):
+    html=setup[2].get('/account').text
+    assert 'data-account-photo-open' in html
+    assert 'Profil fotoğrafı ekle' in html
+    assert 'Uzman olarak danışmanlık ver' in html
+    assert 'Üyelik belgesi onayı uzman yetkisi vermez' in html
+    assert 'href="#professional-info"' in html
+    assert setup[2].get('/expert-support/profile').status_code==403
+    # Membership approval alone must never grant the expert application route.
+    from app.membership_verification import MembershipVerification
+    submit(setup)
+    with Session(setup[0]) as session:
+        row=session.exec(select(MembershipVerification)).first()
+        row.status='VERIFIED';session.add(row);session.commit()
+    assert setup[2].get('/expert-support/profile').status_code==403
+
+
+def test_real_pdf_submission_confirms_and_is_available_to_owner(setup):
+    import io
+    from pypdf import PdfWriter
+    writer=PdfWriter();writer.add_blank_page(width=200,height=200)
+    content=io.BytesIO();writer.write(content)
+    response=setup[2].post('/account/verification',data={'document_type':'DIPLOMA','consent':'yes'},files={'document':('belge.pdf',content.getvalue(),'application/pdf')},follow_redirects=False)
+    assert response.status_code==303
+    html=setup[2].get(response.headers['location']).text
+    assert 'Belgeniz başarıyla gönderildi' in html
+    from app.membership_verification import MembershipVerification
+    with Session(setup[0]) as session:
+        row=session.exec(select(MembershipVerification)).first()
+        url=f'/account/verification/{row.id}/document'
+    assert setup[2].get(url).content==content.getvalue()
+    assert setup[2].get(url,headers={'x-user':'other'}).status_code==404
