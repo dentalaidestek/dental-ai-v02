@@ -11,7 +11,7 @@ form.addEventListener('change',event=>{
  if(event.target.name==='consent')submit.disabled=!event.target.checked;
  if(event.target!==fileInput)return;
  const file=fileInput.files?.[0],error=form.querySelector('[data-member-error]');error.hidden=true;if(!file)return;
- if(file.size===0||file.size>5*1024*1024||!(/\.(jpe?g|png|pdf)$/i.test(file.name))){clear();error.textContent='JPG, PNG veya PDF seçin. Belge boş olmamalı ve 5 MB sınırını aşmamalı.';error.hidden=false;return;}
+ if(file.size===0||file.size>Number(form.dataset.maxMb||5)*1024*1024||!(/\.(jpe?g|png|pdf)$/i.test(file.name))){clear();error.textContent='JPG, PNG veya PDF seçin. Belge boş olmamalı ve '+(form.dataset.maxMb||5)+' MB sınırını aşmamalı.';error.hidden=false;return;}
  if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=null;
  form.querySelectorAll('[data-file-name]').forEach(el=>el.textContent=file.name);
  form.querySelectorAll('[data-file-size]').forEach(el=>el.textContent=(file.size/1024/1024).toFixed(2)+' MB');
@@ -28,6 +28,7 @@ form.addEventListener('click',event=>{
  if(event.target.closest('[data-member-clear]'))clear();
 });
 form.addEventListener('submit',event=>{if(form.dataset.sent==='1'){event.preventDefault();return;}if(!selected()||!fileInput.files?.length||!form.querySelector('[name="consent"]').checked){event.preventDefault();return;}form.dataset.sent='1';submit.disabled=true;submit.textContent='Gönderiliyor…';});
+const choices=form.querySelectorAll('[name="document_type"]');if(choices.length===1){choices[0].checked=true;form.querySelector('[data-member-step="1"] [data-member-next]').disabled=false;show(2);}
 window.addEventListener('pageshow',()=>{form.dataset.sent='';submit.disabled=!form.querySelector('[name="consent"]').checked;submit.textContent='İncelemeye Gönder →';});
 window.addEventListener('dai:sync-event',event=>{if(['MEMBERSHIP_UPDATED','MEMBERSHIP_SUBMITTED'].includes(event.detail?.event_type))location.reload();});
 })();

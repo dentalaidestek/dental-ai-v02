@@ -313,3 +313,36 @@ def test_membership_migration_creates_private_table(pg, monkeypatch):
     migrate.apply();migrate.apply();migrate.require_schema(engine)
     with engine.connect() as c:
         assert c.execute(text("SELECT to_regclass('membershipverification')")).scalar()
+
+
+def test_profile_document_replacements_serialize_without_duplicate_review(pg, monkeypatch, tmp_path):
+    import io
+    import threading
+    from PIL import Image
+    from fastapi.testclient import TestClient
+    engine,_,resources=pg
+    with Session(engine,expire_on_commit=False) as s:
+        owner=s.get(main.User,resources[0].owner_user_id)
+        s.add(main.UserAccountMeta(user_id=owner.id,professional_title='Uzman Diş Hekimi'))
+        profile=main.ExpertProfile(user_id=owner.id,specialty='Endodonti',phone='05000000000',credential_document_path='old.pdf',application_status='APPROVED',verification_status='VERIFIED',specialty_verified=True,availability='AVAILABLE',consultation_price=200,bio='Preserve biography')
+        s.add(profile);s.commit();profile_id=profile.id
+    monkeypatch.setattr(main,'get_current_user',lambda request:owner)
+    monkeypatch.setattr(main,'on_loop',lambda *a,**kw:None)
+    monkeypatch.setattr(main,'UPLOAD_DIR',tmp_path)
+    barrier=threading.Barrier(2)
+    def write(path,data,**kwargs):
+        path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+        barrier.wait(timeout=10)
+        return str(path)
+    monkeypatch.setattr(main,'storage_write_bytes',write)
+    monkeypatch.setattr(main,'storage_delete',lambda path:__import__('pathlib').Path(path).unlink(missing_ok=True))
+    buf=io.BytesIO();Image.new('RGB',(12,12)).save(buf,format='PNG')
+    def upload(_):
+        return TestClient(main.app).post('/account/documents/expert',files={'credential_document':('replacement.png',buf.getvalue(),'image/png')},follow_redirects=False).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(upload,range(2)))==[303,409]
+    assert len(list(tmp_path.rglob('*.png')))==1
+    with Session(engine) as s:
+        profile=s.get(main.ExpertProfile,profile_id)
+        assert profile.application_status=='SUBMITTED' and profile.availability=='PASSIVE'
+        assert profile.bio=='Preserve biography' and profile.specialty=='Endodonti'

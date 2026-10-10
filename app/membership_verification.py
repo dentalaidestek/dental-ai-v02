@@ -59,9 +59,9 @@ def state(session, user):
             'reason': row.rejection_reason, 'student': row.document_type == 'STUDENT'}
 
 
-def validate_document(filename, data):
-    if not data or len(data) > MAX_DOCUMENT_BYTES:
-        raise ValueError('Belge boş olamaz ve 5 MB sınırını aşamaz.')
+def validate_document(filename, data, *, max_bytes=MAX_DOCUMENT_BYTES):
+    if not data or len(data) > max_bytes:
+        raise ValueError(f'Belge boş olamaz ve {max_bytes // (1024*1024)} MB sınırını aşamaz.')
     suffix = Path(filename).suffix.lower()
     try:
         if suffix == '.pdf':
@@ -139,7 +139,7 @@ def register(app):
                     events.append(m._record_realtime_event(session, admin.id, 'MEMBERSHIP_SUBMITTED', 'membership_verification', row.id, {'verification_id': row.id, 'target_url': '/admin/member-verifications'}))
                 session.commit(); committed = True
             for event in events: m.on_loop(m._publish_realtime_event, event)
-            return RedirectResponse('/account/verification?submitted=1', status_code=303)
+            return RedirectResponse('/account?section=professional#professional-info', status_code=303)
         finally:
             if not committed:
                 try: m.storage_delete(reference)

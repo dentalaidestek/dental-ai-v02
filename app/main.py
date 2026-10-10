@@ -3288,7 +3288,7 @@ def change_professional_title(request: Request, professional_title: str = Form(.
             ).order_by(ExpertTitleChange.created_at.desc())).first()
             if pending and pending.status == "PENDING_REVIEW":
                 if pending.requested_title == professional_title:
-                    return RedirectResponse("/expert-support/profile", status_code=303)
+                    return RedirectResponse("/account?section=professional#professional-info", status_code=303)
                 return HTMLResponse("İncelenmekte olan unvan değişikliği sonuçlanmadan yeni bir unvan değişikliği başlatılamaz.", status_code=409)
             if not pending:
                 pending = ExpertTitleChange(
@@ -3324,15 +3324,7 @@ def professional_title_document_page(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    with Session(engine, expire_on_commit=False) as s:
-        pending = s.exec(select(ExpertTitleChange).where(
-            ExpertTitleChange.user_id == user.id,
-            ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
-        ).order_by(ExpertTitleChange.created_at.desc())).first()
-    if not pending:
-        return RedirectResponse("/account", status_code=303)
-    return templates.TemplateResponse(request=request, name="professional_title_document.html",
-        context={"user": user, "pending": pending})
+    return profile_document_page(request, purpose='title')
 
 
 @app.post("/account/professional-title/document")
@@ -3377,7 +3369,7 @@ def professional_title_document_upload(request: Request, credential_document: Up
         s.commit()
     if notice_event:
         on_loop(_publish_realtime_event, notice_event)
-    return RedirectResponse("/expert-support/profile?title_change_submitted=1", status_code=303)
+    return RedirectResponse("/account?section=professional#professional-info", status_code=303)
 
 
 @app.post("/account/username", response_class=HTMLResponse)
@@ -4185,6 +4177,8 @@ def template_user_context(request: Request):
     expert_nav = {"eligible": False, "state": "NONE", "label": None, "href": None}
     profile_verified = False
     membership = {"status": "NONE"}
+    account_expert = None
+    account_title_change = None
     if user:
         meta_checked = getattr(request.state, "_dai_account_meta_checked", False)
         meta = getattr(request.state, "_dai_account_meta", None) if meta_checked else None
@@ -4194,6 +4188,12 @@ def template_user_context(request: Request):
             if request.url.path.startswith("/account"):
                 membership = membership_state(s, user)
             profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
+            if request.url.path.startswith("/account"):
+                account_expert = profile
+                account_title_change = s.exec(select(ExpertTitleChange).where(
+                    ExpertTitleChange.user_id == user.id,
+                    ExpertTitleChange.status.in_(["AWAITING_DOCUMENT", "PENDING_REVIEW", "REJECTED"]),
+                ).order_by(ExpertTitleChange.created_at.desc()).limit(1)).first()
             profile_verified = bool(
                 profile
                 and profile.application_status == "APPROVED"
@@ -4212,17 +4212,20 @@ def template_user_context(request: Request):
                 expert_nav["label"] = "Uzman Profilim"
             elif profile and profile.application_status == "APPROVED":
                 expert_nav["state"] = "APPROVED"
-                expert_nav["label"] = "Belge İnceleniyor"
+                expert_nav["label"] = "Uzman Profilim"
             elif profile and profile.application_status == "SUBMITTED":
                 expert_nav["state"] = "PENDING"
-                expert_nav["label"] = "Başvurum"
+                expert_nav["label"] = "Uzman Profilim"
             else:
                 expert_nav["state"] = "ELIGIBLE"
-                expert_nav["label"] = "Uzman Ağına Katıl"
+                expert_nav["label"] = "Uzman Profilim"
     return {
         "user": user,
         "expert_nav": expert_nav,
         "membership": membership,
+        "account_expert": account_expert,
+        "account_title_change": account_title_change,
+        "expert_verified": profile_verified,
         "professional_name": _professional_display_name,
         "profile_photo_url": _profile_photo_url,
     }
@@ -12600,7 +12603,9 @@ def admin_center_verify(request: Request, profile_id: int, decision: str = Form(
     if not admin: return HTMLResponse("Yetkisiz işlem.",status_code=403)
     if decision not in {"APPROVE","REJECT","SUBMITTED"}: return HTMLResponse("Geçersiz karar.",status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        profile=s.get(ExpertProfile,profile_id)
+        profile_stmt=select(ExpertProfile).where(ExpertProfile.id==profile_id)
+        if engine.dialect.name=="postgresql": profile_stmt=profile_stmt.with_for_update()
+        profile=s.exec(profile_stmt).first()
         if not profile: return HTMLResponse("Profil bulunamadı.",status_code=404)
         if decision=="APPROVE":
             expert=s.get(User,profile.user_id)
@@ -13807,6 +13812,8 @@ Hekimin sorusu:
 
 from app.membership_verification import register as register_membership_verification, state as membership_state
 register_membership_verification(app)
+from app.profile_hub import register as register_profile_hub, document_page as profile_document_page
+register_profile_hub(app)
 
 # Native Android JSON API
 from app.mobile_api import router as mobile_router
