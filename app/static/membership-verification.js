@@ -27,8 +27,32 @@ form.addEventListener('click',event=>{
  if(event.target.closest('[data-member-pdf]')){fileInput.accept='application/pdf';fileInput.click();}
  if(event.target.closest('[data-member-clear]'))clear();
 });
-form.addEventListener('submit',event=>{if(form.dataset.sent==='1'){event.preventDefault();return;}if(!selected()||!fileInput.files?.length||!form.querySelector('[name="consent"]').checked){event.preventDefault();return;}form.dataset.sent='1';submit.disabled=true;submit.textContent='Gönderiliyor…';});
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(form.dataset.sent==='1'||!selected()||!fileInput.files?.length||!form.querySelector('[name="consent"]').checked)return;
+ const live=document.querySelector('[data-member-live]');
+ const payload=new FormData(form);
+ form.dataset.sent='1';submit.disabled=true;submit.textContent='Gönderiliyor…';
+ live.hidden=false;live.textContent='Belgeniz yükleniyor. Lütfen bu ekranı kapatmayın.';
+ try{
+  const response=await fetch(form.action,{method:'POST',body:payload,credentials:'same-origin',cache:'no-store'});
+  const html=await response.text();
+  if(!response.ok){
+   const doc=new DOMParser().parseFromString(html,'text/html');
+   throw new Error(doc.querySelector('.member-error')?.textContent.trim()||doc.body.textContent.trim().slice(0,300)||'Belge gönderilemedi. Tekrar deneyin.');
+  }
+  if(new URL(response.url).pathname==='/login')throw new Error('Oturumunuz sona erdi. Yeniden giriş yapmanız gerekiyor.');
+  live.textContent='Belgeniz başarıyla gönderildi. Başvuru durumu açılıyor…';
+  location.assign(response.url);
+ }catch(cause){
+  form.dataset.sent='';submit.disabled=false;submit.textContent='Tekrar gönder →';
+  live.textContent='Gönderme işlemi doğrulanamadı. Seçtiğiniz belge bu ekranda duruyor.';
+  // Keep errors visible on the confirmation step, outside the hidden upload step.
+  live.textContent+=' '+(cause.message||'Bağlantınızı kontrol edin ve tekrar deneyin.');
+ }
+});
 const choices=form.querySelectorAll('[name="document_type"]');if(choices.length===1){choices[0].checked=true;form.querySelector('[data-member-step="1"] [data-member-next]').disabled=false;show(2);}
 window.addEventListener('pageshow',()=>{form.dataset.sent='';submit.disabled=!form.querySelector('[name="consent"]').checked;submit.textContent='İncelemeye Gönder →';});
-window.addEventListener('dai:sync-event',event=>{if(['MEMBERSHIP_UPDATED','MEMBERSHIP_SUBMITTED'].includes(event.detail?.event_type))location.reload();});
+// Realtime events must not reload an in-progress file selection or submission.
+window.addEventListener('dai:sync-event',event=>{if(event.detail?.event_type==='MEMBERSHIP_UPDATED'&&form.dataset.sent!=='1'){const live=document.querySelector('[data-member-live]');live.hidden=false;live.textContent='Belge durumunuz güncellendi. Seçiminiz korunuyor; güncel durumu Profilim bölümünden görebilirsiniz.';}});
 })();
