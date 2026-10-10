@@ -473,6 +473,7 @@ class GeminiStudyProvider(StudyProvider):
         )
         started = time.perf_counter()
         emitted = False
+        self.last_finish_reason = 'UNKNOWN'
         try:
             with provider_reservation(self.name, model), urlopen(request, timeout=self.timeout) as response:
                 for raw_line in response:
@@ -486,6 +487,14 @@ class GeminiStudyProvider(StudyProvider):
                     candidates = event.get("candidates") or []
                     if not candidates:
                         continue
+                    reason = candidates[0].get('finishReason')
+                    if reason:
+                        # Fixed enum only; never retain arbitrary response text.
+                        self.last_finish_reason = (reason if isinstance(reason, str) and reason in {
+                            'STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION',
+                            'OTHER', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII',
+                            'MALFORMED_FUNCTION_CALL', 'UNEXPECTED_TOOL_CALL',
+                        } else 'UNKNOWN')
                     parts = candidates[0].get("content", {}).get("parts", [])
                     piece = "".join(
                         part.get("text", "") for part in parts

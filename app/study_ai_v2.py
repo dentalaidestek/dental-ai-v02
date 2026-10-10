@@ -168,8 +168,9 @@ def stream_rag_v2(
             if not emitted:
                 raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
             report_target_success(target)
-            logger.info('Academic flow trace=%s stage=response origin=provider provider=%s model=%s emitted=%s',
-                        trace_id, target.provider, target.model, emitted)
+            logger.info('Academic flow trace=%s stage=response origin=provider provider=%s model=%s emitted=%s finish=%s',
+                        trace_id, target.provider, target.model, emitted,
+                        getattr(provider, 'last_finish_reason', 'UNKNOWN'))
             if retrieval.retrieval_mode == "questions_exhaustive" and retrieval.has_more and retrieval.evidence:
                 # Persisted with the assistant message and consumed only by the
                 # server on an explicit "devam" turn; harmless in rendered HTML.

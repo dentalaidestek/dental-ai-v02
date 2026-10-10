@@ -199,7 +199,9 @@ class StudyDialogueTests(unittest.TestCase):
                         and node.name == 'stream_rag_v2')
         def forbidden_provider_call():
             self.fail('Insufficient evidence must not invoke generation')
+        import logging
         namespace = {'Iterator': Iterator, 'RetrievalResult': RetrievalResult,
+                     'logger': logging.getLogger('test.study_dialogue'),
                      '_generation_targets': forbidden_provider_call}
         exec(compile(ast.Module(body=[function], type_ignores=[]), 'study_ai_v2.py', 'exec'), namespace)
         for result in (RetrievalResult(resolved_query='Pulpitis anlat'),

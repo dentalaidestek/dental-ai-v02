@@ -134,3 +134,27 @@ def test_current_request_and_provider_output_are_preserved_and_traceable(monkeyp
     assert 'özgün mesajı esas al' in args['system_prompt']
     assert 'trace=test-trace stage=response origin=provider provider=gemini' in caplog.text
     assert 'ANB' not in caplog.text and 'Eski cevap' not in caplog.text
+
+
+@pytest.mark.parametrize('reason,expected', [('STOP','STOP'), ('MAX_TOKENS','MAX_TOKENS'), ('PRIVATE-TEXT','UNKNOWN')])
+def test_gemini_stream_keeps_safe_completion_reason_without_repeating_call(monkeypatch, reason, expected):
+    import json
+    from contextlib import nullcontext
+    import app.study_provider as transport
+    provider = transport.GeminiStudyProvider()
+    provider.api_key = 'test-only'
+    response = Mock()
+    response.__iter__ = Mock(return_value=iter([
+        ('data: '+json.dumps({'candidates':[{'content':{'parts':[{'text':'Answer'}]}}]})+'\n').encode(),
+        ('data: '+json.dumps({'candidates':[{'finishReason':reason}]})+'\n').encode(),
+    ]))
+    response.status = 200
+    response.headers = {}
+    http = Mock(return_value=nullcontext(response))
+    monkeypatch.setattr(transport, 'urlopen', http)
+    monkeypatch.setattr(transport, 'router_target_available', lambda *args: True)
+    monkeypatch.setattr(transport, 'provider_reservation', lambda *args: nullcontext())
+    monkeypatch.setattr(transport, 'record_api_result', lambda **kwargs: None)
+    assert ''.join(provider.generate_stream(model='test-model',system_prompt='Test',history=[],prompt='Test')) == 'Answer'
+    assert provider.last_finish_reason == expected
+    http.assert_called_once()
