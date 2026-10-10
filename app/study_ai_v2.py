@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 from typing import Iterator
@@ -54,6 +55,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
     return (
         f"Ders: {course_title}\n\nDERS NOTU KANITLARI:\n{context}\n\n"
         "İSTEĞİ YERİNE GETİR:\n"
+        f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
         "Bu turun görevi KULLANICININ ÖZGÜN MESAJI'dır. Önceki konuşma yalnız gerçek "
         "takip sorularının bağlamıdır; geçmişte kalan görevleri yeniden yerine getirme. "
         "Güncel mesaj bağımsız bir soruysa önceki soru hazırlama, adet veya biçim isteğini taşıma. "
@@ -61,6 +63,13 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         "Yorumlanmış isteğin bütün işlemlerini, karşılaştırma taraflarını, koşullarını, "
         "dışlamalarını, sayılarını, birimlerini, adet/zorluk/biçim/uzunluk ve sırasını koru. "
         "Özgün mesajı ve son konuşmayı da dikkate al; önceki cevapları akademik kaynak sayma.\n\n"
+        + ("YENİ SORU ÜRETİMİ: Bu görev kaynakta hazır soruları bulup kopyalamak değildir. "
+           "Doğrulanmış not bilgileri üzerinden yeni ve farklı sorular üret. İstenen adet için "
+           "kaynakta aynı sayıda hazır soru bulunması gerekmez. İstenen adede uy; "
+           "kaynak dışı olgular ekleyerek sayıyı doldurma. Yeterli doğrulanmış bilgi yoksa "
+           "kaç soru hazırlayabildiğini ve eksik kalan adedi açıkça belirt.\n\n"
+           if retrieval.study_task.get('operation') == 'generate_questions' else "")
+        +
         "KAYNAK DESTEĞİNİ DEĞERLENDİR:\n"
         "Bunlar aramayla getirilen aday kaynaklardır. Yerel bir kural motoru sorunun "
         "tamamını desteklediklerini doğrulamış değildir. Her istek ve karşılaştırma "

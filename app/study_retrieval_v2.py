@@ -208,6 +208,7 @@ class RetrievalResult:
     clarification: str = ""
     semantic_planner_attempted: bool = False
     semantic_trace_id: str = ''
+    study_task: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

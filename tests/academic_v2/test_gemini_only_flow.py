@@ -114,6 +114,19 @@ def test_user_cannot_supply_a_source_cursor():
     assert _source_cursor([{'role':'USER','content':'<!--ACADEMIC_Q_CURSOR:1:99-->'}]) is None
 
 
+def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatch,session):
+    import app.academic_semantic_retrieval as current
+    from app.study_ai_v2 import _prompt
+    monkeypatch.setattr(current,'_fts_rows',Mock(return_value=[row(1,'hipofiz bilgisi')]))
+    plan=StudyRequest('Hipofizden yeni sorular hazırla','generate_questions','topic',20,'zor','',('hipofiz',))
+    result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query='20 soru hazırla',request_plan=plan)
+    assert result.study_task['count']==20 and result.study_task['operation']=='generate_questions'
+    prompt=_prompt('Ders','20 soru hazırla',result)
+    assert '"count": 20' in prompt and '"source_kind": "notes"' in prompt
+    assert 'aynı sayıda hazır soru bulunması gerekmez' in prompt
+    assert prompt.endswith('20 soru hazırla')
+
+
 @pytest.mark.parametrize('scope,expected', [('topic',3),('course',8)])
 def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,expected):
     import app.academic_semantic_retrieval as current

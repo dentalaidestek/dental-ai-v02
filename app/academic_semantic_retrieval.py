@@ -107,7 +107,9 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
     if not isinstance(request_plan, StudyRequest):
         raise ValueError('Gemini request plan is required')
     result = RetrievalResult(resolved_query=request_plan.resolved_query,
-                             semantic_planner_attempted=True)
+                             semantic_planner_attempted=True,
+                             study_task={key:getattr(request_plan,key) for key in
+                                         ('operation','scope','count','difficulty','source_kind','depth')})
     if request_plan.operation == 'clarify':
         result.retrieval_mode = 'clarification'
         result.clarification = request_plan.clarification
