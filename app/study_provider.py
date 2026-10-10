@@ -372,7 +372,7 @@ class GeminiStudyProvider(StudyProvider):
             role = "model" if item.get("role") == "ASSISTANT" else "user"
             contents.append({"role": role, "parts": [{"text": text}]})
 
-        latest_parts: list[dict] = [{"text": prompt}]
+        latest_parts: list[dict] = []
         for attachment in attachments or []:
             label = (attachment.get("label") or "").strip()
             if label:
@@ -386,6 +386,9 @@ class GeminiStudyProvider(StudyProvider):
                         "data": base64.b64encode(raw).decode("ascii"),
                     }
                 })
+        # Place the active instruction after source attachments, so the last
+        # user text is the actual task rather than a source label/page.
+        latest_parts.append({"text": prompt})
         contents.append({"role": "user", "parts": latest_parts})
 
         payload = {
@@ -445,7 +448,7 @@ class GeminiStudyProvider(StudyProvider):
                     "role": "model" if item.get("role") == "ASSISTANT" else "user",
                     "parts": [{"text": value}],
                 })
-        latest_parts: list[dict] = [{"text": prompt}]
+        latest_parts: list[dict] = []
         for attachment in attachments or []:
             label = (attachment.get("label") or "").strip()
             if label:
@@ -456,6 +459,7 @@ class GeminiStudyProvider(StudyProvider):
                     "mime_type": mime_type,
                     "data": base64.b64encode(raw).decode("ascii"),
                 }})
+        latest_parts.append({"text": prompt})
         contents.append({"role": "user", "parts": latest_parts})
         payload = {
             "systemInstruction": {"parts": [{"text": system_prompt}]},

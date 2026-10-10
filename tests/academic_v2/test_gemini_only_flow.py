@@ -169,7 +169,10 @@ def test_current_request_and_provider_output_are_preserved_and_traceable(monkeyp
         answer = generation.ask_rag_v2('Ortoo', 'ANB açısı neyi gösterir?', history, result)
     assert answer == 'actual provider output'
     args = provider.generate_stream.call_args.kwargs
-    assert args['history'] == history
+    assert args['history'] == []
+    import json
+    context_json=args['prompt'].split('\n',1)[1].split('\n\nDers:',1)[0]
+    assert json.loads(context_json)==history
     assert args['prompt'].endswith('ANB açısı neyi gösterir?')
     assert 'özgün mesajı esas al' in args['system_prompt']
     assert 'trace=test-trace stage=response origin=provider provider=gemini' in caplog.text
@@ -198,3 +201,35 @@ def test_gemini_stream_keeps_safe_completion_reason_without_repeating_call(monke
     assert ''.join(provider.generate_stream(model='test-model',system_prompt='Test',history=[],prompt='Test')) == 'Answer'
     assert provider.last_finish_reason == expected
     http.assert_called_once()
+
+
+@pytest.mark.parametrize('streaming',[False,True])
+def test_gemini_active_task_follows_original_attachment_without_extra_call(monkeypatch,streaming):
+    import json
+    from contextlib import nullcontext
+    import app.study_provider as transport
+    provider=transport.GeminiStudyProvider()
+    provider.api_key='test-only'
+    payloads=[]
+    if streaming:
+        response=Mock(status=200,headers={})
+        response.__iter__=Mock(return_value=iter([b'data: {"candidates":[{"content":{"parts":[{"text":"Answer"}]},"finishReason":"STOP"}]}\n']))
+        def http(request,**kwargs):
+            payloads.append(json.loads(request.data))
+            return nullcontext(response)
+        monkeypatch.setattr(transport,'urlopen',http)
+        monkeypatch.setattr(transport,'router_target_available',lambda *args:True)
+        monkeypatch.setattr(transport,'provider_reservation',lambda *args:nullcontext())
+        monkeypatch.setattr(transport,'record_api_result',lambda **kwargs:None)
+    else:
+        def request(path,payload,**kwargs):
+            payloads.append(payload)
+            return {'candidates':[{'content':{'parts':[{'text':'Answer'}]}}]}
+        monkeypatch.setattr(provider,'_request_json',request)
+    kwargs=dict(model='test',system_prompt='Grounded',history=[],prompt='CURRENT QUESTION',
+        attachments=[{'label':'source page','data':b'original','mime_type':'application/pdf'}])
+    answer=''.join(provider.generate_stream(**kwargs)) if streaming else provider.generate(**kwargs)
+    assert answer=='Answer' and len(payloads)==1
+    parts=payloads[0]['contents'][-1]['parts']
+    assert parts[0]=={'text':'source page'} and 'inline_data' in parts[1]
+    assert parts[-1]=={'text':'CURRENT QUESTION'}
