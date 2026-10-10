@@ -92,7 +92,7 @@ def _balanced_candidates(rows, phrases, limit):
 def _source_cursor(history):
     # Only consume the server-persisted assistant cursor, never the user message.
     for item in reversed(history or []):
-        if item.get('role') == 'assistant':
+        if str(item.get('role', '')).upper() == 'ASSISTANT':
             match = re.search(r'<!--ACADEMIC_Q_CURSOR:(\d+):(\d+)-->', item.get('content') or '')
             if match:
                 return tuple(map(int, match.groups()))
