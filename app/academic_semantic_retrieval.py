@@ -170,7 +170,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
     # The planner has not seen the selected pages and cannot know whether OCR
     # omitted crossed-out options, answer marks or handwritten corrections.
     scanned_pages = set()
-    if result.evidence and not request_plan.needs_visual:
+    if result.evidence:
         selected_pages = {(item.material_id, page) for item in result.evidence
                           for page in range(item.page_start, item.page_end + 1)}
         checkpoints = session.exec(text('''SELECT p.material_id,p.page_number
@@ -206,6 +206,20 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             if len(pages) == page_limit:
                 break
         if scanned_pages:
+            # OCR is a search index, not a second factual source competing
+            # with the original scan. It can omit the very mark that makes a
+            # printed option false. Keep evidence for retrieval/citations but
+            # do not pass its lossy transcription as generation facts.
+            result.note_context = [
+                (f'[KANIT material_id={item.material_id} sayfa={item.page_start} '
+                 f'bölüm={item.section_title or "-"} tür=SCAN]\n'
+                 + ('Bilgi için ekli orijinal sayfayı incele; OCR yalnız arama için kullanıldı.'
+                    if (item.material_id,item.page_start) in pages else
+                    'Bu taranmış sayfanın görseli bu turda eklenmedi; bilgi kanıtı olarak kullanma.'))
+                if any((item.material_id,page) in scanned_pages
+                       for page in range(item.page_start,item.page_end+1)) else context
+                for item,context in zip(result.evidence,result.note_context)
+            ]
             result.note_context.insert(0,
                 'OCR KAYNAK UYARISI: Seçilen taranmış sayfalarda metin çıkarımı işaretleri, '
                 'yanlış şıkları ve el yazısı düzeltmelerini kaybedebilir. Ekli sayfa görselleri '
