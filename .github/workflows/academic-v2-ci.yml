@@ -3,6 +3,11 @@ name: Academic V2 CI
 
 on:
   workflow_dispatch:
+    inputs:
+      run_legacy_benchmarks:
+        description: 'Also run the retired language-engine benchmarks (35K/50K/89K)'
+        type: boolean
+        default: false
   # Always validate pull requests to main. Required checks must not disappear
   # because a path filter evaluated differently on the base branch.
   pull_request:
@@ -14,6 +19,9 @@ on:
       - "release/academic-v2-clean-*"
     paths:
       - "app/study_ai_v2.py"
+      - "app/academic_request_understanding.py"
+      - "app/academic_semantic_retrieval.py"
+      - "app/academic_chunk_links.py"
       - "app/academic_retrieval_plan.py"
       - "app/academic_retrieval_adapter.py"
       - "app/academic_query_decomposer.py"
@@ -54,9 +62,8 @@ concurrency:
 jobs:
   static-safety:
     runs-on: ubuntu-latest
-    # The full invariant/35K/50K suite takes about seven minutes; the gated
-    # standalone 89K holdout also builds its 85K structural denylist. Allow
-    # both CPU-only stages to finish without changing any test/score gate.
+    # Current Gemini gateway/source/generation checks run automatically.
+    # Retired language-engine benchmarks remain an explicit manual job below.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +73,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install production web dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-web.lock
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check pytest==9.1.1 httpx==0.28.1
       - name: Reuse verified main suite for workflow-only changes
         id: verified
         env:
@@ -116,6 +125,26 @@ jobs:
           python -m py_compile app/study_ai_v2.py app/academic_retrieval_plan.py app/academic_retrieval_adapter.py app/academic_query_decomposer.py scripts/generate_academic_retrieval_training.py app/study_retrieval_v2.py app/academic_coverage.py app/academic_generation.py app/academic_generation_jobs.py app/dental_retrieval_terms.py app/dental_knowledge_graph.py app/dental_knowledge_relations.py app/dental_query_intent.py app/dental_semantics.py app/dental_academic_scope.py app/dental_specialty_concepts.py app/dental_specialty_concepts_extended.py app/study_provider.py app/study_router_state.py app/study_local_ocr.py app/study_index_worker.py app/study_index_jobs.py app/study_chunking.py app/migrate.py
       - name: Run Academic V2 invariant and function tests
         if: steps.verified.outputs.reuse != 'true'
+        run: >-
+          python -m pytest -q tests/academic_v2 tests/test_study_ai_v2.py tests/test_study_retrieval_v2.py
+          --ignore=tests/academic_v2/test_intent_benchmark_15k.py
+          --ignore=tests/academic_v2/test_intent_holdout_20k.py
+          --ignore=tests/academic_v2/test_intent_combined_35k.py
+          --ignore=tests/academic_v2/test_utility_holdout_50k.py
+          --ignore=tests/academic_v2/test_past_question_note_holdout_89k.py
+
+  legacy-language-benchmarks:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_legacy_benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install production web dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-web.lock
+      - name: Run unchanged legacy invariant and benchmark gates
         run: python tests/academic_v2/run_tests.py
-      - name: Run 89K past-question note holdout standalone
+      - name: Run unchanged 89K past-question note holdout gate
         run: python -c "from tests.academic_v2.test_past_question_note_holdout_89k import test_unseen_89k_past_question_note_workflow_holdout as t; t()"

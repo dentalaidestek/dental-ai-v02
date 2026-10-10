@@ -40,6 +40,11 @@ Yanıtı yazmadan önce ekli orijinal sayfalarda ilgili basılı ifadeyi ve üze
 işaret/düzeltmeleri birlikte incele; yanlış işaretli ifadeyi çıkar ve açık
 düzeltmeyi kullan. Önceki cevabın bu düzeltmeyle çelişiyorsa eski cevabı tekrarlama,
 yanlış bilgiyi kısaca düzelt. Okunamayan düzeltmeyi tahmin ederek kesinleştirme.
+Kaynağa dayalı düşünme serbesttir: verilen tanım ve bilgilerden mantıksal
+karşılaştırma, açıklama ve yeni soru çıkarabilirsin. Sonucun notta aynı cümleyle
+yazılması gerekmez. Kaynakta olmayan olgu, sayı veya ilişkiyi ekleme; varsayımlı
+bir çıkarımı kesin bilgi gibi sunma. Çoktan seçmeli yeni sorularda istenmedikçe
+tek doğru seçenek kullan; çeldiricilerin de doğru olduğu belirsiz sorular üretme.
 '''
 
 
@@ -57,6 +62,11 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         if retrieval.retrieval_mode == 'questions_exhaustive' else ""
     )
     return (
+        "ÖNCEKİ KONUŞMA BAĞLAMI (geçmiş görevler, etkin istek veya bilgi kanıtı değil):\n"
+        + json.dumps([{'role':item.get('role'), 'content':re.sub(
+            r"\n?<!--ACADEMIC_Q_CURSOR:\d+:\d+-->", "", item.get('content') or '')}
+            for item in (history or [])[-8:]], ensure_ascii=False)
+        + "\n\n"
         f"Ders: {course_title}\n\nDERS NOTU KANITLARI:\n{context}\n\n"
         "İSTEĞİ YERİNE GETİR:\n"
         f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
@@ -162,17 +172,12 @@ def stream_rag_v2(
                 target.model,
                 attempted_api_calls,
             )
-            clean_history = [
-                {
-                    **item,
-                    "content": re.sub(r"\n?<!--ACADEMIC_Q_CURSOR:\d+:\d+-->", "", item.get("content") or ""),
-                }
-                for item in history[-8:]
-            ]
             for chunk in provider.generate_stream(
                 model=target.model,
                 system_prompt=V2_SYSTEM_PROMPT,
-                history=clean_history,
+                # Older assistant prose is context data in the prompt, not
+                # conversational model exemplars competing with this task.
+                history=[],
                 prompt=prompt,
                 attachments=retrieval.attachments,
                 temperature=0.22,
