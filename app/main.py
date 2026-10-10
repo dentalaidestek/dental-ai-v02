@@ -65,21 +65,19 @@ from app.xray_trace import (
 # === TEMP_XRAY_TRACE_MAIN_IMPORT_END ===
 
 from app.legal_texts import LEGAL_TEXTS, LEGAL_VERSION
-from app.study_ai import StudyAIError, ask_rag as ask_study_ai, delete_file as delete_study_ai_file
+from app.study_ai import StudyAIError, delete_file as delete_study_ai_file
 from app.study_ai_v2 import ask_rag_v2 as ask_study_ai_v2, stream_rag_v2 as stream_study_ai_v2
-from app.dental_academic_scope import should_block_academic_question
 from app.study_index_jobs import (
     StudyDeletionJob, StudyIndexChunk, StudyIndexJob, StudyIndexPage, StudyProviderCircuit,
     enqueue_material_deletion, tombstone_material,
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
-from app.academic_recovery_store import AcademicRecoveryEvent, recover_course_context
-from app.study_retrieval_v2 import retrieve_course_context_v2, materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
+from app.academic_recovery_store import AcademicRecoveryEvent
+from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
     course_v2_ready, enqueue_legacy_materials_v2, enqueue_material_v2, legacy_indexing_required, validate_configuration,
     reactivate_configured_ocr_jobs,
-    reads_enabled as study_v2_reads_enabled,
     streaming_enabled as study_v2_streaming_enabled,
 )
 from app.study_colocated_worker import start_colocated_worker_task
@@ -92,9 +90,7 @@ from app.study_rag import (
     delete_course_rag_memory,
     delete_material_rag_index,
     ensure_course_index,
-    course_index_ready,
     remember_exchange,
-    retrieve_course_context,
 )
 from fastapi import (
     FastAPI,
@@ -4753,7 +4749,6 @@ def study_ai_page(request: Request, course_id: int):
                 s, material_model=StudyMaterial,
                 owner_user_id=user.id, course_id=course_id,
             )
-            if study_v2_reads_enabled() else True
         )
 
     return templates.TemplateResponse(
@@ -4876,8 +4871,6 @@ def study_ai_ask(
                     "error": "Bu ders Dental AI Akademik'in diş hekimliği çalışma alanı dışında görünüyor.",
                 }, status_code=400)
 
-            use_v2 = study_v2_reads_enabled()
-
             # Upload normally prepares the index in background. Existing courses
             # get one lazy migration only when no usable index exists yet.
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_BEGIN ===
@@ -4886,17 +4879,9 @@ def study_ai_ask(
                     s, material_model=StudyMaterial,
                     owner_user_id=user.id, course_id=course_id,
                 )
-                if use_v2 else
-                course_index_ready(s, owner_user_id=user.id, course_id=course_id)
             )
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_END ===
-            if not use_v2 and not course_index_ready(s, owner_user_id=user.id, course_id=course_id):
-                s.close()
-                job = _queue_work("LEGACY_INDEX", "COURSE", course_id)
-                return JSONResponse({"ok": False, "error": "Ders notları hazırlanıyor.",
-                                     "code": "INDEX_PENDING", "job_id": job.id}, status_code=409)
-
             history_rows = s.exec(
                 select(StudyChatMessage)
                 .where(StudyChatMessage.course_id == course_id)
@@ -4908,20 +4893,13 @@ def study_ai_ask(
                 for row in reversed(history_rows)
             ]
 
-            if should_block_academic_question(clean_message, recent_history=history):
-                return JSONResponse({
-                    "ok": False,
-                    "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
-                    "code": "ACADEMIC_SCOPE_OUTSIDE",
-                }, status_code=400)
-
             # === TEMP_STUDY_TRACE_ASK_HISTORY_BEGIN ===
             trace_event("ask.history.ready", course_id=course_id, history_count=len(history))
             _rag_started = _study_trace_time.perf_counter()
             trace_event("ask.rag.begin", course_id=course_id)
             # === TEMP_STUDY_TRACE_ASK_HISTORY_END ===
 
-            if use_v2 and not _trace_index_ready:
+            if not _trace_index_ready:
                 return JSONResponse({
                     "ok": False,
                     "error": "Ders notlarının yeni akademik indeksi henüz hazır değil.",
@@ -4936,29 +4914,18 @@ def study_ai_ask(
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
             from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
-            understanding = understand_study_request(clean_message, history) if use_v2 else None
+            understanding = understand_study_request(clean_message, history)
             with Session(engine, expire_on_commit=False) as retrieval_session:
-                if use_v2:
-                    rag_result = retrieve_understood_course_context(
-                        retrieval_session,
-                        understanding=understanding,
-                        owner_user_id=user.id,
-                        course_id=course_id,
-                        query=clean_message,
-                        recent_history=history,
-                    )
-                    if rag_result.visual_sources and rag_result.evidence_sufficient:
-                        materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
-                else:
-                    rag_result = retrieve_course_context(
-                        retrieval_session,
-                        owner_user_id=user.id,
-                        course_id=course_id,
-                        query=clean_message,
-                        materials=materials,
-                        recent_history=history,
-                    )
-
+                rag_result = retrieve_understood_course_context(
+                    retrieval_session,
+                    understanding=understanding,
+                    owner_user_id=user.id,
+                    course_id=course_id,
+                    query=clean_message,
+                    recent_history=history,
+                )
+                if rag_result.visual_sources and rag_result.evidence_sufficient:
+                    materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
                 "ask.rag.success",
@@ -4975,31 +4942,16 @@ def study_ai_ask(
 
             # Generation may take minutes; it must not occupy a DB connection.
             s.close()
-            if use_v2:
-                rag_result = recover_course_context(
-                    session_factory=lambda: Session(engine, expire_on_commit=False),
-                    owner_user_id=user.id, course_id=course_id,
-                    question=clean_message, history=history, initial=rag_result,
+            if rag_result.visual_sources and rag_result.evidence_sufficient and not rag_result.attachments:
+                materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), rag_result,
                 )
-                if rag_result.visual_sources and rag_result.evidence_sufficient and not rag_result.attachments:
-                    materialize_visual_sources(
-                        lambda: Session(engine, expire_on_commit=False), rag_result,
-                    )
-                answer = ask_study_ai_v2(
-                    course_title,
-                    clean_message,
-                    history,
-                    rag_result,
-                )
-            else:
-                answer = ask_study_ai(
-                    course_title,
-                    clean_message,
-                    history,
-                    rag_result.note_context,
-                    rag_result.memory_context,
-                    rag_result.attachments,
-                )
+            answer = ask_study_ai_v2(
+                course_title,
+                clean_message,
+                history,
+                rag_result,
+            )
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
                 "ask.generation.success",
@@ -5021,7 +4973,6 @@ def study_ai_ask(
                     }
                     for item in rag_result.evidence
                 ], ensure_ascii=False)
-                if use_v2 else None
             )
 
             # Re-authorize and persist in a fresh short transaction after the
@@ -5044,7 +4995,7 @@ def study_ai_ask(
                     content=clean_message,
                     source_ids_json=source_json,
                     source_evidence_json=evidence_json,
-                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                    mode="RAG_V2_HYBRID",
                 ))
                 save_session.add(StudyChatMessage(
                     course_id=course_id,
@@ -5053,7 +5004,7 @@ def study_ai_ask(
                     content=answer,
                     source_ids_json=source_json,
                     source_evidence_json=evidence_json,
-                    mode="RAG_V2_HYBRID" if use_v2 else "RAG_NOTES_ONLY",
+                    mode="RAG_V2_HYBRID",
                 ))
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
@@ -5135,12 +5086,6 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
-        if should_block_academic_question(clean_message, recent_history=history):
-            return JSONResponse({
-                "ok": False,
-                "error": "Bu soru diş hekimliği ders notları çalışma alanı dışında görünüyor.",
-                "code": "ACADEMIC_SCOPE_OUTSIDE",
-            }, status_code=400)
         source_versions = _study_source_versions(s, user.id, course_id)
         course_title = course.title
         s.close()
@@ -5190,11 +5135,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
     def generate_stream():
         pieces: list[str] = []
         try:
-            prepared = recover_course_context(
-                session_factory=lambda: Session(engine, expire_on_commit=False),
-                owner_user_id=owner_user_id, course_id=course_id,
-                question=clean_message, history=history, initial=retrieval,
-            )
+            prepared = retrieval
             if prepared.visual_sources and prepared.evidence_sufficient and not prepared.attachments:
                 materialize_visual_sources(
                     lambda: Session(engine, expire_on_commit=False), prepared,

@@ -1,4 +1,5 @@
-# Turkish study request interpretation — prepared, not enabled or deployed
+# Gemini-only Academic chat — implemented on work branch, not deployed
+
 
 ## Decision
 
@@ -144,3 +145,38 @@ pages with no final errors. Five pages yielded more than 20 characters (36,37,
 has not been semantically validated or incorporated into the production index.
 The saved OCR audit records text/confidence per page; blank OCR output does not
 prove a source page is empty. Visual attachments are still required for diagrams.
+
+
+## 10 October: remove legacy language routing from active chat
+
+This section supersedes the earlier default-off/legacy-fallback descriptions.
+The user chose Gemini interpretation as the sole Academic chat architecture.
+The interpretation disable flag is retired. Gemini now also selects source kind
+(notes, source questions, or past-question patterns), depth and whether actual
+visual attachments are needed. Normal and streaming chat require a Gemini plan;
+missing access, invalid output and oversized dialogue return a truthful error
+message without falling back to local language heuristics. The normal endpoint
+always requires the published V2 index, matching the streaming endpoint.
+
+The new academic_semantic_retrieval module uses Gemini search phrases directly,
+PostgreSQL ranking, bounded lexical pool balancing and owned READY source
+filters. It does not call the old query resolver, study-task classifier, dental
+requirement parser, semantic reranker or rule-based evidence sufficiency gate.
+A candidate-presence flag only allows the final Gemini request; it explicitly
+does not certify that the sources answer the question. The final prompt requires
+Gemini to distinguish supported and unsupported parts, preserve every compound
+request and avoid filling missing facts from general knowledge. It no longer
+calls the old output/dialogue rules. There is no recovery-planner call.
+
+Source question pagination and visual materialization still use server-owned
+source IDs and published versions. Legacy helpers/modules remain available for
+shared indexing, stored-data cleanup and historical regression tests; they are
+not reachable as an alternative language engine from either chat endpoint.
+Neither production configuration nor deployment is changed. Real-model semantic
+quality remains unverified until secure Gemini access is configured.
+
+Focused local verification for this cutover: 151 tests and five subtests pass;
+eight PostgreSQL cases are reserved for real CI. Ali Kiki 8/8 hand-authored
+contract replay also passes on the new retrieval path. The legacy static
+output-rule assertions were replaced with the new no-legacy-import/grounded
+compound-request contract; no scorer, benchmark threshold or access gate changed.

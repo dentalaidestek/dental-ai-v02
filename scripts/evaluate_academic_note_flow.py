@@ -17,10 +17,9 @@ from unittest.mock import patch, Mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from pypdf import PdfReader
-from app.academic_request_understanding import StudyRequest, understand_study_request, retrieve_understood_course_context
+from app.academic_request_understanding import StudyRequest, UnderstandingResult, understand_study_request, retrieve_understood_course_context
 from app.study_chunking import chunk_dental_page
 from app.dental_semantics import analyze_dental_text, retrieval_enrichment_text
-from app.study_retrieval_v2 import retrieve_course_context_v2
 from app.study_ai_v2 import _prompt, ask_rag_v2
 
 
@@ -111,8 +110,7 @@ def evaluate(db, rows, documents, cases, live, answers):
     for index,(question, searches, expected, operation, count) in enumerate(cases,1):
         history = [{'role':'user','content':'Tiroid etkisini anlat'}] if index == 7 else []
         if live:
-            with patch.dict(os.environ, {'STUDY_ACADEMIC_SEMANTIC_PLANNER':'1'}):
-                understanding = understand_study_request(question, history)
+            understanding = understand_study_request(question, history)
             plan = understanding.plan
         else:
             understanding = None
@@ -122,9 +120,9 @@ def evaluate(db, rows, documents, cases, live, answers):
         if plan is None:
             reports.append(dict(case=index,passed=False,outcome=understanding.outcome))
             continue
-        retrieval = retrieve_understood_course_context(db, understanding=understanding,
-            owner_user_id=17,course_id=23,query=question,recent_history=history) if live else retrieve_course_context_v2(
-            db,owner_user_id=17,course_id=23,query=question,recent_history=history,request_plan=plan)
+        retrieval = retrieve_understood_course_context(db,
+            understanding=understanding if live else UnderstandingResult(plan=plan,attempted=True,outcome='hand_authored_replay'),
+            owner_user_id=17,course_id=23,query=question,recent_history=history)
         pages = sorted({e.page_start for e in retrieval.evidence})
         recall = all(p in pages for p in expected)
         contract = plan.operation == operation and plan.count == count
@@ -173,8 +171,7 @@ def main():
             output['cases'] = evaluate(db,rows,documents,cases,True,args.answers)
     elif args.replay:
         db = Mock(); db.get_bind.return_value.dialect.name = 'postgresql'
-        with patch('app.study_retrieval_v2._fts_rows',side_effect=lambda session,**kw:replay_lookup(rows,documents,**kw)), \
-             patch('app.study_retrieval_v2._neighbor_rows',return_value=[]):
+        with patch('app.academic_semantic_retrieval._fts_rows', side_effect=lambda session,**kw:replay_lookup(rows,documents,**kw)):
             output['cases'] = evaluate(db,rows,documents,cases,False,False)
     print(json.dumps(output,ensure_ascii=False,indent=2))
     # Replay never grants production enablement. Live recall/schema success also

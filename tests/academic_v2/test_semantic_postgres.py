@@ -74,3 +74,22 @@ def test_partial_phrase_recovers_note_without_discarding_strict_preference(db):
         lexical_groups=('"hipofiz" "etkisi"',),
         lexical_fallback_groups=('"hipofiz" OR "etkisi"',))
     assert [r[0] for r in rows] == [2,1]
+
+
+def test_gemini_only_retrieval_keeps_comparison_and_owned_ready_scope(db):
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    from app.academic_request_understanding import StudyRequest
+    for ident in range(1,41):
+        add(db,ident,'hipofiz')
+    add(db,100,'tiroid')
+    add(db,101,'tiroid',owner=99)
+    add(db,102,'tiroid',course=99)
+    add(db,103,'tiroid',version='stale')
+    db.exec(text("INSERT INTO studymaterial VALUES (2,17,'v1','INDEXING',NULL,'pending'), (3,17,'v1','READY',now(),'deleted')"))
+    add(db,104,'tiroid',material=2); add(db,105,'tiroid',material=3)
+    plan=StudyRequest('Hipofiz ve tiroidi karşılaştır','compare','topic',None,None,'',('hipofiz','tiroid'))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+    ids={item.chunk_id for item in result.evidence}
+    assert 100 in ids and any(i < 100 for i in ids)
+    assert not ids & {101,102,103,104,105}
+    assert len(ids) <= 16

@@ -777,10 +777,13 @@ def test_semantic_overlap_handles_positive_nodes_without_runtime_error():
 
 
 def test_multi_intent_generation_contract_keeps_all_requested_facets():
-    from app.study_ai_v2 import _response_contract
-    contract = _response_contract("Pulpitisin tanısı ve tedavisi nedir?")
-    assert "Tanı" in contract or "tanı" in contract
-    assert "tedavi" in contract.casefold()
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    question = 'Pulpitisin tanısı ve tedavisi nedir?'
+    prompt = _prompt('Ders', question, RetrievalResult(resolved_query=question, note_context=['Kaynak']))
+    assert question in prompt
+    assert 'bütün işlemlerini' in prompt
+    assert 'kendi bilginle doldurma' in prompt
 
 
 def test_visual_source_need_is_part_of_canonical_plan():

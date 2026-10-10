@@ -1,7 +1,7 @@
 """Bounded semantic request interpretation; no subject-specific language rules.
 
 The planner interprets language, never authorizes access or supplies note facts.
-An opt-in deployment flag protects existing behavior until a real-model evaluation.
+All Academic V2 requests use Gemini; there is no local language fallback.
 """
 from __future__ import annotations
 
@@ -24,8 +24,11 @@ SCHEMA = {
         'count': {'type': ['integer', 'null']},
         'difficulty': {'type': ['string', 'null']},
         'clarification': {'type': 'string'},
+        'source_kind': {'type': 'string', 'enum': ['notes', 'questions', 'question_patterns']},
+        'depth': {'type': 'string', 'enum': ['standard', 'detailed']},
+        'needs_visual': {'type': 'boolean'},
     },
-    'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification'],
+    'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual'],
     'additionalProperties': False,
 }
 SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
@@ -60,6 +63,14 @@ put count/difficulty in their fields too. For course scope use an explicit
 such as '<qualified subjects> hakkında ...'. If count is absent use null,
 not an invented default. Teach means preparing/explaining a lesson, not merely
 searching the words 'ders oluştur'. Do not copy operation words into topics.
+source_kind is notes for factual answers/new questions, questions for solving
+actual questions in the uploaded source, or question_patterns when explicitly
+analysing/using past-exam patterns. Never infer past-exam intent from merely
+requesting new questions. depth is detailed only when substantial detail is
+requested. needs_visual is true when the task needs an actual source diagram,
+image, marked region or table. These fields control source retrieval directly.
+For an ordinary greeting/acknowledgement return clarify with a natural short
+conversational reply in clarification. Do not invent a study request.
 Never turn missing search results into a claim that the notes contain no facts.
 '''
 
@@ -73,13 +84,16 @@ class StudyRequest:
     difficulty: str | None
     clarification: str
     retrieval_queries: tuple[str, ...] = ()
+    source_kind: str = 'notes'
+    depth: str = 'standard'
+    needs_visual: bool = False
 
 
 @dataclass(frozen=True)
 class UnderstandingResult:
     plan: StudyRequest | None = None
     attempted: bool = False
-    outcome: str = 'disabled'
+    outcome: str = 'unavailable'
 
 
 def parse_request(raw: str) -> StudyRequest:
@@ -104,6 +118,8 @@ def parse_request(raw: str) -> StudyRequest:
     if (data['scope'] == 'course' or data['operation'] == 'clarify') and searches:
         raise ValueError('unexpected topic search')
     data['retrieval_queries'] = tuple(dict.fromkeys(x.strip() for x in searches))
+    if not isinstance(data['source_kind'], str) or not isinstance(data['depth'], str) or data['source_kind'] not in {'notes', 'questions', 'question_patterns'} or data['depth'] not in {'standard', 'detailed'} or type(data['needs_visual']) is not bool:
+        raise ValueError('invalid source/depth/visual contract')
     count = data['count']
     if count is not None and (type(count) is not int or not 1 <= count <= 200):
         raise ValueError('invalid requested count')
@@ -138,12 +154,6 @@ def interpret_request(question: str, history: list[dict], *, call) -> Understand
 
 
 def understand_study_request(question: str, history: list[dict]) -> UnderstandingResult:
-    if os.getenv('STUDY_ACADEMIC_SEMANTIC_PLANNER', '0').lower() not in {'1', 'true', 'yes'}:
-        return UnderstandingResult()
-    from app.academic_dialogue import conversational_acknowledgement
-    from app.academic_request_slots import conversational_repair
-    if conversational_acknowledgement(question) or conversational_repair(question):
-        return UnderstandingResult(outcome='conversation')
     from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
     model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-2.5-flash-lite').strip()
     provider = GeminiStudyProvider()
@@ -159,9 +169,10 @@ def understand_study_request(question: str, history: list[dict]) -> Understandin
 
 
 def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, **kwargs):
-    """An enabled interpreter must never silently revert to language heuristics."""
-    from app.study_retrieval_v2 import RetrievalResult, retrieve_course_context_v2
-    if understanding.plan is None and understanding.outcome not in {'disabled', 'conversation'}:
+    """Every chat request needs a Gemini plan; no language-rule fallback exists."""
+    from app.study_retrieval_v2 import RetrievalResult
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    if understanding.plan is None:
         message = (
             'Konuşma bu turda işlenebilecek uzunluğu aşıyor. İlgili soruyu daha kısa bir mesajla tekrar gönderir misin?'
             if understanding.outcome == 'input_budget' else
@@ -170,6 +181,6 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         return RetrievalResult(resolved_query=kwargs.get('query', ''),
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True)
-    result = retrieve_course_context_v2(session, request_plan=understanding.plan, **kwargs)
-    result.semantic_planner_attempted = understanding.attempted
+    result = retrieve_semantic_context(session, request_plan=understanding.plan, **kwargs)
+    result.semantic_planner_attempted = True
     return result

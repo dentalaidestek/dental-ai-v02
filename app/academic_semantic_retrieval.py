@@ -1,0 +1,138 @@
+"""Gemini-directed owned retrieval, without the legacy language/reranking engine.
+
+Search ranking is lexical, not a claim that the retrieved candidates answer the
+question. Gemini assesses support in the final grounded response.
+"""
+from __future__ import annotations
+
+import re
+from sqlalchemy import text
+from app.academic_request_understanding import StudyRequest
+from app.study_retrieval_v2 import (
+    Evidence, RetrievalResult, _fts_rows, _semantic_fts_query,
+    _semantic_fts_fallback, _question_rows, _academic_question_rows,
+    _coverage_evidence_rows, _coverage_hydration_ids, get_or_build_coverage_plan,
+)
+
+
+def _balanced_candidates(rows, phrases, limit):
+    """Round-robin lexical pools so a frequent search cannot crowd out another."""
+    def terms(value):
+        return set(re.findall(r'[^\W_]+', value.casefold()))
+    pools = []
+    for phrase in phrases:
+        wanted = terms(phrase)
+        scored = []
+        for row in rows:
+            present = terms((row[5] or '') + ' ' + (row[7] or ''))
+            overlap = len(wanted & present)
+            if overlap:
+                scored.append((overlap / max(1, len(wanted)), row))
+        scored.sort(key=lambda item: -item[0])
+        pools.append([item[1] for item in scored])
+    selected, seen = [], set()
+    for offset in range(len(rows)):
+        for pool in pools:
+            if offset < len(pool) and int(pool[offset][0]) not in seen:
+                row = pool[offset]
+                selected.append(row); seen.add(int(row[0]))
+                if len(selected) == limit:
+                    return selected
+    for row in rows:
+        if int(row[0]) not in seen:
+            selected.append(row); seen.add(int(row[0]))
+            if len(selected) == limit:
+                break
+    return selected
+
+
+def _source_cursor(history):
+    # Only consume the server-persisted assistant cursor, never the user message.
+    for item in reversed(history or []):
+        if item.get('role') == 'assistant':
+            match = re.search(r'<!--ACADEMIC_Q_CURSOR:(\d+):(\d+)-->', item.get('content') or '')
+            if match:
+                return tuple(map(int, match.groups()))
+            break
+    return None
+
+
+def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
+                              request_plan, recent_history=None, limit=16):
+    if session.get_bind().dialect.name != 'postgresql':
+        raise RuntimeError('Academic semantic retrieval requires PostgreSQL')
+    if not isinstance(request_plan, StudyRequest):
+        raise ValueError('Gemini request plan is required')
+    result = RetrievalResult(resolved_query=request_plan.resolved_query,
+                             semantic_planner_attempted=True)
+    if request_plan.operation == 'clarify':
+        result.retrieval_mode = 'clarification'
+        result.clarification = request_plan.clarification
+        return result
+    limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
+    if request_plan.scope == 'course' and request_plan.source_kind == 'questions':
+        rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
+                              limit=17, after_cursor=_source_cursor(recent_history))
+        result.has_more = len(rows) > 16
+        rows = rows[:16]
+        result.retrieval_mode = 'questions_exhaustive'
+    elif request_plan.scope == 'course':
+        count = min(48, max(24, request_plan.count or 0,
+                           48 if request_plan.depth == 'detailed' else 24))
+        coverage = get_or_build_coverage_plan(session, owner_user_id=owner_user_id,
+                                              course_id=course_id, requested_count=count)
+        rows = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
+            course_id=course_id, chunk_ids=_coverage_hydration_ids(coverage, limit=count), limit=count)
+        if request_plan.source_kind == 'question_patterns':
+            rows = _academic_question_rows(session, owner_user_id=owner_user_id,
+                course_id=course_id, limit=16) + rows
+        result.retrieval_mode = 'coverage'
+    else:
+        searches = request_plan.retrieval_queries
+        if not searches:
+            raise ValueError('Gemini topic searches are required')
+        rows = _fts_rows(session, owner_user_id=owner_user_id, course_id=course_id,
+            lexical_query=_semantic_fts_query(searches), query_vector=None,
+            embedding_provider='', embedding_model='', limit=min(96, limit * 3),
+            lexical_groups=tuple(_semantic_fts_query((phrase,)) for phrase in searches),
+            lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches))
+        if request_plan.source_kind == 'questions':
+            rows = [row for row in rows if row[6] == 'QUESTION']
+        rows = _balanced_candidates(rows, searches, limit)
+        result.retrieval_mode = 'semantic_candidates'
+    seen = set()
+    for row in rows:
+        if int(row[0]) in seen:
+            continue
+        seen.add(int(row[0]))
+        evidence = Evidence(chunk_id=int(row[0]), material_id=int(row[1]), display_name=row[2],
+            page_start=int(row[3]), page_end=int(row[4]), section_title=row[5],
+            content_kind=row[6], text=row[7], lexical_rank=row[8], semantic_rank=None,
+            hybrid_score=float(row[12] or 0), chunk_index=int(row[13] or 0))
+        result.evidence.append(evidence)
+        result.note_context.append(
+            f'[KANIT material_id={evidence.material_id} sayfa={evidence.page_start} '
+            f'bölüm={evidence.section_title or "-"} tür={evidence.content_kind}]\n{evidence.text}')
+        if evidence.material_id not in result.source_material_ids:
+            result.source_material_ids.append(evidence.material_id)
+    # This means candidates exist, not that a rule engine proved factual support.
+    result.evidence_sufficient = bool(result.evidence)
+    if request_plan.needs_visual and result.evidence:
+        materials = session.exec(text('''SELECT id,file_path,mime_type,display_name,active_index_version
+            FROM studymaterial WHERE owner_user_id=:owner AND course_id=:course
+            AND index_status='READY' AND deleted_at IS NULL AND id=ANY(:ids)'''),
+            params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids}).all()
+        by_id = {int(row[0]):row for row in materials}
+        pages = set()
+        for item in result.evidence:
+            key = (item.material_id, item.page_start)
+            if key in pages or item.material_id not in by_id:
+                continue
+            pages.add(key); material = by_id[item.material_id]
+            result.visual_sources.append(dict(owner_user_id=owner_user_id,
+                material_id=item.material_id, page_number=item.page_start,
+                reference=material[1],mime_type=material[2],display_name=material[3],
+                index_version=material[4]))
+            if len(pages) == 3:
+                break
+    return result

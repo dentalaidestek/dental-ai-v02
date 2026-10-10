@@ -8,7 +8,7 @@ from app.academic_request_understanding import interpret_request, parse_request,
 
 def raw(**overrides):
     data = dict(resolved_query='Downs analizindeki yüz tiplerini açıkla', operation='explain',
-                scope='topic', count=None, difficulty=None, clarification='', retrieval_queries=['Downs analiz yüz tipleri'])
+                scope='topic', count=None, difficulty=None, clarification='', retrieval_queries=['Downs analiz yüz tipleri'], source_kind='notes', depth='standard', needs_visual=False)
     data.update(overrides)
     if data['scope'] == 'course' or data['operation'] == 'clarify':
         data['retrieval_queries'] = overrides.get('retrieval_queries', [])
@@ -56,9 +56,16 @@ def test_large_context_is_not_silently_truncated_or_sent(call=None):
     call.assert_not_called()
 
 
-def test_default_off_does_not_import_or_call_provider(monkeypatch):
-    monkeypatch.delenv('STUDY_ACADEMIC_SEMANTIC_PLANNER', raising=False)
-    assert understand_study_request('Yeni cümle', []).outcome == 'disabled'
+def test_old_disable_flag_cannot_switch_back_to_language_rules(monkeypatch):
+    import app.study_provider as provider_module
+    provider = Mock(api_key='test-only')
+    provider.generate.return_value = raw()
+    monkeypatch.setattr(provider_module, 'GeminiStudyProvider', lambda: provider)
+    monkeypatch.setattr(provider_module, 'target_available', lambda target: True)
+    monkeypatch.setenv('STUDY_ACADEMIC_SEMANTIC_PLANNER', '0')
+    result = understand_study_request('Bunu anlat', [])
+    assert result.outcome == 'interpreted' and result.attempted
+    provider.generate.assert_called_once()
 
 
 def test_semantic_attempt_prevents_second_paid_recovery_call():
@@ -205,8 +212,7 @@ def test_gemini_resolved_query_is_not_reinterpreted_by_followup_rules(monkeypatc
 def test_final_prompt_keeps_interpreted_request_without_legacy_output_rules(monkeypatch):
     from app.study_ai_v2 import _prompt
     from app.study_retrieval_v2 import RetrievalResult
-    for name in ('app.study_ai_v2._response_contract',
-                 'app.academic_study_contract.study_output_rules',
+    for name in ('app.academic_study_contract.study_output_rules',
                  'app.academic_dialogue.dialogue_rules'):
         monkeypatch.setattr(name, Mock(side_effect=AssertionError('legacy output rule used')))
     request = 'Hipofiz ve tiroidi karşılaştır; önce farklar, sonra 5 zor soru, cevapları en sona koy'
