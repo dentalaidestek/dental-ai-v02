@@ -55,7 +55,19 @@ def _generation_targets() -> list[ProviderTarget]:
     return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
 
 
+def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
+    turns = list(history or [])[-8:]
+    if retrieval.study_task.get('operation') in {'explain', 'compare', 'teach', 'summarize'}:
+        # The Gemini planner already resolves references using full dialogue.
+        # Prior factual answers must not become examples to copy into a new
+        # source-grounded explanation. Retain user context and leave answer/
+        # solve history intact for evaluating or discussing earlier questions.
+        turns = [item for item in turns if str(item.get('role', '')).lower() != 'assistant']
+    return turns
+
+
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
+    history = _generation_history(retrieval, history)
     context = "\n\n---\n\n".join(retrieval.note_context)
     understood = retrieval.resolved_query or question
     continuation = (
@@ -134,6 +146,7 @@ def stream_rag_v2(
         for item in retrieval.attachments
         if item.get("mime_type")
     }
+    history = _generation_history(retrieval, history)
     prompt = _prompt(course_title, question, retrieval, history)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
