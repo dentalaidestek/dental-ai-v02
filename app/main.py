@@ -4746,7 +4746,7 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
 
 
 @app.get("/notes/courses/{course_id}/ai", response_class=HTMLResponse)
-def study_ai_page(request: Request, course_id: int):
+def study_ai_page(request: Request, course_id: int, background_tasks: BackgroundTasks):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4770,6 +4770,7 @@ def study_ai_page(request: Request, course_id: int):
             course_v2_ready(
                 s, material_model=StudyMaterial,
                 owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
+                background_tasks=background_tasks, wake_existing=True,
             )
         )
 
@@ -4787,7 +4788,7 @@ def study_ai_page(request: Request, course_id: int):
 
 
 @app.get("/notes/courses/{course_id}/ai/index-status")
-def study_ai_index_status(request: Request, course_id: int):
+def study_ai_index_status(request: Request, course_id: int, background_tasks: BackgroundTasks):
     """Small authenticated readiness probe used only while this page is open."""
     user = get_current_user(request)
     if not user:
@@ -4798,6 +4799,7 @@ def study_ai_index_status(request: Request, course_id: int):
         ready = course_v2_ready(
             s, material_model=StudyMaterial,
             owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
+            background_tasks=background_tasks,
         )
     return JSONResponse(
         {"ok": True, "ready": ready}, headers={"Cache-Control": "no-store"},
@@ -4900,6 +4902,7 @@ def study_ai_ask(
                 course_v2_ready(
                     s, material_model=StudyMaterial,
                     owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
+                    background_tasks=background_tasks,
                 )
             )
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
@@ -5068,7 +5071,7 @@ def study_ai_ask(
 
 
 @app.post("/notes/courses/{course_id}/ai/ask-stream")
-def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(...)):
+def study_ai_ask_stream(request: Request, course_id: int, background_tasks: BackgroundTasks, message: str = Form(...)):
     """Default-off NDJSON stream for the fully prepared V2 course index."""
     user = get_current_user(request)
     if not user:
@@ -5095,6 +5098,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
         if not course_v2_ready(
             s, material_model=StudyMaterial,
             owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
+            background_tasks=background_tasks,
         ):
             return JSONResponse({
                 "ok": False,

@@ -42,6 +42,34 @@ def test_profile_upgrade_is_owned_idempotent_and_preserves_published_sources(mon
         assert len(pending) == 1
         assert pending[0].material_id == 1
         assert pending[0].index_version == sources[0]['building_index_version']
+        # A lost dispatch is recovered on page open, without dispatching again
+        # on each readiness poll or sending the request before DB commit.
+        from sqlalchemy import MetaData, Table
+        from sqlalchemy.orm import registry
+        from starlette.background import BackgroundTasks
+        from app.study_v2_service import course_v2_ready
+        class Material:
+            pass
+        mapper = registry()
+        mapper.map_imperatively(Material, Table('studymaterial', MetaData(), autoload_with=engine))
+        page_tasks = BackgroundTasks()
+        assert not course_v2_ready(session, material_model=Material, owner_user_id=10,
+            course_id=20, upgrade_profile=True, background_tasks=page_tasks, wake_existing=True)
+        assert len(page_tasks.tasks) == 1
+        assert page_tasks.tasks[0].func.__name__ == 'wake_academic_modal_indexer'
+        poll_tasks = BackgroundTasks()
+        assert not course_v2_ready(session, material_model=Material, owner_user_id=10,
+            course_id=20, upgrade_profile=True, background_tasks=poll_tasks)
+        assert not poll_tasks.tasks
+        # New upgrades schedule one wake after their transaction is committed.
+        session.execute(text("UPDATE studyindexjob SET index_fingerprint='old' WHERE material_id=4"))
+        session.commit()
+        upgrade_tasks = BackgroundTasks()
+        assert not course_v2_ready(session, material_model=Material, owner_user_id=10,
+            course_id=20, upgrade_profile=True, background_tasks=upgrade_tasks)
+        assert len(upgrade_tasks.tasks) == 1
+        with Session(engine) as other_session:
+            assert len(other_session.exec(select(StudyIndexJob).where(StudyIndexJob.status == 'QUEUED')).all()) == 2
 
 
 def test_disabled_profile_upgrade_does_not_touch_database(monkeypatch):
