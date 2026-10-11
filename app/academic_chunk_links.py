@@ -6,8 +6,24 @@ inferred from the student's question. Links locate evidence, never prove facts.
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 import json
+import re
 import threading
 import time
+import unicodedata
+
+
+def _section_keys(section):
+    parts = str(section or '').strip().casefold().split(' > ')
+    return [' > '.join(parts[:i]) for i in range(1, len(parts) + 1) if parts[0]]
+
+
+def _heading_terms(value):
+    value = unicodedata.normalize('NFKD', value.casefold())
+    value = ''.join(c for c in value if not unicodedata.combining(c))
+    # Match a heading's Turkish plural spelling without dropping its parent
+    # qualifiers. This is source lookup, not question interpretation.
+    return {re.sub(r'(?<=\w)(?:lar|ler)(?:ı|i|u|ü)?$', '', term)
+            for term in re.findall(r'[^\W_]+', value)}
 
 
 def source_nodes(row):
@@ -26,30 +42,49 @@ class CourseLinks:
     by_node: dict
     by_section: dict
 
-    def related_ids(self, seeds, limit):
+    def requested_sections(self, seeds, section_queries):
+        query_terms = [_heading_terms(query) for query in section_queries]
+        # A request naming a source heading asks for its contents, which may
+        # legitimately contain different concepts. A single-concept lookup
+        # must still retain the old concept isolation below.
+        heading_sections = {(int(row[1]), key) for row in seeds for key in _section_keys(row[5])}
+        requested_sections = {section for section in heading_sections
+                              if len(_heading_terms(section[1])) >= 2 and
+                              any(_heading_terms(section[1]) <= query for query in query_terms)}
+        requested_sections = {section for section in requested_sections
+                              if not any(other[0] == section[0] and
+                                         other[1].startswith(section[1] + ' > ')
+                                         for other in requested_sections)}
+        return requested_sections
+
+    def related_ids(self, seeds, limit, *, section_queries=()):
         nodes = {node for row in seeds for node in source_nodes(row)}
         sections = {(int(row[1]), str(row[5]).strip().casefold()) for row in seeds
                     if row[5] and len(str(row[5]).strip()) >= 6}
+        requested_sections = self.requested_sections(seeds, section_queries)
         seed_ids = {int(row[0]) for row in seeds}
         candidates = set()
         for node in nodes:
             candidates.update(self.by_node.get(node, ()))
         # Section continuity helps text lacking a recognized catalog concept.
         # A heading is confined to its actual document, never an entire specialty.
-        for section in sections:
+        for section in sections | requested_sections:
             candidates.update(self.by_section.get(section, ()))
         buckets = defaultdict(list)
         for cid in candidates - seed_ids:
             material, section, kind, page, chunk, row_nodes = self.rows[cid]
             overlap = len(nodes.intersection(row_nodes))
             same_section = (material, section) in sections
+            requested_section = any((material, key) in requested_sections for key in _section_keys(section))
+            if requested_sections and not requested_section:
+                continue
             # Do not link a different explicit concept merely because the
             # inherited heading happens to be the same.
-            if nodes and row_nodes and not overlap:
+            if nodes and row_nodes and not overlap and not requested_section:
                 continue
-            if not overlap and not same_section:
+            if not overlap and not same_section and not requested_section:
                 continue
-            buckets[(-overlap, not same_section, material, section, kind)].append((page, chunk, cid))
+            buckets[(not requested_section, -overlap, not same_section, material, section, kind)].append((page, chunk, cid))
         pools = []
         for key in sorted(buckets):
             members = sorted(buckets[key])
@@ -80,8 +115,9 @@ def build_course_links(pages):
             rows[cid] = (material, section, str(row[6]), int(row[3]), int(row[13]), nodes)
             for node in nodes:
                 by_node[node].append(cid)
-            if len(section) >= 6:
-                by_section[(material, section)].append(cid)
+            for key in _section_keys(section):
+                if len(key) >= 6:
+                    by_section[(material, key)].append(cid)
     return CourseLinks(rows, dict(by_node), dict(by_section))
 
 

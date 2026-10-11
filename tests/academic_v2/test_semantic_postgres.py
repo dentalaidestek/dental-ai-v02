@@ -174,3 +174,18 @@ def test_published_version_change_invalidates_topic_link_cache(db):
     assert set(get_course_links(db,owner_user_id=17,course_id=23).rows) == {1}
     db.exec(text("UPDATE studymaterial SET active_index_version='v2'"))
     assert set(get_course_links(db,owner_user_id=17,course_id=23).rows) == {2}
+
+
+def test_named_section_hydrates_fifty_short_pages_without_sibling_or_foreign_data(db):
+    from app.academic_semantic_retrieval import _linked_candidates
+    from app.study_retrieval_v2 import _coverage_evidence_rows
+    for ident in range(1, 51):
+        add(db, ident, 'Bu başlığa ait kaynak açıklaması')
+    db.exec(text("UPDATE studyindexchunk SET section_title='Deri Noktaları > Tek Noktalar'"))
+    add(db, 100, 'Çift grubuna ait kaynak açıklaması')
+    db.exec(text("UPDATE studyindexchunk SET section_title='Deri Noktaları > Çift Noktalar' WHERE id=100"))
+    add(db, 101, 'Başka kullanıcıya ait açıklama', owner=99)
+    db.exec(text("UPDATE studyindexchunk SET section_title='Deri Noktaları > Tek Noktalar' WHERE id=101"))
+    seed = _coverage_evidence_rows(db, owner_user_id=17, course_id=23, chunk_ids=[1], limit=1)
+    rows = _linked_candidates(db, seed, ('deri tek noktalar',), owner_user_id=17, course_id=23, limit=16)
+    assert {int(row[0]) for row in rows} == set(range(1, 51))

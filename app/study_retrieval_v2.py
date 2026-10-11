@@ -1794,7 +1794,7 @@ def _coverage_hydration_ids(coverage_plan, *, limit: int = 48) -> list[int]:
 
 def _coverage_evidence_rows(
     session: Session, *, owner_user_id: int, course_id: int,
-    chunk_ids: list[int], limit: int = 24,
+    chunk_ids: list[int], limit: int = 24, max_rows: int = 48,
 ) -> list:
     """Hydrate text only for planner-selected chunks."""
     if not chunk_ids:
@@ -1818,7 +1818,7 @@ def _coverage_evidence_rows(
         LIMIT :limit
     """), params={
         "owner": owner_user_id, "course": course_id,
-        "chunk_ids": chunk_ids, "limit": max(1, min(limit, 48)),
+        "chunk_ids": chunk_ids, "limit": max(1, min(limit, max(1, min(max_rows, 128)))),
     }).all())
 
 
