@@ -42,6 +42,12 @@ class CourseLinks:
     by_node: dict
     by_section: dict
 
+    def focus_nodes(self, phrase):
+        # Literal lookup within this course's indexed vocabulary only. Gemini
+        # still interprets the request; this does not infer a task or a fact.
+        from app.dental_knowledge_graph import exact_nodes_in_subset
+        return frozenset(node.id for node in exact_nodes_in_subset(phrase, tuple(self.by_node)))
+
     def requested_sections(self, seeds, section_queries):
         query_terms = [_heading_terms(query) for query in section_queries]
         # A request naming a source heading asks for its contents, which may
@@ -57,11 +63,18 @@ class CourseLinks:
                                          for other in requested_sections)}
         return requested_sections
 
-    def related_ids(self, seeds, limit, *, section_queries=()):
+    def related_ids(self, seeds, limit, *, section_queries=(), focus_nodes=()):
         nodes = {node for row in seeds for node in source_nodes(row)}
+        if focus_nodes:
+            nodes.intersection_update(focus_nodes)
         sections = {(int(row[1]), str(row[5]).strip().casefold()) for row in seeds
                     if row[5] and len(str(row[5]).strip()) >= 6}
         requested_sections = self.requested_sections(seeds, section_queries)
+        focused_sections = set()
+        if focus_nodes:
+            from app.dental_knowledge_graph import exact_nodes_in_subset
+            focused_sections = {section for section in sections if
+                exact_nodes_in_subset(section[1], tuple(focus_nodes))}
         seed_ids = {int(row[0]) for row in seeds}
         candidates = set()
         for node in nodes:
@@ -77,6 +90,8 @@ class CourseLinks:
             same_section = (material, section) in sections
             requested_section = any((material, key) in requested_sections for key in _section_keys(section))
             if requested_sections and not requested_section:
+                continue
+            if focus_nodes and not overlap and not requested_section and (material, section) not in focused_sections:
                 continue
             # Do not link a different explicit concept merely because the
             # inherited heading happens to be the same.

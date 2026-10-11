@@ -145,15 +145,66 @@ def reactivate_configured_ocr_jobs(session: Session) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
-def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int) -> bool:
+def queue_owned_course_profile_upgrade(session, *, owner_user_id, course_id, limit=16):
+    """Reserve old published sources once; never scan or rebuild other courses."""
+    if not indexing_enabled() or not reads_enabled():
+        return 0
+    from app.study_index_profile import index_fingerprint
+    profile = index_fingerprint()
+    rows = session.execute(text('''
+        SELECT m.id,m.active_index_version,m.mime_type
+        FROM studymaterial m JOIN studyindexjob j
+          ON j.material_id=m.id AND j.owner_user_id=m.owner_user_id
+         AND j.course_id=m.course_id AND j.index_version=m.active_index_version
+        WHERE m.owner_user_id=:owner AND m.course_id=:course
+          AND m.deleted_at IS NULL AND m.index_status='READY'
+          AND m.building_index_version IS NULL AND j.status='DONE'
+          AND j.index_fingerprint IS NOT NULL AND j.index_fingerprint<>:profile
+        ORDER BY m.id LIMIT :limit
+    '''), {'owner': owner_user_id, 'course': course_id, 'profile': profile,
+           'limit': max(1, min(limit, 16))}).mappings().all()
+    queued = 0
+    for row in rows:
+        version = new_index_version()
+        reserved = session.execute(text('''
+            UPDATE studymaterial SET building_index_version=:version,index_error=NULL
+            WHERE id=:id AND owner_user_id=:owner AND course_id=:course
+              AND active_index_version=:active AND building_index_version IS NULL
+              AND deleted_at IS NULL AND index_status='READY'
+        '''), {'version': version, 'id': row['id'], 'owner': owner_user_id,
+               'course': course_id, 'active': row['active_index_version']})
+        if reserved.rowcount != 1:
+            continue
+        enqueue_index_job(session, owner_user_id=owner_user_id, course_id=course_id,
+                          material_id=row['id'], index_version=version,
+                          resource_class='NORMAL' if row['mime_type']=='application/pdf' else 'OCR_HEAVY')
+        queued += 1
+    return queued
+
+
+def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int,
+                    upgrade_profile: bool = False) -> bool:
+    if upgrade_profile:
+        from app.work_jobs import WorkCapacity
+        try:
+            if queue_owned_course_profile_upgrade(
+                    session, owner_user_id=owner_user_id, course_id=course_id):
+                session.commit()
+        except WorkCapacity:
+            # A full durable queue must not break the course page or publish a
+            # reservation without a corresponding job. A later probe retries.
+            session.rollback()
+            return False
     rows = list(session.exec(
         select(material_model)
         .where(material_model.owner_user_id == owner_user_id)
         .where(material_model.course_id == course_id)
         .where(material_model.deleted_at == None)
+        .execution_options(populate_existing=True)
     ).all())
     return bool(rows) and all(
         row.index_status == "READY" and bool(row.active_index_version)
+        and (not upgrade_profile or not row.building_index_version)
         for row in rows
     )
 

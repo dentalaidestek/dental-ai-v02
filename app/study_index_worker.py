@@ -135,19 +135,8 @@ def _sha256_file(path) -> str:
 
 
 def _index_fingerprint() -> str:
-    payload = {
-        "schema": "academic-v2-dental-semantics-10",
-        "retrieval_profile": "fts-local-v1",
-        "chunk_profile": "dental-page-v3-layout-heading-paths",
-        "embedding_provider": None,
-        "embedding_model": None,
-        "embedding_dimensions": None,
-        "ocr_provider": (os.getenv("STUDY_V2_OCR_PROVIDER") or "local").strip().lower(),
-        "ocr_engine": LOCAL_OCR_ENGINE_VERSION,
-        "ocr_dpi": _int_env("STUDY_V2_LOCAL_OCR_DPI", 150, 120, 200),
-        "ocr_retry_dpi": _int_env("STUDY_V2_LOCAL_OCR_RETRY_DPI", 210, 160, 240),
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    from app.study_index_profile import index_fingerprint
+    return index_fingerprint()
 
 
 def _material_row(session: Session, material_id: int, owner_user_id: int):

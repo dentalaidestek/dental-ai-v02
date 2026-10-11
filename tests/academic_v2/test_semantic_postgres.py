@@ -189,3 +189,22 @@ def test_named_section_hydrates_fifty_short_pages_without_sibling_or_foreign_dat
     seed = _coverage_evidence_rows(db, owner_user_id=17, course_id=23, chunk_ids=[1], limit=1)
     rows = _linked_candidates(db, seed, ('deri tek noktalar',), owner_user_id=17, course_id=23, limit=16)
     assert {int(row[0]) for row in rows} == set(range(1, 51))
+
+
+def test_anb_focus_follows_distant_mentions_without_sna_only_fragments(db):
+    import json
+    from app.academic_semantic_retrieval import _linked_candidates
+    from app.study_retrieval_v2 import _coverage_evidence_rows
+    for ident, body, nodes in (
+        (1, 'ANB ile SNA karşılaştırması', ['anb', 'sna']),
+        (2, 'ANB açısının bağlı açıklaması', ['anb']),
+        (3, 'SNA açısının bağımsız açıklaması', ['sna']),
+        (4, 'Genel bölümün farklı açıklaması', []),
+    ):
+        add(db, ident, body)
+        db.exec(text('UPDATE studyindexchunk SET section_title=:heading, semantic_json=:meta WHERE id=:id'),
+            params={'id': ident, 'heading': 'Sefalometrik Analiz',
+                    'meta': json.dumps({'nodes': nodes})})
+    seed = _coverage_evidence_rows(db, owner_user_id=17, course_id=23, chunk_ids=[1], limit=1)
+    selected = _linked_candidates(db, seed, ('ANB açısı',), owner_user_id=17, course_id=23, limit=16)
+    assert {int(row[0]) for row in selected} == {1, 2}

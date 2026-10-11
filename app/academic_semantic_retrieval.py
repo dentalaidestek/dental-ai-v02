@@ -33,14 +33,22 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
                for group in seeds for row in group):
         return _balanced_candidates(rows, searches, limit)
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+    focuses = [links.focus_nodes(phrase) for phrase in searches]
+    for i, focus in enumerate(focuses):
+        if focus:
+            from app.dental_knowledge_graph import exact_nodes_in_subset
+            pools[i] = [row for row in pools[i] if focus.intersection(source_nodes(row)) or
+                        (not source_nodes(row) and exact_nodes_in_subset(
+                            (row[5] or '') + ' ' + (row[7] or ''), tuple(focus)))]
+            seeds[i] = pools[i][:2]
     named_sections = [bool(links.requested_sections(group, (phrase,)))
                       for group, phrase in zip(seeds, searches)]
     # Named sections may span many short slides. Bound total text/work rather
     # than discarding the section's middle at the ordinary 16-chunk limit.
     selection_limit = 128 if any(named_sections) else limit
     linked_ids = [links.related_ids(group, max(2, selection_limit // len(pools)),
-                                   section_queries=(phrase,))
-                  for group, phrase in zip(seeds, searches)]
+                                   section_queries=(phrase,), focus_nodes=focus)
+                  for group, phrase, focus in zip(seeds, searches, focuses)]
     ids = list(dict.fromkeys(cid for group in linked_ids for cid in group))
     hydrated = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
         course_id=course_id, chunk_ids=ids, limit=min(selection_limit, len(ids)),

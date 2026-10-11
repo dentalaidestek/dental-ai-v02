@@ -4769,7 +4769,7 @@ def study_ai_page(request: Request, course_id: int):
         v2_ready = (
             course_v2_ready(
                 s, material_model=StudyMaterial,
-                owner_user_id=user.id, course_id=course_id,
+                owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
             )
         )
 
@@ -4797,7 +4797,7 @@ def study_ai_index_status(request: Request, course_id: int):
             return JSONResponse({"ok": False}, status_code=404)
         ready = course_v2_ready(
             s, material_model=StudyMaterial,
-            owner_user_id=user.id, course_id=course_id,
+            owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
         )
     return JSONResponse(
         {"ok": True, "ready": ready}, headers={"Cache-Control": "no-store"},
@@ -4899,7 +4899,7 @@ def study_ai_ask(
             _trace_index_ready = (
                 course_v2_ready(
                     s, material_model=StudyMaterial,
-                    owner_user_id=user.id, course_id=course_id,
+                    owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
                 )
             )
             trace_event("ask.index.state", course_id=course_id, ready=_trace_index_ready)
@@ -5094,7 +5094,7 @@ def study_ai_ask_stream(request: Request, course_id: int, message: str = Form(..
             return JSONResponse({"ok": False, "error": "Bu ders diş hekimliği çalışma alanı dışında."}, status_code=400)
         if not course_v2_ready(
             s, material_model=StudyMaterial,
-            owner_user_id=user.id, course_id=course_id,
+            owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
         ):
             return JSONResponse({
                 "ok": False,
