@@ -166,6 +166,31 @@ def test_prompt_describes_actual_coverage_without_inventing_missing_sources(comp
     assert ('Ders kapsamı sınırlı temsili parçalardan oluşur' in prompt)==(not complete)
 
 
+@pytest.mark.parametrize('operation', ['explain', 'compare', 'teach', 'summarize'])
+def test_grounded_explanations_do_not_copy_prior_assistant_facts(operation):
+    from app.study_retrieval_v2 import RetrievalResult
+    from app.study_ai_v2 import _prompt
+    result = RetrievalResult(note_context=['Güncel ANB kaynağı'],
+        resolved_query='ANB ile SNA tanımlarını karşılaştır', study_task={'operation': operation})
+    history = [{'role': 'USER', 'content': 'ANB konusunu çalışıyorum'},
+               {'role': 'ASSISTANT', 'content': 'Önceki yanlış birleşik tanım'}]
+    prompt = _prompt('Ortoo', 'İkisini karşılaştır', result, history)
+    assert 'Önceki yanlış birleşik tanım' not in prompt
+    assert 'ANB konusunu çalışıyorum' in prompt
+    assert 'Güncel ANB kaynağı' in prompt
+    assert 'ANB ile SNA tanımlarını karşılaştır' in prompt
+    assert len(history) == 2
+
+
+@pytest.mark.parametrize('operation', ['answer', 'solve'])
+def test_answer_and_solution_history_remains_available(operation):
+    from app.study_retrieval_v2 import RetrievalResult
+    from app.study_ai_v2 import _generation_history
+    history = [{'role': 'assistant', 'content': 'Soru 1: A mı B mi?'},
+               {'role': 'user', 'content': '1-A cevabımı değerlendir'}]
+    assert _generation_history(RetrievalResult(study_task={'operation': operation}), history) == history
+
+
 def test_current_request_and_provider_output_are_preserved_and_traceable(monkeypatch, caplog):
     import logging
     import app.study_ai_v2 as generation
