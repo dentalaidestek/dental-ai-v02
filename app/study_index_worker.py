@@ -138,7 +138,7 @@ def _index_fingerprint() -> str:
     payload = {
         "schema": "academic-v2-dental-semantics-10",
         "retrieval_profile": "fts-local-v1",
-        "chunk_profile": "dental-page-v2-margin-position-safe",
+        "chunk_profile": "dental-page-v3-layout-heading-paths",
         "embedding_provider": None,
         "embedding_model": None,
         "embedding_dimensions": None,
@@ -297,7 +297,10 @@ def _extract_pdf_slice(session: Session, job: StudyIndexJob, path) -> str:
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"
-            text = normalize_extracted_text(reader.pages[page_number - 1].extract_text())
+            # Positioned slide text often consists of separate PDF drawing
+            # operations. Plain extraction breaks a heading/definition at each
+            # operation; layout extraction reconstructs the visible text lines.
+            text = normalize_extracted_text(reader.pages[page_number - 1].extract_text(extraction_mode="layout"))
             if not _lease_still_owned(session, job):
                 session.rollback()
                 return "LEASE_LOST"

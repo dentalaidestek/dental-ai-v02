@@ -53,6 +53,17 @@ def normalize_extracted_text(value: str | None) -> str:
 
 def _is_heading(line: str) -> bool:
     raw = line.strip()
+    # Slides often use title case and a dash for headings, rather than all
+    # capitals. A sentence/definition or an MCQ option is not such a heading.
+    slide_title = re.sub(r"^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)", "", raw).rstrip(":")
+    title_words = slide_title.split()
+    if (2 <= len(title_words) <= 8 and len(slide_title) <= 110
+            and not re.search(r"[:.!?;()]", slide_title)
+            and not re.match(r"^[A-E][.)]\s", raw)
+            and all(word[0].isupper() for word in title_words)):
+        return True
+    if _TABLE_GAP_RE.search(raw):
+        return False  # Column labels belong to their table, not its section path.
     stripped = raw.rstrip(":")
     if not stripped or len(stripped) > 110 or _BULLET_RE.match(line):
         return False
@@ -60,9 +71,29 @@ def _is_heading(line: str) -> bool:
     if len(words) > 12:
         return False
     letters = [ch for ch in stripped if ch.isalpha()]
+    if len(letters) < 2:
+        return False  # A single diagram label is not a new document section.
     uppercase_ratio = sum(ch.isupper() for ch in letters) / max(1, len(letters))
     title_shape = raw.endswith(":") or uppercase_ratio >= 0.72
     return title_shape or bool(_DENTAL_HEADING_RE.search(stripped) and len(words) <= 8)
+
+
+def _next_section_title(previous: str | None, line: str, *, consecutive: bool) -> str:
+    """Carry a slide's parent across pages, including sibling subheadings."""
+    raw = line.strip().rstrip(":")
+    numbered = bool(re.match(r"^[A-ZÇĞİÖŞÜ]\s*-\s*", raw))
+    label = re.sub(r"\s+", " ", re.sub(r"^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)", "", raw))
+    if not previous or numbered:
+        return label
+    path = previous.split(" > ")
+    # Unmarked sibling slide headings (e.g. two kinds of points) share their
+    # final noun. Only replace an existing child, never infer a new parent.
+    if len(path) > 1 and path[-1].split()[-1].casefold() == label.split()[-1].casefold():
+        return " > ".join([*path[:-1], label])
+    # Explicit list headings on a slide are children of its current heading.
+    if consecutive and not label.isupper():
+        return " > ".join([*path, label])
+    return label
 
 
 def _content_kind(lines: list[str]) -> str:
@@ -174,14 +205,20 @@ def chunk_dental_page(
     sections: list[tuple[str | None, list[str]]] = []
     title: str | None = inherited_section_title
     body: list[str] = []
+    consecutive_heading = False
     for line in lines:
         if _is_heading(line):
             if body:
                 sections.append((title, body))
-            title = line.strip().rstrip(":")
+            elif consecutive_heading:
+                sections.append((title, []))  # Preserve heading-only outlines.
+            title = _next_section_title(title, line, consecutive=consecutive_heading)
             body = []
+            consecutive_heading = True
         else:
             body.append(line)
+            if line.strip():
+                consecutive_heading = False
     if body or title:
         sections.append((title, body))
 

@@ -33,28 +33,43 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
                for group in seeds for row in group):
         return _balanced_candidates(rows, searches, limit)
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
-    linked_ids = [links.related_ids(group, max(2, limit // len(pools))) for group in seeds]
+    named_sections = [bool(links.requested_sections(group, (phrase,)))
+                      for group, phrase in zip(seeds, searches)]
+    # Named sections may span many short slides. Bound total text/work rather
+    # than discarding the section's middle at the ordinary 16-chunk limit.
+    selection_limit = 128 if any(named_sections) else limit
+    linked_ids = [links.related_ids(group, max(2, selection_limit // len(pools)),
+                                   section_queries=(phrase,))
+                  for group, phrase in zip(seeds, searches)]
     ids = list(dict.fromkeys(cid for group in linked_ids for cid in group))
     hydrated = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
-        course_id=course_id, chunk_ids=ids, limit=min(48, len(ids))) if ids else []
+        course_id=course_id, chunk_ids=ids, limit=min(selection_limit, len(ids)),
+        max_rows=selection_limit) if ids else []
     by_id = {int(row[0]): row for row in hydrated}
     combined = []
-    for pool, group in zip(pools, linked_ids):
+    for pool, group, named in zip(pools, linked_ids, named_sections):
         related = [by_id[cid] for cid in group if cid in by_id]
         merged = pool[:2]
+        if named:
+            combined.append(merged + related)
+            continue
         for offset in range(max(len(pool)-2, len(related))):
             if offset < len(related):
                 merged.append(related[offset])
             if offset + 2 < len(pool):
                 merged.append(pool[offset + 2])
         combined.append(merged)
-    selected, seen = [], set()
+    selected, seen, text_chars = [], set(), 0
     for offset in range(max((len(p) for p in combined), default=0)):
         for pool in combined:
             if offset < len(pool) and int(pool[offset][0]) not in seen:
                 row = pool[offset]
+                size = len(row[7] or '') + len(row[5] or '') + 160
+                if any(named_sections) and text_chars + size > 96000:
+                    continue
+                text_chars += size
                 seen.add(int(row[0])); selected.append(row)
-                if len(selected) == limit:
+                if len(selected) == selection_limit:
                     return selected
     return selected
 

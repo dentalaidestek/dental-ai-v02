@@ -36,9 +36,50 @@ def test_unknown_concept_can_follow_its_actual_heading():
     assert index.related_ids([seed],16) == [990]
 
 
+def test_explicit_heading_request_keeps_different_points_in_its_section():
+    seed = row(1, nodes=['pronasale'], section='Deri Tek Noktalar')
+    index = build_course_links([[seed,
+        row(2, nodes=['labiale'], section=seed[5]),
+        row(3, nodes=['pogonion'], section=seed[5]),
+        row(4, nodes=['sella'], section='Kemik Tek Noktalar'),
+        row(5, nodes=['labiale'], section=seed[5], material=2),
+        row(6, nodes=['pronasale'], section='Başka bir bölüm')]])
+    assert index.related_ids([seed], 16, section_queries=('Deri Tek Noktalar anlat',)) == [2, 3]
+    assert index.related_ids([seed], 16, section_queries=('pronasale',)) == [6]
+    assert index.related_ids([seed], 16, section_queries=('tek noktalar',)) == [6]
+
+
 def test_malformed_metadata_never_creates_a_link_or_crashes():
     seed=row(1,nodes=['anb'])
     for value in ['not json','[]','{"nodes":"anb"}','{"nodes":[null,{},7]}']:
         bad=(*row(2)[:14],value)
         assert source_nodes(bad) == ()
         assert build_course_links([[seed,bad]]).related_ids([seed],16) == []
+
+
+def test_heading_path_selects_children_without_crossing_sibling_groups():
+    seed = row(1, nodes=['pronasale'], section='Deri Noktaları > Tek Noktalar')
+    single = row(2, nodes=['stomion'], section=seed[5])
+    paired = row(3, nodes=['tragion'], section='Deri Noktaları > Çift Noktalar')
+    bone = row(4, nodes=['basion'], section='Kemik Noktaları > Tek Noktalar')
+    links = build_course_links([[seed, single, paired, bone]])
+    assert links.related_ids([seed], 16, section_queries=('deri tek noktalar',)) == [2]
+    assert set(links.related_ids([seed], 16, section_queries=('deri noktaları',))) == {2, 3}
+
+
+def test_named_section_selection_uses_text_budget_instead_of_sixteen_chunks(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    def run(text_size):
+        rows = [(*row(i, section='Deri Noktaları > Tek Noktalar')[:7],
+                 'deri tek noktalar ' + 'x' * text_size, *row(i)[8:]) for i in range(1, 51)]
+        monkeypatch.setattr(retrieval, 'get_course_links', lambda *a, **k: build_course_links([rows]))
+        def hydrate(*a, chunk_ids, limit, max_rows, **k):
+            assert limit <= max_rows <= 128
+            return [r for cid in chunk_ids for r in rows if r[0] == cid][:limit]
+        monkeypatch.setattr(retrieval, '_coverage_evidence_rows', hydrate)
+        return retrieval._linked_candidates(None, rows[:1], ('deri tek noktalar',),
+                                            owner_user_id=17, course_id=23, limit=16)
+    assert len(run(200)) == 50
+    large = run(5000)
+    assert len(large) < 50
+    assert sum(len(r[7]) + len(r[5]) + 160 for r in large) <= 96000
