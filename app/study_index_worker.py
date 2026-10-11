@@ -138,7 +138,7 @@ def _index_fingerprint() -> str:
     payload = {
         "schema": "academic-v2-dental-semantics-10",
         "retrieval_profile": "fts-local-v1",
-        "chunk_profile": "dental-page-v2-margin-position-safe",
+        "chunk_profile": "dental-page-v3-layout-heading-paths",
         "embedding_provider": None,
         "embedding_model": None,
         "embedding_dimensions": None,
