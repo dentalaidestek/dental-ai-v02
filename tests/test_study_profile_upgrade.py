@@ -70,6 +70,18 @@ def test_profile_upgrade_is_owned_idempotent_and_preserves_published_sources(mon
         assert len(upgrade_tasks.tasks) == 1
         with Session(engine) as other_session:
             assert len(other_session.exec(select(StudyIndexJob).where(StudyIndexJob.status == 'QUEUED')).all()) == 2
+        # Modal can publish a fingerprint derived from different OCR settings.
+        # The requested target is still one completed attempt, not a new job
+        # on each poll. Worker retries remain bounded by the existing job.
+        version = sources[0]['building_index_version']
+        assert version.startswith('upgrade-' + index_fingerprint()[:16] + '-')
+        session.execute(text('''UPDATE studymaterial SET active_index_version=:version,
+            building_index_version=NULL WHERE id=1'''), {'version': version})
+        session.execute(text('''UPDATE studyindexjob SET status='DONE',
+            index_fingerprint='worker-specific-profile' WHERE material_id=1 AND index_version=:version'''),
+            {'version': version})
+        session.commit()
+        assert queue_owned_course_profile_upgrade(session, owner_user_id=10, course_id=20) == 0
 
 
 def test_disabled_profile_upgrade_does_not_touch_database(monkeypatch):

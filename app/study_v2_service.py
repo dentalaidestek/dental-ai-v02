@@ -151,6 +151,10 @@ def queue_owned_course_profile_upgrade(session, *, owner_user_id, course_id, lim
         return 0
     from app.study_index_profile import index_fingerprint
     profile = index_fingerprint()
+    # Preserve the requested target independently of the worker's fingerprint:
+    # web and Modal OCR settings can differ. A completed attempt must not cause
+    # another automatic rebuild on every readiness probe.
+    target_prefix = 'upgrade-' + profile[:16] + '-'
     rows = session.execute(text('''
         SELECT m.id,m.active_index_version,m.mime_type
         FROM studymaterial m JOIN studyindexjob j
@@ -160,12 +164,18 @@ def queue_owned_course_profile_upgrade(session, *, owner_user_id, course_id, lim
           AND m.deleted_at IS NULL AND m.index_status='READY'
           AND m.building_index_version IS NULL AND j.status='DONE'
           AND j.index_fingerprint IS NOT NULL AND j.index_fingerprint<>:profile
+          AND NOT EXISTS (
+              SELECT 1 FROM studyindexjob attempted
+              WHERE attempted.material_id=m.id AND attempted.owner_user_id=m.owner_user_id
+                AND attempted.course_id=m.course_id AND attempted.index_version LIKE :attempted
+          )
         ORDER BY m.id LIMIT :limit
     '''), {'owner': owner_user_id, 'course': course_id, 'profile': profile,
+           'attempted': target_prefix + '%',
            'limit': max(1, min(limit, 16))}).mappings().all()
     queued = 0
     for row in rows:
-        version = new_index_version()
+        version = target_prefix + new_index_version()
         reserved = session.execute(text('''
             UPDATE studymaterial SET building_index_version=:version,index_error=NULL
             WHERE id=:id AND owner_user_id=:owner AND course_id=:course
