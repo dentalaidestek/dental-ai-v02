@@ -57,6 +57,20 @@ def test_malformed_metadata_never_creates_a_link_or_crashes():
         assert build_course_links([[seed,bad]]).related_ids([seed],16) == []
 
 
+def test_source_focus_does_not_expand_every_concept_on_a_mixed_page():
+    seed = row(1, nodes=['anb', 'sna'], section='Sefalometrik Analiz')
+    links = build_course_links([[seed,
+        row(2, nodes=['anb'], section='ANB Tanımı', material=2),
+        row(3, nodes=['sna'], section=seed[5]),
+        row(4, section=seed[5]),
+        row(5, section='ANB Tanımı', material=2)]])
+    focus = links.focus_nodes('ANB açısı')
+    assert focus == {'anb'}
+    assert links.related_ids([seed], 16, focus_nodes=focus) == [2]
+    definition = row(2, nodes=['anb'], section='ANB Tanımı', material=2)
+    assert 5 in links.related_ids([definition], 16, focus_nodes=focus)
+
+
 def test_heading_path_selects_children_without_crossing_sibling_groups():
     seed = row(1, nodes=['pronasale'], section='Deri Noktaları > Tek Noktalar')
     single = row(2, nodes=['stomion'], section=seed[5])

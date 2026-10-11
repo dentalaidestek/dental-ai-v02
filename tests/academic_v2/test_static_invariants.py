@@ -98,7 +98,9 @@ worker = (ROOT / "app/study_index_worker.py").read_text(encoding="utf-8")
 jobs = (ROOT / "app/study_index_jobs.py").read_text(encoding="utf-8")
 ast.parse(worker)
 ast.parse(jobs)
-assert '"retrieval_profile": "fts-local-v1"' in worker
+profile = (ROOT / 'app/study_index_profile.py').read_text()
+assert "'retrieval_profile': 'fts-local-v1'" in profile
+assert 'return index_fingerprint()' in worker
 assert '_int_env("STUDY_RAG_MAX_PDF_PAGES", 800, 1, 2000)' in worker
 main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
 assert "from app.academic_generation_jobs import AcademicGenerationJob" in main_source
