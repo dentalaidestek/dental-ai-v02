@@ -82,3 +82,9 @@ def test_complete_style_followups_reuse_source_topic_not_all_course(query):
     'Hepsini tablo halinde anlat'])
 def test_unaccounted_clauses_and_missing_references_are_not_guessed(query):
     assert direct_request(query,[]) is None
+
+
+def test_owned_section_selection_survives_followup_source_marker():
+    task=dict(operation='explain',scope='topic',retrieval_queries=[],
+              source_sections=['deri noktaları > tek noktalar'],resolved_query='Hepsini anlat')
+    assert previous_source_request([{'role':'ASSISTANT','content':source_marker(task)}])==task

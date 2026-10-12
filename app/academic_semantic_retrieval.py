@@ -24,7 +24,7 @@ class SectionEvidenceRows(list):
     """Complete named-section rows, requiring coverage rather than top-k."""
 
 
-def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit):
+def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit, source_sections=()):
     """Keep Gemini's independent subjects balanced while following source links."""
     pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
     seeds = []
@@ -37,11 +37,12 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
     # A named source section is a coverage request, not a top-k question.
     # Hydrate it in bounded database pages, never truncate its contents.
     named_ids = [links.named_section_ids(phrase) for phrase in searches]
-    logger.info('Academic heading lookup matches=%s diagnostics=%s',
-                [len(ids) for ids in named_ids],
+    selected_ids=links.selected_section_ids(source_sections)
+    logger.info('Academic heading lookup selected_sections=%s selected_rows=%s matches=%s diagnostics=%s',
+                len(source_sections),len(selected_ids),[len(ids) for ids in named_ids],
                 [links.lookup_diagnostics(phrase) for phrase in searches])
-    if any(named_ids):
-        ids = list(dict.fromkeys(cid for group in named_ids for cid in group))
+    if any(named_ids) or selected_ids:
+        ids = list(dict.fromkeys([*selected_ids,*(cid for group in named_ids for cid in group)]))
         # A comparison may pair a complete section with a short unnamed topic.
         ids += [int(row[0]) for group,named in zip(pools,named_ids) if not named for row in group]
         ids = list(dict.fromkeys(ids))
@@ -184,19 +185,19 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.retrieval_mode = 'coverage'
     else:
         searches = request_plan.retrieval_queries
-        if not searches:
+        if not searches and not request_plan.source_sections:
             raise ValueError('Gemini topic searches are required')
         rows = _fts_rows(session, owner_user_id=owner_user_id, course_id=course_id,
             lexical_query=_semantic_fts_query(searches), query_vector=None,
             embedding_provider='', embedding_model='', limit=min(96, limit * 3),
             lexical_groups=tuple(_semantic_fts_query((phrase,)) for phrase in searches),
-            lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches))
+            lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches)) if searches else []
         if request_plan.source_kind == 'questions':
             rows = [row for row in rows if row[6] == 'QUESTION']
         rows = (_balanced_candidates(rows, searches, limit)
                 if request_plan.source_kind == 'questions' else
                 _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
-                                   course_id=course_id, limit=limit))
+                                   course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
         result.retrieval_mode = 'semantic_candidates'
     if (_source_rows is None and request_plan.scope == 'topic'
             and isinstance(rows,SectionEvidenceRows)

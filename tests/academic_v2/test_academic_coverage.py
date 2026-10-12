@@ -48,7 +48,14 @@ def test_retrieval_coverage_scan_is_metadata_only_and_hydration_is_owner_scoped(
     from pathlib import Path
     source = Path("app/study_retrieval_v2.py").read_text(encoding="utf-8")
     assert "def _coverage_metadata_page" in source
-    assert "'' AS text_content" in source
+    from unittest.mock import Mock
+    from app.study_retrieval_v2 import _coverage_metadata_page
+    session = Mock()
+    session.exec.return_value.all.return_value = []
+    _coverage_metadata_page(session, owner_user_id=17, course_id=23)
+    assert "'' AS text_content" in str(session.exec.call_args.args[0])
+    _coverage_metadata_page(session, owner_user_id=17, course_id=23, include_source_prefix=True)
+    assert "left(c.text_content, 1024) AS text_content" in str(session.exec.call_args.args[0])
     assert "def _coverage_evidence_rows" in source
     assert "c.owner_user_id=:owner AND c.course_id=:course" in source
     assert "c.id = ANY(CAST(:chunk_ids AS BIGINT[]))" in source

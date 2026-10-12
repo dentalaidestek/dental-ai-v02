@@ -36,11 +36,72 @@ def source_nodes(row):
     return tuple(dict.fromkeys(x for x in value if isinstance(x, str) and 0 < len(x) <= 120))[:32]
 
 
+def _source_heading_rows(rows):
+    """Recover literal heading continuity from already extracted source prefixes.
+
+    Older PDF extraction split list markers onto separate lines and omitted
+    inherited headings. This is a cached read-only link repair, never OCR,
+    re-indexing, or generated document facts.
+    """
+    from app.study_chunking import _is_heading, _next_section_title
+    def is_literal_heading(line):
+        # Definition sentences and split parenthetical labels are body text,
+        # even when they contain a keyword such as "tanım".
+        return not re.search(r'[:.!?;()]', line.rstrip(':')) and _is_heading(line)
+
+    previous, material, last_page, consecutive = None, None, None, False
+    for row in sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0]))):
+        if material != int(row[1]):
+            previous, consecutive = None, False
+        if last_page != (int(row[1]),int(row[3])):
+            consecutive = False
+        material, last_page = int(row[1]), (int(row[1]),int(row[3]))
+        if str(row[6]).upper() == 'QUESTION':
+            continue
+        stored = str(row[5] or '').strip()
+        if ' > ' in stored:
+            previous = stored
+            consecutive = False
+            yield row, [stored]
+            continue
+        lines = [line.strip() for line in str(row[7] or '').splitlines() if line.strip()]
+        joined, i = [], 0
+        while i < len(lines):
+            if (i+2 < len(lines) and re.fullmatch(r'[A-ZÇĞİÖŞÜ]',lines[i])
+                    and lines[i+1]=='-' and is_literal_heading(lines[i+2])):
+                joined.append(lines[i]+' - '+lines[i+2]); i+=3
+            elif i+1 < len(lines) and lines[i] in {'-','•'} and is_literal_heading(lines[i+1]):
+                joined.append(lines[i]+' '+lines[i+1]); i+=2
+            else:
+                joined.append(lines[i]); i+=1
+        observed = []
+        for line in joined:
+            if is_literal_heading(line):
+                label=re.sub(r'^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)','',line).rstrip(':').strip()
+                if not previous or previous.split(' > ')[-1].casefold()!=label.casefold():
+                    previous=_next_section_title(previous,line,consecutive=consecutive)
+                observed.append(previous)
+                consecutive=True
+            else:
+                consecutive=False
+        # A stored flat title is usable only when no explicit source heading
+        # or inherited source section is available.
+        if not observed and stored and (not previous or stored.casefold()!=previous.split(' > ')[-1].casefold()):
+            previous=stored
+        section=previous or stored or None
+        yield (*row[:5],section,*row[6:]), observed or ([section] if section else [])
+
+
 @dataclass
 class CourseLinks:
     rows: dict
     by_node: dict
     by_section: dict
+
+    def selected_section_ids(self, headings):
+        ids={cid for heading in headings for (material,section),members in self.by_section.items()
+             if section==heading.strip().casefold() for cid in members}
+        return sorted(ids,key=lambda cid:(self.rows[cid][0],self.rows[cid][3],self.rows[cid][4],cid))
 
     def lookup_diagnostics(self, phrase):
         """Aggregate lookup shape only: never log headings or user text."""
@@ -154,21 +215,22 @@ class CourseLinks:
         return result
 
 
-def build_course_links(pages):
+def build_course_links(pages, *, repair_headings=False):
     rows, by_node, by_section = {}, defaultdict(list), defaultdict(list)
-    for page in pages:
-        for row in page:
-            if str(row[6]).upper() == 'QUESTION':
-                continue
-            cid, material = int(row[0]), int(row[1])
-            section = str(row[5] or '').strip().casefold()
-            nodes = source_nodes(row)
-            rows[cid] = (material, section, str(row[6]), int(row[3]), int(row[13]), nodes)
-            for node in nodes:
-                by_node[node].append(cid)
-            for key in _section_keys(section):
-                if len(key) >= 6:
-                    by_section[(material, key)].append(cid)
+    flattened = [row for page in pages for row in page]
+    source_rows = _source_heading_rows(flattened) if repair_headings else ((row,[row[5]]) for row in flattened)
+    for row, headings in source_rows:
+        if str(row[6]).upper() == 'QUESTION':
+            continue
+        cid, material = int(row[0]), int(row[1])
+        section = str(row[5] or '').strip().casefold()
+        nodes = source_nodes(row)
+        rows[cid] = (material, section, str(row[6]), int(row[3]), int(row[13]), nodes)
+        for node in nodes:
+            by_node[node].append(cid)
+        for key in dict.fromkeys(key for heading in headings for key in _section_keys(heading)):
+            if len(key) >= 6:
+                by_section[(material, key)].append(cid)
     return CourseLinks(rows, dict(by_node), dict(by_section))
 
 
@@ -191,14 +253,15 @@ def get_course_links(session, *, owner_user_id, course_id):
         after = 0
         while True:
             page = _coverage_metadata_page(session, owner_user_id=owner_user_id,
-                                          course_id=course_id, after_id=after, limit=400)
+                                          course_id=course_id, after_id=after, limit=400,
+                                          include_source_prefix=True)
             if not page:
                 return
             yield page
             after = int(page[-1][0])
             if len(page) < 400:
                 return
-    links = build_course_links(pages())
+    links = build_course_links(pages(),repair_headings=True)
     with _LOCK:
         # Old generations are never reused after publish/delete/index changes.
         for old in list(_CACHE):
@@ -221,7 +284,8 @@ def planner_source_outline(session, *, owner_user_id, course_id, query='', histo
     previous = previous_source_request(history or [])
     terms = _heading_terms(query)
     if previous:
-        terms |= set().union(*(_heading_terms(x) for x in previous.get('retrieval_queries', [])))
+        terms |= set().union(*(_heading_terms(x) for x in
+            previous.get('retrieval_queries', [])+previous.get('source_sections',[])))
     headings = sorted({section for _,section in links.by_section},
                       key=lambda x: (-len(_heading_terms(x) & terms), x.count(' > '), x))
     selected, size = [], 0

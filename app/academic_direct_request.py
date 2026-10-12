@@ -35,7 +35,7 @@ def direct_request(question, history):
 def source_marker(task):
     import base64
     import json
-    data = {key: task[key] for key in ('operation', 'scope', 'retrieval_queries', 'resolved_query', 'source_kind') if key in task}
+    data = {key: task[key] for key in ('operation', 'scope', 'retrieval_queries', 'source_sections', 'resolved_query', 'source_kind') if key in task}
     encoded = base64.urlsafe_b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
     return '<!--ACADEMIC_SOURCE_REQUEST:' + encoded + '-->'
 
@@ -52,10 +52,12 @@ def previous_source_request(history):
         try:
             data = json.loads(base64.urlsafe_b64decode(matches[-1]).decode())
             phrases = data.get('retrieval_queries')
+            sections=data.get('source_sections',[])
             if (data.get('scope') not in {'topic', 'course'} or not isinstance(phrases, list)
                     or len(phrases) > 16 or any(not isinstance(x, str) or len(x) > 160 for x in phrases)
                     or not isinstance(data.get('resolved_query'), str)
-                    or len(data['resolved_query']) > 8000):
+                    or len(data['resolved_query']) > 8000 or not isinstance(sections,list)
+                    or len(sections)>16 or any(not isinstance(x,str) or len(x)>400 for x in sections)):
                 return None
             return data
         except (ValueError, TypeError, AttributeError, UnicodeError):

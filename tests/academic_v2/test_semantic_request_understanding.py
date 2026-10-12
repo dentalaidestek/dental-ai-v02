@@ -316,3 +316,21 @@ def test_multiple_comparison_sources_are_not_rejected_at_four_queries():
     searches=['ANB','SNA','SNB','Wits','FMA','Y ekseni']
     plan=parse_request(raw(operation='compare',retrieval_queries=searches))
     assert plan.retrieval_queries==tuple(searches)
+
+
+def test_planner_can_select_owned_section_without_guessing_member_names():
+    heading='deri noktaları > tek noktalar'
+    call=Mock(return_value=raw(retrieval_queries=[],source_sections=[heading]))
+    result=interpret_request('Hepsini anlat',[],call=call,
+                             source_outline={'sections':[heading],'complete':True})
+    assert result.plan.source_sections==(heading,)
+    assert result.plan.retrieval_queries==()
+    call.assert_called_once()
+
+
+def test_planner_cannot_select_section_outside_supplied_owned_outline():
+    call=Mock(return_value=raw(retrieval_queries=[],source_sections=['foreign heading']))
+    result=interpret_request('Hepsini anlat',[],call=call,
+                             source_outline={'sections':['owned heading'],'complete':True})
+    assert result.plan is None and result.outcome=='failed'
+    call.assert_called_once()

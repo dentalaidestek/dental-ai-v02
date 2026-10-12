@@ -295,3 +295,24 @@ def test_anb_focus_follows_distant_mentions_without_sna_only_fragments(db):
     seed = _coverage_evidence_rows(db, owner_user_id=17, course_id=23, chunk_ids=[1], limit=1)
     selected = _linked_candidates(db, seed, ('ANB açısı',), owner_user_id=17, course_id=23, limit=16)
     assert {int(row[0]) for row in selected} == {1, 2}
+
+
+def test_owned_section_recovery_from_real_fragmented_pdf_prefixes(db):
+    import json
+    from pathlib import Path
+    from app.academic_chunk_links import planner_source_outline
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    fixture=json.loads(Path('evaluation/academic/cephalometric_legacy_prefixes.json').read_text())
+    for cid,body in enumerate(fixture['legacy_prefixes'],1):
+        add(db,cid,body)
+    add(db,10,'PRIVATE',owner=99)
+    add(db,11,'OLD',version='v0')
+    add(db,12,'OTHER COURSE',course=99)
+    heading='deri noktaları > tek noktalar'
+    assert heading in planner_source_outline(db,owner_user_id=17,course_id=23)['sections']
+    plan=StudyRequest('Deri tek noktalarının hepsini anlat','explain','topic',None,None,'',
+                      source_sections=(heading,))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
+                                    query=plan.resolved_query,request_plan=plan)
+    assert [e.chunk_id for e in result.evidence]==[1,2,3,4,5,6]
