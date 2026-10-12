@@ -12,7 +12,10 @@ def row(ident, body, kind='TEXT'):
 
 
 @pytest.fixture
-def session():
+def session(monkeypatch):
+    from app.academic_chunk_links import build_course_links
+    monkeypatch.setattr('app.academic_semantic_retrieval.get_course_links',
+                        lambda *a, **k: build_course_links([]))
     value = Mock()
     value.get_bind.return_value.dialect.name = 'postgresql'
     value.exec.return_value.all.return_value = []

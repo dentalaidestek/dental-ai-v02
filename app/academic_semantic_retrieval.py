@@ -33,13 +33,13 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
         aligned = [row for row in pool if wanted.intersection(
             re.findall(r'[^\W_]+', ((row[5] or '') + ' ' + (row[7] or '')).casefold()))]
         seeds.append(aligned[:2])
-    if not any(source_nodes(row) or row[5] and len(str(row[5]).strip()) >= 6
-               for group in seeds for row in group):
-        return _balanced_candidates(rows, searches, limit)
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
     # A named source section is a coverage request, not a top-k question.
     # Hydrate it in bounded database pages, never truncate its contents.
     named_ids = [links.named_section_ids(phrase) for phrase in searches]
+    logger.info('Academic heading lookup matches=%s diagnostics=%s',
+                [len(ids) for ids in named_ids],
+                [links.lookup_diagnostics(phrase) for phrase in searches])
     if any(named_ids):
         ids = list(dict.fromkeys(cid for group in named_ids for cid in group))
         # A comparison may pair a complete section with a short unnamed topic.
@@ -53,6 +53,9 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
         if set(ids) != {int(row[0]) for row in hydrated}:
             raise ValueError('source generation changed during section retrieval')
         return SectionEvidenceRows(hydrated)
+    if not any(source_nodes(row) or row[5] and len(str(row[5]).strip()) >= 6
+               for group in seeds for row in group):
+        return _balanced_candidates(rows, searches, limit)
     focuses = [links.focus_nodes(phrase) for phrase in searches]
     for i, focus in enumerate(focuses):
         if focus:
@@ -191,7 +194,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         if request_plan.source_kind == 'questions':
             rows = [row for row in rows if row[6] == 'QUESTION']
         rows = (_balanced_candidates(rows, searches, limit)
-                if request_plan.source_kind == 'questions' or not rows else
+                if request_plan.source_kind == 'questions' else
                 _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit))
         result.retrieval_mode = 'semantic_candidates'

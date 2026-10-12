@@ -120,3 +120,16 @@ def test_full_named_section_is_hydrated_in_pages_beyond_128(monkeypatch):
     result=retrieval._linked_candidates(None,rows[:1],('deri tek noktalar',),owner_user_id=17,course_id=23,limit=16)
     assert {r[0] for r in result}==set(range(1,301))
     assert calls==[128,128,44]
+
+
+def test_named_section_does_not_require_a_lexical_seed(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(i,section='Deri Noktaları > Tek Noktalar') for i in range(1,6)]
+    links=build_course_links([rows])
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:links)
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,chunk_ids,**k:[r for r in rows if r[0] in chunk_ids])
+    selected=retrieval._linked_candidates(None,[],('deri tek noktalar',),owner_user_id=17,course_id=23,limit=16)
+    assert {r[0] for r in selected}=={1,2,3,4,5}
+    diagnostics=links.lookup_diagnostics('deri tek noktalar')
+    assert diagnostics['nested']==1 and diagnostics['missing_terms']==0
+    assert 'deri' not in str(diagnostics)
