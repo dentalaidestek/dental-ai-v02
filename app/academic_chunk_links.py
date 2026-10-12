@@ -202,6 +202,8 @@ def get_course_links(session, *, owner_user_id, course_id):
 def planner_source_outline(session, *, owner_user_id, course_id, query='', history=None):
     """Bounded, source-owned heading vocabulary, never raw facts or file IDs."""
     from app.academic_direct_request import previous_source_request
+    if session.get_bind().dialect.name != 'postgresql':
+        return {'sections': [], 'complete': False}
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
     previous = previous_source_request(history or [])
     terms = _heading_terms(query)

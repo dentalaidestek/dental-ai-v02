@@ -220,7 +220,8 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
     monkeypatch.setattr(main, 'course_v2_ready', lambda *args, **kwargs: True)
     from app import academic_request_understanding as gateway
     from app.study_retrieval_v2 import RetrievalResult
-    def understand(*args):
+    def understand(*args, source_outline=None):
+        assert source_outline == {'sections': [], 'complete': False}
         assert engine.pool.checkedout() == 0
         return object()
     monkeypatch.setattr(gateway, 'understand_study_request', understand)

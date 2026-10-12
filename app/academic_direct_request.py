@@ -46,7 +46,7 @@ def previous_source_request(history):
     for turn in reversed((history or [])[-8:]):
         if str(turn.get('role', '')).casefold() != 'assistant':
             continue
-        matches = re.findall(r'<!--ACADEMIC_SOURCE_REQUEST:([A-Za-z0-9_=-]{1,14000})-->', turn.get('content', ''))
+        matches = re.findall(r'<!--ACADEMIC_SOURCE_REQUEST:([A-Za-z0-9_=-]{1,64000})-->', turn.get('content', ''))
         if not matches:
             continue
         try:

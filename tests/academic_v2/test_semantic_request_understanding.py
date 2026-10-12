@@ -239,7 +239,7 @@ def test_course_plan_selects_coverage_with_owned_scope_and_count(monkeypatch):
     assert catalog.call_args.kwargs['requested_count']==20
 
 
-@pytest.mark.parametrize('searches', [[], [''], ['---'], ['x'*161], ['A']*5, [123]])
+@pytest.mark.parametrize('searches', [[], [''], ['---'], ['x'*161], ['A']*17, [123]])
 def test_topic_search_contract_rejects_unbounded_or_empty_search(searches):
     with pytest.raises(ValueError):
         parse_request(raw(retrieval_queries=searches))
