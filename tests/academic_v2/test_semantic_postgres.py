@@ -306,6 +306,7 @@ def test_owned_section_recovery_from_real_fragmented_pdf_prefixes(db):
     fixture=json.loads(Path('evaluation/academic/cephalometric_legacy_prefixes.json').read_text())
     for cid,body in enumerate(fixture['legacy_prefixes'],1):
         add(db,cid,body)
+    db.exec(text("UPDATE studyindexchunk SET section_title='Legacy flat point label' WHERE id BETWEEN 3 AND 6"))
     add(db,10,'PRIVATE',owner=99)
     add(db,11,'OLD',version='v0')
     add(db,12,'OTHER COURSE',course=99)

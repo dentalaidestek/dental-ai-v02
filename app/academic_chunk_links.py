@@ -86,7 +86,7 @@ def _source_heading_rows(rows):
                 consecutive=False
         # A stored flat title is usable only when no explicit source heading
         # or inherited source section is available.
-        if not observed and stored and (not previous or stored.casefold()!=previous.split(' > ')[-1].casefold()):
+        if not observed and stored and not previous:
             previous=stored
         section=previous or stored or None
         yield (*row[:5],section,*row[6:]), observed or ([section] if section else [])
