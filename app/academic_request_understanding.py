@@ -14,13 +14,16 @@ import re
 import time
 import uuid
 
+PLANNER_INPUT_MAX_BYTES = 256000
+MAX_SOURCE_SEARCHES = 16
+
 logger = logging.getLogger('uvicorn.error.academic_request_understanding')
 OPERATIONS = ('answer', 'explain', 'summarize', 'teach', 'compare', 'generate_questions', 'solve', 'clarify')
 SCHEMA = {
     'type': 'object',
     'properties': {
         'resolved_query': {'type': 'string'},
-        'retrieval_queries': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 4},
+        'retrieval_queries': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_SOURCE_SEARCHES},
         'operation': {'type': 'string', 'enum': list(OPERATIONS)},
         'scope': {'type': 'string', 'enum': ['topic', 'course']},
         'count': {'type': ['integer', 'null']},
@@ -51,7 +54,7 @@ Return only the required JSON. resolved_query is a short self-contained Turkish
 restatement of the complete request. Preserve ALL explicit subjects, numbers,
 units, brands, comparisons, exclusions, negations, conditions, requested order,
 source selection, output format and who/what each modifier belongs to.
-retrieval_queries contains up to four short, independent source search phrases.
+retrieval_queries contains up to sixteen short, independent source search phrases.
 Use the actual dental subject nouns, relevant qualifiers and source terminology,
 not request verbs, output counts, difficulty, order or excluded subjects. For a
 comparison provide a separate phrase for EACH compared subject so one chunk need
@@ -144,7 +147,7 @@ def parse_request(raw: str) -> StudyRequest:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text')
     searches = data['retrieval_queries']
-    if (not isinstance(searches, list) or len(searches) > 4
+    if (not isinstance(searches, list) or len(searches) > MAX_SOURCE_SEARCHES
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
@@ -183,7 +186,7 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     prompt = json.dumps({'source_outline': source_outline or {'sections': [], 'complete': False},
                          'recent_source_request': previous_source_request(history),
                          'recent_dialogue': turns, 'request': question}, ensure_ascii=False)
-    if len(prompt.encode('utf-8')) > 32000:
+    if len(prompt.encode('utf-8')) > PLANNER_INPUT_MAX_BYTES:
         return UnderstandingResult(outcome='input_budget', trace_id=trace_id)
     try:
         plan = parse_request(call(prompt))
@@ -221,7 +224,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     def call(prompt):
         logger.info('Academic planner provider=gemini model=%s', model)
         return provider.generate(model=model, system_prompt=SYSTEM, history=[], prompt=prompt,
-                                 temperature=0, max_output_tokens=1536)
+                                 temperature=0, max_output_tokens=4096)
     return interpret_request(question, history, call=call, source_outline=source_outline)
 
 

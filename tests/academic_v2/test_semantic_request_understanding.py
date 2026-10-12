@@ -63,7 +63,7 @@ def test_failure_has_one_attempt_and_no_exception_content_in_logs(caplog):
 
 def test_large_context_is_not_silently_truncated_or_sent(call=None):
     call = Mock(return_value=raw())
-    out = interpret_request('Soru', [{'role':'assistant','content':'ğ'*32000}], call=call)
+    out = interpret_request('Soru', [{'role':'assistant','content':'ğ'*256000}], call=call)
     assert not out.attempted and out.outcome == 'input_budget'
     call.assert_not_called()
 
@@ -302,3 +302,17 @@ def test_final_prompt_keeps_interpreted_request_without_legacy_output_rules(monk
         semantic_planner_attempted=True, evidence_sufficient=True)
     prompt = _prompt('Ortodonti', 'İkisini karşılaştır', result, [])
     assert request in prompt and 'Kaynak kanıtı' in prompt and 'İkisini karşılaştır' in prompt
+
+
+def test_long_teaching_history_under_budget_is_retained_intact():
+    history=[{'role':'ASSISTANT','content':'a'*50000}]
+    call=Mock(return_value=raw())
+    result=interpret_request('Bunları kolay ezberlemem için kodla',history,call=call)
+    assert result.attempted and result.plan is not None
+    assert json.loads(call.call_args.args[0])['recent_dialogue']==history
+
+
+def test_multiple_comparison_sources_are_not_rejected_at_four_queries():
+    searches=['ANB','SNA','SNB','Wits','FMA','Y ekseni']
+    plan=parse_request(raw(operation='compare',retrieval_queries=searches))
+    assert plan.retrieval_queries==tuple(searches)

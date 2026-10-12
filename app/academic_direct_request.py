@@ -53,7 +53,7 @@ def previous_source_request(history):
             data = json.loads(base64.urlsafe_b64decode(matches[-1]).decode())
             phrases = data.get('retrieval_queries')
             if (data.get('scope') not in {'topic', 'course'} or not isinstance(phrases, list)
-                    or len(phrases) > 4 or any(not isinstance(x, str) or len(x) > 160 for x in phrases)
+                    or len(phrases) > 16 or any(not isinstance(x, str) or len(x) > 160 for x in phrases)
                     or not isinstance(data.get('resolved_query'), str)
                     or len(data['resolved_query']) > 8000):
                 return None
