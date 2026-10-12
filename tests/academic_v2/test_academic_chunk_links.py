@@ -95,5 +95,28 @@ def test_named_section_selection_uses_text_budget_instead_of_sixteen_chunks(monk
                                             owner_user_id=17, course_id=23, limit=16)
     assert len(run(200)) == 50
     large = run(5000)
-    assert len(large) < 50
-    assert sum(len(r[7]) + len(r[5]) + 160 for r in large) <= 96000
+    assert len(large) == 50  # Request-size budgets now split downstream, never discard source rows.
+
+
+def test_named_section_ignores_outer_document_title_without_losing_parent_qualifier():
+    skin=row(1,section='Sefalometrik Noktalar > Deri Noktaları > Tek Noktalar')
+    skin2=row(2,section=skin[5])
+    bone=row(3,section='Sefalometrik Noktalar > Kemik Noktaları > Tek Noktalar')
+    paired=row(4,section='Sefalometrik Noktalar > Deri Noktaları > Çift Noktalar')
+    links=build_course_links([[skin,skin2,bone,paired]])
+    assert links.named_section_ids('deri tek noktalar')==[1,2]
+
+
+def test_full_named_section_is_hydrated_in_pages_beyond_128(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(i,section='Deri Noktaları > Tek Noktalar') for i in range(1,301)]
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    calls=[]
+    def hydrate(*a,chunk_ids,limit,max_rows,**kw):
+        calls.append(len(chunk_ids))
+        assert limit==len(chunk_ids) and max_rows==128
+        return [r for cid in chunk_ids for r in rows if r[0]==cid]
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',hydrate)
+    result=retrieval._linked_candidates(None,rows[:1],('deri tek noktalar',),owner_user_id=17,course_id=23,limit=16)
+    assert {r[0] for r in result}==set(range(1,301))
+    assert calls==[128,128,44]

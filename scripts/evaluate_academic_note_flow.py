@@ -43,7 +43,7 @@ def note_rows(source):
     reader = PdfReader(source)
     empty_pages = []
     for page, item in enumerate(reader.pages, 1):
-        text = item.extract_text() or ''
+        text = item.extract_text(extraction_mode='layout') or ''
         if not text.strip():
             empty_pages.append(page)
         chunks = chunk_dental_page(text, inherited_section_title=title)
@@ -71,18 +71,23 @@ def temporary_note_database(url, rows, documents):
         raise ValueError('a dedicated PostgreSQL test database is required')
     with Session(engine) as db:
         db.exec(text('''CREATE TEMP TABLE studymaterial (id bigint, owner_user_id bigint,
-            active_index_version text,index_status text,deleted_at timestamp,display_name text)'''))
+            active_index_version text,index_status text,deleted_at timestamp,display_name text,course_id bigint DEFAULT 23,file_path text,mime_type text DEFAULT 'application/pdf')'''))
         db.exec(text('''CREATE TEMP TABLE studyindexchunk (id bigint, material_id bigint,
             owner_user_id bigint,course_id bigint,index_version text,section_title text,
             text_content text,retrieval_terms text,page_start int,page_end int,
             content_kind text,chunk_index int,semantic_json text)'''))
-        db.exec(text("INSERT INTO studymaterial VALUES (1,17,'fixture','READY',NULL,:name)"),
+        db.exec(text("INSERT INTO studymaterial (id,owner_user_id,active_index_version,index_status,deleted_at,display_name,course_id) VALUES (1,17,'fixture','READY',NULL,:name,23)"),
                 params={'name':rows[0][2] if rows else 'empty'})
         for row in rows:
             db.exec(text('''INSERT INTO studyindexchunk VALUES
                 (:id,1,17,23,'fixture',:title,:body,:terms,:page,:page,:kind,:idx,:metadata)'''),
                 params=dict(id=row[0],title=row[5],body=row[7],terms=documents[row[0]],
                             page=row[3],kind=row[6],idx=row[13],metadata=row[14]))
+        db.exec(text('''CREATE TEMP TABLE studyindexpage (
+            owner_user_id bigint,course_id bigint,material_id bigint,index_version text,
+            page_number int,extraction_method text)'''))
+        for page in sorted({int(row[3]) for row in rows}):
+            db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'fixture',:p,'PDF_TEXT')"),params={'p':page})
         try:
             yield db
         finally:
@@ -105,12 +110,15 @@ def replay_lookup(rows, documents, **kwargs):
     return sorted(picked.values(),key=lambda r:(r[8],r[3],r[0]))[:min(kwargs['limit'],20)]
 
 
-def evaluate(db, rows, documents, cases, live, answers):
+def evaluate(db, rows, documents, cases, live, answers, histories=None):
     reports = []
     for index,(question, searches, expected, operation, count) in enumerate(cases,1):
-        history = [{'role':'user','content':'Tiroid etkisini anlat'}] if index == 7 else []
+        history = (histories[index-1] if histories is not None else
+                   [{'role':'user','content':'Tiroid etkisini anlat'}] if index == 7 else [])
         if live:
-            understanding = understand_study_request(question, history)
+            from app.academic_chunk_links import planner_source_outline
+            outline = planner_source_outline(db,owner_user_id=17,course_id=23,query=question,history=history)
+            understanding = understand_study_request(question, history, source_outline=outline)
             plan = understanding.plan
         else:
             understanding = None
@@ -127,9 +135,13 @@ def evaluate(db, rows, documents, cases, live, answers):
         recall = all(p in pages for p in expected)
         contract = plan.operation == operation and plan.count == count
         sufficient = bool(retrieval.clarification) if operation == 'clarify' else retrieval.evidence_sufficient
-        answer = ask_rag_v2('Ali Kiki Ortodonti',question,history,retrieval) if answers else None
-        reports.append(dict(case=index,passed=bool(recall and contract and sufficient),
-            planner_origin='real_gemini' if live else 'hand_authored_replay',
+        visuals_unavailable = bool(retrieval.visual_sources)
+        if retrieval.source_batches:
+            visuals_unavailable = any(child.visual_sources for child in retrieval.source_batches)
+        answer = ask_rag_v2('Ortodonti',question,history,retrieval) if answers and not visuals_unavailable else None
+        reports.append(dict(case=index,passed=bool(recall and contract and sufficient and not visuals_unavailable),
+            visual_source_unavailable=visuals_unavailable,
+            planner_origin=('real_gemini' if understanding and understanding.attempted else 'local') if live else 'hand_authored_replay',
             plan=asdict(plan),expected_pages=expected,selected_pages=pages,
             evidence_sufficient=retrieval.evidence_sufficient,missing_facets=retrieval.missing_facets,
             answer=answer,answer_prompt_built=bool(_prompt('Ali Kiki Ortodonti',question,retrieval,history)),
@@ -165,10 +177,14 @@ def main():
         production_ocr_or_margin_cleanup_reproduced=False,
         backend='postgresql' if args.run else 'token_replay_not_postgresql',
         real_gemini=args.run,final_answer_calls_enabled=args.answers)
-    cases = CASES[:max(1,min(8,args.limit))]
+    cases = [tuple(case) for case in fixture.get('cases',CASES)] if args.source_fixture else CASES
+    histories = fixture.get('histories') if args.source_fixture else None
+    cases = cases[:max(1,min(8,args.limit))]
+    if histories is not None:
+        histories = histories[:len(cases)]
     if args.run:
         with temporary_note_database(os.environ['ACADEMIC_TEST_DATABASE_URL'],rows,documents) as db:
-            output['cases'] = evaluate(db,rows,documents,cases,True,args.answers)
+            output['cases'] = evaluate(db,rows,documents,cases,True,args.answers,histories)
     elif args.replay:
         db = Mock(); db.get_bind.return_value.dialect.name = 'postgresql'
         with patch('app.academic_semantic_retrieval._fts_rows', side_effect=lambda session,**kw:replay_lookup(rows,documents,**kw)):

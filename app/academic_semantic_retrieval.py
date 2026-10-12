@@ -20,6 +20,10 @@ from app.study_retrieval_v2 import (
 logger = logging.getLogger('uvicorn.error.academic_semantic_retrieval')
 
 
+class SectionEvidenceRows(list):
+    """Complete named-section rows, requiring coverage rather than top-k."""
+
+
 def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit):
     """Keep Gemini's independent subjects balanced while following source links."""
     pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
@@ -33,6 +37,22 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
                for group in seeds for row in group):
         return _balanced_candidates(rows, searches, limit)
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+    # A named source section is a coverage request, not a top-k question.
+    # Hydrate it in bounded database pages, never truncate its contents.
+    named_ids = [links.named_section_ids(phrase) for phrase in searches]
+    if any(named_ids):
+        ids = list(dict.fromkeys(cid for group in named_ids for cid in group))
+        # A comparison may pair a complete section with a short unnamed topic.
+        ids += [int(row[0]) for group,named in zip(pools,named_ids) if not named for row in group]
+        ids = list(dict.fromkeys(ids))
+        hydrated = []
+        for offset in range(0,len(ids),128):
+            page = ids[offset:offset+128]
+            hydrated.extend(_coverage_evidence_rows(session,owner_user_id=owner_user_id,
+                course_id=course_id,chunk_ids=page,limit=len(page),max_rows=128))
+        if set(ids) != {int(row[0]) for row in hydrated}:
+            raise ValueError('source generation changed during section retrieval')
+        return SectionEvidenceRows(hydrated)
     focuses = [links.focus_nodes(phrase) for phrase in searches]
     for i, focus in enumerate(focuses):
         if focus:
@@ -125,7 +145,7 @@ def _source_cursor(history):
 
 
 def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
-                              request_plan, recent_history=None, limit=16):
+                              request_plan, recent_history=None, limit=16, _source_rows=None):
     if session.get_bind().dialect.name != 'postgresql':
         raise RuntimeError('Academic semantic retrieval requires PostgreSQL')
     if not isinstance(request_plan, StudyRequest):
@@ -139,7 +159,10 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.clarification = request_plan.clarification
         return result
     limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
-    if request_plan.scope == 'course' and request_plan.source_kind == 'questions':
+    if _source_rows is not None:
+        rows = list(_source_rows)
+        result.retrieval_mode = 'source_batch'
+    elif request_plan.scope == 'course' and request_plan.source_kind == 'questions':
         rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
                               limit=17, after_cursor=_source_cursor(recent_history) if request_plan.continue_source else None)
         result.has_more = len(rows) > 16
@@ -172,6 +195,14 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit))
         result.retrieval_mode = 'semantic_candidates'
+    if (_source_rows is None and request_plan.scope == 'topic'
+            and isinstance(rows,SectionEvidenceRows)
+            and (len({(int(row[1]),page) for row in rows for page in range(int(row[3]),int(row[4])+1)}) > 8
+                 or sum(len(row[7] or '')+len(row[5] or '')+200 for row in rows)>96000)):
+        from app.academic_source_batches import retrieve_row_batches
+        partitioned = retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
+            course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
+        return partitioned
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)
     seen = set()
@@ -256,7 +287,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 'doğrulanmış bilgi sayma.')
         logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
                     len(scanned_pages),len(result.visual_sources))
-    if request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
+    if _source_rows is None and request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
         originals={(v['material_id'],v['page_number']) for v in result.visual_sources}
         evidence_pages={(item.material_id,page) for item in result.evidence
                         for page in range(item.page_start,item.page_end+1)}

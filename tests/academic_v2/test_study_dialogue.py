@@ -212,8 +212,10 @@ class StudyDialogueTests(unittest.TestCase):
                 response = ''.join(namespace['stream_rag_v2']('Ders', 'anlat', [], result))
                 self.assertTrue(response)
                 self.assertNotIn('Bu soruyla ilişkilendirilebilecek ders notu bulunamadı', response)
-        self.assertIn('pulpitis', ''.join(namespace['stream_rag_v2'](
-            'Ders', 'anlat', [], RetrievalResult(resolved_query='Pulpitis anlat'))).casefold())
+        self.assertIn('Şu an baktığım ders notlarında bu sorunun cevabını bulamadım', response)
+        self.assertIn('biraz daha açık yazar mısın', response)
+        self.assertNotIn('chunk', response)
+        self.assertNotIn('parça', response)
 
     def test_noisy_scope_controls_do_not_mutate_medical_nouns(self):
         from app.study_retrieval_v2 import _normalize_state_controls

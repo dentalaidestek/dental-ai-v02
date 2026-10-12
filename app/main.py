@@ -4935,11 +4935,14 @@ def study_ai_ask(
             # silently reopening this closed request session.
             source_versions = _study_source_versions(s, user.id, course_id)
             course_title = course.title
+            from app.academic_chunk_links import planner_source_outline
+            source_outline = planner_source_outline(s, owner_user_id=user.id,
+                course_id=course_id, query=clean_message, history=history)
             s.close()
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
             from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
-            understanding = understand_study_request(clean_message, history)
+            understanding = understand_study_request(clean_message, history, source_outline=source_outline)
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 rag_result = retrieve_understood_course_context(
                     retrieval_session,
@@ -4951,6 +4954,9 @@ def study_ai_ask(
                 )
                 if rag_result.visual_sources and rag_result.evidence_sufficient:
                     materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
+            if rag_result.source_batches:
+                rag_result.batch_materializer = lambda child: materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), child)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
                 "ask.rag.success",
@@ -5114,9 +5120,12 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
         source_versions = _study_source_versions(s, user.id, course_id)
         course_title = course.title
+        from app.academic_chunk_links import planner_source_outline
+        source_outline = planner_source_outline(s, owner_user_id=user.id,
+            course_id=course_id, query=clean_message, history=history)
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
-        understanding = understand_study_request(clean_message, history)
+        understanding = understand_study_request(clean_message, history, source_outline=source_outline)
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 retrieval = retrieve_understood_course_context(
@@ -5157,6 +5166,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             )
 
     owner_user_id = user.id
+    if retrieval.source_batches:
+        retrieval.batch_materializer = lambda child: materialize_visual_sources(
+            lambda: Session(engine, expire_on_commit=False), child)
 
     def generate_stream():
         pieces: list[str] = []

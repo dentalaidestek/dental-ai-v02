@@ -87,6 +87,35 @@ jobs:
       - name: Run PostgreSQL concurrency and migration tests
         run: python -m pytest -q tests/test_postgres_optimization.py tests/academic_v2/test_semantic_postgres.py
 
+      - name: Run bounded real Gemini note validation on the authorized source branch
+        if: github.head_ref == 'work/academic-source-batches-20261012' || github.ref == 'refs/heads/work/academic-semantic-source-check-20261012'
+        timeout-minutes: 6
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          mkdir -p evaluation-output
+          python - <<'PYAPI'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          out=Path('evaluation-output/real-cephalometric-flow.json')
+          if not os.getenv('GEMINI_API_KEY'):
+              out.write_text(json.dumps({'live_calls_made':False,'blocked':'No repository test key is configured'}))
+              print('Real Gemini validation blocked: no test key; no API calls made.')
+          else:
+              with out.open('w') as report:
+                  result=subprocess.run([sys.executable,'scripts/evaluate_academic_note_flow.py',
+                      '--source-fixture','evaluation/academic/cephalometric_text_fixture.json',
+                      '--run','--answers','--limit','8'],stdout=report)
+              sys.exit(result.returncode)
+          PYAPI
+      - name: Retain actual note validation output
+        if: always() && (github.head_ref == 'work/academic-source-batches-20261012' || github.ref == 'refs/heads/work/academic-semantic-source-check-20261012')
+        uses: actions/upload-artifact@v4
+        with:
+          name: actual-cephalometric-flow
+          path: evaluation-output/
+          retention-days: 7
+
   ready-model-contract:
     runs-on: ubuntu-latest
     steps:

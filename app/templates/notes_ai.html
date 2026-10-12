@@ -109,6 +109,7 @@
         // Keep pagination metadata in stored history, never in visible text.
         // This runs before HTML escaping, on reload and during streaming.
         text = text.replace(/<!--ACADEMIC_Q_CURSOR:\d+:\d+-->/g, '');
+        text = text.replace(/<!--ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+-->/g, '');
         const replacements = [
             [/\^\s*\\circ\b/g, '°'], [/\\circ\b/g, '°'],
             [/\\rightarrow\b/g, '→'], [/\\leftarrow\b/g, '←'], [/\\leftrightarrow\b/g, '↔'],
