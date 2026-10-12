@@ -42,6 +42,19 @@ class CourseLinks:
     by_node: dict
     by_section: dict
 
+    def lookup_diagnostics(self, phrase):
+        """Aggregate lookup shape only: never log headings or user text."""
+        wanted = _heading_terms(phrase)
+        suffixes = [_heading_terms(' > '.join(section.split(' > ')[start:]))
+                    for _, section in self.by_section for start in range(len(section.split(' > ')))]
+        overlaps = [(len(terms & wanted), len(terms - wanted)) for terms in suffixes if len(terms) >= 2]
+        best = max(overlaps, key=lambda item:(item[0], -item[1]), default=(0,0))
+        return {'headings':len(self.by_section),
+                'nested':sum(' > ' in section for _,section in self.by_section),
+                'empty_rows':sum(not row[1] for row in self.rows.values()),
+                'matched_terms':best[0], 'missing_terms':best[1],
+                'query_terms':len(wanted)}
+
     def focus_nodes(self, phrase):
         # Literal lookup within this course's indexed vocabulary only. Gemini
         # still interprets the request; this does not infer a task or a fact.
