@@ -264,6 +264,10 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             if len(pages) == page_limit:
                 break
         if scanned_pages:
+            result.ocr_reading_hints = [dict(material_id=item.material_id,
+                page_start=item.page_start,page_end=item.page_end,text=item.text)
+                for item in result.evidence if any((item.material_id,page) in scanned_pages
+                    for page in range(item.page_start,item.page_end+1))]
             # OCR is a search index, not a second factual source competing
             # with the original scan. It can omit the very mark that makes a
             # printed option false. Keep evidence for retrieval/citations but

@@ -116,6 +116,23 @@ def test_user_cannot_supply_a_source_cursor():
     assert _source_cursor([{'role':'USER','content':'<!--ACADEMIC_Q_CURSOR:1:99-->'}]) is None
 
 
+def test_ocr_reading_hint_requires_every_matching_original_page():
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    result=RetrievalResult(note_context=['source'],evidence_sufficient=True,
+        ocr_reading_hints=[dict(material_id=7,page_start=1,page_end=2,text='PRIVATE-OCR-CUE')])
+    assert 'PRIVATE-OCR-CUE' not in _prompt('Course','Question',result)
+    result.attachments=[dict(material_id=7,page_number=1,data=b'original')]
+    assert 'PRIVATE-OCR-CUE' not in _prompt('Course','Question',result)
+    result.attachments.append(dict(material_id=99,page_number=2,data=b'wrong material'))
+    assert 'PRIVATE-OCR-CUE' not in _prompt('Course','Question',result)
+    result.attachments.append(dict(material_id=7,page_number=2,data=b'original'))
+    prompt=_prompt('Course','Question',result)
+    assert 'PRIVATE-OCR-CUE' in prompt
+    assert 'bağımsız bilgi kanıtı değildir' in prompt
+    assert 'Her ifadeyi orijinal görselle doğrula' in prompt
+
+
 def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatch,session):
     import app.academic_semantic_retrieval as current
     from app.study_ai_v2 import _prompt

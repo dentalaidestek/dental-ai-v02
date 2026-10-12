@@ -4806,9 +4806,21 @@ def study_ai_index_status(request: Request, course_id: int, background_tasks: Ba
         completed=sum(row.index_status=='READY' and bool(row.active_index_version)
             and not row.building_index_version for row in rows)
         failed=any(row.index_status=='FAILED' and not row.building_index_version for row in rows)
+        outline=None
+        last_source_request=None
+        if request.query_params.get('outline')=='1':
+            from app.academic_chunk_links import planner_source_outline
+            outline=planner_source_outline(s,owner_user_id=user.id,course_id=course_id)
+            last=s.exec(select(StudyChatMessage).where(StudyChatMessage.owner_user_id==user.id)
+                .where(StudyChatMessage.course_id==course_id).where(StudyChatMessage.role=='ASSISTANT')
+                .order_by(StudyChatMessage.id.desc()).limit(1)).first()
+            if last:
+                from app.academic_direct_request import previous_source_request
+                last_source_request=previous_source_request([{'role':'ASSISTANT','content':last.content}])
     return JSONResponse(
         {"ok": True, "ready": ready,"completed":completed,"total":len(rows),
-         "state":"ready" if ready else "failed" if failed else "preparing"},
+         "state":"ready" if ready else "failed" if failed else "preparing",
+         **({"outline":outline,"last_source_request":last_source_request} if outline is not None else {})},
         headers={"Cache-Control": "no-store"},
     )
 
