@@ -90,6 +90,15 @@
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/index-status',{credentials:'same-origin',cache:'no-store'});
             const result=await response.json();
+            if (response.ok && !result.ready) {
+                if (result.state==='failed') {
+                    status.textContent='Not hazırlığı tamamlanamadı. Bu ders için şu anda yanıt hazırlanamıyor.';
+                    return;
+                }
+                if (Number.isInteger(result.completed) && Number.isInteger(result.total)) {
+                    status.textContent='Ders notları hazırlanıyor: '+result.completed+'/'+result.total+' dosya hazır.';
+                }
+            }
             if (response.ok && result.ready) {
                 v2Ready=true;
                 applyIndexReadiness();
