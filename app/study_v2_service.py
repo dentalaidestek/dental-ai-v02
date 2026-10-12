@@ -33,11 +33,11 @@ def v2_only_enabled() -> bool:
     return _flag("STUDY_ACADEMIC_V2_ONLY")
 
 
-def enqueue_material_v2(session: Session, material) -> str | None:
+def enqueue_material_v2(session: Session, material, *, index_version: str | None = None) -> str | None:
     """Reserve and enqueue exactly one new generation inside caller's tx."""
     if not indexing_enabled() or material.id is None or material.deleted_at is not None:
         return None
-    version = new_index_version()
+    version = index_version or new_index_version()
     reserved = begin_material_build(
         session,
         material_id=material.id,
@@ -192,6 +192,23 @@ def queue_owned_course_profile_upgrade(session, *, owner_user_id, course_id, lim
     return queued
 
 
+def queue_owned_legacy_course_materials(session, *, material_model, owner_user_id, course_id):
+    """First V2 index for the opened owned course; never global startup work."""
+    if not indexing_enabled() or not reads_enabled():
+        return 0
+    from app.study_index_profile import index_fingerprint
+    rows = session.exec(select(material_model)
+        .where(material_model.owner_user_id==owner_user_id)
+        .where(material_model.course_id==course_id)
+        .where(material_model.deleted_at==None)
+        .where(material_model.index_status=='LEGACY')
+        .where(material_model.active_index_version==None)
+        .where(material_model.building_index_version==None)
+        .order_by(material_model.id).limit(16)).all()
+    prefix='upgrade-'+index_fingerprint()[:16]+'-'
+    return sum(bool(enqueue_material_v2(session,row,index_version=prefix+new_index_version())) for row in rows)
+
+
 def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int,
                     upgrade_profile: bool = False, background_tasks=None,
                     wake_existing: bool = False) -> bool:
@@ -199,7 +216,9 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
     if upgrade_profile:
         from app.work_jobs import WorkCapacity
         try:
-            queued = queue_owned_course_profile_upgrade(
+            queued = queue_owned_legacy_course_materials(session,material_model=material_model,
+                owner_user_id=owner_user_id,course_id=course_id)
+            queued += queue_owned_course_profile_upgrade(
                 session, owner_user_id=owner_user_id, course_id=course_id)
             if queued:
                 session.commit()
