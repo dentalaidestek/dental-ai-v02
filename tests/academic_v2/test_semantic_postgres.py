@@ -52,6 +52,36 @@ def test_complete_batch_reader_crosses_128_without_foreign_stale_or_question_row
     assert [cid for batch in batches for cid in batch.chunk_ids] == list(range(1,301))
 
 
+def test_broad_gateway_retrieves_complete_sections_instead_of_coverage_sample(db):
+    from app.academic_request_understanding import StudyRequest, UnderstandingResult, retrieve_understood_course_context
+    db.exec(text('''INSERT INTO studyindexchunk
+        SELECT n,1,17,23,'v1','Sefalometrik Noktalar','definition','',
+               n,n,'TEXT',n,NULL FROM generate_series(1,300) AS n'''))
+    plan=StudyRequest('Tüm ders notlarını özetle','summarize','course',None,None,'')
+    result=retrieve_understood_course_context(db,
+        understanding=UnderstandingResult(plan=plan,attempted=True,outcome='interpreted'),
+        owner_user_id=17,course_id=23,query='Her konuyu özetle',recent_history=[])
+    assert result.retrieval_mode=='source_batches'
+    assert len(result.source_batches)==19
+    assert [item.chunk_id for child in result.source_batches for item in child.evidence]==list(range(1,301))
+    assert result.source_material_ids==[1]
+    assert not result.source_coverage_complete  # Search/index coverage is not proof of response accuracy.
+
+
+def test_definition_fast_path_uses_real_owned_fts_without_planner(db,monkeypatch):
+    from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
+    add(db,1,'ANB açısı sagittal ilişkidir')
+    add(db,2,'ANB başka kullanıcı',owner=99)
+    monkeypatch.setattr('app.study_provider.GeminiStudyProvider',
+                        lambda: pytest.fail('A definition must not make a planner call'))
+    understanding=understand_study_request('ANB nedir?',[])
+    result=retrieve_understood_course_context(db,understanding=understanding,
+        owner_user_id=17,course_id=23,query='ANB nedir?',recent_history=[])
+    assert not understanding.attempted
+    assert not result.semantic_planner_attempted
+    assert [item.chunk_id for item in result.evidence]==[1]
+
+
 def lookup(db, groups=()):
     return _fts_rows(db, owner_user_id=17, course_id=23,
         lexical_query='"hipofiz" OR "tiroid"', query_vector=None,
