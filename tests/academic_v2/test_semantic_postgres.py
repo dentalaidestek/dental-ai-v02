@@ -116,6 +116,20 @@ def lookup(db, groups=()):
         embedding_provider='', embedding_model='', limit=20, lexical_groups=groups)
 
 
+@pytest.mark.parametrize('count',[8,16])
+def test_every_allowed_planner_search_reaches_real_postgres(db,count):
+    from app.academic_request_understanding import MAX_SOURCE_SEARCHES
+    assert count <= MAX_SOURCE_SEARCHES
+    groups=tuple('"subject'+str(i)+'"' for i in range(count))
+    for i in range(count):
+        add(db,i+1,'subject'+str(i))
+        add(db,100+i,'subject'+str(i),owner=99)
+    selected=lookup(db,groups)
+    assert {int(row[0]) for row in selected}==set(range(1,count+1))
+    with pytest.raises(ValueError,match='invalid lexical search groups'):
+        lookup(db,tuple('"subject"' for _ in range(MAX_SOURCE_SEARCHES+1)))
+
+
 @pytest.mark.parametrize('scope',['topic','course'])
 def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db,monkeypatch,scope):
     from app.academic_request_understanding import StudyRequest

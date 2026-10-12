@@ -11,6 +11,21 @@ def row(ident, body, kind='TEXT'):
     return (ident, 1, 'note', ident, ident, None, kind, body, 1, .2, None, None, .2, ident, '{}')
 
 
+def test_lexical_group_bound_matches_planner_contract():
+    from app.study_retrieval_v2 import _fts_rows
+    from app.academic_request_understanding import MAX_SOURCE_SEARCHES
+    value=Mock()
+    value.get_bind.return_value.dialect.name='postgresql'
+    value.exec.return_value.all.return_value=[]
+    kwargs=dict(owner_user_id=17,course_id=23,lexical_query='"subject"',query_vector=None,
+                embedding_provider='',embedding_model='',limit=48)
+    _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(MAX_SOURCE_SEARCHES)))
+    assert len(value.exec.call_args.kwargs['params']['lexical_groups'])==MAX_SOURCE_SEARCHES
+    assert value.exec.call_args.kwargs['params']['group_candidate_limit']>=1
+    with pytest.raises(ValueError,match='invalid lexical search groups'):
+        _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(MAX_SOURCE_SEARCHES+1)))
+
+
 @pytest.fixture
 def session(monkeypatch):
     from app.academic_chunk_links import build_course_links
