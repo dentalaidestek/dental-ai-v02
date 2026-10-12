@@ -61,9 +61,9 @@ def test_broad_gateway_retrieves_complete_sections_instead_of_coverage_sample(db
     result=retrieve_understood_course_context(db,
         understanding=UnderstandingResult(plan=plan,attempted=True,outcome='interpreted'),
         owner_user_id=17,course_id=23,query='Her konuyu özetle',recent_history=[])
-    assert result.retrieval_mode=='source_batches'
-    assert len(result.source_batches)==19
-    assert [item.chunk_id for child in result.source_batches for item in child.evidence]==list(range(1,301))
+    assert result.retrieval_mode=='source_batch'
+    assert not result.source_batches  # Short digital text needs one call, not 19 visual-page batches.
+    assert [item.chunk_id for item in result.evidence]==list(range(1,301))
     assert result.source_material_ids==[1]
     assert not result.source_coverage_complete  # Search/index coverage is not proof of response accuracy.
 
@@ -74,12 +74,40 @@ def test_definition_fast_path_uses_real_owned_fts_without_planner(db,monkeypatch
     add(db,2,'ANB başka kullanıcı',owner=99)
     monkeypatch.setattr('app.study_provider.GeminiStudyProvider',
                         lambda: pytest.fail('A definition must not make a planner call'))
+    monkeypatch.setenv('STUDY_ACADEMIC_LOCAL_ROUTING','1')
     understanding=understand_study_request('ANB nedir?',[])
     result=retrieve_understood_course_context(db,understanding=understanding,
         owner_user_id=17,course_id=23,query='ANB nedir?',recent_history=[])
     assert not understanding.attempted
     assert not result.semantic_planner_attempted
     assert [item.chunk_id for item in result.evidence]==[1]
+
+
+def test_actual_uploaded_note_selects_all_skin_single_definitions_without_paired_points():
+    import json
+    from pathlib import Path
+    from scripts.evaluate_academic_note_flow import temporary_note_database
+    from app.academic_request_understanding import StudyRequest, UnderstandingResult, retrieve_understood_course_context
+    from app.academic_chunk_links import planner_source_outline
+    url=os.getenv('ACADEMIC_TEST_DATABASE_URL')
+    if not url:
+        pytest.skip('Dedicated PostgreSQL is required')
+    fixture=json.loads((Path(__file__).resolve().parents[2]/'evaluation/academic/cephalometric_text_fixture.json').read_text())
+    rows=[tuple(row) for row in fixture['rows']]
+    documents={int(k):v for k,v in fixture['documents'].items()}
+    with temporary_note_database(url,rows,documents) as session:
+        outline=planner_source_outline(session,owner_user_id=17,course_id=23,query='deri tek noktalar')
+        assert 'deri noktaları > tek noktalar' in outline['sections']
+        plan=StudyRequest('Deri tek noktalarının tüm tanımlarını açıkla','explain','topic',None,None,'',('deri tek noktalar',))
+        result=retrieve_understood_course_context(session,
+            understanding=UnderstandingResult(plan=plan,attempted=True,outcome='source_replay'),
+            owner_user_id=17,course_id=23,query=plan.resolved_query,recent_history=[])
+        assert {2,3,4,5,6} <= {item.page_start for item in result.evidence}
+        import re
+        text=re.sub(r'\s+',' ',' '.join(item.text for item in result.evidence)).casefold()
+        for name in ['pronasale','sub-nasale','labiale superior','labiale inferior','stomion']:
+            assert name in text
+        assert 'tragion' not in text and 'chelion' not in text
 
 
 def lookup(db, groups=()):

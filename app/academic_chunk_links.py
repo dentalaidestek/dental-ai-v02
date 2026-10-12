@@ -63,6 +63,29 @@ class CourseLinks:
                                          for other in requested_sections)}
         return requested_sections
 
+    def named_section_ids(self, phrase):
+        """Match the most specific source path suffix and return all children.
+
+        Outer document headings need not be repeated in a question. Parent
+        qualifiers distinguish e.g. skin/single from bone/single sections.
+        """
+        wanted = _heading_terms(phrase)
+        candidates = []
+        for (material, section), ids in self.by_section.items():
+            parts = section.split(' > ')
+            score = max((len(terms) for start in range(len(parts))
+                         if len(terms := _heading_terms(' > '.join(parts[start:]))) >= 2
+                         and terms <= wanted), default=0)
+            if score:
+                candidates.append((score, material, section, ids))
+        best = max((item[0] for item in candidates), default=0)
+        selected = [(m,section,ids) for score,m,section,ids in candidates if score==best]
+        selected = [(m,section,ids) for m,section,ids in selected if not any(
+            other_m==m and other_section.startswith(section+' > ')
+            for other_m,other_section,_ in selected)]
+        ids = {cid for _,_,members in selected for cid in members}
+        return sorted(ids, key=lambda cid: (self.rows[cid][0],self.rows[cid][3],self.rows[cid][4],cid))
+
     def related_ids(self, seeds, limit, *, section_queries=(), focus_nodes=()):
         nodes = {node for row in seeds for node in source_nodes(row)}
         if focus_nodes:
@@ -174,3 +197,22 @@ def get_course_links(session, *, owner_user_id, course_id):
                 _CACHE.popitem(last=False)
             _CACHE[key] = (now, links)
     return links
+
+
+def planner_source_outline(session, *, owner_user_id, course_id, query='', history=None):
+    """Bounded, source-owned heading vocabulary, never raw facts or file IDs."""
+    from app.academic_direct_request import previous_source_request
+    links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+    previous = previous_source_request(history or [])
+    terms = _heading_terms(query)
+    if previous:
+        terms |= set().union(*(_heading_terms(x) for x in previous.get('retrieval_queries', [])))
+    headings = sorted({section for _,section in links.by_section},
+                      key=lambda x: (-len(_heading_terms(x) & terms), x.count(' > '), x))
+    selected, size = [], 0
+    for heading in headings:
+        length = len(heading.encode('utf-8')) + 8
+        if len(selected) >= 96 or size + length > 8000:
+            continue
+        selected.append(heading); size += length
+    return {'sections':selected,'complete':len(selected)==len(headings)}

@@ -4,6 +4,11 @@ from app.academic_direct_request import direct_request, previous_source_request,
 from app.academic_request_understanding import understand_study_request
 
 
+@pytest.fixture(autouse=True)
+def opt_in_local_routing(monkeypatch):
+    monkeypatch.setenv('STUDY_ACADEMIC_LOCAL_ROUTING','1')
+
+
 @pytest.mark.parametrize('query,subject', [('ANB nedir?', 'ANB'), ('SNA neyi gösterir', 'SNA'),
     ('Labiale superior ne demek?', 'Labiale superior')])
 def test_definition_skips_planner(monkeypatch, query, subject):

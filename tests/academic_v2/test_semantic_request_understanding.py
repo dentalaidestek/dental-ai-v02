@@ -92,6 +92,26 @@ def test_planner_defaults_to_current_answer_model(monkeypatch):
     assert provider.generate.call_args.kwargs['model'] == ACADEMIC_V2_MODEL
 
 
+def test_unvalidated_local_routing_is_not_enabled_by_default(monkeypatch):
+    import app.study_provider as provider_module
+    provider=Mock(api_key='test-only')
+    provider.generate.return_value=raw()
+    monkeypatch.setattr(provider_module,'GeminiStudyProvider',lambda:provider)
+    monkeypatch.setattr(provider_module,'target_available',lambda target:True)
+    monkeypatch.delenv('STUDY_ACADEMIC_LOCAL_ROUTING',raising=False)
+    assert understand_study_request('ANB nedir?',[]).attempted
+    provider.generate.assert_called_once()
+
+
+def test_planner_receives_source_outline_as_data_before_active_request():
+    outline={'sections':['Deri Noktaları > Tek Noktalar'],'complete':True}
+    call=Mock(return_value=raw())
+    interpret_request('O noktaları anlat',[],call=call,source_outline=outline)
+    payload=json.loads(call.call_args.args[0])
+    assert payload['source_outline']==outline
+    assert list(payload)[-1]=='request'
+
+
 def test_safe_rejection_reason_does_not_log_source_or_model_output(caplog):
     payload = raw(count=201, retrieval_queries=['SECRET-PATIENT-TEXT'])
     result = interpret_request('PRIVATE-QUESTION', [], call=Mock(return_value=payload))

@@ -12,7 +12,7 @@ class SourceBatch:
     chunk_ids: tuple[int, ...]
 
 
-def partition_source_rows(rows, *, max_chars=96000, max_pages=16):
+def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=None):
     if max_chars < 1 or max_pages < 1:
         raise ValueError('invalid batch budget')
     seen = set()
@@ -28,7 +28,8 @@ def partition_source_rows(rows, *, max_chars=96000, max_pages=16):
         seen.add(cid)
         title = str(row[5] or row[2] or 'Ders notu')
         size = len(row[7] or '') + len(title) + 200
-        current_pages = {(int(row[1]), p) for p in range(int(row[3]), int(row[4])+1)}
+        current_pages = {(int(row[1]), p) for p in range(int(row[3]), int(row[4])+1)
+                         if visual_pages is None or (int(row[1]),p) in visual_pages}
         if size > max_chars or len(current_pages) > max_pages:
             raise ValueError('source chunk exceeds batch budget')
         # Adjacent small headings share a call, while each row retains its full
@@ -72,7 +73,26 @@ def retrieve_source_batches(session, *, owner_user_id, course_id, query,
     from app.academic_semantic_retrieval import retrieve_semantic_context
     from app.study_retrieval_v2 import RetrievalResult
     rows = list(load_owned_source_rows(session, owner_user_id=owner_user_id, course_id=course_id))
-    batches = partition_source_rows(rows)
+    return retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
+        course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
+
+
+def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
+                         request_plan, recent_history=None):
+    from sqlalchemy import text
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    from app.study_retrieval_v2 import RetrievalResult
+    # Only original visual pages count toward the page budget. Fifty short
+    # digital text slides need not become fifty calls or be cut at page eight.
+    visual_pages = None if request_plan.needs_visual else {(int(row[0]),int(row[1])) for row in session.exec(text(
+        "SELECT p.material_id,p.page_number FROM studyindexpage p JOIN studymaterial m "
+        "ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id AND m.course_id=p.course_id "
+        "AND m.active_index_version=p.index_version WHERE p.owner_user_id=:owner AND p.course_id=:course "
+        "AND m.index_status='READY' AND m.deleted_at IS NULL "
+        "AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
+        params={'owner':owner_user_id,'course':course_id}).all()}
+    batches = partition_source_rows(rows,visual_pages=visual_pages,
+        max_pages=8 if request_plan.scope=='topic' else 16)
     by_id = {int(row[0]): row for row in rows}
     children = [retrieve_semantic_context(session, owner_user_id=owner_user_id,
         course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history,

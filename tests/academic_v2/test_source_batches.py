@@ -30,6 +30,12 @@ def test_character_budget_splits_without_discarding_remainder():
         partition_source_rows([row(1,1,text='a'*2000)],max_chars=1200)
 
 
+def test_many_short_digital_pages_share_one_request_but_visual_pages_split():
+    rows=[row(i,i) for i in range(1,51)]
+    assert len(partition_source_rows(rows,visual_pages=set()))==1
+    assert len(partition_source_rows(rows,visual_pages={(1,i) for i in range(1,51)}))==4
+
+
 def test_reader_paginates_beyond_old_limit_with_owner_course_fences(monkeypatch):
     import app.study_retrieval_v2 as module
     rows = [row(i,i) for i in range(1,301)]

@@ -20,6 +20,10 @@ from app.study_retrieval_v2 import (
 logger = logging.getLogger('uvicorn.error.academic_semantic_retrieval')
 
 
+class SectionEvidenceRows(list):
+    """Complete named-section rows, requiring coverage rather than top-k."""
+
+
 def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit):
     """Keep Gemini's independent subjects balanced while following source links."""
     pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
@@ -33,6 +37,22 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
                for group in seeds for row in group):
         return _balanced_candidates(rows, searches, limit)
     links = get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+    # A named source section is a coverage request, not a top-k question.
+    # Hydrate it in bounded database pages, never truncate its contents.
+    named_ids = [links.named_section_ids(phrase) for phrase in searches]
+    if any(named_ids):
+        ids = list(dict.fromkeys(cid for group in named_ids for cid in group))
+        # A comparison may pair a complete section with a short unnamed topic.
+        ids += [int(row[0]) for group,named in zip(pools,named_ids) if not named for row in group]
+        ids = list(dict.fromkeys(ids))
+        hydrated = []
+        for offset in range(0,len(ids),128):
+            page = ids[offset:offset+128]
+            hydrated.extend(_coverage_evidence_rows(session,owner_user_id=owner_user_id,
+                course_id=course_id,chunk_ids=page,limit=len(page),max_rows=128))
+        if set(ids) != {int(row[0]) for row in hydrated}:
+            raise ValueError('source generation changed during section retrieval')
+        return SectionEvidenceRows(hydrated)
     focuses = [links.focus_nodes(phrase) for phrase in searches]
     for i, focus in enumerate(focuses):
         if focus:
@@ -175,6 +195,14 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit))
         result.retrieval_mode = 'semantic_candidates'
+    if (_source_rows is None and request_plan.scope == 'topic'
+            and isinstance(rows,SectionEvidenceRows)
+            and (len({(int(row[1]),page) for row in rows for page in range(int(row[3]),int(row[4])+1)}) > 8
+                 or sum(len(row[7] or '')+len(row[5] or '')+200 for row in rows)>96000)):
+        from app.academic_source_batches import retrieve_row_batches
+        partitioned = retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
+            course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
+        return partitioned
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)
     seen = set()
