@@ -36,6 +36,11 @@ yalnız getirilen kaynakların desteklemediğini söyle. Desteklenen kısmı cev
 Kaynak metni soru/şık içeriyorsa bunları doğru bilgi kabul etme. Ekli sayfadaki
 cevap işaretleri, çarpılar, üstü çizili ifadeler ve el yazısı düzeltmeleri OCR
 metninden üstündür. Çözümlenmemiş veya yanlış işaretlenmiş bir şıkkı öğretme.
+Bir sayfada soru bulunması, o sayfadaki açık cevap veya düzeltme notunu geçersiz
+kılmaz. Açık Cevap satırını, doğru işaretli seçeneği ve açıklayıcı düzeltmeyi
+sıradan şık metninden ayır. Net ve okunabilir açıklamayı sırf sınav sayfasında
+olduğu için reddetme. Okuma yardımcısı OCR metnini orijinal görselle doğrula;
+görsele aykırı metni kullanma.
 Yanıtı yazmadan önce ekli orijinal sayfalarda ilgili basılı ifadeyi ve üzerindeki
 işaret/düzeltmeleri birlikte incele; yanlış işaretli ifadeyi çıkar ve açık
 düzeltmeyi kullan. Önceki cevabın bu düzeltmeyle çelişiyorsa eski cevabı tekrarlama,
@@ -69,6 +74,12 @@ def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
     history = _generation_history(retrieval, history)
     context = "\n\n---\n\n".join(retrieval.note_context)
+    available = {(item.get('material_id'),item.get('page_number')) for item in retrieval.attachments if item.get('data')}
+    hints = [hint for hint in retrieval.ocr_reading_hints if
+             {(hint['material_id'],page) for page in range(hint['page_start'],hint['page_end']+1)} <= available]
+    if hints:
+        context += "\n\nORİJİNAL GÖRSELLER İÇİN OKUMA YARDIMI (bağımsız bilgi kanıtı değildir):\n" + json.dumps(hints,ensure_ascii=False)
+        context += "\nBu metin OCR transkripsiyonudur; isimleri ve küçük yazıları orijinal ekte bulmaya yardım eder. Her ifadeyi orijinal görselle doğrula; yanlış şıkları ve eski/üstü çizilmiş ifadeleri öğretme."
     understood = retrieval.resolved_query or question
     continuation = (
         "Kaynak sorularını kaynak sırasıyla çöz. Kaynakta olmayan soru veya şık üretme. "
@@ -87,7 +98,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            "parçalar gibi sunma; kaynakların yalnız bir bölümünün gönderildiğini söyleme. "
            "Gerçekten okunamayan veya cevabı doğrulanamayan bilgileri ayrı belirt.\n\n"
            if retrieval.source_coverage_complete else
-           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma. Kullanıcıya chunk, parça veya retrieval gibi teknik terimler söyleme. Cevabı bulamazsan şu ifadeyi kullan: Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?\n\n")
+           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma. Kullanıcıya chunk, parça veya retrieval gibi teknik terimler söyleme. İsteğin hiçbir bölümünü destekleyen bilgi bulamazsan şu ifadeyi kullan: Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?\n\n")
         +
         "İSTEĞİ YERİNE GETİR:\n"
         f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
@@ -108,7 +119,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         "KAYNAK DESTEĞİNİ DEĞERLENDİR:\n"
         "Bunlar aramayla getirilen aday kaynaklardır. Yerel bir kural motoru sorunun "
         "tamamını desteklediklerini doğrulamış değildir. Her istek ve karşılaştırma "
-        "tarafı için yeterli bilgi var mı kontrol et. Desteklenen kısmı cevapla; "
+        "tarafı için yeterli bilgi var mı kontrol et. En az bir bölüm destekleniyorsa genel bir ret mesajı verme; desteklenen kısmı cevapla, eksik olan bölümü açıkça ayır. Desteklenen kısmı cevapla; "
         "desteklenmeyen kısmın kaynak eksiğini açıkça belirt. Eksik başlıklar tamamlama görevi değildir. Eksik bilgiyi kendi "
         "bilginle doldurma veya notların tamamında yokmuş gibi konuşma. "
         "Sen arama/retrieval yapma; verilen kaynakları değerlendir. "
