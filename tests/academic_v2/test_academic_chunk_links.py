@@ -133,3 +133,62 @@ def test_named_section_does_not_require_a_lexical_seed(monkeypatch):
     diagnostics=links.lookup_diagnostics('deri tek noktalar')
     assert diagnostics['nested']==1 and diagnostics['missing_terms']==0
     assert 'deri' not in str(diagnostics)
+
+
+def test_fragmented_source_headers_restore_missing_page_inheritance_and_siblings():
+    def prefix(cid,body,material=1,section=None):
+        r=row(cid,material=material,section=section)
+        return (*r[:7],body,*r[8:])
+    rows=[prefix(1,'SEFALOMETRİK NOKTALAR\nA\n-\nDeri Noktaları\n-\nTek Noktalar'),
+          prefix(2,'Pronasale (Prn): Kaynaktaki tanım.'),
+          prefix(3,'Sub\n-\nnasale (Sn): Kaynaktaki tanım.'),
+          prefix(4,'Labiale superior (Ls): Kaynaktaki tanım.'),
+          prefix(5,'Labiale inferior (Li): Kaynaktaki tanım.'),
+          prefix(6,'Stomion (St): Kaynaktaki tanım.'),
+          prefix(7,'Çift Noktalar\nTragion (Tr): Başka grup.'),
+          prefix(8,'Chelion (Ch): Başka grup.'),
+          prefix(9,'B\n-\nKemik Noktaları\n-\nTek Noktalar\nSella (S): Başka grup.'),
+          prefix(10,'Belgesiz başlangıç.',material=2)]
+    links=build_course_links([rows[5:],rows[:5]],repair_headings=True)
+    assert links.selected_section_ids(['deri noktaları > tek noktalar'])==[1,2,3,4,5,6]
+    assert links.selected_section_ids(['deri noktaları > çift noktalar'])==[7,8]
+    assert links.selected_section_ids(['kemik noktaları > tek noktalar'])==[9]
+    assert links.rows[10][1]==''
+
+
+def test_explicit_owned_section_keeps_all_children_without_lexical_queries(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(i,section='Deri Noktaları > Tek Noktalar') for i in range(1,7)]
+    rows.append(row(7,section='Deri Noktaları > Çift Noktalar'))
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,chunk_ids,**k:[r for r in rows if r[0] in chunk_ids])
+    selected=retrieval._linked_candidates(None,[],(),owner_user_id=17,course_id=23,limit=16,
+        source_sections=('deri noktaları > tek noktalar',))
+    assert {r[0] for r in selected}==set(range(1,7))
+    assert not build_course_links([rows]).selected_section_ids(['invented heading'])
+
+
+def test_selected_section_and_unmatched_comparison_subject_both_survive(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(i,section='Deri Noktaları > Tek Noktalar') for i in range(1,7)]
+    other=row(7,section='Başka Konu')
+    other=(*other[:7],'ANB tanımı',*other[8:])
+    rows.append(other)
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,chunk_ids,**k:[r for r in rows if r[0] in chunk_ids])
+    selected=retrieval._linked_candidates(None,[other],('ANB',),owner_user_id=17,course_id=23,limit=16,
+        source_sections=('deri noktaları > tek noktalar',))
+    assert {r[0] for r in selected}==set(range(1,8))
+
+
+def test_actual_pdf_fragmented_prefixes_include_every_definition_and_exclude_siblings():
+    import json
+    from pathlib import Path
+    fixture=json.loads(Path('evaluation/academic/cephalometric_legacy_prefixes.json').read_text())
+    rows=[]
+    for cid,body in enumerate(fixture['legacy_prefixes'],1):
+        r=row(cid,section=None)
+        rows.append((*r[:7],body,*r[8:]))
+    links=build_course_links([rows],repair_headings=True)
+    assert links.selected_section_ids(['deri noktaları > tek noktalar'])==[1,2,3,4,5,6]
+    assert links.selected_section_ids(['deri noktaları > çift noktalar'])==[1,7,8]

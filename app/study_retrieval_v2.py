@@ -1697,12 +1697,13 @@ def _question_rows(
 
 def _coverage_metadata_page(
     session: Session, *, owner_user_id: int, course_id: int,
-    after_id: int = 0, limit: int = 240,
+    after_id: int = 0, limit: int = 240, include_source_prefix: bool = False,
 ) -> list:
-    """Read only lightweight coverage metadata; never chunk text."""
-    return list(session.exec(text("""
+    """Coverage stays metadata-only; heading repair opts into bounded prefixes."""
+    source_prefix = 'left(c.text_content, 1024)' if include_source_prefix else "''"
+    return list(session.exec(text(f"""
         SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
-               c.section_title, c.content_kind, '' AS text_content,
+               c.section_title, c.content_kind, {source_prefix} AS text_content,
                NULL::BIGINT, NULL::DOUBLE PRECISION, NULL::BIGINT, NULL::DOUBLE PRECISION,
                1.0::DOUBLE PRECISION, c.chunk_index, c.semantic_json
         FROM studyindexchunk c

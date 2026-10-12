@@ -52,6 +52,9 @@ bir çıkarımı kesin bilgi gibi sunma. Çoktan seçmeli yeni sorularda istenme
 tek doğru seçenek kullan; çeldiricilerin de doğru olduğu belirsiz sorular üretme.
 Farklı kavramlara ait ayrı tanımları 'veya' ile tek tanımda birleştirme. Her
 ifadeyi sorulan kavrama ait kaynakla doğrula; karşılaştırmada tarafları ayrı tut.
+Tanımdaki anatomik nesneyi, yönü, referansı ve ilişkiyi koru. Bunları başka
+kavramların tanımlarıyla değiştirerek sadeleştirme. Kaynakta doğrulanmayan
+açıklayıcı parantez veya anatomik ayrıntı ekleme.
 '''
 
 
