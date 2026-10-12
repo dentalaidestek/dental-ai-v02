@@ -210,6 +210,8 @@ class RetrievalResult:
     semantic_trace_id: str = ''
     study_task: dict = field(default_factory=dict)
     source_coverage_complete: bool = False
+    source_batches: list = field(default_factory=list)
+    batch_materializer: object = None
 
 
 @dataclass(frozen=True)

@@ -67,7 +67,8 @@ assert "not retrieval.evidence_sufficient" in generation
 _stream_body = generation.split("def stream_rag_v2(", 1)[1]
 _stream_prefix = _stream_body.split("required_attachment_types =", 1)[0]
 assert "not retrieval.evidence_sufficient" in _stream_prefix
-assert "kaynak içeriğini henüz eşleştiremedim" in _stream_prefix
+assert "Şu an baktığım ders notlarında bu sorunun cevabını bulamadım" in _stream_prefix
+assert "biraz daha açık yazar mısın" in _stream_prefix
 assert "_generation_targets()" not in _stream_prefix
 assert "Eksik başlıklar tamamlama görevi değildir" in generation
 assert "class EvidenceSufficiency" in retrieval

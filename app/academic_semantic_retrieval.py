@@ -125,7 +125,7 @@ def _source_cursor(history):
 
 
 def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
-                              request_plan, recent_history=None, limit=16):
+                              request_plan, recent_history=None, limit=16, _source_rows=None):
     if session.get_bind().dialect.name != 'postgresql':
         raise RuntimeError('Academic semantic retrieval requires PostgreSQL')
     if not isinstance(request_plan, StudyRequest):
@@ -139,7 +139,10 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.clarification = request_plan.clarification
         return result
     limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
-    if request_plan.scope == 'course' and request_plan.source_kind == 'questions':
+    if _source_rows is not None:
+        rows = list(_source_rows)
+        result.retrieval_mode = 'source_batch'
+    elif request_plan.scope == 'course' and request_plan.source_kind == 'questions':
         rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
                               limit=17, after_cursor=_source_cursor(recent_history) if request_plan.continue_source else None)
         result.has_more = len(rows) > 16
@@ -256,7 +259,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 'doğrulanmış bilgi sayma.')
         logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
                     len(scanned_pages),len(result.visual_sources))
-    if request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
+    if _source_rows is None and request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
         originals={(v['material_id'],v['page_number']) for v in result.visual_sources}
         evidence_pages={(item.material_id,page) for item in result.evidence
                         for page in range(item.page_start,item.page_end+1)}

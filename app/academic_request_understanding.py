@@ -1,7 +1,8 @@
 """Bounded semantic request interpretation; no subject-specific language rules.
 
 The planner interprets language, never authorizes access or supplies note facts.
-All Academic V2 requests use Gemini; there is no local language fallback.
+Explicit definition questions have a conservative local fast path.
+Other requests use Gemini interpretation; source access remains server-owned.
 """
 from __future__ import annotations
 
@@ -67,6 +68,12 @@ A previous assistant assertion is context, NOT evidence or a verified fact.
 For an ambiguous referent, missing topic or non-study/system request, operation
 is clarify and clarification is a short truthful question/explanation. Do not
 invent the answer, assume missing clinical values, or invent an antecedent.
+recent_source_request, when present, records the previous source topic and task,
+not facts. For 'o noktaların hepsi', 'bu saydıklarını anlat', 'bunları kodla' and
+similar follow-ups, resolve that source topic and search its named heading and
+children. 'Hepsi' refers to that set, not the whole course. 'Kodlama' in a study
+request means mnemonic aids, not software programming. Retain the topic while
+changing the output style. Do not choose course scope for these follow-ups.
 Use course scope only when the user requests the whole uploaded course/notes,
 all topics or a new source-wide study task. A named topic remains topic scope
 unless the user explicitly asks for course-wide selection. 'Detailed' alone
@@ -166,7 +173,9 @@ def interpret_request(question: str, history: list[dict], *, call) -> Understand
     turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', ''))}
              for x in (history or [])[-8:]]
     # Put the active request last, after its historical context.
-    prompt = json.dumps({'recent_dialogue': turns, 'request': question}, ensure_ascii=False)
+    from app.academic_direct_request import previous_source_request
+    prompt = json.dumps({'recent_source_request': previous_source_request(history),
+                         'recent_dialogue': turns, 'request': question}, ensure_ascii=False)
     if len(prompt.encode('utf-8')) > 32000:
         return UnderstandingResult(outcome='input_budget', trace_id=trace_id)
     try:
@@ -186,6 +195,13 @@ def interpret_request(question: str, history: list[dict], *, call) -> Understand
 
 
 def understand_study_request(question: str, history: list[dict]) -> UnderstandingResult:
+    from app.academic_direct_request import direct_request
+    direct = direct_request(question, history)
+    if direct is not None:
+        trace_id = uuid.uuid4().hex
+        logger.info('Academic flow trace=%s stage=plan provider=local operation=%s scope=topic searches=1',
+                    trace_id, direct.operation)
+        return UnderstandingResult(plan=direct, outcome='direct', trace_id=trace_id)
     from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
     model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-3.5-flash-lite').strip()
     provider = GeminiStudyProvider()
@@ -202,20 +218,27 @@ def understand_study_request(question: str, history: list[dict]) -> Understandin
 
 
 def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, **kwargs):
-    """Every chat request needs a Gemini plan; no language-rule fallback exists."""
+    """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
     if understanding.plan is None:
         message = (
             'Konuşma bu turda işlenebilecek uzunluğu aşıyor. İlgili soruyu daha kısa bir mesajla tekrar gönderir misin?'
             if understanding.outcome == 'input_budget' else
-            'Sorunu şu anda yorumlayamadım. Lütfen biraz sonra tekrar dene.'
+            'Şu anda bağlantı sorunu nedeniyle yanıt hazırlayamadım. Lütfen tekrar dene.'
         )
         return RetrievalResult(resolved_query=kwargs.get('query', ''),
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
-    result = retrieve_semantic_context(session, request_plan=understanding.plan, **kwargs)
-    result.semantic_planner_attempted = True
+    plan = understanding.plan
+    if plan.scope == 'course' and plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions'}:
+        from app.academic_source_batches import retrieve_source_batches
+        result = retrieve_source_batches(session, request_plan=plan, **kwargs)
+    else:
+        result = retrieve_semantic_context(session, request_plan=plan, **kwargs)
+    result.semantic_planner_attempted = understanding.attempted
+    result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
+    result.study_task['resolved_query'] = understanding.plan.resolved_query
     result.semantic_trace_id = understanding.trace_id
     logger.info('Academic flow trace=%s stage=retrieval mode=%s chunks=%s pages=%s',
                 understanding.trace_id, result.retrieval_mode,

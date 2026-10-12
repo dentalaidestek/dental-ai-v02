@@ -4951,6 +4951,9 @@ def study_ai_ask(
                 )
                 if rag_result.visual_sources and rag_result.evidence_sufficient:
                     materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
+            if rag_result.source_batches:
+                rag_result.batch_materializer = lambda child: materialize_visual_sources(
+                    lambda: Session(engine, expire_on_commit=False), child)
             # === TEMP_STUDY_TRACE_ASK_RAG_DONE_BEGIN ===
             trace_event(
                 "ask.rag.success",
@@ -5157,6 +5160,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             )
 
     owner_user_id = user.id
+    if retrieval.source_batches:
+        retrieval.batch_materializer = lambda child: materialize_visual_sources(
+            lambda: Session(engine, expire_on_commit=False), child)
 
     def generate_stream():
         pieces: list[str] = []

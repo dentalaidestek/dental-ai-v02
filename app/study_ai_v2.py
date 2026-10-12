@@ -78,7 +78,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
     return (
         "ÖNCEKİ KONUŞMA BAĞLAMI (geçmiş görevler, etkin istek veya bilgi kanıtı değil):\n"
         + json.dumps([{'role':item.get('role'), 'content':re.sub(
-            r"\n?<!--ACADEMIC_Q_CURSOR:\d+:\d+-->", "", item.get('content') or '')}
+            r"\n?<!--(?:ACADEMIC_Q_CURSOR:\d+:\d+|ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+)-->", "", item.get('content') or '')}
             for item in (history or [])[-8:]], ensure_ascii=False)
         + "\n\n"
         f"Ders: {course_title}\n\nDERS NOTU KANITLARI:\n{context}\n\n"
@@ -87,7 +87,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            "parçalar gibi sunma; kaynakların yalnız bir bölümünün gönderildiğini söyleme. "
            "Gerçekten okunamayan veya cevabı doğrulanamayan bilgileri ayrı belirt.\n\n"
            if retrieval.source_coverage_complete else
-           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma.\n\n")
+           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma. Kullanıcıya chunk, parça veya retrieval gibi teknik terimler söyleme. Cevabı bulamazsan şu ifadeyi kullan: Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?\n\n")
         +
         "İSTEĞİ YERİNE GETİR:\n"
         f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
@@ -126,6 +126,53 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
     )
 
 
+def _stream_source_batches(course_title, question, history, retrieval):
+    from dataclasses import replace
+    operation = retrieval.study_task.get('operation')
+    outputs = []
+    total = len(retrieval.source_batches)
+    for index, child in enumerate(retrieval.source_batches, 1):
+        if child.visual_sources:
+            if retrieval.batch_materializer is None:
+                raise StudyAIError('Ders kaynakları hazırlanamadı. Lütfen tekrar dene.')
+            retrieval.batch_materializer(child)
+            required = {(item['material_id'],item['page_number']) for item in child.visual_sources}
+            prepared = {(item.get('material_id'),item.get('page_number')) for item in child.attachments}
+            # Byte-budget failures must not silently omit a required original.
+            if not required <= prepared:
+                raise StudyAIError('Bazı not sayfaları hazırlanamadı. Lütfen tekrar dene.')
+        task = dict(child.study_task)
+        if operation == 'generate_questions':
+            task.update(operation='summarize', count=None)
+            request = ('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
+                       'bilgilerini kaynak sayfalarıyla çıkar. Henüz soru veya cevap anahtarı üretme. '
+                       'Aynı bilgiyi tekrarlama; farklı alt başlıkları atlama.')
+        else:
+            request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
+                       'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
+                       'diğer bölümlerin notlarda bulunmadığını iddia etme.')
+        prepared_child = replace(child, study_task=task, resolved_query=request)
+        output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
+        outputs.append(output)
+        child.attachments.clear()
+        if operation != 'generate_questions':
+            yield ('\n\n' if index > 1 else '') + output
+    if operation == 'generate_questions':
+        # Source-grounded extraction for every section, followed by one question
+        # generation call with the ORIGINAL total count. Never multiply it by N.
+        reduced = RetrievalResult(note_context=[f'BÖLÜM {i}:\n{text}' for i,text in enumerate(outputs,1)],
+            evidence_sufficient=True, resolved_query=retrieval.resolved_query,
+            study_task=dict(retrieval.study_task), evidence=retrieval.evidence,
+            source_material_ids=retrieval.source_material_ids)
+        # Do not cut a long set of section results to the first few entries.
+        if sum(len(text) for text in reduced.note_context) > 240000:
+            raise StudyAIError('Ders kapsamı tek soru hazırlama isteği için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
+        yield from stream_rag_v2(course_title, question, history, reduced)
+    from app.academic_direct_request import source_marker
+    if 'retrieval_queries' in retrieval.study_task:
+        yield '\n' + source_marker(retrieval.study_task)
+
+
 def stream_rag_v2(
     course_title: str,
     question: str,
@@ -133,13 +180,16 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
+    if retrieval.source_batches:
+        yield from _stream_source_batches(course_title, question, history, retrieval)
+        return
     if retrieval.clarification:
         logger.info('Academic flow trace=%s stage=response origin=local_clarification', trace_id)
         yield retrieval.clarification
         return
     if (not retrieval.note_context and not retrieval.attachments) or not retrieval.evidence_sufficient:
         logger.info('Academic flow trace=%s stage=response origin=local_no_sources', trace_id)
-        yield f'«{retrieval.resolved_query or question}» için kaynak içeriğini henüz eşleştiremedim. Bu, bilginin notlarda bulunmadığı anlamına gelmez.'
+        yield 'Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?'
         return
     required_attachment_types = {
         item.get("mime_type")
@@ -220,6 +270,9 @@ def stream_rag_v2(
                 # server on an explicit "devam" turn; harmless in rendered HTML.
                 last = retrieval.evidence[-1]
                 yield f"\n<!--ACADEMIC_Q_CURSOR:{last.material_id}:{last.chunk_index}-->"
+            from app.academic_direct_request import source_marker
+            if retrieval.study_task.get('scope') in {'topic', 'course'} and 'retrieval_queries' in retrieval.study_task:
+                yield '\n' + source_marker(retrieval.study_task)
             return
         except StudyProviderError as exc:
             report_target_failure(target, exc)

@@ -37,6 +37,21 @@ def add(db, ident, body, *, material=1, owner=17, course=23, version='v1'):
         params=dict(id=ident,material=material,owner=owner,course=course,version=version,body=body))
 
 
+def test_complete_batch_reader_crosses_128_without_foreign_stale_or_question_rows(db):
+    from app.academic_source_batches import load_owned_source_rows, partition_source_rows
+    db.exec(text('''INSERT INTO studyindexchunk
+        SELECT n,1,17,23,'v1','Deri Noktaları > Tek Noktalar','definition','',
+               n,n,'TEXT',n,NULL FROM generate_series(1,300) AS n'''))
+    add(db,301,'foreign',owner=99)
+    add(db,302,'other course',course=99)
+    add(db,303,'old version',version='v0')
+    add(db,304,'question')
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION' WHERE id=304"))
+    rows=list(load_owned_source_rows(db,owner_user_id=17,course_id=23))
+    batches=partition_source_rows(rows)
+    assert [cid for batch in batches for cid in batch.chunk_ids] == list(range(1,301))
+
+
 def lookup(db, groups=()):
     return _fts_rows(db, owner_user_id=17, course_id=23,
         lexical_query='"hipofiz" OR "tiroid"', query_vector=None,
