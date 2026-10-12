@@ -1529,7 +1529,8 @@ def _fts_rows(
     # query alone can let a frequent subject consume the entire bounded pool.
     # This remains one DB statement with the same owner/version/READY filters.
     if lexical_groups:
-        if len(lexical_groups) > 4 or any(not x or len(x) > 1024 for x in lexical_groups):
+        from app.academic_request_understanding import MAX_SOURCE_SEARCHES
+        if len(lexical_groups) > MAX_SOURCE_SEARCHES or any(not x or len(x) > 1024 for x in lexical_groups):
             raise ValueError("invalid lexical search groups")
         if lexical_fallback_groups and (
             len(lexical_fallback_groups) != len(lexical_groups)
