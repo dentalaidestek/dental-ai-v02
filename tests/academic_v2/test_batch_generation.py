@@ -90,3 +90,28 @@ def test_token_limited_answer_is_never_reported_as_complete(monkeypatch):
     result=RetrievalResult(note_context=['Source'],evidence_sufficient=True)
     with pytest.raises(StudyAIError,match='uzunluk sınırına'):
         ask_rag_v2('Course','Hepsini anlat',[],result)
+
+
+@pytest.mark.parametrize('outcome', ['failed', 'unavailable', 'input_budget'])
+def test_failed_planner_is_an_error_before_output_not_a_completed_reply(monkeypatch, outcome):
+    from app.academic_request_understanding import UnderstandingResult, retrieve_understood_course_context
+    from app.study_ai_v2 import stream_rag_v2
+    value = provider(monkeypatch, ['must not be called'])
+    retrieval = retrieve_understood_course_context(Mock(),
+        understanding=UnderstandingResult(outcome=outcome),
+        owner_user_id=17, course_id=23, query='Mevcut soruları aktar', recent_history=[])
+    stream = stream_rag_v2('Course', 'Mevcut soruları aktar', [], retrieval)
+    with pytest.raises(StudyAIError) as error:
+        next(stream)
+    assert str(error.value) == retrieval.clarification
+    with pytest.raises(StudyAIError):
+        ask_rag_v2('Course', 'Mevcut soruları aktar', [], retrieval)
+    value.generate_stream.assert_not_called()
+
+
+def test_valid_clarification_remains_a_completed_reply(monkeypatch):
+    value = provider(monkeypatch, ['must not be called'])
+    retrieval = RetrievalResult(clarification='Hangi konuyu çalışalım?',
+                               retrieval_mode='clarify')
+    assert ask_rag_v2('Course', 'Onu anlat', [], retrieval) == retrieval.clarification
+    value.generate_stream.assert_not_called()

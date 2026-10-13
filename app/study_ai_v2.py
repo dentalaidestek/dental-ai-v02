@@ -224,6 +224,12 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
+    if retrieval.retrieval_mode == 'interpretation_unavailable':
+        # A failed planner is a failed request, not a completed assistant
+        # answer. Raising before output keeps both endpoints from persisting
+        # it and lets the client restore the request without a PDF control.
+        raise StudyAIError(retrieval.clarification or
+                           'İstek işlenemedi. Lütfen kısa süre sonra tekrar deneyin.')
     if retrieval.source_batches:
         yield from _stream_source_batches(course_title, question, history, retrieval)
         return
