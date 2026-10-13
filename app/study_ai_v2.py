@@ -168,7 +168,8 @@ def _stream_source_batches(course_title, question, history, retrieval):
     from dataclasses import replace
     operation = retrieval.study_task.get('operation')
     outputs = []
-    total = len(retrieval.source_batches)
+    synthesis_chars = 0
+    synthesize = operation in {'generate_questions', 'compare'}
     for index, child in enumerate(retrieval.source_batches, 1):
         if child.visual_sources:
             if retrieval.batch_materializer is None:
@@ -180,11 +181,16 @@ def _stream_source_batches(course_title, question, history, retrieval):
             if not required <= prepared:
                 raise StudyAIError('Bazı not sayfaları hazırlanamadı. Lütfen tekrar dene.')
         task = dict(child.study_task)
-        if operation == 'generate_questions':
+        if synthesize:
             task.update(operation='summarize', count=None)
-            request = ('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
+            request = (('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
                        'bilgilerini kaynak sayfalarıyla çıkar. Henüz soru veya cevap anahtarı üretme. '
                        'Aynı bilgiyi tekrarlama; farklı alt başlıkları atlama.')
+                       if operation == 'generate_questions' else
+                       f'Karşılaştırma için kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
+                       'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
+                       'dosya/sayfa atıflarıyla ayrı tut. Diğer taraf bu bölümde yoksa burada karşılaştırma '
+                       'sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
         else:
             request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
                        'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
@@ -192,25 +198,31 @@ def _stream_source_batches(course_title, question, history, retrieval):
         task['batch_partial'] = True
         prepared_child = replace(child, study_task=task, resolved_query=request,
                                  semantic_trace_id=retrieval.semantic_trace_id)
-        output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
-        child.attachments.clear()
+        try:
+            output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
+        finally:
+            child.attachments.clear()
         if output == BATCH_NO_SUPPORT:
             continue
         outputs.append(output)
-        if operation != 'generate_questions':
+        synthesis_chars += len(output) + 32
+        if synthesize and synthesis_chars > 240000:
+            raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
+        if not synthesize:
             yield ('\n\n' if len(outputs) > 1 else '') + output
     if not outputs:
         yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım. İlgili konu veya dosya adını biraz daha açık yazar mısın?'
-    elif operation == 'generate_questions':
-        # Source-grounded extraction for every section, followed by one question
-        # generation call with the ORIGINAL total count. Never multiply it by N.
+    elif synthesize:
+        # One final answer sees evidence from every relevant section. A global
+        # comparison cannot be built by concatenating independent answers.
         reduced = RetrievalResult(note_context=[f'BÖLÜM {i}:\n{text}' for i,text in enumerate(outputs,1)],
             evidence_sufficient=True, resolved_query=retrieval.resolved_query,
             study_task=dict(retrieval.study_task), evidence=retrieval.evidence,
-            source_material_ids=retrieval.source_material_ids)
+            source_material_ids=retrieval.source_material_ids,
+            semantic_trace_id=retrieval.semantic_trace_id)
         # Do not cut a long set of section results to the first few entries.
         if sum(len(text) for text in reduced.note_context) > 240000:
-            raise StudyAIError('Ders kapsamı tek soru hazırlama isteği için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
+            raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
         yield from stream_rag_v2(course_title, question, history, reduced)
     from app.academic_direct_request import source_marker
     if 'retrieval_queries' in retrieval.study_task:

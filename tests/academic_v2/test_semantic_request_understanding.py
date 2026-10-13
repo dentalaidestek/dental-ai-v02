@@ -334,3 +334,22 @@ def test_planner_cannot_select_section_outside_supplied_owned_outline():
                              source_outline={'sections':['owned heading'],'complete':True})
     assert result.plan is None and result.outcome=='failed'
     call.assert_called_once()
+
+
+@pytest.mark.parametrize('configured,expected', [(None,45),('bad',45),('1',10),('999',75),('30',30)])
+def test_planner_wait_budget_is_bounded_without_adding_retries(monkeypatch,configured,expected):
+    from app.academic_request_understanding import understand_study_request
+    import app.study_provider as providers
+    monkeypatch.delenv('STUDY_ACADEMIC_LOCAL_ROUTING',raising=False)
+    if configured is None:
+        monkeypatch.delenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS',raising=False)
+    else:
+        monkeypatch.setenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS',configured)
+    provider=Mock(api_key='test-only')
+    provider.generate.return_value=raw()
+    monkeypatch.setattr(providers,'GeminiStudyProvider',lambda:provider)
+    monkeypatch.setattr(providers,'target_available',lambda target:True)
+    result=understand_study_request('Bir konuyu anlat',[])
+    assert result.plan is not None
+    assert provider.timeout==expected and provider.max_attempts==1
+    provider.generate.assert_called_once()

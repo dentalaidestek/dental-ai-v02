@@ -60,10 +60,11 @@ def test_missing_originals_stop_before_model_call(monkeypatch):
     ['<!--ACADEMIC_BATCH_NO_SUPPORT-->','Supported answer'],
 ])
 def test_unsupported_batch_does_not_append_denial_to_supported_answer(monkeypatch,outputs):
-    value=provider(monkeypatch,outputs)
+    value=provider(monkeypatch,outputs + ['Supported answer'])
     assert ask_rag_v2('Course','Karşılaştır',[],parent('compare'))=='Supported answer'
-    assert value.generate_stream.call_count==2
-    assert 'BÖLÜM İŞLEME KURALI' in value.generate_stream.call_args.kwargs['prompt']
+    assert value.generate_stream.call_count==3
+    assert 'BÖLÜM İŞLEME KURALI' in value.generate_stream.call_args_list[0].kwargs['prompt']
+    assert 'ACADEMIC_BATCH_NO_SUPPORT' not in value.generate_stream.call_args.kwargs['prompt']
 
 
 def test_all_unsupported_batches_produce_one_honest_reply(monkeypatch):
@@ -115,3 +116,29 @@ def test_valid_clarification_remains_a_completed_reply(monkeypatch):
                                retrieval_mode='clarify')
     assert ask_rag_v2('Course', 'Onu anlat', [], retrieval) == retrieval.clarification
     value.generate_stream.assert_not_called()
+
+
+def test_comparison_synthesis_sees_both_files_and_preserves_original_request(monkeypatch):
+    value=provider(monkeypatch,['Alpha evidence (file A page 1)',
+                                'Beta evidence (file B page 9)',
+                                'One supported comparison'])
+    result=parent('compare')
+    result.resolved_query='Compare alpha and beta in a table; exclude gamma.'
+    result.semantic_trace_id='comparison-trace'
+    assert ask_rag_v2('Course',result.resolved_query,[],result)=='One supported comparison'
+    assert value.generate_stream.call_count==3
+    final=value.generate_stream.call_args.kwargs['prompt']
+    assert 'Alpha evidence (file A page 1)' in final and 'Beta evidence (file B page 9)' in final
+    assert result.resolved_query in final and '"operation": "compare"' in final
+    assert all('Diğer taraf bu bölümde yoksa' in item.kwargs['prompt']
+               for item in value.generate_stream.call_args_list[:2])
+
+
+def test_failed_comparison_extraction_does_not_emit_a_misleading_partial_result(monkeypatch):
+    from app.study_ai_v2 import stream_rag_v2
+    value=provider(monkeypatch,['Alpha evidence'])
+    value.generate_stream.side_effect=[iter(['Alpha evidence']), StudyAIError('unavailable')]
+    stream=stream_rag_v2('Course','Compare alpha with beta',[],parent('compare'))
+    with pytest.raises(StudyAIError,match='unavailable'):
+        next(stream)
+    assert value.generate_stream.call_count==2

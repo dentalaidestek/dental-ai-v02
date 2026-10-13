@@ -164,7 +164,7 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,total,expected', [('topic',12,8),('course',12,12),('course',35,32)])
+@pytest.mark.parametrize('scope,total,expected', [('topic',12,12),('course',12,12),('course',35,35)])
 def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,total,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
@@ -173,21 +173,27 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     monkeypatch.setattr(current,'get_or_build_coverage_plan',Mock(return_value=SimpleNamespace()))
     monkeypatch.setattr(current,'_coverage_hydration_ids',Mock(return_value=list(range(1,total+1))))
     monkeypatch.setattr(current,'_coverage_evidence_rows',Mock(return_value=rows))
-    session.exec.side_effect = [
-        Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)])),
-        Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')])),
-        Mock(first=Mock(return_value=(0,0,total))),
-    ]
+    def database(query, **kwargs):
+        if 'SELECT id,file_path' in str(query):
+            return Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')]))
+        return Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)]),
+                    first=Mock(return_value=(0,0,total)))
+    session.exec.side_effect = database
     plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
     result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
-    assert len(result.visual_sources)==expected
-    assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in result.visual_sources)
-    assert 'OCR KAYNAK UYARISI' in result.note_context[0]
-    assert 'ANB konu bilgisi' not in '\n'.join(result.note_context)
+    children=result.source_batches or [result]
+    visuals=[source for child in children for source in child.visual_sources]
+    contexts=[context for child in children for context in child.note_context]
+    assert len(visuals)==expected
+    assert {(s['material_id'],s['page_number']) for s in visuals}=={(1,i) for i in range(1,total+1)}
+    assert all(len(child.visual_sources)<=(16 if scope=='course' and result.source_batches else 32 if scope=='course' else 8) for child in children)
+    assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in visuals)
+    assert all('OCR KAYNAK UYARISI' in child.note_context[0] for child in children)
+    assert 'ANB konu bilgisi' not in '\n'.join(contexts)
     assert len(result.evidence)==total  # OCR remains usable for search and provenance.
-    assert sum('ekli orijinal sayfayı incele' in c for c in result.note_context)==expected
-    assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==total-expected
-    assert result.source_coverage_complete == (scope=='course' and total==expected)
+    assert sum('ekli orijinal sayfayı incele' in c for c in contexts)==expected
+    assert not any('bilgi kanıtı olarak kullanma' in c for c in contexts)
+    assert result.source_coverage_complete == (scope=='course' and not result.source_batches)
     assert session.exec.call_args_list[0].kwargs['params']['course']==23
 
 
@@ -199,6 +205,21 @@ def test_prompt_describes_actual_coverage_without_inventing_missing_sources(comp
     prompt=_prompt('Course','20 soru hazırla',result)
     assert ('bütün parçalar ve sayfalar' in prompt)==complete
     assert ('Ders kapsamı sınırlı temsili parçalardan oluşur' in prompt)==(not complete)
+
+
+def test_originals_include_every_page_of_a_multi_page_chunk(monkeypatch,session):
+    import app.academic_semantic_retrieval as current
+    candidate=list(row(1,'OCR reference'))
+    candidate[3:5]=[5,7]
+    monkeypatch.setattr(current,'_fts_rows',Mock(return_value=[tuple(candidate)]))
+    session.exec.side_effect=[Mock(all=Mock(return_value=[(1,5),(1,6),(1,7)])),
+        Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')]))]
+    plan=StudyRequest('Explain alpha','explain','topic',None,None,'',('alpha',))
+    result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert [item['page_number'] for item in result.visual_sources]==[5,6,7]
+    assert 'OCR reference' not in '\n'.join(result.note_context)
+    assert 'ekli orijinal sayfayı incele' in result.note_context[-1]
 
 
 @pytest.mark.parametrize('operation', ['explain', 'compare', 'teach', 'summarize'])

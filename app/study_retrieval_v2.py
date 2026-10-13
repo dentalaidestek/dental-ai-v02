@@ -1468,16 +1468,26 @@ def _fts_rows(
     limit: int,
     lexical_groups: tuple[str, ...] = (),
     lexical_fallback_groups: tuple[str, ...] = (),
+    content_domain: str = 'all',
 ) -> list:
+    if content_domain not in {'all', 'notes', 'questions'}:
+        raise ValueError('invalid source content domain')
     candidate_limit = max(20, min(120, limit * 8))
     common = """
         FROM studyindexchunk c
         JOIN studymaterial m
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.course_id=c.course_id
          AND m.active_index_version=c.index_version
          AND m.index_status='READY' AND m.deleted_at IS NULL
         WHERE c.owner_user_id=:owner AND c.course_id=:course
     """
+    if content_domain == 'notes':
+        common += " AND c.content_kind <> 'QUESTION' "
+    elif content_domain == 'questions':
+        common += """ AND (c.content_kind = 'QUESTION'
+            OR c.text_content ~* :question_pattern
+            OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)') """
     if query_vector:
         dimensions = len(query_vector)
         if _pgvector_available(session, dimensions):
@@ -1509,6 +1519,16 @@ def _fts_rows(
                 SELECT c.id, {semantic_score} AS raw_score,
                        ROW_NUMBER() OVER (ORDER BY {semantic_score} DESC, c.id) AS rank
                 {common} {semantic_where}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM studyindexchunk pending
+                    WHERE pending.material_id=c.material_id
+                      AND pending.owner_user_id=c.owner_user_id AND pending.course_id=c.course_id
+                      AND pending.index_version=c.index_version AND
+                      (pending.embedding_array IS NULL
+                       OR pending.embedding_provider IS DISTINCT FROM :embedding_provider
+                       OR pending.embedding_model IS DISTINCT FROM :embedding_model
+                       OR pending.embedding_dimensions IS DISTINCT FROM :embedding_dimensions)
+                  )
                 ORDER BY raw_score DESC, c.id
                 LIMIT :candidate_limit
             ),
@@ -1619,7 +1639,8 @@ def _fts_rows(
         "lexical_query": lexical_query,
         "title_like": "%" + " ".join(_retrieval_terms(lexical_query)[0][:3]) + "%",
         "candidate_limit": candidate_limit,
-        "limit": max(1, min(limit, 20)),
+        "limit": max(1, min(limit, 120)),
+        "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
         "embedding_provider": embedding_provider,
         "embedding_model": embedding_model,
         "embedding_dimensions": len(query_vector) if query_vector else 0,
