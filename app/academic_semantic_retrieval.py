@@ -26,6 +26,10 @@ class SectionEvidenceRows(list):
 
 def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit, source_sections=()):
     """Keep Gemini's independent subjects balanced while following source links."""
+    # Lexical search also returns exam questions. The section graph and its
+    # hydrator both exclude them: use the same candidate domain before ranking
+    # and verifying IDs. Dedicated question retrieval bypasses this function.
+    rows = [row for row in rows if str(row[6]).upper() != 'QUESTION']
     pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
     seeds = []
     for phrase, pool in zip(searches, pools):

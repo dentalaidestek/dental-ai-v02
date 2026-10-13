@@ -192,3 +192,25 @@ def test_actual_pdf_fragmented_prefixes_include_every_definition_and_exclude_sib
     links=build_course_links([rows],repair_headings=True)
     assert links.selected_section_ids(['deri noktaları > tek noktalar'])==[1,2,3,4,5,6]
     assert links.selected_section_ids(['deri noktaları > çift noktalar'])==[1,7,8]
+
+
+def test_section_hydration_uses_the_same_question_filter_as_lexical_candidates(monkeypatch):
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(1,section='Yapısal Değerlendirme'),row(2),row(3,kind='QUESTION')]
+    rows=[(*r[:7],'ANB bilgisi',*r[8:]) for r in rows]
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,chunk_ids,**k:
+        [r for r in rows if r[0] in chunk_ids and r[6]!='QUESTION'])
+    selected=retrieval._linked_candidates(None,rows,('yapısal değerlendirme','ANB'),
+        owner_user_id=17,course_id=23,limit=16)
+    assert {r[0] for r in selected}=={1,2}
+
+
+def test_real_missing_section_row_still_fails_closed(monkeypatch):
+    import pytest
+    import app.academic_semantic_retrieval as retrieval
+    rows=[row(1,section='Yapısal Değerlendirme')]
+    monkeypatch.setattr(retrieval,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,**k:[])
+    with pytest.raises(ValueError,match='source generation changed'):
+        retrieval._linked_candidates(None,rows,('yapısal değerlendirme',),owner_user_id=17,course_id=23,limit=16)

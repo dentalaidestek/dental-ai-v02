@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.study-chat-table-wrap { max-width:100%; overflow-x:auto; margin:10px 0; }
+.study-chat-table { width:100%; min-width:360px; border-collapse:collapse; }
+.study-chat-table th,.study-chat-table td { padding:8px 10px; border:1px solid #dbe2ea; text-align:left; vertical-align:top; }
+.study-chat-table th { background:#f1f5f9; font-weight:700; }
+</style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
         <a class="study-chat-clean-back" href="/notes/courses/{{ course.id }}" aria-label="Derse dön">←</a>
@@ -139,11 +145,51 @@
     function inlineFormat(value) {
         return value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
     }
+    function tableCells(line) {
+        let value=line.trim();
+        if (value.startsWith('|')) value=value.slice(1);
+        if (value.endsWith('|') && !value.endsWith('\\|')) value=value.slice(0,-1);
+        const cells=[];
+        let cell='';
+        for (let i=0;i<value.length;i++) {
+            if (value[i]==='\\' && value[i+1]==='|') { cell+='|'; i++; }
+            else if (value[i]==='|') { cells.push(cell.trim()); cell=''; }
+            else cell+=value[i];
+        }
+        cells.push(cell.trim());
+        return cells;
+    }
+    function markdownTable(lines,start) {
+        const header=tableCells(lines[start]);
+        if (header.length<2) return null;
+        let cursor=start+1;
+        while (cursor<lines.length && !lines[cursor].trim()) cursor++;
+        if (cursor===lines.length) return null;
+        const separator=tableCells(lines[cursor]);
+        if (separator.length!==header.length || !separator.every(cell=>/^:?-{3,}:?$/.test(cell))) return null;
+        let html='<div class="study-chat-table-wrap"><table class="study-chat-table"><thead><tr>';
+        header.forEach(cell=>{html+='<th scope="col">'+inlineFormat(cell)+'</th>';});
+        html+='</tr></thead><tbody>';
+        cursor++;
+        // Gemini sometimes emits blank lines between Markdown table rows.
+        // Input is already HTML-escaped; only these fixed tags are introduced.
+        while (cursor<lines.length) {
+            if (!lines[cursor].trim()) { cursor++; continue; }
+            const cells=tableCells(lines[cursor]);
+            if (cells.length!==header.length) break;
+            html+='<tr>'+cells.map(cell=>'<td>'+inlineFormat(cell)+'</td>').join('')+'</tr>';
+            cursor++;
+        }
+        return {html:html+'</tbody></table></div>',next:cursor};
+    }
     function safeMarkdown(text) {
         const lines = escapeHtml(normalizeAcademicText(text)).split(/\r?\n/);
         let out = '', inUl = false, inOl = false;
         function closeLists() { if (inUl) { out += '</ul>'; inUl=false; } if (inOl) { out += '</ol>'; inOl=false; } }
-        lines.forEach(line => {
+        for (let index=0;index<lines.length;index++) {
+            const line=lines[index];
+            const table=markdownTable(lines,index);
+            if (table) { closeLists(); out+=table.html; index=table.next-1; continue; }
             if (/^\s*(?:\*\*)?Soru\s+\d+(?:[:.)-])?(?:\*\*)?\s*$/i.test(line)) {
                 closeLists();
                 const clean = line.replace(/\*\*/g,'').trim().replace(/[:.)-]$/,'');
@@ -155,7 +201,7 @@
             else if (/^\d+[.)]\s+/.test(line)) { if (inUl) { out += '</ul>'; inUl=false; } if (!inOl) { out += '<ol>'; inOl=true; } out += '<li>'+inlineFormat(line.replace(/^\d+[.)]\s+/,''))+'</li>'; }
             else if (!line.trim()) { closeLists(); out += '<div class="study-chat-gap"></div>'; }
             else { closeLists(); out += '<p>'+inlineFormat(line)+'</p>'; }
-        });
+        }
         closeLists();
         return out;
     }

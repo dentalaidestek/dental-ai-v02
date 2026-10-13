@@ -317,3 +317,18 @@ def test_owned_section_recovery_from_real_fragmented_pdf_prefixes(db):
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
                                     query=plan.resolved_query,request_plan=plan)
     assert [e.chunk_id for e in result.evidence]==[1,2,3,4,5,6]
+
+
+def test_mixed_section_and_lexical_search_does_not_treat_filtered_questions_as_missing_source(db):
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    add(db,1,'Retrognatik yüz tipinde ANB artar; prognatik yüz tipinde ANB azalır.')
+    db.exec(text("UPDATE studyindexchunk SET section_title='Yapısal Değerlendirme' WHERE id=1"))
+    add(db,2,'ANB başka not açıklaması.')
+    add(db,3,'ANB hangi durumda artar? A) Yanlış seçenek B) Başka seçenek')
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION' WHERE id=3"))
+    plan=StudyRequest('İki yüz tipini ANB yönünden karşılaştır','compare','topic',None,None,'',
+                      ('yapısal değerlendirme','ANB'))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
+    assert {e.chunk_id for e in result.evidence}=={1,2}
+    assert all(e.content_kind!='QUESTION' for e in result.evidence)
