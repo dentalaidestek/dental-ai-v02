@@ -17,7 +17,6 @@ def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=N
         raise ValueError('invalid batch budget')
     seen = set()
     batches, ids, chars, pages, titles = [], [], 0, set(), []
-    material = None
     def flush():
         if ids:
             batches.append(SourceBatch(' / '.join(titles), tuple(ids)))
@@ -32,13 +31,13 @@ def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=N
                          if visual_pages is None or (int(row[1]),p) in visual_pages}
         if size > max_chars or len(current_pages) > max_pages:
             raise ValueError('source chunk exceeds batch budget')
-        # Adjacent small headings share a call, while each row retains its full
-        # parent/child heading. A heading is not itself a paid-call boundary.
-        if ids and (material != int(row[1]) or chars + size > max_chars
+        # Source identity stays on every row. Neither a heading nor a file
+        # boundary requires another model call: related facts from different
+        # files must be judged together when they fit the same input budget.
+        if ids and (chars + size > max_chars
                     or len(pages | current_pages) > max_pages):
             flush()
             ids, chars, pages, titles = [], 0, set(), []
-        material = int(row[1])
         ids.append(cid); chars += size; pages.update(current_pages)
         if title not in titles:
             titles.append(title)
