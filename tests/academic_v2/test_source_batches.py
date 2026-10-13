@@ -14,12 +14,56 @@ def test_long_section_keeps_every_middle_and_end_page_in_source_order():
     assert all(len(batch.chunk_ids) <= 16 for batch in batches)
 
 
-def test_heading_and_document_boundaries_are_preserved_and_duplicates_removed():
+def test_small_documents_share_budget_with_heading_identity_and_deduplication():
     rows = [row(1,1),row(1,1),row(2,2,'Deri noktalar > Çift noktalar'),
             row(3,1,material=2)]
     batches = partition_source_rows(rows)
-    assert [batch.chunk_ids for batch in batches] == [(1,2),(3,)]
+    assert [batch.chunk_ids for batch in batches] == [(1,2,3)]
     assert 'Tek' in batches[0].title and 'Çift' in batches[0].title
+
+
+def test_visual_page_budget_counts_same_page_number_in_different_documents():
+    rows = [row(1,1,material=1), row(2,1,material=2), row(3,1,material=3)]
+    batches = partition_source_rows(rows, max_pages=2,
+                                    visual_pages={(1,1),(2,1),(3,1)})
+    assert [batch.chunk_ids for batch in batches] == [(1,2),(3,)]
+
+
+def test_cross_document_character_budget_still_splits_without_losing_sources():
+    rows = [row(i,1,material=i,text='x'*300) for i in range(1,5)]
+    batches = partition_source_rows(rows, max_chars=1200, visual_pages=set())
+    assert [batch.chunk_ids for batch in batches] == [(1,2),(3,4)]
+
+
+def test_cross_document_comparison_reaches_one_generation_with_both_sources(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import app.academic_semantic_retrieval as semantic
+    import app.study_ai_v2 as generation
+    from app.academic_source_batches import retrieve_row_batches
+    from app.study_retrieval_v2 import RetrievalResult
+
+    rows = [row(1,90,material=1,text='Retrognatik: ANB artar.'),
+            row(2,6,material=2,text='Prognatik: ANB azalır.')]
+    session = Mock()
+    session.exec.return_value.all.return_value = []
+    plan = SimpleNamespace(needs_visual=False, scope='topic')
+    def retrieve(session, **kwargs):
+        selected = kwargs['_source_rows']
+        return RetrievalResult(note_context=[r[7] for r in selected],
+            evidence_sufficient=True, study_task={'operation':'compare','scope':'topic'})
+    monkeypatch.setattr(semantic, 'retrieve_semantic_context', retrieve)
+    result = retrieve_row_batches(session, rows=rows, owner_user_id=17,
+        course_id=23, query='İki yüz tipini karşılaştır', request_plan=plan)
+    model = Mock()
+    model.generate_stream.return_value = iter(['Retrognatik: artar. Prognatik: azalır.'])
+    monkeypatch.setattr(generation, 'target_available', lambda target: True)
+    monkeypatch.setattr(generation, 'get_provider', lambda name: model)
+    monkeypatch.setattr(generation, 'report_target_success', lambda target: None)
+    assert generation.ask_rag_v2('Course','İki yüz tipini karşılaştır',[],result)
+    assert model.generate_stream.call_count == 1
+    prompt = model.generate_stream.call_args.kwargs['prompt']
+    assert rows[0][7] in prompt and rows[1][7] in prompt
 
 
 def test_character_budget_splits_without_discarding_remainder():
