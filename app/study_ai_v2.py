@@ -22,6 +22,7 @@ logger = logging.getLogger('uvicorn.error.study_ai_v2')
 
 
 ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"
+BATCH_NO_SUPPORT = '<!--ACADEMIC_BATCH_NO_SUPPORT-->'
 V2_SYSTEM_PROMPT = STUDY_SYSTEM_PROMPT + '''
 
 BU TURUN ÖNCELİĞİ:
@@ -93,7 +94,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         context += "\nBu metin OCR transkripsiyonudur; isimleri ve küçük yazıları orijinal ekte bulmaya yardım eder. Her ifadeyi orijinal görselle doğrula; yanlış şıkları ve eski/üstü çizilmiş ifadeleri öğretme."
     understood = retrieval.resolved_query or question
     continuation = (
-        "Kaynak sorularını kaynak sırasıyla çöz. Kaynakta olmayan soru veya şık üretme. "
+        "Kaynak sorularını kaynak sırasıyla işle; yalnız kullanıcı çözüm istiyorsa çöz. Kaynakta olmayan soru veya şık üretme. "
         + ("Bu turda yalnız ilk bölüm getirildi; devamının bulunduğunu belirt. " if retrieval.has_more else "")
         if retrieval.retrieval_mode == 'questions_exhaustive' else ""
     )
@@ -127,6 +128,15 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            "kaç soru hazırlayabildiğini ve eksik kalan adedi açıkça belirt.\n\n"
            if retrieval.study_task.get('operation') == 'generate_questions' else "")
         +
+        ("MEVCUT KAYNAK SORULARI: Kullanıcı yeni soru üretmeni değil mevcut soruları istiyor. "
+         "Düzenleme/aktarma isteğinde soru kökü, şıklar, sıralama ve anlamı koru; çözüm veya cevap anahtarı istenmemişse ekleme. "
+         "Soru/şık metnini aynen aktarmak, onu doğru akademik bilgi olarak onaylamak değildir. "
+         "Yanlış seçenekleri de metnin parçası olarak aktar; fakat açıklama veya çözümde doğru bilgi gibi kullanma. "
+         "Okuyamadığın metni uydurma; hangi sorunun okunamadığını belirt. Sorunun geçmiş sınavda çıktığını yalnız kaynak bunu gösteriyorsa söyle.\n\n"
+         if retrieval.study_task.get('source_kind') == 'questions' else "")
+        + "PDF istenirse tamamlanan yanıtın altındaki 'Yazdır / PDF kaydet' düğmesini kullanabileceğini belirt. "
+        "Dosya eki veya indirme bağlantısı oluşturduğunu iddia etme.\n\n"
+        +
         "KAYNAK DESTEĞİNİ DEĞERLENDİR:\n"
         "Bunlar aramayla getirilen aday kaynaklardır. Yerel bir kural motoru sorunun "
         "tamamını desteklediklerini doğrulamış değildir. Her istek ve karşılaştırma "
@@ -142,6 +152,12 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         + ("Ders kapsamı sınırlı temsili parçalardan oluşur; tüm notları okumuş gibi davranma. "
            if retrieval.retrieval_mode == 'coverage' and not retrieval.source_coverage_complete else "")
         + continuation + "\n\n"
+        + ("BÖLÜM İŞLEME KURALI: Bu, aynı yanıtın ayrı işlenen bir kaynak bölümüdür. "
+           "Bu bölüm isteğin hiçbir kısmını desteklemiyorsa kullanıcıya ret veya açıklama sorusu yazma; "
+           f"yalnız {BATCH_NO_SUPPORT} döndür. Başka bölümler cevabı destekleyebilir. "
+           "Destek varsa yalnız desteklenen içeriği yaz; bu bölümde olmayan bilgiler için tüm notlar adına konuşma.\n\n"
+           if retrieval.study_task.get('batch_partial') else "")
+        +
         "Sayfa/dosya atıflarını yalnız verilen KANIT/INTERNAL_SOURCE bilgisinden aktar; uydurma.\n\n"
         f"GEMINI'NİN YORUMLADIĞI İSTEK:\n{understood}\n\n"
         f"KULLANICININ ÖZGÜN MESAJI:\n{question}"
@@ -173,13 +189,19 @@ def _stream_source_batches(course_title, question, history, retrieval):
             request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
                        'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
                        'diğer bölümlerin notlarda bulunmadığını iddia etme.')
-        prepared_child = replace(child, study_task=task, resolved_query=request)
+        task['batch_partial'] = True
+        prepared_child = replace(child, study_task=task, resolved_query=request,
+                                 semantic_trace_id=retrieval.semantic_trace_id)
         output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
-        outputs.append(output)
         child.attachments.clear()
+        if output == BATCH_NO_SUPPORT:
+            continue
+        outputs.append(output)
         if operation != 'generate_questions':
-            yield ('\n\n' if index > 1 else '') + output
-    if operation == 'generate_questions':
+            yield ('\n\n' if len(outputs) > 1 else '') + output
+    if not outputs:
+        yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım. İlgili konu veya dosya adını biraz daha açık yazar mısın?'
+    elif operation == 'generate_questions':
         # Source-grounded extraction for every section, followed by one question
         # generation call with the ORIGINAL total count. Never multiply it by N.
         reduced = RetrievalResult(note_context=[f'BÖLÜM {i}:\n{text}' for i,text in enumerate(outputs,1)],
@@ -283,6 +305,8 @@ def stream_rag_v2(
                     yield chunk
             if not emitted:
                 raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
+            if getattr(provider, 'last_finish_reason', 'UNKNOWN') == 'MAX_TOKENS':
+                raise StudyAIError('Yanıt uzunluk sınırına ulaştığı için tamamlanamadı. İsteği daha küçük konu gruplarına ayırarak tekrar gönderin.')
             report_target_success(target)
             logger.info('Academic flow trace=%s stage=response origin=provider provider=%s model=%s emitted=%s finish=%s',
                         trace_id, target.provider, target.model, emitted,

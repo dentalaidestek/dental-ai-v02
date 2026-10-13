@@ -95,3 +95,28 @@ def test_reader_paginates_beyond_old_limit_with_owner_course_fences(monkeypatch)
     assert len(list(load_owned_source_rows(None,owner_user_id=17,course_id=23)))==300
     assert [kw['after_id'] for kw in calls]==[0,128,256,300]
     assert all(kw['owner_user_id']==17 and kw['course_id']==23 for kw in calls)
+
+
+def test_question_reader_visits_beyond_first_sixteen_without_fact_filter(monkeypatch):
+    from app.academic_source_batches import load_owned_question_rows
+    import app.study_retrieval_v2 as module
+    rows=[tuple(list(row(i,i))[:6]+['QUESTION']+list(row(i,i))[7:]) for i in range(1,71)]
+    calls=[]
+    def questions(session, **kw):
+        calls.append(kw)
+        after=kw['after_cursor'] or (0,0)
+        return [r for r in rows if (r[1],r[13])>after][:33]
+    monkeypatch.setattr(module,'_question_rows',questions)
+    selected=list(load_owned_question_rows(None,owner_user_id=17,course_id=23))
+    assert selected==rows
+    batches=partition_source_rows(selected,include_questions=True,visual_pages=set())
+    assert [cid for batch in batches for cid in batch.chunk_ids]==list(range(1,71))
+    assert all(c['owner_user_id']==17 and c['course_id']==23 for c in calls)
+    assert list(partition_source_rows(selected,visual_pages=set()))==[]
+
+
+def test_question_reader_rejects_nonadvancing_cursor(monkeypatch):
+    from app.academic_source_batches import load_owned_question_rows
+    monkeypatch.setattr('app.study_retrieval_v2._question_rows',lambda *a,**k:[row(1,1)])
+    with pytest.raises(ValueError,match='did not advance'):
+        list(load_owned_question_rows(None,owner_user_id=17,course_id=23))

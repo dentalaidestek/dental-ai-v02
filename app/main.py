@@ -5244,7 +5244,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             return
         except Exception as exc:
             logger.warning("Academic V2 streaming generation failed (%s)", type(exc).__name__)
-            safe_error = "Akademik AI akışı tamamlanamadı. Ders kaynaklarını kontrol edip tekrar deneyin."
+            safe_error = (str(exc) if isinstance(exc, StudyAIError) else
+                          "Yanıt tamamlanamadı. Lütfen kısa süre sonra tekrar deneyin.")
             yield json.dumps({"type": "error", "error": safe_error}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(

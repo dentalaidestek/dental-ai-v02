@@ -5,6 +5,19 @@
 .study-chat-table { width:100%; min-width:360px; border-collapse:collapse; }
 .study-chat-table th,.study-chat-table td { padding:8px 10px; border:1px solid #dbe2ea; text-align:left; vertical-align:top; }
 .study-chat-table th { background:#f1f5f9; font-weight:700; }
+.study-answer-print { margin-top:12px; padding:6px 10px; font-size:13px; }
+.study-incomplete-notice { color:#9b2c2c; margin-top:10px; }
+.study-print-area { display:none; }
+@media print {
+    body.study-printing { height:auto !important; overflow:visible !important; margin:0 !important; }
+    body.study-printing > * { display:none !important; }
+    body.study-printing > .study-print-area { display:block !important; color:#111; background:white; font:12pt/1.5 sans-serif; }
+    .study-print-area table { width:100%; min-width:0; border-collapse:collapse; }
+    .study-print-area th,.study-print-area td { border:1px solid #999; padding:6px; text-align:left; }
+    .study-print-area h3 { break-after:avoid; }
+    .study-print-area tr { break-inside:avoid; }
+    .study-print-area .study-chat-markdown { max-height:none !important; overflow:visible !important; }
+}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -207,6 +220,29 @@
     }
     document.querySelectorAll('.study-chat-markdown').forEach(el => { el.innerHTML = safeMarkdown(el.textContent); });
 
+    function addPrintButton(article) {
+        if (article.querySelector('.study-answer-print')) return;
+        const button=document.createElement('button');
+        button.type='button'; button.className='study-answer-print';
+        button.textContent='Yazdır / PDF kaydet';
+        button.addEventListener('click',()=>{
+            const old=document.getElementById('studyPrintArea');
+            if (old) old.remove();
+            const area=document.createElement('div');
+            area.id='studyPrintArea'; area.className='study-print-area';
+            const title=document.createElement('h1');
+            title.textContent=document.querySelector('.study-chat-clean-title strong').textContent;
+            area.appendChild(title);
+            area.appendChild(article.querySelector('.study-chat-markdown').cloneNode(true));
+            document.body.appendChild(area); document.body.classList.add('study-printing');
+            const cleanup=()=>{area.remove();document.body.classList.remove('study-printing');};
+            window.addEventListener('afterprint',cleanup,{once:true});
+            try { window.print(); } catch (error) { cleanup(); }
+        });
+        article.querySelector('.study-chat-content').appendChild(button);
+    }
+    document.querySelectorAll('.study-chat-message.assistant').forEach(addPrintButton);
+
     function isNearBottom() {
         return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 180;
     }
@@ -251,6 +287,7 @@
         send.disabled=true;
         const data = new FormData();
         data.append('message', text);
+        let answer='';
         try {
             const endpoint = v2Streaming ? '/notes/courses/'+courseId+'/ai/ask-stream' : '/notes/courses/'+courseId+'/ai/ask';
             const response = await fetch(endpoint, {method:'POST', body:data, credentials:'same-origin'});
@@ -265,7 +302,7 @@
                     throw new Error(result.error || 'AI akışı başlatılamadı.');
                 }
                 const reader=response.body.getReader(),decoder=new TextDecoder();
-                let buffer='',answer='',finished=false;
+                let buffer='',finished=false;
                 while (true) {
                     const part=await reader.read();
                     buffer+=decoder.decode(part.value||new Uint8Array(),{stream:!part.done});
@@ -286,10 +323,20 @@
                 }
                 if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
             }
+            addPrintButton(pending);
             scrollChatBottom();
         } catch (err) {
-            pending.remove();
-            userMessage.remove();
+            if (answer) {
+                pending.classList.remove('pending');
+                const warning=document.createElement('p');
+                warning.className='study-incomplete-notice';
+                warning.textContent='Bu yanıt tamamlanmadı ve sohbet geçmişine kaydedilmedi.';
+                pending.querySelector('.study-chat-content').appendChild(warning);
+            } else {
+                pending.remove();
+                userMessage.remove();
+            }
+            if (!input.value.trim()) input.value=text;
             status.textContent = err.message || 'Bir hata oluştu.';
         } finally {
             send.disabled=false;
