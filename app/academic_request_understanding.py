@@ -102,14 +102,24 @@ put count/difficulty in their fields too. For course scope use an explicit
 such as '<qualified subjects> hakkında ...'. If count is absent use null,
 not an invented default. Teach means preparing/explaining a lesson, not merely
 searching the words 'ders oluştur'. Do not copy operation words into topics.
-source_kind is notes for factual answers/new questions, questions for solving
-actual questions in the uploaded source, or question_patterns when explicitly
+source_kind is notes for factual answers/new questions, questions for finding,
+listing, transcribing, formatting, exporting or solving actual questions in the
+uploaded source, or question_patterns when explicitly
 analysing/using past-exam patterns. Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
 requested. needs_visual is true when the task needs an actual source diagram,
 image, marked region or table. These fields control source retrieval directly. continue_source is true only
 for continuing the previously paginated SOURCE question list, never for a fresh
 request or a request to restart from the beginning.
+Reformatting existing exam questions is NOT generate_questions and does not
+require solving them: use answer + questions, preserving the requested format
+in resolved_query. All existing questions means course scope. Do not replace
+this with new questions. PDF requests are study tasks: retrieve their requested
+content normally; the UI offers printing/saving a completed answer as PDF.
+You have NOT searched the question index. The heading outline excludes question
+records. Neither absent headings nor previous assistant denials prove that
+exam questions are missing. Never answer a source-availability question or
+deny the presence of questions in clarification; route it to source retrieval.
 For an ordinary greeting/acknowledgement return clarify with a natural short
 conversational reply in clarification. Do not invent a study request.
 Never turn missing search results into a claim that the notes contain no facts.
@@ -263,7 +273,9 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.scope == 'course' and plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions'}:
+    if plan.scope == 'course' and plan.operation != 'clarify' and (
+            (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions'})
+            or (plan.source_kind == 'questions' and not plan.continue_source)):
         from app.academic_source_batches import retrieve_source_batches
         result = retrieve_source_batches(session, request_plan=plan, **kwargs)
     else:

@@ -332,3 +332,20 @@ def test_mixed_section_and_lexical_search_does_not_treat_filtered_questions_as_m
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
     assert {e.chunk_id for e in result.evidence}=={1,2}
     assert all(e.content_kind!='QUESTION' for e in result.evidence)
+
+
+def test_whole_source_question_request_includes_beyond_sixteen_with_ownership_fences(db):
+    from app.academic_request_understanding import StudyRequest, UnderstandingResult, retrieve_understood_course_context
+    for ident in range(1,76):
+        add(db,ident,f'{ident}. Kaynaktaki soruyu aynen aktar. A) Birinci seçenek B) İkinci seçenek')
+    add(db,76,'foreign question',owner=99)
+    add(db,77,'other course question',course=99)
+    add(db,78,'old question',version='v0')
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION'"))
+    plan=StudyRequest('Mevcut soruların hepsini aynen düzenle, çözme','answer','course',None,None,'',source_kind='questions')
+    result=retrieve_understood_course_context(db,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,recent_history=[],
+        understanding=UnderstandingResult(plan=plan,attempted=True,outcome='interpreted'))
+    assert [e.chunk_id for e in result.evidence]==list(range(1,76))
+    assert result.study_task['source_kind']=='questions'
+    assert len(result.source_batches)>1

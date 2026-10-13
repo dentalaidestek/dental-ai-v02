@@ -53,3 +53,40 @@ def test_missing_originals_stop_before_model_call(monkeypatch):
     with pytest.raises(StudyAIError):
         ask_rag_v2('Course','Her konuyu özetle',[],result)
     value.generate_stream.assert_not_called()
+
+
+@pytest.mark.parametrize('outputs',[
+    ['Supported answer','<!--ACADEMIC_BATCH_NO_SUPPORT-->'],
+    ['<!--ACADEMIC_BATCH_NO_SUPPORT-->','Supported answer'],
+])
+def test_unsupported_batch_does_not_append_denial_to_supported_answer(monkeypatch,outputs):
+    value=provider(monkeypatch,outputs)
+    assert ask_rag_v2('Course','Karşılaştır',[],parent('compare'))=='Supported answer'
+    assert value.generate_stream.call_count==2
+    assert 'BÖLÜM İŞLEME KURALI' in value.generate_stream.call_args.kwargs['prompt']
+
+
+def test_all_unsupported_batches_produce_one_honest_reply(monkeypatch):
+    value=provider(monkeypatch,['<!--ACADEMIC_BATCH_NO_SUPPORT-->']*2)
+    result=ask_rag_v2('Course','Soru hazırla',[],parent('generate_questions',20))
+    assert result.count('bilgi bulamadım')==1
+    assert 'ACADEMIC_BATCH' not in result
+    assert value.generate_stream.call_count==2
+
+
+def test_question_transcription_is_not_forced_to_solve_or_create_questions(monkeypatch):
+    from app.study_ai_v2 import _prompt
+    result=RetrievalResult(note_context=['1. Kaynak sorusu A) Yanlış şık'],evidence_sufficient=True,
+        study_task={'operation':'answer','scope':'course','source_kind':'questions'})
+    prompt=_prompt('Course','Mevcut soruları aynen düzenle, çözme',result)
+    assert 'MEVCUT KAYNAK SORULARI' in prompt
+    assert 'Yanlış seçenekleri de metnin parçası olarak aktar' in prompt
+    assert 'YENİ SORU ÜRETİMİ' not in prompt
+
+
+def test_token_limited_answer_is_never_reported_as_complete(monkeypatch):
+    value=provider(monkeypatch,['Soru 10: yarım'])
+    value.last_finish_reason='MAX_TOKENS'
+    result=RetrievalResult(note_context=['Source'],evidence_sufficient=True)
+    with pytest.raises(StudyAIError,match='uzunluk sınırına'):
+        ask_rag_v2('Course','Hepsini anlat',[],result)

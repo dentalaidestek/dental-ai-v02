@@ -12,7 +12,8 @@ class SourceBatch:
     chunk_ids: tuple[int, ...]
 
 
-def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=None):
+def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=None,
+                          include_questions=False):
     if max_chars < 1 or max_pages < 1:
         raise ValueError('invalid batch budget')
     seen = set()
@@ -22,7 +23,7 @@ def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=N
             batches.append(SourceBatch(' / '.join(titles), tuple(ids)))
     for row in sorted(rows, key=lambda r: (int(r[1]), int(r[3]), int(r[13]), int(r[0]))):
         cid = int(row[0])
-        if cid in seen or str(row[6]).upper() == 'QUESTION':
+        if cid in seen or (not include_questions and str(row[6]).upper() == 'QUESTION'):
             continue
         seen.add(cid)
         title = str(row[5] or row[2] or 'Ders notu')
@@ -71,9 +72,26 @@ def retrieve_source_batches(session, *, owner_user_id, course_id, query,
                             request_plan, recent_history=None, **kwargs):
     from app.academic_semantic_retrieval import retrieve_semantic_context
     from app.study_retrieval_v2 import RetrievalResult
-    rows = list(load_owned_source_rows(session, owner_user_id=owner_user_id, course_id=course_id))
+    loader = load_owned_question_rows if request_plan.source_kind == 'questions' else load_owned_source_rows
+    rows = list(loader(session, owner_user_id=owner_user_id, course_id=course_id))
     return retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
         course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
+
+
+def load_owned_question_rows(session, *, owner_user_id, course_id):
+    """Visit the complete question candidate index, retaining source order."""
+    from app.study_retrieval_v2 import _question_rows
+    cursor = None
+    while True:
+        rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
+                              limit=32, after_cursor=cursor)
+        if not rows:
+            return
+        next_cursor = (int(rows[-1][1]), int(rows[-1][13]))
+        if cursor is not None and next_cursor <= cursor:
+            raise ValueError('question source cursor did not advance')
+        yield from rows
+        cursor = next_cursor
 
 
 def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
@@ -90,8 +108,13 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
         "AND m.index_status='READY' AND m.deleted_at IS NULL "
         "AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
         params={'owner':owner_user_id,'course':course_id}).all()}
+    questions = getattr(request_plan,'source_kind','notes')=='questions'
+    # Verbatim question output is much longer than a summary of the same
+    # inputs. Bound those sections for the existing generation output budget.
     batches = partition_source_rows(rows,visual_pages=visual_pages,
-        max_pages=8 if request_plan.scope=='topic' else 16)
+        max_chars=14000 if questions else 96000,
+        max_pages=4 if questions else (8 if request_plan.scope=='topic' else 16),
+        include_questions=questions)
     by_id = {int(row[0]): row for row in rows}
     children = [retrieve_semantic_context(session, owner_user_id=owner_user_id,
         course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history,
