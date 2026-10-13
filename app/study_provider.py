@@ -24,6 +24,7 @@ from app.study_router_state import (
 )
 
 logger = logging.getLogger(__name__)
+timing_logger = logging.getLogger('uvicorn.error.gemini_timing')
 
 
 class _GeminiTiming:
@@ -62,7 +63,7 @@ class _GeminiTiming:
 
     def finish(self):
         self.next('finished')
-        logger.info('Gemini timing id=%s model=%s operation=%s mode=%s input_bytes=%s structured=%s '
+        timing_logger.info('Gemini timing id=%s model=%s operation=%s mode=%s input_bytes=%s structured=%s '
                     'phases_ms=%s first_text_ms=%s finish_event_ms=%s tokens=%s total_ms=%s',
                     self.identifier, self.model, self.operation, self.mode, self.input_bytes,
                     self.structured, self.durations, self.first_text_ms, self.finish_event_ms, self.tokens,
