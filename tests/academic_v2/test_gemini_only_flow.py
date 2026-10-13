@@ -202,19 +202,49 @@ def test_prompt_describes_actual_coverage_without_inventing_missing_sources(comp
 
 
 @pytest.mark.parametrize('operation', ['explain', 'compare', 'teach', 'summarize'])
-def test_grounded_explanations_do_not_copy_prior_assistant_facts(operation):
+def test_grounded_followups_keep_the_referenced_answer_as_context(operation):
     from app.study_retrieval_v2 import RetrievalResult
-    from app.study_ai_v2 import _prompt
-    result = RetrievalResult(note_context=['Güncel ANB kaynağı'],
-        resolved_query='ANB ile SNA tanımlarını karşılaştır', study_task={'operation': operation})
-    history = [{'role': 'USER', 'content': 'ANB konusunu çalışıyorum'},
-               {'role': 'ASSISTANT', 'content': 'Önceki yanlış birleşik tanım'}]
-    prompt = _prompt('Ortoo', 'İkisini karşılaştır', result, history)
-    assert 'Önceki yanlış birleşik tanım' not in prompt
-    assert 'ANB konusunu çalışıyorum' in prompt
-    assert 'Güncel ANB kaynağı' in prompt
-    assert 'ANB ile SNA tanımlarını karşılaştır' in prompt
-    assert len(history) == 2
+    from app.study_ai_v2 import _prompt, V2_SYSTEM_PROMPT
+    result = RetrievalResult(note_context=['Güncel kaynak: A, B, C, D, E'],
+        resolved_query='Önceki beş öğenin tamamını istenen biçimde anlat', study_task={'operation': operation})
+    history = [{'role': 'USER', 'content': 'Beş öğenin tamamını açıkla'},
+               {'role': 'ASSISTANT', 'content': '1. A\n2. B\n3. C\n4. D\n5. E'},
+               {'role': 'USER', 'content': 'Bunları dönüştür; hiçbirini atlama'}]
+    prompt = _prompt('Ders', history[-1]['content'], result, history)
+    assert history[1]['content'].replace('\n', '\\n') in prompt
+    assert 'Güncel kaynak: A, B, C, D, E' in prompt
+    assert 'doğrulanmış akademik kanıt değildir' in V2_SYSTEM_PROMPT
+    assert 'Önceki cevap notlarla çelişiyorsa düzelt' in V2_SYSTEM_PROMPT
+    assert len(history) == 3
+
+
+def test_generation_keeps_referents_without_sending_assistant_examples(monkeypatch):
+    import app.study_ai_v2 as generation
+    from app.study_retrieval_v2 import RetrievalResult
+    result=RetrievalResult(note_context=['Current owned source'],evidence_sufficient=True,
+        resolved_query='Listedeki ikinci ve beşinci öğeyi karşılaştır',study_task={'operation':'compare'})
+    history=[{'role':'ASSISTANT','content':'1. A\n2. B\n3. C\n4. D\n5. E'},
+             {'role':'USER','content':'İkinci ve beşincinin farkı ne?'}]
+    provider=Mock()
+    provider.generate_stream.return_value=iter(['provider response'])
+    monkeypatch.setattr(generation,'target_available',lambda target:True)
+    monkeypatch.setattr(generation,'get_provider',lambda name:provider)
+    monkeypatch.setattr(generation,'report_target_success',lambda *a,**k:None)
+    assert 'provider response' in ''.join(generation.stream_rag_v2('Course',history[-1]['content'],history,result))
+    call=provider.generate_stream.call_args.kwargs
+    assert call['history']==[]
+    assert history[0]['content'].replace('\n','\\n') in call['prompt']
+    assert 'Current owned source' in call['prompt']
+    provider.generate_stream.assert_called_once()
+
+
+def test_generation_context_remains_bounded_and_does_not_mutate_dialogue():
+    from app.study_ai_v2 import _generation_history
+    from app.study_retrieval_v2 import RetrievalResult
+    history=[{'role':'ASSISTANT' if i%2 else 'USER','content':str(i)} for i in range(12)]
+    original=[dict(turn) for turn in history]
+    assert _generation_history(RetrievalResult(study_task={'operation':'summarize'}),history)==history[-8:]
+    assert history==original
 
 
 @pytest.mark.parametrize('operation', ['answer', 'solve'])
