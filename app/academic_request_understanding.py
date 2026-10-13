@@ -148,6 +148,38 @@ class UnderstandingResult:
     attempted: bool = False
     outcome: str = 'unavailable'
     trace_id: str = ''
+    failure_reason: str = ''
+
+
+def _provider_failure_reason(error):
+    """Fixed public categories; never forward provider/user/credential text."""
+    from app.study_provider import StudyProviderError
+    if not isinstance(error, StudyProviderError):
+        return 'invalid_response'
+    if error.code == 429:
+        return 'rate_limit'
+    if error.code in {401, 403}:
+        return 'authorization'
+    if error.code in {400, 404}:
+        return 'configuration'
+    if error.code == 408:
+        return 'timeout'
+    if error.code and error.code >= 500:
+        return 'provider_unavailable'
+    import urllib.error
+    current = error
+    for _ in range(6):
+        if isinstance(current, TimeoutError) or (
+            isinstance(current, urllib.error.URLError)
+            and current.reason in ('ReadTimeoutError', 'ConnectTimeoutError')
+        ):
+            return 'timeout'
+        if isinstance(current, urllib.error.URLError):
+            return 'network'
+        current = current.__cause__
+        if current is None:
+            break
+    return 'provider_unavailable'
 
 
 class PlannerContractError(ValueError):
@@ -229,8 +261,11 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
         # No transcript, model output or exception text in public operational logs.
         reason = (str(exc) if isinstance(exc, PlannerContractError) else
                   'invalid_json' if isinstance(exc, json.JSONDecodeError) else 'call_failed')
-        logger.warning('Semantic request failed type=%s reason=%s', type(exc).__name__, reason)
-        return UnderstandingResult(attempted=True, outcome='failed', trace_id=trace_id)
+        failure_reason = _provider_failure_reason(exc)
+        logger.warning('Semantic request failed trace=%s type=%s reason=%s failure=%s',
+                       trace_id, type(exc).__name__, reason, failure_reason)
+        return UnderstandingResult(attempted=True, outcome='failed', trace_id=trace_id,
+                                   failure_reason=failure_reason)
     finally:
         logger.info('Semantic request elapsed_ms=%s', round((time.perf_counter()-started)*1000))
 
@@ -247,17 +282,20 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
     model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-3.5-flash-lite').strip()
     provider = GeminiStudyProvider()
-    if not provider.api_key or not target_available(ProviderTarget('gemini', model)):
-        return UnderstandingResult(outcome='unavailable')
+    if not provider.api_key:
+        return UnderstandingResult(outcome='unavailable', failure_reason='configuration')
+    if not target_available(ProviderTarget('gemini', model)):
+        logger.info('Academic planner skipped provider=gemini reason=provider_wait')
+        return UnderstandingResult(outcome='unavailable', failure_reason='provider_wait')
     try:
-        planner_timeout = int(os.getenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS', '45'))
+        planner_timeout = int(os.getenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS', '75'))
     except ValueError:
-        planner_timeout = 45
+        planner_timeout = 75
     provider.timeout = max(10, min(planner_timeout, 75))
     provider.max_attempts = 1
     provider.response_schema = SCHEMA
     def call(prompt):
-        logger.info('Academic planner provider=gemini model=%s', model)
+        logger.info('Academic planner provider=gemini model=%s timeout_seconds=%s', model, provider.timeout)
         return provider.generate(model=model, system_prompt=SYSTEM, history=[], prompt=prompt,
                                  temperature=0, max_output_tokens=4096)
     return interpret_request(question, history, call=call, source_outline=source_outline)
@@ -268,10 +306,20 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
     if understanding.plan is None:
+        failures = {
+            'timeout': 'Sorunu anlamlandırırken yapay zekâ sağlayıcısının yanıt süresi doldu. Yanıt oluşturulmadı; mesajını yeniden gönderebilirsin.',
+            'provider_wait': 'Yapay zekâ sağlayıcısı şu anda geçici beklemede. Bu, bağlantı hatası sonrası koruma veya kullanım sınırı nedeniyle olabilir. Kısa süre sonra yeniden deneyebilirsin.',
+            'rate_limit': 'Yapay zekâ isteği kullanım sınırı veya eşzamanlı kapasite nedeniyle beklemeye alındı. Kısa süre sonra yeniden deneyebilirsin.',
+            'authorization': 'Yapay zekâ sağlayıcısı sunucunun erişimini reddetti. Sunucu bağlantı ayarının düzeltilmesi gerekiyor.',
+            'configuration': 'Yapay zekâ sağlayıcısının sunucu ayarında sorun var. Sunucu yapılandırmasının düzeltilmesi gerekiyor.',
+            'provider_unavailable': 'Yapay zekâ sağlayıcısı şu anda yanıt veremiyor. Mesajın tamamlanmış bir yanıt olarak kaydedilmedi.',
+            'network': 'Sunucu ile yapay zekâ sağlayıcısı arasındaki bağlantı kurulamadı. Mesajını yeniden gönderebilirsin.',
+            'invalid_response': 'Yapay zekâ sağlayıcısının soruyu anlama yanıtı doğrulanamadı. Mesajını yeniden gönderebilirsin.',
+        }
         message = (
             'Konuşma bu turda işlenebilecek uzunluğu aşıyor. İlgili soruyu daha kısa bir mesajla tekrar gönderir misin?'
             if understanding.outcome == 'input_budget' else
-            'Şu anda bağlantı sorunu nedeniyle yanıt hazırlayamadım. Lütfen tekrar dene.'
+            failures.get(understanding.failure_reason, 'Şu anda bağlantı sorunu nedeniyle yanıt hazırlayamadım. Lütfen tekrar dene.')
         )
         return RetrievalResult(resolved_query=kwargs.get('query', ''),
             retrieval_mode='interpretation_unavailable', clarification=message,

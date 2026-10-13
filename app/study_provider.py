@@ -347,6 +347,9 @@ class GeminiStudyProvider(StudyProvider):
                     retryable=True,
                     tracked=True,
                 )
+                # Retain the typed transport cause for safe timeout/network
+                # classification after leaving this except block.
+                last_error.__cause__ = exc
 
             if not last_error.retryable or attempt >= self.max_attempts:
                 raise last_error

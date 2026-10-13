@@ -336,7 +336,7 @@ def test_planner_cannot_select_section_outside_supplied_owned_outline():
     call.assert_called_once()
 
 
-@pytest.mark.parametrize('configured,expected', [(None,45),('bad',45),('1',10),('999',75),('30',30)])
+@pytest.mark.parametrize('configured,expected', [(None,75),('bad',75),('1',10),('999',75),('30',30)])
 def test_planner_wait_budget_is_bounded_without_adding_retries(monkeypatch,configured,expected):
     from app.academic_request_understanding import understand_study_request
     import app.study_provider as providers
@@ -353,3 +353,57 @@ def test_planner_wait_budget_is_bounded_without_adding_retries(monkeypatch,confi
     assert result.plan is not None
     assert provider.timeout==expected and provider.max_attempts==1
     provider.generate.assert_called_once()
+
+
+def test_real_transport_timeout_is_preserved_and_not_reported_as_quota(monkeypatch, caplog):
+    import urllib.error
+    from contextlib import nullcontext
+    import app.study_provider as providers
+    from app.academic_request_understanding import retrieve_understood_course_context
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-only')
+    provider = providers.GeminiStudyProvider()
+    provider.max_attempts = 1
+    monkeypatch.setattr(providers, 'router_target_available', lambda *args: True)
+    monkeypatch.setattr(providers, 'provider_reservation', lambda *args: nullcontext())
+    monkeypatch.setattr(providers, 'record_api_result', Mock())
+    transport = Mock(side_effect=urllib.error.URLError('ReadTimeoutError'))
+    monkeypatch.setattr(providers, 'urlopen', transport)
+    result = interpret_request('PRIVATE-REQUEST', [], call=lambda prompt: provider.generate(
+        model='gemini-3.5-flash-lite', system_prompt='Interpret', history=[], prompt=prompt))
+    assert result.plan is None and result.failure_reason == 'timeout'
+    transport.assert_called_once()
+    reply = retrieve_understood_course_context(Mock(), understanding=result,
+        owner_user_id=17, course_id=23, query='PRIVATE-REQUEST', recent_history=[])
+    assert 'yanıt süresi doldu' in reply.clarification
+    assert 'limit' not in reply.clarification and not reply.evidence_sufficient
+    assert 'PRIVATE-REQUEST' not in caplog.text
+
+
+@pytest.mark.parametrize('code,reason', [(429,'rate_limit'), (403,'authorization'),
+    (404,'configuration'), (503,'provider_unavailable')])
+def test_planner_preserves_fixed_provider_failure_categories(code, reason, caplog):
+    from app.study_provider import StudyProviderError
+    from app.academic_request_understanding import retrieve_understood_course_context
+    result = interpret_request('Soru', [], call=Mock(side_effect=StudyProviderError(
+        'PRIVATE-VENDOR-BODY', code=code)))
+    assert result.failure_reason == reason
+    reply = retrieve_understood_course_context(Mock(), understanding=result,
+        owner_user_id=17, course_id=23, query='Soru', recent_history=[])
+    assert reply.clarification and 'PRIVATE-VENDOR-BODY' not in reply.clarification
+    assert 'PRIVATE-VENDOR-BODY' not in caplog.text
+
+
+def test_provider_wait_does_not_call_gemini_or_claim_user_quota_exhausted(monkeypatch):
+    import app.study_provider as providers
+    from app.academic_request_understanding import retrieve_understood_course_context
+    provider = Mock(api_key='test-only')
+    monkeypatch.setattr(providers, 'GeminiStudyProvider', lambda: provider)
+    monkeypatch.setattr(providers, 'target_available', lambda target: False)
+    monkeypatch.delenv('STUDY_ACADEMIC_LOCAL_ROUTING', raising=False)
+    result = understand_study_request('Notlardaki tüm soruları aktar', [])
+    assert result.failure_reason == 'provider_wait' and not result.attempted
+    provider.generate.assert_not_called()
+    reply = retrieve_understood_course_context(Mock(), understanding=result,
+        owner_user_id=17, course_id=23, query='Soru', recent_history=[])
+    assert 'geçici beklemede' in reply.clarification
+    assert 'limitiniz doldu' not in reply.clarification
