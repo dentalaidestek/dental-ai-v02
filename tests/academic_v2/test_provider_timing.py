@@ -96,3 +96,12 @@ def test_timeout_timing_retains_failed_phase_and_single_attempt(monkeypatch, cap
     assert error.value.__cause__.reason == 'ReadTimeoutError'
     log = next(record.message for record in caplog.records if 'Gemini timing' in record.message)
     assert "'headers': 45000" in log and 'PRIVATE-' not in log
+
+
+def test_phase_timings_follow_uvicorn_level_when_root_filters_info(caplog):
+    with caplog.at_level(logging.WARNING), caplog.at_level(logging.INFO, logger='uvicorn.error'):
+        timing = providers._GeminiTiming(model='test-model', operation='generation',
+            mode='json', input_bytes=1, structured=True)
+        timing.finish()
+    assert any(record.name == 'uvicorn.error.gemini_timing'
+        and 'Gemini timing' in record.message for record in caplog.records)
