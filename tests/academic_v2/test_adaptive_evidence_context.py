@@ -70,3 +70,21 @@ def test_enabled_gateway_requests_adaptive_context_without_changing_gemini_task(
         owner_user_id=17,course_id=23,query='İkisini tabloyla karşılaştır',recent_history=[])
     assert retrieve.call_args.kwargs['prefer_full_context'] is True
     assert retrieve.call_args.kwargs['request_plan'] is plan
+
+
+def test_named_subsection_boundary_prevents_whole_course_expansion(monkeypatch):
+    import app.academic_semantic_retrieval as module
+    from app.academic_chunk_links import build_course_links
+    rows=[(1,1,'note',1,1,'Alpha > Single','TEXT','One definition',1,.2,None,None,1,1,'{}'),
+          (2,1,'note',2,2,'Alpha > Paired','TEXT','Excluded sibling',1,.2,None,None,1,2,'{}')]
+    monkeypatch.setattr(module,'get_course_links',lambda *a,**k:build_course_links([rows]))
+    monkeypatch.setattr('app.academic_evidence_context.small_note_context',
+                        Mock(side_effect=AssertionError('named section broadened')))
+    monkeypatch.setattr(module,'_fts_rows',Mock(return_value=[]))
+    monkeypatch.setattr(module,'_coverage_evidence_rows',lambda session,**kw:[row for row in rows if row[0] in kw['chunk_ids']])
+    session=Mock();session.get_bind.return_value.dialect.name='postgresql'
+    session.exec.return_value.all.return_value=[]
+    plan=StudyRequest('Explain alpha single','explain','topic',None,None,'',('alpha single',))
+    result=module.retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan,prefer_full_context=True)
+    assert [item.chunk_id for item in result.evidence]==[1]

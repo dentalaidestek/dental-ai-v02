@@ -170,9 +170,14 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
     limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
     small_rows = None
     if (prefer_full_context and _source_rows is None and request_plan.scope == 'topic'
-            and request_plan.source_kind == 'notes' and not request_plan.needs_visual):
+            and request_plan.source_kind == 'notes' and not request_plan.needs_visual
+            and not request_plan.source_sections):
         from app.academic_evidence_context import small_note_context
-        small_rows = small_note_context(session, owner_user_id=owner_user_id, course_id=course_id)
+        links=get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+        # A requested named subsection is a deliberate source boundary.
+        # Supplying the entire course would reintroduce its excluded siblings.
+        if not any(links.named_section_ids(phrase) for phrase in request_plan.retrieval_queries):
+            small_rows = small_note_context(session, owner_user_id=owner_user_id, course_id=course_id)
     if _source_rows is not None:
         rows = list(_source_rows)
         result.retrieval_mode = 'source_batch'

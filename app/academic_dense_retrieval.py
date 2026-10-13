@@ -25,7 +25,7 @@ class QueryEmbedding:
 
 
 def prepare_query_embedding(understanding, *, session_factory, owner_user_id, course_id):
-    plan=understanding.plan
+    plan=getattr(understanding,'plan',None)
     if not plan or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
         return None
     from app.study_provider import GeminiStudyProvider, get_embedding_target, get_embedding_dimensions, target_available
@@ -35,6 +35,8 @@ def prepare_query_embedding(understanding, *, session_factory, owner_user_id, co
     dimensions=get_embedding_dimensions()
     domain="c.content_kind <> 'QUESTION'" if plan.source_kind=='notes' else "TRUE"
     with session_factory() as session:
+        if session.get_bind().dialect.name!='postgresql':
+            return None
         totals=session.exec(text(f'''SELECT COUNT(*),
             COALESCE(SUM(length(coalesce(c.text_content,''))+length(coalesce(c.section_title,''))+200),0),
             COUNT(*) FILTER (WHERE c.embedding_array IS NOT NULL

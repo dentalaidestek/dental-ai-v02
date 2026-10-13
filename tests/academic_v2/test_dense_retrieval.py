@@ -18,6 +18,7 @@ def dependencies(monkeypatch, totals, *, scans=0):
     monkeypatch.setattr(module,'target_available',lambda target:True)
     state={'closed':False}
     session=Mock()
+    session.get_bind.return_value.dialect.name='postgresql'
     session.exec.side_effect=[Mock(first=Mock(return_value=totals)),Mock(first=Mock(return_value=(scans,)))]
     @contextmanager
     def factory():
@@ -26,7 +27,7 @@ def dependencies(monkeypatch, totals, *, scans=0):
     return session,factory,state
 
 
-@pytest.mark.parametrize('plan',[UnderstandingResult(),understanding('course'),understanding(operation='clarify')])
+@pytest.mark.parametrize('plan',[object(),UnderstandingResult(),understanding('course'),understanding(operation='clarify')])
 def test_irrelevant_plans_never_open_database_or_call_embedding(plan):
     factory=Mock(side_effect=AssertionError('unnecessary preflight'))
     assert prepare_query_embedding(plan,session_factory=factory,owner_user_id=17,course_id=23) is None
