@@ -5,19 +5,12 @@
 .study-chat-table { width:100%; min-width:360px; border-collapse:collapse; }
 .study-chat-table th,.study-chat-table td { padding:8px 10px; border:1px solid #dbe2ea; text-align:left; vertical-align:top; }
 .study-chat-table th { background:#f1f5f9; font-weight:700; }
-.study-answer-print { margin-top:12px; padding:6px 10px; font-size:13px; }
+.study-pdf-file { display:flex; gap:12px; align-items:center; width:fit-content; max-width:100%; margin-top:12px; padding:14px 16px; border:1px solid #dbe2ea; border-radius:14px; background:#fff; color:#14243b; text-decoration:none; }
+.study-pdf-file small { color:#64748b; display:block; margin-top:4px; }
+.study-pdf-badge { padding:8px; border-radius:8px; background:#fef2f2; color:#a51d32; font-size:12px; font-weight:700; }
+.study-chat-composer .study-attach-button { flex-shrink:0; background:transparent; color:#14243b; font-size:24px; }
+.study-upload-files { font-size:13px; padding:6px 12px; color:#475569; max-height:80px; overflow:auto; }
 .study-incomplete-notice { color:#9b2c2c; margin-top:10px; }
-.study-print-area { display:none; }
-@media print {
-    body.study-printing { height:auto !important; overflow:visible !important; margin:0 !important; }
-    body.study-printing > * { display:none !important; }
-    body.study-printing > .study-print-area { display:block !important; color:#111; background:white; font:12pt/1.5 sans-serif; }
-    .study-print-area table { width:100%; min-width:0; border-collapse:collapse; }
-    .study-print-area th,.study-print-area td { border:1px solid #999; padding:6px; text-align:left; }
-    .study-print-area h3 { break-after:avoid; }
-    .study-print-area tr { break-inside:avoid; }
-    .study-print-area .study-chat-markdown { max-height:none !important; overflow:visible !important; }
-}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -55,7 +48,15 @@
             <article class="study-chat-message {{ 'assistant' if msg.role == 'ASSISTANT' else 'user' }}">
                 <div class="study-chat-content">
                     <div class="study-chat-role">{{ 'Dental AI Akademik' if msg.role == 'ASSISTANT' else 'Sen' }}</div>
+                    {% if msg.role == 'ASSISTANT' and msg.mode and msg.mode.endswith('_PDF') %}
+                    <div class="study-chat-markdown">İstediğin PDF hazır.</div>
+                    <a class="study-pdf-file" href="/notes/courses/{{ course.id }}/ai/messages/{{ msg.id }}/pdf" download>
+                        <span class="study-pdf-badge">PDF</span>
+                        <span>{{ course.title }}.pdf<small>PDF dosyasını indir</small></span>
+                    </a>
+                    {% else %}
                     <div class="study-chat-markdown">{{ msg.content }}</div>
+                    {% endif %}
                 </div>
             </article>
             {% endfor %}
@@ -74,7 +75,14 @@
 
     <footer class="study-chat-clean-footer">
         <div class="study-chat-status" id="studyChatStatus"></div>
+        {% if chat_upload_enabled %}
+        <input type="file" id="studyChatFiles" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
+        <div class="study-upload-files" id="studyChatUploadFiles" aria-live="polite"></div>
+        {% endif %}
         <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm">
+            {% if chat_upload_enabled %}
+            <button type="button" id="studyAttachButton" class="study-attach-button" aria-label="PDF veya görsel ekle">＋</button>
+            {% endif %}
             <textarea id="studyChatInput" name="message" rows="1" maxlength="8000" placeholder="Mesajını yaz..." {% if material_count == 0 %}disabled{% endif %} required></textarea>
             <button type="submit" id="studySendButton" aria-label="Gönder" {% if material_count == 0 %}disabled{% endif %}>↑</button>
         </form>
@@ -86,26 +94,33 @@
     document.body.classList.add('study-chat-active');
 
     const courseId = {{ course.id }};
-    const materialCount = {{ material_count }};
+    let materialCount = {{ material_count }};
     const v2Streaming = {{ 'true' if v2_streaming else 'false' }};
     let v2Ready = {{ 'true' if v2_ready else 'false' }};
     const form = document.getElementById('studyChatForm');
     const input = document.getElementById('studyChatInput');
     const send = document.getElementById('studySendButton');
+    const attach = document.getElementById('studyAttachButton');
+    const filesInput = document.getElementById('studyChatFiles');
+    const uploadFiles = document.getElementById('studyChatUploadFiles');
+    let uploading = false;
+    let indexTimer = null, indexPolling = false;
     const chat = document.getElementById('studyChat');
     const status = document.getElementById('studyChatStatus');
 
     function applyIndexReadiness() {
-        const blocked = v2Streaming && !v2Ready;
-        input.disabled = !materialCount || blocked;
-        send.disabled = !materialCount || blocked;
+        const blocked = materialCount > 0 && !v2Ready;
+        input.disabled = !materialCount || blocked || uploading;
+        send.disabled = !materialCount || blocked || uploading;
         document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
         if (blocked) status.textContent='Ders notları hazırlanıyor. Bu sayfa açıkken otomatik devam edecek.';
     }
 
     async function waitForIndex() {
+        if (indexTimer) { clearTimeout(indexTimer); indexTimer=null; }
         applyIndexReadiness();
-        if (!v2Streaming || v2Ready || document.hidden) return;
+        if (!materialCount || v2Ready || document.hidden || uploading || indexPolling) return;
+        indexPolling=true;
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/index-status',{credentials:'same-origin',cache:'no-store'});
             const result=await response.json();
@@ -125,8 +140,8 @@
                 setTimeout(() => { if (v2Ready) status.textContent=''; },3000);
                 return;
             }
-        } catch (_) {}
-        setTimeout(waitForIndex,15000);
+        } catch (_) {} finally { indexPolling=false; }
+        indexTimer=setTimeout(waitForIndex,15000);
     }
 
     function escapeHtml(value) {
@@ -220,28 +235,19 @@
     }
     document.querySelectorAll('.study-chat-markdown').forEach(el => { el.innerHTML = safeMarkdown(el.textContent); });
 
-    function addPrintButton(article) {
-        if (article.querySelector('.study-answer-print')) return;
-        const button=document.createElement('button');
-        button.type='button'; button.className='study-answer-print';
-        button.textContent='Yazdır / PDF kaydet';
-        button.addEventListener('click',()=>{
-            const old=document.getElementById('studyPrintArea');
-            if (old) old.remove();
-            const area=document.createElement('div');
-            area.id='studyPrintArea'; area.className='study-print-area';
-            const title=document.createElement('h1');
-            title.textContent=document.querySelector('.study-chat-clean-title strong').textContent;
-            area.appendChild(title);
-            area.appendChild(article.querySelector('.study-chat-markdown').cloneNode(true));
-            document.body.appendChild(area); document.body.classList.add('study-printing');
-            const cleanup=()=>{area.remove();document.body.classList.remove('study-printing');};
-            window.addEventListener('afterprint',cleanup,{once:true});
-            try { window.print(); } catch (error) { cleanup(); }
-        });
-        article.querySelector('.study-chat-content').appendChild(button);
+    function addPdfArtifact(article, artifact) {
+        if (!artifact || artifact.type !== 'pdf' || typeof artifact.url !== 'string') return;
+        const expected = new RegExp('^/notes/courses/'+courseId+'/ai/messages/[1-9][0-9]*/pdf$');
+        if (!expected.test(artifact.url) || article.querySelector('.study-pdf-file')) return;
+        const link = document.createElement('a');
+        link.className='study-pdf-file'; link.href=artifact.url; link.download=artifact.name || 'ders-notlari.pdf';
+        const badge=document.createElement('span'); badge.className='study-pdf-badge'; badge.textContent='PDF';
+        const label=document.createElement('span'); label.textContent=artifact.name || 'Ders notları.pdf';
+        const detail=document.createElement('small'); detail.textContent='PDF dosyasını indir';
+        label.appendChild(detail); link.appendChild(badge); link.appendChild(label);
+        article.querySelector('.study-chat-content').appendChild(link);
+        article.querySelector('.study-chat-markdown').textContent='İstediğin PDF hazır.';
     }
-    document.querySelectorAll('.study-chat-message.assistant').forEach(addPrintButton);
 
     function isNearBottom() {
         return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 180;
@@ -285,9 +291,10 @@
         input.value='';
         input.style.height='auto';
         send.disabled=true;
+        if (attach) attach.disabled=true;
         const data = new FormData();
         data.append('message', text);
-        let answer='';
+        let answer='',artifact=null,pdfOutput=false;
         try {
             const endpoint = v2Streaming ? '/notes/courses/'+courseId+'/ai/ask-stream' : '/notes/courses/'+courseId+'/ai/ask';
             const response = await fetch(endpoint, {method:'POST', body:data, credentials:'same-origin'});
@@ -296,6 +303,7 @@
                 if (!response.ok || !result.ok) throw new Error(result.error || 'AI isteği tamamlanamadı.');
                 pending.classList.remove('pending');
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(result.answer);
+                artifact=result.artifact || null;
             } else {
                 if (!response.ok || !response.body) {
                     const result = await response.json().catch(() => ({}));
@@ -311,11 +319,12 @@
                         if (!line.trim()) continue;
                         const event=JSON.parse(line);
                         if (event.type==='error') throw new Error(event.error||'AI akışı kesildi.');
-                        if (event.type==='done') finished=true;
+                        if (event.type==='format' && event.format==='pdf') pdfOutput=true;
+                        if (event.type==='done') { finished=true; artifact=event.artifact || null; }
                         if (event.type==='delta') {
                             answer+=event.text||'';
                             pending.classList.remove('pending');
-                            pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(answer);
+                            pending.querySelector('.study-chat-markdown').innerHTML=pdfOutput ? 'PDF hazırlanıyor...' : safeMarkdown(answer);
                             scrollChatBottom();
                         }
                     }
@@ -323,11 +332,12 @@
                 }
                 if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
             }
-            addPrintButton(pending);
+            addPdfArtifact(pending,artifact);
             scrollChatBottom();
         } catch (err) {
             if (answer) {
                 pending.classList.remove('pending');
+                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(answer);
                 const warning=document.createElement('p');
                 warning.className='study-incomplete-notice';
                 warning.textContent='Bu yanıt tamamlanmadı ve sohbet geçmişine kaydedilmedi.';
@@ -340,8 +350,40 @@
             status.textContent = err.message || 'Bir hata oluştu.';
         } finally {
             send.disabled=false;
+            if (attach) attach.disabled=uploading;
+            applyIndexReadiness();
             input.focus();
         }
+    }
+
+    async function uploadChatFiles() {
+        const selected=Array.from(filesInput.files || []);
+        if (!selected.length || uploading) return;
+        uploading=true; attach.disabled=true; applyIndexReadiness();
+        uploadFiles.textContent=selected.map(file=>file.name).join(' · ');
+        status.textContent='Dosyalar yükleniyor...';
+        const data=new FormData(); data.append('chat_upload','true');
+        selected.forEach(file=>data.append('files',file));
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/materials',{
+                method:'POST',body:data,credentials:'same-origin'});
+            const result=await response.json().catch(()=>({}));
+            if (!response.ok || !result.ok || !Number.isInteger(result.added) || result.added<1)
+                throw new Error(result.error || 'Dosyalar eklenemedi. Lütfen yeniden dene.');
+            materialCount+=result.added; v2Ready=false;
+            status.textContent='Dosyalar eklendi. Ders notları hazırlanıyor...';
+        } catch (error) {
+            status.textContent=error.message || 'Dosya yükleme tamamlanamadı.';
+            uploadFiles.textContent='';
+        } finally {
+            uploading=false; attach.disabled=false; filesInput.value='';
+            applyIndexReadiness();
+            if (!v2Ready && materialCount>0) waitForIndex();
+        }
+    }
+    if (attach && filesInput) {
+        attach.addEventListener('click',()=>filesInput.click());
+        filesInput.addEventListener('change',uploadChatFiles);
     }
 
     form.addEventListener('submit', event => { event.preventDefault(); sendMessage(input.value); });

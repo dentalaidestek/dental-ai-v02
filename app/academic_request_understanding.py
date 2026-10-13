@@ -34,11 +34,13 @@ SCHEMA = {
         'depth': {'type': 'string', 'enum': ['standard', 'detailed']},
         'needs_visual': {'type': 'boolean'},
         'continue_source': {'type': 'boolean'},
+        'output_format': {'type': 'string', 'enum': ['text', 'pdf']},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
 }
 SCHEMA['required'].append('source_sections')
+SCHEMA['required'].append('output_format')
 SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
 The `request` field is the only active user request for this turn.
 `recent_dialogue` is earlier context, not a list of pending tasks to execute.
@@ -115,11 +117,18 @@ Reformatting existing exam questions is NOT generate_questions and does not
 require solving them: use answer + questions, preserving the requested format
 in resolved_query. All existing questions means course scope. Do not replace
 this with new questions. PDF requests are study tasks: retrieve their requested
-content normally; the UI offers printing/saving a completed answer as PDF.
+content normally; the application builds a downloadable PDF from the completed answer.
 You have NOT searched the question index. The heading outline excludes question
 records. Neither absent headings nor previous assistant denials prove that
 exam questions are missing. Never answer a source-availability question or
 deny the presence of questions in clarification; route it to source retrieval.
+output_format is pdf ONLY when the active request asks for an actual PDF file.
+Negated requests ('PDF yapma'), mentions of a source PDF, or general discussion
+of PDFs do not request a PDF output. Use text otherwise. Do not inherit pdf
+format from old unrelated turns. A genuine follow-up may ask to change the
+current study answer into a PDF. Return the requested content normally; the
+application creates the real file after the answer is complete. Never tell
+the user to print/save the browser page or invent a download link.
 For an ordinary greeting/acknowledgement return clarify with a natural short
 conversational reply in clarification. Do not invent a study request.
 Never turn missing search results into a claim that the notes contain no facts.
@@ -140,6 +149,7 @@ class StudyRequest:
     needs_visual: bool = False
     continue_source: bool = False
     source_sections: tuple[str, ...] = ()
+    output_format: str = 'text'
 
 
 @dataclass(frozen=True)
@@ -192,11 +202,14 @@ def parse_request(raw: str) -> StudyRequest:
     data = json.loads(raw)
     if isinstance(data,dict):
         data.setdefault('source_sections',[])  # Older persisted/mock contracts.
+        data.setdefault('output_format','text')
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
             or data['operation'] not in OPERATIONS or data['scope'] not in {'topic', 'course'}):
         raise PlannerContractError('invalid operation/scope')
+    if data['output_format'] not in ('text', 'pdf'):
+        raise PlannerContractError('invalid output format')
     for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text')
@@ -337,6 +350,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
     result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
     result.study_task['source_sections'] = list(understanding.plan.source_sections)
     result.study_task['resolved_query'] = understanding.plan.resolved_query
+    result.study_task['output_format'] = understanding.plan.output_format
     result.semantic_trace_id = understanding.trace_id
     logger.info('Academic flow trace=%s stage=retrieval mode=%s chunks=%s pages=%s',
                 understanding.trace_id, result.retrieval_mode,

@@ -407,3 +407,9 @@ def test_provider_wait_does_not_call_gemini_or_claim_user_quota_exhausted(monkey
         owner_user_id=17, course_id=23, query='Soru', recent_history=[])
     assert 'geçici beklemede' in reply.clarification
     assert 'limitiniz doldu' not in reply.clarification
+
+
+def test_pdf_format_is_explicit_semantic_state_and_legacy_contracts_stay_text():
+    assert parse_request(raw()).output_format == 'text'
+    assert parse_request(raw(output_format='pdf')).output_format == 'pdf'
+    with pytest.raises(ValueError): parse_request(raw(output_format='html'))

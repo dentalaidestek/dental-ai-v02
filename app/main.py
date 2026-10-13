@@ -4540,10 +4540,15 @@ def upload_study_materials(
     course_id: int,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(default=[]),
+    chat_upload: bool = Form(False),
 ):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+
+    chat_upload = chat_upload is True
+    if chat_upload and os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() not in {'1','true','yes'}:
+        return JSONResponse({'ok': False, 'error': 'Sohbetten dosya ekleme şu anda açık değil.'}, status_code=403)
 
     # === TEMP_STUDY_TRACE_UPLOAD_START_BEGIN ===
     _upload_trace_id = begin_trace(user.id, "upload")
@@ -4684,6 +4689,8 @@ def upload_study_materials(
     trace_event("upload.index.scheduled", course_id=course_id)
     background_tasks.add_task(_wake_academic_modal_indexer)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
+    if chat_upload:
+        return JSONResponse({'ok': True, 'added': added, 'ready': False})
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
 
 
@@ -4783,8 +4790,51 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
             "messages": messages[-40:],
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
+            "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
         },
     )
+
+
+@app.get('/notes/courses/{course_id}/ai/messages/{message_id}/pdf')
+def study_answer_pdf(request: Request, course_id: int, message_id: int):
+    from fastapi.responses import Response
+    from urllib.parse import quote
+    from app.academic_pdf import render_pdf, pdf_filename
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse('Oturumunuz sona ermiş.', status_code=401)
+    with Session(engine, expire_on_commit=False) as session:
+        course = _owned_study_course(session, user, course_id)
+        answer = session.exec(select(StudyChatMessage).where(
+            StudyChatMessage.id == message_id, StudyChatMessage.course_id == course_id,
+            StudyChatMessage.owner_user_id == user.id, StudyChatMessage.role == 'ASSISTANT',
+        )).first() if course else None
+        if not answer or not answer.mode.endswith('_PDF'):
+            return HTMLResponse('PDF bulunamadı veya erişim yetkiniz yok.', status_code=404)
+        title, content = course.title, answer.content
+    try:
+        data = render_pdf(title, content)
+    except Exception as exc:
+        logger.warning('Academic PDF download failed type=%s', type(exc).__name__)
+        return HTMLResponse('PDF şu anda hazırlanamadı. Lütfen tekrar deneyin.', status_code=503)
+    return Response(data, media_type='application/pdf', headers={
+        'Content-Disposition': "attachment; filename=ders-notlari.pdf; filename*=UTF-8''" + quote(pdf_filename(title), safe=''),
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    })
+
+
+def _prepare_study_pdf(course_title, answer, understanding, retrieval):
+    from app.academic_pdf import pdf_requested, render_pdf
+    if not pdf_requested(understanding, retrieval):
+        return False
+    try:
+        # Validate a real file before advertising its owned download resource.
+        # Later downloads render the immutable saved answer without an AI call.
+        render_pdf(course_title, answer)
+    except Exception as exc:
+        logger.warning('Academic PDF creation failed type=%s', type(exc).__name__)
+        raise StudyAIError('PDF hazırlanamadı. Mesajını yeniden gönderebilirsin.') from exc
+    return True
 
 
 @app.get("/notes/courses/{course_id}/ai/index-status")
@@ -5007,6 +5057,7 @@ def study_ai_ask(
                 history,
                 rag_result,
             )
+            export_pdf = _prepare_study_pdf(course_title, answer, understanding, rag_result)
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
                 "ask.generation.success",
@@ -5052,18 +5103,22 @@ def study_ai_ask(
                     source_evidence_json=evidence_json,
                     mode="RAG_V2_HYBRID",
                 ))
-                save_session.add(StudyChatMessage(
+                assistant_message = StudyChatMessage(
                     course_id=course_id,
                     owner_user_id=user.id,
                     role="ASSISTANT",
                     content=answer,
                     source_ids_json=source_json,
                     source_evidence_json=evidence_json,
-                    mode="RAG_V2_HYBRID",
-                ))
+                    mode="RAG_V2_HYBRID_PDF" if export_pdf else "RAG_V2_HYBRID",
+                )
+                save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
+                if export_pdf:
+                    from app.academic_pdf import pdf_artifact
+                    artifact = pdf_artifact(course_id, assistant_message.id, course_title)
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
@@ -5097,7 +5152,7 @@ def study_ai_ask(
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
         return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
 
-    return JSONResponse({"ok": True, "answer": answer})
+    return JSONResponse({"ok": True, "answer": answer, **({'artifact': artifact} if export_pdf else {})})
 
 
 @app.post("/notes/courses/{course_id}/ai/ask-stream")
@@ -5203,6 +5258,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         pieces: list[str] = []
         try:
             prepared = retrieval
+            from app.academic_pdf import pdf_requested, pdf_artifact
+            if pdf_requested(understanding, prepared):
+                yield json.dumps({'type': 'format', 'format': 'pdf'}) + '\n'
             if prepared.visual_sources and prepared.evidence_sufficient and not prepared.attachments:
                 materialize_visual_sources(
                     lambda: Session(engine, expire_on_commit=False), prepared,
@@ -5222,6 +5280,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             answer = "".join(pieces).strip()
             if not answer:
                 raise StudyAIError("Akademik AI boş yanıt döndürdü.")
+            export_pdf = _prepare_study_pdf(course_title, answer, understanding, prepared)
             with Session(engine, expire_on_commit=False) as save_session:
                 live_course = save_session.exec(
                     select(StudyCourse)
@@ -5239,16 +5298,19 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                     source_ids_json=recovered_source_json, mode="RAG_V2_HYBRID_STREAM",
                     source_evidence_json=recovered_evidence_json,
                 ))
-                save_session.add(StudyChatMessage(
+                assistant_message = StudyChatMessage(
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="ASSISTANT", content=answer,
-                    source_ids_json=recovered_source_json, mode="RAG_V2_HYBRID_STREAM",
+                    source_ids_json=recovered_source_json,
+                    mode="RAG_V2_HYBRID_STREAM_PDF" if export_pdf else "RAG_V2_HYBRID_STREAM",
                     source_evidence_json=recovered_evidence_json,
-                ))
+                )
+                save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
-            yield json.dumps({"type": "done"}) + "\n"
+                artifact = pdf_artifact(course_id, assistant_message.id, course_title) if export_pdf else None
+            yield json.dumps({'type': 'done', **({'artifact': artifact} if artifact else {})}, ensure_ascii=False) + '\n'
         except GeneratorExit:
             # Client disconnected: incomplete answers are never persisted.
             return
