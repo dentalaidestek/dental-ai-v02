@@ -134,8 +134,9 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
          "Yanlış seçenekleri de metnin parçası olarak aktar; fakat açıklama veya çözümde doğru bilgi gibi kullanma. "
          "Okuyamadığın metni uydurma; hangi sorunun okunamadığını belirt. Sorunun geçmiş sınavda çıktığını yalnız kaynak bunu gösteriyorsa söyle.\n\n"
          if retrieval.study_task.get('source_kind') == 'questions' else "")
-        + "PDF istenirse tamamlanan yanıtın altındaki 'Yazdır / PDF kaydet' düğmesini kullanabileceğini belirt. "
-        "Dosya eki veya indirme bağlantısı oluşturduğunu iddia etme.\n\n"
+        + "PDF dosyasını uygulama tamamlanan içerikten oluşturur. Yalnız istenen ders içeriğini yaz; "
+        "yazdırma/kaydetme talimatı, PDF önerisi veya hayalî indirme bağlantısı ekleme. "
+        "Dosyanın oluşturulduğunu kendin iddia etme.\n\n"
         +
         "KAYNAK DESTEĞİNİ DEĞERLENDİR:\n"
         "Bunlar aramayla getirilen aday kaynaklardır. Yerel bir kural motoru sorunun "

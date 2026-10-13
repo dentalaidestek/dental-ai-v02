@@ -126,7 +126,7 @@ jobs:
       - name: Run Academic V2 invariant and function tests
         if: steps.verified.outputs.reuse != 'true'
         run: >-
-          python -m pytest -q tests/academic_v2 tests/test_study_ai_v2.py tests/test_study_retrieval_v2.py
+          python -m pytest -q tests/academic_v2 tests/test_study_ai_v2.py tests/test_study_retrieval_v2.py tests/test_study_pdf_download.py
           --ignore=tests/academic_v2/test_intent_benchmark_15k.py
           --ignore=tests/academic_v2/test_intent_holdout_20k.py
           --ignore=tests/academic_v2/test_intent_combined_35k.py
