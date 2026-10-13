@@ -249,7 +249,11 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     provider = GeminiStudyProvider()
     if not provider.api_key or not target_available(ProviderTarget('gemini', model)):
         return UnderstandingResult(outcome='unavailable')
-    provider.timeout = 15
+    try:
+        planner_timeout = int(os.getenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS', '45'))
+    except ValueError:
+        planner_timeout = 45
+    provider.timeout = max(10, min(planner_timeout, 75))
     provider.max_attempts = 1
     provider.response_schema = SCHEMA
     def call(prompt):
@@ -259,7 +263,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     return interpret_request(question, history, call=call, source_outline=source_outline)
 
 
-def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, **kwargs):
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, **kwargs):
     """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
@@ -279,7 +283,8 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_source_batches import retrieve_source_batches
         result = retrieve_source_batches(session, request_plan=plan, **kwargs)
     else:
-        result = retrieve_semantic_context(session, request_plan=plan, **kwargs)
+        result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=True,
+                                          query_embedding=query_embedding, **kwargs)
     result.semantic_planner_attempted = understanding.attempted
     result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
     result.study_task['source_sections'] = list(understanding.plan.source_sections)

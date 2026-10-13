@@ -349,3 +349,103 @@ def test_whole_source_question_request_includes_beyond_sixteen_with_ownership_fe
     assert [e.chunk_id for e in result.evidence]==list(range(1,76))
     assert result.study_task['source_kind']=='questions'
     assert len(result.source_batches)>1
+
+
+def test_candidate_pool_honors_requested_budget_above_twenty(db):
+    for ident in range(1,101):
+        add(db,ident,'alpha definition')
+    selected=_fts_rows(db,owner_user_id=17,course_id=23,lexical_query='"alpha"',
+        query_vector=None,embedding_provider='',embedding_model='',limit=96,content_domain='notes')
+    assert len(selected)==96
+    assert {row[0] for row in selected}==set(range(1,97))
+
+
+def test_question_noise_cannot_exhaust_the_factual_candidate_budget(db):
+    for ident in range(1,101):
+        add(db,ident,'alpha quiz question')
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION'"))
+    add(db,101,'alpha factual definition')
+    add(db,102,'alpha foreign definition',owner=99)
+    selected=_fts_rows(db,owner_user_id=17,course_id=23,lexical_query='"alpha"',
+        query_vector=None,embedding_provider='',embedding_model='',limit=20,content_domain='notes')
+    assert [row[0] for row in selected]==[101]
+
+
+def test_topic_question_lookup_includes_legacy_text_question_candidates(db):
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    add(db,1,'1. Alpha hangi durumda uygulanır? A) Bir B) İki')
+    add(db,2,'Alpha kaynak açıklaması')
+    plan=StudyRequest('Alpha kaynak sorusunu aktar','answer','topic',None,None,'',
+                      ('Alpha',),source_kind='questions')
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert [item.chunk_id for item in result.evidence]==[1]
+
+
+def test_small_course_context_answers_without_literal_query_overlap_or_topk_loss(db,monkeypatch):
+    from app.academic_request_understanding import StudyRequest, UnderstandingResult, retrieve_understood_course_context
+    import app.academic_semantic_retrieval as module
+    for ident in range(1,31):
+        add(db,ident,f'Source definition {ident}')
+    add(db,31,'foreign',owner=99)
+    add(db,32,'other course',course=99)
+    add(db,33,'old source',version='v0')
+    add(db,34,'unresolved question option')
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION' WHERE id=34"))
+    monkeypatch.setattr(module,'_fts_rows',lambda *a,**k:pytest.fail('small context should not depend on literal matching'))
+    plan=StudyRequest('Bunların mantığını açıkla','explain','topic',None,None,'',('different phrasing',))
+    result=retrieve_understood_course_context(db,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,recent_history=[],understanding=UnderstandingResult(plan=plan))
+    assert [item.chunk_id for item in result.evidence]==list(range(1,31))
+    assert result.retrieval_mode=='bounded_note_context'
+    assert result.study_task['scope']=='topic'
+    assert not result.source_coverage_complete
+    assert all('dosya="fixture"' in context for context in result.note_context)
+
+
+def vector_columns(db):
+    db.exec(text('''ALTER TABLE studyindexchunk ADD COLUMN embedding_array double precision[],
+        ADD COLUMN embedding_provider text, ADD COLUMN embedding_model text,
+        ADD COLUMN embedding_dimensions integer'''))
+
+
+def test_dense_path_retrieves_a_paraphrase_without_lexical_overlap(db):
+    from app.academic_dense_retrieval import QueryEmbedding
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    vector_columns(db)
+    add(db,1,'A meaning-preserving synonymous source description')
+    db.exec(text("UPDATE studyindexchunk SET embedding_array=ARRAY[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',embedding_dimensions=2"))
+    plan=StudyRequest('Explain alpha','explain','topic',None,None,'',('alpha',))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,
+        request_plan=plan,query_embedding=QueryEmbedding('gemini','fixture',(1.0,0.0)))
+    assert [item.chunk_id for item in result.evidence]==[1]
+    assert result.used_semantic_search and result.retrieval_mode=='hybrid_candidates'
+    assert result.evidence[0].semantic_rank==1 and result.evidence[0].lexical_rank is None
+
+
+def test_partial_or_wrong_model_vector_index_is_not_used_for_semantic_answers(db):
+    vector_columns(db)
+    add(db,1,'synonymous source')
+    add(db,2,'another source without vector')
+    db.exec(text("UPDATE studyindexchunk SET embedding_array=ARRAY[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',embedding_dimensions=2 WHERE id=1"))
+    kwargs=dict(owner_user_id=17,course_id=23,lexical_query='"absent_term"',
+                query_vector=[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',limit=16)
+    assert _fts_rows(db,**kwargs)==[]
+    db.exec(text("UPDATE studyindexchunk SET embedding_array=ARRAY[1.0,0.0],embedding_provider='gemini',embedding_model='different',embedding_dimensions=2 WHERE id=2"))
+    assert _fts_rows(db,**kwargs)==[]
+    db.exec(text("UPDATE studyindexchunk SET embedding_model='fixture' WHERE id=2"))
+    assert {row[0] for row in _fts_rows(db,**kwargs)}=={1,2}
+
+
+def test_dense_candidates_preserve_owner_course_and_published_version_fences(db):
+    vector_columns(db)
+    add(db,1,'source')
+    add(db,2,'foreign',owner=99)
+    add(db,3,'other course',course=99)
+    add(db,4,'stale',version='v0')
+    db.exec(text("UPDATE studyindexchunk SET embedding_array=ARRAY[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',embedding_dimensions=2"))
+    selected=_fts_rows(db,owner_user_id=17,course_id=23,lexical_query='"absent_term"',
+        query_vector=[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',limit=96)
+    assert [row[0] for row in selected]==[1]

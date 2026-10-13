@@ -153,7 +153,8 @@ def _source_cursor(history):
 
 
 def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
-                              request_plan, recent_history=None, limit=16, _source_rows=None):
+                              request_plan, recent_history=None, limit=16, _source_rows=None,
+                              prefer_full_context=False, query_embedding=None):
     if session.get_bind().dialect.name != 'postgresql':
         raise RuntimeError('Academic semantic retrieval requires PostgreSQL')
     if not isinstance(request_plan, StudyRequest):
@@ -167,9 +168,23 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.clarification = request_plan.clarification
         return result
     limit = min(32, max(4, limit, 24 if request_plan.depth == 'detailed' else 16))
+    small_rows = None
+    if (prefer_full_context and _source_rows is None and request_plan.scope == 'topic'
+            and request_plan.source_kind == 'notes' and not request_plan.needs_visual
+            and not request_plan.source_sections):
+        from app.academic_evidence_context import small_note_context
+        links=get_course_links(session, owner_user_id=owner_user_id, course_id=course_id)
+        # A requested named subsection is a deliberate source boundary.
+        # Supplying the entire course would reintroduce its excluded siblings.
+        if not any(links.named_section_ids(phrase) for phrase in request_plan.retrieval_queries):
+            small_rows = small_note_context(session, owner_user_id=owner_user_id, course_id=course_id)
     if _source_rows is not None:
         rows = list(_source_rows)
         result.retrieval_mode = 'source_batch'
+    elif small_rows is not None:
+        rows = small_rows
+        result.retrieval_mode = 'bounded_note_context'
+        result.study_task['context_strategy'] = 'whole_factual_index'
     elif request_plan.scope == 'course' and request_plan.source_kind == 'questions':
         rows = _question_rows(session, owner_user_id=owner_user_id, course_id=course_id,
                               limit=17, after_cursor=_source_cursor(recent_history) if request_plan.continue_source else None)
@@ -189,28 +204,33 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         result.retrieval_mode = 'coverage'
     else:
         searches = request_plan.retrieval_queries
+        if request_plan.source_kind == 'questions' and not searches:
+            searches = request_plan.source_sections
         if not searches and not request_plan.source_sections:
             raise ValueError('Gemini topic searches are required')
         rows = _fts_rows(session, owner_user_id=owner_user_id, course_id=course_id,
-            lexical_query=_semantic_fts_query(searches), query_vector=None,
-            embedding_provider='', embedding_model='', limit=min(96, limit * 3),
+            lexical_query=_semantic_fts_query(searches),
+            query_vector=list(query_embedding.vector) if query_embedding else None,
+            embedding_provider=query_embedding.provider if query_embedding else '',
+            embedding_model=query_embedding.model if query_embedding else '', limit=min(96, limit * 3),
             lexical_groups=tuple(_semantic_fts_query((phrase,)) for phrase in searches),
-            lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches)) if searches else []
+            lexical_fallback_groups=tuple(_semantic_fts_fallback(phrase) for phrase in searches),
+            content_domain='questions' if request_plan.source_kind == 'questions' else
+                           'all' if request_plan.source_kind == 'question_patterns' else 'notes') if searches else []
         if request_plan.source_kind == 'questions':
-            rows = [row for row in rows if row[6] == 'QUESTION']
+            rows = [row for row in rows if str(row[6]).upper() == 'QUESTION'
+                    or re.search(r'(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+', row[7] or '', re.I)
+                    or re.search(r'(soru|test|quiz|değerlendirme)', row[5] or '', re.I)]
+        ranked_rows=rows
         rows = (_balanced_candidates(rows, searches, limit)
                 if request_plan.source_kind == 'questions' else
                 _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
-        result.retrieval_mode = 'semantic_candidates'
-    if (_source_rows is None and request_plan.scope == 'topic'
-            and isinstance(rows,SectionEvidenceRows)
-            and (len({(int(row[1]),page) for row in rows for page in range(int(row[3]),int(row[4])+1)}) > 8
-                 or sum(len(row[7] or '')+len(row[5] or '')+200 for row in rows)>96000)):
-        from app.academic_source_batches import retrieve_row_batches
-        partitioned = retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
-            course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
-        return partitioned
+        if query_embedding:
+            from app.academic_dense_retrieval import hybrid_candidates
+            rows=hybrid_candidates(rows,ranked_rows,searches,limit)
+            result.used_semantic_search=any(row[10] is not None for row in rows)
+        result.retrieval_mode = 'hybrid_candidates' if result.used_semantic_search else 'lexical_candidates'
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)
     seen = set()
@@ -220,11 +240,12 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         seen.add(int(row[0]))
         evidence = Evidence(chunk_id=int(row[0]), material_id=int(row[1]), display_name=row[2],
             page_start=int(row[3]), page_end=int(row[4]), section_title=row[5],
-            content_kind=row[6], text=row[7], lexical_rank=row[8], semantic_rank=None,
+            content_kind=row[6], text=row[7], lexical_rank=row[8], semantic_rank=row[10],
             hybrid_score=float(row[12] or 0), chunk_index=int(row[13] or 0))
         result.evidence.append(evidence)
         result.note_context.append(
             f'[KANIT material_id={evidence.material_id} sayfa={evidence.page_start} '
+            f'dosya={json.dumps(evidence.display_name, ensure_ascii=False)} '
             f'bölüm={evidence.section_title or "-"} tür={evidence.content_kind}]\n{evidence.text}')
         if evidence.material_id not in result.source_material_ids:
             result.source_material_ids.append(evidence.material_id)
@@ -247,6 +268,14 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids,
                     'pages':list({page for _,page in selected_pages})}).all()
         scanned_pages = {(int(row[0]),int(row[1])) for row in checkpoints} & selected_pages
+    required_visual_pages = selected_pages if request_plan.needs_visual and result.evidence else scanned_pages
+    page_limit = 32 if request_plan.scope == 'course' else 8
+    if (_source_rows is None and
+            (len(required_visual_pages) > page_limit
+             or sum(len(row[7] or '') + len(row[5] or '') + 200 for row in rows) > 96000)):
+        from app.academic_source_batches import retrieve_row_batches
+        return retrieve_row_batches(session, rows=rows, owner_user_id=owner_user_id,
+            course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history)
     if (request_plan.needs_visual or scanned_pages) and result.evidence:
         materials = session.exec(text('''SELECT id,file_path,mime_type,display_name,active_index_version
             FROM studymaterial WHERE owner_user_id=:owner AND course_id=:course
@@ -257,20 +286,18 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         # Source-wide tasks already selected a bounded coverage sample. Do not
         # arbitrarily discard most of its scans: use the shared byte budget.
         # A separate page bound still prevents tiny pages from being unlimited.
-        page_limit = 32 if request_plan.scope == 'course' else 8
         for item in result.evidence:
-            key = (item.material_id, item.page_start)
-            if not request_plan.needs_visual and key not in scanned_pages:
-                continue
-            if key in pages or item.material_id not in by_id:
-                continue
-            pages.add(key); material = by_id[item.material_id]
-            result.visual_sources.append(dict(owner_user_id=owner_user_id,
-                material_id=item.material_id, page_number=item.page_start,
-                reference=material[1],mime_type=material[2],display_name=material[3],
-                index_version=material[4]))
-            if len(pages) == page_limit:
-                break
+            for page in range(item.page_start, item.page_end + 1):
+                key = (item.material_id, page)
+                if key not in required_visual_pages or key in pages or item.material_id not in by_id:
+                    continue
+                pages.add(key); material = by_id[item.material_id]
+                result.visual_sources.append(dict(owner_user_id=owner_user_id,
+                    material_id=item.material_id, page_number=page,
+                    reference=material[1],mime_type=material[2],display_name=material[3],
+                    index_version=material[4]))
+        if len(pages) > page_limit:
+            raise ValueError('visual source batch exceeds page budget')
         if scanned_pages:
             result.ocr_reading_hints = [dict(material_id=item.material_id,
                 page_start=item.page_start,page_end=item.page_end,text=item.text)
@@ -284,7 +311,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 (f'[KANIT material_id={item.material_id} sayfa={item.page_start} '
                  f'bölüm={item.section_title or "-"} tür=SCAN]\n'
                  + ('Bilgi için ekli orijinal sayfayı incele; OCR yalnız arama için kullanıldı.'
-                    if (item.material_id,item.page_start) in pages else
+                    if {(item.material_id,page) for page in range(item.page_start,item.page_end+1)} & scanned_pages <= pages else
                     'Bu taranmış sayfanın görseli bu turda eklenmedi; bilgi kanıtı olarak kullanma.'))
                 if any((item.material_id,page) in scanned_pages
                        for page in range(item.page_start,item.page_end+1)) else context

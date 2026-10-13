@@ -4962,10 +4962,15 @@ def study_ai_ask(
             # receives source documents, credentials or ownership identifiers.
             from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
             understanding = understand_study_request(clean_message, history, source_outline=source_outline)
+            from app.academic_dense_retrieval import prepare_query_embedding
+            query_embedding = prepare_query_embedding(understanding,
+                session_factory=lambda: Session(engine, expire_on_commit=False),
+                owner_user_id=user.id, course_id=course_id)
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 rag_result = retrieve_understood_course_context(
                     retrieval_session,
                     understanding=understanding,
+                    query_embedding=query_embedding,
                     owner_user_id=user.id,
                     course_id=course_id,
                     query=clean_message,
@@ -5145,10 +5150,15 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
         understanding = understand_study_request(clean_message, history, source_outline=source_outline)
+        from app.academic_dense_retrieval import prepare_query_embedding
+        query_embedding = prepare_query_embedding(understanding,
+            session_factory=lambda: Session(engine, expire_on_commit=False),
+            owner_user_id=user.id, course_id=course_id)
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 retrieval = retrieve_understood_course_context(
                     retrieval_session, understanding=understanding,
+                    query_embedding=query_embedding,
                     owner_user_id=user.id, course_id=course_id,
                     query=clean_message, recent_history=history,
                 )
