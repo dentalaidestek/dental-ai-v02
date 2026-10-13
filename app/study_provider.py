@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import time
+import uuid
 import urllib.error
 import urllib.request
 from app.http_transport import urlopen
@@ -23,6 +24,49 @@ from app.study_router_state import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _GeminiTiming:
+    """Scalar latency diagnostics; never retain prompts, URLs, keys or replies."""
+    def __init__(self, *, model, operation, mode, input_bytes, structured):
+        self.identifier = uuid.uuid4().hex
+        self.model, self.operation, self.mode = model, operation, mode
+        self.input_bytes, self.structured = input_bytes, structured
+        self.started = time.perf_counter()
+        self.phase_started, self.phase = self.started, 'reservation'
+        self.durations = {}
+        self.first_text_ms = None
+        self.finish_event_ms = None
+        self.tokens = {}
+
+    def next(self, phase):
+        now = time.perf_counter()
+        self.durations[self.phase] = self.durations.get(self.phase, 0) + round((now-self.phase_started)*1000)
+        self.phase, self.phase_started = phase, now
+
+    def first_text(self):
+        if self.first_text_ms is None:
+            self.first_text_ms = round((time.perf_counter()-self.started)*1000)
+
+    def completion(self):
+        if self.finish_event_ms is None:
+            self.finish_event_ms = round((time.perf_counter()-self.started)*1000)
+
+    def usage(self, response):
+        usage = response.get('usageMetadata') if isinstance(response, dict) else None
+        if isinstance(usage, dict):
+            for name in ('promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount'):
+                value = usage.get(name)
+                if type(value) is int and 0 <= value <= 10**9:
+                    self.tokens[name] = value
+
+    def finish(self):
+        self.next('finished')
+        logger.info('Gemini timing id=%s model=%s operation=%s mode=%s input_bytes=%s structured=%s '
+                    'phases_ms=%s first_text_ms=%s finish_event_ms=%s tokens=%s total_ms=%s',
+                    self.identifier, self.model, self.operation, self.mode, self.input_bytes,
+                    self.structured, self.durations, self.first_text_ms, self.finish_event_ms, self.tokens,
+                    round((time.perf_counter()-self.started)*1000))
 
 
 class StudyProviderError(RuntimeError):
@@ -47,6 +91,13 @@ def provider_reservation(provider, model):
             yield
     except ProviderBusy as exc:
         raise StudyProviderError(str(exc), code=429, retryable=True, tracked=True) from exc
+
+
+@contextmanager
+def _timed_provider_reservation(timing, provider, model):
+    with provider_reservation(provider, model):
+        timing.next('headers')
+        yield
 
 
 @dataclass(frozen=True)
@@ -292,30 +343,39 @@ class GeminiStudyProvider(StudyProvider):
                 },
             )
             started = time.perf_counter()
+            timing = _GeminiTiming(model=model, operation=operation, mode='json',
+                input_bytes=len(data), structured=bool(payload.get('generationConfig', {}).get('responseJsonSchema')))
             try:
-                with provider_reservation(self.name, model), urlopen(request, timeout=timeout or self.timeout) as response:
-                    body = response.read().decode("utf-8")
-                    try:
-                        result = json.loads(body)
-                    except json.JSONDecodeError as exc:
+                with provider_reservation(self.name, model):
+                    timing.next('headers')
+                    with urlopen(request, timeout=timeout or self.timeout) as response:
+                        timing.next('body')
+                        body = response.read().decode("utf-8")
+                        timing.next('decode')
+                        try:
+                            result = json.loads(body)
+                        except json.JSONDecodeError as exc:
+                            record_api_result(
+                                provider=self.name, model=model, operation=operation, success=False,
+                                status_code=getattr(response, "status", 200),
+                                latency_ms=int((time.perf_counter() - started) * 1000),
+                                response_headers=response.headers, error_body=None,
+                            )
+                            raise StudyProviderError(
+                                "Akademik AI sağlayıcı cevabı okunamadı.",
+                                code=getattr(response, "status", 200),
+                                tracked=True,
+                            ) from exc
+                        timing.usage(result)
+                        timing.next('ledger')
                         record_api_result(
-                            provider=self.name, model=model, operation=operation, success=False,
+                            provider=self.name, model=model, operation=operation, success=True,
                             status_code=getattr(response, "status", 200),
                             latency_ms=int((time.perf_counter() - started) * 1000),
-                            response_headers=response.headers, error_body=None,
+                            response_headers=response.headers, response_json=result,
                         )
-                        raise StudyProviderError(
-                            "Akademik AI sağlayıcı cevabı okunamadı.",
-                            code=getattr(response, "status", 200),
-                            tracked=True,
-                        ) from exc
-                    record_api_result(
-                        provider=self.name, model=model, operation=operation, success=True,
-                        status_code=getattr(response, "status", 200),
-                        latency_ms=int((time.perf_counter() - started) * 1000),
-                        response_headers=response.headers, response_json=result,
-                    )
-                    return result
+                        timing.next('release')
+                        return result
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
                 logger.warning("Gemini Academic provider HTTP %s", exc.code)
@@ -350,6 +410,9 @@ class GeminiStudyProvider(StudyProvider):
                 # Retain the typed transport cause for safe timeout/network
                 # classification after leaving this except block.
                 last_error.__cause__ = exc
+
+            finally:
+                timing.finish()
 
             if not last_error.retryable or attempt >= self.max_attempts:
                 raise last_error
@@ -481,8 +544,11 @@ class GeminiStudyProvider(StudyProvider):
         started = time.perf_counter()
         emitted = False
         self.last_finish_reason = 'UNKNOWN'
+        timing = _GeminiTiming(model=model, operation='generation', mode='stream',
+            input_bytes=len(request.data), structured=False)
         try:
-            with provider_reservation(self.name, model), urlopen(request, timeout=self.timeout) as response:
+            with _timed_provider_reservation(timing, self.name, model), urlopen(request, timeout=self.timeout) as response:
+                timing.next('stream')
                 for raw_line in response:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line.startswith("data:"):
@@ -491,11 +557,13 @@ class GeminiStudyProvider(StudyProvider):
                         event = json.loads(line[5:].strip())
                     except json.JSONDecodeError:
                         continue
+                    timing.usage(event)
                     candidates = event.get("candidates") or []
                     if not candidates:
                         continue
                     reason = candidates[0].get('finishReason')
                     if reason:
+                        timing.completion()
                         # Fixed enum only; never retain arbitrary response text.
                         self.last_finish_reason = (reason if isinstance(reason, str) and reason in {
                             'STOP', 'MAX_TOKENS', 'SAFETY', 'RECITATION',
@@ -509,14 +577,17 @@ class GeminiStudyProvider(StudyProvider):
                     )
                     piece = re.sub(r"(?is)<think>.*?</think>", "", piece)
                     if piece:
+                        timing.first_text()
                         emitted = True
                         yield piece
+                timing.next('ledger')
                 record_api_result(
                     provider=self.name, model=model, operation="generation", success=emitted,
                     status_code=getattr(response, "status", 200),
                     latency_ms=int((time.perf_counter() - started) * 1000),
                     response_headers=response.headers,
                 )
+                timing.next('release')
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             record_api_result(
@@ -536,6 +607,8 @@ class GeminiStudyProvider(StudyProvider):
             raise StudyProviderError(
                 "Akademik AI akış bağlantısı kesildi.", retryable=not emitted, tracked=True,
             ) from exc
+        finally:
+            timing.finish()
         if not emitted:
             raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
 
