@@ -20,7 +20,8 @@ from app.study_provider import (
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
-from app.academic_question_output import prior_questions, question_set_issues, limit_source_questions
+from app.academic_question_output import (prior_questions, question_set_issues, limit_source_questions,
+    question_blocks, question_repair_slots, merge_question_replacements)
 
 logger = logging.getLogger('uvicorn.error.study_ai_v2')
 
@@ -517,16 +518,29 @@ def stream_rag_v2(
                     # Reuse exactly the same source evidence; never retry forever
                     # or expose the rejected set as a completed assistant reply.
                     logger.info('Academic question validation trace=%s issues=%s repair=1', trace_id, len(issues))
-                    repair_prompt = (prompt + '\n\nÇIKTI KONTROLÜ: Önceki taslak reddedildi. '
-                        'Aşağıdaki hataları aynı kaynaklarla düzelt ve tek bir tam yeni set döndür. '
-                        'Kontrol raporunu veya eski taslağı cevaba ekleme.\n'
-                        + json.dumps(issues,ensure_ascii=False) + '\nREDDEDİLEN TASLAK:\n' + answer)
+                    from dataclasses import replace
+                    total=retrieval.study_task.get('count') or len(question_blocks(answer))
+                    accepted,missing=question_repair_slots(answer,total,history)
+                    repair_history=list(history)+[{'role':'ASSISTANT','content':'\n\n'.join(accepted.values())}]
+                    repair_request=(f'Aynı ders kaynaklarından {len(missing)} yeni ve farklı çoktan seçmeli soru hazırla. '
+                        'Konuşmada veya kabul edilen sorularda zaten sorulmuş aynı olguyu yeniden sorma. '
+                        'Yeni bir bilgi, ilişki veya uygulama seç. Soruları 1 ile '+str(len(missing))+
+                        ' arasında numaralandır. Cevap anahtarı gösterme. Yalnız bu yeni soruları yaz.')
+                    repair_retrieval=replace(retrieval,study_task={**retrieval.study_task,'count':len(missing)},
+                                             resolved_query=repair_request)
+                    repair_prompt=_prompt(course_title,repair_request,repair_retrieval,repair_history)
                     repaired = list(provider.generate_stream(model=target.model,
                         system_prompt=V2_SYSTEM_PROMPT, history=[], prompt=repair_prompt,
-                        attachments=retrieval.attachments, temperature=0.22, max_output_tokens=7000))
+                        attachments=retrieval.attachments, temperature=0.22, max_output_tokens=7000)) if missing else []
                     if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                         raise StudyAIError('Soru seti uzunluk sınırında kaldığı için tamamlanamadı.')
-                    answer = ''.join(repaired)
+                    replacement_answer=''.join(repaired)
+                    if question_set_issues(replacement_answer,len(missing),repair_history):
+                        raise StudyAIError('Yeni sorular tekrar kontrolünü geçemedi; eski set yeniden kaydedilmedi. Yeniden deneyebilirsin.')
+                    try:
+                        answer=merge_question_replacements(accepted,missing,replacement_answer)
+                    except ValueError as exc:
+                        raise StudyAIError('Eksik sorular tamamlanamadı; soru seti kaydedilmedi.') from exc
                     if question_set_issues(answer, retrieval.study_task.get('count'), history):
                         raise StudyAIError('Soru seti adet veya tekrar kontrolünü geçemedi. Eksik veya tekrar eden set tamamlanmış olarak kaydedilmedi; yeniden deneyebilirsin.')
                 yield answer
