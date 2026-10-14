@@ -1776,7 +1776,7 @@ def _question_page_context_rows(session, *, owner_user_id, course_id, seeds):
     for offset in range(0,len(ordered_ids),128):
         batch=ordered_ids[offset:offset+128]
         hydrated=_coverage_evidence_rows(session,owner_user_id=owner_user_id,course_id=course_id,
-            chunk_ids=batch,limit=len(batch),max_rows=128)
+            chunk_ids=batch,limit=len(batch),max_rows=128,include_questions=True)
         if set(int(r[0]) for r in hydrated) != set(batch):
             raise ValueError('question source generation changed during hydration')
         rows.extend(hydrated)
@@ -1887,7 +1887,7 @@ def _coverage_hydration_ids(coverage_plan, *, limit: int = 48) -> list[int]:
 
 def _coverage_evidence_rows(
     session: Session, *, owner_user_id: int, course_id: int,
-    chunk_ids: list[int], limit: int = 24, max_rows: int = 48,
+    chunk_ids: list[int], limit: int = 24, max_rows: int = 48, include_questions: bool = False,
 ) -> list:
     """Hydrate text only for planner-selected chunks."""
     if not chunk_ids:
@@ -1906,12 +1906,13 @@ def _coverage_evidence_rows(
           ON selected.id=c.id
         WHERE c.owner_user_id=:owner AND c.course_id=:course
           AND c.id = ANY(CAST(:chunk_ids AS BIGINT[]))
-          AND c.content_kind <> 'QUESTION'
+          AND (:include_questions OR c.content_kind <> 'QUESTION')
         ORDER BY selected.ord
         LIMIT :limit
     """), params={
         "owner": owner_user_id, "course": course_id,
         "chunk_ids": chunk_ids, "limit": max(1, min(limit, max(1, min(max_rows, 128)))),
+        "include_questions": include_questions,
     }).all())
 
 

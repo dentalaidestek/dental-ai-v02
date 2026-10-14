@@ -45,6 +45,7 @@ def test_question_pages_include_text_siblings_and_continuations_without_foreign_
         add(db,cid,body)
         db.exec(text('UPDATE studyindexchunk SET page_start=:p,page_end=:p WHERE id=:id'),params={'p':page,'id':cid})
     add(db,201,'FOREIGN',owner=99)
+    db.exec(text("UPDATE studyindexchunk SET content_kind='QUESTION' WHERE id=101"))
     add(db,202,'STALE',version='old')
     db.exec(text('UPDATE studyindexchunk SET page_start=3,page_end=3 WHERE id IN (201,202)'))
     selected=_question_rows(db,owner_user_id=17,course_id=23,limit=32)
@@ -399,7 +400,9 @@ def test_topic_question_lookup_includes_legacy_text_question_candidates(db):
                       ('Alpha',),source_kind='questions')
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
         query=plan.resolved_query,request_plan=plan)
-    assert [item.chunk_id for item in result.evidence]==[1]
+    # The hit still selects the source question; its adjoining page is now
+    # included so options/continuations are not discarded as lecture TEXT.
+    assert [item.chunk_id for item in result.evidence]==[1,2]
 
 
 def test_small_course_context_answers_without_literal_query_overlap_or_topk_loss(db,monkeypatch):
