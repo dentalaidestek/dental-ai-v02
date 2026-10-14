@@ -6,7 +6,8 @@ import json
 import os
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import Iterator
 
 from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error_for_user
@@ -179,7 +180,28 @@ def _batch_workers():
         return 1
 
 
-def _extract_source_batch(course_title, question, history, retrieval, child, synthesize, stopped=None):
+class _SourceRecoveryBudget:
+    # One extra provider attempt for the whole question request, not per page.
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.remaining = 1
+
+    def take(self, error, pieces):
+        cause = error.__cause__
+        if pieces or not isinstance(cause, StudyProviderError) or not cause.retryable:
+            return False
+        if cause.code not in {None, 408, 500, 502, 503, 504}:
+            return False
+        if cause.code is None and not isinstance(cause.__cause__, (TimeoutError, urllib.error.URLError)):
+            return False
+        with self.lock:
+            if self.remaining < 1:
+                return False
+            self.remaining -= 1
+            return True
+
+
+def _extract_source_batch(course_title, question, history, retrieval, child, synthesize, stopped=None, recovery=None):
     from dataclasses import replace
     from app.object_cache import scope
     operation = retrieval.study_task.get('operation')
@@ -214,39 +236,69 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
             task['batch_partial'] = True
             prepared_child = replace(child, study_task=task, resolved_query=request,
                                      semantic_trace_id=retrieval.semantic_trace_id)
-            output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
+            pieces = []
+            try:
+                for piece in stream_rag_v2(course_title, request, history, prepared_child):
+                    pieces.append(piece)
+            except StudyAIError as error:
+                if (recovery is None or (stopped is not None and stopped.is_set())
+                        or not recovery.take(error, pieces)):
+                    raise
+                logger.warning('Academic source recovery trace=%s reason=transient_before_output extra_attempt=1',
+                               retrieval.semantic_trace_id)
+                pieces = list(stream_rag_v2(course_title, request, history, prepared_child))
+            output = ''.join(pieces).strip()
         finally:
             child.attachments.clear()
     return output
 
 
 def _source_batch_outputs(course_title, question, history, retrieval, synthesize):
-    children = iter(retrieval.source_batches)
-    workers = _batch_workers() if retrieval.study_task.get('operation') == 'generate_questions' else 1
+    children = iter(enumerate(retrieval.source_batches))
+    questions = retrieval.study_task.get('operation') == 'generate_questions'
+    workers = _batch_workers() if questions else 1
+    recovery = _SourceRecoveryBudget() if questions else None
     logger.info('Academic source batch execution trace=%s batches=%s workers=%s',
                 retrieval.semantic_trace_id, len(retrieval.source_batches), workers)
     if workers == 1:
-        for child in children:
-            yield _extract_source_batch(course_title, question, history, retrieval, child, synthesize)
+        for _, child in children:
+            yield _extract_source_batch(course_title, question, history, retrieval, child, synthesize,
+                                        recovery=recovery)
         return
-    pending = []
+    pending = {}
+    ready = {}
     stopped = threading.Event()
+    next_output = 0
+    produced_chars = 0
     def extract(child):
         if stopped.is_set():
             return ''
-        return _extract_source_batch(course_title, question, history, retrieval, child, synthesize, stopped)
+        return _extract_source_batch(course_title, question, history, retrieval, child, synthesize,
+                                     stopped, recovery)
+    def refill():
+        while len(pending) < workers:
+            item = next(children, None)
+            if item is None:
+                break
+            index, child = item
+            pending[_SOURCE_BATCH_POOL.submit(extract, child)] = index
     try:
-        for _ in range(workers):
-            child = next(children, None)
-            if child is not None:
-                pending.append(_SOURCE_BATCH_POOL.submit(extract, child))
+        refill()
         while pending:
-            # Completion order must never change source order in synthesis.
-            output = pending.pop(0).result()
-            yield output
-            child = next(children, None)
-            if child is not None:
-                pending.append(_SOURCE_BATCH_POOL.submit(extract, child))
+            completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in sorted(completed, key=lambda item: pending[item]):
+                index = pending.pop(future)
+                output = future.result()
+                ready[index] = output
+                if output != BATCH_NO_SUPPORT:
+                    produced_chars += len(output) + 32
+                if produced_chars > 240000:
+                    raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
+            # A slow earlier section must not leave the other worker idle.
+            refill()
+            while next_output in ready:
+                yield ready.pop(next_output)
+                next_output += 1
     finally:
         stopped.set()
         for future in pending:
