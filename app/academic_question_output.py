@@ -72,3 +72,29 @@ def limit_source_questions(answer, count):
     if len(selected) < count:
         result += f'\n\nBu aktarımda {len(selected)} soru verildi; istenen {count} soruya göre {count-len(selected)} soru eksik. Bu liste tamamlanmış değildir.'
     return result
+
+
+def question_repair_slots(answer, count, history):
+    """Keep valid new questions; request only missing/repeated positions."""
+    accepted={}
+    old=[question_stem(b) for b in prior_questions(history)]
+    for number,block in question_blocks(answer):
+        if number<1 or number>count or number in accepted:
+            continue
+        stem=question_stem(block)
+        if any(same_question(stem,p) for p in old+[question_stem(b) for b in accepted.values()]):
+            continue
+        accepted[number]=block
+    return accepted,[n for n in range(1,count+1) if n not in accepted]
+
+
+def merge_question_replacements(accepted, missing, answer):
+    replacements=question_blocks(answer)
+    if len(replacements)!=len(missing) or [n for n,_ in replacements]!=list(range(1,len(missing)+1)):
+        raise ValueError('invalid replacement question count')
+    merged=dict(accepted)
+    for target,(_,block) in zip(missing,replacements):
+        match=_HEADING.search(block)
+        body=(match.group(2)+'\n'+block[match.end():].lstrip()).strip()
+        merged[target]=f'### Soru {target}\n{body}'
+    return '\n\n'.join(merged[n] for n in sorted(merged))

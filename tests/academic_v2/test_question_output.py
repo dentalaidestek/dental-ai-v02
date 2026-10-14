@@ -47,8 +47,9 @@ def test_count_gaps_and_internal_duplicates_are_detected():
 def test_only_one_repair_is_used_and_rejected_draft_is_not_returned(monkeypatch,bad):
     from app.study_ai_v2 import ask_rag_v2
     from app.study_retrieval_v2 import RetrievalResult
-    good=question(1,'Kök 2')+'\n\n'+question(2,'Kök 3')
-    model=provider(monkeypatch,[bad,good])
+    replacement=question(1,'Kök 3')
+    good=question(1,'Kök 1')+'\n\n'+question(2,'Kök 3')
+    model=provider(monkeypatch,[bad,replacement])
     retrieval=RetrievalResult(note_context=['Kaynak'],evidence_sufficient=True,
         study_task={'operation':'generate_questions','count':2})
     assert ask_rag_v2('Orto','2 soru hazırla',[],retrieval)==good
@@ -65,3 +66,30 @@ def test_second_invalid_set_is_not_saved_as_success(monkeypatch):
     with pytest.raises(StudyAIError,match='kontrolünü'):
         ask_rag_v2('Orto','2 soru hazırla',[],retrieval)
     assert model.generate_stream.call_count==2
+
+
+def test_valid_new_questions_survive_repair_of_repeated_position(monkeypatch):
+    from app.study_ai_v2 import ask_rag_v2
+    from app.study_retrieval_v2 import RetrievalResult
+    old=question(1,'Frankfort düzlemi hangi noktalardan geçer?')
+    good=question(1,'ANB açısı nasıl hesaplanır?')
+    bad=good+'\n\n'+question(2,'Frankfort düzlemi hangi noktalardan geçer?')
+    model=provider(monkeypatch,[bad,question(1,'Y aksı hangi noktalardan geçer?')])
+    retrieval=RetrievalResult(note_context=['Kaynak'],evidence_sufficient=True,
+        study_task={'operation':'generate_questions','count':2})
+    answer=ask_rag_v2('Orto','2 soru hazırla',[{'role':'ASSISTANT','content':old}],retrieval)
+    assert question_blocks(answer)[0][1]==good
+    assert [n for n,_ in question_blocks(answer)]==[1,2]
+    assert 'Frankfort' not in answer and 'Y aksı' in answer
+    assert '"count": 1' in model.generate_stream.call_args.kwargs['prompt']
+
+
+def test_extra_questions_can_be_trimmed_without_calling_model_again(monkeypatch):
+    from app.study_ai_v2 import ask_rag_v2
+    from app.study_retrieval_v2 import RetrievalResult
+    draft='\n\n'.join(question(n,f'Kavram {n}') for n in range(1,4))
+    model=provider(monkeypatch,[draft])
+    retrieval=RetrievalResult(note_context=['Kaynak'],evidence_sufficient=True,
+        study_task={'operation':'generate_questions','count':2})
+    assert [n for n,_ in question_blocks(ask_rag_v2('Orto','2 soru hazırla',[],retrieval))]==[1,2]
+    assert model.generate_stream.call_count==1
