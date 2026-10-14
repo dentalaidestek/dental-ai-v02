@@ -1119,7 +1119,9 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
     attached_bytes = sum(len(item.get('data') or b'') for item in result.attachments)
     prepared_pages = {(item.get('material_id'),item.get('page_number'))
                       for item in result.attachments if item.get('data')}
-    for source in result.visual_sources[:32]:
+    sources = result.visual_sources[:32]
+    rows_by_key = None
+    for source in sources:
         cache_key = (
             f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
             int(source["page_number"]),
@@ -1140,18 +1142,42 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
             attached_bytes += len(cached)
             continue
 
-        with session_factory() as read_session:
-            row = read_session.exec(
-                text(
-                    "SELECT m.file_path, m.mime_type, m.display_name, m.active_index_version, p.visual_pdf_bytes "
-                    "FROM studymaterial m LEFT JOIN studyindexpage p ON "
-                    "p.owner_user_id=m.owner_user_id AND p.material_id=m.id "
-                    "AND p.index_version=m.active_index_version AND p.page_number=:p "
-                    "WHERE m.id=:m AND m.owner_user_id=:o AND m.deleted_at IS NULL"
-                ),
-                params={"m": source["material_id"], "o": source["owner_user_id"], "p": source["page_number"]},
-            ).first()
-        if not row:
+        if rows_by_key is None:
+            # Hydrate a bounded page batch in one short read per owner. Opening
+            # a database Session for every page dominated large-course latency.
+            rows_by_key = {}
+            missing_by_owner = {}
+            with _PAGE_PDF_CACHE_LOCK:
+                for candidate in sources:
+                    key = (f"{candidate['owner_user_id']}:{candidate['material_id']}:"
+                           f"{candidate.get('index_version')}:{candidate.get('reference')}",
+                           int(candidate['page_number']))
+                    if key not in _PAGE_PDF_CACHE:
+                        missing_by_owner.setdefault(candidate['owner_user_id'], []).append(candidate)
+            for owner, missing in missing_by_owner.items():
+                missing = list({(item['material_id'],item['page_number']):item for item in missing}.values())
+                params = {'o': owner, 'bytes': _VISUAL_REQUEST_MAX_BYTES}
+                wanted = []
+                for index, candidate in enumerate(missing):
+                    params[f'm{index}'] = candidate['material_id']
+                    params[f'p{index}'] = candidate['page_number']
+                    wanted.append(f'SELECT :m{index} AS material_id, :p{index} AS page_number')
+                with session_factory() as read_session:
+                    byte_sum = "SUM(COALESCE(length(visual_pdf_bytes),0)) OVER (ORDER BY id,page_number ROWS UNBOUNDED PRECEDING)"
+                    rows = read_session.exec(text(
+                        "WITH page_data AS (SELECT m.id,w.page_number,m.file_path,m.mime_type,m.display_name,"
+                        "m.active_index_version,p.visual_pdf_bytes FROM (" +
+                        " UNION ALL ".join(wanted) + ") w JOIN studymaterial m ON m.id=w.material_id "
+                        "LEFT JOIN studyindexpage p ON p.owner_user_id=m.owner_user_id "
+                        "AND p.material_id=m.id AND p.index_version=m.active_index_version "
+                        "AND p.page_number=w.page_number WHERE m.owner_user_id=:o AND m.deleted_at IS NULL) "
+                        "SELECT id,page_number,file_path,mime_type,display_name,active_index_version,"
+                        "CASE WHEN " + byte_sum + " <= :bytes THEN visual_pdf_bytes ELSE NULL END,"
+                        "CASE WHEN " + byte_sum + " > :bytes THEN 1 ELSE 0 END FROM page_data"
+                    ), params=params).all()
+                rows_by_key.update({(owner,int(item[0]),int(item[1])):tuple(item[2:]) for item in rows})
+        row = rows_by_key.get((source['owner_user_id'],int(source['material_id']),int(source['page_number'])))
+        if not row or row[5]:
             continue
         live_version = str(row[3]) if row[3] else None
         if live_version != source.get("index_version"):

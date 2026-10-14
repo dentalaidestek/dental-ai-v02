@@ -449,3 +449,29 @@ def test_dense_candidates_preserve_owner_course_and_published_version_fences(db)
     selected=_fts_rows(db,owner_user_id=17,course_id=23,lexical_query='"absent_term"',
         query_vector=[1.0,0.0],embedding_provider='gemini',embedding_model='fixture',limit=96)
     assert [row[0] for row in selected]==[1]
+
+
+def test_batched_visual_page_read_preserves_owner_version_and_byte_budget(db,monkeypatch):
+    from contextlib import contextmanager
+    import app.study_retrieval_v2 as retrieval
+    db.exec(text("ALTER TABLE studymaterial ADD COLUMN file_path text, ADD COLUMN mime_type text"))
+    db.exec(text("ALTER TABLE studyindexpage ADD COLUMN visual_pdf_bytes bytea"))
+    db.exec(text("UPDATE studymaterial SET file_path='/synthetic/source.pdf',mime_type='application/pdf'"))
+    db.exec(text("INSERT INTO studyindexpage(owner_user_id,course_id,material_id,index_version,page_number,visual_pdf_bytes) SELECT 17,23,1,'v1',p,:data FROM generate_series(1,16) p"),params={'data':b'%PDF-12345'})
+    sources=[dict(owner_user_id=17,material_id=1,index_version='v1',reference='ref',page_number=p,
+        mime_type='application/pdf',display_name='fixture') for p in range(1,17)]
+    @contextmanager
+    def factory():yield db
+    monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',25)
+    with retrieval._PAGE_PDF_CACHE_LOCK:retrieval._PAGE_PDF_CACHE.clear()
+    try:
+        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True,source_coverage_complete=True)
+        retrieval.materialize_visual_sources(factory,result)
+        assert [item['page_number'] for item in result.attachments]==[1,2]
+        assert not result.source_coverage_complete
+        for changed in [dict(sources[0],owner_user_id=18),dict(sources[0],index_version='obsolete')]:
+            result=retrieval.RetrievalResult(visual_sources=[changed],evidence_sufficient=True)
+            retrieval.materialize_visual_sources(factory,result)
+            assert not result.attachments
+    finally:
+        with retrieval._PAGE_PDF_CACHE_LOCK:retrieval._PAGE_PDF_CACHE.clear()

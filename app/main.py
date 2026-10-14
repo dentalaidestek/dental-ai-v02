@@ -4784,6 +4784,7 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
     return templates.TemplateResponse(
         request=request,
         name="notes_ai.html",
+        headers={"Cache-Control": "private, no-store"},
         context={
             "course": course,
             "material_count": len(materials),

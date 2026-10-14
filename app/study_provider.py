@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import socket
+import threading
 import time
 import uuid
 import urllib.error
@@ -281,7 +282,16 @@ class GeminiStudyProvider(StudyProvider):
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
     RETRYABLE_HTTP_CODES = {408, 429, 500, 502, 503, 504}
 
+    @property
+    def last_finish_reason(self):
+        return getattr(self._stream_state, 'finish_reason', 'UNKNOWN')
+
+    @last_finish_reason.setter
+    def last_finish_reason(self, value):
+        self._stream_state.finish_reason = value
+
     def __init__(self):
+        self._stream_state = threading.local()
         self.api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
         try:
             self.timeout = int(os.getenv("STUDY_GEMINI_TIMEOUT_SECONDS", "75"))
