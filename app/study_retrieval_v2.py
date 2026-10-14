@@ -1705,7 +1705,12 @@ def _question_rows(
     session: Session, *, owner_user_id: int, course_id: int,
     limit: int = 16, after_cursor: tuple[int, int] | None = None,
 ) -> list:
-    """Return likely question-bearing chunks in source order, not semantic top-k."""
+    """Read question-bearing pages AND adjoining pages in source order.
+
+    A question's options can be separate TEXT chunks or continue on the next
+    page. Selecting only QUESTION chunks loses these options and whole pages
+    whose OCR did not retain a recognizable question number.
+    """
     return list(session.exec(text(
         """
         SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
@@ -1716,6 +1721,7 @@ def _question_rows(
         FROM studyindexchunk c
         JOIN studymaterial m
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.course_id=c.course_id
          AND m.active_index_version=c.index_version
          AND m.index_status='READY' AND m.deleted_at IS NULL
         WHERE c.owner_user_id=:owner AND c.course_id=:course
@@ -1725,9 +1731,16 @@ def _question_rows(
             OR (c.material_id = :after_material_id AND c.chunk_index > :after_chunk_index)
           )
           AND (
-            c.content_kind = 'QUESTION'
-            OR c.text_content ~* :question_pattern
-            OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)'
+            EXISTS (
+                SELECT 1 FROM studyindexchunk q
+                WHERE q.material_id=c.material_id AND q.owner_user_id=c.owner_user_id
+                  AND q.course_id=c.course_id AND q.index_version=c.index_version
+                  AND q.page_start <= c.page_end + 1
+                  AND q.page_end >= c.page_start - 1
+                  AND (q.content_kind = 'QUESTION'
+                    OR q.text_content ~* :question_pattern
+                    OR lower(coalesce(q.section_title, '')) ~ '(soru|test|quiz|değerlendirme)')
+            )
           )
         ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
         LIMIT :limit

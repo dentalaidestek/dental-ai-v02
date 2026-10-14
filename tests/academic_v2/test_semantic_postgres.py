@@ -37,6 +37,22 @@ def add(db, ident, body, *, material=1, owner=17, course=23, version='v1'):
         params=dict(id=ident,material=material,owner=owner,course=course,version=version,body=body))
 
 
+def test_question_pages_include_text_siblings_and_continuations_without_foreign_or_stale(db):
+    from app.study_retrieval_v2 import _question_rows
+    for cid,page,body in [(101,3,'14. Çenelerin açma hareketi?'),(102,3,'OCR bozuk şık'),
+                          (103,4,'Temporal gevşemesi'),(104,4,'OCR numaraları kaybolan soru'),
+                          (105,9,'Başka ders başlığı')]:
+        add(db,cid,body)
+        db.exec(text('UPDATE studyindexchunk SET page_start=:p,page_end=:p WHERE id=:id'),params={'p':page,'id':cid})
+    add(db,201,'FOREIGN',owner=99)
+    add(db,202,'STALE',version='old')
+    db.exec(text('UPDATE studyindexchunk SET page_start=3,page_end=3 WHERE id IN (201,202)'))
+    selected=_question_rows(db,owner_user_id=17,course_id=23,limit=32)
+    assert [r[0] for r in selected]==[101,102,103,104]
+    remaining=_question_rows(db,owner_user_id=17,course_id=23,after_cursor=(1,102),limit=32)
+    assert [r[0] for r in remaining]==[103,104]
+
+
 def test_complete_batch_reader_crosses_128_without_foreign_stale_or_question_rows(db):
     from app.academic_source_batches import load_owned_source_rows, partition_source_rows
     db.exec(text('''INSERT INTO studyindexchunk

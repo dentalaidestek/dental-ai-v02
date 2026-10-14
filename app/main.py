@@ -4713,6 +4713,44 @@ def study_material_file(request: Request, course_id: int, material_id: int):
     return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})
 
 
+@app.get("/notes/courses/{course_id}/materials/{material_id}/pages/{page_number}/text")
+def study_material_page_text(request: Request, course_id: int, material_id: int, page_number: int):
+    """Owner-only inspection of the published OCR checkpoint and its chunks.
+
+    This reads saved extraction results; it performs no OCR or provider call.
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({'error': 'Yetkisiz erişim.'}, status_code=401)
+    with Session(engine, expire_on_commit=False) as s:
+        material = _owned_study_material(s, user, course_id, material_id)
+        if not material or material.index_status != 'READY' or not material.active_index_version:
+            return JSONResponse({'error': 'Yayımlanmış not bulunamadı.'}, status_code=404)
+        version = material.active_index_version
+        page = s.exec(select(StudyIndexPage).where(
+            StudyIndexPage.owner_user_id == user.id,
+            StudyIndexPage.course_id == course_id,
+            StudyIndexPage.material_id == material_id,
+            StudyIndexPage.index_version == version,
+            StudyIndexPage.page_number == page_number)).first()
+        if page is None:
+            return JSONResponse({'error': 'Sayfa bulunamadı.'}, status_code=404)
+        chunks = s.exec(select(StudyIndexChunk).where(
+            StudyIndexChunk.owner_user_id == user.id,
+            StudyIndexChunk.course_id == course_id,
+            StudyIndexChunk.material_id == material_id,
+            StudyIndexChunk.index_version == version,
+            StudyIndexChunk.page_start <= page_number,
+            StudyIndexChunk.page_end >= page_number
+        ).order_by(StudyIndexChunk.chunk_index)).all()
+        data = {'filename': material.original_filename, 'page': page_number,
+                'status': page.status, 'extraction_method': page.extraction_method,
+                'ocr_text': page.text_content or '',
+                'chunks': [{'id': c.id, 'kind': c.content_kind,
+                            'title': c.section_title, 'text': c.text_content} for c in chunks]}
+    return JSONResponse(data, headers={'Cache-Control': 'private, no-store'})
+
+
 @app.post("/notes/courses/{course_id}/materials/{material_id}/delete")
 def delete_study_material(request: Request, course_id: int, material_id: int):
     user = get_current_user(request)

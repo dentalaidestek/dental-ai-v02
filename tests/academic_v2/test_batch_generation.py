@@ -35,9 +35,10 @@ def test_summary_processes_each_section_once_and_combines_without_extra_call(mon
 
 
 def test_question_count_applies_once_after_all_sections_are_read(monkeypatch):
-    value=provider(monkeypatch,['First grounded extraction','Second grounded extraction','20 questions'])
+    questions='\n\n'.join(f'### Soru {n}\nKavram {n} hangi tanıma karşılık gelir?\nA) Tanım' for n in range(1,21))
+    value=provider(monkeypatch,['First grounded extraction','Second grounded extraction',questions])
     result=ask_rag_v2('Course','20 soru hazırla',[],parent('generate_questions',20))
-    assert result=='20 questions'
+    assert result==questions
     assert value.generate_stream.call_count==3
     first=value.generate_stream.call_args_list[0].kwargs['prompt']
     final=value.generate_stream.call_args_list[-1].kwargs['prompt']

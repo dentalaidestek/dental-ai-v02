@@ -106,13 +106,23 @@ not an invented default. Teach means preparing/explaining a lesson, not merely
 searching the words 'ders oluştur'. Do not copy operation words into topics.
 source_kind is notes for factual answers/new questions, questions for finding,
 listing, transcribing, formatting, exporting or solving actual questions in the
-uploaded source, or question_patterns when explicitly
-analysing/using past-exam patterns. Never infer past-exam intent from merely
+uploaded source, or question_patterns when
+analysing/using past-exam patterns, including asking which topics the teacher
+most often asks or what to prioritize based on previous exams. Such a request
+asks for an evidence-based estimate, not an unsupported prediction or a refusal
+because the notes do not contain a future exam. Retrieve the question index;
+past exams need not have appeared in the heading outline. Preserve a genuinely
+topic-specific scope, otherwise use course scope for the pattern analysis.
+Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
 requested. needs_visual is true when the task needs an actual source diagram,
 image, marked region or table. These fields control source retrieval directly. continue_source is true only
 for continuing the previously paginated SOURCE question list, never for a fresh
 request or a request to restart from the beginning.
+Solving or grading questions that the assistant just generated refers to the
+conversation's question set, NOT the uploaded question index. Use solve + notes
+and restate the referenced questions' subjects/searches; preserve which set and
+question numbers the user means. For the entire generated set use course scope.
 Reformatting existing exam questions is NOT generate_questions and does not
 require solving them: use answer + questions, preserving the requested format
 in resolved_query. All existing questions means course scope. Do not replace
@@ -338,9 +348,9 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.scope == 'course' and plan.operation != 'clarify' and (
-            (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions'})
-            or (plan.source_kind == 'questions' and not plan.continue_source)):
+    if plan.operation != 'clarify' and (plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
+            (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions', 'solve'})
+            or (plan.source_kind == 'questions' and not plan.continue_source)))):
         from app.academic_source_batches import retrieve_source_batches
         result = retrieve_source_batches(session, request_plan=plan, **kwargs)
     else:

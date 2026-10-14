@@ -10,12 +10,57 @@ from dataclasses import dataclass
 class SourceBatch:
     title: str
     chunk_ids: tuple[int, ...]
+    primary_chunk_ids: tuple[int, ...] = ()
+
+
+def _question_page_batches(rows, *, max_chars, max_pages, visual_pages):
+    """Whole pages plus one look-ahead page for continuation options."""
+    from itertools import groupby
+    groups=[]
+    seen=set()
+    ordered=sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0])))
+    for _,items in groupby(ordered,key=lambda r:(int(r[1]),int(r[3]),int(r[4]))):
+        group=[r for r in items if int(r[0]) not in seen]
+        seen.update(int(r[0]) for r in group)
+        if group: groups.append(group)
+    def size(group):
+        return sum(len(r[7] or '')+len(str(r[5] or r[2] or ''))+200 for r in group)
+    def pages(group):
+        return {(int(r[1]),p) for r in group for p in range(int(r[3]),int(r[4])+1)
+                if visual_pages is None or (int(r[1]),p) in visual_pages}
+    batches=[]
+    start=0
+    while start<len(groups):
+        end=start; chars=0; chosen_pages=set(); chosen=[]
+        while end<len(groups):
+            group=groups[end]
+            if size(group)>max_chars or len(pages(group))>max_pages:
+                raise ValueError('question page exceeds batch budget')
+            following=(groups[end+1] if end+1<len(groups) and
+                int(groups[end+1][0][1])==int(group[0][1]) and
+                int(groups[end+1][0][3])<=int(group[-1][4])+1 else [])
+            if chosen and (chars+size(group)+size(following)>max_chars or len(chosen_pages|pages(group))>max(1,max_pages-1)):
+                break
+            chosen.extend(group); chars+=size(group); chosen_pages |= pages(group); end+=1
+        primary=tuple(int(r[0]) for r in chosen)
+        if end<len(groups) and int(groups[end][0][1])==int(chosen[-1][1]) and int(groups[end][0][3])<=int(chosen[-1][4])+1:
+            extra=groups[end]
+            if chars+size(extra)<=max_chars and len(chosen_pages|pages(extra))<=max_pages:
+                chosen.extend(extra)
+            else:
+                raise ValueError('question continuation exceeds batch budget')
+        titles=list(dict.fromkeys(str(r[5] or r[2] or 'Ders notu') for r in chosen))
+        batches.append(SourceBatch(' / '.join(titles),tuple(int(r[0]) for r in chosen),primary))
+        start=end
+    return tuple(batches)
 
 
 def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=None,
                           include_questions=False):
     if max_chars < 1 or max_pages < 1:
         raise ValueError('invalid batch budget')
+    if include_questions:
+        return _question_page_batches(rows,max_chars=max_chars,max_pages=max_pages,visual_pages=visual_pages)
     seen = set()
     batches, ids, chars, pages, titles = [], [], 0, set(), []
     def flush():
@@ -72,7 +117,7 @@ def retrieve_source_batches(session, *, owner_user_id, course_id, query,
                             request_plan, recent_history=None, **kwargs):
     from app.academic_semantic_retrieval import retrieve_semantic_context
     from app.study_retrieval_v2 import RetrievalResult
-    loader = load_owned_question_rows if request_plan.source_kind == 'questions' else load_owned_source_rows
+    loader = load_owned_question_rows if request_plan.source_kind in {'questions', 'question_patterns'} else load_owned_source_rows
     rows = list(loader(session, owner_user_id=owner_user_id, course_id=course_id))
     return retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
         course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
@@ -108,7 +153,7 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
         "AND m.index_status='READY' AND m.deleted_at IS NULL "
         "AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
         params={'owner':owner_user_id,'course':course_id}).all()}
-    questions = getattr(request_plan,'source_kind','notes')=='questions'
+    questions = getattr(request_plan,'source_kind','notes') in {'questions', 'question_patterns'}
     # Verbatim question output is much longer than a summary of the same
     # inputs. Bound those sections for the existing generation output budget.
     batches = partition_source_rows(rows,visual_pages=visual_pages,
@@ -116,9 +161,15 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
         max_pages=4 if questions else (8 if request_plan.scope=='topic' else 16),
         include_questions=questions)
     by_id = {int(row[0]): row for row in rows}
-    children = [retrieve_semantic_context(session, owner_user_id=owner_user_id,
-        course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history,
-        _source_rows=[by_id[cid] for cid in batch.chunk_ids]) for batch in batches]
+    children=[]
+    for batch in batches:
+        child=retrieve_semantic_context(session, owner_user_id=owner_user_id,
+            course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history,
+            _source_rows=[by_id[cid] for cid in batch.chunk_ids])
+        if questions:
+            child.study_task['question_start_pages']=sorted({(int(by_id[cid][1]),p)
+                for cid in batch.primary_chunk_ids for p in range(int(by_id[cid][3]),int(by_id[cid][4])+1)})
+        children.append(child)
     if len(children) == 1:
         return children[0]
     result = RetrievalResult(resolved_query=request_plan.resolved_query,

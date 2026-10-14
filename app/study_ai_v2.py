@@ -20,6 +20,7 @@ from app.study_provider import (
     target_available,
 )
 from app.study_retrieval_v2 import RetrievalResult
+from app.academic_question_output import prior_questions, question_set_issues, limit_source_questions
 
 logger = logging.getLogger('uvicorn.error.study_ai_v2')
 
@@ -125,10 +126,18 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         "dışlamalarını, sayılarını, birimlerini, adet/zorluk/biçim/uzunluk ve sırasını koru. "
         "Özgün mesajı ve son konuşmayı da dikkate al; önceki cevapları akademik kaynak sayma.\n\n"
         + ("YENİ SORU ÜRETİMİ: Bu görev kaynakta hazır soruları bulup kopyalamak değildir. "
-           "Doğrulanmış not bilgileri üzerinden yeni ve farklı sorular üret. İstenen adet için "
+           "Doğrulanmış not bilgileri üzerinden yeni ve farklı sorular üret. Önceki soru setlerini "
+           "örnek alıp yeniden yazma; soru kökünü birkaç kelimeyle değiştirmek veya şık sırasını "
+           "değiştirmek yeni soru değildir. Önceki konular tekrar çalışılabilir ama farklı bir "
+           "bilgi, ilişki veya uygulama sorulmalı. Her soru için doğru şıkkı kaynakla doğrula; "
+           "yanlışı soran kökte doğru ifadeyi cevap olarak seçme. Cevap anahtarı istenmese de "
+           "tek doğru cevabı kontrol et. Her başlığı '### Soru N' biçiminde yaz. İstenen adet için "
            "kaynakta aynı sayıda hazır soru bulunması gerekmez. İstenen adede uy; "
            "kaynak dışı olgular ekleyerek sayıyı doldurma. Yeterli doğrulanmış bilgi yoksa "
            "kaç soru hazırlayabildiğini ve eksik kalan adedi açıkça belirt.\n\n"
+           if retrieval.study_task.get('operation') == 'generate_questions' else "")
+        + ("TEKRAR EDİLMEYECEK ÖNCEKİ SORULAR (bilgi kaynağı değildir):\n"
+           + json.dumps(prior_questions(history), ensure_ascii=False) + "\n\n"
            if retrieval.study_task.get('operation') == 'generate_questions' else "")
         + (f"BU TURUN İSTENEN SORU ADEDİ: {retrieval.study_task['count']}. "
            f"Soru 1'den Soru {retrieval.study_task['count']}'ye kadar tek bir sıra halinde "
@@ -144,8 +153,34 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
          "Düzenleme/aktarma isteğinde soru kökü, şıklar, sıralama ve anlamı koru; çözüm veya cevap anahtarı istenmemişse ekleme. "
          "Soru/şık metnini aynen aktarmak, onu doğru akademik bilgi olarak onaylamak değildir. "
          "Yanlış seçenekleri de metnin parçası olarak aktar; fakat açıklama veya çözümde doğru bilgi gibi kullanma. "
-         "Okuyamadığın metni uydurma; hangi sorunun okunamadığını belirt. Sorunun geçmiş sınavda çıktığını yalnız kaynak bunu gösteriyorsa söyle.\n\n"
+         "Her soruyu '### Soru <kaynak numarası>' başlığıyla ve kendi dosya/sayfa atfıyla yaz. "
+         "Bütün sayfayı incele: ilk sorular, sayfa sonundaki şıklar ve sonraki sayfanın başındaki "
+         "devam şıkları atlanmamalı. El yazısı cevap işareti basılı şık metninin yerine geçmez. "
+         "Okunabilen bütün şıkları aynen aktar; 'görselde işaretli seçenek', 'veya diğer seçenekler' "
+         "gibi yer tutucular yazma. Okuyamadığın metni açıkça '[okunamadı]' olarak göster. "
+         "Şekil/tablo zorunluysa okuyabildiğin değerleri aktar, okunamayan bölümü ve kaynak "
+         "sayfasını belirt; eksik bir soruyu tam gibi sunma. Sırf işaretli olduğu için bir şıkkı "
+         "doğru kabul etme. Sorunun geçmiş sınavda çıktığını yalnız kaynak bunu gösteriyorsa söyle.\n\n"
          if retrieval.study_task.get('source_kind') == 'questions' else "")
+        + ("SORU BAŞLANGIÇ SAYFALARI: " + json.dumps(retrieval.study_task['question_start_pages'])
+           + ". Yalnız bu sayfalarda BAŞLAYAN soruları aktar veya envantere say. Diğer ekli "
+           "sayfa yalnız son sorunun devam şıklarını tamamlamak içindir. Bir sayfa başındaki "
+           "önceki sorunun şıklarını yeni soru diye başlatma.\n\n"
+           if retrieval.study_task.get('question_start_pages') else "")
+        + ("ÇIKMIŞ SORU ÖRÜNTÜLERİ: Yalnız kaynakta bulunan gerçek sınav sorularını say. "
+           "Ders metninde bir konunun uzun anlatılması, o konunun sık sorulduğunun kanıtı değildir. "
+           "Her konu için soru adedi ve dosya/sayfa/soru numarası ver; sayılabilir örnekleri "
+           "göstermeden en sık sorulan konu sıralaması yapma. Aynı sorunun kopyasını iki kere "
+           "sayma. Okunamayan ve örüntüsü doğrulanamayan soruları ayrı belirt. Bu analiz geçmiş "
+           "soru dağılımıdır, gelecek sınavın kesin tahmini değildir.\n\n"
+           if retrieval.study_task.get('source_kind') == 'question_patterns' else "")
+        + ("SORU ÇÖZÜMÜ: Gönderme yapılan soru kökünü ve şıkları konuşmadan belirle, "
+           "doğru cevabı bu turun kaynak tanımıyla doğrula. Önceki üretilmiş soru veya "
+           "cevap anahtarı doğruluk kanıtı değildir. 'Yanlıştır/değildir' kökünde doğru "
+           "ifadeyi cevap diye seçme. Her yanıtı destekleyen dosya/sayfayı belirt. Soru "
+           "hatalı veya birden fazla doğru şık içeriyorsa bunu açıkça söyle; zorla tek "
+           "şıkkı doğru ilan etme. Farklı kavramların benzer tanımlarını birleştirme.\n\n"
+           if retrieval.study_task.get('operation') == 'solve' else "")
         + "PDF dosyasını uygulama tamamlanan içerikten oluşturur. Yalnız istenen ders içeriğini yaz; "
         "yazdırma/kaydetme talimatı, PDF önerisi veya hayalî indirme bağlantısı ekleme. "
         "Dosyanın oluşturulduğunu kendin iddia etme.\n\n"
@@ -231,17 +266,34 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
             if synthesize:
                 task.update(operation='summarize', count=None)
                 request = (('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
-                           'bilgilerini kaynak sayfalarıyla çıkar. Henüz soru veya cevap anahtarı üretme. '
+                           'bilgilerini kavram | basılı tanım/ilişki | dosya/sayfa şeklinde ayrı kaydet. '
+                           'Farklı kavramların tanımlarını tek olguda birleştirme. Henüz soru veya cevap anahtarı üretme. '
                            'Aynı bilgiyi tekrarlama; farklı alt başlıkları atlama.')
                            if operation == 'generate_questions' else
+                           ('Kullanıcının çözmek istediği konuşmadaki sorular için bu bölümdeki '
+                            'doğrulanmış kavram ve tanımları çıkar. Her olguyu ilgili soru numarası, '
+                            'kavram ve dosya/sayfa ile ayrı tut. Henüz cevap anahtarı üretme. '
+                            'Önceki cevapları kanıt sayma; başka kavramın tanımını bu soruya bağlama.')
+                           if operation == 'solve' and retrieval.study_task.get('source_kind') == 'notes' else
+                           ('Bu bölümdeki gerçek sınav sorularının her birini kaynak dosya, sayfa, '
+                            'orijinal soru numarası, kısa soru kökü ve konusu ile bir envanter halinde çıkar. '
+                            'Soru olmayan ders anlatımını sayma. Soruları çözme, seçenekleri doğru bilgi '
+                            'olarak kullanma. Henüz bütün kaynakların sıklık sıralamasını yapma.')
+                           if retrieval.study_task.get('source_kind') == 'question_patterns' else
                            f'Karşılaştırma için kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
                            'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
                            'dosya/sayfa atıflarıyla ayrı tut. Diğer taraf bu bölümde yoksa burada karşılaştırma '
                            'sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
             else:
+                if task.get('source_kind') == 'questions':
+                    task['count'] = None  # The parent applies the total once.
                 request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
                            'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
                            'diğer bölümlerin notlarda bulunmadığını iddia etme.')
+                if task.get('source_kind') == 'questions':
+                    request += (' İstenen toplam adet uygulama tarafından bütün bölümler toplandıktan '
+                                'sonra uygulanacak. Bu bölümde adet sınırı koyma; bulunan tüm soruları '
+                                've devam şıklarını aynen aktar. Soruları kaynak numarasıyla başlat.')
             task['batch_partial'] = True
             prepared_child = replace(child, study_task=task, resolved_query=request,
                                      semantic_trace_id=retrieval.semantic_trace_id)
@@ -264,7 +316,8 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
 
 def _source_batch_outputs(course_title, question, history, retrieval, synthesize):
     children = iter(enumerate(retrieval.source_batches))
-    questions = retrieval.study_task.get('operation') == 'generate_questions'
+    questions = (retrieval.study_task.get('operation') == 'generate_questions'
+                 or retrieval.study_task.get('source_kind') in {'questions','question_patterns'})
     workers = _batch_workers() if questions else 1
     recovery = _SourceRecoveryBudget() if questions else None
     logger.info('Academic source batch execution trace=%s batches=%s workers=%s',
@@ -318,7 +371,10 @@ def _stream_source_batches(course_title, question, history, retrieval):
     operation = retrieval.study_task.get('operation')
     outputs = []
     synthesis_chars = 0
-    synthesize = operation in {'generate_questions', 'compare'}
+    source_questions = retrieval.study_task.get('source_kind') == 'questions'
+    synthesize = (operation in {'generate_questions', 'compare'}
+                  or operation == 'solve' and retrieval.study_task.get('source_kind') == 'notes'
+                  or retrieval.study_task.get('source_kind') == 'question_patterns')
     for output in _source_batch_outputs(course_title, question, history, retrieval, synthesize):
         if output == BATCH_NO_SUPPORT:
             continue
@@ -326,10 +382,12 @@ def _stream_source_batches(course_title, question, history, retrieval):
         synthesis_chars += len(output) + 32
         if synthesize and synthesis_chars > 240000:
             raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
-        if not synthesize:
+        if not synthesize and not source_questions:
             yield ('\n\n' if len(outputs) > 1 else '') + output
     if not outputs:
         yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım. İlgili konu veya dosya adını biraz daha açık yazar mısın?'
+    elif source_questions and not synthesize:
+        yield limit_source_questions('\n\n'.join(outputs), retrieval.study_task.get('count'))
     elif synthesize:
         # One final answer sees evidence from every relevant section. A global
         # comparison cannot be built by concatenating independent answers.
@@ -425,6 +483,11 @@ def stream_rag_v2(
                 target.model,
                 attempted_api_calls,
             )
+            checked_set = retrieval.study_task.get('operation') == 'generate_questions'
+            checked_source = (retrieval.study_task.get('source_kind') == 'questions'
+                and type(retrieval.study_task.get('count')) is int
+                and not retrieval.study_task.get('batch_partial'))
+            pieces = []
             for chunk in provider.generate_stream(
                 model=target.model,
                 system_prompt=V2_SYSTEM_PROMPT,
@@ -438,11 +501,37 @@ def stream_rag_v2(
             ):
                 if chunk:
                     emitted = True
-                    yield chunk
+                    if checked_set or checked_source:
+                        pieces.append(chunk)
+                    else:
+                        yield chunk
             if not emitted:
                 raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
             if getattr(provider, 'last_finish_reason', 'UNKNOWN') == 'MAX_TOKENS':
                 raise StudyAIError('Yanıt uzunluk sınırına ulaştığı için tamamlanamadı. İsteği daha küçük konu gruplarına ayırarak tekrar gönderin.')
+            if checked_set:
+                answer = ''.join(pieces)
+                issues = question_set_issues(answer, retrieval.study_task.get('count'), history)
+                if issues:
+                    # Only a malformed/repeated set needs one correction call.
+                    # Reuse exactly the same source evidence; never retry forever
+                    # or expose the rejected set as a completed assistant reply.
+                    logger.info('Academic question validation trace=%s issues=%s repair=1', trace_id, len(issues))
+                    repair_prompt = (prompt + '\n\nÇIKTI KONTROLÜ: Önceki taslak reddedildi. '
+                        'Aşağıdaki hataları aynı kaynaklarla düzelt ve tek bir tam yeni set döndür. '
+                        'Kontrol raporunu veya eski taslağı cevaba ekleme.\n'
+                        + json.dumps(issues,ensure_ascii=False) + '\nREDDEDİLEN TASLAK:\n' + answer)
+                    repaired = list(provider.generate_stream(model=target.model,
+                        system_prompt=V2_SYSTEM_PROMPT, history=[], prompt=repair_prompt,
+                        attachments=retrieval.attachments, temperature=0.22, max_output_tokens=7000))
+                    if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
+                        raise StudyAIError('Soru seti uzunluk sınırında kaldığı için tamamlanamadı.')
+                    answer = ''.join(repaired)
+                    if question_set_issues(answer, retrieval.study_task.get('count'), history):
+                        raise StudyAIError('Soru seti adet veya tekrar kontrolünü geçemedi. Eksik veya tekrar eden set tamamlanmış olarak kaydedilmedi; yeniden deneyebilirsin.')
+                yield answer
+            elif checked_source:
+                yield limit_source_questions(''.join(pieces), retrieval.study_task['count'])
             report_target_success(target)
             logger.info('Academic flow trace=%s stage=response origin=provider provider=%s model=%s emitted=%s finish=%s',
                         trace_id, target.provider, target.model, emitted,
