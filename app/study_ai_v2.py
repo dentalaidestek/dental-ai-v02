@@ -94,6 +94,10 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
     available = {(item.get('material_id'),item.get('page_number')) for item in retrieval.attachments if item.get('data')}
     hints = [hint for hint in retrieval.ocr_reading_hints if
              {(hint['material_id'],page) for page in range(hint['page_start'],hint['page_end']+1)} <= available]
+    if retrieval.study_task.get('source_kind') in {'questions','question_patterns'}:
+        # Transcribe/count printed questions from originals; lossy OCR can swap
+        # adjacent choices or falsely call a photographed exam page blank.
+        hints=[]
     if hints:
         context += "\n\nORİJİNAL GÖRSELLER İÇİN OKUMA YARDIMI (bağımsız bilgi kanıtı değildir):\n" + json.dumps(hints,ensure_ascii=False)
         context += "\nBu metin OCR transkripsiyonudur; isimleri ve küçük yazıları orijinal ekte bulmaya yardım eder. Her ifadeyi orijinal görselle doğrula; yanlış şıkları ve eski/üstü çizilmiş ifadeleri öğretme."
