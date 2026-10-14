@@ -601,6 +601,9 @@ def _ocr_slice(session: Session, job: StudyIndexJob, path, mime_type: str) -> st
                 if fallback_text:
                     text = fallback_text
                     method = f"PDF_TEXT_OCR_FALLBACK:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
+                elif text:
+                    # Preserve weak text for search; originals stay authoritative.
+                    method = f"LOCAL_OCR_SEARCH_ONLY:{LOCAL_OCR_ENGINE_VERSION}:CONF_{result.confidence}"
                 else:
                     # A diagram/blank page can legitimately contain no dependable text.
                     # Account for it without inventing clinical content; the immutable

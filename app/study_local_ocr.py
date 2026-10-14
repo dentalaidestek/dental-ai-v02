@@ -17,7 +17,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 
-LOCAL_OCR_ENGINE_VERSION = "tesseract-5.5-adaptive-dental-tur-eng-v3"
+LOCAL_OCR_ENGINE_VERSION = "tesseract-5.5-adaptive-dental-tur-eng-v4"
 _DENTAL_WORDS_PATH = Path(__file__).with_name("dental_ocr_words.txt")
 _TESSDATA_PATH = Path(__file__).with_name("tessdata")
 _PDFIUM_LOCK = threading.RLock()
@@ -391,7 +391,7 @@ def _recognize(image: Image.Image, *, psm, timeout_ms: int) -> tuple[str, int]:
 
 
 def _needs_quality_retry(text: str, confidence: int) -> bool:
-    if confidence < _int_env("STUDY_V2_LOCAL_OCR_RETRY_CONFIDENCE", 58, 20, 90):
+    if confidence < _int_env("STUDY_V2_LOCAL_OCR_RETRY_CONFIDENCE", 70, 20, 90):
         return True
     compact = re.sub(r"\s+", "", text or "")
     if len(compact) < 40:
@@ -399,6 +399,15 @@ def _needs_quality_retry(text: str, confidence: int) -> bool:
         # itself evidence that a second full render will recover more text.
         return confidence < 78
     return _ocr_anomaly_score(text) >= 0.34
+
+
+def _prefer_ocr_retry(text, confidence, retry_text, retry_confidence):
+    """A high confidence on a tiny region is not whole-page coverage."""
+    original=len(re.sub(r'\s+','',text or ''))
+    candidate=len(re.sub(r'\s+','',retry_text or ''))
+    if not candidate or (original>=80 and candidate<original*.65):
+        return False
+    return retry_confidence>confidence or (retry_confidence==confidence and candidate>original)
 
 
 def ocr_material_page(
@@ -507,14 +516,12 @@ def ocr_material_page(
                     )
             finally:
                 retry_deskewed.close()
-            if retry_confidence > confidence or (
-                retry_confidence == confidence and len(retry_text) > len(text)
-            ):
+            if _prefer_ocr_retry(text, confidence, retry_text, retry_confidence):
                 text, confidence = retry_text, retry_confidence
         finally:
             retry_image.close()
 
     text = _preserve_academic_structure(text)
-    minimum_confidence = _int_env("STUDY_V2_LOCAL_OCR_MIN_CONFIDENCE", 35, 0, 90)
+    minimum_confidence = _int_env("STUDY_V2_LOCAL_OCR_MIN_CONFIDENCE", 65, 0, 90)
     visual_only = not text or confidence < minimum_confidence
     return LocalOCRResult(text=text, confidence=confidence, visual_only=visual_only, elapsed_ms=int((time.perf_counter() - started_at) * 1000), retried=retried, layout_kind=layout_kind)
