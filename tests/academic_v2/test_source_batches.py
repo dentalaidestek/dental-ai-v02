@@ -74,6 +74,16 @@ def test_character_budget_splits_without_discarding_remainder():
         partition_source_rows([row(1,1,text='a'*2000)],max_chars=1200)
 
 
+def test_question_pages_stay_whole_and_boundary_has_continuation():
+    rows=[row(i,p,text='exam') for i,p in enumerate((1,2,3,3,4,4,5,6),1)]
+    batches=partition_source_rows(rows,include_questions=True,max_pages=4,
+        visual_pages={(1,p) for p in range(1,7)})
+    assert [cid for b in batches for cid in b.primary_chunk_ids]==list(range(1,9))
+    assert batches[0].primary_chunk_ids==(1,2,3,4)
+    assert batches[0].chunk_ids==(1,2,3,4,5,6)
+    assert batches[1].primary_chunk_ids==(5,6,7,8)
+
+
 def test_many_short_digital_pages_share_one_request_but_visual_pages_split():
     rows=[row(i,i) for i in range(1,51)]
     assert len(partition_source_rows(rows,visual_pages=set()))==1

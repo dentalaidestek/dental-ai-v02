@@ -57,6 +57,36 @@ def test_no_session_has_no_pdf_access(pdf_client,monkeypatch):
     assert client.get('/notes/courses/1/ai/messages/1/pdf').status_code==401
 
 
+def test_page_text_reads_published_ocr_with_owner_and_version_fences(pdf_client,monkeypatch):
+    main,client=pdf_client
+    with Session(main.engine) as session:
+        session.add(main.StudyMaterial(id=71,course_id=1,owner_user_id=1,
+            original_filename='exam.pdf',display_name='exam',stored_filename='exam.pdf',
+            file_path='unused',material_type='PDF',mime_type='application/pdf',size_bytes=10,
+            index_status='READY',active_index_version='v2'))
+        session.add(main.StudyIndexPage(owner_user_id=1,course_id=1,material_id=71,
+            index_version='v2',page_number=4,status='OCR_DONE',extraction_method='LOCAL_OCR',
+            text_content='14. Kök\nc. Devam şıkkı\n15. Sonraki soru'))
+        session.add(main.StudyIndexPage(owner_user_id=1,course_id=1,material_id=71,
+            index_version='v1',page_number=4,text_content='STALE_PRIVATE'))
+        for owner,version,body in [(1,'v2','PUBLISHED'),(1,'v1','STALE_PRIVATE'),(2,'v2','FOREIGN_PRIVATE')]:
+            session.add(main.StudyIndexChunk(owner_user_id=owner,course_id=1,material_id=71,
+                index_version=version,chunk_index=owner,page_start=4,page_end=4,
+                text_content=body,text_sha256='synthetic'))
+        session.commit()
+    response=client.get('/notes/courses/1/materials/71/pages/4/text')
+    assert response.status_code==200
+    assert response.json()['ocr_text'].endswith('15. Sonraki soru')
+    assert [c['text'] for c in response.json()['chunks']]==['PUBLISHED']
+    assert 'private, no-store'==response.headers['cache-control']
+    assert client.get('/notes/courses/2/materials/71/pages/4/text').status_code==404
+    assert client.get('/notes/courses/1/materials/71/pages/999/text').status_code==404
+    monkeypatch.setattr(main,'get_current_user',lambda request:SimpleNamespace(id=2,role='DOCTOR'))
+    assert client.get('/notes/courses/1/materials/71/pages/4/text').status_code==404
+    monkeypatch.setattr(main,'get_current_user',lambda request:None)
+    assert client.get('/notes/courses/1/materials/71/pages/4/text').status_code==401
+
+
 def test_unapproved_chat_upload_never_wakes_or_indexes(pdf_client,monkeypatch):
     main,client=pdf_client
     monkeypatch.delenv('STUDY_CHAT_ATTACHMENTS_ENABLED',raising=False)

@@ -86,9 +86,12 @@ def test_partial_candidates_are_not_falsely_certified_as_complete(monkeypatch, s
 def test_question_source_filter_obeys_gemini_instead_of_question_keyword(monkeypatch, session):
     import app.academic_semantic_retrieval as current
     monkeypatch.setattr(current, '_fts_rows', Mock(return_value=[row(1, 'hipofiz'), row(2, 'hipofiz sorusu', 'QUESTION')]))
+    expand=Mock(side_effect=lambda session,**kwargs:kwargs['seeds'])
+    monkeypatch.setattr('app.study_retrieval_v2._question_page_context_rows',expand)
     plan = StudyRequest('Hipofiz kaynak sorusunu çöz', 'solve', 'topic', None, None, '', ('hipofiz',), source_kind='questions')
     result = retrieve_semantic_context(session, owner_user_id=17, course_id=23, query='Onu yap', request_plan=plan)
     assert [item.chunk_id for item in result.evidence] == [2]
+    assert [r[0] for r in expand.call_args.kwargs['seeds']]==[2]
 
 
 def test_visual_material_lookup_is_owned_and_uses_materializer_contract(monkeypatch, session):

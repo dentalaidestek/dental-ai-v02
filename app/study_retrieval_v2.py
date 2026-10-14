@@ -9,6 +9,7 @@ from app.object_cache import scoped as storage_scoped
 
 
 import io
+import json
 import logging
 import re
 import threading
@@ -1705,7 +1706,12 @@ def _question_rows(
     session: Session, *, owner_user_id: int, course_id: int,
     limit: int = 16, after_cursor: tuple[int, int] | None = None,
 ) -> list:
-    """Return likely question-bearing chunks in source order, not semantic top-k."""
+    """Read question-bearing pages AND adjoining pages in source order.
+
+    A question's options can be separate TEXT chunks or continue on the next
+    page. Selecting only QUESTION chunks loses these options and whole pages
+    whose OCR did not retain a recognizable question number.
+    """
     return list(session.exec(text(
         """
         SELECT c.id, c.material_id, m.display_name, c.page_start, c.page_end,
@@ -1716,6 +1722,7 @@ def _question_rows(
         FROM studyindexchunk c
         JOIN studymaterial m
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+         AND m.course_id=c.course_id
          AND m.active_index_version=c.index_version
          AND m.index_status='READY' AND m.deleted_at IS NULL
         WHERE c.owner_user_id=:owner AND c.course_id=:course
@@ -1725,9 +1732,16 @@ def _question_rows(
             OR (c.material_id = :after_material_id AND c.chunk_index > :after_chunk_index)
           )
           AND (
-            c.content_kind = 'QUESTION'
-            OR c.text_content ~* :question_pattern
-            OR lower(coalesce(c.section_title, '')) ~ '(soru|test|quiz|değerlendirme)'
+            EXISTS (
+                SELECT 1 FROM studyindexchunk q
+                WHERE q.material_id=c.material_id AND q.owner_user_id=c.owner_user_id
+                  AND q.course_id=c.course_id AND q.index_version=c.index_version
+                  AND q.page_start <= c.page_end + 1
+                  AND q.page_end >= c.page_start - 1
+                  AND (q.content_kind = 'QUESTION'
+                    OR q.text_content ~* :question_pattern
+                    OR lower(coalesce(q.section_title, '')) ~ '(soru|test|quiz|değerlendirme)')
+            )
           )
         ORDER BY c.material_id, c.page_start, c.chunk_index, c.id
         LIMIT :limit
@@ -1740,6 +1754,33 @@ def _question_rows(
         "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
         "limit": max(1, min(limit, 32)) + 1,
     }).all())
+
+
+def _question_page_context_rows(session, *, owner_user_id, course_id, seeds):
+    """Expand topic-search hits to complete owned pages and their continuation."""
+    if not seeds:
+        return []
+    ranges = [dict(material_id=int(r[1]), first_page=int(r[3])-1, last_page=int(r[4])+1) for r in seeds]
+    ids = session.exec(text('''SELECT c.id FROM studyindexchunk c
+        JOIN studymaterial m ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+          AND m.course_id=c.course_id AND m.active_index_version=c.index_version
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND m.index_status='READY' AND m.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM jsonb_to_recordset(CAST(:ranges AS jsonb))
+            AS p(material_id integer,first_page integer,last_page integer)
+            WHERE p.material_id=c.material_id AND c.page_start<=p.last_page AND c.page_end>=p.first_page)
+        ORDER BY c.material_id,c.page_start,c.chunk_index,c.id'''),
+        params={'owner':owner_user_id,'course':course_id,'ranges':json.dumps(ranges)}).all()
+    ordered_ids=[int(r[0]) for r in ids]
+    rows=[]
+    for offset in range(0,len(ordered_ids),128):
+        batch=ordered_ids[offset:offset+128]
+        hydrated=_coverage_evidence_rows(session,owner_user_id=owner_user_id,course_id=course_id,
+            chunk_ids=batch,limit=len(batch),max_rows=128,include_questions=True)
+        if set(int(r[0]) for r in hydrated) != set(batch):
+            raise ValueError('question source generation changed during hydration')
+        rows.extend(hydrated)
+    return sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0])))
 
 
 def _coverage_metadata_page(
@@ -1846,7 +1887,7 @@ def _coverage_hydration_ids(coverage_plan, *, limit: int = 48) -> list[int]:
 
 def _coverage_evidence_rows(
     session: Session, *, owner_user_id: int, course_id: int,
-    chunk_ids: list[int], limit: int = 24, max_rows: int = 48,
+    chunk_ids: list[int], limit: int = 24, max_rows: int = 48, include_questions: bool = False,
 ) -> list:
     """Hydrate text only for planner-selected chunks."""
     if not chunk_ids:
@@ -1865,12 +1906,13 @@ def _coverage_evidence_rows(
           ON selected.id=c.id
         WHERE c.owner_user_id=:owner AND c.course_id=:course
           AND c.id = ANY(CAST(:chunk_ids AS BIGINT[]))
-          AND c.content_kind <> 'QUESTION'
+          AND (:include_questions OR c.content_kind <> 'QUESTION')
         ORDER BY selected.ord
         LIMIT :limit
     """), params={
         "owner": owner_user_id, "course": course_id,
         "chunk_ids": chunk_ids, "limit": max(1, min(limit, max(1, min(max_rows, 128)))),
+        "include_questions": include_questions,
     }).all())
 
 
