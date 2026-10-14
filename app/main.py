@@ -4724,7 +4724,7 @@ def study_material_page_text(request: Request, course_id: int, material_id: int,
         return JSONResponse({'error': 'Yetkisiz erişim.'}, status_code=401)
     with Session(engine, expire_on_commit=False) as s:
         material = _owned_study_material(s, user, course_id, material_id)
-        if not material or material.index_status != 'READY' or not material.active_index_version:
+        if not material or material.deleted_at is not None or material.index_status != 'READY' or not material.active_index_version:
             return JSONResponse({'error': 'Yayımlanmış not bulunamadı.'}, status_code=404)
         version = material.active_index_version
         page = s.exec(select(StudyIndexPage).where(
@@ -4748,7 +4748,26 @@ def study_material_page_text(request: Request, course_id: int, material_id: int,
                 'ocr_text': page.text_content or '',
                 'chunks': [{'id': c.id, 'kind': c.content_kind,
                             'title': c.section_title, 'text': c.text_content} for c in chunks]}
-    return JSONResponse(data, headers={'Cache-Control': 'private, no-store'})
+    headers={'Cache-Control': 'private, no-store'}
+    if request.query_params.get('format') == 'json':
+        return JSONResponse(data, headers=headers)
+    # A normal, escaped HTML document is readable in browsers and never treats
+    # OCR or a chunk as executable markup. JSON remains available for clients.
+    chunks=''.join('<h3>'+html.escape(str(c['title'] or 'Kaynak metni'))+'</h3><pre>'
+        +html.escape(c['text'])+'</pre>' for c in data['chunks'])
+    body=('<!doctype html><html lang="tr"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>İndekslenen sayfa metni</title><style>'
+        'body{font:16px system-ui;max-width:960px;margin:24px auto;padding:0 16px}'
+        'pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f9;padding:16px;border-radius:8px}'
+        '</style><h1>İndekslenen sayfa metni</h1><p>'
+        +html.escape(data['filename'])+' · Sayfa '+str(page_number)+'</p><p>'
+        +html.escape(str(data['status']))+' · '+html.escape(str(data['extraction_method'] or ''))
+        +'</p><p>Bu metin kaydedilmiş çıkarım sonucudur; orijinal sayfa ile doğrulanmalıdır. '
+        'Bu ekran yeniden OCR veya yapay zekâ çağrısı yapmaz.</p>'
+        '<h2>Kaydedilmiş OCR metni</h2><pre>'+html.escape(data['ocr_text'])
+        +'</pre><h2>Arama için düzenlenmiş metin</h2>'+chunks+'</html>')
+    return HTMLResponse(body,headers=headers)
 
 
 @app.post("/notes/courses/{course_id}/materials/{material_id}/delete")
