@@ -74,11 +74,14 @@ def test_page_text_reads_published_ocr_with_owner_and_version_fences(pdf_client,
                 index_version=version,chunk_index=owner,page_start=4,page_end=4,
                 text_content=body,text_sha256='synthetic'))
         session.commit()
-    response=client.get('/notes/courses/1/materials/71/pages/4/text')
+    response=client.get('/notes/courses/1/materials/71/pages/4/text?format=json')
     assert response.status_code==200
     assert response.json()['ocr_text'].endswith('15. Sonraki soru')
     assert [c['text'] for c in response.json()['chunks']]==['PUBLISHED']
     assert 'private, no-store'==response.headers['cache-control']
+    page=client.get('/notes/courses/1/materials/71/pages/4/text')
+    assert page.status_code==200 and 'text/html' in page.headers['content-type']
+    assert 'PUBLISHED' in page.text and 'STALE_PRIVATE' not in page.text and 'FOREIGN_PRIVATE' not in page.text
     assert client.get('/notes/courses/2/materials/71/pages/4/text').status_code==404
     assert client.get('/notes/courses/1/materials/71/pages/999/text').status_code==404
     monkeypatch.setattr(main,'get_current_user',lambda request:SimpleNamespace(id=2,role='DOCTOR'))
