@@ -130,6 +130,15 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            "kaynak dışı olgular ekleyerek sayıyı doldurma. Yeterli doğrulanmış bilgi yoksa "
            "kaç soru hazırlayabildiğini ve eksik kalan adedi açıkça belirt.\n\n"
            if retrieval.study_task.get('operation') == 'generate_questions' else "")
+        + (f"BU TURUN İSTENEN SORU ADEDİ: {retrieval.study_task['count']}. "
+           f"Soru 1'den Soru {retrieval.study_task['count']}'ye kadar tek bir sıra halinde "
+           "istenen adedin tamamını üret. 5 veya 10 soruluk varsayılan bir listeye dönme. "
+           "Kaynaklar farklı sorular için yeterliyse yarısında bitirme ve devamını kullanıcıdan isteme. "
+           "Son cevabı bitirmeden numaraları ve toplam adedi kontrol et. "
+           "Gerçek bir kaynak yetersizliği yüzünden adedi tamamlayamıyorsan kalan adedi ve "
+           "nedenini açıkça belirt; eksik bir listeyi tamamlanmış gibi sunma.\n\n"
+           if retrieval.study_task.get('operation') == 'generate_questions'
+           and type(retrieval.study_task.get('count')) is int else "")
         +
         ("MEVCUT KAYNAK SORULARI: Kullanıcı yeni soru üretmeni değil mevcut soruları istiyor. "
          "Düzenleme/aktarma isteğinde soru kökü, şıklar, sıralama ve anlamı koru; çözüm veya cevap anahtarı istenmemişse ekleme. "
