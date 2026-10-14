@@ -322,12 +322,17 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 for item,context in zip(result.evidence,result.note_context)
             ]
             result.note_context.insert(0,
+                ('KAYNAK SORUSU AKTARIMI: Basılı soru köklerini ve bütün şıkları orijinal '
+                 'sayfalardan oku. Yanlış şıklar da aktarılacak metnin bir parçasıdır; '
+                 'bunları doğru akademik bilgi diye öğretme. OCR sayfanın boş olduğunu '
+                 'veya metin çıkarılamadığını söylese bile ekli orijinal sayfayı incele.'
+                 if request_plan.source_kind in {'questions','question_patterns'} else
                 'OCR KAYNAK UYARISI: Seçilen taranmış sayfalarda metin çıkarımı işaretleri, '
                 'yanlış şıkları ve el yazısı düzeltmelerini kaybedebilir. Ekli sayfa görselleri '
                 'OCR metninden üstündür. Soru kökü/şık içindeki ifadeleri kendiliğinden bilgi '
                 'sayma; yalnız açıkça doğrulanan cevap ve açıklamaları kullan. Görseli '
                 'eklenmeyen taranmış sayfalardaki şıkları veya tartışmalı eşleştirmeleri '
-                'doğrulanmış bilgi sayma.')
+                'doğrulanmış bilgi sayma.'))
         logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
                     len(scanned_pages),len(result.visual_sources))
     if _source_rows is None and request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
