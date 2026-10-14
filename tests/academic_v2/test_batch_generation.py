@@ -16,6 +16,7 @@ def parent(operation, count=None):
 
 def provider(monkeypatch, outputs):
     import app.study_ai_v2 as module
+    monkeypatch.setenv("STUDY_SOURCE_BATCH_WORKERS", "1")
     value = Mock()
     value.generate_stream.side_effect = [iter([output]) for output in outputs]
     monkeypatch.setattr(module,'target_available',lambda target: True)
@@ -142,3 +143,121 @@ def test_failed_comparison_extraction_does_not_emit_a_misleading_partial_result(
     with pytest.raises(StudyAIError,match='unavailable'):
         next(stream)
     assert value.generate_stream.call_count==2
+
+
+def test_parallel_question_sections_overlap_but_synthesize_in_source_order(monkeypatch):
+    import threading
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','2')
+    monkeypatch.setenv('DENTAL_PROVIDER_MAX_INFLIGHT','4')
+    result=parent('generate_questions',20)
+    result.source_batches += [RetrievalResult(note_context=['Third source'],evidence_sufficient=True,
+        study_task={'operation':'generate_questions'})]
+    rendezvous=threading.Barrier(2)
+    lock=threading.Lock(); active=0; peak=0; calls=[]
+    def generate(course,question,history,child):
+        nonlocal active,peak
+        if not child.study_task.get('batch_partial'):
+            assert child.study_task['count']==20
+            assert len(child.note_context)==3
+            assert 'First source' in child.note_context[0]
+            assert 'Second source' in child.note_context[1]
+            assert 'Third source' in child.note_context[2]
+            yield '20 balanced questions'
+            return
+        name=child.note_context[0]
+        with lock:
+            active+=1; peak=max(peak,active); calls.append(name)
+        try:
+            if name!='Third source':
+                rendezvous.wait(timeout=3)
+            yield name
+        finally:
+            with lock:active-=1
+    monkeypatch.setattr(module,'stream_rag_v2',generate)
+    assert ''.join(module._stream_source_batches('Course','20 questions',[],result))=='20 balanced questions'
+    assert peak==2 and sorted(calls)==sorted(['First source definition','Second source definition','Third source'])
+    assert all(not child.attachments for child in result.source_batches)
+
+
+def test_parallel_failure_never_synthesizes_or_schedules_remaining_sections(monkeypatch):
+    import threading
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','2')
+    result=parent('generate_questions',20)
+    result.source_batches += [RetrievalResult(note_context=['Never schedule'],evidence_sufficient=True)]
+    ready=threading.Event(); release=threading.Event(); finished=threading.Event(); calls=[]
+    def generate(course,question,history,child):
+        name=child.note_context[0];calls.append(name)
+        if name.startswith('First'):
+            assert ready.wait(3)
+            raise StudyAIError('Synthetic failed section')
+        if name.startswith('Second'):
+            ready.set()
+            try:
+                assert release.wait(3)
+                yield name
+            finally:finished.set()
+        else:
+            raise AssertionError('Failed extraction scheduled another section or synthesis')
+    monkeypatch.setattr(module,'stream_rag_v2',generate)
+    try:
+        with pytest.raises(StudyAIError,match='failed section'):
+            list(module._stream_source_batches('Course','20 questions',[],result))
+    finally:
+        release.set();assert finished.wait(3)
+    assert len(calls)==2
+
+
+def test_cached_gemini_finish_reason_is_isolated_between_threads():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from app.study_provider import GeminiStudyProvider
+    provider=GeminiStudyProvider(); barrier=threading.Barrier(2)
+    def read_own_finish(reason):
+        provider.last_finish_reason=reason
+        barrier.wait(timeout=3)
+        return provider.last_finish_reason
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a=pool.submit(read_own_finish,'MAX_TOKENS');b=pool.submit(read_own_finish,'STOP')
+        assert a.result()=='MAX_TOKENS' and b.result()=='STOP'
+    assert provider.last_finish_reason=='UNKNOWN'
+
+
+def test_question_parallelism_respects_single_provider_slot(monkeypatch):
+    from app.study_ai_v2 import _batch_workers
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','20')
+    monkeypatch.setenv('DENTAL_PROVIDER_MAX_INFLIGHT','1')
+    assert _batch_workers()==1
+    monkeypatch.setenv('DENTAL_PROVIDER_MAX_INFLIGHT','4')
+    assert _batch_workers()==2
+
+
+def test_source_pool_bounds_parallel_work_across_users(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','2')
+    monkeypatch.setenv('DENTAL_PROVIDER_MAX_INFLIGHT','4')
+    lock=threading.Lock(); two_active=threading.Event(); release=threading.Event()
+    active=0;peak=0;calls=0
+    def extract(*args):
+        nonlocal active,peak,calls
+        with lock:
+            active+=1;calls+=1;peak=max(peak,active)
+            if active==2:two_active.set()
+        try:
+            assert release.wait(3)
+            return 'Grounded section'
+        finally:
+            with lock:active-=1
+    monkeypatch.setattr(module,'_extract_source_batch',extract)
+    with ThreadPoolExecutor(max_workers=2) as requests:
+        a=requests.submit(lambda:list(module._source_batch_outputs('A','20',[],parent('generate_questions',20),True)))
+        b=requests.submit(lambda:list(module._source_batch_outputs('B','20',[],parent('generate_questions',20),True)))
+        try:
+            assert two_active.wait(3)
+            with lock:assert peak==2
+        finally:release.set()
+        assert len(a.result())==len(b.result())==2
+    assert calls==4 and peak==2

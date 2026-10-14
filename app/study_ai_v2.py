@@ -5,6 +5,8 @@ import logging
 import json
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Iterator
 
 from app.study_ai import STUDY_SYSTEM_PROMPT, StudyAIError, study_provider_error_for_user
@@ -165,44 +167,98 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
     )
 
 
-def _stream_source_batches(course_title, question, history, retrieval):
+# A process-wide pool bounds source preparation and provider calls across users.
+_SOURCE_BATCH_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='academic-source')
+
+
+def _batch_workers():
+    try:
+        return max(1, min(2, int(os.getenv('STUDY_SOURCE_BATCH_WORKERS', '2')),
+                          int(os.getenv('DENTAL_PROVIDER_MAX_INFLIGHT', '4'))))
+    except ValueError:
+        return 1
+
+
+def _extract_source_batch(course_title, question, history, retrieval, child, synthesize, stopped=None):
     from dataclasses import replace
+    from app.object_cache import scope
+    operation = retrieval.study_task.get('operation')
+    with scope():
+        try:
+            if child.visual_sources:
+                if retrieval.batch_materializer is None:
+                    raise StudyAIError('Ders kaynakları hazırlanamadı. Lütfen tekrar dene.')
+                retrieval.batch_materializer(child)
+                required = {(item['material_id'],item['page_number']) for item in child.visual_sources}
+                prepared = {(item.get('material_id'),item.get('page_number')) for item in child.attachments}
+                # Byte-budget failures must not silently omit a required original.
+                if not required <= prepared:
+                    raise StudyAIError('Bazı not sayfaları hazırlanamadı. Lütfen tekrar dene.')
+            if stopped is not None and stopped.is_set():
+                return ''
+            task = dict(child.study_task)
+            if synthesize:
+                task.update(operation='summarize', count=None)
+                request = (('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
+                           'bilgilerini kaynak sayfalarıyla çıkar. Henüz soru veya cevap anahtarı üretme. '
+                           'Aynı bilgiyi tekrarlama; farklı alt başlıkları atlama.')
+                           if operation == 'generate_questions' else
+                           f'Karşılaştırma için kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
+                           'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
+                           'dosya/sayfa atıflarıyla ayrı tut. Diğer taraf bu bölümde yoksa burada karşılaştırma '
+                           'sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
+            else:
+                request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
+                           'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
+                           'diğer bölümlerin notlarda bulunmadığını iddia etme.')
+            task['batch_partial'] = True
+            prepared_child = replace(child, study_task=task, resolved_query=request,
+                                     semantic_trace_id=retrieval.semantic_trace_id)
+            output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
+        finally:
+            child.attachments.clear()
+    return output
+
+
+def _source_batch_outputs(course_title, question, history, retrieval, synthesize):
+    children = iter(retrieval.source_batches)
+    workers = _batch_workers() if retrieval.study_task.get('operation') == 'generate_questions' else 1
+    logger.info('Academic source batch execution trace=%s batches=%s workers=%s',
+                retrieval.semantic_trace_id, len(retrieval.source_batches), workers)
+    if workers == 1:
+        for child in children:
+            yield _extract_source_batch(course_title, question, history, retrieval, child, synthesize)
+        return
+    pending = []
+    stopped = threading.Event()
+    def extract(child):
+        if stopped.is_set():
+            return ''
+        return _extract_source_batch(course_title, question, history, retrieval, child, synthesize, stopped)
+    try:
+        for _ in range(workers):
+            child = next(children, None)
+            if child is not None:
+                pending.append(_SOURCE_BATCH_POOL.submit(extract, child))
+        while pending:
+            # Completion order must never change source order in synthesis.
+            output = pending.pop(0).result()
+            yield output
+            child = next(children, None)
+            if child is not None:
+                pending.append(_SOURCE_BATCH_POOL.submit(extract, child))
+    finally:
+        stopped.set()
+        for future in pending:
+            future.cancel()
+
+
+def _stream_source_batches(course_title, question, history, retrieval):
     operation = retrieval.study_task.get('operation')
     outputs = []
     synthesis_chars = 0
     synthesize = operation in {'generate_questions', 'compare'}
-    for index, child in enumerate(retrieval.source_batches, 1):
-        if child.visual_sources:
-            if retrieval.batch_materializer is None:
-                raise StudyAIError('Ders kaynakları hazırlanamadı. Lütfen tekrar dene.')
-            retrieval.batch_materializer(child)
-            required = {(item['material_id'],item['page_number']) for item in child.visual_sources}
-            prepared = {(item.get('material_id'),item.get('page_number')) for item in child.attachments}
-            # Byte-budget failures must not silently omit a required original.
-            if not required <= prepared:
-                raise StudyAIError('Bazı not sayfaları hazırlanamadı. Lütfen tekrar dene.')
-        task = dict(child.study_task)
-        if synthesize:
-            task.update(operation='summarize', count=None)
-            request = (('Bu bölümdeki her başlığın soru hazırlamaya yarayan tanım, ilişki ve kritik '
-                       'bilgilerini kaynak sayfalarıyla çıkar. Henüz soru veya cevap anahtarı üretme. '
-                       'Aynı bilgiyi tekrarlama; farklı alt başlıkları atlama.')
-                       if operation == 'generate_questions' else
-                       f'Karşılaştırma için kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
-                       'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
-                       'dosya/sayfa atıflarıyla ayrı tut. Diğer taraf bu bölümde yoksa burada karşılaştırma '
-                       'sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
-        else:
-            request = (f'Kullanıcının isteğini bu kaynak bölümünün bütün başlıklarına uygula: {question}. '
-                       'Bu bölüm başka bölümlerle birleştirilecek. Yalnız bu bölümü anlat; '
-                       'diğer bölümlerin notlarda bulunmadığını iddia etme.')
-        task['batch_partial'] = True
-        prepared_child = replace(child, study_task=task, resolved_query=request,
-                                 semantic_trace_id=retrieval.semantic_trace_id)
-        try:
-            output = ''.join(stream_rag_v2(course_title, request, history, prepared_child)).strip()
-        finally:
-            child.attachments.clear()
+    for output in _source_batch_outputs(course_title, question, history, retrieval, synthesize):
         if output == BATCH_NO_SUPPORT:
             continue
         outputs.append(output)

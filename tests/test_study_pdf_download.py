@@ -133,3 +133,41 @@ def test_stream_advertises_only_completed_requested_pdf(pdf_client,monkeypatch,o
             assert saved[-1].mode.endswith('_PDF')
         else:
             assert 'artifact' not in events[-1] and not saved[-1].mode.endswith('_PDF')
+
+
+@pytest.mark.parametrize('byte_budget,expected_pages',[(1024,16),(25,2)])
+def test_visual_hydration_uses_one_owned_bounded_read(pdf_client,monkeypatch,byte_budget,expected_pages):
+    import app.study_retrieval_v2 as retrieval
+    from app.study_index_jobs import StudyIndexPage
+    from sqlalchemy import event
+    main,client=pdf_client
+    monkeypatch.setattr(retrieval,'_VISUAL_REQUEST_MAX_BYTES',byte_budget)
+    with retrieval._PAGE_PDF_CACHE_LOCK:retrieval._PAGE_PDF_CACHE.clear()
+    with Session(main.engine) as session:
+        for id,owner,course in [(41,1,1),(42,2,2)]:
+            session.add(main.StudyMaterial(id=id,course_id=course,owner_user_id=owner,
+                original_filename='source.pdf',display_name='Source',stored_filename='source.pdf',
+                file_path='/synthetic/source.pdf',material_type='PDF',mime_type='application/pdf',size_bytes=100,
+                active_index_version='v2',index_status='READY'))
+            for page in range(1,17):
+                session.add(StudyIndexPage(owner_user_id=owner,course_id=course,material_id=id,
+                    index_version='v2',page_number=page,visual_pdf_bytes=b'%PDF-12345'))
+        session.commit()
+    sources=[dict(owner_user_id=1,material_id=41,index_version='v2',reference='ref',
+        page_number=page,mime_type='application/pdf',display_name='Source') for page in range(1,17)]
+    sources += [dict(sources[0],material_id=42),dict(sources[0],index_version='obsolete')]
+    queries=[]
+    def capture(connection,cursor,statement,params,context,executemany):
+        if statement.startswith('WITH page_data'):queries.append(statement)
+    event.listen(main.engine,'before_cursor_execute',capture)
+    try:
+        result=retrieval.RetrievalResult(visual_sources=sources,evidence_sufficient=True,source_coverage_complete=True)
+        retrieval.materialize_visual_sources(lambda:Session(main.engine),result)
+        assert len(queries)==1 and len(result.attachments)==expected_pages
+        assert all(item['material_id']==41 for item in result.attachments)
+        assert len({item['page_number'] for item in result.attachments})==expected_pages
+        assert sum(len(item['data']) for item in result.attachments)<=byte_budget
+        assert not result.source_coverage_complete
+    finally:
+        event.remove(main.engine,'before_cursor_execute',capture)
+        with retrieval._PAGE_PDF_CACHE_LOCK:retrieval._PAGE_PDF_CACHE.clear()
