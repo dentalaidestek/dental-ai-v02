@@ -261,3 +261,80 @@ def test_source_pool_bounds_parallel_work_across_users(monkeypatch):
         finally:release.set()
         assert len(a.result())==len(b.result())==2
     assert calls==4 and peak==2
+
+
+def test_slow_first_section_does_not_stop_later_section_work(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','2')
+    result=parent('generate_questions',20)
+    result.source_batches.append(RetrievalResult(note_context=['Third source'],evidence_sufficient=True))
+    third_started=threading.Event()
+    def extract(course,question,history,parent,child,*args):
+        name=child.note_context[0]
+        if name.startswith('First'):
+            assert third_started.wait(3), 'A finished second worker was left idle behind the first section'
+        if name=='Third source':third_started.set()
+        return name
+    monkeypatch.setattr(module,'_extract_source_batch',extract)
+    assert list(module._source_batch_outputs('Course','20',[],result,True))==[
+        'First source definition','Second source definition','Third source']
+
+
+def transport_failure(code=None):
+    from app.study_provider import StudyProviderError
+    provider_error=StudyProviderError('Synthetic transport failure',code=code,retryable=True)
+    provider_error.__cause__=TimeoutError('Synthetic timeout')
+    error=StudyAIError('Synthetic source error',retryable=True)
+    error.__cause__=provider_error
+    return error
+
+
+def test_question_request_recovers_only_failed_section_once(monkeypatch):
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','1')
+    result=parent('generate_questions',20)
+    counts={}
+    def generate(course,question,history,child):
+        if not child.study_task.get('batch_partial'):
+            assert 'Recovered first source' in child.note_context[0]
+            assert 'Second source definition' in child.note_context[1]
+            yield '20 complete questions'
+            return
+        name=child.note_context[0];counts[name]=counts.get(name,0)+1
+        if name.startswith('First') and counts[name]==1:
+            raise transport_failure()
+        yield 'Recovered first source' if name.startswith('First') else name
+    monkeypatch.setattr(module,'stream_rag_v2',generate)
+    assert ''.join(module._stream_source_batches('Course','20 questions',[],result))=='20 complete questions'
+    assert counts=={'First source definition':2,'Second source definition':1}
+
+
+@pytest.mark.parametrize('mode',['quota','partial','second_failed_section','retry_failed'])
+def test_recovery_is_bounded_and_never_synthesizes_incomplete_sources(monkeypatch,mode):
+    import app.study_ai_v2 as module
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','1')
+    counts={}
+    def generate(course,question,history,child):
+        assert child.study_task.get('batch_partial'), 'Incomplete source extraction reached synthesis'
+        name=child.note_context[0];counts[name]=counts.get(name,0)+1
+        if mode=='quota':raise transport_failure(429)
+        if mode=='partial':
+            yield 'Partial source facts'
+            raise transport_failure()
+        if mode=='retry_failed' or counts[name]==1:
+            raise transport_failure()
+        yield 'Recovered facts'
+    monkeypatch.setattr(module,'stream_rag_v2',generate)
+    with pytest.raises(StudyAIError):
+        list(module._stream_source_batches('Course','20',[],parent('generate_questions',20)))
+    assert sum(counts.values())==({'quota':1,'partial':1,'second_failed_section':3,'retry_failed':2}[mode])
+
+
+def test_timeout_is_reported_as_timeout_instead_of_generic_failure():
+    from app.study_ai import study_provider_error_for_user
+    source=transport_failure().__cause__
+    assert 'zaman aşımına' in str(study_provider_error_for_user(source))
+    source.code=429
+    assert 'yoğun' in str(study_provider_error_for_user(source))

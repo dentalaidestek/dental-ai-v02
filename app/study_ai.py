@@ -82,6 +82,9 @@ def study_provider_error_for_user(exc: StudyProviderError) -> StudyAIError:
         message = "Akademik AI bağlantısı şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin."
     elif exc.code == 400:
         message = "Mesajınız şu anda işlenemedi. Lütfen yeniden gönderin."
+    elif exc.code is None and (isinstance(exc.__cause__, TimeoutError)
+            or isinstance(getattr(exc.__cause__, 'reason', None), TimeoutError)):
+        message = "Yanıt hazırlanırken bağlantı zaman aşımına uğradı. Mesajını yeniden gönderebilirsin."
     else:
         message = "Akademik AI yanıtı şu anda hazırlanamadı. Lütfen kısa süre sonra tekrar deneyin."
     return StudyAIError(message, code=exc.code, retryable=exc.retryable)
