@@ -51,6 +51,9 @@ def test_question_pages_include_text_siblings_and_continuations_without_foreign_
     assert [r[0] for r in selected]==[101,102,103,104]
     remaining=_question_rows(db,owner_user_id=17,course_id=23,after_cursor=(1,102),limit=32)
     assert [r[0] for r in remaining]==[103,104]
+    from app.study_retrieval_v2 import _question_page_context_rows
+    expanded=_question_page_context_rows(db,owner_user_id=17,course_id=23,seeds=[selected[0]])
+    assert [r[0] for r in expanded]==[101,102,103,104]
 
 
 def test_complete_batch_reader_crosses_128_without_foreign_stale_or_question_rows(db):

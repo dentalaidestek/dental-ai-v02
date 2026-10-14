@@ -9,6 +9,7 @@ from app.object_cache import scoped as storage_scoped
 
 
 import io
+import json
 import logging
 import re
 import threading
@@ -1753,6 +1754,33 @@ def _question_rows(
         "question_pattern": r"(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+",
         "limit": max(1, min(limit, 32)) + 1,
     }).all())
+
+
+def _question_page_context_rows(session, *, owner_user_id, course_id, seeds):
+    """Expand topic-search hits to complete owned pages and their continuation."""
+    if not seeds:
+        return []
+    ranges = [dict(material_id=int(r[1]), first_page=int(r[3])-1, last_page=int(r[4])+1) for r in seeds]
+    ids = session.exec(text('''SELECT c.id FROM studyindexchunk c
+        JOIN studymaterial m ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+          AND m.course_id=c.course_id AND m.active_index_version=c.index_version
+        WHERE c.owner_user_id=:owner AND c.course_id=:course
+          AND m.index_status='READY' AND m.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM jsonb_to_recordset(CAST(:ranges AS jsonb))
+            AS p(material_id integer,first_page integer,last_page integer)
+            WHERE p.material_id=c.material_id AND c.page_start<=p.last_page AND c.page_end>=p.first_page)
+        ORDER BY c.material_id,c.page_start,c.chunk_index,c.id'''),
+        params={'owner':owner_user_id,'course':course_id,'ranges':json.dumps(ranges)}).all()
+    ordered_ids=[int(r[0]) for r in ids]
+    rows=[]
+    for offset in range(0,len(ordered_ids),128):
+        batch=ordered_ids[offset:offset+128]
+        hydrated=_coverage_evidence_rows(session,owner_user_id=owner_user_id,course_id=course_id,
+            chunk_ids=batch,limit=len(batch),max_rows=128)
+        if set(int(r[0]) for r in hydrated) != set(batch):
+            raise ValueError('question source generation changed during hydration')
+        rows.extend(hydrated)
+    return sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0])))
 
 
 def _coverage_metadata_page(

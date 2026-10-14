@@ -177,6 +177,13 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
         study_task={key:getattr(request_plan,key) for key in
                     ('operation','scope','count','difficulty','source_kind','depth')},
         source_batches=children)
-    result.evidence = [item for child in children for item in child.evidence]
+    # Continuation pages may appear in two children, but parent provenance is
+    # one unique source list. They must not become two counted exam records.
+    seen_evidence=set()
+    for child in children:
+        for item in child.evidence:
+            if item.chunk_id not in seen_evidence:
+                result.evidence.append(item)
+                seen_evidence.add(item.chunk_id)
     result.source_material_ids = list(dict.fromkeys(item.material_id for item in result.evidence))
     return result

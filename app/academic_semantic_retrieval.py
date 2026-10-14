@@ -230,6 +230,10 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             from app.academic_dense_retrieval import hybrid_candidates
             rows=hybrid_candidates(rows,ranked_rows,searches,limit)
             result.used_semantic_search=any(row[10] is not None for row in rows)
+        if request_plan.source_kind == 'questions':
+            from app.study_retrieval_v2 import _question_page_context_rows
+            rows = _question_page_context_rows(session, owner_user_id=owner_user_id,
+                course_id=course_id, seeds=rows)
         result.retrieval_mode = 'hybrid_candidates' if result.used_semantic_search else 'lexical_candidates'
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)
