@@ -16,7 +16,7 @@ def retrieve_document_samples(session, *, request_plan, owner_user_id, course_id
           WHERE c.owner_user_id=:owner AND c.course_id=:course
             AND m.index_status='READY' AND m.deleted_at IS NULL
         ), pages AS (
-          SELECT material_id,page_start,MIN(CASE WHEN content_kind='QUESTION' THEN 1 ELSE 0 END) AS priority
+          SELECT material_id,page_start,MAX(CASE WHEN content_kind='QUESTION' THEN 1 ELSE 0 END) AS priority
           FROM owned GROUP BY material_id,page_start
         ), chosen AS (
           SELECT material_id,page_start,ROW_NUMBER() OVER (
