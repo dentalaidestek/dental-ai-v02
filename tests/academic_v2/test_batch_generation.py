@@ -295,6 +295,7 @@ def transport_failure(code=None):
 def test_question_request_recovers_only_failed_section_once(monkeypatch):
     import app.study_ai_v2 as module
     monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','1')
+    monkeypatch.setattr(module,'_wait_source_recovery',lambda stopped:True)
     result=parent('generate_questions',20)
     counts={}
     def generate(course,question,history,child):
@@ -312,10 +313,67 @@ def test_question_request_recovers_only_failed_section_once(monkeypatch):
     assert counts=={'First source definition':2,'Second source definition':1}
 
 
+def test_transient_recovery_waits_before_reentering_real_generation_gate(monkeypatch):
+    import app.study_ai_v2 as module
+    from app.study_provider import StudyProviderError
+    monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','1')
+    available=[True]
+    calls=[]
+    def generate(**kwargs):
+        calls.append(kwargs)
+        if len(calls)==1:
+            available[0]=False
+            raise StudyProviderError('Synthetic 503',code=503,retryable=True,tracked=True)
+        yield 'Recovered source' if len(calls)==2 else 'Second source'
+    model=Mock(generate_stream=generate)
+    monkeypatch.setattr(module,'get_provider',lambda name:model)
+    monkeypatch.setattr(module,'target_available',lambda target:available[0])
+    def wait(stopped):
+        assert available[0] is False
+        available[0]=True
+        return True
+    waited=Mock(side_effect=wait)
+    monkeypatch.setattr(module,'_wait_source_recovery',waited)
+    result=parent('answer')
+    result.study_task['source_kind']='questions'
+    assert ask_rag_v2('Course','Kaynak sorularını aktar',[],result)=='Recovered source\n\nSecond source'
+    assert len(calls)==3
+    waited.assert_called_once()
+
+
+@pytest.mark.parametrize('cancelled', [False,True])
+def test_recovery_wait_respects_circuit_timeout_and_cancellation(monkeypatch,cancelled):
+    from types import SimpleNamespace
+    import app.study_ai_v2 as module
+    clock=[0.0]
+    monkeypatch.setattr(module.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(module,'target_available',lambda target:False)
+    def pause(delay):
+        clock[0]+=delay
+        return cancelled
+    stopped=SimpleNamespace(is_set=lambda:False,wait=pause)
+    assert module._wait_source_recovery(stopped,timeout=.6) is False
+    assert clock[0] <= .6
+
+
+def test_recovery_wait_proceeds_only_after_router_becomes_available(monkeypatch):
+    from types import SimpleNamespace
+    import app.study_ai_v2 as module
+    clock=[0.0]
+    monkeypatch.setattr(module.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(module,'target_available',lambda target:clock[0]>=.5)
+    def pause(delay):
+        clock[0]+=delay
+        return False
+    assert module._wait_source_recovery(SimpleNamespace(is_set=lambda:False,wait=pause),timeout=1)
+    assert clock[0]==.5
+
+
 @pytest.mark.parametrize('mode',['quota','partial','second_failed_section','retry_failed'])
 def test_recovery_is_bounded_and_never_synthesizes_incomplete_sources(monkeypatch,mode):
     import app.study_ai_v2 as module
     monkeypatch.setenv('STUDY_SOURCE_BATCH_WORKERS','1')
+    monkeypatch.setattr(module,'_wait_source_recovery',lambda stopped:True)
     counts={}
     def generate(course,question,history,child):
         assert child.study_task.get('batch_partial'), 'Incomplete source extraction reached synthesis'
