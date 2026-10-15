@@ -39,14 +39,26 @@ SCHEMA = {
         'source_pages': {'type': 'array', 'items': {'type': 'integer'}, 'maxItems': 128},
         'source_subjects': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
         'reuse_previous_source': {'type': 'boolean'},
+        'complete_sections': {'type': 'boolean'},
+        'each_document': {'type': 'boolean'},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
 }
 SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
-SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source'])
-SYSTEM = '''source_subjects lists the actual requested subject nouns/groups, preserving qualifiers.
+SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source', 'complete_sections', 'each_document'])
+SYSTEM = '''each_document is true when the user requests a representative topic, overview
+or study target from EACH uploaded document. File count and output format are
+not source_subjects. If no clinical subject is specified, source_subjects=[]
+and scope=course. Do not reuse the previous clinical topic for a new per-file
+overview. each_document is false when asking to read all contents verbatim.
+complete_sections is true only when the user requests the full contents of a
+named group/heading, such as all its members or measurements. It is false for
+a specific definition, fact, value or comparison. A heading containing a subject
+is not a request for that heading's other contents. For these matching-only
+lookups leave source_sections empty and supply subject searches instead.
+source_subjects lists the actual requested subject nouns/groups, preserving qualifiers.
 Exclude output instructions, excluded topics and illustrative examples. For a
 whole-course task use []. Named subjects always imply topic scope.
 reuse_previous_source is true only for a genuine reference to the previous
@@ -185,6 +197,8 @@ class StudyRequest:
     source_pages: tuple[int, ...] = ()
     source_subjects: tuple[str, ...] = ()
     reuse_previous_source: bool = False
+    complete_sections: bool = True
+    each_document: bool = False
 
 
 @dataclass(frozen=True)
@@ -242,6 +256,8 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('source_pages', [])
         data.setdefault('source_subjects', [])
         data.setdefault('reuse_previous_source', False)
+        data.setdefault('each_document', False)
+        data.setdefault('complete_sections', True)  # Compatibility with older contracts.
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -256,7 +272,9 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if (not isinstance(subjects, list) or len(subjects) > 16
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x for x in subjects)
-            or type(data['reuse_previous_source']) is not bool):
+            or type(data['reuse_previous_source']) is not bool
+            or type(data['complete_sections']) is not bool
+            or type(data['each_document']) is not bool):
         raise PlannerContractError('invalid source reference')
     data['source_subjects'] = tuple(dict.fromkeys(x.strip() for x in subjects))
     if data['operation'] != 'clarify':
@@ -271,6 +289,10 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             data['scope'] = 'topic'
             if not data['retrieval_queries'] and not data['source_sections']:
                 data['retrieval_queries'] = subjects
+    if not data['complete_sections'] and data['operation'] != 'clarify':
+        data['source_sections'] = []
+        if not data['retrieval_queries'] and subjects:
+            data['retrieval_queries'] = subjects
     searches = data['retrieval_queries']
     sections=data['source_sections']
     files, pages = data['source_files'], data['source_pages']
@@ -406,7 +428,10 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.operation != 'clarify' and (plan.source_files or plan.source_pages or plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
+    if plan.operation != 'clarify' and plan.each_document and not plan.source_subjects and not (plan.source_files or plan.source_pages):
+        from app.academic_document_samples import retrieve_document_samples
+        result = retrieve_document_samples(session, request_plan=plan, **kwargs)
+    elif plan.operation != 'clarify' and (plan.source_files or plan.source_pages or plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
             (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions', 'solve'})
             or (plan.source_kind == 'questions' and not plan.continue_source)))):
         from app.academic_source_batches import retrieve_source_batches

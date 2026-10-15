@@ -494,3 +494,39 @@ def test_topic_evidence_does_not_pad_with_unrelated_candidates():
     rows = [(1, None, None, None, None, 'Pronasale', None, 'Tanım'),
             (2, None, None, None, None, 'Downs', None, 'Açı')]
     assert _balanced_candidates(rows, ['Pronasale'], 16) == rows[:1]
+
+
+def test_single_subject_does_not_expand_the_parent_outline_section():
+    heading='Kemik noktaları > Tek noktalar'
+    result=interpret_request('Basion nedir?',[],call=Mock(return_value=raw(
+        source_sections=[heading],source_subjects=['Basion'],retrieval_queries=[],complete_sections=False)),
+        source_outline={'sections':[heading],'complete':True})
+    assert result.plan.source_sections==()
+    assert result.plan.retrieval_queries==('Basion',)
+
+
+def test_explicit_complete_group_retains_its_section_boundary():
+    heading='Kemik noktaları > Tek noktalar'
+    result=interpret_request('Bu başlığın bütün üyelerini listele',[],call=Mock(return_value=raw(
+        source_sections=[heading],source_subjects=['Kemik tek noktalar'],complete_sections=True)),
+        source_outline={'sections':[heading],'complete':True})
+    assert result.plan.source_sections==(heading,)
+
+
+def test_unmatched_subject_pool_cannot_take_another_subjects_candidates():
+    from app.academic_semantic_retrieval import _balanced_candidates
+    rows=[(1,None,None,None,None,'Prostaglandin',None,'Açıklama')]
+    assert _balanced_candidates(rows,['Nifedipine'],16,allow_unmatched=False)==[]
+    assert _balanced_candidates(rows,['Prostaglandin'],16,allow_unmatched=False)==rows
+
+
+def test_each_document_request_uses_representative_per_file_reader(monkeypatch):
+    from app.academic_request_understanding import UnderstandingResult,retrieve_understood_course_context
+    from app.study_retrieval_v2 import RetrievalResult
+    reader=Mock(return_value=RetrievalResult())
+    monkeypatch.setattr('app.academic_document_samples.retrieve_document_samples',reader)
+    plan=parse_request(raw(scope='course',source_subjects=[],each_document=True))
+    retrieve_understood_course_context(None,understanding=UnderstandingResult(plan=plan),
+        owner_user_id=17,course_id=23,query='Her dosyadan bir konu')
+    reader.assert_called_once()
+    assert reader.call_args.kwargs['owner_user_id']==17

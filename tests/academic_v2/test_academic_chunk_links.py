@@ -214,3 +214,17 @@ def test_real_missing_section_row_still_fails_closed(monkeypatch):
     monkeypatch.setattr(retrieval,'_coverage_evidence_rows',lambda *a,**k:[])
     with pytest.raises(ValueError,match='source generation changed'):
         retrieval._linked_candidates(None,rows,('yapısal değerlendirme',),owner_user_id=17,course_id=23,limit=16)
+
+
+def test_literal_new_parent_overrides_a_stale_inherited_stored_path():
+    stale='Kemik Noktaları > Tek Noktalar'
+    def source(cid,body):
+        r=row(cid,section=stale)
+        return (*r[:7],body,*r[8:])
+    rows=[source(1,'B - Kemik Noktaları\nTek Noktalar\nBasion (Ba): Tanım.'),
+          source(2,'Bolton (Bo): Tanım.'),
+          source(3,'C - Deri-Kemik Noktaları\nTek Noktalar\nVertex (V): Tanım.'),
+          source(4,'Trichion (Tri): Tanım.')]
+    links=build_course_links([rows],repair_headings=True)
+    assert links.named_section_ids('kemik tek noktalar')==[1,2]
+    assert links.named_section_ids('deri-kemik tek noktalar')==[3,4]

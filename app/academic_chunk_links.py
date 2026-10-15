@@ -50,20 +50,24 @@ def _source_heading_rows(rows):
         return not re.search(r'[:.!?;()]', line.rstrip(':')) and _is_heading(line)
 
     previous, material, last_page, consecutive = None, None, None, False
+    last_stored = None
     for row in sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0]))):
         if material != int(row[1]):
-            previous, consecutive = None, False
+            previous, consecutive, last_stored = None, False, None
         if last_page != (int(row[1]),int(row[3])):
             consecutive = False
         material, last_page = int(row[1]), (int(row[1]),int(row[3]))
         if str(row[6]).upper() == 'QUESTION':
             continue
         stored = str(row[5] or '').strip()
-        if ' > ' in stored:
+        # An inherited stored path may be stale across a new literal heading.
+        # Prefer explicit page text; only a changed metadata path without a
+        # printed heading supplies a new fallback section.
+        changed_path = ' > ' in stored and stored != last_stored
+        if changed_path:
             previous = stored
             consecutive = False
-            yield row, [stored]
-            continue
+        last_stored = stored
         lines = [line.strip() for line in str(row[7] or '').splitlines() if line.strip()]
         joined, i = [], 0
         while i < len(lines):
