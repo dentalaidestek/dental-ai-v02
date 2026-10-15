@@ -309,7 +309,7 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                             'olarak kullanma. Henüz bütün kaynakların sıklık sıralamasını yapma.')
                            if retrieval.study_task.get('source_kind') == 'question_patterns' else
                            f'Kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
-                           'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
+                           'Bu bölümde bulunan her istenen kavramın tanımını, koşullarını ve ilişkilerini '
                            'dosya/sayfa atıflarıyla ayrı tut. İstenen bilgi bu bölümde yoksa burada genel bir '
                            'yokluk sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
             else:
@@ -404,6 +404,7 @@ def _stream_source_batches(course_title, question, history, retrieval):
     source_questions = retrieval.study_task.get('source_kind') == 'questions'
     synthesize = (operation in {'generate_questions', 'compare'}
                   or operation in {'answer', 'explain'} and not source_questions
+                  and len(retrieval.source_batches) > 1
                   or operation == 'solve' and retrieval.study_task.get('source_kind') == 'notes'
                   or retrieval.study_task.get('source_kind') == 'question_patterns')
     for output in _source_batch_outputs(course_title, question, history, retrieval, synthesize):
