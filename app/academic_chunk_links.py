@@ -51,9 +51,11 @@ def _source_heading_rows(rows):
 
     previous, material, last_page, consecutive = None, None, None, False
     last_stored = None
+    literal_structure = False
     for row in sorted(rows,key=lambda r:(int(r[1]),int(r[3]),int(r[13]),int(r[0]))):
         if material != int(row[1]):
             previous, consecutive, last_stored = None, False, None
+            literal_structure = False
         if last_page != (int(row[1]),int(row[3])):
             consecutive = False
         material, last_page = int(row[1]), (int(row[1]),int(row[3]))
@@ -64,7 +66,7 @@ def _source_heading_rows(rows):
         # Prefer explicit page text; only a changed metadata path without a
         # printed heading supplies a new fallback section.
         changed_path = ' > ' in stored and stored != last_stored
-        if changed_path:
+        if changed_path and not literal_structure:
             previous = stored
             consecutive = False
         last_stored = stored
@@ -81,6 +83,7 @@ def _source_heading_rows(rows):
         observed = []
         for line in joined:
             if is_literal_heading(line):
+                literal_structure = True
                 label=re.sub(r'^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)','',line).rstrip(':').strip()
                 if not previous or previous.split(' > ')[-1].casefold()!=label.casefold():
                     previous=_next_section_title(previous,line,consecutive=consecutive)

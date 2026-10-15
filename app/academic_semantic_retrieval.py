@@ -221,11 +221,23 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             rows = [row for row in rows if str(row[6]).upper() == 'QUESTION'
                     or re.search(r'(^|\n)\s*((soru\s*)?[0-9]{1,3}[.)]|[A-E][.)])\s+', row[7] or '', re.I)
                     or re.search(r'(soru|test|quiz|değerlendirme)', row[5] or '', re.I)]
+        native_matches=[];native_complete=False
+        if (request_plan.source_kind=='notes' and not request_plan.complete_sections
+                and not request_plan.needs_visual and not request_plan.source_sections):
+            from app.academic_native_evidence import matching_native_pages
+            native_matches,native_complete=matching_native_pages(session,
+                owner_user_id=owner_user_id,course_id=course_id,
+                searches=request_plan.source_subjects or request_plan.retrieval_queries)
         ranked_rows=rows
-        rows = (_balanced_candidates(rows, searches, limit)
-                if request_plan.source_kind == 'questions' else
-                _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
-                                   course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
+        if native_complete:
+            rows=native_matches
+        else:
+            rows = (_balanced_candidates(rows, searches, limit)
+                    if request_plan.source_kind == 'questions' else
+                    _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
+                                       course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
+            ids={int(row[0]) for row in native_matches}
+            rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
         if query_embedding:
             from app.academic_dense_retrieval import hybrid_candidates
             rows=hybrid_candidates(rows,ranked_rows,searches,limit)
