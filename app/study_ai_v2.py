@@ -80,6 +80,13 @@ def _generation_targets() -> list[ProviderTarget]:
 
 
 def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
+    if (retrieval.study_task.get('source_kind') == 'questions'
+            and retrieval.study_task.get('operation') == 'answer'
+            and (retrieval.study_task.get('source_files') or retrieval.study_task.get('source_pages'))):
+        # The semantic planner already resolved the source selection and
+        # referent. Previous transcriptions may contain the very OCR mistakes
+        # this request asks to correct; never recycle them as reading hints.
+        return []
     # Prior answers are needed to identify a referenced list, ordinal item,
     # exercise, or requested transformation. Keep them as quoted context data
     # in _prompt, never as provider-role examples or factual note evidence.
