@@ -225,6 +225,7 @@ def test_literal_new_parent_overrides_a_stale_inherited_stored_path():
           source(2,'Bolton (Bo): Tanım.'),
           source(3,'C - Deri-Kemik Noktaları\nTek Noktalar\nVertex (V): Tanım.'),
           source(4,'Trichion (Tri): Tanım.')]
+    wrong=list(source(5,'Nasion (N-Na): Tanım.'));wrong[5]=stale+' > Nasion';rows.append(tuple(wrong))
     links=build_course_links([rows],repair_headings=True)
     assert links.named_section_ids('kemik tek noktalar')==[1,2]
-    assert links.named_section_ids('deri-kemik tek noktalar')==[3,4]
+    assert links.named_section_ids('deri-kemik tek noktalar')==[3,4,5]
