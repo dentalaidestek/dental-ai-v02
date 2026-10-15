@@ -88,6 +88,10 @@ def _generation_targets() -> list[ProviderTarget]:
 
 
 def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
+    if retrieval.study_task.get('document_sample'):
+        # Independent per-file inventories use only this turn's representative
+        # sources; an earlier answer is not evidence for an unsampled page.
+        return []
     if (retrieval.study_task.get('source_kind') == 'questions'
             and retrieval.study_task.get('operation') == 'answer'
             and (retrieval.study_task.get('source_files') or retrieval.study_task.get('source_pages'))):
@@ -437,7 +441,7 @@ def _stream_source_batches(course_title, question, history, retrieval):
     synthesis_chars = 0
     source_questions = retrieval.study_task.get('source_kind') == 'questions'
     synthesize = (operation in {'generate_questions', 'compare'}
-                  or operation in {'answer', 'explain'} and not source_questions
+                  or operation in {'answer', 'explain', 'summarize', 'teach'} and not source_questions
                   and len(retrieval.source_batches) > 1
                   or operation == 'solve' and retrieval.study_task.get('source_kind') == 'notes'
                   or retrieval.study_task.get('source_kind') == 'question_patterns')

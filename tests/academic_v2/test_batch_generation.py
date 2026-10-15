@@ -25,13 +25,17 @@ def provider(monkeypatch, outputs):
     return value
 
 
-def test_summary_processes_each_section_once_and_combines_without_extra_call(monkeypatch):
-    value=provider(monkeypatch,['First summary','Second summary'])
-    result=ask_rag_v2('Course','Her konuyu özetle',[],parent('summarize'))
-    assert result=='First summary\n\nSecond summary'
-    assert value.generate_stream.call_count==2
+@pytest.mark.parametrize('operation',['summarize','teach'])
+def test_summary_and_teaching_combine_all_sections_before_final_format(monkeypatch,operation):
+    value=provider(monkeypatch,['First facts','Second facts','Complete two-group table'])
+    result=ask_rag_v2('Course','Her konuyu iki grupta tabloya koy',[],parent(operation))
+    assert result=='Complete two-group table'
+    assert value.generate_stream.call_count==3
     assert 'First source definition' in value.generate_stream.call_args_list[0].kwargs['prompt']
     assert 'Second source definition' in value.generate_stream.call_args_list[1].kwargs['prompt']
+    final=value.generate_stream.call_args_list[2].kwargs['prompt']
+    assert 'First facts' in final and 'Second facts' in final
+    assert 'Her konuyu iki grupta tabloya koy' in final
 
 
 def test_question_count_applies_once_after_all_sections_are_read(monkeypatch):

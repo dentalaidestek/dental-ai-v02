@@ -187,7 +187,7 @@ class StudyDialogueTests(unittest.TestCase):
             self.assertIn('furkasyon lezyonları', resolved)
             self.assertNotIn('soru hazırla', resolved)
 
-    def test_insufficient_evidence_streams_followup_without_provider_call(self):
+    def test_insufficient_evidence_reports_source_gap_without_provider_call(self):
         import ast
         from pathlib import Path
         from typing import Iterator
@@ -213,7 +213,7 @@ class StudyDialogueTests(unittest.TestCase):
                 self.assertTrue(response)
                 self.assertNotIn('Bu soruyla ilişkilendirilebilecek ders notu bulunamadı', response)
         self.assertIn('Şu an baktığım ders notlarında bu sorunun cevabını bulamadım', response)
-        self.assertIn('biraz daha açık yazar mısın', response)
+        self.assertNotIn('biraz daha açık yazar mısın', response)
         self.assertNotIn('chunk', response)
         self.assertNotIn('parça', response)
 

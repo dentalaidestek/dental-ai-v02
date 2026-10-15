@@ -3,6 +3,16 @@ from app.study_provider import ProviderTarget, StudyProviderError
 from app.study_retrieval_v2 import RetrievalResult
 
 
+def test_independent_file_inventory_cannot_cite_a_previous_answer_as_a_source():
+    history=[{'role':'assistant','content':'UNSAMPLED_PAGE_FROM_OLD_ANSWER'}]
+    result=RetrievalResult(note_context=['[KANIT sayfa=1] Current source'],
+        evidence_sufficient=True,study_task={'document_sample':True,'document_inventory':['Notes.pdf']})
+    assert 'UNSAMPLED_PAGE_FROM_OLD_ANSWER' not in ai_v2._prompt('Course','Each file',result,history)
+    result.study_task={}
+    # Real follow-ups still need their referent; do not erase history globally.
+    assert 'UNSAMPLED_PAGE_FROM_OLD_ANSWER' in ai_v2._prompt('Course','Those items',result,history)
+
+
 class _FakeGemini:
     def __init__(self):
         self.model = None
