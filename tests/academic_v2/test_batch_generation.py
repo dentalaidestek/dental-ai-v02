@@ -408,3 +408,11 @@ def test_multi_section_answer_is_synthesized_once_instead_of_joining_denials(mon
     assert value.generate_stream.call_count == 3
     final = value.generate_stream.call_args.kwargs['prompt']
     assert 'section A' in final and 'section B' in final
+
+
+def test_single_section_answer_does_not_add_a_synthesis_call(monkeypatch):
+    value = provider(monkeypatch, ['One-row table'])
+    result = parent('answer')
+    result.source_batches = result.source_batches[:1]
+    assert ask_rag_v2('Course', 'Tanımı tabloya çevir', [], result) == 'One-row table'
+    value.generate_stream.assert_called_once()
