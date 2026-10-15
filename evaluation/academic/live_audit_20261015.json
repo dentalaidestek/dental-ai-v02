@@ -1,0 +1,137 @@
+{
+  "baseline_commit": "2d1816b937b0efcf0355536fde579816970f939c",
+  "course_id": 2,
+  "date": "2026-10-15",
+  "method": "Live browser requests, Render call/retrieval traces, owner-only saved page inspection and selected original PDF pages. This is a targeted audit, not proof of universal factual accuracy.",
+  "unique_requests": 20,
+  "completed_baseline_answers": 18,
+  "provider_failed_requests": [
+    9,
+    14
+  ],
+  "initial_cooldown_then_retried": [
+    10
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "question": "Gonion noktası nasıl tanımlanır? Yalnız ders notuna göre iki cümle yaz ve kaynak dosya/sayfayı belirt.",
+      "baseline_answer": "Gonion noktası; ramus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının açıortayının kemik üzerindeki iz düşümüdür. Her iki düzlemin kesişme noktasına postgonion denir.",
+      "finding": "Definition matches page 33; requested filename/page omitted. 50 chunks fetched."
+    },
+    {
+      "id": 2,
+      "question": "Basion ile Bolton noktalarını karıştırıyorum. Notlardaki tanımlarını iki satırlı karşılaştırma tablosunda, kaynak sayfalarıyla göster.",
+      "baseline_answer": "Nokta\tNottaki tanım\tKaynak sayfa\nBasion (Ba)\tForamen Occipitale Magnum’un ön kenarının en aşağı noktası\t12\nBolton (Bo)\tCondylis Occipitalis’in arkasındaki kemik iç bükeyliğinin en derin ve en yukarı noktasıdır\t13",
+      "finding": "Definitions/pages 12 and 13 match; 46 chunks unnecessarily fetched."
+    },
+    {
+      "id": 3,
+      "question": "Sella noktası nerede bulunur? Nottaki anatomik tanımı ve kısaltmasını yaz; kaynak sayfasını belirt.",
+      "baseline_answer": "Sella noktası (S); sella turcica’nın orta noktasıdır.\n\nKaynak sayfa: 40",
+      "finding": "Definition/page 40 match; 54 chunks fetched."
+    },
+    {
+      "id": 4,
+      "question": "Y aksı doğrusu ile Y ekseni açısı aynı şey mi? Notlara dayanarak geçtiği noktaları ve oluşan açıyı ayır, kaynak göster.",
+      "baseline_answer": "Y aksı doğrusu (Y ekseni) ile Y ekseni açısı aynı şey değildir; biri anatomik noktaları birleştiren bir doğrudur, diğeri ise bu doğrunun referans düzlemle yaptığı açıdır. Ders notlarına göre detayları şu şekildedir:\n\nY aksı / Y ekseni\n\nGeçtiği noktalar: Sella ve Gnathion noktalarını birleştiren doğrumudur/eksendir.\nKullanım amacı: Alt çene gelişim yönünün tayininde kullanılmaktadır.\nKaynak sayfa: 56\n\nY ekseni Açısı\n\nOluşan açı: Sella ve Gnathion noktalarını birleştiren doğrunun Frankfurt düzlemi ile kesişmesi sonucu aşağı ve önde oluşan açıdır.\nKullanım amacı: Çene ucunun üst yüze göre ileri ve aşağı konumlarını belirlemeye yarar.\nKaynak sayfa: 76",
+      "finding": "Correct line/angle distinction, pages 56 and 76; four calls and broad scan coverage."
+    },
+    {
+      "id": 5,
+      "question": "NA ve NB düzlemlerini üç sütunlu tabloyla karşılaştır: düzlem, geçtiği noktalar, kaynak sayfa. Başka düzlem ekleme.",
+      "baseline_answer": "Ders notlarına göre NA ve NB düzlemlerinin karşılaştırması aşağıdaki tabloda yer almaktadır:\n\nDüzlem\tGeçtiği noktalar\tKaynak sayfa\nNA (Nasion-A noktası Düzlemi)\tNasion ile A noktalarından geçen düzlemdir\t52\nNB (Nasion-B noktası Düzlemi)\tNasion ile B noktalarından geçen düzlemdir\t53",
+      "finding": "Correct NA/NB table, pages 52 and 53; unrelated candidates included."
+    },
+    {
+      "id": 6,
+      "question": "Notlarda Kemik tek noktaları başlığı altındaki noktaların tamamını ad, kısaltma, tanım ve kaynak sayfa olarak listele. Komşu başlıkları ekleme.",
+      "baseline_answer": "Ders notlarına göre \"Kemik Noktaları - Tek Noktalar\" başlığı altında geçen sefalometrik noktalar, kısaltmaları, tanımları ve kaynak sayfalarıyla birlikte aşağıda listelenmiştir:\n\nSpina Nasalis Anterior (ANS)\n\nTanım: Anterior nazal spinanın en ön uç noktası\nKaynak sayfa: 9\n\nProsthion (Pr)\n\nTanım: Üst orta keser dişler arasındaki alveol kemiği çıkıntısının profildeki en alt ve ön noktası\nKaynak sayfa: 10\n\nInfradentale (Id)\n\nTanım: Alt orta keser dişler arasındaki alveol kemiğinin profildeki en yukarı ve ileri noktası (dişeti papili tepesi)\nKaynak sayfa: 11\n\nBasion (Ba)\n\nTanım: Foramen Occipitale Magnum’un ön kenarının en aşağı noktası\nKaynak sayfa: 12\n\nBolton (Bo)\n\nTanım: Condylis Occipitalis’in arkasındaki kemik iç bükeyliğinin en derin ve en yukarı noktasıdır\nKaynak sayfa: 13\n\nOpistocranion (Op)\n\nTanım: Başın en arka ve en çıkıntılı noktasıdır\nKaynak sayfa: 14\n\nInion (In)\n\nTanım: Protuberentia occipitalis externa’nın en geride ve en çıkıntılı noktasıdır\nKaynak sayfa: 14\n\nSpina Nasalis Posterior (PNS)\n\nTanım: Sert damağın profil görüntüsünün en arka uç noktasıdır\nKaynak sayfa: 15\n\nVertex (V)\n\nTanım: Frankfort düzlem yere paralel iken orta oksal düzlem üzerinde başın en yüksek tepe noktası\nKaynak sayfa: 23\n\nTrichion (Tri)\n\nTanım: Orta okzal düzlem üzerinde saçların başlama noktası\nKaynak sayfa: 24\n\nGlabella (Gl)\n\nTanım: Orta okzal düzlem üzerinde kaşların üst kenarı hizasında alnın en çıkıntılı noktası\nKaynak sayfa: 25\n\nOphryon (On)\n\nTanım: İki kaş arasında orta okzal düzlem üzerinde ve glabellanın 1-2 mm altında bulunan nokta\nKaynak sayfa: 26\n\nNasion (N - Na)\n\nTanım: Naso-frontal suturanın orta okzal düzlem üzerindeki en ileri uç noktası\nKaynak sayfa: 27\n\nA noktası (Sub-spinale / SSp)\n\nTanım: Anterior nazal spinanın altında kalan iç bükeyliğin en derin noktası\nKaynak sayfa: 28\n\nB noktası (Supramentale / Sm)\n\nTanım: Infradentale ile pogonion arasında kalan kemik iç bükeyliğinin profildeki en derin noktası\nKaynak sayfa: 29\n\nPogonion (Pog - Pg)\n\nTanım: Çene ucunun orta okzal düzlem üzerindeki en ileri noktası\nKaynak sayfa: 30\n\nGnathion (Gn)\n\nTanım: Alt çene simfizinin en alt ve en ön noktasıdır\nKaynak sayfa: 31\n\nMenton (Me - M)\n\nTanım: Alt çene kemiği simfizinin en alt noktası\nKaynak sayfa: 32",
+      "finding": "Incorrect scope: 18 entries, including neighbouring skin-bone group; requested group has 8 points on pages 9-15."
+    },
+    {
+      "id": 7,
+      "question": "Downs analizinin beş iskeletsel ve beş dişsel ölçümünü iki grupta tabloya koy. Her ölçümün kaynak sayfasını belirt; notta yoksa ekleme.",
+      "baseline_answer": "Ders notlarına göre Downs analizinin iskeletsel ve dişsel ölçümleri ile bunların kaynak sayfaları aşağıda iki ayrı grupta tablo halinde verilmiştir:\n\nİskeletsel Ölçümler\n\nGrup\tÖlçüm\tKaynak Sayfa\nİskeletsel Ölçümler\tYüz Açısı\t68\nİskeletsel Ölçümler\tDış Bükeylik (Konveksite) Açısı\t70\nİskeletsel Ölçümler\tAlt Çene Düzlemi Açısı\t74\n\nDişsel Ölçümler\n\nGrup\tÖlçüm\tKaynak Sayfa\nDişsel Ölçümler\tKapanış Düzlemi Eğimi\t79\nDişsel Ölçümler\tAlt Keser - Kapanış Düzlemi Açısı\t83\nDişsel Ölçümler\tAlt Keser - Altçene Düzlemi Açısı\t85\nDişsel Ölçümler\tÜst Keser Dişin İleriliği\t87\n\nŞu an baktığım ders notlarında istenen beşer adet iskeletsel ve dişsel ölçümün tamamı yer almamaktadır; yalnızca yukarıdaki tabloda bulunan iskeletsel ve dişsel ölçümler ile ilgili sayfa bilgileri geçmektedir. Notlarda yer almayan diğer ölçümler eklenmemiştir.",
+      "finding": "Incomplete: only 3 skeletal and 4 dental measurements despite full 5+5 lists on pages 67 and 78."
+    },
+    {
+      "id": 8,
+      "question": "Yüz açısı ile dış bükeylik açısı arasındaki farkı bir öğrenciye anlatır gibi açıkla. İdeal değerler notta yazıyorsa ekle ve kaynak göster.",
+      "baseline_answer": "Ders notlarına göre Downs analizinin iki önemli iskeletsel ölçümü olan Yüz Açısı ile Dış Bükeylik (Konveksite) Açısı arasındaki farklar, kullanıldığı çizgiler ve ölçtüğü özellikler bakımından şu şekildedir:\n\nYüz Açısı\n\nOluşumu ve Çizgileri: Frankfort düzlemi ile yüz çizgisinin (Nasion - Pogonion) kesişmesi ile aşağı ve içte oluşan açıdır.\nAmacı: Alt çenenin başa veya üst yüz bölgesine göre ilerilik durumunu belirten bir ölçümdür.\nİdeal Değeri: Ders notlarının ilgili metin kısmında Downs'a göre ideal değer belirtilmemiştir (sayfa 68).\nKaynak Sayfa: 68\n\nDış Bükeylik (Konveksite) Açısı\n\nOluşumu ve Çizgileri: Nasion - A noktalarını birleştiren doğru ile A - Pogonion doğrusu kesiştirilir. A - Pg doğrusu yukarı doğru uzatılır. Uzatılan A - Pg doğrusu ile N - A doğrusu arasında yukarıda içte veya dışta oluşan açıdır.\nAmacı: Yüzün içbükey veya dışbükeyliğini belirten bir ölçümdür.\nİdeal Değeri: Ders notlarının ilgili metin kısmında Downs'a göre ideal değer belirtilmemiştir (sayfa 70).\nKaynak Sayfa: 70",
+      "finding": "Definitions match but existing ideal values on native pages 68 and 70 were reported absent."
+    },
+    {
+      "id": 9,
+      "question": "Downs analizinde AB-NPg açısının ideal değeri nedir? Nottaki değeri ve aralığı aynen, dosya/sayfasıyla aktar; yoksa sayı uydurma.",
+      "baseline_answer": null,
+      "finding": "Planner provider unavailable; no completed assistant reply."
+    },
+    {
+      "id": 10,
+      "question": "Retrognatik yüz tipinde hangi sefalometrik açılar artar, hangileri azalır? Yalnız notlara göre açıkla ve kaynak sayfalarını belirt.",
+      "baseline_answer": "Ders notlarına göre retrognatik yüz tipinde sefalometrik açıların değişimleri şu şekildedir:\n\nAzalan Açılar:\n\nYüz açısı azalır (Kaynak sayfa: 90)\n\nArtan Açılar:\n\nKonveksite açısı artar (Kaynak sayfa: 90)\nANB açısı artar (Kaynak sayfa: 90)\nAlt çene düzlemi açısı artar (Kaynak sayfa: 90)\nY-aksı açısı artar (Kaynak sayfa: 90)",
+      "finding": "Correct changes on page 90 after a retry; first attempt blocked by provider cooldown."
+    },
+    {
+      "id": 11,
+      "question": "Bunu değişimin yönü ve kaynak sayfa sütunlarıyla tabloya dönüştür; önceki konunun dışına çıkma.",
+      "baseline_answer": "Ders notlarına göre retrognatik yüz tipinde sefalometrik açıların değişimleri, değişim yönleri ve kaynak sayfaları aşağıdaki tabloda verilmiştir:\n\nSefalometrik Ölçüm\tDeğişimin Yönü\tKaynak Sayfa\nYüz açısı\tAzalır\t90\nKonveksite açısı\tArtar\t90\nANB açısı\tArtar\t90\nAlt çene düzlemi açısı\tArtar\t90\nY-aksı açısı\tArtar\t90",
+      "finding": "Correct five-row follow-up table, topic retained."
+    },
+    {
+      "id": 12,
+      "question": "Bir hocaymışım gibi soruyorum: Frankfort düzlemini hangi noktalar oluşturur, bu noktaların tanımları nelerdir? Her bilgi için not sayfasını göster.",
+      "baseline_answer": "Ders notlarına göre Frankfort düzlemini oluşturan noktalar ve bu noktaların tanımları şu şekildedir:\n\nFrankfort Düzlemi (FH):\n\nOrbita ve Porion noktalarından geçen düzlemdir (Kaynak sayfa: 46).\n\nOluşturan Noktalar ve Tanımları:\n\nOrbitale (O-Or): Orbita çukurunun en alt en dış noktasıdır. Canlıda ise birey tam karşıya bakarken infraorbital kıvrımın en alt noktasıdır (Kaynak sayfa: 34).\nPorion (pr): Meatus acusticus externus'un üst kenarının en yukarı noktasıdır (Kaynak sayfa: 18).",
+      "finding": "Correct compound answer: FH page 46, Orbitale page 34, Porion page 18."
+    },
+    {
+      "id": 13,
+      "question": "Nasion, Pogonion, Gnathion ve Menton noktalarını karıştırmamak için kısa bir ezber yöntemi kur. Önce nottaki tanımlarını ver, sonra senin ürettiğin ezber cümlesini açıkça ayır.",
+      "baseline_answer": "Ders notlarına göre Nasion, Pogonion, Gnathion ve Menton noktalarının tanımları şu şekildedir:\n\nNasion (N - Na): Naso-frontal suturanın orta okzal düzlem üzerindeki en ileri uç noktasıdır (Kaynak sayfa: 27).\nPogonion (Pog - Pg): Çene ucunun orta okzal düzlem üzerindeki en ileri noktasıdır (Kaynak sayfa: 30).\nGnathion (Gn): Alt çene simfizinin en alt ve en ön noktasıdır (Kaynak sayfa: 31).\nMenton (Me - M): Alt çene kemiği simfizinin en alt noktasıdır (Kaynak sayfa: 32).\n\nAkılda Kalıcı Ezber Yöntemi ve Cümlesi\n\nBu dört noktayı karıştırmamak için kafanızda yukarıdan aşağıya (burun kökünden çene ucuna) doğru bir sıralama yapabilirsiniz:\n\nEn üstte Nasion (burun kökü/alın birleşimi) vardır.\nÇenenin en ön noktasında Pogonion yer alır.\nÇenenin hem ön hem de alt noktasında Gnathion bulunur.\nEn alt noktada ise sadece Menton vardır.\n\nEzber Cümlesi:\n\n\"Nasıl Poz Güzlü Melek?\" (→ Nasiyon, Pogonion, Gnathion, Menton)",
+      "finding": "Definitions preserved and mnemonic separate; overfetch: 60 chunks, 2.36 MB generation request."
+    },
+    {
+      "id": 14,
+      "question": "Nifedipine prostaglandin sentezini inhibe ettiği için mi ortodontik tedaviyi etkiler? Bu ifadeyi ders notlarına göre kontrol et; başka ilaçla karışıyorsa ayır ve kaynak göster.",
+      "baseline_answer": null,
+      "finding": "Transport failure before output after about 77 seconds; 5.29 MB generation request."
+    },
+    {
+      "id": 15,
+      "question": "Asetilsalisilik asidin ortodontik diş hareketini etkileme mekanizması notlarda nasıl açıklanıyor? En fazla üç cümle ve kaynak dosya/sayfa yaz.",
+      "baseline_answer": "Şu an baktığım ders notlarında asetilsalisilik asidin ortodontik diş hareketini etkileme mekanizmasıyla ilgili bir bilgi bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?",
+      "finding": "No supported answer returned; absence across all documents was not independently established."
+    },
+    {
+      "id": 16,
+      "question": "Kondro-kranium gelişimini nottaki sıraya göre üç kısa aşamada açıkla. Scleroblastem ve kondro-sfenoid terimlerini doğru aşamaya bağla; kaynak sayfalarını ekle.",
+      "baseline_answer": "Ders notlarına göre kondro-kranium gelişimi sırasıyla şu üç aşamada gerçekleşir:\n\nİlk Gelişimin Başlaması ve Hücre Yoğunlaşması (Scleroblastem): Başın ilk kıkırdaksal yapısını teşkil eden kondro-kranium için ilk gelişme, embriyonun 4. haftasından sonra sfenoid kemiğin gövdesinin (corpus sphenoideus) bulunacağı bölgede başlar. Hipofizo-pfuter yapısının bulunduğu yerin biraz alt kısmında mezenkim içerisinde bir hücre yoğunlaşması meydana gelir ve buna *scleroblastem* adı verilir (Kaynak: Orto devamı.pdf, sayfa 26).\nKondro-Sfenoid Oluşumu: Bu hücre yoğunlaşmasının (kalsiyum veya skleroblastemin) orta kısmı sfenoid kemik bölgesinde yer aldığından *kondro-sfenoid* teşkil edilir. Sfenoidden öne ve arkaya doğru kıkırdaksal kısımlar gelişir (Kaynak: Orto devamı.pdf, sayfa 26).\nKıkırdaksal Taslakların Gelişimi: Kafa skleroblasteminden öne doğru kondro-etmoid denilen kıkırdak, arkaya doğru ise oksibito-vertebral blastem denilen kıkırdaksal taslak gelişir. Etmoidden sağ ve tarafa doğru iki çıkıntı meydana gelir (arkada temporal kanat, önde orbital kanat); ayrıca orta çizgi boyunca uzanan kıkırdaksal taslak burun septumunu teşkil eder ve palatinal proseslerle birleşir (Kaynak: Orto devamı.pdf, sayfa 26).",
+      "finding": "Source page 26 supports sequence, but unsupported calcium parenthesis was added."
+    },
+    {
+      "id": 17,
+      "question": "Orto devamı.pdf dosyasının yalnız 3. sayfasındaki 14. soruyu ve 4. sayfanın en üstündeki devam şıklarını birlikte aynen aktar. Başka sayfalardaki kopyaları ekleme. Çözme; okunamayan kısmı uydurma.",
+      "baseline_answer": "Soru 14\n\nÇenelerin açma hareketinde hangi kaslar nasıl çalışır?\n\na. Temporal-masseter-digastricus kasılması\n\nb. Temporal-masseter-pterygoideus externus kasılması\n\nc. [okunamadı] kasılması\n\nd. [okunamadı]\n\ne. Hiçbiri",
+      "finding": "Source pages 3-4 selected, but c/d remained unreadable; c fragment mismatches printed relaxation wording."
+    },
+    {
+      "id": 18,
+      "question": "Yüklediğim gerçek çıkmış sorulara göre hangi üç konu daha sık sorulmuş? Her konu için saydığın soru numaralarını ve dosya/sayfayı göster. Aynı sorunun kopyalarını tekrar sayma; okunamayanları hesaba katma. Bu bir tahmindir diye açıkla.",
+      "baseline_answer": "Yüklediğim ders notlarındaki gerçek çıkmış soruların envanterine dayanarak yapılan incelemede, en sık karşılaşılan üç konu ve bu konuların geçtiği soru numaraları, dosya ve sayfalar şu şekildedir:\n\nFontaneller (Bıngıldaklar) ve Kafa Kaidesi/Kraniofasiyal Gelişim\nOrto devamı.pdf, Sayfa 8, Soru 3 (Bıngıldaklar)\nOrto devamı.pdf, Sayfa 8, Soru 1 ve 2 (Kafa kaidesi yapısı ve kıkırdaksal yapılar)\nOrto devamı.pdf, Sayfa 12, Soru 13 ve 14 (Eşkenar dörtgene benzeyen bıngıldak, metopik/koronal/sagital suturalar arası bıngıldaklar)\nSefalometrik Ölçümler, Noktalar ve Analizler (Tweed, Steiner, Holdaway vb.)\nOrto devamı.pdf, Sayfa 4, Soru 21 ve 22 (Sefalometrik ölçümler, Tweed üçgeni)\nOrto devamı.pdf, Sayfa 6, Soru 25 ve 26 (Steiner tedavi planlaması, Holdaway oranları)\nOrto devamı.pdf, Sayfa 9, Soru 21 ve 22 (Sefalometrik ölçümler ve Tweed üçgeni - tekrar/kopya soru hariç tutularak analiz edilmiştir)\nDil Postürü, Yutkunma ve Dudak İlişkileri (Fonksiyonel Bulgular)\nOrto devamı.pdf, Sayfa 16, Soru 42 ve 43 (Dil postürleri ve ayırıcı tanısı)\nOrto devamı.pdf, Sayfa 16, Soru 44 (Fonksiyonel kısa dudaklar)\nOrto devamı.pdf, Sayfa 17, Soru 47 (Yutkunmanın ayırıcı tanısı)\n\n*(Bu analiz, yalnızca mevcut ders notu metinlerinde yer alan soru envanterlerine dayanan bir tahmindir; gelecekteki bir sınavın kesin soru dağılımını garanti etmez.)*",
+      "finding": "Free-form frequency answer includes duplicate question copies (e.g. pages 4/9, questions 21/22). Counts not independently validated."
+    },
+    {
+      "id": 19,
+      "question": "Bu dersteki üç not dosyasının her birinden birer ana konu seçip toplam üç satırlık çalışma planı tablosu oluştur. Her satırda dosya adı, konu, kaynak sayfa ve bir öğrenme hedefi olsun; aynı dosyayı tekrar seçme.",
+      "baseline_answer": "Şu an baktığım ders notlarında üç farklı dosyadan konu seçerek çalışma planı tablosu oluşturmama yetecek kadar farklı dosya kaynağı bulunmamaktadır. Yalnızca Orto devamı.pdf dosyasına ait sayfalar incelenebilmektedir. Bu bağlamda, eldeki kaynakla desteklenen Orto devamı.pdf içeriğine ait bilgiler şu şekildedir:\n\nKonu: Kondro-Kranium Gelişimi\nDosya Adı: Orto devamı.pdf\nKaynak Sayfa: Sayfa 26\nÖğrenme Hedefi: Embriyonun 4. haftasından sonra sfenoid kemik bölgesinde başlayan hücre yoğunlaşması (scleroblastem) ile kondro-sfenoid, kondro-etmoid ve oksibito-vertebral blastem gibi kıkırdaksal taslakların gelişim aşamalarını kavramak.\n\nİstediğin çoklu dosya tablosunun diğer bölümleri için gerekli olan diğer dosya içerikleri şu an baktığım ders notlarında yer almamaktadır. Farklı dosyaları veya başka bir başlığı incelememi istersen belirtebilirsin.",
+      "finding": "Failed per-file coverage: three files exist but answer claimed only Orto continued was usable. Five calls."
+    },
+    {
+      "id": 20,
+      "question": "Bu notlarda Invisalign için kesin önerilen günlük kullanım süresi kaç saat olarak veriliyor? Yalnız bu notlara dayan; yoksa bulunmadığını söyle ve genel bilginle sayı ekleme.",
+      "baseline_answer": "Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?",
+      "finding": "Honest no-source response without invented usage hours. One planner call, no generation; unnecessary clarification question."
+    }
+  ]
+}

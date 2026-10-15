@@ -69,6 +69,9 @@ bir çıkarımı kesin bilgi gibi sunma. Çoktan seçmeli yeni sorularda istenme
 tek doğru seçenek kullan; çeldiricilerin de doğru olduğu belirsiz sorular üretme.
 Farklı kavramlara ait ayrı tanımları 'veya' ile tek tanımda birleştirme. Her
 ifadeyi sorulan kavrama ait kaynakla doğrula; karşılaştırmada tarafları ayrı tut.
+Her akademik tanım ve olguyu verilen kaynak dosya/sayfa atfıyla ilişkilendir.
+Kullanıcı kaynak istiyorsa atfı atlama; kısa cevapta da dosya ve sayfayı belirt.
+Tabloda atıfları ilgili hücre veya kaynak sütununda ver, yeni veri satırı ekleme.
 Tanımdaki anatomik nesneyi, yönü, referansı ve ilişkiyi koru. Bunları başka
 kavramların tanımlarıyla değiştirerek sadeleştirme. Kaynakta doğrulanmayan
 açıklayıcı parantez veya anatomik ayrıntı ekleme.
@@ -127,9 +130,14 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            "parçalar gibi sunma; kaynakların yalnız bir bölümünün gönderildiğini söyleme. "
            "Gerçekten okunamayan veya cevabı doğrulanamayan bilgileri ayrı belirt.\n\n"
            if retrieval.source_coverage_complete else
-           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma. Dersin tamamının verilmemesi, sorulan başlığın eksik olduğu anlamına gelmez. Verilen kaynakların desteklediği bütün istenen öğeleri işle. Kullanıcıya chunk, parça veya retrieval gibi teknik terimler söyleme. İsteğin hiçbir bölümünü destekleyen bilgi bulamazsan şu ifadeyi kullan: Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?\n\n")
+           "KAYNAK KAPSAMI: Bu tur sınırlı aday kaynaklar verildi; bütün notları okumuş gibi davranma. Dersin tamamının verilmemesi, sorulan başlığın eksik olduğu anlamına gelmez. Verilen kaynakların desteklediği bütün istenen öğeleri işle. Kullanıcıya chunk, parça veya retrieval gibi teknik terimler söyleme. İsteğin hiçbir bölümünü destekleyen bilgi bulamazsan şu ifadeyi kullan: Şu an baktığım ders notlarında bu sorunun cevabını bulamadım.\n\n")
         +
-        "İSTEĞİ YERİNE GETİR:\n"
+        ("DOSYA KAPSAMI: " + json.dumps(retrieval.study_task['document_inventory'],ensure_ascii=False)
+         + ". Her dosyadan temsilî sayfalar seçildi; tüm dosyalar okunmuş sayılmaz. "
+         "Her dosya için ayrı satır oluştur. Bir dosyanın konusunu doğrulayamıyorsan dosyayı "
+         "yok sayma; satırında konu doğrulanamadı de.\n\n"
+         if retrieval.study_task.get('document_sample') else "")
+        + "İSTEĞİ YERİNE GETİR:\n"
         f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
         "Bu turun görevi KULLANICININ ÖZGÜN MESAJI'dır. Önceki konuşma yalnız gerçek "
         "takip sorularının bağlamıdır; geçmişte kalan görevleri yeniden yerine getirme. "
@@ -311,7 +319,9 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                            f'Kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
                            'Bu bölümde bulunan her istenen kavramın tanımını, koşullarını ve ilişkilerini '
                            'dosya/sayfa atıflarıyla ayrı tut. İstenen bilgi bu bölümde yoksa burada genel bir '
-                           'yokluk sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
+                           'yokluk sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar. '
+                           'İstenen listenin bütün üyelerini ve metindeki sayısal değerleri kaydet. '
+                           'Başlıktaki toplu liste de kanıttır; açıklaması ayrı yerde diye listedeki bir üyeyi silme.')
             else:
                 if task.get('source_kind') == 'questions':
                     task['count'] = None  # The parent applies the total once.
@@ -322,6 +332,18 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                     request += (' İstenen toplam adet uygulama tarafından bütün bölümler toplandıktan '
                                 'sonra uygulanacak. Bu bölümde adet sınırı koyma; bulunan tüm soruları '
                                 've devam şıklarını aynen aktar. Soruları kaynak numarasıyla başlat.')
+            inventory = (retrieval.study_task.get('source_kind') == 'question_patterns'
+                         and operation != 'generate_questions')
+            if inventory:
+                task['inventory_output'] = True
+                request = (f'Kullanıcı isteği: {question}\n'
+                    'Bu bölümdeki okunabilen gerçek soruları JSON questions dizisine kaydet. '
+                    'Her kayıt material_id, page, number, text, topic alanlarını içersin. '
+                    'text soru kökü ve okunabilen şıkları içersin; numara önekini text içine koyma. '
+                    'topic tutarlı, kısa bir konu adı olsun; aynı konu için aynı etiketi kullan. '
+                    'Soru başlangıç sayfalarına uy. Başka dosya/sayfa veya soru uydurma. '
+                    'Okunamayan, eksik metinli soruları kaydetme. Soru yoksa questions boş dizi olsun. '
+                    'Henüz sıklık sayma, grupları sıralama veya kullanıcıya açıklama yazma.')
             task['batch_partial'] = True
             prepared_child = replace(child, study_task=task, resolved_query=request,
                                      semantic_trace_id=retrieval.semantic_trace_id)
@@ -339,6 +361,14 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                                retrieval.semantic_trace_id)
                 pieces = list(stream_rag_v2(course_title, request, history, prepared_child))
             output = ''.join(pieces).strip()
+            if inventory:
+                from app.academic_exam_inventory import parse_inventory
+                try:
+                    records = parse_inventory(output, child.evidence,
+                        child.study_task.get('question_start_pages', ()))
+                except (ValueError, TypeError, KeyError) as exc:
+                    raise StudyAIError('Soru envanteri kaynak sayfalarıyla doğrulanamadı; güvenilir bir sıklık sıralaması oluşturulamadı.') from exc
+                output = json.dumps(records, ensure_ascii=False) if records else BATCH_NO_SUPPORT
         finally:
             child.attachments.clear()
     return output
@@ -416,8 +446,14 @@ def _stream_source_batches(course_title, question, history, retrieval):
             raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
         if not synthesize and not source_questions:
             yield ('\n\n' if len(outputs) > 1 else '') + output
-    if not outputs:
-        yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım. İlgili konu veya dosya adını biraz daha açık yazar mısın?'
+    inventory = (retrieval.study_task.get('source_kind') == 'question_patterns'
+                 and operation != 'generate_questions')
+    if inventory:
+        from app.academic_exam_inventory import render_inventory
+        records = [record for output in outputs for record in json.loads(output)]
+        yield render_inventory(records, retrieval.study_task.get('count'))
+    elif not outputs:
+        yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım.'
     elif source_questions and not synthesize:
         yield limit_source_questions('\n\n'.join(outputs), retrieval.study_task.get('count'))
     elif synthesize:
@@ -428,6 +464,14 @@ def _stream_source_batches(course_title, question, history, retrieval):
             study_task=dict(retrieval.study_task), evidence=retrieval.evidence,
             source_material_ids=retrieval.source_material_ids,
             semantic_trace_id=retrieval.semantic_trace_id)
+        # Preserve bounded native-page evidence through the reduction stage;
+        # extraction prose must not erase list members or numerical values.
+        if retrieval.study_task.get('source_kind', 'notes') == 'notes':
+            originals = list(dict.fromkeys(text for contexts in [retrieval.note_context,
+                *(child.note_context for child in retrieval.source_batches)]
+                for text in contexts if text.startswith('[KANIT_NATIVE ')))
+            if sum(map(len, originals)) + sum(map(len, reduced.note_context)) <= 240000:
+                reduced.note_context = originals + reduced.note_context
         # Do not cut a long set of section results to the first few entries.
         if sum(len(text) for text in reduced.note_context) > 240000:
             raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
@@ -459,7 +503,7 @@ def stream_rag_v2(
         return
     if (not retrieval.note_context and not retrieval.attachments) or not retrieval.evidence_sufficient:
         logger.info('Academic flow trace=%s stage=response origin=local_no_sources', trace_id)
-        yield 'Şu an baktığım ders notlarında bu sorunun cevabını bulamadım. Hangi konuyu veya başlığı kastettiğini biraz daha açık yazar mısın?'
+        yield 'Şu an baktığım ders notlarında bu sorunun cevabını bulamadım.'
         return
     required_attachment_types = {
         item.get("mime_type")
@@ -468,6 +512,11 @@ def stream_rag_v2(
     }
     history = _generation_history(retrieval, history)
     prompt = _prompt(course_title, question, retrieval, history)
+    # Dense photographed notes need more visual detail than the PDF default.
+    # This changes input detail only, without another provider call.
+    generation_attachments = [{**item, 'media_resolution': 'MEDIA_RESOLUTION_HIGH'}
+        if item.get('mime_type') == 'application/pdf' else item
+        for item in retrieval.attachments]
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
     candidates = _generation_targets()
@@ -515,6 +564,9 @@ def stream_rag_v2(
                 target.model,
                 attempted_api_calls,
             )
+            if retrieval.study_task.get('inventory_output'):
+                from app.academic_exam_inventory import INVENTORY_SCHEMA
+                provider.response_schema = INVENTORY_SCHEMA
             checked_set = retrieval.study_task.get('operation') == 'generate_questions'
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
@@ -527,7 +579,7 @@ def stream_rag_v2(
                 # conversational model exemplars competing with this task.
                 history=[],
                 prompt=prompt,
-                attachments=retrieval.attachments,
+                attachments=generation_attachments,
                 temperature=0.22,
                 max_output_tokens=7000,
             ):
@@ -562,7 +614,7 @@ def stream_rag_v2(
                     repair_prompt=_prompt(course_title,repair_request,repair_retrieval,repair_history)
                     repaired = list(provider.generate_stream(model=target.model,
                         system_prompt=V2_SYSTEM_PROMPT, history=[], prompt=repair_prompt,
-                        attachments=retrieval.attachments, temperature=0.22, max_output_tokens=7000)) if missing else []
+                        attachments=generation_attachments, temperature=0.22, max_output_tokens=7000)) if missing else []
                     if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                         raise StudyAIError('Soru seti uzunluk sınırında kaldığı için tamamlanamadı.')
                     replacement_answer=''.join(repaired)

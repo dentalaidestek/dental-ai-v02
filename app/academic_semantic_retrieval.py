@@ -30,7 +30,7 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
     # hydrator both exclude them: use the same candidate domain before ranking
     # and verifying IDs. Dedicated question retrieval bypasses this function.
     rows = [row for row in rows if str(row[6]).upper() != 'QUESTION']
-    pools = [_balanced_candidates(rows, (phrase,), limit) for phrase in searches]
+    pools = [_balanced_candidates(rows, (phrase,), limit, allow_unmatched=False) for phrase in searches]
     seeds = []
     for phrase, pool in zip(searches, pools):
         wanted = set(re.findall(r'[^\W_]+', phrase.casefold()))
@@ -110,7 +110,7 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
     return selected
 
 
-def _balanced_candidates(rows, phrases, limit):
+def _balanced_candidates(rows, phrases, limit, *, allow_unmatched=True):
     """Round-robin lexical pools so a frequent search cannot crowd out another."""
     def terms(value):
         return set(re.findall(r'[^\W_]+', value.casefold()))
@@ -136,7 +136,7 @@ def _balanced_candidates(rows, phrases, limit):
     # Do not pad a subject's evidence with unrelated lexical candidates.
     # If token forms differ (e.g. Turkish inflections), retain the SQL ranking
     # rather than treating an empty exact-token pool as proof of absence.
-    if not selected:
+    if not selected and allow_unmatched:
         return list(rows[:limit])
     return selected
 
@@ -272,11 +272,19 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             params={'owner':owner_user_id,'course':course_id,'ids':result.source_material_ids,
                     'pages':list({page for _,page in selected_pages})}).all()
         scanned_pages = {(int(row[0]),int(row[1])) for row in checkpoints} & selected_pages
+    from app.academic_native_evidence import selected_native_pages, apply_native_pages
+    native = (selected_native_pages(session, owner_user_id=owner_user_id,
+        course_id=course_id, evidence=result.evidence)
+        if request_plan.source_kind == 'notes' and not request_plan.needs_visual
+        and result.evidence and selected_pages - scanned_pages else {})
     required_visual_pages = selected_pages if request_plan.needs_visual and result.evidence else scanned_pages
     page_limit = 32 if request_plan.scope == 'course' else 8
     if (_source_rows is None and
             (len(required_visual_pages) > page_limit
-             or sum(len(row[7] or '') + len(row[5] or '') + 200 for row in rows) > 96000)):
+             or max(sum(len(row[7] or '') + len(row[5] or '') + 200 for row in rows),
+                    sum(map(len, native.values())) + sum(len(context)
+                        for item,context in zip(result.evidence,result.note_context)
+                        if not {(item.material_id,p) for p in range(item.page_start,item.page_end+1)} <= native.keys())) > 96000)):
         from app.academic_source_batches import retrieve_row_batches
         return retrieve_row_batches(session, rows=rows, owner_user_id=owner_user_id,
             course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history)
@@ -335,6 +343,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 'doğrulanmış bilgi sayma.'))
         logger.info('Academic source visuals scanned_pages=%s selected_pages=%s',
                     len(scanned_pages),len(result.visual_sources))
+    apply_native_pages(result, native)
     if _source_rows is None and request_plan.scope == 'course' and request_plan.source_kind == 'notes' and result.evidence:
         originals={(v['material_id'],v['page_number']) for v in result.visual_sources}
         evidence_pages={(item.material_id,page) for item in result.evidence

@@ -230,7 +230,8 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
             child.study_task['question_start_pages']=sorted({(int(by_id[cid][1]),p)
                 for cid in batch.primary_chunk_ids for p in range(int(by_id[cid][3]),int(by_id[cid][4])+1)})
         children.append(child)
-    if len(children) == 1:
+    if len(children) == 1 and not (getattr(request_plan, 'source_kind', 'notes') == 'question_patterns'
+                                   and getattr(request_plan, 'operation', 'answer') != 'generate_questions'):
         return children[0]
     result = RetrievalResult(resolved_query=request_plan.resolved_query,
         retrieval_mode='source_batches', evidence_sufficient=bool(children),

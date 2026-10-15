@@ -47,3 +47,13 @@ def test_slide_heading_paths_continue_until_the_next_group():
 def test_heading_only_outline_preserves_all_sibling_labels():
     chunks = chunk_dental_page('A- Deri Noktaları\n- Tek Noktalar\n- Çift Noktalar')
     assert [c.section_title for c in chunks] == ['Deri Noktaları', 'Deri Noktaları > Tek Noktalar', 'Deri Noktaları > Çift Noktalar']
+
+
+def test_clinical_value_and_sentence_continuation_are_not_headings():
+    from app.study_chunking import _is_heading, chunk_dental_page
+    assert _is_heading('tedavi ilkeleri')
+    assert not _is_heading('87.8 derece, Türk çocukları')
+    assert not _is_heading('için ise 84 derece olarak')
+    chunks=chunk_dental_page('Yüz Açısı\nİdeal değer Downs’a göre\n87.8 derece, Türk çocukları\niçin ise 84 derece olarak\nbulunmuştur.')
+    assert len(chunks)==1
+    assert '87.8 derece' in chunks[0].text and '84 derece' in chunks[0].text

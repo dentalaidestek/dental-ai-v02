@@ -457,12 +457,14 @@ class GeminiStudyProvider(StudyProvider):
             raw = attachment.get("data")
             mime_type = attachment.get("mime_type")
             if isinstance(raw, bytes) and mime_type:
-                latest_parts.append({
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": base64.b64encode(raw).decode("ascii"),
-                    }
-                })
+                part = {"inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(raw).decode("ascii"),
+                }}
+                resolution = attachment.get("media_resolution")
+                if resolution in {"MEDIA_RESOLUTION_LOW", "MEDIA_RESOLUTION_MEDIUM", "MEDIA_RESOLUTION_HIGH"}:
+                    part["media_resolution"] = {"level": resolution}
+                latest_parts.append(part)
         # Place the active instruction after source attachments, so the last
         # user text is the actual task rather than a source label/page.
         latest_parts.append({"text": prompt})
@@ -532,10 +534,14 @@ class GeminiStudyProvider(StudyProvider):
                 latest_parts.append({"text": label})
             raw, mime_type = attachment.get("data"), attachment.get("mime_type")
             if isinstance(raw, bytes) and mime_type:
-                latest_parts.append({"inline_data": {
+                part = {"inline_data": {
                     "mime_type": mime_type,
                     "data": base64.b64encode(raw).decode("ascii"),
-                }})
+                }}
+                resolution = attachment.get("media_resolution")
+                if resolution in {"MEDIA_RESOLUTION_LOW", "MEDIA_RESOLUTION_MEDIUM", "MEDIA_RESOLUTION_HIGH"}:
+                    part["media_resolution"] = {"level": resolution}
+                latest_parts.append(part)
         latest_parts.append({"text": prompt})
         contents.append({"role": "user", "parts": latest_parts})
         payload = {
@@ -546,6 +552,10 @@ class GeminiStudyProvider(StudyProvider):
                 "maxOutputTokens": max_output_tokens,
             },
         }
+        schema = getattr(self, "response_schema", None)
+        if schema is not None:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
+            payload["generationConfig"]["responseJsonSchema"] = schema
         request = urllib.request.Request(
             f"{self.BASE_URL}/{model}:streamGenerateContent?alt=sse",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

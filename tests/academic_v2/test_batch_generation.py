@@ -416,3 +416,30 @@ def test_single_section_answer_does_not_add_a_synthesis_call(monkeypatch):
     result.source_batches = result.source_batches[:1]
     assert ask_rag_v2('Course', 'Tanımı tabloya çevir', [], result) == 'One-row table'
     value.generate_stream.assert_called_once()
+
+
+def test_final_synthesis_retains_native_values_even_if_extraction_omits_them(monkeypatch):
+    value=provider(monkeypatch,['Partial extraction','Another partial extraction','All ten measurements'])
+    result=parent('compare')
+    result.source_batches[0].note_context=['[KANIT_NATIVE material_id=1 sayfa=68] Ideal value 87.8']
+    assert ask_rag_v2('Course','Bütün ölçümler',[],result)=='All ten measurements'
+    final=value.generate_stream.call_args.kwargs['prompt']
+    assert 'Ideal value 87.8' in final and 'Partial extraction' in final
+
+
+def test_pattern_counts_use_validated_records_and_no_final_model_call(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    first=dict(material_id=1,page=4,number='21',topic='Sefalometri',
+        text='Sefalometrik ölçümler ile yüz yüksekliği arasında hangi ilişki vardır? A) Birinci ifade B) İkinci ifade')
+    second={**first,'page':9}
+    value=provider(monkeypatch,[json.dumps({'questions':[first]}),json.dumps({'questions':[second]})])
+    result=parent('answer',3)
+    result.study_task['source_kind']='question_patterns'
+    for child,page in zip(result.source_batches,[4,9]):
+        child.study_task['source_kind']='question_patterns'
+        child.evidence=[SimpleNamespace(material_id=1,page_start=page,page_end=page,display_name='Notes.pdf')]
+    answer=ask_rag_v2('Course','Çıkmış sorulara göre hangi konular sık?',[],result)
+    assert '1 benzersiz' in answer and '1 kopya' in answer
+    assert 'sayfa 9' not in answer
+    assert value.generate_stream.call_count==2

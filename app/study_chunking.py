@@ -53,6 +53,11 @@ def normalize_extracted_text(value: str | None) -> str:
 
 def _is_heading(line: str) -> bool:
     raw = line.strip()
+    # Sentence continuations and clinical values are body text, even when a
+    # keyword such as 'derece' appears in a short extracted line.
+    if re.match(r'^[+−-]?\d', raw) or (raw and raw[0].islower()
+            and any(ch.isdigit() for ch in raw) and not raw.endswith(':')):
+        return False
     # Slides often use title case and a dash for headings, rather than all
     # capitals. A sentence/definition or an MCQ option is not such a heading.
     slide_title = re.sub(r"^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)", "", raw).rstrip(":")

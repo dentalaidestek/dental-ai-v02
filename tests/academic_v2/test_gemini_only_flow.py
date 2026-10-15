@@ -354,12 +354,14 @@ def test_gemini_active_task_follows_original_attachment_without_extra_call(monke
             return {'candidates':[{'content':{'parts':[{'text':'Answer'}]}}]}
         monkeypatch.setattr(provider,'_request_json',request)
     kwargs=dict(model='test',system_prompt='Grounded',history=[],prompt='CURRENT QUESTION',
-        attachments=[{'label':'source page','data':b'original','mime_type':'application/pdf'}])
+        attachments=[{'label':'source page','data':b'original','mime_type':'application/pdf',
+                      'media_resolution':'MEDIA_RESOLUTION_HIGH'}])
     answer=''.join(provider.generate_stream(**kwargs)) if streaming else provider.generate(**kwargs)
     assert answer=='Answer' and len(payloads)==1
     parts=payloads[0]['contents'][-1]['parts']
     assert parts[0]=={'text':'source page'} and 'inline_data' in parts[1]
     assert parts[-1]=={'text':'CURRENT QUESTION'}
+    assert parts[1]['media_resolution']=={'level':'MEDIA_RESOLUTION_HIGH'}
 
 
 def test_source_transcription_does_not_copy_corrupt_ocr_or_blank_page_placeholder():
