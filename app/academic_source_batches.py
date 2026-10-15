@@ -213,6 +213,8 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
         child=retrieve_semantic_context(session, owner_user_id=owner_user_id,
             course_id=course_id, query=query, request_plan=request_plan, recent_history=recent_history,
             _source_rows=[by_id[cid] for cid in batch.chunk_ids])
+        child.study_task['source_files'] = list(getattr(request_plan, 'source_files', ()))
+        child.study_task['source_pages'] = list(getattr(request_plan, 'source_pages', ()))
         if questions:
             child.study_task['question_start_pages']=sorted({(int(by_id[cid][1]),p)
                 for cid in batch.primary_chunk_ids for p in range(int(by_id[cid][3]),int(by_id[cid][4])+1)})

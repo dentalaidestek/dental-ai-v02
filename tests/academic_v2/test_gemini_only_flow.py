@@ -370,3 +370,16 @@ def test_source_transcription_does_not_copy_corrupt_ocr_or_blank_page_placeholde
         attachments=[dict(material_id=7,page_number=4,data=b'original')],
         ocr_reading_hints=[dict(material_id=7,page_start=4,page_end=4,text='FALSE_BLANK_PAGE_OCR')])
     assert 'FALSE_BLANK_PAGE_OCR' not in _prompt('Course','Soruyu aynen aktar',result)
+
+
+def test_selected_original_transcription_does_not_recycle_previous_misreading():
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    result=RetrievalResult(note_context=['Orijinal sayfa 3 ve 4'],
+        resolved_query='Orto.pdf sayfa 3 ve 4 içindeki soru 14 bütün şıklarıyla',
+        study_task={'source_kind':'questions','operation':'answer',
+                    'source_files':['Orto.pdf'],'source_pages':[3,4]})
+    prompt=_prompt('Orto','Aynen aktar',result,
+        [{'role':'ASSISTANT','content':'PREVIOUS-INCORRECT-TRANSCRIPTION'}])
+    assert 'PREVIOUS-INCORRECT-TRANSCRIPTION' not in prompt
+    assert result.resolved_query in prompt
