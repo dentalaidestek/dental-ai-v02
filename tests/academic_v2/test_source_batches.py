@@ -71,6 +71,25 @@ def test_cross_document_character_budget_still_splits_without_losing_sources():
     assert [batch.chunk_ids for batch in batches] == [(1,2),(3,4)]
 
 
+def test_cached_original_pdf_bytes_split_small_text_batches_without_omission():
+    mb=1024*1024
+    rows=[row(1,1),row(2,1),row(3,2),row(4,3)]
+    sizes={(1,1):7*mb,(1,2):7*mb,(1,3):mb}
+    batches=partition_source_rows(rows,visual_page_bytes=sizes)
+    assert [b.chunk_ids for b in batches] == [(1,2),(3,4)]
+    assert [cid for b in batches for cid in b.chunk_ids] == [1,2,3,4]
+
+
+def test_question_byte_budget_preserves_boundary_continuations():
+    rows=[row(i,i) for i in range(1,5)]
+    sizes={(1,i):2 for i in range(1,5)}
+    batches=partition_source_rows(rows,include_questions=True,visual_page_bytes=sizes,max_visual_bytes=5)
+    assert [cid for b in batches for cid in b.primary_chunk_ids] == [1,2,3,4]
+    assert all(sum(sizes[(1,cid)] for cid in b.chunk_ids)<=5 for b in batches)
+    for b in batches[:-1]:
+        assert max(b.primary_chunk_ids)+1 in b.chunk_ids
+
+
 def test_cross_document_comparison_reaches_one_generation_with_both_sources(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import Mock

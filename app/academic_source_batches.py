@@ -13,7 +13,7 @@ class SourceBatch:
     primary_chunk_ids: tuple[int, ...] = ()
 
 
-def _question_page_batches(rows, *, max_chars, max_pages, visual_pages):
+def _question_page_batches(rows, *, max_chars, max_pages, visual_pages, visual_page_bytes, max_visual_bytes):
     """Whole pages plus one look-ahead page for continuation options."""
     from itertools import groupby
     groups=[]
@@ -28,24 +28,28 @@ def _question_page_batches(rows, *, max_chars, max_pages, visual_pages):
     def pages(group):
         return {(int(r[1]),p) for r in group for p in range(int(r[3]),int(r[4])+1)
                 if visual_pages is None or (int(r[1]),p) in visual_pages}
+    def byte_size(selected):
+        return sum(visual_page_bytes.get(page, 0) for page in selected)
     batches=[]
     start=0
     while start<len(groups):
         end=start; chars=0; chosen_pages=set(); chosen=[]
         while end<len(groups):
             group=groups[end]
-            if size(group)>max_chars or len(pages(group))>max_pages:
+            if size(group)>max_chars or len(pages(group))>max_pages or byte_size(pages(group))>max_visual_bytes:
                 raise ValueError('question page exceeds batch budget')
             following=(groups[end+1] if end+1<len(groups) and
                 int(groups[end+1][0][1])==int(group[0][1]) and
                 int(groups[end+1][0][3])<=int(group[-1][4])+1 else [])
-            if chosen and (chars+size(group)+size(following)>max_chars or len(chosen_pages|pages(group))>max(1,max_pages-1)):
+            if chosen and (chars+size(group)+size(following)>max_chars or len(chosen_pages|pages(group))>max(1,max_pages-1)
+                           or byte_size(chosen_pages|pages(group)|pages(following))>max_visual_bytes):
                 break
             chosen.extend(group); chars+=size(group); chosen_pages |= pages(group); end+=1
         primary=tuple(int(r[0]) for r in chosen)
         if end<len(groups) and int(groups[end][0][1])==int(chosen[-1][1]) and int(groups[end][0][3])<=int(chosen[-1][4])+1:
             extra=groups[end]
-            if chars+size(extra)<=max_chars and len(chosen_pages|pages(extra))<=max_pages:
+            if (chars+size(extra)<=max_chars and len(chosen_pages|pages(extra))<=max_pages
+                    and byte_size(chosen_pages|pages(extra))<=max_visual_bytes):
                 chosen.extend(extra)
             else:
                 raise ValueError('question continuation exceeds batch budget')
@@ -56,11 +60,14 @@ def _question_page_batches(rows, *, max_chars, max_pages, visual_pages):
 
 
 def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=None,
-                          include_questions=False):
+                          include_questions=False, visual_page_bytes=None,
+                          max_visual_bytes=12*1024*1024):
     if max_chars < 1 or max_pages < 1:
         raise ValueError('invalid batch budget')
+    visual_page_bytes = visual_page_bytes or {}
     if include_questions:
-        return _question_page_batches(rows,max_chars=max_chars,max_pages=max_pages,visual_pages=visual_pages)
+        return _question_page_batches(rows,max_chars=max_chars,max_pages=max_pages,visual_pages=visual_pages,
+            visual_page_bytes=visual_page_bytes,max_visual_bytes=max_visual_bytes)
     seen = set()
     batches, ids, chars, pages, titles = [], [], 0, set(), []
     def flush():
@@ -75,13 +82,15 @@ def partition_source_rows(rows, *, max_chars=96000, max_pages=16, visual_pages=N
         size = len(row[7] or '') + len(title) + 200
         current_pages = {(int(row[1]), p) for p in range(int(row[3]), int(row[4])+1)
                          if visual_pages is None or (int(row[1]),p) in visual_pages}
-        if size > max_chars or len(current_pages) > max_pages:
+        if (size > max_chars or len(current_pages) > max_pages
+                or sum(visual_page_bytes.get(p,0) for p in current_pages)>max_visual_bytes):
             raise ValueError('source chunk exceeds batch budget')
         # Source identity stays on every row. Neither a heading nor a file
         # boundary requires another model call: related facts from different
         # files must be judged together when they fit the same input budget.
         if ids and (chars + size > max_chars
-                    or len(pages | current_pages) > max_pages):
+                    or len(pages | current_pages) > max_pages
+                    or sum(visual_page_bytes.get(p,0) for p in pages|current_pages)>max_visual_bytes):
             flush()
             ids, chars, pages, titles = [], 0, set(), []
         ids.append(cid); chars += size; pages.update(current_pages)
@@ -193,20 +202,22 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
     from app.study_retrieval_v2 import RetrievalResult
     # Only original visual pages count toward the page budget. Fifty short
     # digital text slides need not become fifty calls or be cut at page eight.
-    visual_pages = None if request_plan.needs_visual else {(int(row[0]),int(row[1])) for row in session.exec(text(
-        "SELECT p.material_id,p.page_number FROM studyindexpage p JOIN studymaterial m "
+    visual_metadata = session.exec(text(
+        "SELECT p.material_id,p.page_number,COALESCE(length(p.visual_pdf_bytes),0) FROM studyindexpage p JOIN studymaterial m "
         "ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id AND m.course_id=p.course_id "
         "AND m.active_index_version=p.index_version WHERE p.owner_user_id=:owner AND p.course_id=:course "
         "AND m.index_status='READY' AND m.deleted_at IS NULL "
-        "AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
-        params={'owner':owner_user_id,'course':course_id}).all()}
+        "AND (:all_pages OR p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
+        params={'owner':owner_user_id,'course':course_id,'all_pages':request_plan.needs_visual}).all()
+    visual_pages = None if request_plan.needs_visual else {(int(r[0]),int(r[1])) for r in visual_metadata}
+    visual_page_bytes = {(int(r[0]),int(r[1])):int(r[2] or 0) for r in visual_metadata if len(r)>2}
     questions = getattr(request_plan,'source_kind','notes') in {'questions', 'question_patterns'}
     # Verbatim question output is much longer than a summary of the same
     # inputs. Bound those sections for the existing generation output budget.
     batches = partition_source_rows(rows,visual_pages=visual_pages,
         max_chars=14000 if questions else 96000,
         max_pages=4 if questions else (8 if request_plan.scope=='topic' else 16),
-        include_questions=questions)
+        include_questions=questions,visual_page_bytes=visual_page_bytes)
     by_id = {int(row[0]): row for row in rows}
     children=[]
     for batch in batches:
