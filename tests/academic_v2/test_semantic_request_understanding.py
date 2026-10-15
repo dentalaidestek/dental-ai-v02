@@ -446,3 +446,51 @@ def test_pdf_format_is_explicit_semantic_state_and_legacy_contracts_stay_text():
     assert parse_request(raw()).output_format == 'text'
     assert parse_request(raw(output_format='pdf')).output_format == 'pdf'
     with pytest.raises(ValueError): parse_request(raw(output_format='html'))
+
+
+def test_explicit_subjects_correct_accidental_course_scope_without_second_call():
+    call = Mock(return_value=raw(scope='course', retrieval_queries=[],
+        source_subjects=['Pronasale', 'Sub-nasale'], operation='compare'))
+    result = interpret_request('Bu iki noktayı tabloda karşılaştır', [], call=call)
+    assert result.plan.scope == 'topic'
+    assert result.plan.retrieval_queries == ('Pronasale', 'Sub-nasale')
+    call.assert_called_once()
+
+
+def test_semantic_followup_reuses_validated_source_boundaries():
+    from app.academic_direct_request import source_marker
+    task = dict(scope='topic', operation='answer', source_kind='notes',
+                resolved_query='Pronasale tanımı', retrieval_queries=['Pronasale'],
+                source_files=['Noktalar.pdf'], source_pages=[2])
+    history = [{'role':'assistant', 'content':'Tanım.' + source_marker(task)}]
+    call = Mock(return_value=raw(retrieval_queries=[], reuse_previous_source=True))
+    result = interpret_request('Bu tanımı iki sütunlu tabloya çevir', history, call=call)
+    assert result.plan.retrieval_queries == ('Pronasale',)
+    assert result.plan.source_files == ('Noktalar.pdf',)
+    assert result.plan.source_pages == (2,)
+    call.assert_called_once()
+
+
+def test_new_topic_never_inherits_previous_selection():
+    previous = dict(scope='topic', retrieval_queries=['Pronasale'],
+                    source_files=['Eski.pdf'], source_pages=[2])
+    result = parse_request(raw(source_subjects=['SN düzlemi'],
+        retrieval_queries=['SN düzlemi']), previous_source=previous)
+    assert result.retrieval_queries == ('SN düzlemi',)
+    assert not result.source_files and not result.source_pages
+
+
+@pytest.mark.parametrize('fields', [
+    {'source_subjects':['']}, {'source_subjects':['x'*161]},
+    {'source_subjects':'Pronasale'}, {'reuse_previous_source':'true'},
+])
+def test_invalid_semantic_reference_rejected(fields):
+    with pytest.raises(ValueError):
+        parse_request(raw(**fields))
+
+
+def test_topic_evidence_does_not_pad_with_unrelated_candidates():
+    from app.academic_semantic_retrieval import _balanced_candidates
+    rows = [(1, None, None, None, None, 'Pronasale', None, 'Tanım'),
+            (2, None, None, None, None, 'Downs', None, 'Açı')]
+    assert _balanced_candidates(rows, ['Pronasale'], 16) == rows[:1]

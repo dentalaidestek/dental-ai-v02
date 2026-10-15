@@ -133,11 +133,11 @@ def _balanced_candidates(rows, phrases, limit):
                 selected.append(row); seen.add(int(row[0]))
                 if len(selected) == limit:
                     return selected
-    for row in rows:
-        if int(row[0]) not in seen:
-            selected.append(row); seen.add(int(row[0]))
-            if len(selected) == limit:
-                break
+    # Do not pad a subject's evidence with unrelated lexical candidates.
+    # If token forms differ (e.g. Turkish inflections), retain the SQL ranking
+    # rather than treating an empty exact-token pool as proof of absence.
+    if not selected:
+        return list(rows[:limit])
     return selected
 
 
@@ -203,7 +203,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 course_id=course_id, limit=16) + rows
         result.retrieval_mode = 'coverage'
     else:
-        searches = request_plan.retrieval_queries
+        searches = tuple(dict.fromkeys((*request_plan.source_subjects, *request_plan.retrieval_queries)))
         if request_plan.source_kind == 'questions' and not searches:
             searches = request_plan.source_sections
         if not searches and not request_plan.source_sections:
@@ -224,7 +224,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         ranked_rows=rows
         rows = (_balanced_candidates(rows, searches, limit)
                 if request_plan.source_kind == 'questions' else
-                _linked_candidates(session, rows, searches, owner_user_id=owner_user_id,
+                _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
         if query_embedding:
             from app.academic_dense_retrieval import hybrid_candidates

@@ -132,7 +132,7 @@ def test_comparison_synthesis_sees_both_files_and_preserves_original_request(mon
     final=value.generate_stream.call_args.kwargs['prompt']
     assert 'Alpha evidence (file A page 1)' in final and 'Beta evidence (file B page 9)' in final
     assert result.resolved_query in final and '"operation": "compare"' in final
-    assert all('Diğer taraf bu bölümde yoksa' in item.kwargs['prompt']
+    assert all('İstenen bilgi bu bölümde yoksa' in item.kwargs['prompt']
                for item in value.generate_stream.call_args_list[:2])
 
 
@@ -397,3 +397,14 @@ def test_timeout_is_reported_as_timeout_instead_of_generic_failure():
     assert 'zaman aşımına' in str(study_provider_error_for_user(source))
     source.code=429
     assert 'yoğun' in str(study_provider_error_for_user(source))
+
+
+def test_multi_section_answer_is_synthesized_once_instead_of_joining_denials(monkeypatch):
+    value = provider(monkeypatch, ['No measurement in section A',
+                                 'Definition in section B, no measurement',
+                                 'Notlarda bu ölçü verilmemiştir.'])
+    result = parent('answer')
+    assert ask_rag_v2('Course', 'Ölçü kaç mm?', [], result) == 'Notlarda bu ölçü verilmemiştir.'
+    assert value.generate_stream.call_count == 3
+    final = value.generate_stream.call_args.kwargs['prompt']
+    assert 'section A' in final and 'section B' in final

@@ -37,14 +37,23 @@ SCHEMA = {
         'output_format': {'type': 'string', 'enum': ['text', 'pdf']},
         'source_files': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
         'source_pages': {'type': 'array', 'items': {'type': 'integer'}, 'maxItems': 128},
+        'source_subjects': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
+        'reuse_previous_source': {'type': 'boolean'},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
 }
 SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
-SCHEMA['required'].extend(['source_files', 'source_pages'])
-SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
+SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source'])
+SYSTEM = '''source_subjects lists the actual requested subject nouns/groups, preserving qualifiers.
+Exclude output instructions, excluded topics and illustrative examples. For a
+whole-course task use []. Named subjects always imply topic scope.
+reuse_previous_source is true only for a genuine reference to the previous
+source task, such as reformatting that definition as a table. Resolve its subject
+in resolved_query; retain its source searches and file/page boundaries unless
+explicitly changed. Changing to a self-contained new topic sets this false.
+Interpret a Turkish dental STUDY request, not its factual answer.
 The `request` field is the only active user request for this turn.
 `recent_dialogue` is earlier context, not a list of pending tasks to execute.
 Use it to resolve genuine follow-ups and references. A self-contained current
@@ -174,6 +183,8 @@ class StudyRequest:
     output_format: str = 'text'
     source_files: tuple[str, ...] = ()
     source_pages: tuple[int, ...] = ()
+    source_subjects: tuple[str, ...] = ()
+    reuse_previous_source: bool = False
 
 
 @dataclass(frozen=True)
@@ -220,7 +231,7 @@ class PlannerContractError(ValueError):
     """A fixed validation reason; never contains model or user text."""
 
 
-def parse_request(raw: str) -> StudyRequest:
+def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if not isinstance(raw, str) or len(raw) > 10000:
         raise PlannerContractError('invalid planner output size')
     data = json.loads(raw)
@@ -229,6 +240,8 @@ def parse_request(raw: str) -> StudyRequest:
         data.setdefault('output_format','text')
         data.setdefault('source_files', [])
         data.setdefault('source_pages', [])
+        data.setdefault('source_subjects', [])
+        data.setdefault('reuse_previous_source', False)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -239,6 +252,25 @@ def parse_request(raw: str) -> StudyRequest:
     for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text')
+    subjects = data['source_subjects']
+    if (not isinstance(subjects, list) or len(subjects) > 16
+            or any(not isinstance(x, str) or not x.strip() or len(x) > 160
+                   or '\x00' in x for x in subjects)
+            or type(data['reuse_previous_source']) is not bool):
+        raise PlannerContractError('invalid source reference')
+    data['source_subjects'] = tuple(dict.fromkeys(x.strip() for x in subjects))
+    if data['operation'] != 'clarify':
+        if data['reuse_previous_source'] and previous_source:
+            # Copy selection only on an explicit semantic reference. The same
+            # bounds and owner/course checks apply to inherited selections.
+            for key in ('retrieval_queries', 'source_sections', 'source_files', 'source_pages'):
+                if not data[key]:
+                    data[key] = previous_source.get(key, [])
+            data['scope'] = previous_source['scope']
+        if subjects:
+            data['scope'] = 'topic'
+            if not data['retrieval_queries'] and not data['source_sections']:
+                data['retrieval_queries'] = subjects
     searches = data['retrieval_queries']
     sections=data['source_sections']
     files, pages = data['source_files'], data['source_pages']
@@ -298,7 +330,7 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     if len(prompt.encode('utf-8')) > PLANNER_INPUT_MAX_BYTES:
         return UnderstandingResult(outcome='input_budget', trace_id=trace_id)
     try:
-        plan = parse_request(call(prompt))
+        plan = parse_request(call(prompt), previous_source=previous_source_request(history))
         allowed=set((source_outline or {}).get('sections',[]))
         if any(section not in allowed for section in plan.source_sections):
             raise PlannerContractError('unknown source section')
@@ -380,13 +412,14 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_source_batches import retrieve_source_batches
         result = retrieve_source_batches(session, request_plan=plan, **kwargs)
     else:
-        result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=True,
+        result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=not bool(plan.source_subjects),
                                           query_embedding=query_embedding, **kwargs)
     result.semantic_planner_attempted = understanding.attempted
     result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
     result.study_task['source_sections'] = list(understanding.plan.source_sections)
     result.study_task['source_files'] = list(plan.source_files)
     result.study_task['source_pages'] = list(plan.source_pages)
+    result.study_task['source_subjects'] = list(plan.source_subjects)
     result.study_task['resolved_query'] = understanding.plan.resolved_query
     result.study_task['output_format'] = understanding.plan.output_format
     result.semantic_trace_id = understanding.trace_id

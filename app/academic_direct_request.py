@@ -35,7 +35,7 @@ def direct_request(question, history):
 def source_marker(task):
     import base64
     import json
-    data = {key: task[key] for key in ('operation', 'scope', 'retrieval_queries', 'source_sections', 'resolved_query', 'source_kind') if key in task}
+    data = {key: task[key] for key in ('operation', 'scope', 'retrieval_queries', 'source_sections', 'resolved_query', 'source_kind', 'source_files', 'source_pages', 'source_subjects') if key in task}
     encoded = base64.urlsafe_b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
     return '<!--ACADEMIC_SOURCE_REQUEST:' + encoded + '-->'
 
@@ -58,6 +58,13 @@ def previous_source_request(history):
                     or not isinstance(data.get('resolved_query'), str)
                     or len(data['resolved_query']) > 8000 or not isinstance(sections,list)
                     or len(sections)>16 or any(not isinstance(x,str) or len(x)>400 for x in sections)):
+                return None
+            files, pages = data.get('source_files', []), data.get('source_pages', [])
+            if (not isinstance(files, list) or len(files) > 16
+                    or any(not isinstance(x, str) or not x.strip() or len(x) > 400
+                           or '\x00' in x or '/' in x or '\\' in x for x in files)
+                    or not isinstance(pages, list) or len(pages) > 128
+                    or any(type(x) is not int or not 1 <= x <= 20000 for x in pages)):
                 return None
             return data
         except (ValueError, TypeError, AttributeError, UnicodeError):

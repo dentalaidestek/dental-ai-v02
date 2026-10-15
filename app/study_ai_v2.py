@@ -308,10 +308,10 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                             'Soru olmayan ders anlatımını sayma. Soruları çözme, seçenekleri doğru bilgi '
                             'olarak kullanma. Henüz bütün kaynakların sıklık sıralamasını yapma.')
                            if retrieval.study_task.get('source_kind') == 'question_patterns' else
-                           f'Karşılaştırma için kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
+                           f'Kullanıcının şu isteğiyle ilgili kaynak bilgilerini çıkar: {question}. '
                            'Bu bölümde bulunan her karşılaştırma tarafının tanımını, koşullarını ve ilişkilerini '
-                           'dosya/sayfa atıflarıyla ayrı tut. Diğer taraf bu bölümde yoksa burada karşılaştırma '
-                           'sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
+                           'dosya/sayfa atıflarıyla ayrı tut. İstenen bilgi bu bölümde yoksa burada genel bir '
+                           'yokluk sonucu üretme; diğer bölümlerde bulunabilir. Yalnız kaynakla desteklenen bilgileri çıkar.')
             else:
                 if task.get('source_kind') == 'questions':
                     task['count'] = None  # The parent applies the total once.
@@ -403,6 +403,7 @@ def _stream_source_batches(course_title, question, history, retrieval):
     synthesis_chars = 0
     source_questions = retrieval.study_task.get('source_kind') == 'questions'
     synthesize = (operation in {'generate_questions', 'compare'}
+                  or operation in {'answer', 'explain'} and not source_questions
                   or operation == 'solve' and retrieval.study_task.get('source_kind') == 'notes'
                   or retrieval.study_task.get('source_kind') == 'question_patterns')
     for output in _source_batch_outputs(course_title, question, history, retrieval, synthesize):
