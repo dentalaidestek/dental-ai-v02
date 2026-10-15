@@ -73,7 +73,10 @@ def _source_heading_rows(rows):
         lines = [line.strip() for line in str(row[7] or '').splitlines() if line.strip()]
         joined, i = [], 0
         while i < len(lines):
-            if (i+2 < len(lines) and re.fullmatch(r'[A-ZÇĞİÖŞÜ]',lines[i])
+            if (i+2 < len(lines) and re.fullmatch(r'[A-ZÇĞİÖŞÜ][a-zçğıöşü]{1,31}',lines[i])
+                    and lines[i+1]=='-' and is_literal_heading(lines[i+2])):
+                joined.append(lines[i]+'-'+lines[i+2]); i+=3
+            elif (i+2 < len(lines) and re.fullmatch(r'[A-ZÇĞİÖŞÜ]',lines[i])
                     and lines[i+1]=='-' and is_literal_heading(lines[i+2])):
                 joined.append(lines[i]+' - '+lines[i+2]); i+=3
             elif i+1 < len(lines) and lines[i] in {'-','•'} and is_literal_heading(lines[i+1]):

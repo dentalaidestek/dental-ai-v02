@@ -72,6 +72,10 @@ ifadeyi sorulan kavrama ait kaynakla doğrula; karşılaştırmada tarafları ay
 Her akademik tanım ve olguyu verilen kaynak dosya/sayfa atfıyla ilişkilendir.
 Kullanıcı kaynak istiyorsa atfı atlama; kısa cevapta da dosya ve sayfayı belirt.
 Tabloda atıfları ilgili hücre veya kaynak sütununda ver, yeni veri satırı ekleme.
+Kullanıcı tablo istediğinde gerçek Markdown tablosu yaz: başlık satırı, ayırıcı
+satır ve | ile ayrılan veri hücreleri kullan. Tabloyu madde listesine çevirme.
+İki grupta tablo istiyorsa her grup için ayrı tablo oluştur. Kaynakta olmayan
+hücreyi boşluğu tahminle doldurmak yerine doğrulanamadı diye belirt.
 Tanımdaki anatomik nesneyi, yönü, referansı ve ilişkiyi koru. Bunları başka
 kavramların tanımlarıyla değiştirerek sadeleştirme. Kaynakta doğrulanmayan
 açıklayıcı parantez veya anatomik ayrıntı ekleme.
