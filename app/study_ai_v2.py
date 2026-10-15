@@ -6,6 +6,7 @@ import json
 import os
 import re
 import threading
+import time
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import Iterator
@@ -236,6 +237,21 @@ def _batch_workers():
         return 1
 
 
+def _wait_source_recovery(stopped, timeout=32.0):
+    """Wait for the router's short transient circuit; never bypass its gates."""
+    deadline = time.monotonic() + timeout
+    pause = stopped or threading.Event()
+    while not pause.is_set():
+        if any(target_available(target) for target in _generation_targets()):
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        if pause.wait(min(.25, remaining)):
+            return False
+    return False
+
+
 class _SourceRecoveryBudget:
     # One extra provider attempt for the whole question request, not per page.
     def __init__(self):
@@ -316,6 +332,8 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
             except StudyAIError as error:
                 if (recovery is None or (stopped is not None and stopped.is_set())
                         or not recovery.take(error, pieces)):
+                    raise
+                if not _wait_source_recovery(stopped):
                     raise
                 logger.warning('Academic source recovery trace=%s reason=transient_before_output extra_attempt=1',
                                retrieval.semantic_trace_id)
