@@ -229,15 +229,15 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 owner_user_id=owner_user_id,course_id=course_id,
                 searches=request_plan.source_subjects or request_plan.retrieval_queries)
         ranked_rows=rows
-        if native_complete:
-            rows=native_matches
-        else:
-            rows = (_balanced_candidates(rows, searches, limit)
-                    if request_plan.source_kind == 'questions' else
-                    _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
-                                       course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
-            ids={int(row[0]) for row in native_matches}
-            rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
+        # Literal subject matches recover missing labels, but do not prove that
+        # two matching pages cover a whole subject or all requested list items.
+        # Retain the independently ranked/section-linked evidence as well.
+        rows = (_balanced_candidates(rows, searches, limit)
+                if request_plan.source_kind == 'questions' else
+                _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
+                                   course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
+        ids={int(row[0]) for row in native_matches}
+        rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
         if query_embedding:
             from app.academic_dense_retrieval import hybrid_candidates
             rows=hybrid_candidates(rows,ranked_rows,searches,limit)

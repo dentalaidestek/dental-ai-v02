@@ -61,7 +61,9 @@ def _is_heading(line: str) -> bool:
     # Slides often use title case and a dash for headings, rather than all
     # capitals. A sentence/definition or an MCQ option is not such a heading.
     slide_title = re.sub(r"^(?:[A-ZÇĞİÖŞÜ]\s*-\s*|[-•]\s*)", "", raw).rstrip(":")
-    title_words = slide_title.split()
+    # PDF text extraction can surround an internal hyphen with spaces. The
+    # separator is not a lowercase title word (e.g. 'Deri - Kemik Noktaları').
+    title_words = [word for word in slide_title.split() if word not in {'-', '–', '—'}]
     if (2 <= len(title_words) <= 8 and len(slide_title) <= 110
             and not re.search(r"[:.!?;()]", slide_title)
             and not re.match(r"^[A-E][.)]\s", raw)
