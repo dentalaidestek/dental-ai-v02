@@ -14,6 +14,42 @@ def test_long_section_keeps_every_middle_and_end_page_in_source_order():
     assert all(len(batch.chunk_ids) <= 16 for batch in batches)
 
 
+def test_selected_page_reader_enforces_owner_course_version_status_and_exact_file(monkeypatch):
+    from sqlalchemy import create_engine, text
+    from sqlmodel import Session
+    from app.academic_source_batches import load_owned_selected_rows
+    engine = create_engine('sqlite://')
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE studymaterial (id INTEGER, owner_user_id INTEGER, course_id INTEGER, active_index_version INTEGER, index_status TEXT, deleted_at TEXT, display_name TEXT)'))
+        connection.execute(text('CREATE TABLE studyindexchunk (id INTEGER, material_id INTEGER, owner_user_id INTEGER, course_id INTEGER, index_version INTEGER, page_start INTEGER, page_end INTEGER)'))
+        for mid, owner, course, status, deleted, name in [
+            (1,17,23,'READY',None,'Orto devamı.pdf'),
+            (2,99,23,'READY',None,'Orto devamı.pdf'),
+            (3,17,99,'READY',None,'Orto devamı.pdf'),
+            (4,17,23,'READY','deleted','Orto devamı.pdf'),
+            (5,17,23,'PROCESSING',None,'Orto devamı.pdf'),
+            (6,17,23,'READY',None,'Other.pdf')]:
+            connection.execute(text('INSERT INTO studymaterial VALUES (:id,:owner,:course,2,:status,:deleted,:name)'),
+                dict(id=mid,owner=owner,course=course,status=status,deleted=deleted,name=name))
+            connection.execute(text('INSERT INTO studyindexchunk VALUES (:id,:mid,:owner,:course,2,3,3)'),
+                dict(id=mid,mid=mid,owner=owner,course=course))
+        # Current page 4 is eligible even if OCR did not recognize any question.
+        connection.execute(text('INSERT INTO studyindexchunk VALUES (7,1,17,23,2,4,4),(8,1,17,23,1,3,3),(9,1,17,23,2,5,5),(10,1,17,23,2,3,5),(11,1,99,23,2,3,3)'))
+    calls=[]
+    def hydrate(session, **kw):
+        calls.append(kw)
+        return [row(cid,3 if cid==1 else 4) for cid in kw['chunk_ids']]
+    monkeypatch.setattr('app.study_retrieval_v2._coverage_evidence_rows',hydrate)
+    with Session(engine) as session:
+        selected = list(load_owned_selected_rows(session,owner_user_id=17,course_id=23,
+            source_files=('Orto devamı.pdf',),source_pages=(3,4)))
+        assert [r[0] for r in selected] == [1,7]
+        assert list(load_owned_selected_rows(session,owner_user_id=17,course_id=23,
+            source_files=('Missing.pdf',),source_pages=(3,4))) == []
+    assert calls[0]['include_questions'] is True
+    assert calls[0]['owner_user_id'] == 17 and calls[0]['course_id'] == 23
+
+
 def test_small_documents_share_budget_with_heading_identity_and_deduplication():
     rows = [row(1,1),row(1,1),row(2,2,'Deri noktalar > Çift noktalar'),
             row(3,1,material=2)]

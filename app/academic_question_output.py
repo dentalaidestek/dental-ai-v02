@@ -67,8 +67,35 @@ def limit_source_questions(answer, count):
     if not blocks:
         return answer + f'\n\nİstenen {count} soruluk aktarım tamamlanamadı; soru listesi doğrulanamadı.'
     prefix = answer[:_HEADING.search(answer).start()].strip()
-    selected = blocks[:count]
+    # Source PDFs can contain several photographs of the same exam sheet.
+    # Count exact transcriptions once, while keeping variants (including a
+    # changed choice or unreadable portion) separate. Fuzzy practice-question
+    # matching is deliberately inappropriate for verbatim source material.
+    unique = []
+    seen = set()
+    duplicates = 0
+    for number, block in blocks:
+        heading = _HEADING.search(block)
+        inline = heading.group(2)
+        if re.fullmatch(r'\([^\n)]*\.pdf,\s*Sayfa\s+[\d,–\-\s]+\)', inline, re.I):
+            inline = ''
+        body = inline + '\n' + block[heading.end():]
+        body = '\n'.join(line for line in body.splitlines()
+                         if not re.match(r'^\s*(?:\*\*)?Kaynak(?:lar)?\s*:', line, re.I))
+        key = ' '.join(unicodedata.normalize('NFC', body).split())
+        if 'okunamad' in key.casefold():
+            # Identical placeholders are not evidence of identical originals.
+            unique.append((number, block))
+            continue
+        if key and key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
+        unique.append((number, block))
+    selected = unique[:count]
     result = '\n\n'.join(([prefix] if prefix else []) + [b for _,b in selected])
+    if duplicates:
+        result += f'\n\nAynı metne sahip {duplicates} soru kopyası istenen adede yeniden sayılmadı.'
     if len(selected) < count:
         result += f'\n\nBu aktarımda {len(selected)} soru verildi; istenen {count} soruya göre {count-len(selected)} soru eksik. Bu liste tamamlanmış değildir.'
     return result

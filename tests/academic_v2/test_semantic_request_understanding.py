@@ -53,6 +53,39 @@ def test_owner_and_chunk_identifiers_cannot_enter_contract():
     with pytest.raises(ValueError): parse_request(json.dumps(data))
 
 
+def test_explicit_source_pages_are_distinct_from_question_number():
+    plan = parse_request(raw(source_files=['Orto devamı.pdf'], source_pages=[4,3,3],
+        resolved_query='3 ve 4. sayfalardaki 14. soruyu aynen aktar',
+        retrieval_queries=[], source_kind='questions'))
+    assert plan.source_files == ('Orto devamı.pdf',)
+    assert plan.source_pages == (3,4)
+    assert plan.count is None
+
+
+@pytest.mark.parametrize('selection', [
+    {'source_pages':[True]}, {'source_pages':[0]}, {'source_pages':[-1]},
+    {'source_pages':[3.5]}, {'source_pages':'3'}, {'source_files':['../other.pdf']},
+    {'source_files':['']}, {'source_files':[14]},
+])
+def test_invalid_source_boundaries_are_rejected(selection):
+    with pytest.raises(ValueError):
+        parse_request(raw(**selection))
+
+
+def test_explicit_page_request_routes_to_selected_sources_even_for_topic(monkeypatch):
+    from app.academic_request_understanding import UnderstandingResult, retrieve_understood_course_context
+    from app.study_retrieval_v2 import RetrievalResult
+    plan = parse_request(raw(source_files=['Orto devamı.pdf'], source_pages=[3,4]))
+    selected = Mock(return_value=RetrievalResult())
+    ordinary = Mock(side_effect=AssertionError('selection must not fall back to topic search'))
+    monkeypatch.setattr('app.academic_source_batches.retrieve_source_batches',selected)
+    monkeypatch.setattr('app.academic_semantic_retrieval.retrieve_semantic_context',ordinary)
+    result = retrieve_understood_course_context(None, understanding=UnderstandingResult(plan=plan),
+        owner_user_id=17, course_id=23, query='Soru 14')
+    selected.assert_called_once()
+    assert result.study_task['source_pages'] == [3,4]
+
+
 def test_failure_has_one_attempt_and_no_exception_content_in_logs(caplog):
     call = Mock(side_effect=RuntimeError('SECRET-PATIENT-CONTENT'))
     out = interpret_request('Soru', [], call=call)

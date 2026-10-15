@@ -117,10 +117,57 @@ def retrieve_source_batches(session, *, owner_user_id, course_id, query,
                             request_plan, recent_history=None, **kwargs):
     from app.academic_semantic_retrieval import retrieve_semantic_context
     from app.study_retrieval_v2 import RetrievalResult
-    loader = load_owned_question_rows if request_plan.source_kind in {'questions', 'question_patterns'} else load_owned_source_rows
-    rows = list(loader(session, owner_user_id=owner_user_id, course_id=course_id))
+    if request_plan.source_files or request_plan.source_pages:
+        rows = list(load_owned_selected_rows(session, owner_user_id=owner_user_id,
+            course_id=course_id, source_files=request_plan.source_files,
+            source_pages=request_plan.source_pages))
+    else:
+        loader = load_owned_question_rows if request_plan.source_kind in {'questions', 'question_patterns'} else load_owned_source_rows
+        rows = list(loader(session, owner_user_id=owner_user_id, course_id=course_id))
     return retrieve_row_batches(session,rows=rows,owner_user_id=owner_user_id,
         course_id=course_id,query=query,request_plan=request_plan,recent_history=recent_history)
+
+
+def load_owned_selected_rows(session, *, owner_user_id, course_id, source_files, source_pages):
+    """Explicit file/page boundaries apply before any model call or batching.
+
+    Include OCR placeholders and unclassified exam text too: selecting a page
+    must not depend on whether its corrupted OCR contains a question marker.
+    """
+    import unicodedata
+    from sqlalchemy import text
+    from app.study_retrieval_v2 import _coverage_evidence_rows
+    normalize = lambda value: unicodedata.normalize('NFC', value.strip()).casefold()
+    files = {normalize(value) for value in source_files}
+    pages = set(source_pages)
+    after = 0
+    while True:
+        metadata = session.exec(text(
+            "SELECT c.id,m.display_name,c.page_start,c.page_end FROM studyindexchunk c "
+            "JOIN studymaterial m ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id "
+            "AND m.course_id=c.course_id AND m.active_index_version=c.index_version "
+            "WHERE c.owner_user_id=:owner AND c.course_id=:course "
+            "AND m.index_status='READY' AND m.deleted_at IS NULL AND c.id>:after "
+            "ORDER BY c.id LIMIT 128"),
+            params={'owner': owner_user_id, 'course': course_id, 'after': after}).all()
+        if not metadata:
+            return
+        if int(metadata[-1][0]) <= after:
+            raise ValueError('selected source cursor did not advance')
+        after = int(metadata[-1][0])
+        ids = [int(cid) for cid, name, start, end in metadata
+               if (not files or normalize(name) in files)
+               and (not pages or start >= 1 and end >= start
+                    and end - start + 1 <= len(pages)
+                    and set(range(start, end + 1)) <= pages)]
+        if not ids:
+            continue
+        rows = _coverage_evidence_rows(session, owner_user_id=owner_user_id,
+            course_id=course_id, chunk_ids=ids, limit=len(ids), max_rows=128,
+            include_questions=True)
+        if set(ids) != {int(row[0]) for row in rows}:
+            raise ValueError('source generation changed during selected retrieval')
+        yield from rows
 
 
 def load_owned_question_rows(session, *, owner_user_id, course_id):

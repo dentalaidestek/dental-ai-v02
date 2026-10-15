@@ -34,6 +34,29 @@ def test_reordered_options_and_minor_rewording_do_not_create_a_new_question():
     assert question_set_issues(question(1,'Frankfort düzlemi hangi iki noktadan geçer?'),1,history)==[]
 
 
+def test_source_sheet_copies_do_not_fill_requested_count():
+    first = question(8, 'Gelişim hangi döneme kadar sürer?')
+    copy = first.replace('Soru 8', 'Soru 18 (Orto.pdf, Sayfa 8)')
+    next_question = question(24, 'Free way space ne demektir?')
+    text = (first + '\nKaynak: Orto.pdf, sayfa 3\n\n' + copy
+            + '\nKaynak: Orto.pdf, sayfa 8\n\n' + next_question)
+    result = limit_source_questions(text, 3)
+    assert [n for n, _ in question_blocks(result)] == [8, 24]
+    assert '2 soru verildi' in result and '1 soru eksik' in result
+    assert '1 soru kopyası' in result
+    assert 'Kaynak: Orto.pdf, sayfa 3' in result
+
+
+def test_source_variants_and_partial_transcriptions_are_not_silently_combined():
+    first = question(8, 'Gelişim hangi döneme kadar sürer?')
+    partial = first.replace('İkinci', '[okunamadı]')
+    variants = [first, first.replace('İkinci', 'Üçüncü'), partial, partial]
+    result = limit_source_questions('\n\n'.join(variants), 4)
+    assert len(question_blocks(result)) == 4
+    assert '[okunamadı]' in result and 'Üçüncü' in result
+    assert 'kopyası' not in result
+
+
 def test_count_gaps_and_internal_duplicates_are_detected():
     text=question(1,'ANB açısı nedir?')+'\n\n'+question(3,'ANB açısı nedir?')
     issues=question_set_issues(text,2,[])
