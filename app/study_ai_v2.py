@@ -544,6 +544,10 @@ def stream_rag_v2(
         emitted = False
         try:
             provider = get_provider(target.provider)
+            from app.study_provider import GeminiStudyProvider
+            if isinstance(provider, GeminiStudyProvider):
+                from copy import copy
+                provider = copy(provider)  # Isolate finish state between concurrent sections.
             if required_attachment_types and not all(
                 provider.supports_generation_attachment(mime_type)
                 for mime_type in required_attachment_types
@@ -564,9 +568,10 @@ def stream_rag_v2(
                 target.model,
                 attempted_api_calls,
             )
+            generation_options = {}
             if retrieval.study_task.get('inventory_output'):
                 from app.academic_exam_inventory import INVENTORY_SCHEMA
-                provider.response_schema = INVENTORY_SCHEMA
+                generation_options['response_schema'] = INVENTORY_SCHEMA
             checked_set = retrieval.study_task.get('operation') == 'generate_questions'
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
@@ -582,6 +587,7 @@ def stream_rag_v2(
                 attachments=generation_attachments,
                 temperature=0.22,
                 max_output_tokens=7000,
+                **generation_options,
             ):
                 if chunk:
                     emitted = True

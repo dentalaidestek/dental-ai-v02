@@ -385,3 +385,25 @@ def test_selected_original_transcription_does_not_recycle_previous_misreading():
         [{'role':'ASSISTANT','content':'PREVIOUS-INCORRECT-TRANSCRIPTION'}])
     assert 'PREVIOUS-INCORRECT-TRANSCRIPTION' not in prompt
     assert result.resolved_query in prompt
+
+
+def test_gemini_stream_schema_is_call_local_and_does_not_leak(monkeypatch):
+    import json
+    from contextlib import nullcontext
+    import app.study_provider as transport
+    provider=transport.GeminiStudyProvider();provider.api_key='test-only'
+    payloads=[]
+    def http(request,**kwargs):
+        payloads.append(json.loads(request.data))
+        response=Mock(status=200,headers={})
+        response.__iter__=Mock(return_value=iter([b'data: {"candidates":[{"content":{"parts":[{"text":"Answer"}]},"finishReason":"STOP"}]}\n']))
+        return nullcontext(response)
+    monkeypatch.setattr(transport,'urlopen',http)
+    monkeypatch.setattr(transport,'router_target_available',lambda *a:True)
+    monkeypatch.setattr(transport,'provider_reservation',lambda *a:nullcontext())
+    monkeypatch.setattr(transport,'record_api_result',lambda **k:None)
+    args=dict(model='test',system_prompt='Test',history=[],prompt='Test')
+    list(provider.generate_stream(**args,response_schema={'type':'object'}))
+    list(provider.generate_stream(**args))
+    assert payloads[0]['generationConfig']['responseJsonSchema']=={'type':'object'}
+    assert 'responseJsonSchema' not in payloads[1]['generationConfig']
