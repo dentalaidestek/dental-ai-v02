@@ -36,7 +36,7 @@ def test_reordered_options_and_minor_rewording_do_not_create_a_new_question():
 
 def test_source_sheet_copies_do_not_fill_requested_count():
     first = question(8, 'Gelişim hangi döneme kadar sürer?')
-    copy = first.replace('Soru 8', 'Soru 18')
+    copy = first.replace('Soru 8', 'Soru 18 (Orto.pdf, Sayfa 8)')
     next_question = question(24, 'Free way space ne demektir?')
     text = (first + '\nKaynak: Orto.pdf, sayfa 3\n\n' + copy
             + '\nKaynak: Orto.pdf, sayfa 8\n\n' + next_question)

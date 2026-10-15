@@ -75,7 +75,11 @@ def limit_source_questions(answer, count):
     seen = set()
     duplicates = 0
     for number, block in blocks:
-        body = _HEADING.sub(lambda m: m.group(2), block, count=1)
+        heading = _HEADING.search(block)
+        inline = heading.group(2)
+        if re.fullmatch(r'\([^\n)]*\.pdf,\s*Sayfa\s+[\d,–\-\s]+\)', inline, re.I):
+            inline = ''
+        body = inline + '\n' + block[heading.end():]
         body = '\n'.join(line for line in body.splitlines()
                          if not re.match(r'^\s*(?:\*\*)?Kaynak(?:lar)?\s*:', line, re.I))
         key = ' '.join(unicodedata.normalize('NFC', body).split())
