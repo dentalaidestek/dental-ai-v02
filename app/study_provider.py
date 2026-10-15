@@ -511,6 +511,7 @@ class GeminiStudyProvider(StudyProvider):
         attachments: list[dict] | None = None,
         temperature: float = 0.3,
         max_output_tokens: int = 7000,
+        response_schema: dict | None = None,
     ) -> Iterator[str]:
         """Yield Gemini SSE text chunks; never retry after output is emitted."""
         self._require_key()
@@ -552,7 +553,7 @@ class GeminiStudyProvider(StudyProvider):
                 "maxOutputTokens": max_output_tokens,
             },
         }
-        schema = getattr(self, "response_schema", None)
+        schema = response_schema
         if schema is not None:
             payload["generationConfig"]["responseMimeType"] = "application/json"
             payload["generationConfig"]["responseJsonSchema"] = schema
