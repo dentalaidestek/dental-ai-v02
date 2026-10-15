@@ -35,12 +35,15 @@ SCHEMA = {
         'needs_visual': {'type': 'boolean'},
         'continue_source': {'type': 'boolean'},
         'output_format': {'type': 'string', 'enum': ['text', 'pdf']},
+        'source_files': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
+        'source_pages': {'type': 'array', 'items': {'type': 'integer'}, 'maxItems': 128},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
 }
 SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
+SCHEMA['required'].extend(['source_files', 'source_pages'])
 SYSTEM = '''Interpret a Turkish dental STUDY request, not its factual answer.
 The `request` field is the only active user request for this turn.
 `recent_dialogue` is earlier context, not a list of pending tasks to execute.
@@ -139,6 +142,15 @@ format from old unrelated turns. A genuine follow-up may ask to change the
 current study answer into a PDF. Return the requested content normally; the
 application creates the real file after the answer is complete. Never tell
 the user to print/save the browser page or invent a download link.
+source_files contains only explicitly requested document filenames (including
+their extensions), never IDs or paths. source_pages contains explicitly selected
+PDF page numbers, expanding a requested page range. These are source boundaries,
+not question numbers, output counts or clinical values. For 'question 14 on pages
+3 and 4 of Orto devamı.pdf', use source_files=['Orto devamı.pdf'],
+source_pages=[3,4]. Do not include page 14. Use [] when no such restriction exists.
+Preserve these boundaries for genuine follow-ups, never from unrelated tasks.
+The server will retrieve only these owned published files/pages; keep the subject
+and requested question in resolved_query. Do not invent a filename or page.
 For an ordinary greeting/acknowledgement return clarify with a natural short
 conversational reply in clarification. Do not invent a study request.
 Never turn missing search results into a claim that the notes contain no facts.
@@ -160,6 +172,8 @@ class StudyRequest:
     continue_source: bool = False
     source_sections: tuple[str, ...] = ()
     output_format: str = 'text'
+    source_files: tuple[str, ...] = ()
+    source_pages: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +227,8 @@ def parse_request(raw: str) -> StudyRequest:
     if isinstance(data,dict):
         data.setdefault('source_sections',[])  # Older persisted/mock contracts.
         data.setdefault('output_format','text')
+        data.setdefault('source_files', [])
+        data.setdefault('source_pages', [])
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -225,6 +241,16 @@ def parse_request(raw: str) -> StudyRequest:
             raise PlannerContractError('invalid planner text')
     searches = data['retrieval_queries']
     sections=data['source_sections']
+    files, pages = data['source_files'], data['source_pages']
+    if (not isinstance(files, list) or len(files) > 16
+            or any(not isinstance(x, str) or not x.strip() or len(x) > 400
+                   or '\x00' in x or '/' in x or '\\' in x for x in files)):
+        raise PlannerContractError('invalid source files')
+    if (not isinstance(pages, list) or len(pages) > 128
+            or any(type(x) is not int or not 1 <= x <= 20000 for x in pages)):
+        raise PlannerContractError('invalid source pages')
+    data['source_files'] = tuple(dict.fromkeys(x.strip() for x in files))
+    data['source_pages'] = tuple(sorted(set(pages)))
     if (not isinstance(sections,list) or len(sections)>MAX_SOURCE_SEARCHES
             or any(not isinstance(x,str) or not x.strip() or len(x)>400 or '\x00' in x for x in sections)):
         raise PlannerContractError('invalid source sections')
@@ -232,7 +258,7 @@ def parse_request(raw: str) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches and not sections:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -348,7 +374,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.operation != 'clarify' and (plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
+    if plan.operation != 'clarify' and (plan.source_files or plan.source_pages or plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
             (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions', 'solve'})
             or (plan.source_kind == 'questions' and not plan.continue_source)))):
         from app.academic_source_batches import retrieve_source_batches
@@ -359,6 +385,8 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
     result.semantic_planner_attempted = understanding.attempted
     result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
     result.study_task['source_sections'] = list(understanding.plan.source_sections)
+    result.study_task['source_files'] = list(plan.source_files)
+    result.study_task['source_pages'] = list(plan.source_pages)
     result.study_task['resolved_query'] = understanding.plan.resolved_query
     result.study_task['output_format'] = understanding.plan.output_format
     result.semantic_trace_id = understanding.trace_id
