@@ -1,0 +1,139 @@
+{
+  "deployment": "dep-db9an3navr4c73dbpcug",
+  "commit": "98d83169f3d5a5ac1cc8ce4516bea96fc591b541",
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "effort": "medium",
+  "logs": {
+    "definition": [
+      {
+        "t": "2026-10-16T22:58:03.856846273Z",
+        "m": "INFO:     Academic planner provider=anthropic model=claude-haiku-5-5 timeout_seconds=75"
+      },
+      {
+        "t": "2026-10-16T22:58:12.659309928Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=json total_ms=8801 first_text_ms=None finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T22:58:12.660149805Z",
+        "m": "INFO:     Academic flow trace=bf706b9832b2426780e1bf69f8bc57f9 stage=plan provider=anthropic operation=answer scope=topic count=None source=notes searches=3 history=8 continue=False"
+      },
+      {
+        "t": "2026-10-16T22:58:16.110616719Z",
+        "m": "INFO:     Academic flow trace=bf706b9832b2426780e1bf69f8bc57f9 stage=retrieval mode=lexical_candidates chunks=[3614, 3644, 3731] pages=[(24, 33, 33), (24, 55, 55), (26, 6, 6)]"
+      },
+      {
+        "t": "2026-10-16T22:58:17.731545823Z",
+        "m": "INFO:     Academic flow trace=bf706b9832b2426780e1bf69f8bc57f9 stage=generation provider=anthropic model=claude-haiku-5-5 history=8"
+      },
+      {
+        "t": "2026-10-16T22:58:17.731583914Z",
+        "m": "INFO:     Academic AI V2 generation target selected. provider=anthropic model=claude-haiku-5-5 api_call=1"
+      },
+      {
+        "t": "2026-10-16T22:58:25.694961821Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=stream total_ms=7956 first_text_ms=6852 finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T22:58:25.695235397Z",
+        "m": "INFO:     Academic flow trace=bf706b9832b2426780e1bf69f8bc57f9 stage=response origin=provider provider=anthropic model=claude-haiku-5-5 emitted=True finish=STOP"
+      }
+    ],
+    "table": [
+      {
+        "t": "2026-10-16T22:58:49.531335319Z",
+        "m": "INFO:     Academic planner provider=anthropic model=claude-haiku-5-5 timeout_seconds=75"
+      },
+      {
+        "t": "2026-10-16T22:58:56.05888542Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=json total_ms=6526 first_text_ms=None finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T22:58:56.059761617Z",
+        "m": "INFO:     Academic flow trace=2f180eb0c5024c499b0954c4612f3a6f stage=plan provider=anthropic operation=compare scope=topic count=None source=notes searches=4 history=8 continue=False"
+      },
+      {
+        "t": "2026-10-16T22:58:58.250042865Z",
+        "m": "INFO:     Academic flow trace=2f180eb0c5024c499b0954c4612f3a6f stage=retrieval mode=lexical_candidates chunks=[3601, 3643, 3679, 3687, 3642, 3641] pages=[(24, 26, 26), (24, 54, 54), (24, 74, 74), (24, 78, 78), (24, 53, 53), (24, 52, 52)]"
+      },
+      {
+        "t": "2026-10-16T22:58:59.56462754Z",
+        "m": "INFO:     Academic flow trace=2f180eb0c5024c499b0954c4612f3a6f stage=generation provider=anthropic model=claude-haiku-5-5 history=8"
+      },
+      {
+        "t": "2026-10-16T22:58:59.56463305Z",
+        "m": "INFO:     Academic AI V2 generation target selected. provider=anthropic model=claude-haiku-5-5 api_call=1"
+      },
+      {
+        "t": "2026-10-16T22:59:04.272722329Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=stream total_ms=4702 first_text_ms=3556 finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T22:59:04.27274584Z",
+        "m": "INFO:     Academic flow trace=2f180eb0c5024c499b0954c4612f3a6f stage=response origin=provider provider=anthropic model=claude-haiku-5-5 emitted=True finish=STOP"
+      }
+    ],
+    "pdf": [
+      {
+        "t": "2026-10-16T22:59:30.621261755Z",
+        "m": "INFO:     Academic planner provider=anthropic model=claude-haiku-5-5 timeout_seconds=75"
+      },
+      {
+        "t": "2026-10-16T22:59:37.571531301Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=json total_ms=6949 first_text_ms=None finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T22:59:37.572310587Z",
+        "m": "INFO:     Academic flow trace=68113a147d37410fa75020517dbbf989 stage=plan provider=anthropic operation=answer scope=topic count=None source=notes searches=4 history=8 continue=False"
+      },
+      {
+        "t": "2026-10-16T22:59:37.572554632Z",
+        "m": "INFO:     Academic flow trace=68113a147d37410fa75020517dbbf989 stage=retrieval mode=previous_answer_pdf chunks=[] pages=[]"
+      },
+      {
+        "t": "2026-10-16T22:59:37.574180436Z",
+        "m": "INFO:     Academic flow trace=68113a147d37410fa75020517dbbf989 stage=response origin=previous_answer_pdf"
+      }
+    ],
+    "practice_questions": [
+      {
+        "t": "2026-10-16T23:00:08.021243926Z",
+        "m": "INFO:     Academic planner provider=anthropic model=claude-haiku-5-5 timeout_seconds=75"
+      },
+      {
+        "t": "2026-10-16T23:00:13.807161703Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=json total_ms=5785 first_text_ms=None finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T23:00:13.807922089Z",
+        "m": "INFO:     Academic flow trace=8c86bad0598b451996effae069572ae8 stage=plan provider=anthropic operation=generate_questions scope=topic count=5 source=notes searches=5 history=8 continue=False"
+      },
+      {
+        "t": "2026-10-16T23:00:15.601393763Z",
+        "m": "INFO:     Academic flow trace=8c86bad0598b451996effae069572ae8 stage=retrieval mode=lexical_candidates chunks=[3614, 3644, 3580, 3616, 3590, 3633, 3624, 3647, 3731, 3625] pages=[(24, 33, 33), (24, 55, 55), (24, 12, 12), (24, 34, 34), (24, 18, 18), (24, 46, 46), (24, 40, 40), (24, 57, 57), (26, 6, 6), (24, 40, 40)]"
+      },
+      {
+        "t": "2026-10-16T23:00:15.751565252Z",
+        "m": "INFO:     Academic flow trace=8c86bad0598b451996effae069572ae8 stage=generation provider=anthropic model=claude-haiku-5-5 history=8"
+      },
+      {
+        "t": "2026-10-16T23:00:15.751582943Z",
+        "m": "INFO:     Academic AI V2 generation target selected. provider=anthropic model=claude-haiku-5-5 api_call=1"
+      },
+      {
+        "t": "2026-10-16T23:00:28.350791172Z",
+        "m": "INFO:     Academic provider timing provider=anthropic model=claude-haiku-5-5 mode=stream total_ms=12594 first_text_ms=9542 finish=STOP success=True"
+      },
+      {
+        "t": "2026-10-16T23:00:28.353571189Z",
+        "m": "INFO:     Academic flow trace=8c86bad0598b451996effae069572ae8 stage=response origin=provider provider=anthropic model=claude-haiku-5-5 emitted=True finish=STOP"
+      }
+    ]
+  },
+  "pdf": {
+    "bytes": 44253,
+    "pages": 1,
+    "table_values_present": true
+  },
+  "screenshot": "dental-haiku-live-1792191567488.jpg"
+}
