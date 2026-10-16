@@ -1,4 +1,5 @@
 import inspect
+import pytest
 
 from app.study_retrieval_v2 import _fts_rows, resolve_followup_query
 
@@ -104,3 +105,43 @@ def test_account_erasure_evicts_only_erased_owner_visual_cache():
         assert all(not key[0].startswith("31:") for key in retrieval._PAGE_PDF_CACHE)
         assert ("32:1:v:r", 1) in retrieval._PAGE_PDF_CACHE
         retrieval._PAGE_PDF_CACHE.clear()
+
+
+@pytest.mark.parametrize('evict_all', [False, True])
+def test_visual_materialization_pins_cached_pages_during_its_own_lru_evictions(monkeypatch, evict_all):
+    from unittest.mock import Mock
+    from contextlib import nullcontext
+    import app.study_retrieval_v2 as retrieval
+    monkeypatch.setattr(retrieval, '_PAGE_PDF_CACHE_MAX', 12)
+    sources = [dict(owner_user_id=17, material_id=1, index_version='v1', reference='ref',
+                    page_number=n, mime_type='application/pdf', display_name='fixture') for n in range(1,17)]
+    with retrieval._PAGE_PDF_CACHE_LOCK:
+        retrieval._PAGE_PDF_CACHE.clear()
+        for n in range(5,17):
+            retrieval._PAGE_PDF_CACHE[('17:1:v1:ref',n)] = f'page-{n}'.encode()
+    session = Mock()
+    # Only the four cache misses are hydrated. Adding them to the 12-slot LRU
+    # evicts pages 5–8 before the materializer reaches those original hits.
+    def hydrate():
+        if evict_all:  # Another worker evicts the original hits during DB I/O.
+            with retrieval._PAGE_PDF_CACHE_LOCK:
+                retrieval._PAGE_PDF_CACHE.clear()
+        return [(1,n,'ref','application/pdf','fixture','v1',f'page-{n}'.encode(),0) for n in range(1,5)]
+    session.exec.return_value.all.side_effect = hydrate
+    result = retrieval.RetrievalResult(visual_sources=sources, evidence_sufficient=True,
+                                       source_coverage_complete=True)
+    try:
+        retrieval.materialize_visual_sources(lambda:nullcontext(session),result)
+        assert {a['page_number'] for a in result.attachments} == set(range(1,17))
+        assert result.source_coverage_complete
+        session.exec.assert_called_once()
+        assert len(retrieval._PAGE_PDF_CACHE) <= 12
+        # A second preparation must not append duplicates or consume the byte
+        # budget twice, even if another worker has evicted every global page.
+        with retrieval._PAGE_PDF_CACHE_LOCK:
+            retrieval._PAGE_PDF_CACHE.clear()
+        retrieval.materialize_visual_sources(Mock(side_effect=AssertionError('already prepared')),result)
+        assert len(result.attachments)==16 and result.source_coverage_complete
+    finally:
+        with retrieval._PAGE_PDF_CACHE_LOCK:
+            retrieval._PAGE_PDF_CACHE.clear()

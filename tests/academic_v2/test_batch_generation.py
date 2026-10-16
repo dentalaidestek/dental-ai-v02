@@ -51,6 +51,27 @@ def test_question_count_applies_once_after_all_sections_are_read(monkeypatch):
     assert '"count": 20' in final and '"operation": "generate_questions"' in final
 
 
+@pytest.mark.parametrize('vendor,operation,count,partial,expected', [
+    ('anthropic','summarize',None,True,16000),
+    ('anthropic','generate_questions',20,False,16000),
+    ('anthropic','generate_questions',5,False,7000),
+    ('anthropic','answer',None,False,7000),
+    ('gemini','summarize',None,True,7000),
+])
+def test_claude_whole_source_and_long_question_budgets_leave_room_for_thinking(
+        monkeypatch,vendor,operation,count,partial,expected):
+    import app.study_ai_v2 as module
+    from app.study_provider import ProviderTarget
+    output = ('\n\n'.join(f'### Soru {n}\nKavram {n} hangi tanıma karşılık gelir?\nA) Tanım'
+                         for n in range(1,count+1)) if count else 'Source facts')
+    value=provider(monkeypatch,[output])
+    monkeypatch.setattr(module,'_generation_targets',lambda:[ProviderTarget(vendor,'fixture-model')])
+    result=RetrievalResult(note_context=['Owned source'],evidence_sufficient=True,
+        study_task={'operation':operation,'count':count,'batch_partial':partial})
+    assert ask_rag_v2('Course','Request',[],result)==output
+    assert value.generate_stream.call_args.kwargs['max_output_tokens']==expected
+
+
 def test_missing_originals_stop_before_model_call(monkeypatch):
     value=provider(monkeypatch,['must not be generated'])
     result=parent('summarize')
