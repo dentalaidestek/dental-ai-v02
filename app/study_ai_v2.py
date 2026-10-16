@@ -84,7 +84,10 @@ açıklayıcı parantez veya anatomik ayrıntı ekleme.
 
 def _generation_targets() -> list[ProviderTarget]:
     """Academic V2 uses exactly one generation provider/model; no fallback chain."""
-    return [ProviderTarget("gemini", ACADEMIC_V2_MODEL)]
+    model=(os.getenv('STUDY_ACADEMIC_GENERATION_MODEL') or ACADEMIC_V2_MODEL).strip()
+    if not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}',model):
+        raise StudyAIError('Akademik AI model ayarı geçersiz.')
+    return [ProviderTarget("gemini", model)]
 
 
 def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
