@@ -1123,16 +1123,28 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
     prepared_pages = {(item.get('material_id'),item.get('page_number'))
                       for item in result.attachments if item.get('data')}
     sources = result.visual_sources[:32]
-    rows_by_key = None
-    for source in sources:
-        cache_key = (
-            f"{source['owner_user_id']}:{source['material_id']}:{source.get('index_version')}:{source.get('reference')}",
-            int(source["page_number"]),
-        )
-        with _PAGE_PDF_CACHE_LOCK:
+    # Pin this bounded request's existing hits. The shared LRU holds only 12
+    # pages, while one batch can contain 16. Loading early misses (or another
+    # worker) may evict later hits after the hydration query excluded them.
+    # Stable byte references avoid missing pages without enlarging the cache.
+    def page_cache_key(source):
+        return (f"{source['owner_user_id']}:{source['material_id']}:"
+                f"{source.get('index_version')}:{source.get('reference')}",
+                int(source['page_number']))
+    cached_pages = {}
+    with _PAGE_PDF_CACHE_LOCK:
+        for source in sources:
+            cache_key = page_cache_key(source)
             cached = _PAGE_PDF_CACHE.get(cache_key)
             if cached is not None:
+                cached_pages[cache_key] = cached
                 _PAGE_PDF_CACHE.move_to_end(cache_key)
+    rows_by_key = None
+    for source in sources:
+        if (source['material_id'],source['page_number']) in prepared_pages:
+            continue
+        cache_key = page_cache_key(source)
+        cached = cached_pages.get(cache_key)
         if cached is not None:
             if attached_bytes + len(cached) > _VISUAL_REQUEST_MAX_BYTES:
                 continue
@@ -1150,13 +1162,10 @@ def materialize_visual_sources(session_factory, result: RetrievalResult) -> None
             # a database Session for every page dominated large-course latency.
             rows_by_key = {}
             missing_by_owner = {}
-            with _PAGE_PDF_CACHE_LOCK:
-                for candidate in sources:
-                    key = (f"{candidate['owner_user_id']}:{candidate['material_id']}:"
-                           f"{candidate.get('index_version')}:{candidate.get('reference')}",
-                           int(candidate['page_number']))
-                    if key not in _PAGE_PDF_CACHE:
-                        missing_by_owner.setdefault(candidate['owner_user_id'], []).append(candidate)
+            for candidate in sources:
+                if ((candidate['material_id'],candidate['page_number']) not in prepared_pages
+                        and page_cache_key(candidate) not in cached_pages):
+                    missing_by_owner.setdefault(candidate['owner_user_id'], []).append(candidate)
             for owner, missing in missing_by_owner.items():
                 missing = list({(item['material_id'],item['page_number']):item for item in missing}.values())
                 params = {'o': owner, 'bytes': _VISUAL_REQUEST_MAX_BYTES}

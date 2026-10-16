@@ -615,6 +615,14 @@ def stream_rag_v2(
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
                 and not retrieval.study_task.get('batch_partial'))
+            output_budget = 16000 if retrieval.study_task.get('inventory_output') else 7000
+            # Claude's cap includes adaptive thinking as well as answer text.
+            # Whole-source extraction and long question sets need room for
+            # both; the earlier Gemini-sized cap truncated a real 20-item turn.
+            if target.provider == 'anthropic' and (
+                    retrieval.study_task.get('batch_partial')
+                    or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
+                output_budget = 16000
             pieces = []
             for chunk in provider.generate_stream(
                 model=target.model,
@@ -625,7 +633,7 @@ def stream_rag_v2(
                 prompt=prompt,
                 attachments=generation_attachments,
                 temperature=0.22,
-                max_output_tokens=16000 if retrieval.study_task.get('inventory_output') else 7000,
+                max_output_tokens=output_budget,
                 **generation_options,
             ):
                 if chunk:
@@ -659,7 +667,7 @@ def stream_rag_v2(
                     repair_prompt=_prompt(course_title,repair_request,repair_retrieval,repair_history)
                     repaired = list(provider.generate_stream(model=target.model,
                         system_prompt=V2_SYSTEM_PROMPT, history=[], prompt=repair_prompt,
-                        attachments=generation_attachments, temperature=0.22, max_output_tokens=7000)) if missing else []
+                        attachments=generation_attachments, temperature=0.22, max_output_tokens=output_budget)) if missing else []
                     if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                         raise StudyAIError('Soru seti uzunluk sınırında kaldığı için tamamlanamadı.')
                     replacement_answer=''.join(repaired)
