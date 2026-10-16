@@ -43,6 +43,28 @@ def _gemini_rejection_kind(body):
     return 'other_argument'
 
 
+def _gemini_service_error_kind(body):
+    """Allowlisted operational categories only; never log provider message text."""
+    try:
+        error=json.loads(body).get('error')
+    except (ValueError,TypeError,AttributeError):
+        return 'non_json_response'
+    if not isinstance(error,dict):
+        return 'unknown_response'
+    message=str(error.get('message') or '').casefold()
+    if 'high demand' in message or 'overload' in message or 'capacity' in message:
+        return 'high_demand'
+    if any(term in message for term in ('quota','rate limit','resource exhausted')):
+        return 'quota'
+    if any(term in message for term in ('billing','credit','payment')):
+        return 'billing'
+    if any(term in message for term in ('region','location','country')):
+        return 'location'
+    if error.get('status')=='UNAVAILABLE':
+        return 'unavailable'
+    return 'other_api_error'
+
+
 class _GeminiTiming:
     """Scalar latency diagnostics; never retain prompts, URLs, keys or replies."""
     def __init__(self, *, model, operation, mode, input_bytes, structured):
@@ -432,6 +454,8 @@ class GeminiStudyProvider(StudyProvider):
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
                 logger.warning("Gemini Academic provider HTTP %s", exc.code)
+                if exc.code == 503:
+                    timing_logger.warning('Gemini upstream failure code=503 kind=%s',_gemini_service_error_kind(body))
                 record_api_result(
                     provider=self.name, model=model, operation=operation, success=False,
                     status_code=exc.code,
@@ -667,6 +691,8 @@ class GeminiStudyProvider(StudyProvider):
                 timing.next('release')
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 503:
+                timing_logger.warning('Gemini upstream failure code=503 kind=%s',_gemini_service_error_kind(body))
             if exc.code == 400:
                 timing_logger.warning('Gemini request rejected code=400 kind=%s structured=%s',
                     _gemini_rejection_kind(body), schema is not None)
