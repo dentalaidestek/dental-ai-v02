@@ -349,6 +349,8 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                 request = (f'Kullanıcı isteği: {question}\n'
                     'Bu bölümdeki okunabilen gerçek soruları JSON questions dizisine kaydet. '
                     'Her kayıt material_id, page, number, text, topic alanlarını içersin. '
+                    'number yalnız kaynakta gerçekten yazılı soru numarasıdır. Numara yoksa veya '
+                    'okunamıyorsa null kullan; sayfadaki sırasından numara üretme. '
                     'text soru kökü ve okunabilen şıkları içersin; numara önekini text içine koyma. '
                     'topic tutarlı, kısa bir konu adı olsun; aynı konu için aynı etiketi kullan. '
                     'Soru başlangıç sayfalarına uy. Başka dosya/sayfa veya soru uydurma. '
