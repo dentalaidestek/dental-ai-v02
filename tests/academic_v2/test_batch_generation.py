@@ -447,3 +447,4 @@ def test_pattern_counts_use_validated_records_and_no_final_model_call(monkeypatc
     assert '1 benzersiz' in answer and '1 kopya' in answer
     assert 'sayfa 9' not in answer
     assert value.generate_stream.call_count==2
+    assert all(call.kwargs['max_output_tokens']==16000 for call in value.generate_stream.call_args_list)

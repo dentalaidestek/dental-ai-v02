@@ -14,6 +14,27 @@ def test_long_section_keeps_every_middle_and_end_page_in_source_order():
     assert all(len(batch.chunk_ids) <= 16 for batch in batches)
 
 
+def test_frequency_inventory_uses_fewer_batches_without_losing_start_pages(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_source_batches import retrieve_row_batches
+    from app.study_retrieval_v2 import RetrievalResult
+    rows=[row(i,i) for i in range(1,13)]
+    session=Mock()
+    session.exec.return_value.all.return_value=[(1,p,1000) for p in range(1,13)]
+    def child(*args,_source_rows,**kwargs):
+        return RetrievalResult(evidence=[SimpleNamespace(chunk_id=r[0],material_id=1) for r in _source_rows])
+    monkeypatch.setattr('app.academic_semantic_retrieval.retrieve_semantic_context',child)
+    plan=StudyRequest('Count exam topics','answer','course',3,None,'',(),source_kind='question_patterns')
+    result=retrieve_row_batches(session,rows=rows,owner_user_id=17,course_id=23,
+        query='Count exam topics',request_plan=plan)
+    assert len(result.source_batches)==2
+    starts=[tuple(pair) for batch in result.source_batches for pair in batch.study_task['question_start_pages']]
+    assert sorted(starts)==[(1,p) for p in range(1,13)]
+    assert all(len(batch.evidence)<=8 for batch in result.source_batches)
+
+
 def test_selected_page_reader_enforces_owner_course_version_status_and_exact_file(monkeypatch):
     from sqlalchemy import create_engine, text
     from sqlmodel import Session
