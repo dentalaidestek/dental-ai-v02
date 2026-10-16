@@ -525,6 +525,9 @@ def stream_rag_v2(
     generation_attachments = [{**item, 'media_resolution': 'MEDIA_RESOLUTION_HIGH'}
         if item.get('mime_type') == 'application/pdf' else item
         for item in retrieval.attachments]
+    if retrieval.study_task.get('source_kind') in {'questions','question_patterns'}:
+        from app.academic_page_images import question_page_attachments
+        generation_attachments=question_page_attachments(retrieval.attachments)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
     candidates = _generation_targets()
