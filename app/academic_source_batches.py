@@ -212,11 +212,12 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
     visual_pages = None if request_plan.needs_visual else {(int(r[0]),int(r[1])) for r in visual_metadata}
     visual_page_bytes = {(int(r[0]),int(r[1])):int(r[2] or 0) for r in visual_metadata if len(r)>2}
     questions = getattr(request_plan,'source_kind','notes') in {'questions', 'question_patterns'}
+    inventory = getattr(request_plan,'source_kind','notes') == 'question_patterns'
     # Verbatim question output is much longer than a summary of the same
     # inputs. Bound those sections for the existing generation output budget.
     batches = partition_source_rows(rows,visual_pages=visual_pages,
-        max_chars=14000 if questions else 96000,
-        max_pages=4 if questions else (8 if request_plan.scope=='topic' else 16),
+        max_chars=28000 if inventory else 14000 if questions else 96000,
+        max_pages=8 if inventory else 4 if questions else (8 if request_plan.scope=='topic' else 16),
         include_questions=questions,visual_page_bytes=visual_page_bytes)
     by_id = {int(row[0]): row for row in rows}
     children=[]

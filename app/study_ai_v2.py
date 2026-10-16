@@ -597,7 +597,7 @@ def stream_rag_v2(
                 prompt=prompt,
                 attachments=generation_attachments,
                 temperature=0.22,
-                max_output_tokens=7000,
+                max_output_tokens=16000 if retrieval.study_task.get('inventory_output') else 7000,
                 **generation_options,
             ):
                 if chunk:
