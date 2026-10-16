@@ -92,6 +92,21 @@ def test_capacity_backoff_is_short_bounded_and_respects_retry_after():
     assert _backoff_seconds(403,1,None)==21600
 
 
+@pytest.mark.parametrize('body,expected',[
+    ('{"error":{"status":"UNAVAILABLE","message":"High demand PRIVATE-QUESTION"}}','high_demand'),
+    ('{"error":{"message":"quota PRIVATE-KEY"}}','quota'),
+    ('{"error":{"message":"billing PRIVATE-KEY"}}','billing'),
+    ('{"error":{"message":"country not allowed PRIVATE-KEY"}}','location'),
+    ('{"error":{"status":"UNAVAILABLE","message":"PRIVATE-QUESTION"}}','unavailable'),
+    ('<html>PRIVATE-KEY</html>','non_json_response'),
+    ('[]','non_json_response'),
+    ('{"error":"PRIVATE-KEY"}','unknown_response'),
+])
+def test_upstream_error_diagnostics_never_return_arbitrary_text(body,expected):
+    value=providers._gemini_service_error_kind(body)
+    assert value==expected and 'PRIVATE' not in value
+
+
 @pytest.mark.parametrize('gap,expected',[(10,5),(301,1)])
 def test_old_capacity_failure_streak_decays_after_idle(monkeypatch,gap,expected):
     import app.study_router_state as router
