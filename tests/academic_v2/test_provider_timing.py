@@ -105,3 +105,21 @@ def test_phase_timings_follow_uvicorn_level_when_root_filters_info(caplog):
         timing.finish()
     assert any(record.name == 'uvicorn.error.gemini_timing'
         and 'Gemini timing' in record.message for record in caplog.records)
+
+
+def test_structured_400_logs_fixed_reason_without_response_or_prompt(monkeypatch,caplog):
+    import io
+    import urllib.error
+    provider,_=setup_provider(monkeypatch)
+    monkeypatch.setattr(providers,'provider_reservation',lambda *args:nullcontext())
+    body=b'{"error":{"message":"Response schema has too many states PRIVATE-QUESTION"}}'
+    http=Mock(side_effect=urllib.error.HTTPError('private-url',400,'bad request',{},io.BytesIO(body)))
+    monkeypatch.setattr(providers,'urlopen',http)
+    with caplog.at_level(logging.INFO),pytest.raises(providers.StudyProviderError) as error:
+        list(provider.generate_stream(model='test-model',system_prompt='PRIVATE-SYSTEM',history=[],
+            prompt='PRIVATE-QUESTION',response_schema={'type':'object'}))
+    assert error.value.code==400 and not error.value.retryable
+    http.assert_called_once()
+    logs='\n'.join(record.message for record in caplog.records)
+    assert 'kind=schema_complexity structured=True' in logs
+    assert 'PRIVATE-' not in logs and 'private-url' not in logs

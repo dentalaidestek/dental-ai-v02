@@ -28,6 +28,20 @@ logger = logging.getLogger(__name__)
 timing_logger = logging.getLogger('uvicorn.error.gemini_timing')
 
 
+def _gemini_rejection_kind(body):
+    """Fixed diagnostic labels only: provider error text can contain user data."""
+    value = str(body or '').casefold()
+    if 'schema' in value and any(word in value for word in ('complex', 'states', 'nesting', 'too large')):
+        return 'schema_complexity'
+    if 'schema' in value:
+        return 'schema_argument'
+    if any(word in value for word in ('media_resolution', 'mediaresolution')):
+        return 'media_resolution'
+    if 'pdf' in value:
+        return 'pdf_argument'
+    return 'other_argument'
+
+
 class _GeminiTiming:
     """Scalar latency diagnostics; never retain prompts, URLs, keys or replies."""
     def __init__(self, *, model, operation, mode, input_bytes, structured):
@@ -567,7 +581,7 @@ class GeminiStudyProvider(StudyProvider):
         emitted = False
         self.last_finish_reason = 'UNKNOWN'
         timing = _GeminiTiming(model=model, operation='generation', mode='stream',
-            input_bytes=len(request.data), structured=False)
+            input_bytes=len(request.data), structured=schema is not None)
         try:
             with _timed_provider_reservation(timing, self.name, model), urlopen(request, timeout=self.timeout) as response:
                 timing.next('stream')
@@ -612,6 +626,9 @@ class GeminiStudyProvider(StudyProvider):
                 timing.next('release')
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 400:
+                timing_logger.warning('Gemini request rejected code=400 kind=%s structured=%s',
+                    _gemini_rejection_kind(body), schema is not None)
             record_api_result(
                 provider=self.name, model=model, operation="generation", success=False,
                 status_code=exc.code, latency_ms=int((time.perf_counter() - started) * 1000),
