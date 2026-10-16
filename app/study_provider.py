@@ -5,6 +5,7 @@ import json
 import importlib
 import logging
 import os
+import random
 import re
 import socket
 import threading
@@ -306,6 +307,8 @@ class GeminiStudyProvider(StudyProvider):
 
     def __init__(self):
         self._stream_state = threading.local()
+        self.capacity_retry = False
+        self._capacity_recovery_used = False
         self.api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
         try:
             self.timeout = int(os.getenv("STUDY_GEMINI_TIMEOUT_SECONDS", "75"))
@@ -338,7 +341,32 @@ class GeminiStudyProvider(StudyProvider):
             return "Akademik AI modeli bulunamadı. Sunucu model ayarını kontrol edin."
         return f"Akademik AI sağlayıcı isteği başarısız oldu (HTTP {code})."
 
-    def _request_json(
+    def _recover_capacity(self, error, model):
+        if (not self.capacity_retry or self._capacity_recovery_used
+                or error.code != 503 or not error.retryable):
+            return False
+        self._capacity_recovery_used = True
+        # Never bypass auth/quota, provider admission or Retry-After. A long
+        # outage fails promptly instead of blocking this web request for minutes.
+        deadline = time.monotonic() + 6.0
+        pause = threading.Event()
+        pause.wait(random.uniform(.1, .3))
+        while time.monotonic() < deadline:
+            if router_target_available(self.name, model):
+                timing_logger.info('Gemini capacity recovery provider=gemini retry=1')
+                return True
+            pause.wait(min(.25, max(0, deadline-time.monotonic())))
+        return False
+
+    def _request_json(self, url, payload, *, model, operation, timeout=None):
+        try:
+            return self._request_json_once(url,payload,model=model,operation=operation,timeout=timeout)
+        except StudyProviderError as error:
+            if operation != 'generation' or not self._recover_capacity(error,model):
+                raise
+        return self._request_json_once(url,payload,model=model,operation=operation,timeout=timeout)
+
+    def _request_json_once(
         self,
         url: str,
         payload: dict,
@@ -515,7 +543,20 @@ class GeminiStudyProvider(StudyProvider):
             raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
         return answer
 
-    def generate_stream(
+    def generate_stream(self, **kwargs):
+        emitted = False
+        try:
+            for piece in self._generate_stream_once(**kwargs):
+                if piece:
+                    emitted = True
+                yield piece
+            return
+        except StudyProviderError as error:
+            if emitted or not self._recover_capacity(error,kwargs['model']):
+                raise
+        yield from self._generate_stream_once(**kwargs)
+
+    def _generate_stream_once(
         self,
         *,
         model: str,

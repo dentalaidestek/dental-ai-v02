@@ -416,6 +416,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
         planner_timeout = 75
     provider.timeout = max(10, min(planner_timeout, 75))
     provider.max_attempts = 1
+    provider.capacity_retry = True
     provider.response_schema = SCHEMA
     def call(prompt):
         logger.info('Academic planner provider=gemini model=%s timeout_seconds=%s', model, provider.timeout)

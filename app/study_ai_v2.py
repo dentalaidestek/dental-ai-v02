@@ -578,6 +578,10 @@ def stream_rag_v2(
             if isinstance(provider, GeminiStudyProvider):
                 from copy import copy
                 provider = copy(provider)  # Isolate finish state between concurrent sections.
+                # Section extraction has its own shared recovery budget. Only
+                # the final answer gets this single pre-output capacity retry.
+                provider.capacity_retry = not retrieval.study_task.get('batch_partial', False)
+                provider._capacity_recovery_used = False
             if required_attachment_types and not all(
                 provider.supports_generation_attachment(mime_type)
                 for mime_type in required_attachment_types
