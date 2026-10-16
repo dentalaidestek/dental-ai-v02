@@ -185,6 +185,8 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
          "Her soruyu '### Soru <kaynak numarası>' başlığıyla ve kendi dosya/sayfa atfıyla yaz. "
          "Bütün sayfayı incele: ilk sorular, sayfa sonundaki şıklar ve sonraki sayfanın başındaki "
          "devam şıkları atlanmamalı. El yazısı cevap işareti basılı şık metninin yerine geçmez. "
+         "Her şıkkın basılı harfini tek tek doğrula; devam sayfasındaki bir şıkkı önceki "
+         "okunamayan şıkkın yerine kaydırma. Yakın görünüm aynı sayfanın ayrıntısıdır, yeni soru değildir. "
          "Okunabilen bütün şıkları aynen aktar; 'görselde işaretli seçenek', 'veya diğer seçenekler' "
          "gibi yer tutucular yazma. Okuyamadığın metni açıkça '[okunamadı]' olarak göster. "
          "Şekil/tablo zorunluysa okuyabildiğin değerleri aktar, okunamayan bölümü ve kaynak "
@@ -527,7 +529,9 @@ def stream_rag_v2(
         for item in retrieval.attachments]
     if retrieval.study_task.get('source_kind') in {'questions','question_patterns'}:
         from app.academic_page_images import question_page_attachments
-        generation_attachments=question_page_attachments(retrieval.attachments)
+        generation_attachments=question_page_attachments(retrieval.attachments,
+            top_detail=retrieval.study_task.get('source_kind')=='questions'
+                       and len(retrieval.attachments)<=2)
     last_error: StudyProviderError | None = None
     attempted_api_calls = 0
     candidates = _generation_targets()
