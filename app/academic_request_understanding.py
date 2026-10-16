@@ -27,7 +27,11 @@ SCHEMA = {
         'source_sections': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_SOURCE_SEARCHES},
         'operation': {'type': 'string', 'enum': list(OPERATIONS)},
         'scope': {'type': 'string', 'enum': ['topic', 'course']},
-        'count': {'type': ['integer', 'null']},
+        'count': {'type': ['integer', 'null'], 'description':
+            'Explicit requested output item count: questions for question generation, '
+            'topics for exam-frequency rankings. Three topics means 3 even when all '
+            'source questions must be inspected. Null only when no output count is requested; '
+            'do not use the number of source files or source questions.'},
         'difficulty': {'type': ['string', 'null']},
         'clarification': {'type': 'string'},
         'source_kind': {'type': 'string', 'enum': ['notes', 'questions', 'question_patterns']},
@@ -137,6 +141,9 @@ asks for an evidence-based estimate, not an unsupported prediction or a refusal
 because the notes do not contain a future exam. Retrieve the question index;
 past exams need not have appeared in the heading outline. Preserve a genuinely
 topic-specific scope, otherwise use course scope for the pattern analysis.
+For question_patterns ranking, count is the requested number of topic rows,
+not the number of source questions to read. Preserve that number in count and
+resolved_query even when the user writes it as a Turkish word.
 Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
 requested. needs_visual is true when the task needs an actual source diagram,
