@@ -6,7 +6,7 @@ _PDFIUM_LOCK = threading.Lock()  # PDFium is not safe for concurrent calls.
 _MAX_BYTES = 12 * 1024 * 1024
 
 
-def question_page_attachments(attachments):
+def question_page_attachments(attachments, *, top_detail=False):
     """Preserve source labels and page geometry; no OCR or provider call."""
     result=[]
     remaining=_MAX_BYTES-sum(len(item.get('data',b'')) for item in attachments)
@@ -46,4 +46,23 @@ def question_page_attachments(attachments):
             remaining+=len(data)-len(converted)
             item={**item,'data':converted,'mime_type':'image/jpeg'}
         result.append({**item,'media_resolution':'MEDIA_RESOLUTION_HIGH'})
+    if top_detail:
+        from PIL import Image
+        for item in list(result):
+            if item.get('mime_type')!='image/jpeg':
+                continue
+            try:
+                with Image.open(io.BytesIO(item['data'])) as image:
+                    crop=image.crop((0,0,image.width,max(1,image.height//4)))
+                    try:
+                        output=io.BytesIO();crop.save(output,format='JPEG',quality=92)
+                        data=output.getvalue()
+                    finally:
+                        crop.close()
+                if len(data)<=remaining:
+                    remaining-=len(data)
+                    result.append({**item,'data':data,'label':item.get('label','')+
+                        ' (aynı sayfanın üst bölümü, yakın görünüm; basılı şık harflerini koru)'})
+            except Exception:
+                continue  # The full original page remains in the request.
     return result

@@ -23,6 +23,12 @@ def test_exam_page_image_preserves_orientation_source_and_readable_dimensions():
         red,green,blue=image.getpixel((15,15))
         assert red>240 and green<20 and blue<20
     assert len(converted['data'])<=12*1024*1024
+    detailed=question_page_attachments([source],top_detail=True)
+    assert len(detailed)==2 and detailed[1]['page_number']==4
+    with Image.open(io.BytesIO(detailed[1]['data'])) as image:
+        assert image.size==(600,225)
+        red,green,blue=image.getpixel((15,15))
+        assert red>240 and green<20 and blue<20
 
 
 def test_unreadable_pdf_is_retained_instead_of_dropping_the_source():
