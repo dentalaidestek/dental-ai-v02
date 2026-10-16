@@ -129,13 +129,16 @@ def test_specific_native_definition_does_not_expand_generic_point_matches(monkey
     def row(ident,title,body):
         return (ident,1,'note',ident,ident,title,'TEXT',body,None,None,None,None,1,ident,'{}')
     generic=row(2,'Başka noktalar','Başka noktası açıklaması')
-    native=row(33,'Old header','Gonion noktası\nKaynakta bulunan tam tanım.')
+    other=row(3,'Daha başka noktalar','Başka bir noktası açıklaması')
+    # The old page label says only Gonion, while many other definitions say
+    # "noktası". Uniform overlap would incorrectly treat them as equal hits.
+    native=row(33,'Old header','Gonion\nGo\nKaynakta bulunan tam tanım.')
     links=Mock()
     links.named_section_ids.return_value=[]
     links.selected_section_ids.return_value=[]
     links.focus_nodes.side_effect=AssertionError('specific fact must not expand ontology')
     monkeypatch.setattr(module,'get_course_links',lambda *a,**k:links)
-    monkeypatch.setattr(module,'_fts_rows',Mock(return_value=[generic]))
+    monkeypatch.setattr(module,'_fts_rows',Mock(return_value=[generic,other]))
     monkeypatch.setattr('app.academic_native_evidence.matching_native_pages',Mock(return_value=([native],True)))
     monkeypatch.setattr('app.academic_native_evidence.selected_native_pages',Mock(return_value={}))
     plan=StudyRequest('Gonion noktası nedir?','answer','topic',None,None,'',('Gonion noktası',),

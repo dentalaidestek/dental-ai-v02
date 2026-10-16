@@ -119,15 +119,20 @@ def _balanced_candidates(rows, phrases, limit, *, allow_unmatched=True, best_mat
     """Round-robin lexical pools so a frequent search cannot crowd out another."""
     def terms(value):
         return set(re.findall(r'[^\W_]+', value.casefold()))
+    present_terms = [terms((row[5] or '') + ' ' + (row[7] or '')) for row in rows]
+    if best_match_only:
+        from collections import Counter
+        frequencies = Counter(term for present in present_terms for term in present)
     pools = []
     for phrase in phrases:
         wanted = terms(phrase)
         scored = []
-        for row in rows:
-            present = terms((row[5] or '') + ' ' + (row[7] or ''))
+        for row,present in zip(rows,present_terms):
             overlap = len(wanted & present)
             if overlap:
-                scored.append((overlap / max(1, len(wanted)), row))
+                score = (sum(1 / frequencies[term] for term in wanted & present)
+                         if best_match_only else overlap / max(1, len(wanted)))
+                scored.append((score, row))
         scored.sort(key=lambda item: -item[0])
         if best_match_only and scored:
             scored = [item for item in scored if item[0] == scored[0][0]]
