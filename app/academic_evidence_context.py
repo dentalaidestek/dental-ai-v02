@@ -13,15 +13,20 @@ MAX_CONTEXT_SCAN_PAGES = 4
 def small_note_context(session, *, owner_user_id, course_id):
     """Return every factual row only when the complete set fits one request."""
     params = {'owner': owner_user_id, 'course': course_id}
+    # One extra row proves that a course cannot fit. Do not detoast and sum
+    # every published chunk merely to reject a large course on each question.
     totals = session.exec(text('''SELECT COUNT(*),
-        COALESCE(SUM(length(coalesce(c.text_content,'')) +
-                     length(coalesce(c.section_title,'')) + 200),0)
+        COALESCE(SUM(length(coalesce(candidate.text_content,'')) +
+                     length(coalesce(candidate.section_title,'')) + 200),0)
+        FROM (SELECT c.text_content,c.section_title
         FROM studyindexchunk c JOIN studymaterial m
           ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
          AND m.course_id=c.course_id AND m.active_index_version=c.index_version
         WHERE c.owner_user_id=:owner AND c.course_id=:course
           AND m.index_status='READY' AND m.deleted_at IS NULL
-          AND c.content_kind <> 'QUESTION' '''), params=params).first()
+          AND c.content_kind <> 'QUESTION'
+        LIMIT :candidate_limit) candidate'''),
+        params={**params, 'candidate_limit': MAX_CONTEXT_ROWS + 1}).first()
     if not totals or not 0 < int(totals[0]) <= MAX_CONTEXT_ROWS or int(totals[1]) > MAX_CONTEXT_CHARS:
         return None
     # Count scans before hydrating rows. Large visual courses stay on the

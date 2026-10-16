@@ -42,7 +42,41 @@ def test_small_course_preserves_every_row_and_has_no_provider_call(monkeypatch):
     reader.assert_called_once_with(session,owner_user_id=17,course_id=23)
     query=str(session.exec.call_args_list[0].args[0])
     assert "m.active_index_version=c.index_version" in query and "m.deleted_at IS NULL" in query
-    assert session.exec.call_args_list[0].kwargs['params']=={'owner':17,'course':23}
+    assert session.exec.call_args_list[0].kwargs['params']=={'owner':17,'course':23,'candidate_limit':129}
+
+
+@pytest.mark.parametrize('count', [128,129,2000])
+def test_size_gate_reads_at_most_one_extra_row_in_sql(monkeypatch,count):
+    from sqlalchemy import text
+    from sqlmodel import Session, create_engine
+    engine=create_engine('sqlite://')
+    measured=[]
+    with engine.connect() as connection:
+        # Count actual evaluated bodies, rather than merely asserting a LIMIT
+        # appears in the query. SQLite is enough for this portable size gate.
+        def length(value):
+            if value and value.startswith('body-'):
+                measured.append(value)
+            return len(value) if value else None
+        connection.connection.driver_connection.create_function('length',1,length)
+        connection.execute(text('CREATE TABLE studymaterial (id INT, owner_user_id INT, course_id INT, active_index_version TEXT, index_status TEXT, deleted_at TEXT)'))
+        connection.execute(text('CREATE TABLE studyindexchunk (material_id INT, owner_user_id INT, course_id INT, index_version TEXT, text_content TEXT, section_title TEXT, content_kind TEXT)'))
+        connection.execute(text("INSERT INTO studymaterial VALUES (1,17,23,'live','READY',NULL)"))
+        connection.execute(text("INSERT INTO studyindexchunk VALUES (1,17,23,'live',:body,'heading','TEXT')"),
+                           [{'body':f'body-{i}'} for i in range(count)])
+        connection.execute(text('CREATE TABLE studyindexpage (material_id INT, owner_user_id INT, course_id INT, index_version TEXT, page_number INT, extraction_method TEXT)'))
+        rows=[(i,1,'note',1,1,'heading','TEXT',f'body-{i}',None,None,None,None,1,i,'{}') for i in range(count)]
+        reader=Mock(return_value=iter(rows))
+        monkeypatch.setattr('app.academic_source_batches.load_owned_source_rows',reader)
+        with Session(bind=connection) as session:
+            result=small_note_context(session,owner_user_id=17,course_id=23)
+        assert len(measured)==min(count,129)
+        if count<=128:
+            assert result==rows
+        else:
+            assert result is None
+            reader.assert_not_called()
+    engine.dispose()
 
 
 def test_large_scan_set_stays_on_query_retrieval(monkeypatch):
