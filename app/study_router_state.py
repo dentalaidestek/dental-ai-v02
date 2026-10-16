@@ -504,6 +504,11 @@ def _backoff_seconds(
         values = [21600, 86400]
     elif status_code == 404:
         values = [21600, 86400]
+    elif status_code == 503:
+        # Capacity shedding should allow a short bounded probe, not turn one
+        # rejected call into minutes of locally rejected student questions.
+        # Explicit Retry-After above always retains precedence.
+        values = [2, 5, 15, 60, 120]
     elif status_code == 408 or (status_code is not None and status_code >= 500):
         values = [30, 120, 300, 600]
     else:
@@ -985,6 +990,11 @@ def record_api_result(
                 pstate.circuit_open_until_epoch = pstate.provider_reset_at_epoch
         else:
             state.total_failures += 1
+            if (status_code == 503 and state.last_failure_at_epoch
+                    and now_epoch-state.last_failure_at_epoch >= 300):
+                # Old capacity incidents must not keep increasing today's
+                # circuit after a long idle period without any new request.
+                state.consecutive_failures = 0
             state.consecutive_failures += 1
             state.last_error_kind = error_kind
             state.last_failure_at_epoch = now_epoch
