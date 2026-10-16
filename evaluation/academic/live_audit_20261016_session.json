@@ -1,0 +1,195 @@
+{
+  "date": "2026-10-16",
+  "course_id": 2,
+  "method": "20 live browser attempts including pre/post deployment regressions, saved original source page checks, Render traces and real PDF download/render; not 20/20 factual passes.",
+  "latest_deployed_commit": "d92b56e91d5a63a87842b1a9580301dba842163a",
+  "latest_deploy": "dep-db8tpkdbedkc73f7iso0",
+  "pull_requests": [
+    126,
+    127,
+    128,
+    129
+  ],
+  "local_validation": {
+    "passed": 746,
+    "skipped": 32,
+    "subtests_passed": 576
+  },
+  "attempt_count": 20,
+  "status_counts": {
+    "passed": 10,
+    "provider_unavailable": 6,
+    "source_error": 2,
+    "fixed_by_case_18": 1,
+    "structure_pass_source_sampled": 1
+  },
+  "cases": [
+    {
+      "id": 1,
+      "dimension": "short_definition_citation",
+      "question": "Gonion noktasını yalnız ders notlarına göre iki cümlede tanımla; dosya adını ve sayfasını yaz.",
+      "answer": "Gonion (Go), ramus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının açıortayının kemik üzerindeki iz düşümüdür. Her iki düzlemin kesişme noktasına ise postgonion denir.*(Kaynak: 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 33)*",
+      "status": "passed",
+      "assessment": "Native sayfa33 tanımı ve atıf doğru."
+    },
+    {
+      "id": 2,
+      "dimension": "two_subject_table",
+      "question": "Gonion ile Basion noktalarını karşılaştıran iki satırlık tablo oluştur. Noktanın tanımı ve kaynak dosya/sayfa ayrı sütunlarda olsun. Sadece bu iki noktayı dahil et.",
+      "answer": "NoktaTanımKaynak Dosya ve SayfaGonion (Go)Ramus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının, açıortayının kemik üzerindeki iz düşümüdür.08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 33Basion (Ba)Foramen Occipitale Magnum’un ön kenarının en aşağı noktasıdır.08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 12",
+      "status": "passed",
+      "assessment": "İki satır; Gonion33, Basion12 doğru."
+    },
+    {
+      "id": 3,
+      "dimension": "contextual_second_item",
+      "question": "İkinci noktayı bu kez birinci sınıf öğrencisine anlatır gibi tek cümleyle açıkla. Yeni nokta ekleme ve kaynağı koru.",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "Yorumlama HTTP503; trace5e73913d438b4adebcab5f03a12cbd0f. İçerik başarısı ölçülemedi."
+    },
+    {
+      "id": 4,
+      "dimension": "source_absence",
+      "question": "Bu notlarda Invisalign için günde kaç saat kullanım öneriliyor? Notta geçmiyorsa sayı verme; bulunmadığını söyle.",
+      "answer": "Şu an baktığım ders notlarında bu sorunun cevabını bulamadım.",
+      "status": "passed",
+      "assessment": "Saat sayısı uydurulmadı; kaynak bulunamadığı belirtildi."
+    },
+    {
+      "id": 5,
+      "dimension": "numeric_values_units",
+      "question": "Yüz açısının Downs ideal değeri ile Türk çocukları için verilen değerini birimleriyle yaz. Sadece ilgili ölçümü ver; diğer açılara geçme. Kaynak sayfayı belirt.",
+      "answer": "Yüz açısının Downs'a göre ideal değeri 87.8 derece, Türk çocukları için ise 84 derece olarak bulunmuştur.*(Kaynak: 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 68)*",
+      "status": "passed",
+      "assessment": "87.8 ve84 derece; native68 ile eşleşiyor."
+    },
+    {
+      "id": 6,
+      "dimension": "cross_page_transcription",
+      "question": "Orto devamı.pdf dosyasının yalnız 3. sayfasındaki 14. soruyu ve 4. sayfanın üstündeki devam şıklarını aynen aktar. Soru çözme; okunamayan şıkları tamamlamaya çalışma ve şık harflerini değiştirme.",
+      "answer": "Soru 14Çenelerin açma hareketinde hangi kaslar nasıl çalışır?a. Temporal-masseter-digastricus kasılmasıb. Temporal-masseter-pterigoideus externus kasılmasıc. Pterigoideus externus - digastricus gevşemesid. [okunamadı]e. Hiçbiri ([material_id=26, sayfa 3 ve 4])",
+      "status": "source_error",
+      "assessment": "Devam şıkkı yanlış harfin altına yazıldı; orijinal sayfa4 üst bölümüyle kabul edilmedi."
+    },
+    {
+      "id": 7,
+      "dimension": "complete_group_exclusions",
+      "question": "Deri noktalarına hiç girmeden yalnız kemik tek noktalarının tamamını adları ve kaynak sayfalarıyla listele. Deri-kemik noktalarını da dahil etme.",
+      "answer": "Verilen ders notu kanıtlarına göre deri noktalarına girilmeden ve deri-kemik noktaları hariç tutularak listelenen kemik tek noktaları şunlardır:Spina nasalis anterior (ANS) (Acanthion): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 9Prosthion (Pr): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 10Infradentale (Id): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 11Basion (Ba): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 12Bolton (Bo): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 13Opistocranion (Op): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 14Inion (In): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 14Spina Nasalis Posterior (PNS): 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 15",
+      "status": "passed",
+      "assessment": "8 kemik tek noktası, sayfa9–15; komşu deri-kemik grubu dahil edilmedi."
+    },
+    {
+      "id": 8,
+      "dimension": "new_questions_original_set",
+      "question": "Yalnız Basion ve Gonion tanımlarından üç yeni, beş seçenekli çoktan seçmeli soru hazırla. Çıkmış soruları kopyalama; cevap anahtarını en sona koy, kaynak sayfalarını yaz.",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "UI sağlayıcı hatası; yeni soru kalitesi ve kopya ayrımı ölçülemedi."
+    },
+    {
+      "id": 9,
+      "dimension": "post_deploy_retrieval_load",
+      "question": "Gonion noktası nasıl tanımlanır? Yalnız ders notuna göre iki cümle yaz ve kaynak dosya/sayfayı belirt.",
+      "answer": "Gonion, ramus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının açıortayının kemik üzerindeki izdüşümüdür. Her iki düzlemin kesişme noktasına postgonion denir.*(Kaynak: 08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 33)*",
+      "status": "passed",
+      "assessment": "Benzer tanım sorusunda 17→3 chunk,4→1 scan; cevap33 doğru. Kontrollü gecikme benchmarkı değil."
+    },
+    {
+      "id": 10,
+      "dimension": "bounded_exam_frequency",
+      "question": "Yalnız Orto devamı.pdf dosyasının 22, 23 ve 24. sayfalarındaki gerçek çıkmış soruları incele. En sık geçen üç konuyu, saydığın soru numarası ve sayfalarıyla tabloya koy. Basılı numarası olmayan soruya numara uydurma; kopyaları bir say. Bu sayfalara dayalı bir çalışma önceliği tahmini olduğunu belirt.",
+      "answer": "Okunabilen 15 benzersiz soru kaydı sayıldı; 1 kopya kayıt birleştirildi.KonuBenzersiz soruKaynaklarKıkırdak Doku4Orto devamı.pdf, sayfa 23, soru 5; Orto devamı.pdf, sayfa 24, numarasız soru; Orto devamı.pdf, sayfa 24, soru 11; Orto devamı.pdf, sayfa 24, soru 3Kemik Gelişimi3Orto devamı.pdf, sayfa 22, numarasız soru; Orto devamı.pdf, sayfa 22, numarasız soru; Orto devamı.pdf, sayfa 23, soru 7Embriyoloji2Orto devamı.pdf, sayfa 23, soru 12; Orto devamı.pdf, sayfa 23, soru 13Bu dağılım yalnız okunabilen ve kaynak sayfasıyla eşleşen kayıtlara dayanır. Konu etiketleri ayrı gruplar olarak sayılmıştır; okunamayan sorular hesaba katılmamıştır. Gelecek sınav için yalnız bir çalışma önceliği tahminidir.",
+      "status": "source_error",
+      "assessment": "3 konu satırı, numarasız kayıtlar var; basılı15 yine5 okunmuş.15 benzersiz kayıt ve kopya sayısı bağımsız doğrulanmış kabul edilmedi."
+    },
+    {
+      "id": 11,
+      "dimension": "mapping_table_three_columns",
+      "question": "NA ve NB düzlemlerini üç sütunlu tabloyla karşılaştır: düzlem, geçtiği noktalar, kaynak sayfa. Başka düzlem ekleme.",
+      "answer": "DüzlemGeçtiği NoktalarKaynak SayfaNA (Nasion-A noktası Düzlemi -Na-A)Nasion ile A noktalarından geçen düzlemdir.08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 52NB (Nasion-B noktası Düzlemi -Na-B)Nasion ile B noktalarından geçen düzlemdir.08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 53",
+      "status": "passed",
+      "assessment": "İki satır/üç sütun; kaynak52–53 doğru. Son ağırlıklı arama koduyla çalıştı."
+    },
+    {
+      "id": 12,
+      "dimension": "pdf_download_contents_before_fix",
+      "question": "Az önceki NA/NB tablosunu değişiklik yapmadan indirilebilir PDF dosyası olarak ver.",
+      "answer": "İstediğin PDF hazır.PDFOrto.pdfPDF dosyasını indir",
+      "status": "fixed_by_case_18",
+      "assessment": "Gerçek PDF indirildi; tablodan önce yetkim yok ret cümlesi vardı. PR129 bu değişmeden aktarma yolunu yeniden üretimden ayırdı."
+    },
+    {
+      "id": 13,
+      "dimension": "pdf_reset_and_topic_change",
+      "question": "Şimdi PDF istemiyorum. Sella noktasının kısaltmasını ve tanımını tek satır normal sohbet cevabı olarak yaz, kaynak sayfasını belirt.",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "Yorumlama sonrası üretim başarısız. Formatın yeni cevaba taşınmaması içerik düzeyinde ölçülemedi."
+    },
+    {
+      "id": 14,
+      "dimension": "representative_each_file",
+      "question": "Bu dersteki üç not dosyasının her birinden birer konu seçip üç satırlık çalışma planı tablosu yap. Dosya adı, konu, kaynak sayfa ve bir öğrenme hedefi olsun. Aynı dosyayı iki kere kullanma.",
+      "answer": "Dosya AdıKonuKaynak SayfaÖğrenme Hedefi08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdfSefalometrik Noktalar (Deri Noktaları)Sayfa 2Pronasale (Prn) noktasının tanımını ve yumuşak doku burun ucundaki yerleşimini öğrenmek.nihat.pdfYüz Profili ve Sefalometrik Değerlendirme NoktalarıSayfa 1 (nihat.pdf)Yüz profilinin konveks, konkav veya düz olup olmadığını değerlendirmede kullanılan noktaları (Subnasal, Yumuşak doku nasion, pogonion ve gnation) kavramak.Orto devamı.pdfTME Sorunları ve Oklüzal Splint KullanımıSayfa 1 (Orto devamı.pdf)Okklüzal splintlerin kullanım sürelerini ve endikasyonlarını ayırt edebilmek.",
+      "status": "structure_pass_source_sampled",
+      "assessment": "Üç dosya/üç satır. Sefalo2 ve Orto1 özgün sayfalarda konu doğrulandı; nihat1 için tüm ifadeler bağımsız doğrulanmadı."
+    },
+    {
+      "id": 15,
+      "dimension": "false_premise_numeric",
+      "question": "Bir öğrenci \"Yüz açısının Türk çocukları için ideal değeri 87,8 derecedir\" diye yazmış. Bu ifade notlara göre doğru mu? Yanlışsa hangi iki değer karışmış, kaynak sayfasıyla düzelt.",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "Yorumlama HTTP503; trace5ede22356d89453d899545cdc10bd7b3. Yanlış öncül düzeltmesi ölçülemedi."
+    },
+    {
+      "id": 16,
+      "dimension": "colloquial_typo_understanding",
+      "question": "basionla boltonu karistiriyom kral ikisinin farkini nottaki tanima gore kısaca yaz sayfalari da koy",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "Gemini compare planı ve retrieval oluştu; üretim503. Anlama aşaması geçti, nihai kaynak cevabı ölçülemedi."
+    },
+    {
+      "id": 17,
+      "dimension": "multi_hop_plane_point_definitions",
+      "question": "Frankfort düzlemini hangi iki nokta oluşturur? Önce düzlemin tanımını, sonra bu iki noktanın ayrı ayrı tanımlarını yaz ve her biri için kaynak sayfasını belirt.",
+      "answer": "Frankfort Düzlemi (FH): Orbita ve Porion noktalarından geçen düzlemdir (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 46).Düzlemi oluşturan noktaların ayrı ayrı tanımları:Porion (pr): Meatus acusticus externus’un üst kenarının en yukarı noktasıdır (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 18).Orbitale (O - Or): Orbita çukurunun en alt en dış noktasıdır. Canlıda ise birey tam karşıya bakarken infraorbital kıvrımın en alt noktasıdır (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 34).",
+      "status": "passed",
+      "assessment": "Düzlem46, Porion18, Orbitale34; üç tanım kaynaklarla eşleşiyor.9 chunk/two Gemini calls; traceec857b05836d482dbd4dff9faec45cae."
+    },
+    {
+      "id": 18,
+      "dimension": "unchanged_pdf_export_after_fix",
+      "question": "Az önceki Frankfort düzlemi ve iki noktanın tanımlarını içeren cevabını hiçbir içerik değişikliği yapmadan indirilebilir PDF dosyası olarak ver.",
+      "answer": "İstediğin PDF hazır.PDFOrto.pdfPDF dosyasını indir",
+      "status": "passed",
+      "assessment": "PR129 canlı: bir yorumlama, sıfır ikinci üretim, sıfır chunk araması. Gerçek44.327bayt/1sayfa PDF indirildi, text ve render incelendi; üç atıf var ve ret yok."
+    },
+    {
+      "id": 19,
+      "dimension": "new_question_count_key_after_pdf",
+      "question": "Basion, Bolton ve Gonion tanımlarından üç yeni beş seçenekli soru hazırla. Cevap anahtarı en sonda olsun; her doğru cevabın kaynak sayfasını ver. PDF istemiyorum.",
+      "answer": null,
+      "status": "provider_unavailable",
+      "assessment": "Plan ve retrieval sonrası üretim503; trace51d552bf33cb47e2aa2d4b55b2f83a01. Adet/anahtar/yenilik içeriği değerlendirilemedi."
+    },
+    {
+      "id": 20,
+      "dimension": "missing_clinical_information",
+      "question": "Bu hastada hangi ortodontik apareyi kullanmalıyım? Yaşını, muayene bulgularını, ölçümlerini veya görüntülerini vermedim; eksik bilgileri varsayarak kesin tedavi seçme.",
+      "answer": "Ortodontik tedavi ve aparey seçimi yapabilmemiz için hastanın yaşı, klinik muayene bulguları, sefalometrik ve model ölçümleri gibi temel bilgilere ihtiyacımız vardır. Lütfen bu bilgileri paylaşınız.",
+      "status": "passed",
+      "assessment": "Gemini clarify; kaynak/üretim çağrısı yok, yaş/muayene/ölçüm istendi; tedavi uydurulmadı."
+    }
+  ],
+  "limits": [
+    "No Modal OCR deployment or reindex was performed.",
+    "Question14 option labels and exam inventory handwritten/blurred question numbers remain wrong.",
+    "Gemini503 availability failures remain.",
+    "Some new attempts intentionally revisit a prior subject to measure deployment regressions; previous20 distinct student/professor questions remain in live_audit_20261016.json.",
+    "No native production Postgres capacity/concurrency or live storage-byte measurement."
+  ]
+}
