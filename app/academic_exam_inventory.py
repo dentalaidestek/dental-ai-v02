@@ -16,7 +16,7 @@ INVENTORY_SCHEMA = {'type':'object','properties':{'questions':{'type':'array',
     'required':['questions'],'additionalProperties':False}
 
 
-def parse_inventory(raw, evidence, primary_pages=()):
+def parse_inventory(raw, evidence, primary_pages=(), *, rejected=None):
     raw=re.sub(r'<!--ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+-->','',raw).strip()
     data=json.loads(raw)
     if not isinstance(data,dict) or set(data)!={'questions'} or not isinstance(data['questions'],list) or len(data['questions'])>160:
@@ -30,8 +30,15 @@ def parse_inventory(raw, evidence, primary_pages=()):
         if type(item['material_id']) is not int or type(item['page']) is not int:
             raise ValueError('invalid source reference')
         key=(item['material_id'],item['page'])
-        if key not in allowed or key not in starts:
+        if key not in allowed:
+            if rejected is not None:
+                rejected.append('source_reference')
+                continue
             raise ValueError('question outside selected start pages')
+        if key not in starts:
+            # This page is present only to finish the previous question. New
+            # questions on it belong to the following batch, not this one.
+            continue
         for field,limit in [('number',40),('text',6000),('topic',160)]:
             if not isinstance(item[field],str) or not item[field].strip() or len(item[field])>limit or '\x00' in item[field]:
                 raise ValueError('invalid inventory field')
@@ -68,7 +75,7 @@ def unique_inventory(records):
     return unique
 
 
-def render_inventory(records, count=None):
+def render_inventory(records, count=None, *, excluded=0):
     unique=unique_inventory(records)
     if not unique:
         return 'Kaynak sayfalarında sayılabilir ve okunabilir bir soru envanteri doğrulayamadım; konu sıklığı sıralaması vermiyorum.'
@@ -81,6 +88,8 @@ def render_inventory(records, count=None):
         return ' '.join(str(value).split()).replace('|','\\|')
     lines=[f'Okunabilen {len(unique)} benzersiz soru kaydı sayıldı; {len(records)-len(unique)} kopya kayıt birleştirildi.',
            '', '| Konu | Benzersiz soru | Kaynaklar |','| --- | --- | --- |']
+    if excluded:
+        lines.insert(1,f'{excluded} kayıt kaynak sayfasıyla eşleşmediği için sayılmadı. Bu sonuç eksiksiz bir sınav dökümü değildir.')
     for items in top:
         refs='; '.join(f"{cell(q['filename'])}, sayfa {q['page']}, soru {cell(q['number'])}" for q in items)
         lines.append(f"| {cell(items[0]['topic'])} | {len(items)} | {refs} |")
