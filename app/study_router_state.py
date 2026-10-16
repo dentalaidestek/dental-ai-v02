@@ -504,7 +504,7 @@ def _backoff_seconds(
         values = [21600, 86400]
     elif status_code == 404:
         values = [21600, 86400]
-    elif status_code == 503:
+    elif status_code in {503, 529}:
         # Capacity shedding should allow a short bounded probe, not turn one
         # rejected call into minutes of locally rejected student questions.
         # Explicit Retry-After above always retains precedence.
@@ -584,6 +584,9 @@ def _usage_from_json(payload: Any) -> tuple[int, int, int]:
     usage = payload.get("usage") or {}
     if isinstance(usage, dict) and usage:
         prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        # Claude reports uncached, cache-write and cache-read inputs separately.
+        prompt += int(usage.get('cache_creation_input_tokens') or 0)
+        prompt += int(usage.get('cache_read_input_tokens') or 0)
         output = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
         total = int(usage.get("total_tokens") or (prompt + output))
         if prompt or output or total:
@@ -990,7 +993,7 @@ def record_api_result(
                 pstate.circuit_open_until_epoch = pstate.provider_reset_at_epoch
         else:
             state.total_failures += 1
-            if (status_code == 503 and state.last_failure_at_epoch
+            if (status_code in {503, 529} and state.last_failure_at_epoch
                     and now_epoch-state.last_failure_at_epoch >= 300):
                 # Old capacity incidents must not keep increasing today's
                 # circuit after a long idle period without any new request.

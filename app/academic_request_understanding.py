@@ -358,7 +358,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     return StudyRequest(**data)
 
 
-def interpret_request(question: str, history: list[dict], *, call, source_outline=None) -> UnderstandingResult:
+def interpret_request(question: str, history: list[dict], *, call, source_outline=None, provider_name='gemini') -> UnderstandingResult:
     """One call at most; preserves messages intact rather than clipping meaning."""
     started = time.perf_counter()
     trace_id = uuid.uuid4().hex
@@ -376,8 +376,8 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
         allowed=set((source_outline or {}).get('sections',[]))
         if any(section not in allowed for section in plan.source_sections):
             raise PlannerContractError('unknown source section')
-        logger.info('Academic flow trace=%s stage=plan provider=gemini operation=%s scope=%s count=%s source=%s searches=%s history=%s continue=%s',
-                    trace_id, plan.operation, plan.scope, plan.count, plan.source_kind,
+        logger.info('Academic flow trace=%s stage=plan provider=%s operation=%s scope=%s count=%s source=%s searches=%s history=%s continue=%s',
+                    trace_id, provider_name, plan.operation, plan.scope, plan.count, plan.source_kind,
                     len(plan.retrieval_queries), len(turns), plan.continue_source)
         return UnderstandingResult(plan=plan, attempted=True, outcome='interpreted', trace_id=trace_id)
     except Exception as exc:
@@ -402,13 +402,20 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
         logger.info('Academic flow trace=%s stage=plan provider=local operation=%s scope=topic searches=1',
                     trace_id, direct.operation)
         return UnderstandingResult(plan=direct, outcome='direct', trace_id=trace_id)
-    from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
-    model = (os.getenv('STUDY_ACADEMIC_PLANNER_MODEL') or 'gemini-3.5-flash-lite').strip()
-    provider = GeminiStudyProvider()
+    from copy import copy
+    from app.study_provider import GeminiStudyProvider, StudyProviderError, get_provider, target_available
+    from app.academic_provider_config import academic_target
+    try:
+        target = academic_target('planner')
+    except StudyProviderError:
+        return UnderstandingResult(outcome='unavailable', failure_reason='configuration')
+    model = target.model
+    provider = GeminiStudyProvider() if target.provider == 'gemini' else copy(get_provider(target.provider))
+    provider._capacity_recovery_used = False
     if not provider.api_key:
         return UnderstandingResult(outcome='unavailable', failure_reason='configuration')
-    if not target_available(ProviderTarget('gemini', model)):
-        logger.info('Academic planner skipped provider=gemini reason=provider_wait')
+    if not target_available(target):
+        logger.info('Academic planner skipped provider=%s reason=provider_wait', target.provider)
         return UnderstandingResult(outcome='unavailable', failure_reason='provider_wait')
     try:
         planner_timeout = int(os.getenv('STUDY_ACADEMIC_PLANNER_TIMEOUT_SECONDS', '75'))
@@ -419,10 +426,10 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     provider.capacity_retry = True
     provider.response_schema = SCHEMA
     def call(prompt):
-        logger.info('Academic planner provider=gemini model=%s timeout_seconds=%s', model, provider.timeout)
+        logger.info('Academic planner provider=%s model=%s timeout_seconds=%s', target.provider, model, provider.timeout)
         return provider.generate(model=model, system_prompt=SYSTEM, history=[], prompt=prompt,
                                  temperature=0, max_output_tokens=4096)
-    return interpret_request(question, history, call=call, source_outline=source_outline)
+    return interpret_request(question, history, call=call, source_outline=source_outline, provider_name=target.provider)
 
 
 def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, **kwargs):

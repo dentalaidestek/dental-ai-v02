@@ -247,6 +247,7 @@ def _provider_has_key(provider: str) -> bool:
         "mistral": "MISTRAL_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
         "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
     }
     env = mapping.get(provider)
     return True if env is None else bool((os.getenv(env) or "").strip())
@@ -254,6 +255,10 @@ def _provider_has_key(provider: str) -> bool:
 
 def get_generation_targets(profile: str = "complex") -> list[ProviderTarget]:
     """Deterministic Academic AI chain; quota/circuit state only skips unavailable targets."""
+    if os.getenv('STUDY_ACADEMIC_PROVIDER', 'gemini').strip().lower() == 'anthropic':
+        from app.academic_provider_config import academic_target
+        target = academic_target('generation')
+        return [target] if _provider_has_key('anthropic') and router_target_available(target.provider, target.model) else []
     targets: list[ProviderTarget] = []
     def add(provider: str, model: str) -> None:
         if provider and model and _provider_has_key(provider):
@@ -1262,3 +1267,4 @@ register_provider("groq", GroqStudyProvider)
 register_provider("mistral", MistralStudyProvider)
 register_provider("openrouter", OpenRouterStudyProvider)
 register_provider("openai", OpenAIStudyProvider)
+register_provider("anthropic", lambda: importlib.import_module('app.study_anthropic').AnthropicStudyProvider())
