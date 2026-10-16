@@ -12,9 +12,19 @@ def record(page=4,number='21',topic='Sefalometri',text=None):
 def test_inventory_rejects_foreign_pages_and_continuation_as_question_start():
     evidence=[SimpleNamespace(material_id=1,page_start=4,page_end=5,display_name='Owned.pdf')]
     with pytest.raises(ValueError):parse_inventory(json.dumps({'questions':[record(page=9)]}),evidence)
-    with pytest.raises(ValueError):parse_inventory(json.dumps({'questions':[record(page=5)]}),evidence,[(1,4)])
+    assert not parse_inventory(json.dumps({'questions':[record(page=5)]}),evidence,[(1,4)])
     result=parse_inventory(json.dumps({'questions':[record()]}),evidence,[(1,4)])
     assert result[0]['filename']=='Owned.pdf'
+
+
+def test_unmatched_record_is_excluded_explicitly_without_certifying_full_coverage():
+    evidence=[SimpleNamespace(material_id=1,page_start=4,page_end=4,display_name='Owned.pdf')]
+    rejected=[]
+    records=parse_inventory(json.dumps({'questions':[record(),record(page=99)]}),evidence,rejected=rejected)
+    assert len(records)==1 and len(rejected)==1
+    answer=render_inventory(records,3,excluded=len(rejected))
+    assert '1 kayıt kaynak sayfasıyla eşleşmediği için sayılmadı' in answer
+    assert 'eksiksiz bir sınav dökümü değildir' in answer and 'sayfa 99' not in answer
 
 
 def test_repeated_exam_copy_is_counted_once_but_changed_value_is_not_merged():

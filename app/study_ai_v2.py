@@ -374,11 +374,18 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
             if inventory:
                 from app.academic_exam_inventory import parse_inventory
                 try:
+                    rejected=[]
                     records = parse_inventory(output, child.evidence,
-                        child.study_task.get('question_start_pages', ()))
+                        child.study_task.get('question_start_pages', ()),rejected=rejected)
                 except (ValueError, TypeError, KeyError) as exc:
+                    known={'invalid inventory','invalid question record','invalid source reference',
+                           'question outside selected start pages','invalid inventory field'}
+                    reason='invalid_json' if isinstance(exc,json.JSONDecodeError) else str(exc)
+                    logger.warning('Academic inventory rejected trace=%s reason=%s',retrieval.semantic_trace_id,
+                                   reason if reason in known|{'invalid_json'} else 'invalid_record')
                     raise StudyAIError('Soru envanteri kaynak sayfalarıyla doğrulanamadı; güvenilir bir sıklık sıralaması oluşturulamadı.') from exc
-                output = json.dumps(records, ensure_ascii=False) if records else BATCH_NO_SUPPORT
+                output = (json.dumps({'records':records,'excluded':len(rejected)},ensure_ascii=False)
+                          if records or rejected else BATCH_NO_SUPPORT)
         finally:
             child.attachments.clear()
     return output
@@ -460,8 +467,10 @@ def _stream_source_batches(course_title, question, history, retrieval):
                  and operation != 'generate_questions')
     if inventory:
         from app.academic_exam_inventory import render_inventory
-        records = [record for output in outputs for record in json.loads(output)]
-        yield render_inventory(records, retrieval.study_task.get('count'))
+        inventories=[json.loads(output) for output in outputs]
+        records=[record for item in inventories for record in item['records']]
+        yield render_inventory(records, retrieval.study_task.get('count'),
+                               excluded=sum(item['excluded'] for item in inventories))
     elif not outputs:
         yield 'Şu an baktığım ders notlarında bu isteği karşılayan bilgi bulamadım.'
     elif source_questions and not synthesize:
