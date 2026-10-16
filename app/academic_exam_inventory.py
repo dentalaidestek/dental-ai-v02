@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 INVENTORY_SCHEMA = {'type':'object','properties':{'questions':{'type':'array',
     'items':{'type':'object','properties':{
         'material_id':{'type':'integer'},'page':{'type':'integer'},
-        'number':{'type':'string'},'text':{'type':'string'},'topic':{'type':'string'}},
+        'number':{'type':['string','null']},'text':{'type':'string'},'topic':{'type':'string'}},
         'required':['material_id','page','number','text','topic'],'additionalProperties':False}}},
     'required':['questions'],'additionalProperties':False}
 
@@ -40,6 +40,8 @@ def parse_inventory(raw, evidence, primary_pages=(), *, rejected=None):
             # questions on it belong to the following batch, not this one.
             continue
         for field,limit in [('number',40),('text',6000),('topic',160)]:
+            if field=='number' and item[field] is None:
+                continue
             if not isinstance(item[field],str) or not item[field].strip() or len(item[field])>limit or '\x00' in item[field]:
                 raise ValueError('invalid inventory field')
         # Unreadable question text cannot substantiate a frequency count.
@@ -57,8 +59,8 @@ def _key(value):
 
 def unique_inventory(records):
     unique=[];seen=set();physical=set();fingerprints=[]
-    for item in sorted(records,key=lambda r:(r['material_id'],r['page'],r['number'])):
-        identity=(item['material_id'],item['page'],item['number'])
+    for item in sorted(records,key=lambda r:(r['material_id'],r['page'],r['number'] or '')):
+        identity=(item['material_id'],item['page'],item['number'] or _key(item['text']))
         key=_key(item['text']);numbers=tuple(re.findall(r'\d+(?:[.,]\d+)?',item['text']))
         duplicate=identity in physical or (len(key)>=40 and key in seen)
         if not duplicate and len(key)>=60:
@@ -91,7 +93,8 @@ def render_inventory(records, count=None, *, excluded=0):
     if excluded:
         lines.insert(1,f'{excluded} kayıt kaynak sayfasıyla eşleşmediği için sayılmadı. Bu sonuç eksiksiz bir sınav dökümü değildir.')
     for items in top:
-        refs='; '.join(f"{cell(q['filename'])}, sayfa {q['page']}, soru {cell(q['number'])}" for q in items)
+        refs='; '.join(f"{cell(q['filename'])}, sayfa {q['page']}, "
+            +(f"soru {cell(q['number'])}" if q['number'] else 'numarasız soru') for q in items)
         lines.append(f"| {cell(items[0]['topic'])} | {len(items)} | {refs} |")
     lines+=['','Bu dağılım yalnız okunabilen ve kaynak sayfasıyla eşleşen kayıtlara dayanır. '
             'Konu etiketleri ayrı gruplar olarak sayılmıştır; okunamayan sorular hesaba katılmamıştır. '

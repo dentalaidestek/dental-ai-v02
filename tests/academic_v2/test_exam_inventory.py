@@ -48,3 +48,14 @@ def test_frequency_table_sorts_actual_counts_and_lists_unique_sources():
 def test_unreadable_questions_cannot_support_counts():
     evidence=[SimpleNamespace(material_id=1,page_start=4,page_end=4,display_name='Owned.pdf')]
     assert not parse_inventory(json.dumps({'questions':[record(text='Soru [okunamadı]')]}),evidence)
+
+
+def test_unnumbered_source_questions_stay_distinct_and_do_not_gain_invented_numbers():
+    evidence=[SimpleNamespace(material_id=1,page_start=4,page_end=4,display_name='Owned.pdf')]
+    data=[record(number=None,text='Kıkırdak taslaktan kemik oluşumu nasıl gerçekleşir?'),
+          record(number=None,text='Basınç altında kıkırdak hangi yönde gelişim gösterir?')]
+    records=parse_inventory(json.dumps({'questions':data}),evidence)
+    assert len(unique_inventory(records))==2
+    answer=render_inventory(records,3)
+    assert '2 benzersiz' in answer and answer.count('numarasız soru')==2
+    assert 'soru None' not in answer and 'soru 1' not in answer
