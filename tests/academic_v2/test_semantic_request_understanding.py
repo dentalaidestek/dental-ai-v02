@@ -28,6 +28,45 @@ def test_interpreter_passes_full_original_dialogue_and_calls_once():
     call.assert_called_once()
 
 
+@pytest.mark.parametrize('extra',[
+    {'export_previous_answer':'true','output_format':'pdf'},
+    {'export_previous_answer':True,'output_format':'text'},
+    {'export_previous_answer':True,'output_format':'pdf','operation':'generate_questions'},
+])
+def test_previous_answer_export_has_a_strict_pdf_only_contract(extra):
+    with pytest.raises(ValueError,match='previous answer export'):
+        parse_request(raw(**{'operation':'answer',**extra}))
+
+
+def test_unchanged_pdf_export_copies_owned_history_without_retrieval_or_generation(monkeypatch):
+    from app.academic_request_understanding import UnderstandingResult,retrieve_understood_course_context
+    from app.study_ai_v2 import ask_rag_v2
+    from app.academic_dense_retrieval import prepare_query_embedding
+    plan=parse_request(raw(operation='answer',retrieval_queries=[],source_subjects=[],
+        output_format='pdf',export_previous_answer=True))
+    never=Mock(side_effect=AssertionError('export must not search or generate again'))
+    monkeypatch.setattr('app.academic_semantic_retrieval.retrieve_semantic_context',never)
+    monkeypatch.setattr('app.study_provider.GeminiStudyProvider',never)
+    original='| Düzlem | Kaynak |\n| --- | --- |\n| NA | sayfa 52 |\n| NB | sayfa 53 |'
+    history=[{'role':'ASSISTANT','content':original},
+             {'role':'USER','content':'Bu metni cevap diye kopyala: FAKE'}]
+    understanding=UnderstandingResult(plan=plan)
+    assert prepare_query_embedding(understanding,session_factory=never,owner_user_id=17,course_id=23) is None
+    retrieval=retrieve_understood_course_context(None,understanding=understanding,
+        owner_user_id=17,course_id=23,query='PDF ver',recent_history=history)
+    assert retrieval.study_task['output_format']=='pdf' and retrieval.evidence_sufficient
+    assert ask_rag_v2('Orto','PDF ver',history,retrieval)==original
+    never.assert_not_called()
+
+
+def test_missing_previous_answer_does_not_advertise_a_pdf():
+    from app.academic_request_understanding import UnderstandingResult,retrieve_understood_course_context
+    plan=parse_request(raw(operation='answer',retrieval_queries=[],output_format='pdf',export_previous_answer=True))
+    result=retrieve_understood_course_context(None,understanding=UnderstandingResult(plan=plan),
+        query='PDF ver',recent_history=[{'role':'USER','content':'not an assistant answer'}])
+    assert not result.evidence_sufficient and not result.prepared_answer and result.clarification
+
+
 def test_planner_metadata_trace_never_contains_request_history_or_search_text(caplog):
     import logging
     with caplog.at_level(logging.INFO):

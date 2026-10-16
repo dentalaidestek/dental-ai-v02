@@ -45,6 +45,7 @@ SCHEMA = {
         'reuse_previous_source': {'type': 'boolean'},
         'complete_sections': {'type': 'boolean'},
         'each_document': {'type': 'boolean'},
+        'export_previous_answer': {'type': 'boolean'},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
@@ -52,7 +53,14 @@ SCHEMA = {
 SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
 SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source', 'complete_sections', 'each_document'])
-SYSTEM = '''each_document is true when the user requests a representative topic, overview
+SCHEMA['required'].append('export_previous_answer')
+SYSTEM = '''export_previous_answer is true ONLY when the current request asks to export
+the immediately preceding assistant answer as a PDF without changing its content.
+Set output_format=pdf and operation=answer. The application will copy that completed answer exactly;
+no new factual answer, source search or content generation is needed. For any
+new content, correction, changed question count, translation, or edited table,
+export_previous_answer=false. For text output it must always be false.
+each_document is true when the user requests a representative topic, overview
 or study target from EACH uploaded document. File count and output format are
 not source_subjects. If no clinical subject is specified, source_subjects=[]
 and scope=course. Do not reuse the previous clinical topic for a new per-file
@@ -206,6 +214,7 @@ class StudyRequest:
     reuse_previous_source: bool = False
     complete_sections: bool = True
     each_document: bool = False
+    export_previous_answer: bool = False
 
 
 @dataclass(frozen=True)
@@ -265,6 +274,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('reuse_previous_source', False)
         data.setdefault('each_document', False)
         data.setdefault('complete_sections', True)  # Compatibility with older contracts.
+        data.setdefault('export_previous_answer', False)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -272,6 +282,9 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         raise PlannerContractError('invalid operation/scope')
     if data['output_format'] not in ('text', 'pdf'):
         raise PlannerContractError('invalid output format')
+    if (type(data['export_previous_answer']) is not bool or
+            (data['export_previous_answer'] and (data['output_format'] != 'pdf' or data['operation'] != 'answer'))):
+        raise PlannerContractError('invalid previous answer export')
     for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text')
@@ -319,7 +332,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -435,7 +448,15 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.operation != 'clarify' and plan.each_document and not plan.source_subjects and not (plan.source_files or plan.source_pages):
+    if plan.operation != 'clarify' and plan.export_previous_answer:
+        previous = next((str(item.get('content') or '') for item in
+            reversed(kwargs.get('recent_history') or [])
+            if str(item.get('role','')).upper() == 'ASSISTANT' and str(item.get('content') or '').strip()), '')
+        result = RetrievalResult(resolved_query=plan.resolved_query,
+            retrieval_mode='previous_answer_pdf', prepared_answer=previous,
+            evidence_sufficient=bool(previous),
+            clarification='' if previous else 'PDF’ye aktarılacak önceki bir yanıt bulunamadı.')
+    elif plan.operation != 'clarify' and plan.each_document and not plan.source_subjects and not (plan.source_files or plan.source_pages):
         from app.academic_document_samples import retrieve_document_samples
         result = retrieve_document_samples(session, request_plan=plan, **kwargs)
     elif plan.operation != 'clarify' and (plan.source_files or plan.source_pages or plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (

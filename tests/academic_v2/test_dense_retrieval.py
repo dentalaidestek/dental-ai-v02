@@ -19,7 +19,8 @@ def dependencies(monkeypatch, totals, *, scans=0):
     state={'closed':False}
     session=Mock()
     session.get_bind.return_value.dialect.name='postgresql'
-    session.exec.side_effect=[Mock(first=Mock(return_value=totals)),Mock(first=Mock(return_value=(scans,)))]
+    session.exec.side_effect=[Mock(first=Mock(return_value=(1,) if totals[2] else None)),
+        Mock(first=Mock(return_value=totals)),Mock(first=Mock(return_value=(scans,)))]
     @contextmanager
     def factory():
         try:yield session
@@ -42,6 +43,21 @@ def test_no_ready_vectors_or_small_context_makes_no_paid_call(monkeypatch,totals
     assert prepare_query_embedding(understanding(),session_factory=factory,owner_user_id=17,course_id=23) is None
     assert state['closed']
     constructor.assert_not_called()
+    if not totals[2]:
+        assert session.exec.call_count==1
+        sql=str(session.exec.call_args.args[0])
+        assert 'length(' not in sql and 'text_content' not in sql
+
+
+def test_fts_only_course_does_not_scan_bodies_or_open_a_provider(monkeypatch):
+    session,factory,state=dependencies(monkeypatch,(50000,90000000,0))
+    assert prepare_query_embedding(understanding(),session_factory=factory,owner_user_id=17,course_id=23) is None
+    assert session.exec.call_count==1
+    query=str(session.exec.call_args.args[0])
+    assert "m.active_index_version=c.index_version" in query
+    assert "m.deleted_at IS NULL" in query and "pending.index_version=c.index_version" in query
+    assert 'LIMIT 1' in query and 'text_content' not in query
+    assert state['closed']
 
 
 def test_one_embedding_request_runs_after_preflight_transaction_closes(monkeypatch):
