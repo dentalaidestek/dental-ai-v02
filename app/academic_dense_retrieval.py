@@ -26,7 +26,7 @@ class QueryEmbedding:
 
 def prepare_query_embedding(understanding, *, session_factory, owner_user_id, course_id):
     plan=getattr(understanding,'plan',None)
-    if not plan or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
+    if not plan or getattr(plan,'export_previous_answer',False) or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
         return None
     from app.study_provider import GeminiStudyProvider, get_embedding_target, get_embedding_dimensions, target_available
     target=get_embedding_target()
@@ -36,6 +36,28 @@ def prepare_query_embedding(understanding, *, session_factory, owner_user_id, co
     domain="c.content_kind <> 'QUESTION'" if plan.source_kind=='notes' else "TRUE"
     with session_factory() as session:
         if session.get_bind().dialect.name!='postgresql':
+            return None
+        # Most newly indexed courses are FTS-only. Establish vector readiness
+        # using metadata before measuring any chunk bodies across the course.
+        ready=session.exec(text(f'''SELECT 1
+            FROM studyindexchunk c JOIN studymaterial m
+              ON m.id=c.material_id AND m.owner_user_id=c.owner_user_id
+             AND m.course_id=c.course_id AND m.active_index_version=c.index_version
+            WHERE c.owner_user_id=:owner AND c.course_id=:course AND {domain}
+              AND m.index_status='READY' AND m.deleted_at IS NULL
+              AND c.embedding_array IS NOT NULL
+              AND c.embedding_provider=:provider AND c.embedding_model=:model
+              AND c.embedding_dimensions=:dimensions
+              AND NOT EXISTS (SELECT 1 FROM studyindexchunk pending
+                WHERE pending.material_id=c.material_id AND pending.owner_user_id=c.owner_user_id
+                  AND pending.course_id=c.course_id AND pending.index_version=c.index_version
+                  AND (pending.embedding_array IS NULL
+                       OR pending.embedding_provider IS DISTINCT FROM :provider
+                       OR pending.embedding_model IS DISTINCT FROM :model
+                       OR pending.embedding_dimensions IS DISTINCT FROM :dimensions))
+            LIMIT 1'''),params={'owner':owner_user_id,'course':course_id,
+                'provider':target.provider,'model':target.model,'dimensions':dimensions}).first()
+        if not ready:
             return None
         totals=session.exec(text(f'''SELECT COUNT(*),
             COALESCE(SUM(length(coalesce(c.text_content,''))+length(coalesce(c.section_title,''))+200),0),

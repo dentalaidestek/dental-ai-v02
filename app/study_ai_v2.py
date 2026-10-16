@@ -509,6 +509,10 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
+    if retrieval.retrieval_mode == 'previous_answer_pdf' and retrieval.prepared_answer:
+        logger.info('Academic flow trace=%s stage=response origin=previous_answer_pdf', trace_id)
+        yield retrieval.prepared_answer
+        return
     if retrieval.retrieval_mode == 'interpretation_unavailable':
         # A failed planner is a failed request, not a completed assistant
         # answer. Raising before output keeps both endpoints from persisting

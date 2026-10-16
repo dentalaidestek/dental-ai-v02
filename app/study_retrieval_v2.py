@@ -214,6 +214,8 @@ class RetrievalResult:
     source_batches: list = field(default_factory=list)
     ocr_reading_hints: list[dict] = field(default_factory=list)
     batch_materializer: object = None
+    # Server-owned completed answer, only for an explicit unchanged PDF export.
+    prepared_answer: str = ''
 
 
 @dataclass(frozen=True)
