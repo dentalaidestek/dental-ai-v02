@@ -5,7 +5,10 @@ import unicodedata
 from collections import defaultdict
 from difflib import SequenceMatcher
 
-INVENTORY_SCHEMA = {'type':'object','properties':{'questions':{'type':'array','maxItems':160,
+# Keep the provider grammar small. The owned-record validator below enforces
+# the 160-record budget; expanding a large bounded array in the remote grammar
+# is unnecessary and can make otherwise valid structured requests fail.
+INVENTORY_SCHEMA = {'type':'object','properties':{'questions':{'type':'array',
     'items':{'type':'object','properties':{
         'material_id':{'type':'integer'},'page':{'type':'integer'},
         'number':{'type':'string'},'text':{'type':'string'},'topic':{'type':'string'}},
