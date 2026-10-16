@@ -7,6 +7,16 @@ from app.academic_request_understanding import StudyRequest, UnderstandingResult
 from app.academic_semantic_retrieval import retrieve_semantic_context
 
 
+def test_academic_generation_model_can_change_without_adding_a_fallback_chain(monkeypatch):
+    from app.study_ai_v2 import _generation_targets
+    monkeypatch.setenv('STUDY_ACADEMIC_GENERATION_MODEL','gemini-3.1-flash-lite')
+    targets=_generation_targets()
+    assert [(target.provider,target.model) for target in targets]==[('gemini','gemini-3.1-flash-lite')]
+    monkeypatch.setenv('STUDY_ACADEMIC_GENERATION_MODEL','other:gemini-x,gemini-y')
+    with pytest.raises(Exception,match='model ayarı'):
+        _generation_targets()
+
+
 def row(ident, body, kind='TEXT'):
     return (ident, 1, 'note', ident, ident, None, kind, body, 1, .2, None, None, .2, ident, '{}')
 
