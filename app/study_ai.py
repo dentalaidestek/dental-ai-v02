@@ -78,7 +78,7 @@ def study_provider_error_for_user(exc: StudyProviderError) -> StudyAIError:
     """Preserve diagnostics in logs while exposing only actionable copy."""
     if exc.code == 429:
         message = "Akademik AI şu anda yoğun. Kısa süre sonra tekrar deneyin."
-    elif exc.code in {500, 502, 503, 504}:
+    elif exc.code in {500, 502, 503, 504, 529}:
         message = "Akademik AI yanıtını sağlayan servis geçici olarak kullanılamıyor. Kısa süre sonra mesajını yeniden gönderebilirsin."
     elif exc.code in {401, 403}:
         message = "Akademik AI bağlantısı şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin."

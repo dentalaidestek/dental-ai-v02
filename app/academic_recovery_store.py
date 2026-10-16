@@ -26,8 +26,9 @@ def recover_course_context(*, session_factory, owner_user_id: int, course_id: in
                            question: str, history: list[dict], initial):
     if initial.clarification or initial.evidence_sufficient or getattr(initial, "semantic_planner_attempted", False):
         return initial
-    from app.study_ai_v2 import ACADEMIC_V2_MODEL
-    from app.study_provider import GeminiStudyProvider, ProviderTarget, target_available
+    from copy import copy
+    from app.academic_provider_config import academic_target
+    from app.study_provider import get_provider, target_available
     from app.study_retrieval_v2 import retrieve_course_context_v2
 
     def load_catalog():
@@ -54,17 +55,19 @@ def recover_course_context(*, session_factory, owner_user_id: int, course_id: in
                     for row in rows]
 
     def plan_call(prompt):
-        target = ProviderTarget("gemini", ACADEMIC_V2_MODEL)
+        target = academic_target('planner')
         if not target_available(target):
             return None
         # Dedicated adapter: never alter the cached generation provider's
         # timeout/retries. One transport attempt, small output, no retry chain.
-        provider = GeminiStudyProvider()
+        provider = copy(get_provider(target.provider))
+        provider.capacity_retry = False
+        provider.response_schema = None
         provider.timeout = 4
         provider.max_attempts = 1
         if not provider.api_key:
             return None
-        return provider.generate(model=ACADEMIC_V2_MODEL,
+        return provider.generate(model=target.model,
             system_prompt=PLANNER_SYSTEM, history=[], prompt=prompt,
             temperature=0, max_output_tokens=700)
 

@@ -84,10 +84,11 @@ açıklayıcı parantez veya anatomik ayrıntı ekleme.
 
 def _generation_targets() -> list[ProviderTarget]:
     """Academic V2 uses exactly one generation provider/model; no fallback chain."""
-    model=(os.getenv('STUDY_ACADEMIC_GENERATION_MODEL') or ACADEMIC_V2_MODEL).strip()
-    if not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}',model):
-        raise StudyAIError('Akademik AI model ayarı geçersiz.')
-    return [ProviderTarget("gemini", model)]
+    from app.academic_provider_config import academic_target
+    try:
+        return [academic_target('generation')]
+    except StudyProviderError as exc:
+        raise StudyAIError(str(exc)) from exc
 
 
 def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
@@ -283,7 +284,7 @@ class _SourceRecoveryBudget:
         cause = error.__cause__
         if pieces or not isinstance(cause, StudyProviderError) or not cause.retryable:
             return False
-        if cause.code not in {None, 408, 500, 502, 503, 504}:
+        if cause.code not in {None, 408, 500, 502, 503, 504, 529}:
             return False
         if cause.code is None and not isinstance(cause.__cause__, (TimeoutError, urllib.error.URLError)):
             return False
@@ -578,7 +579,8 @@ def stream_rag_v2(
         try:
             provider = get_provider(target.provider)
             from app.study_provider import GeminiStudyProvider
-            if isinstance(provider, GeminiStudyProvider):
+            from app.study_anthropic import AnthropicStudyProvider
+            if isinstance(provider, (GeminiStudyProvider, AnthropicStudyProvider)):
                 from copy import copy
                 provider = copy(provider)  # Isolate finish state between concurrent sections.
                 # Section extraction has its own shared recovery budget. Only
