@@ -24,7 +24,7 @@ class SectionEvidenceRows(list):
     """Complete named-section rows, requiring coverage rather than top-k."""
 
 
-def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit, source_sections=()):
+def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, limit, source_sections=(), expand_related=True):
     """Keep Gemini's independent subjects balanced while following source links."""
     # Lexical search also returns exam questions. The section graph and its
     # hydrator both exclude them: use the same candidate domain before ranking
@@ -58,6 +58,11 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
         if set(ids) != {int(row[0]) for row in hydrated}:
             raise ValueError('source generation changed during section retrieval')
         return SectionEvidenceRows(hydrated)
+    if not expand_related:
+        # A specific fact/comparison does not request neighboring concepts.
+        # Keep the strongest literal pool for each Gemini-selected subject;
+        # complete named sections above still retain all their descendants.
+        return _balanced_candidates(rows, searches, limit, best_match_only=True)
     if not any(source_nodes(row) or row[5] and len(str(row[5]).strip()) >= 6
                for group in seeds for row in group):
         return _balanced_candidates(rows, searches, limit)
@@ -110,7 +115,7 @@ def _linked_candidates(session, rows, searches, *, owner_user_id, course_id, lim
     return selected
 
 
-def _balanced_candidates(rows, phrases, limit, *, allow_unmatched=True):
+def _balanced_candidates(rows, phrases, limit, *, allow_unmatched=True, best_match_only=False):
     """Round-robin lexical pools so a frequent search cannot crowd out another."""
     def terms(value):
         return set(re.findall(r'[^\W_]+', value.casefold()))
@@ -124,6 +129,8 @@ def _balanced_candidates(rows, phrases, limit, *, allow_unmatched=True):
             if overlap:
                 scored.append((overlap / max(1, len(wanted)), row))
         scored.sort(key=lambda item: -item[0])
+        if best_match_only and scored:
+            scored = [item for item in scored if item[0] == scored[0][0]]
         pools.append([item[1] for item in scored])
     selected, seen = [], set()
     for offset in range(len(rows)):
@@ -229,13 +236,18 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 owner_user_id=owner_user_id,course_id=course_id,
                 searches=request_plan.source_subjects or request_plan.retrieval_queries)
         ranked_rows=rows
+        native_ids={int(row[0]) for row in native_matches}
+        # Recovered complete native pages must participate in lexical selection,
+        # not arrive only after generic "point/angle" matches expanded a graph.
+        selection_rows=[*native_matches,*(row for row in rows if int(row[0]) not in native_ids)]
         # Literal subject matches recover missing labels, but do not prove that
         # two matching pages cover a whole subject or all requested list items.
         # Retain the independently ranked/section-linked evidence as well.
         rows = (_balanced_candidates(rows, searches, limit)
                 if request_plan.source_kind == 'questions' else
-                _linked_candidates(session, rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
-                                   course_id=course_id, limit=limit,source_sections=request_plan.source_sections))
+                _linked_candidates(session, selection_rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
+                                   course_id=course_id, limit=limit,source_sections=request_plan.source_sections,
+                                   expand_related=request_plan.complete_sections or request_plan.depth=='detailed'))
         ids={int(row[0]) for row in native_matches}
         rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
         if query_embedding:

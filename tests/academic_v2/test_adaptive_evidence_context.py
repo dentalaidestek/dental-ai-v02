@@ -122,3 +122,39 @@ def test_named_subsection_boundary_prevents_whole_course_expansion(monkeypatch):
     result=module.retrieve_semantic_context(session,owner_user_id=17,course_id=23,
         query=plan.resolved_query,request_plan=plan,prefer_full_context=True)
     assert [item.chunk_id for item in result.evidence]==[1]
+
+
+def test_specific_native_definition_does_not_expand_generic_point_matches(monkeypatch):
+    import app.academic_semantic_retrieval as module
+    def row(ident,title,body):
+        return (ident,1,'note',ident,ident,title,'TEXT',body,None,None,None,None,1,ident,'{}')
+    generic=row(2,'Başka noktalar','Başka noktası açıklaması')
+    native=row(33,'Old header','Gonion noktası\nKaynakta bulunan tam tanım.')
+    links=Mock()
+    links.named_section_ids.return_value=[]
+    links.selected_section_ids.return_value=[]
+    links.focus_nodes.side_effect=AssertionError('specific fact must not expand ontology')
+    monkeypatch.setattr(module,'get_course_links',lambda *a,**k:links)
+    monkeypatch.setattr(module,'_fts_rows',Mock(return_value=[generic]))
+    monkeypatch.setattr('app.academic_native_evidence.matching_native_pages',Mock(return_value=([native],True)))
+    monkeypatch.setattr('app.academic_native_evidence.selected_native_pages',Mock(return_value={}))
+    plan=StudyRequest('Gonion noktası nedir?','answer','topic',None,None,'',('Gonion noktası',),
+                      source_subjects=('Gonion noktası',),complete_sections=False)
+    session=Mock();session.get_bind.return_value.dialect.name='postgresql'
+    session.exec.return_value.all.return_value=[]
+    result=module.retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert [item.chunk_id for item in result.evidence]==[33]
+    assert not result.attachments and not result.visual_sources
+
+
+def test_strongest_subject_pools_remain_balanced_for_comparison():
+    from app.academic_semantic_retrieval import _balanced_candidates
+    rows=[(1,None,None,None,None,'Gonion noktası',None,'Definition A'),
+          (2,None,None,None,None,'Başka noktası',None,'Unrequested'),
+          (3,None,None,None,None,'Basion noktası',None,'Definition B')]
+    assert _balanced_candidates(rows,('Gonion noktası','Basion noktası'),16,
+                                best_match_only=True)==[rows[0],rows[2]]
+    # An inflected form with no literal match keeps SQL-ranked candidates;
+    # lexical normalization is not proof that the source is absent.
+    assert _balanced_candidates(rows[:1],('Gonionun',),16,best_match_only=True)==rows[:1]
