@@ -5041,7 +5041,7 @@ def study_ai_ask(
                 .order_by(StudyChatMessage.id.desc()).limit(8)
             ).all()
             history = [
-                {"role": row.role, "content": row.content}
+                {"role": row.role, "content": row.content, "id": row.id, "mode": row.mode}
                 for row in reversed(history_rows)
             ]
 
@@ -5081,6 +5081,7 @@ def study_ai_ask(
                 rag_result = retrieve_understood_course_context(
                     retrieval_session,
                     understanding=understanding,
+                    message_model=StudyChatMessage,
                     query_embedding=query_embedding,
                     owner_user_id=user.id,
                     course_id=course_id,
@@ -5259,7 +5260,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             .where(StudyChatMessage.owner_user_id == user.id)
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
-        history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
+        history = [{"role": row.role, "content": row.content, "id": row.id, "mode": row.mode} for row in reversed(history_rows)]
         source_versions = _study_source_versions(s, user.id, course_id)
         from app.academic_quiz import restore_quizzes, pack_evidence
         restore_quizzes(history, list(reversed(history_rows)), source_versions)
@@ -5278,7 +5279,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 retrieval = retrieve_understood_course_context(
-                    retrieval_session, understanding=understanding,
+                    retrieval_session, understanding=understanding, message_model=StudyChatMessage,
                     query_embedding=query_embedding,
                     owner_user_id=user.id, course_id=course_id,
                     query=clean_message, recent_history=history,
