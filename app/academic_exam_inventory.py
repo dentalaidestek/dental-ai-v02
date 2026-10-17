@@ -16,7 +16,7 @@ INVENTORY_SCHEMA = {'type':'object','properties':{'questions':{'type':'array',
     'required':['questions'],'additionalProperties':False}
 
 
-def parse_inventory(raw, evidence, primary_pages=(), *, rejected=None):
+def parse_inventory(raw, evidence, primary_pages=(), *, rejected=None, topic_labels=(), strict_topics=False):
     raw=re.sub(r'<!--ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+-->','',raw).strip()
     data=json.loads(raw)
     if not isinstance(data,dict) or set(data)!={'questions'} or not isinstance(data['questions'],list) or len(data['questions'])>160:
@@ -47,6 +47,9 @@ def parse_inventory(raw, evidence, primary_pages=(), *, rejected=None):
         # Unreadable question text cannot substantiate a frequency count.
         if re.search(r'\[(?:okunamadı|okunamadi|illegible)\]',item['text'],re.I):
             continue
+        if topic_labels or strict_topics:
+            labels={_key(label):label for label in topic_labels}
+            item={**item,'topic':labels.get(_key(item['topic']),'Sınıflandırılamayan sorular')}
         records.append({**item,'filename':allowed[key]})
     return records
 
@@ -81,8 +84,11 @@ def render_inventory(records, count=None, *, excluded=0):
     unique=unique_inventory(records)
     if not unique:
         return 'Kaynak sayfalarında sayılabilir ve okunabilir bir soru envanteri doğrulayamadım; konu sıklığı sıralaması vermiyorum.'
+    unclassified=[q for q in unique if _key(q['topic'])==_key('Sınıflandırılamayan sorular')]
     groups=defaultdict(list)
     for item in unique:
+        if item in unclassified:
+            continue
         groups[_key(item['topic'])].append(item)
     groups=sorted(groups.values(),key=lambda items:(-len(items),items[0]['topic'].casefold()))
     top=groups[:count if type(count) is int else 10]
@@ -90,6 +96,8 @@ def render_inventory(records, count=None, *, excluded=0):
         return ' '.join(str(value).split()).replace('|','\\|')
     lines=[f'Okunabilen {len(unique)} benzersiz soru kaydı sayıldı; {len(records)-len(unique)} kopya kayıt birleştirildi.',
            '', '| Konu | Benzersiz soru | Kaynaklar |','| --- | --- | --- |']
+    if unclassified:
+        lines.insert(1,f'{len(unclassified)} soru ortak konu sözlüğüne eşleştirilemedi; sıralamaya alınmadı. Sıralama tam konu dağılımını göstermeyebilir.')
     if excluded:
         lines.insert(1,f'{excluded} kayıt kaynak sayfasıyla eşleşmediği için sayılmadı. Bu sonuç eksiksiz bir sınav dökümü değildir.')
     for items in top:

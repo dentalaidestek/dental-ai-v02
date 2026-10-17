@@ -253,6 +253,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 _linked_candidates(session, selection_rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit,source_sections=request_plan.source_sections,
                                    expand_related=request_plan.complete_sections or request_plan.depth=='detailed'))
+        section_ids={int(row[0]) for row in rows} if isinstance(rows,SectionEvidenceRows) else set()
         ids={int(row[0]) for row in native_matches}
         rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
         if query_embedding:
@@ -263,6 +264,11 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             from app.study_retrieval_v2 import _question_page_context_rows
             rows = _question_page_context_rows(session, owner_user_id=owner_user_id,
                 course_id=course_id, seeds=rows)
+        if section_ids and request_plan.complete_sections:
+            vocabulary=get_course_links(session,owner_user_id=owner_user_id,course_id=course_id)
+            selections=(list(request_plan.source_sections) or list(request_plan.source_subjects or searches))
+            fully_named=all(vocabulary.selected_section_ids((heading,)) or vocabulary.named_section_ids(heading) for heading in selections)
+            result.study_task['requested_sections_complete']=bool(fully_named and section_ids<={int(row[0]) for row in rows})
         result.retrieval_mode = 'hybrid_candidates' if result.used_semantic_search else 'lexical_candidates'
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)

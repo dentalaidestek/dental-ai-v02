@@ -149,6 +149,8 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
          "Her dosya için ayrı satır oluştur. Bir dosyanın konusunu doğrulayamıyorsan dosyayı "
          "yok sayma; satırında konu doğrulanamadı de.\n\n"
          if retrieval.study_task.get('document_sample') else "")
+        + ("BAŞLIK KAPSAMI: İstenen adlandırılmış başlıkların yayımlanmış indeksteki bütün kayıtları verildi. Dersin tamamının verilmemesinden bu başlıkların eksik olduğunu çıkarma. Okunamayan metni ayrıca belirt; sırf kapsam uyarısı nedeniyle desteklenen listeye varsayımsal eksik öğeler ekleme.\n\n"
+           if retrieval.study_task.get('requested_sections_complete') else "")
         + "İSTEĞİ YERİNE GETİR:\n"
         f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
         "Bu turun görevi KULLANICININ ÖZGÜN MESAJI'dır. Önceki konuşma yalnız gerçek "
@@ -350,6 +352,7 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                          and operation != 'generate_questions')
             if inventory:
                 task['inventory_output'] = True
+                task['exam_topics'] = retrieval.study_task.get('exam_topics',[])
                 request = (f'Kullanıcı isteği: {question}\n'
                     'Bu bölümdeki okunabilen gerçek soruları JSON questions dizisine kaydet. '
                     'Her kayıt material_id, page, number, text, topic alanlarını içersin. '
@@ -360,6 +363,8 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                     'Soru başlangıç sayfalarına uy. Başka dosya/sayfa veya soru uydurma. '
                     'Okunamayan, eksik metinli soruları kaydetme. Soru yoksa questions boş dizi olsun. '
                     'Henüz sıklık sayma, grupları sıralama veya kullanıcıya açıklama yazma.')
+            if inventory and task.get('exam_topics'):
+                request += '\nORTAK KONU SÖZLÜĞÜ: '+json.dumps(task['exam_topics'],ensure_ascii=False)+'. topic yalnız bu başlıklardan biri olsun; ayrıntıları yeni konu etiketi yapma. Eşleşmeyen topic için Sınıflandırılamayan sorular yaz.'
             task['batch_partial'] = True
             prepared_child = replace(child, study_task=task, resolved_query=request,
                                      semantic_trace_id=retrieval.semantic_trace_id)
@@ -382,7 +387,9 @@ def _extract_source_batch(course_title, question, history, retrieval, child, syn
                 try:
                     rejected=[]
                     records = parse_inventory(output, child.evidence,
-                        child.study_task.get('question_start_pages', ()),rejected=rejected)
+                        child.study_task.get('question_start_pages', ()),rejected=rejected,
+                        topic_labels=retrieval.study_task.get('exam_topics',()),
+                        strict_topics='exam_topics' in retrieval.study_task)
                 except (ValueError, TypeError, KeyError) as exc:
                     known={'invalid inventory','invalid question record','invalid source reference',
                            'question outside selected start pages','invalid inventory field'}
@@ -452,6 +459,20 @@ def _source_batch_outputs(course_title, question, history, retrieval, synthesize
 
 def _stream_source_batches(course_title, question, history, retrieval):
     operation = retrieval.study_task.get('operation')
+    # A single complete text batch already fits the normal generation budget.
+    # Preserve its original evidence rather than paying to summarize it first.
+    if (len(retrieval.source_batches)==1
+            and retrieval.study_task.get('source_kind','notes')=='notes'
+            and not retrieval.source_batches[0].visual_sources
+            and not retrieval.source_batches[0].attachments):
+        from dataclasses import replace
+        child=retrieval.source_batches[0]
+        direct=replace(child,study_task={**child.study_task,**retrieval.study_task},
+            resolved_query=retrieval.resolved_query,semantic_trace_id=retrieval.semantic_trace_id,
+            source_coverage_complete=retrieval.source_coverage_complete)
+        yield from stream_rag_v2(course_title,question,history,direct)
+        retrieval.generated_quiz=direct.generated_quiz
+        return
     outputs = []
     synthesis_chars = 0
     source_questions = retrieval.study_task.get('source_kind') == 'questions'
@@ -501,6 +522,7 @@ def _stream_source_batches(course_title, question, history, retrieval):
         if sum(len(text) for text in reduced.note_context) > 240000:
             raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
         yield from stream_rag_v2(course_title, question, history, reduced)
+        retrieval.generated_quiz = reduced.generated_quiz
     from app.academic_direct_request import source_marker
     if 'retrieval_queries' in retrieval.study_task:
         yield '\n' + source_marker(retrieval.study_task)
@@ -513,8 +535,8 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
-    if retrieval.retrieval_mode == 'previous_answer_pdf' and retrieval.prepared_answer:
-        logger.info('Academic flow trace=%s stage=response origin=previous_answer_pdf', trace_id)
+    if retrieval.retrieval_mode in {'previous_answer_pdf', 'generated_quiz_grade'} and retrieval.prepared_answer:
+        logger.info('Academic flow trace=%s stage=response origin=%s', trace_id, retrieval.retrieval_mode)
         yield retrieval.prepared_answer
         return
     if retrieval.retrieval_mode == 'interpretation_unavailable':
@@ -612,6 +634,12 @@ def stream_rag_v2(
                 from app.academic_exam_inventory import INVENTORY_SCHEMA
                 generation_options['response_schema'] = INVENTORY_SCHEMA
             checked_set = retrieval.study_task.get('operation') == 'generate_questions'
+            structured_quiz = checked_set and retrieval.study_task.get('quiz_contract') and not retrieval.study_task.get('batch_partial')
+            if structured_quiz:
+                from app.academic_quiz import QUIZ_SCHEMA, CONTRACT_PROMPT
+                generation_options['response_schema'] = QUIZ_SCHEMA
+                prompt += CONTRACT_PROMPT
+                prompt += '\nÖnceki setlerin fact kayıtları: ' + json.dumps([q['fact'] for h in history for q in (h.get('quiz') or {}).get('questions',[])], ensure_ascii=False)
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
                 and not retrieval.study_task.get('batch_partial'))
@@ -648,7 +676,29 @@ def stream_rag_v2(
                 raise StudyAIError('Yanıt uzunluk sınırına ulaştığı için tamamlanamadı. İsteği daha küçük konu gruplarına ayırarak tekrar gönderin.')
             if checked_set:
                 answer = ''.join(pieces)
+                if structured_quiz:
+                    from app.academic_quiz import parse_quiz, render_quiz
+                    try:
+                        quiz=parse_quiz(answer,retrieval.study_task.get('count'),history,retrieval.evidence)
+                    except (ValueError,TypeError,KeyError) as exc:
+                        # One bounded repair reuses evidence; no rejected set is emitted.
+                        logger.info('Academic quiz validation trace=%s repair=1 reason=%s',trace_id,type(exc).__name__)
+                        repair_prompt=prompt+'\nÖnceki JSON seti doğrulanamadı. Kök-şık-anahtar uyumunu, adedi, tekrar ve cevap sızıntısını düzelt.\n'+answer
+                        repaired=''.join(provider.generate_stream(model=target.model,system_prompt=V2_SYSTEM_PROMPT,
+                            history=[],prompt=repair_prompt,attachments=generation_attachments,temperature=0.22,
+                            max_output_tokens=output_budget,**generation_options))
+                        if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
+                            raise StudyAIError('Soru seti uzunluk sınırında kaldı; set kaydedilmedi.')
+                        try:
+                            quiz=parse_quiz(repaired,retrieval.study_task.get('count'),history,retrieval.evidence)
+                        except (ValueError,TypeError,KeyError) as final_exc:
+                            raise StudyAIError('Soru setinin anahtar veya tekrar kontrolü tamamlanamadı; set kaydedilmedi.') from final_exc
+                    retrieval.generated_quiz=quiz
+                    answer=render_quiz(quiz,retrieval.study_task.get('show_quiz_answers',False))
                 issues = question_set_issues(answer, retrieval.study_task.get('count'), history)
+                if issues and structured_quiz:
+                    retrieval.generated_quiz=None
+                    raise StudyAIError('Soru seti adet veya tekrar kontrolünü geçemedi; set kaydedilmedi.')
                 if issues:
                     # Only a malformed/repeated set needs one correction call.
                     # Reuse exactly the same source evidence; never retry forever

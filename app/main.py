@@ -5061,6 +5061,8 @@ def study_ai_ask(
             # transaction. Retrieval gets its own short-lived session instead of
             # silently reopening this closed request session.
             source_versions = _study_source_versions(s, user.id, course_id)
+            from app.academic_quiz import restore_quizzes, pack_evidence
+            restore_quizzes(history, list(reversed(history_rows)), source_versions)
             course_title = course.title
             from app.academic_chunk_links import planner_source_outline
             source_outline = planner_source_outline(s, owner_user_id=user.id,
@@ -5167,7 +5169,8 @@ def study_ai_ask(
                     role="ASSISTANT",
                     content=answer,
                     source_ids_json=source_json,
-                    source_evidence_json=evidence_json,
+                    source_evidence_json=pack_evidence(
+                        evidence_json, getattr(rag_result,'generated_quiz',None), answer, source_versions),
                     mode="RAG_V2_HYBRID_PDF" if export_pdf else "RAG_V2_HYBRID",
                 )
                 save_session.add(assistant_message)
@@ -5256,6 +5259,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         ).all())
         history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
         source_versions = _study_source_versions(s, user.id, course_id)
+        from app.academic_quiz import restore_quizzes, pack_evidence
+        restore_quizzes(history, list(reversed(history_rows)), source_versions)
         course_title = course.title
         from app.academic_chunk_links import planner_source_outline
         source_outline = planner_source_outline(s, owner_user_id=user.id,
@@ -5361,7 +5366,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                     role="ASSISTANT", content=answer,
                     source_ids_json=recovered_source_json,
                     mode="RAG_V2_HYBRID_STREAM_PDF" if export_pdf else "RAG_V2_HYBRID_STREAM",
-                    source_evidence_json=recovered_evidence_json,
+                    source_evidence_json=pack_evidence(
+                        recovered_evidence_json, getattr(prepared,'generated_quiz',None), answer, source_versions),
                 )
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()

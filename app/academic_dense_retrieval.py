@@ -25,6 +25,8 @@ class QueryEmbedding:
 
 
 def prepare_query_embedding(understanding, *, session_factory, owner_user_id, course_id):
+    if getattr(getattr(understanding,'plan',None),'grade_previous_set',False):
+        return None
     plan=getattr(understanding,'plan',None)
     if not plan or getattr(plan,'export_previous_answer',False) or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
         return None

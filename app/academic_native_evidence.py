@@ -45,8 +45,9 @@ def selected_native_pages(session, *, owner_user_id, course_id, evidence):
         key = (int(material), int(page))
         if key not in selected or not body or _question_page(body):
             continue
+        headings=list(dict.fromkeys(e.section_title for e in evidence if e.material_id==key[0] and e.page_start<=key[1]<=e.page_end and getattr(e,'section_title',None)))
         result[key] = (f'[KANIT_NATIVE material_id={key[0]} sayfa={key[1]} '
-                       f'dosya={json.dumps(name, ensure_ascii=False)} tür=PDF_TEXT]\n{body}')
+                       f'dosya={json.dumps(name, ensure_ascii=False)} tür=PDF_TEXT başlık={json.dumps(headings,ensure_ascii=False)}]\n{body}')
     return result
 
 
