@@ -474,6 +474,8 @@ def _stream_source_batches(course_title, question, history, retrieval):
             source_coverage_complete=retrieval.source_coverage_complete)
         yield from stream_rag_v2(course_title,question,history,direct)
         retrieval.generated_quiz=direct.generated_quiz
+        if direct.study_task.get('auto_pdf'):
+            retrieval.study_task['auto_pdf'] = True
         return
     if (retrieval.study_task.get('quick_action')
             and retrieval.study_task.get('source_kind','notes')=='notes'
@@ -489,6 +491,8 @@ def _stream_source_batches(course_title, question, history, retrieval):
                     retrieval.semantic_trace_id,len(retrieval.source_batches),len(contexts),sum(map(len,contexts)))
                 yield from stream_rag_v2(course_title,question,history,direct)
                 retrieval.generated_quiz=direct.generated_quiz
+                if direct.study_task.get('auto_pdf'):
+                    retrieval.study_task['auto_pdf'] = True
                 return
     outputs = []
     synthesis_chars = 0
@@ -540,6 +544,8 @@ def _stream_source_batches(course_title, question, history, retrieval):
             raise StudyAIError('Kaynak kapsamı tek yanıt için çok geniş. İstediğin konu gruplarını ayrı ayrı belirtir misin?')
         yield from stream_rag_v2(course_title, question, history, reduced)
         retrieval.generated_quiz = reduced.generated_quiz
+        if reduced.study_task.get('auto_pdf'):
+            retrieval.study_task['auto_pdf'] = True
     from app.academic_direct_request import source_marker
     if 'retrieval_queries' in retrieval.study_task:
         yield '\n' + source_marker(retrieval.study_task)
@@ -602,8 +608,8 @@ def stream_rag_v2(
         retrieval.source_coverage_complete,
     )
 
-    # Exactly one final-generation call; difficult failures may have spent one
-    # separate bounded planning call before reaching this function.
+    # One normal generation call. Token-limited prose alone may resume within
+    # a bounded completion budget, reusing the same evidence.
     for target in candidates:
         if attempted_api_calls >= 1:
             break
@@ -669,8 +675,9 @@ def stream_rag_v2(
                     retrieval.study_task.get('batch_partial')
                     or structured_quiz or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
                 output_budget = 16000
+            from app.academic_long_answer import stream_complete_answer, LongAnswerError
             pieces = []
-            for chunk in provider.generate_stream(
+            generation_call = dict(
                 model=target.model,
                 system_prompt=V2_SYSTEM_PROMPT,
                 # Older assistant prose is context data in the prompt, not
@@ -681,17 +688,20 @@ def stream_rag_v2(
                 temperature=0.22,
                 max_output_tokens=output_budget,
                 **generation_options,
-            ):
-                if chunk:
-                    emitted = True
-                    if checked_set or checked_source:
-                        pieces.append(chunk)
-                    else:
-                        yield chunk
-            if not emitted:
-                raise StudyProviderError("Akademik AI boş yanıt döndürdü.")
-            if getattr(provider, 'last_finish_reason', 'UNKNOWN') == 'MAX_TOKENS':
-                raise StudyAIError('Yanıt uzunluk sınırına ulaştığı için tamamlanamadı. İsteği daha küçük konu gruplarına ayırarak tekrar gönderin.')
+            )
+            try:
+                completed = stream_complete_answer(provider, generation_call, retrieval,
+                    allow_continuation=not generation_options.get('response_schema')
+                    and not retrieval.study_task.get('batch_partial'))
+                for chunk in completed:
+                    if chunk:
+                        emitted = True
+                        if checked_set or checked_source:
+                            pieces.append(chunk)
+                        else:
+                            yield chunk
+            except LongAnswerError as exc:
+                raise StudyAIError(str(exc)) from exc
             if checked_set:
                 answer = ''.join(pieces)
                 if structured_quiz:

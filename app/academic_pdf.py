@@ -15,7 +15,10 @@ class AcademicPDFError(ValueError):
     pass
 
 
-def pdf_requested(understanding, retrieval):
+def pdf_requested(understanding, retrieval, answer=''):
+    from app.academic_long_answer import automatic_pdf
+    if automatic_pdf(answer, retrieval):
+        return True
     plan = getattr(understanding, 'plan', None)
     return bool(plan and getattr(plan, 'output_format', 'text') == 'pdf' and plan.operation != 'clarify'
                 and retrieval.evidence_sufficient)
@@ -26,8 +29,9 @@ def pdf_filename(title):
     return (title or 'Ders notları') + '.pdf'
 
 
-def pdf_artifact(course_id, message_id, title):
+def pdf_artifact(course_id, message_id, title, *, automatic=False):
     return {'type': 'pdf', 'name': pdf_filename(title),
+            'reason': 'long_answer' if automatic else 'requested',
             'url': f'/notes/courses/{int(course_id)}/ai/messages/{int(message_id)}/pdf'}
 
 

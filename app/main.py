@@ -4883,7 +4883,7 @@ def study_answer_pdf(request: Request, course_id: int, message_id: int):
 
 def _prepare_study_pdf(course_title, answer, understanding, retrieval):
     from app.academic_pdf import pdf_requested, render_pdf
-    if not pdf_requested(understanding, retrieval):
+    if not pdf_requested(understanding, retrieval, answer):
         return False
     try:
         # Validate a real file before advertising its owned download resource.
@@ -5118,6 +5118,7 @@ def study_ai_ask(
                 history,
                 rag_result,
             )
+            from app.academic_long_answer import automatic_pdf
             export_pdf = _prepare_study_pdf(course_title, answer, understanding, rag_result)
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
@@ -5172,7 +5173,7 @@ def study_ai_ask(
                     source_ids_json=source_json,
                     source_evidence_json=pack_evidence(
                         evidence_json, getattr(rag_result,'generated_quiz',None), answer, source_versions),
-                    mode="RAG_V2_HYBRID_PDF" if export_pdf else "RAG_V2_HYBRID",
+                    mode=("RAG_V2_HYBRID_LONG_PDF" if automatic_pdf(answer, rag_result) else "RAG_V2_HYBRID_PDF") if export_pdf else "RAG_V2_HYBRID",
                 )
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
@@ -5180,7 +5181,7 @@ def study_ai_ask(
                 save_session.commit()
                 if export_pdf:
                     from app.academic_pdf import pdf_artifact
-                    artifact = pdf_artifact(course_id, assistant_message.id, course_title)
+                    artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, rag_result))
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
@@ -5324,7 +5325,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         try:
             prepared = retrieval
             from app.academic_pdf import pdf_requested, pdf_artifact
-            if pdf_requested(understanding, prepared):
+            pdf_announced = pdf_requested(understanding, prepared)
+            answer_chars = 0
+            if pdf_announced:
                 yield json.dumps({'type': 'format', 'format': 'pdf'}) + '\n'
             if prepared.visual_sources and prepared.evidence_sufficient and not prepared.attachments:
                 materialize_visual_sources(
@@ -5341,10 +5344,17 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 course_title, clean_message, history, prepared,
             ):
                 pieces.append(piece)
+                answer_chars += len(piece)
+                from app.academic_long_answer import AUTO_PDF_CHARS
+                if not pdf_announced and prepared.evidence_sufficient and (
+                        answer_chars >= AUTO_PDF_CHARS or prepared.study_task.get('auto_pdf')):
+                    pdf_announced = True
+                    yield json.dumps({'type': 'format', 'format': 'pdf'}) + '\n'
                 yield json.dumps({"type": "delta", "text": piece}, ensure_ascii=False) + "\n"
             answer = "".join(pieces).strip()
             if not answer:
                 raise StudyAIError("Akademik AI boş yanıt döndürdü.")
+            from app.academic_long_answer import automatic_pdf
             export_pdf = _prepare_study_pdf(course_title, answer, understanding, prepared)
             with Session(engine, expire_on_commit=False) as save_session:
                 live_course = save_session.exec(
@@ -5367,7 +5377,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="ASSISTANT", content=answer,
                     source_ids_json=recovered_source_json,
-                    mode="RAG_V2_HYBRID_STREAM_PDF" if export_pdf else "RAG_V2_HYBRID_STREAM",
+                    mode=("RAG_V2_HYBRID_STREAM_LONG_PDF" if automatic_pdf(answer, prepared) else "RAG_V2_HYBRID_STREAM_PDF") if export_pdf else "RAG_V2_HYBRID_STREAM",
                     source_evidence_json=pack_evidence(
                         recovered_evidence_json, getattr(prepared,'generated_quiz',None), answer, source_versions),
                 )
@@ -5375,7 +5385,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
-                artifact = pdf_artifact(course_id, assistant_message.id, course_title) if export_pdf else None
+                artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, prepared)) if export_pdf else None
             yield json.dumps({'type': 'done', **({'artifact': artifact} if artifact else {})}, ensure_ascii=False) + '\n'
         except GeneratorExit:
             # Client disconnected: incomplete answers are never persisted.

@@ -113,11 +113,30 @@ def test_question_transcription_is_not_forced_to_solve_or_create_questions(monke
 
 
 def test_token_limited_answer_is_never_reported_as_complete(monkeypatch):
-    value=provider(monkeypatch,['Soru 10: yarım'])
+    value=provider(monkeypatch,['Yarım bölüm '+str(i) for i in range(4)])
     value.last_finish_reason='MAX_TOKENS'
     result=RetrievalResult(note_context=['Source'],evidence_sufficient=True)
     with pytest.raises(StudyAIError,match='uzunluk sınırına'):
         ask_rag_v2('Course','Hepsini anlat',[],result)
+    assert value.generate_stream.call_count == 4
+
+
+def test_token_limited_prose_completes_before_pdf_is_offered(monkeypatch):
+    value=provider(monkeypatch,[])
+    def generate(**options):
+        if value.generate_stream.call_count == 1:
+            yield '## PERİODONTAL HAST'
+            value.last_finish_reason='MAX_TOKENS'
+        else:
+            yield 'ALIK\nKaynağa dayalı son bölüm. [Not s. 4]'
+            value.last_finish_reason='STOP'
+    value.generate_stream.side_effect=generate
+    result=RetrievalResult(note_context=['Source'],evidence_sufficient=True)
+    answer=ask_rag_v2('Course','Hepsini anlat',[],result)
+    assert 'PERİODONTAL HASTALIK' in answer and answer.endswith('[Not s. 4]')
+    from app.academic_pdf import pdf_requested
+    assert pdf_requested(None,result,answer)
+    assert value.generate_stream.call_count == 2
 
 
 @pytest.mark.parametrize('outcome', ['failed', 'unavailable', 'input_budget'])
