@@ -5065,7 +5065,8 @@ def study_ai_ask(
             restore_quizzes(history, list(reversed(history_rows)), source_versions)
             course_title = course.title
             from app.academic_chunk_links import planner_source_outline
-            source_outline = planner_source_outline(s, owner_user_id=user.id,
+            from app.academic_quick_actions import is_quick_action
+            source_outline = {} if is_quick_action(clean_message) else planner_source_outline(s, owner_user_id=user.id,
                 course_id=course_id, query=clean_message, history=history)
             s.close()
             # Language interpretation runs outside a DB transaction. It never
@@ -5263,7 +5264,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         restore_quizzes(history, list(reversed(history_rows)), source_versions)
         course_title = course.title
         from app.academic_chunk_links import planner_source_outline
-        source_outline = planner_source_outline(s, owner_user_id=user.id,
+        from app.academic_quick_actions import is_quick_action
+        source_outline = {} if is_quick_action(clean_message) else planner_source_outline(s, owner_user_id=user.id,
             course_id=course_id, query=clean_message, history=history)
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context

@@ -455,6 +455,12 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
 
 
 def understand_study_request(question: str, history: list[dict], *, source_outline=None) -> UnderstandingResult:
+    from app.academic_quick_actions import quick_action_plan
+    quick=quick_action_plan(question)
+    if quick is not None:
+        trace_id=uuid.uuid4().hex
+        logger.info('Academic flow trace=%s stage=plan provider=local_quick_action operation=%s scope=course searches=0',trace_id,quick.operation)
+        return UnderstandingResult(plan=quick,outcome='quick_action',trace_id=trace_id)
     from app.academic_direct_request import direct_request
     direct = (direct_request(question, history) if
               os.getenv('STUDY_ACADEMIC_LOCAL_ROUTING', '0').strip().lower() in {'1','true','yes'} else None)
@@ -541,6 +547,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
     else:
         result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=not bool(plan.source_subjects),
                                           query_embedding=query_embedding, **kwargs)
+    result.study_task['quick_action'] = understanding.outcome == 'quick_action'
     result.study_task['exam_topics'] = list(plan.exam_topics)
     if plan.operation == 'generate_questions':
         result.study_task['quiz_contract'] = True

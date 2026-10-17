@@ -221,13 +221,15 @@ class AnthropicStudyProvider(StudyProvider):
             raise StudyProviderError('Akademik AI sağlayıcı cevabı okunamadı.', tracked=True) from exc
         finally:
             elapsed = round((time.perf_counter()-started)*1000)
-            record_api_result(provider=self.name, model=model, operation='generation',
+            meta = record_api_result(provider=self.name, model=model, operation='generation',
                 success=success, status_code=code, latency_ms=elapsed,
-                response_headers=headers, response_json={'usage': usage} if success else None)
+                response_headers=headers, response_json={'usage': usage} if usage else None)
             logger.info('Academic provider timing provider=anthropic model=%s mode=%s '
-                        'total_ms=%s first_text_ms=%s finish=%s success=%s',
+                        'total_ms=%s first_text_ms=%s finish=%s success=%s input_tokens=%s output_tokens=%s',
                         model, 'stream' if payload['stream'] else 'json', elapsed,
-                        first_text_ms, self.last_finish_reason, success)
+                        first_text_ms, self.last_finish_reason, success,
+                        meta.get('prompt_tokens') if isinstance(meta,dict) else None,
+                        meta.get('output_tokens') if isinstance(meta,dict) else None)
 
     def _run(self, payload):
         emitted = False
