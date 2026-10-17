@@ -1,0 +1,54 @@
+{
+  "implementation_commit": "9072f4e648f161ec00c27e5fc5d3ce614191b29f",
+  "workflow_runs": [
+    {
+      "id": 39064952600,
+      "name": "Security recovery regression",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_number": 42,
+      "jobs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952600/jobs",
+      "logs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952600/logs",
+      "workflow_id": 379270026
+    },
+    {
+      "id": 39064952670,
+      "name": "Academic V2 CI",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_number": 1240,
+      "jobs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952670/jobs",
+      "logs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952670/logs",
+      "workflow_id": 372515500
+    },
+    {
+      "id": 39064952693,
+      "name": "Mobile Android CI",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_number": 509,
+      "jobs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952693/jobs",
+      "logs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952693/logs",
+      "workflow_id": 378157000
+    },
+    {
+      "id": 39064952701,
+      "name": "vision48-ci",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_number": 3191,
+      "jobs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952701/jobs",
+      "logs_url": "https://api.github.com/repos/dentalaidestek/dental-ai-v02/actions/runs/39064952701/logs",
+      "workflow_id": 356530094
+    }
+  ],
+  "checked_job": 117490522186,
+  "checked_steps": [],
+  "checked_logs": "404 BlobNotFound",
+  "reason": "Not available through current connector; do not infer billing, runner or code cause.",
+  "local_tests": {
+    "platform_passed": 210,
+    "academic_passed": 260,
+    "postgres_skipped": 14
+  }
+}

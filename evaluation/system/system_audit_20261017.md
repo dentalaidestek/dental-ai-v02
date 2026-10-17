@@ -44,6 +44,10 @@ Total: **470 passed, 14 skipped** across the two invocations. This is not the en
 
 Three modified Jinja templates and their embedded JavaScript pass syntax checking. The stream-render harness passes; the affected Python modules compile. The surface scanner emits no direct Session/open/storage calls in remaining async function bodies, but indirect calls, external dependencies and runtime behavior still require review; this scanner is not a security guarantee.
 
+## Remote CI status
+
+For implementation commit `9072f4e648f161ec00c27e5fc5d3ce614191b29f`, GitHub reports failure for Security recovery regression, Academic V2 CI, Mobile Android CI and vision48-ci. Job-step retrieval for the security job returns an empty list; downloading its logs returns 404 BlobNotFound. Runs complete within seconds. No remote tests are claimed passing. The available connector does not expose a definitive startup/runner/account explanation, so no billing or source-code cause is inferred and no workflow protection was disabled. See `ci_status_20261017.json`. This must be resolved before treating the PR as release-validated.
+
 ## Open items before a 60,000-user capacity claim
 
 | Priority | Remaining evidence/work | Why it is still open |
