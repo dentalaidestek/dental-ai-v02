@@ -79,13 +79,13 @@ def test_size_gate_reads_at_most_one_extra_row_in_sql(monkeypatch,count):
     engine.dispose()
 
 
-def test_large_scan_set_stays_on_query_retrieval(monkeypatch):
-    reader=Mock(side_effect=AssertionError('visual corpus hydration'))
+def test_many_ocr_pages_can_use_complete_bounded_text(monkeypatch):
+    rows=[(i,1,'note',i,i,'heading','TEXT','OCR definition',None,None,None,None,1,i,'{}') for i in range(1,22)]
+    reader=Mock(return_value=iter(rows))
     monkeypatch.setattr('app.academic_source_batches.load_owned_source_rows',reader)
-    session=Mock();session.exec.return_value.first.return_value=(5,1200)
-    session.exec.return_value.all.return_value=[(1,i) for i in range(1,6)]
-    assert small_note_context(session,owner_user_id=17,course_id=23) is None
-    reader.assert_not_called()
+    session=Mock();session.exec.return_value.first.return_value=(21,6000)
+    assert small_note_context(session,owner_user_id=17,course_id=23)==rows
+    assert session.exec.call_count==1  # No scan/page metadata lookup.
 
 
 def test_small_context_rejects_changed_generation(monkeypatch):

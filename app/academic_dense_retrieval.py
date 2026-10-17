@@ -80,18 +80,10 @@ def prepare_query_embedding(understanding, *, session_factory, owner_user_id, co
                 'model':target.model,'dimensions':dimensions}).first()
         if not totals or not int(totals[2]):
             return None
-        from app.academic_evidence_context import MAX_CONTEXT_ROWS, MAX_CONTEXT_CHARS, MAX_CONTEXT_SCAN_PAGES
+        from app.academic_evidence_context import MAX_CONTEXT_ROWS, MAX_CONTEXT_CHARS
         if (plan.source_kind=='notes' and not plan.needs_visual
                 and int(totals[0])<=MAX_CONTEXT_ROWS and int(totals[1])<=MAX_CONTEXT_CHARS):
-            scans=session.exec(text('''SELECT COUNT(*) FROM studyindexpage p JOIN studymaterial m
-                ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id
-               AND m.course_id=p.course_id AND m.active_index_version=p.index_version
-                WHERE p.owner_user_id=:owner AND p.course_id=:course
-                  AND m.index_status='READY' AND m.deleted_at IS NULL
-                  AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')'''),
-                params={'owner':owner_user_id,'course':course_id}).first()
-            if scans and int(scans[0])<=MAX_CONTEXT_SCAN_PAGES:
-                return None
+            return None
     # The short database session is closed before the external request.
     provider=GeminiStudyProvider()
     provider.max_attempts=1

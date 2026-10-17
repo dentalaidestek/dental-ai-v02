@@ -66,7 +66,9 @@ def _source_heading_rows(rows):
         # Prefer explicit page text; only a changed metadata path without a
         # printed heading supplies a new fallback section.
         changed_path = ' > ' in stored and stored != last_stored
-        if changed_path and not literal_structure:
+        printed_path = stored and ' > ' in stored and any(
+            line.strip() == stored for line in str(row[7] or '').splitlines())
+        if changed_path and (not literal_structure or printed_path):
             previous = stored
             consecutive = False
         last_stored = stored

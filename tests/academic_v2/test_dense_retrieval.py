@@ -60,6 +60,15 @@ def test_fts_only_course_does_not_scan_bodies_or_open_a_provider(monkeypatch):
     assert state['closed']
 
 
+def test_small_ocr_course_skips_embedding_and_scan_metadata(monkeypatch):
+    session,factory,state=dependencies(monkeypatch,(21,6000,21),scans=21)
+    constructor=Mock(side_effect=AssertionError('complete text does not need embedding'))
+    monkeypatch.setattr('app.study_provider.GeminiStudyProvider',constructor)
+    assert prepare_query_embedding(understanding(),session_factory=factory,owner_user_id=17,course_id=23) is None
+    assert session.exec.call_count==2 and state['closed']
+    constructor.assert_not_called()
+
+
 def test_one_embedding_request_runs_after_preflight_transaction_closes(monkeypatch):
     session,factory,state=dependencies(monkeypatch,(129,60000,129))
     def embed(**kwargs):

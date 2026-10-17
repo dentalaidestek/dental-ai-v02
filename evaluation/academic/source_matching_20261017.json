@@ -1,0 +1,329 @@
+{
+  "mode": "supplied_plan_real_source_sql",
+  "cases": [
+    {
+      "question": "Pronasale nedir?",
+      "expected_pages": [
+        2
+      ],
+      "selected_pages": [
+        2
+      ],
+      "excluded_terms": [],
+      "chunks": 2,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Sub-nasale tanımını açıkla",
+      "expected_pages": [
+        3
+      ],
+      "selected_pages": [
+        3
+      ],
+      "excluded_terms": [],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Labiale superior ve inferior farkını tabloya koy",
+      "expected_pages": [
+        4,
+        5
+      ],
+      "selected_pages": [
+        4,
+        5
+      ],
+      "excluded_terms": [
+        "molare"
+      ],
+      "chunks": 2,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Stomion nerede?",
+      "expected_pages": [
+        6
+      ],
+      "selected_pages": [
+        6
+      ],
+      "excluded_terms": [],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Tragion nedir?",
+      "expected_pages": [
+        7
+      ],
+      "selected_pages": [
+        7
+      ],
+      "excluded_terms": [],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Chelion nedir?",
+      "expected_pages": [
+        8
+      ],
+      "selected_pages": [
+        8
+      ],
+      "excluded_terms": [],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Sella nedir?",
+      "expected_pages": [
+        40
+      ],
+      "selected_pages": [
+        40,
+        56,
+        57,
+        59,
+        76
+      ],
+      "excluded_terms": [],
+      "chunks": 6,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Gonion nasıl bulunur?",
+      "expected_pages": [
+        33
+      ],
+      "selected_pages": [
+        33,
+        55,
+        59,
+        60
+      ],
+      "excluded_terms": [],
+      "chunks": 4,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Orbitale tanımını yaz",
+      "expected_pages": [
+        34
+      ],
+      "selected_pages": [
+        34
+      ],
+      "excluded_terms": [],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Porion tanımı",
+      "expected_pages": [
+        18
+      ],
+      "selected_pages": [
+        18,
+        46
+      ],
+      "excluded_terms": [],
+      "chunks": 2,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Nasion nedir?",
+      "expected_pages": [
+        27
+      ],
+      "selected_pages": [
+        27,
+        58,
+        60,
+        68,
+        70
+      ],
+      "excluded_terms": [],
+      "chunks": 5,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Pogonion nedir?",
+      "expected_pages": [
+        30
+      ],
+      "selected_pages": [
+        29,
+        30,
+        68,
+        70,
+        87
+      ],
+      "excluded_terms": [],
+      "chunks": 5,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Deri tek noktalarının tamamını açıkla",
+      "expected_pages": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "selected_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "excluded_terms": [
+        "tragion",
+        "chelion"
+      ],
+      "chunks": 6,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Kemik tek noktalarının tamamını açıkla",
+      "expected_pages": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "selected_pages": [
+        1,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "excluded_terms": [
+        "zygion",
+        "chelion"
+      ],
+      "chunks": 8,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Deri çift noktalarını açıkla",
+      "expected_pages": [
+        7,
+        8
+      ],
+      "selected_pages": [
+        1,
+        7,
+        8
+      ],
+      "excluded_terms": [
+        "pronasale",
+        "stomion"
+      ],
+      "chunks": 3,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Frankfurt ve palatal düzlemi karşılaştır",
+      "expected_pages": [
+        46,
+        47
+      ],
+      "selected_pages": [
+        46,
+        47
+      ],
+      "excluded_terms": [],
+      "chunks": 2,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Ön ve arka yüz yüksekliğini karşılaştır",
+      "expected_pages": [
+        58,
+        59
+      ],
+      "selected_pages": [
+        58,
+        59
+      ],
+      "excluded_terms": [],
+      "chunks": 2,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Gonion ile Menton farkını tabloya koy",
+      "expected_pages": [
+        32,
+        33
+      ],
+      "selected_pages": [
+        32,
+        33,
+        49,
+        55,
+        58,
+        59,
+        60
+      ],
+      "excluded_terms": [],
+      "chunks": 7,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "Yalnız 33. sayfadaki tanımı aktar",
+      "expected_pages": [
+        33
+      ],
+      "selected_pages": [
+        33
+      ],
+      "excluded_terms": [
+        "orbitale"
+      ],
+      "chunks": 1,
+      "original_pages": 0,
+      "passed": true
+    },
+    {
+      "question": "İmplant robotlarının yazılımını açıkla",
+      "expected_pages": [],
+      "selected_pages": [],
+      "excluded_terms": [],
+      "chunks": 0,
+      "original_pages": 0,
+      "passed": true
+    }
+  ],
+  "live_model_calls": 0
+}

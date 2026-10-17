@@ -7,7 +7,6 @@ from sqlalchemy import text
 
 MAX_CONTEXT_ROWS = 128
 MAX_CONTEXT_CHARS = 48000
-MAX_CONTEXT_SCAN_PAGES = 4
 
 
 def small_note_context(session, *, owner_user_id, course_id):
@@ -29,18 +28,8 @@ def small_note_context(session, *, owner_user_id, course_id):
         params={**params, 'candidate_limit': MAX_CONTEXT_ROWS + 1}).first()
     if not totals or not 0 < int(totals[0]) <= MAX_CONTEXT_ROWS or int(totals[1]) > MAX_CONTEXT_CHARS:
         return None
-    # Count scans before hydrating rows. Large visual courses stay on the
-    # normal query-specific retrieval path rather than paying for every image.
-    scanned = session.exec(text('''SELECT DISTINCT p.material_id,p.page_number
-        FROM studyindexpage p JOIN studymaterial m
-          ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id
-         AND m.course_id=p.course_id AND m.active_index_version=p.index_version
-        WHERE p.owner_user_id=:owner AND p.course_id=:course
-          AND m.index_status='READY' AND m.deleted_at IS NULL
-          AND (p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')
-        LIMIT :scan_limit'''), params={**params, 'scan_limit': MAX_CONTEXT_SCAN_PAGES + 1}).all()
-    if len(scanned) > MAX_CONTEXT_SCAN_PAGES:
-        return None
+    # This path is only used for text requests. Indexed OCR is text too;
+    # scan count must not reject a complete context that fits both budgets.
     from app.academic_source_batches import load_owned_source_rows
     rows = list(load_owned_source_rows(session, **dict(owner_user_id=owner_user_id, course_id=course_id)))
     if len(rows) != int(totals[0]):

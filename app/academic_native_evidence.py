@@ -98,7 +98,7 @@ def matching_native_pages(session, *, owner_user_id, course_id, searches):
         SELECT DISTINCT ON(subject) * FROM frequencies
         ORDER BY subject,frequency,length(term) DESC,term
       ), matched AS (
-        SELECT f.subject,hits.* FROM focus f CROSS JOIN LATERAL (
+        SELECT f.subject,f.phrase,hits.* FROM focus f CROSS JOIN LATERAL (
           SELECT n.* FROM native n
           WHERE n.document @@ plainto_tsquery('simple',f.term)
           ORDER BY (n.document @@ plainto_tsquery('simple',f.phrase)) DESC,
@@ -111,7 +111,8 @@ def matching_native_pages(session, *, owner_user_id, course_id, searches):
       SELECT c.id,n.material_id,n.display_name,c.page_start,c.page_end,
              c.section_title,'TEXT',n.text_content,
              NULL::BIGINT,NULL::DOUBLE PRECISION,NULL::BIGINT,NULL::DOUBLE PRECISION,
-             1.0::DOUBLE PRECISION,c.chunk_index,c.semantic_json,n.subject
+             1.0::DOUBLE PRECISION,c.chunk_index,c.semantic_json,n.subject,
+             n.document @@ plainto_tsquery('simple',n.phrase) AS full_match
       FROM matched n CROSS JOIN LATERAL (
         SELECT c.* FROM studyindexchunk c WHERE c.owner_user_id=:owner AND c.course_id=:course
           AND c.material_id=n.material_id AND c.index_version=n.index_version
@@ -120,9 +121,13 @@ def matching_native_pages(session, *, owner_user_id, course_id, searches):
       ) c ORDER BY n.subject,n.material_id,n.page_number
     '''),params={'owner':owner_user_id,'course':course_id,
                  'indices':indices,'tokens':tokens,'phrases':phrases}).all()
+    # If the full subject is present, do not add another page just because it
+    # shares the rarest token (e.g. Molare superior for Labiale superior).
+    rows=[row for row in rows if not _question_page(row[7])]
+    exact_subjects={int(row[15]) for row in rows if row[16]}
     selected=[];seen=set();covered=set()
     for row in rows:
-        if _question_page(row[7]):
+        if int(row[15]) in exact_subjects and not row[16]:
             continue
         covered.add(int(row[15]))
         key=(int(row[1]),int(row[3]))

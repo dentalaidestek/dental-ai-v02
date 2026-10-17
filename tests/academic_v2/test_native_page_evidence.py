@@ -46,7 +46,7 @@ def test_native_name_search_recovers_split_label_without_accepting_an_exam_page(
     session=Mock()
     def row(cid,page,body,subject):
         return (cid,1,'Notes.pdf',page,page,'Old header','TEXT',body,
-                None,None,None,None,1.0,cid,'{}',subject)
+                None,None,None,None,1.0,cid,'{}',subject,False)
     session.exec.return_value.all.return_value=[
         row(1,33,'Gonion\nGo\nRamus mandibulanın arka kenarıyla ilgili tam tanım.',0),
         row(2,34,'1. Hangi ifade? A) Yanlış B) Doğru',1)]
@@ -63,3 +63,32 @@ def test_inline_choices_are_not_promoted_to_native_facts():
     from app.academic_native_evidence import _question_page
     assert _question_page('1. Hangisi doğrudur? A) Yanlış B) Doğru')
     assert not _question_page('B\nÇift Noktalar\nGonion\nGo\nGerçek tanım.')
+
+
+def test_full_source_subject_excludes_partial_token_matches_but_keeps_other_subject():
+    from app.academic_native_evidence import matching_native_pages
+    session=Mock()
+    def row(cid,body,subject,full):
+        return (cid,1,'Notes.pdf',cid,cid,'Header','TEXT',body,
+                None,None,None,None,1.0,cid,'{}',subject,full)
+    session.exec.return_value.all.return_value=[
+        row(1,'Labiale superior: üst dudak noktası.',0,True),
+        row(2,'Molare superior: üst azı noktası.',0,False),
+        row(3,'Bölünmüş Gonion tanımı.',1,False)]
+    rows,complete=matching_native_pages(session,owner_user_id=17,course_id=23,
+        searches=['labiale superior','gonion noktası'])
+    assert [r[0] for r in rows]==[1,3]
+    assert complete
+
+
+def test_exam_full_match_does_not_hide_partial_factual_evidence():
+    from app.academic_native_evidence import matching_native_pages
+    session=Mock()
+    def row(cid,body,full):
+        return (cid,1,'Notes.pdf',cid,cid,'Header','TEXT',body,
+                None,None,None,None,1.0,cid,'{}',0,full)
+    session.exec.return_value.all.return_value=[
+        row(1,'1. Hangisi? A) Yanlış B) Doğru',True),
+        row(2,'Gonion tanımının okunabilen kısmı.',False)]
+    rows,complete=matching_native_pages(session,owner_user_id=17,course_id=23,searches=['Gonion noktası'])
+    assert [r[0] for r in rows]==[2] and complete
