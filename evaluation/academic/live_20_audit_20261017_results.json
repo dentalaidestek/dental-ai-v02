@@ -1,0 +1,3388 @@
+{
+  "date": "2026-10-17",
+  "deployed_commit": "5367fef05a99daa2805371bbed06122e68a041ad",
+  "pending_pr": 135,
+  "mode": "live_browser_and_render_logs",
+  "unique_scenarios": 20,
+  "http_attempts": 22,
+  "claude_calls": 46,
+  "planner_calls": 20,
+  "stream_calls": 26,
+  "scenarios": [
+    {
+      "id": 1,
+      "dimension": "short_answer_speed",
+      "course": 2,
+      "question": "Porion noktasını yalnız ders notuna göre tek cümlede tanımla; dosya ve sayfayı belirt. Başka nokta veya PDF ekleme.",
+      "start": "2026-10-17T12:00:21.262Z",
+      "assistantBefore": 20,
+      "end": "2026-10-17T12:01:08.452Z",
+      "answer": "Dental AI Akademik\n\nPorion (pr) noktası, meatus acusticus externus'un üst kenarının en yukarı noktasıdır.\n\n(08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 18)",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 47190,
+      "attempts": 1,
+      "trace": "e151dcc63de943caa6c6e00e6de2a0ee",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 21.762,
+      "planner_ms": 6715,
+      "generation_ms": [
+        3345
+      ],
+      "provider_first_text_ms": [
+        "2546"
+      ],
+      "retrieved_chunk_count": 2,
+      "retrieved_pages": [
+        [
+          24,
+          18,
+          18
+        ],
+        [
+          24,
+          46,
+          46
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Tek cümle, Porion tanımı ve fiziksel sayfa 18 doğru; PDF yok.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 2,
+      "dimension": "two_subject_table",
+      "course": 2,
+      "question": "Gonion ile Basion noktalarını iki satırlık tabloda karşılaştır: tanım, anatomik yapı, dosya ve sayfa sütunları olsun. Yalnız bu iki nokta.",
+      "start": "2026-10-17T12:01:08.452Z",
+      "assistantBefore": 21,
+      "end": "2026-10-17T12:01:38.314Z",
+      "answer": "Dental AI Akademik\nNokta\tTanım\tAnatomik yapı\tKaynak dosya/sayfa\nGonion (Go)\tRamus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının açıortayının kemik üzerindeki iz düşümüdür. İki düzlemin kesişme noktası postgonion olarak adlandırılır.\tMandibula; ramus arka kenarı ile corpus alt kenarı\t08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 33\nBasion (Ba)\tForamen occipitale magnum'un ön kenarının en aşağı noktasıdır.\tForamen occipitale magnum'un ön kenarı\t08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 12",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 29862,
+      "attempts": 1,
+      "trace": "a2e81f924cc345b7945d85845447ac35",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 21.717,
+      "planner_ms": 5940,
+      "generation_ms": [
+        7494
+      ],
+      "provider_first_text_ms": [
+        "5921"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          26,
+          6,
+          6
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Gonion/Basion iki satır; tanım ve 33/12 sayfaları kaynak örneğiyle uyumlu.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 3,
+      "dimension": "conversation_reference",
+      "course": 2,
+      "question": "Az önceki tablonun ikinci satırındaki noktayı birinci sınıf öğrencisine anlatır gibi tek cümleyle açıkla. Yeni nokta ekleme.",
+      "start": "2026-10-17T12:01:38.314Z",
+      "assistantBefore": 22,
+      "end": "2026-10-17T12:02:02.861Z",
+      "answer": "Dental AI Akademik\n\nBasion (Ba), foramen occipitale magnum'un ön kenarının en aşağı noktasıdır; yani bu deliğin ön kenarı üzerinde yer alan en alt noktayı ifade eder.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 24547,
+      "attempts": 1,
+      "trace": "4103182247c441a48d3b4b47ebdc82c7",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 19.073,
+      "planner_ms": 8675,
+      "generation_ms": [
+        5014
+      ],
+      "provider_first_text_ms": [
+        "4218"
+      ],
+      "retrieved_chunk_count": 1,
+      "retrieved_pages": [
+        [
+          24,
+          12,
+          12
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "İkinci satırı Basion olarak çözdü; eski konuya kaymadı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 4,
+      "dimension": "false_premise",
+      "course": 2,
+      "question": "Gonion foramen occipitale magnumun ön kenarındaki en aşağı nokta, değil mi? İfadeyi notlara göre kontrol et; yanlışsa doğru noktayı ve Gonion tanımını ayırarak düzelt.",
+      "start": "2026-10-17T12:02:02.862Z",
+      "assistantBefore": 23,
+      "end": "2026-10-17T12:02:27.704Z",
+      "answer": "Dental AI Akademik\n\nHayır, bu ifade notlarla uyuşmuyor. Foramen occipitale magnum'un ön kenarının en alt noktası Basion (Ba) noktasıdır. Gonion noktası ise mandibulada, ramus ve corpus'un birleştiği bölgede yer alır.\n\nNotlara göre iki nokta şöyle tanımlanır:\n\nBasion (Ba): Foramen occipitale magnum'un ön kenarının en aşağı noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 12)\nGonion (Go): Ramus mandibulanın arka kenarına çizilen teğet ile corpus mandibulanın alt kenarına menton noktasından çizilen teğetin oluşturduğu açının açıortayının kemik üzerindeki iz düşümü. İki düzlemin kesişme noktasına postgonion denir. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 33)\n\nGonion bu nedenle foramen occipitale magnum ile ilgili değildir; mandibula üzerinde, iki teğetin oluşturduğu açının açıortayıyla belirlenir.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 24842,
+      "attempts": 1,
+      "trace": "4d207157bcf24f3a8c0aa19d9f3cb4a9",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 19.216,
+      "planner_ms": 7383,
+      "generation_ms": [
+        5914
+      ],
+      "provider_first_text_ms": [
+        "3690"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          26,
+          6,
+          6
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Yanlış Gonion öncülünü düzeltti; Basion ve Gonion tanımlarını ayırdı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 5,
+      "dimension": "numeric_units_citation",
+      "course": 2,
+      "question": "Yüz açısının Downs ideal değeri ve Türk çocukları için verilen değeri nedir? Yalnız bu iki sayıyı derece birimi ve kaynak sayfasıyla yaz.",
+      "start": "2026-10-17T12:02:27.704Z",
+      "assistantBefore": 24,
+      "end": "2026-10-17T12:02:58.473Z",
+      "answer": "Dental AI Akademik\nDowns'a göre ideal değer: 87,8 derece\nTürk çocukları için değer: 84 derece\n\n(08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 68)",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 30769,
+      "attempts": 1,
+      "trace": "e33c175976924286b4b977c8294ae534",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 16.232,
+      "planner_ms": 7669,
+      "generation_ms": [
+        3248
+      ],
+      "provider_first_text_ms": [
+        "2400"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          90,
+          90
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          68,
+          68
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "87,8° ve 84° değerleri, fiziksel sayfa 68 ile uyumlu.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 6,
+      "dimension": "source_based_arithmetic",
+      "course": 2,
+      "question": "Az önceki iki yüz açısı değeri arasındaki mutlak farkı hesapla. İşlemi göster; hesaplanan fark ile notta basılı değerleri birbirinden ayır.",
+      "start": "2026-10-17T12:02:58.473Z",
+      "assistantBefore": 25,
+      "end": "2026-10-17T12:03:18.567Z",
+      "answer": "Dental AI Akademik\n\nİşlem:\n\n|87,8° − 84°| = 3,8°\n\nNotta basılı değerler (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 68):\n\nDowns'a göre ideal değer: 87,8°\nTürk çocukları için değer: 84°\n\nHesaplanan fark (notta basılı değil): 3,8°",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 20094,
+      "attempts": 1,
+      "trace": "48ece71d3ea045eea0bf156d58cec5d5",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 18.172,
+      "planner_ms": 7208,
+      "generation_ms": [
+        4750
+      ],
+      "provider_first_text_ms": [
+        "3617"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          90,
+          90
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          68,
+          68
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Mutlak fark 3,8° doğru; türetilen sonucu basılı not değerinden ayırdı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 7,
+      "dimension": "complete_section_exclusion",
+      "course": 2,
+      "question": "Yalnız deri tek noktalarının tümünü tanımları ve sayfalarıyla listele. Deri çift noktalarını, kemik ve deri-kemik noktalarını dahil etme. Kaynaktaki listeyi eksiksiz koru.",
+      "start": "2026-10-17T12:03:18.567Z",
+      "assistantBefore": 26,
+      "end": "2026-10-17T12:03:51.197Z",
+      "answer": "Dental AI Akademik\n\nVerilen ders notu sayfalarında deri tek noktaları olarak şu beş nokta yer alıyor:\n\nPronasale (Prn): Yumuşak doku burun ucunun orta oksal düzlemdeki en ileri uç noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 2)\nSubnasale (Sn): Burun ile üst dudak arasında kalan iç bükeyliğin en derin noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 3)\nLabiale superior (Ls): Üst dudak deri-mukoza sınırının orta oksal düzlemle kesişme noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 4)\nLabiale inferior (Li): Alt dudak deri-mukoza sınırının orta oksal düzlemle kesişme noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 5)\nStomion (St): Dudaklar kapalı iken alt ve üst dudak arasında oluşan çizginin (Rima oris) orta oksal düzlemle kesişme noktası. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 6)\n\nSayfa 2'de bu noktalar A > Deri Noktaları > Tek Noktalar başlığı altında yer alıyor. Sayfa 3-6'daki noktalar da aynı listenin devamı gibi görünse de bu sayfalarda başlık tekrarlanmadığı için bu tek noktalar sınıflandırmasını yalnızca sıralamaya dayanarak söylüyorum.\n\nBu sayfalar aramayla getirilen sınırlı kaynaklar olduğu için, notun başka sayfalarında deri tek noktalarına ait ek noktalar olup olmadığını buradan kesin olarak söyleyemem. Bu liste verilen sayfalardaki noktaları eksiksiz yansıtıyor; notun tamamında daha fazla nokta varsa onları da ayrıca çıkarabilirim.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 32630,
+      "attempts": 1,
+      "trace": "5e104fa51b5a4a248e3f43af2bc87de1",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 23.824,
+      "planner_ms": 6532,
+      "generation_ms": [
+        12031
+      ],
+      "provider_first_text_ms": [
+        "8638"
+      ],
+      "retrieved_chunk_count": 6,
+      "retrieved_pages": [
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          2,
+          2
+        ],
+        [
+          24,
+          3,
+          3
+        ],
+        [
+          24,
+          4,
+          4
+        ],
+        [
+          24,
+          5,
+          5
+        ],
+        [
+          24,
+          6,
+          6
+        ]
+      ],
+      "verdict": "WARN",
+      "assessment": "Beş deri tek noktası ve 2–6 sayfaları doğru. Tam seçilen bölüme rağmen devamında başka noktalar olabileceğini söyleyerek gereksiz kapsam belirsizliği yarattı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 8,
+      "dimension": "existing_answer_pdf_export",
+      "course": 2,
+      "question": "Az önceki deri tek noktaları cevabını içeriğini değiştirmeden indirilebilir PDF dosyası olarak ver.",
+      "start": "2026-10-17T12:03:51.197Z",
+      "assistantBefore": 27,
+      "end": "2026-10-17T12:04:21.479Z",
+      "answer": "Dental AI Akademik\nİstediğin PDF hazır.\nPDF\nOrto.pdf\nPDF dosyasını indir",
+      "status": "",
+      "links": [
+        {
+          "text": "PDFOrto.pdfPDF dosyasını indir",
+          "url": "/notes/courses/2/ai/messages/488/pdf"
+        }
+      ],
+      "observed_elapsed_ms": 30282,
+      "download": "/home/oai/share/49ff77a8-f24b-47d8-a5de-c60d7487c86c/ec57fb08-850d-46ec-a09a-d0f95a752c83",
+      "verifiedDownload": "/home/oai/share/49ff77a8-f24b-47d8-a5de-c60d7487c86c/228de864-11d7-44ef-81ed-be8ab281ea26",
+      "attempts": 1,
+      "trace": "83bd4046d78d4faaae4fdbb80fa8cbc8",
+      "model_calls": 1,
+      "send_to_last_model_event_seconds": 10.004,
+      "planner_ms": 5834,
+      "generation_ms": [],
+      "provider_first_text_ms": [],
+      "retrieved_chunk_count": 0,
+      "retrieved_pages": [],
+      "verdict": "PASS",
+      "assessment": "Önceki cevabı bir sayfalık 44.984 bayt PDF olarak indirdim. Liste işaretleri ve boşluklar normalize edilince önceki metnin tamamı korundu. Bir planner çağrısı, yeni cevap çağrısı yok.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 9,
+      "dimension": "topic_switch_no_stale_pdf",
+      "course": 2,
+      "question": "Şimdi yalnız Pogonion noktasının tanımını tek cümlede yaz ve kaynak sayfasını belirt.",
+      "start": "2026-10-17T12:04:32.290Z",
+      "assistantBefore": 28,
+      "end": "2026-10-17T12:05:14.471Z",
+      "answer": "Dental AI Akademik\n\nPogonion (Pog-Pg), çene ucunun orta okzal düzlem üzerindeki en ileri noktasıdır.\n\n(08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 30)",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 42181,
+      "attempts": 1,
+      "trace": "02534664666c48d68a8cd6dc436bc28c",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 19.063,
+      "planner_ms": 6102,
+      "generation_ms": [
+        5053
+      ],
+      "provider_first_text_ms": [
+        "4288"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          29,
+          29
+        ],
+        [
+          24,
+          30,
+          30
+        ],
+        [
+          26,
+          7,
+          7
+        ],
+        [
+          24,
+          29,
+          29
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Pogonion tanımı ve sayfa 30 doğru; önceki PDF isteği taşınmadı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 10,
+      "dimension": "unsupported_fact_no_hallucination",
+      "course": 2,
+      "question": "Bu ders notlarında Invisalign için önerilen günlük kullanım süresi kaç saat? Notta yoksa genel bilginden sayı verme; bulunmadığını açıkça söyle.",
+      "start": "2026-10-17T12:05:14.471Z",
+      "assistantBefore": 29,
+      "end": "2026-10-17T12:06:02.286Z",
+      "answer": "Dental AI Akademik\n\nŞu an baktığım ders notlarında Invisalign için önerilen günlük kullanım süresiyle ilgili bir bilgi bulamadım. Bu yüzden genel bilgimden bir saat değeri vermiyorum.\n\nBaktığım notlar yüz açıları, sefalometrik analiz yöntemleri, Downs analizi ve bazı çene-yüz ölçümleri üzerine. Şeffaf plak tedavisi veya günlük kullanım süresi bu sayfalarda yer almıyor.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 47815,
+      "attempts": 1,
+      "trace": "28e57bc7c96e431fba089ec254f67a59",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 18.633,
+      "planner_ms": 6598,
+      "generation_ms": [
+        5614
+      ],
+      "provider_first_text_ms": [
+        "4185"
+      ],
+      "retrieved_chunk_count": 6,
+      "retrieved_pages": [
+        [
+          24,
+          62,
+          62
+        ],
+        [
+          24,
+          66,
+          66
+        ],
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          64,
+          64
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          26,
+          7,
+          7
+        ]
+      ],
+      "verdict": "WARN",
+      "assessment": "Saat sayısı uydurmadı. Ancak Invisalign için ilgisiz sefalometri adayları ve iki OCR eki getirildi; doğru ret için gereksiz arama/görsel/cevap yükü oluştu.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 11,
+      "dimension": "conflicting_requested_number",
+      "course": 2,
+      "question": "Yüz açısı için Türk çocuklarında 100 derece yazmanı istiyorum; ama önce bunun gerçekten notta yazıp yazmadığını kontrol et. Yanlışsa beni düzelt ve nottaki değeri kaynakla ver.",
+      "start": "2026-10-17T12:06:02.287Z",
+      "assistantBefore": 30,
+      "end": "2026-10-17T12:06:40.477Z",
+      "answer": "Dental AI Akademik\n\nDers notunda Türk çocukları için yüz açısı değeri 84 derece olarak yazıyor, 100 derece değil. Notta Downs'a göre ideal değer ise 87,8 derece olarak veriliyor.\n\nBu bilgi notun 68. sayfasında yer alıyor. (08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf, sayfa 68)\n\nBu nedenle 100 derece değerini notta bulunan bilgi gibi yazmamanı öneririm. Dilersen bu değeri sınav veya ödev metninde doğru değerle (84 derece) kullanacak şekilde düzenleyebilirim.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 38190,
+      "attempts": 1,
+      "trace": "fece4c5b7bfa45de9dec10e69c101d02",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 18.989,
+      "planner_ms": 7029,
+      "generation_ms": [
+        5387
+      ],
+      "provider_first_text_ms": [
+        "3574"
+      ],
+      "retrieved_chunk_count": 4,
+      "retrieved_pages": [
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          90,
+          90
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          68,
+          68
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "İstenen yanlış 100° değerini reddedip 84° ve sayfa 68 ile düzeltti.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 12,
+      "dimension": "verbatim_exam_continuation_ocr",
+      "course": 2,
+      "question": "Yalnız Orto devamı.pdf dosyasının 3. sayfasındaki 14. soruyu ve 4. sayfanın en üstündeki devam şıklarını aynen aktar. Çözme, harfleri yeniden sıralama; okunmayan metni uydurma.",
+      "start": "2026-10-17T12:06:40.478Z",
+      "assistantBefore": 31,
+      "end": "2026-10-17T12:07:18.407Z",
+      "answer": "Dental AI Akademik\nSoru 14\n\nÇenelerin açma hareketinde hangi kaslar nasıl çalışır?\n\na. Temporal-masseter-digastricus kasılması\n\nb. Temporal-masseter-pterigoideus externus kasılması\n\nc. Temporal-masseter-pterigoideus internus gevşemesi\n\nd. Pterigoideus externus-digastricus gevşemesi\n\ne. Hiçbiri\n\n*(Kaynak: Orto devamı.pdf, 3. sayfa; c, d ve e şıkları 4. sayfanın üst kısmında.)*",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 37929,
+      "attempts": 1,
+      "trace": "d98337faa4b745e2ac8c94f64b35fd84",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 25.777,
+      "planner_ms": 7893,
+      "generation_ms": [
+        6764
+      ],
+      "provider_first_text_ms": [
+        "5551"
+      ],
+      "retrieved_chunk_count": 7,
+      "retrieved_pages": [
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          4,
+          4
+        ]
+      ],
+      "verdict": "REVIEW",
+      "assessment": "Soru 14 ve A–E devam harfleri korundu; a/b/d/e görüntü örneğiyle uyumlu. Bulanık c şıkkındaki internus/externus kelimesini bağımsız biçimde kesin teyit edemedim; aktarımın tüm kelimeleri doğru diye işaretlenmedi.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 13,
+      "dimension": "exam_pattern_count_and_uncertainty",
+      "course": 2,
+      "question": "Orto devamı.pdf dosyasının yalnız 22, 23 ve 24. sayfalarındaki çıkmış sorularda en sık geçen üç konuyu say. Her konu için soru numarası ve kaynak sayfa yaz; kopyaları iki sayma, okunmayanı dışarıda tut. Gelecek sınavın kesin tahmini olmadığını belirt.",
+      "start": "2026-10-17T12:07:18.408Z",
+      "assistantBefore": 32,
+      "end": "2026-10-17T12:08:33.182Z",
+      "answer": "Dental AI Akademik\n\nOkunabilen 16 benzersiz soru kaydı sayıldı; 0 kopya kayıt birleştirildi.\n\nKonu\tBenzersiz soru\tKaynaklar\nKemik gelişimi türleri\t2\tOrto devamı.pdf, sayfa 22, numarasız soru; Orto devamı.pdf, sayfa 23, soru 7\nKemik matriksi\t2\tOrto devamı.pdf, sayfa 22, numarasız soru; Orto devamı.pdf, sayfa 22, numarasız soru\nBüyüme yerleri\t1\tOrto devamı.pdf, sayfa 24, numarasız soru\n\nBu dağılım yalnız okunabilen ve kaynak sayfasıyla eşleşen kayıtlara dayanır. Konu etiketleri ayrı gruplar olarak sayılmıştır; okunamayan sorular hesaba katılmamıştır. Gelecek sınav için yalnız bir çalışma önceliği tahminidir.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 74774,
+      "attempts": 1,
+      "trace": "010299d64d914ef58708920501928f90",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 46.59,
+      "planner_ms": 6609,
+      "generation_ms": [
+        30406
+      ],
+      "provider_first_text_ms": [
+        "25707"
+      ],
+      "retrieved_chunk_count": 9,
+      "retrieved_pages": [
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          24,
+          24
+        ]
+      ],
+      "verdict": "WARN",
+      "assessment": "Üç konu ve sayfa referansları verdi; sayım deterministik fakat konu grupları serbest metne bağlı. Kıkırdak soruları alt başlıklara bölünmüş görünüyor. Konu önceliği için güvenilir, sabit taksonomili bir sıralama doğrulanmadı; 16 benzersiz kayıt iddiasının tümü bağımsız sayılmadı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 14,
+      "dimension": "new_question_generation",
+      "course": 2,
+      "question": "Yalnız Gonion, Basion, Orbitale, Porion ve Sella notlarından toplam 5 yeni çoktan seçmeli soru hazırla; her noktadan bir soru olsun. A–E şıkları ve 1–5 numaraları olsun. Önceki sohbetteki soru köklerini tekrar kullanma. Cevap anahtarını gösterme.",
+      "start": "2026-10-17T12:08:33.183Z",
+      "assistantBefore": 33,
+      "end": "2026-10-17T12:09:20.513Z",
+      "answer": "Dental AI Akademik\nSoru 1\n\nForamen occipitale magnum'un ön kenarının en alt noktası hangi sefalometrik noktadır?\n\nA. Porion\n\nB. Orbitale\n\nC. Sella\n\nD. Basion\n\nE. Gonion\n\nSoru 2\n\nMeatus acusticus externus'un üst kenarının en yukarı noktası hangi noktadır?\n\nA. Basion\n\nB. Orbitale\n\nC. Porion\n\nD. Sella\n\nE. Gonion\n\nSoru 3\n\nCanlıda birey tam karşıya bakarken, Orbitale noktasının tanımında hangi kıvrımın en alt noktası kullanılır?\n\nA. Supraorbital kıvrımın en üst noktası\n\nB. Infraorbital kıvrımın en alt noktası\n\nC. Nazolabial kıvrımın en alt noktası\n\nD. Orbita çukurunun en üst iç noktası\n\nE. Zigomatik arkın en alt noktası\n\nSoru 4\n\nSella noktasının tanımı hangisidir?\n\nA. Orbita çukurunun en alt en dış noktası\n\nB. Meatus acusticus externus'un üst kenarının en yukarı noktası\n\nC. Sella turcica'nın orta noktası\n\nD. Foramen occipitale magnum'un ön kenarının en alt noktası\n\nE. Ramus arka kenarına teğet ile corpus alt kenarına teğetin açıortayının iz düşümü\n\nSoru 5\n\nGonion noktasının tanımında hangi iki doğrunun oluşturduğu açı kullanılır?\n\nA. Ramus arka kenarına çizilen teğet ile corpus alt kenarına menton noktasından çizilen teğet\n\nB. Sella ile Nasion noktasını birleştiren doğru ile Frankfurt düzlemi\n\nC. Orbita çukurunun alt kenarı ile porion noktasından geçen doğru\n\nD. Artiküler nokta ile sella noktasını birleştiren doğru ile ramus düzlemi\n\nE. Basion ile gnathion noktasını birleştiren doğru ile Y ekseni",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 47330,
+      "attempts": 1,
+      "trace": "268a56bc5d2d4148818302fc661483db",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 29.702,
+      "planner_ms": 7569,
+      "generation_ms": [
+        14812
+      ],
+      "provider_first_text_ms": [
+        "12023"
+      ],
+      "retrieved_chunk_count": 16,
+      "retrieved_pages": [
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          24,
+          34,
+          34
+        ],
+        [
+          24,
+          18,
+          18
+        ],
+        [
+          24,
+          46,
+          46
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          57,
+          57
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          45,
+          45
+        ],
+        [
+          24,
+          59,
+          59
+        ],
+        [
+          24,
+          60,
+          60
+        ],
+        [
+          24,
+          56,
+          56
+        ],
+        [
+          24,
+          57,
+          57
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Beş farklı noktadan 1–5 numaralı, A–E şıklı set; cevap anahtarı yok. Kaynak örneklerine göre doğru seçenekler D,C,B,C,A.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 15,
+      "dimension": "fresh_set_no_duplicates",
+      "course": 2,
+      "question": "Aynı beş konu için 5 tane daha yeni soru hazırla. Az önceki beş soruyla aynı bilgiyi farklı kelimelerle tekrar sorma; başka bir ilişki veya ayırt edici özellik sor. Yine A–E şıklı olsun ve cevap anahtarını gösterme.",
+      "start": "2026-10-17T12:09:20.514Z",
+      "assistantBefore": 34,
+      "end": "2026-10-17T12:10:08.620Z",
+      "answer": "Dental AI Akademik\nSoru 1\n\nForamen occipitale magnum'un ön kenarının en alt noktası olan sefalometrik nokta, hangi yapının tanımına aittir?\n\nA. Meatus acusticus externus\n\nB. Orbita çukuru\n\nC. Sella turcica\n\nD. Mandibula ramusu\n\nE. Foramen occipitale magnum\n\nSoru 2\n\nFrankfurt düzlemi, Porion noktası ile birlikte hangi noktadan geçen bir düzlemdir?\n\nA. Sella\n\nB. Gonion\n\nC. Orbitale\n\nD. Basion\n\nE. Nasion\n\nSoru 3\n\nKuru kafatasında Orbitale noktasının tanımı hangisidir?\n\nA. Orbita çukurunun en üst iç noktası\n\nB. Orbita çukurunun en alt iç noktası\n\nC. Orbita çukurunun en alt en dış noktası\n\nD. Orbita çukurunun en üst en dış noktası\n\nE. Zigomatik arkın en alt noktası\n\nSoru 4\n\nSella ve Gnathion noktalarını birleştiren doğru hangi isimle anılır ve neyin tayininde kullanılır?\n\nA. SN düzlemi; ön kafa kaidesinin eğiminin tayininde\n\nB. S-Ar düzlemi; arka kafa kaidesinin tayininde\n\nC. Y ekseni; alt çene gelişim yönünün tayininde\n\nD. Ramus düzlemi; ramus yüksekliğinin tayininde\n\nE. Frankfurt düzlemi; orbita ile porion arasındaki ilişkinin tayininde\n\nSoru 5\n\nArka yüz yüksekliği hangi iki nokta arasındaki boyuttur?\n\nA. Nasion ile Gonion\n\nB. Sella ile Gonion\n\nC. Sella ile Nasion\n\nD. Artiküler ile Gonion\n\nE. Porion ile Gonion",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 48106,
+      "attempts": 1,
+      "trace": "fc58c97a446a41bb80806ca366b448ea",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 33.339,
+      "planner_ms": 8367,
+      "generation_ms": [
+        18953
+      ],
+      "provider_first_text_ms": [
+        "16403"
+      ],
+      "retrieved_chunk_count": 16,
+      "retrieved_pages": [
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          24,
+          34,
+          34
+        ],
+        [
+          24,
+          18,
+          18
+        ],
+        [
+          24,
+          46,
+          46
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          57,
+          57
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          45,
+          45
+        ],
+        [
+          24,
+          59,
+          59
+        ],
+        [
+          24,
+          60,
+          60
+        ],
+        [
+          24,
+          56,
+          56
+        ],
+        [
+          24,
+          57,
+          57
+        ]
+      ],
+      "verdict": "FAIL",
+      "assessment": "Yeni setin 1. sorusu eski Basion bilgisini yeniden soruyor ve Foramen occipitale magnum cevabını soru kökünde veriyor. Mevcut tekrar/soru kontrolü bunu kabul etti. Diğer dört soruda yeni ilişkiler mevcut.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 16,
+      "dimension": "grade_generated_set_context",
+      "course": 2,
+      "question": "En son hazırladığın beş soruya cevaplarım 1-A, 2-B, 3-C, 4-D, 5-E. Sadece o son seti değerlendir; her satırda cevabım, doğru şık ve kaynağa dayalı kısa gerekçe olsun. Önceki seti değerlendirme.",
+      "start": "2026-10-17T12:10:08.622Z",
+      "assistantBefore": 35,
+      "end": "2026-10-17T12:12:57.318Z",
+      "answer": "Dental AI Akademik\n\nSon beş soruda 1 doğru, 2 yanlış ve 1 belirsiz değerlendirmeye ulaştım.\n\nSoru 1 (cevabınız A, Meatus acusticus externus): Yanlış. Soru, tanımın hangi yapıya ait olduğunu soruyor. Tanımdaki \"Foramen occipitale magnum'un ön kenarının en alt noktası\" ifadesi Basion noktasına aittir (08-Sefalometrik noktalar 2024 15 nisan, sayfa 12). Şıklarda Basion yer almadığı için soru tam olarak kurulmamış. Referans yapı olarak düşünülürse en uygun şık E (Foramen occipitale magnum)'dir. Bu soruyu sınav çalışmanızda kesin doğru cevabı olan bir soru gibi kullanmayın.\n\nSoru 2 (cevabınız B, Gonion): Yanlış. Doğru cevap C, Orbitale'dir. Frankfurt düzlemi Orbita ve Porion noktalarından geçer (08-Sefalometrik noktalar 2024 15 nisan, sayfa 46).\n\nSoru 3 (cevabınız C, Orbita çukurunun en alt en dış noktası): Doğru. Kuru kafatasında Orbitale, orbita çukurunun en alt en dış noktasıdır (08-Sefalometrik noktalar 2024 15 nisan, sayfa 34).\n\nSoru 4 (cevabınız D, Ramus düzlemi): Yanlış. Doğru cevap C, Y ekseni'dir. Sella ve Gnathion noktalarını birleştiren doğru Y ekseni olarak adlandırılır ve alt çene gelişim yönünün tayininde kullanılır (08-Sefalometrik noktalar 2024 15 nisan, sayfa 56).\n\nSoru 5 (cevabınız E, Porion ile Gonion): Yanlış. Doğru cevap B, Sella ile Gonion'dur. Arka yüz yüksekliği Sella ile Gonion noktaları arasındaki boyuttur (08-Sefalometrik noktalar 2024 15 nisan, sayfa 59).",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 168696,
+      "attempts": 1,
+      "trace": "ab66f9d21d724e4e950b7917f8be4f17",
+      "model_calls": 8,
+      "send_to_last_model_event_seconds": 151.695,
+      "planner_ms": 9975,
+      "generation_ms": [
+        21545,
+        25127,
+        17044,
+        11671,
+        10472,
+        24970,
+        12581
+      ],
+      "provider_first_text_ms": [
+        "16670",
+        "19095",
+        "13614",
+        "11094",
+        "9804",
+        "19833",
+        "9255"
+      ],
+      "retrieved_chunk_count": 284,
+      "retrieved_pages": [
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          2,
+          2
+        ],
+        [
+          24,
+          3,
+          3
+        ],
+        [
+          24,
+          4,
+          4
+        ],
+        [
+          24,
+          5,
+          5
+        ],
+        [
+          24,
+          6,
+          6
+        ],
+        [
+          24,
+          7,
+          7
+        ],
+        [
+          24,
+          7,
+          7
+        ],
+        [
+          24,
+          8,
+          8
+        ],
+        [
+          24,
+          9,
+          9
+        ],
+        [
+          24,
+          9,
+          9
+        ],
+        [
+          24,
+          10,
+          10
+        ],
+        [
+          24,
+          11,
+          11
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          24,
+          12,
+          12
+        ],
+        [
+          24,
+          13,
+          13
+        ],
+        [
+          24,
+          14,
+          14
+        ],
+        [
+          24,
+          14,
+          14
+        ],
+        [
+          24,
+          14,
+          14
+        ],
+        [
+          24,
+          15,
+          15
+        ],
+        [
+          24,
+          16,
+          16
+        ],
+        [
+          24,
+          16,
+          16
+        ],
+        [
+          24,
+          17,
+          17
+        ],
+        [
+          24,
+          18,
+          18
+        ],
+        [
+          24,
+          18,
+          18
+        ],
+        [
+          24,
+          19,
+          19
+        ],
+        [
+          24,
+          20,
+          20
+        ],
+        [
+          24,
+          21,
+          21
+        ],
+        [
+          24,
+          21,
+          21
+        ],
+        [
+          24,
+          22,
+          22
+        ],
+        [
+          24,
+          23,
+          23
+        ],
+        [
+          24,
+          23,
+          23
+        ],
+        [
+          24,
+          24,
+          24
+        ],
+        [
+          24,
+          25,
+          25
+        ],
+        [
+          24,
+          26,
+          26
+        ],
+        [
+          24,
+          27,
+          27
+        ],
+        [
+          24,
+          27,
+          27
+        ],
+        [
+          24,
+          27,
+          27
+        ],
+        [
+          24,
+          27,
+          27
+        ],
+        [
+          24,
+          28,
+          28
+        ],
+        [
+          24,
+          28,
+          28
+        ],
+        [
+          24,
+          29,
+          29
+        ],
+        [
+          24,
+          29,
+          29
+        ],
+        [
+          24,
+          29,
+          29
+        ],
+        [
+          24,
+          30,
+          30
+        ],
+        [
+          24,
+          31,
+          31
+        ],
+        [
+          24,
+          32,
+          32
+        ],
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          33,
+          33
+        ],
+        [
+          24,
+          34,
+          34
+        ],
+        [
+          24,
+          34,
+          34
+        ],
+        [
+          24,
+          34,
+          34
+        ],
+        [
+          24,
+          35,
+          35
+        ],
+        [
+          24,
+          36,
+          36
+        ],
+        [
+          24,
+          37,
+          37
+        ],
+        [
+          24,
+          38,
+          38
+        ],
+        [
+          24,
+          39,
+          39
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          40,
+          40
+        ],
+        [
+          24,
+          41,
+          41
+        ],
+        [
+          24,
+          42,
+          42
+        ],
+        [
+          24,
+          42,
+          42
+        ],
+        [
+          24,
+          43,
+          43
+        ],
+        [
+          24,
+          44,
+          44
+        ],
+        [
+          24,
+          45,
+          45
+        ],
+        [
+          24,
+          46,
+          46
+        ],
+        [
+          24,
+          47,
+          47
+        ],
+        [
+          24,
+          48,
+          48
+        ],
+        [
+          24,
+          48,
+          48
+        ],
+        [
+          24,
+          49,
+          49
+        ],
+        [
+          24,
+          49,
+          49
+        ],
+        [
+          24,
+          50,
+          50
+        ],
+        [
+          24,
+          51,
+          51
+        ],
+        [
+          24,
+          52,
+          52
+        ],
+        [
+          24,
+          53,
+          53
+        ],
+        [
+          24,
+          54,
+          54
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          55,
+          55
+        ],
+        [
+          24,
+          56,
+          56
+        ],
+        [
+          24,
+          57,
+          57
+        ],
+        [
+          24,
+          57,
+          57
+        ],
+        [
+          24,
+          58,
+          58
+        ],
+        [
+          24,
+          59,
+          59
+        ],
+        [
+          24,
+          60,
+          60
+        ],
+        [
+          24,
+          61,
+          61
+        ],
+        [
+          24,
+          61,
+          61
+        ],
+        [
+          24,
+          62,
+          62
+        ],
+        [
+          24,
+          62,
+          62
+        ],
+        [
+          24,
+          63,
+          63
+        ],
+        [
+          24,
+          64,
+          64
+        ],
+        [
+          24,
+          64,
+          64
+        ],
+        [
+          24,
+          65,
+          65
+        ],
+        [
+          24,
+          66,
+          66
+        ],
+        [
+          24,
+          66,
+          66
+        ],
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          67,
+          67
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          68,
+          68
+        ],
+        [
+          24,
+          69,
+          69
+        ],
+        [
+          24,
+          70,
+          70
+        ],
+        [
+          24,
+          70,
+          70
+        ],
+        [
+          24,
+          70,
+          70
+        ],
+        [
+          24,
+          70,
+          70
+        ],
+        [
+          24,
+          71,
+          71
+        ],
+        [
+          24,
+          72,
+          72
+        ],
+        [
+          24,
+          72,
+          72
+        ],
+        [
+          24,
+          72,
+          72
+        ],
+        [
+          24,
+          73,
+          73
+        ],
+        [
+          24,
+          74,
+          74
+        ],
+        [
+          24,
+          74,
+          74
+        ],
+        [
+          24,
+          74,
+          74
+        ],
+        [
+          24,
+          75,
+          75
+        ],
+        [
+          24,
+          76,
+          76
+        ],
+        [
+          24,
+          76,
+          76
+        ],
+        [
+          24,
+          76,
+          76
+        ],
+        [
+          24,
+          77,
+          77
+        ],
+        [
+          24,
+          78,
+          78
+        ],
+        [
+          24,
+          79,
+          79
+        ],
+        [
+          24,
+          79,
+          79
+        ],
+        [
+          24,
+          80,
+          80
+        ],
+        [
+          24,
+          81,
+          81
+        ],
+        [
+          24,
+          81,
+          81
+        ],
+        [
+          24,
+          82,
+          82
+        ],
+        [
+          24,
+          83,
+          83
+        ],
+        [
+          24,
+          83,
+          83
+        ],
+        [
+          24,
+          83,
+          83
+        ],
+        [
+          24,
+          84,
+          84
+        ],
+        [
+          24,
+          85,
+          85
+        ],
+        [
+          24,
+          85,
+          85
+        ],
+        [
+          24,
+          85,
+          85
+        ],
+        [
+          24,
+          86,
+          86
+        ],
+        [
+          24,
+          87,
+          87
+        ],
+        [
+          24,
+          87,
+          87
+        ],
+        [
+          24,
+          88,
+          88
+        ],
+        [
+          24,
+          89,
+          89
+        ],
+        [
+          24,
+          89,
+          89
+        ],
+        [
+          24,
+          90,
+          90
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          2,
+          2
+        ],
+        [
+          25,
+          3,
+          3
+        ],
+        [
+          25,
+          4,
+          4
+        ],
+        [
+          25,
+          5,
+          5
+        ],
+        [
+          25,
+          5,
+          5
+        ],
+        [
+          25,
+          6,
+          6
+        ],
+        [
+          25,
+          7,
+          7
+        ],
+        [
+          25,
+          8,
+          8
+        ],
+        [
+          25,
+          9,
+          9
+        ],
+        [
+          26,
+          1,
+          1
+        ],
+        [
+          26,
+          2,
+          2
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          3,
+          3
+        ],
+        [
+          26,
+          4,
+          4
+        ],
+        [
+          26,
+          5,
+          5
+        ],
+        [
+          26,
+          5,
+          5
+        ],
+        [
+          26,
+          5,
+          5
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          26,
+          6,
+          6
+        ],
+        [
+          26,
+          7,
+          7
+        ],
+        [
+          26,
+          7,
+          7
+        ],
+        [
+          26,
+          7,
+          7
+        ],
+        [
+          26,
+          7,
+          7
+        ],
+        [
+          26,
+          8,
+          8
+        ],
+        [
+          26,
+          8,
+          8
+        ],
+        [
+          26,
+          8,
+          8
+        ],
+        [
+          26,
+          8,
+          8
+        ],
+        [
+          26,
+          9,
+          9
+        ],
+        [
+          26,
+          10,
+          10
+        ],
+        [
+          26,
+          11,
+          11
+        ],
+        [
+          26,
+          11,
+          11
+        ],
+        [
+          26,
+          11,
+          11
+        ],
+        [
+          26,
+          11,
+          11
+        ],
+        [
+          26,
+          12,
+          12
+        ],
+        [
+          26,
+          12,
+          12
+        ],
+        [
+          26,
+          12,
+          12
+        ],
+        [
+          26,
+          12,
+          12
+        ],
+        [
+          26,
+          12,
+          12
+        ],
+        [
+          26,
+          13,
+          13
+        ],
+        [
+          26,
+          13,
+          13
+        ],
+        [
+          26,
+          13,
+          13
+        ],
+        [
+          26,
+          14,
+          14
+        ],
+        [
+          26,
+          14,
+          14
+        ],
+        [
+          26,
+          15,
+          15
+        ],
+        [
+          26,
+          16,
+          16
+        ],
+        [
+          26,
+          16,
+          16
+        ],
+        [
+          26,
+          16,
+          16
+        ],
+        [
+          26,
+          17,
+          17
+        ],
+        [
+          26,
+          18,
+          18
+        ],
+        [
+          26,
+          19,
+          19
+        ],
+        [
+          26,
+          19,
+          19
+        ],
+        [
+          26,
+          19,
+          19
+        ],
+        [
+          26,
+          19,
+          19
+        ],
+        [
+          26,
+          19,
+          19
+        ],
+        [
+          26,
+          20,
+          20
+        ],
+        [
+          26,
+          21,
+          21
+        ],
+        [
+          26,
+          21,
+          21
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          22,
+          22
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          23,
+          23
+        ],
+        [
+          26,
+          24,
+          24
+        ],
+        [
+          26,
+          25,
+          25
+        ],
+        [
+          26,
+          26,
+          26
+        ],
+        [
+          26,
+          26,
+          26
+        ],
+        [
+          26,
+          26,
+          26
+        ],
+        [
+          26,
+          26,
+          26
+        ],
+        [
+          26,
+          27,
+          27
+        ],
+        [
+          26,
+          27,
+          27
+        ],
+        [
+          26,
+          27,
+          27
+        ],
+        [
+          26,
+          28,
+          28
+        ],
+        [
+          26,
+          28,
+          28
+        ],
+        [
+          26,
+          28,
+          28
+        ],
+        [
+          26,
+          28,
+          28
+        ],
+        [
+          26,
+          29,
+          29
+        ],
+        [
+          26,
+          29,
+          29
+        ],
+        [
+          26,
+          29,
+          29
+        ],
+        [
+          26,
+          29,
+          29
+        ],
+        [
+          26,
+          29,
+          29
+        ],
+        [
+          26,
+          30,
+          30
+        ],
+        [
+          26,
+          31,
+          31
+        ],
+        [
+          26,
+          32,
+          32
+        ],
+        [
+          26,
+          33,
+          33
+        ],
+        [
+          26,
+          34,
+          34
+        ],
+        [
+          26,
+          35,
+          35
+        ],
+        [
+          26,
+          36,
+          36
+        ],
+        [
+          26,
+          37,
+          37
+        ],
+        [
+          26,
+          37,
+          37
+        ],
+        [
+          26,
+          38,
+          38
+        ],
+        [
+          26,
+          39,
+          39
+        ],
+        [
+          26,
+          40,
+          40
+        ],
+        [
+          26,
+          41,
+          41
+        ],
+        [
+          26,
+          42,
+          42
+        ],
+        [
+          26,
+          43,
+          43
+        ],
+        [
+          26,
+          43,
+          43
+        ],
+        [
+          26,
+          44,
+          44
+        ],
+        [
+          26,
+          45,
+          45
+        ],
+        [
+          26,
+          46,
+          46
+        ],
+        [
+          26,
+          47,
+          47
+        ],
+        [
+          26,
+          47,
+          47
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          48,
+          48
+        ],
+        [
+          26,
+          49,
+          49
+        ],
+        [
+          26,
+          50,
+          50
+        ],
+        [
+          26,
+          51,
+          51
+        ],
+        [
+          26,
+          51,
+          51
+        ],
+        [
+          26,
+          51,
+          51
+        ],
+        [
+          26,
+          52,
+          52
+        ],
+        [
+          26,
+          53,
+          53
+        ],
+        [
+          26,
+          54,
+          54
+        ],
+        [
+          26,
+          55,
+          55
+        ],
+        [
+          26,
+          55,
+          55
+        ],
+        [
+          26,
+          56,
+          56
+        ],
+        [
+          26,
+          56,
+          56
+        ],
+        [
+          26,
+          57,
+          57
+        ],
+        [
+          26,
+          58,
+          58
+        ],
+        [
+          26,
+          59,
+          59
+        ],
+        [
+          26,
+          60,
+          60
+        ],
+        [
+          26,
+          61,
+          61
+        ],
+        [
+          26,
+          62,
+          62
+        ],
+        [
+          26,
+          62,
+          62
+        ],
+        [
+          26,
+          62,
+          62
+        ],
+        [
+          26,
+          62,
+          62
+        ],
+        [
+          26,
+          63,
+          63
+        ],
+        [
+          26,
+          64,
+          64
+        ]
+      ],
+      "verdict": "FAIL",
+      "assessment": "Son seti seçti ve sorunlu ilk soruyu fark etti; fakat 1 doğru + 2 yanlış + 1 belirsiz özeti beş değil dört ediyor. Gövdede 2,4,5 yanlış. Ayrıca 284 chunk ve 6 kaynak bölümü nedeniyle 8 çağrı/151,7 saniye harcandı; son setin kaynakları yeniden kullanılmadı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 17,
+      "dimension": "multi_file_provenance",
+      "course": 2,
+      "question": "Bu derse yüklenen üç dosyanın her birinden bir farklı konu seçerek üç satırlık çalışma planı oluştur. Dosya adı, konu, fiziksel PDF sayfası ve bir öğrenme hedefi sütunları olsun. Hiçbir dosyayı atlama veya iki kere kullanma.",
+      "start": "2026-10-17T12:32:32.405Z",
+      "assistantBefore": 20,
+      "attempt": 2,
+      "end": "2026-10-17T12:33:17.160Z",
+      "answer": "Dental AI Akademik\nDosya adı\tKonu\tFiziksel PDF sayfası\tÖğrenme hedefi\n08-Sefalometrik noktalar 2024 15 nisan_260611_211248.pdf\tSefalometrik noktalar: deri ve kemik noktaları\t2\tPronasale (Prn) noktasının orta sagittal düzlemdeki yumuşak doku burun ucunun en ileri noktası olarak tanımını ve noktaların deri/kemik ayrımını öğrenmek.\nnihat.pdf\tYüz profili ve yumuşak doku noktaları\t1\tYüz profilinin konveks, konkav veya düz olduğunu değerlendirmede kullanılan yumuşak doku noktalarını (subnasal, nasion, pogonion, gnation) ayırt etmek. Sayfadaki cevap işaretleri net olmadığı için doğru şıkkı bu sayfadan kesinleştirmeyin.\nOrto devamı.pdf\tTemporomandibular eklem problemleri ve splint kullanımı\t1\tLateral pterygoid plağın kasın etkisiyle ilişkisini ve TME splintinin günlük kullanım sürelerini (sayfadaki el yazısı notlarındaki 8-10 saat ve 24 saat ifadeleri) karşılaştırmak. Bu sürelerin hangi endikasyona ait olduğunu sayfadaki soru metninden doğrulamak gerekir.\n\nNot: Taranmış sayfalardaki el yazısı işaretleri ve şık seçimleri OCR metninden daha güvenilirdir, ancak bazı işaretler okunamıyor. Bu nedenle nihat.pdf ve Orto devamı.pdf'deki cevap ve süre bilgilerini kesin kabul etmeden önce orijinal sayfayla kontrol edin.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 44755,
+      "attempts": 2,
+      "trace": "957eb93f22d54e828af498af29756b13",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 28.602,
+      "planner_ms": 8624,
+      "generation_ms": [
+        12106
+      ],
+      "provider_first_text_ms": [
+        "8798"
+      ],
+      "retrieved_chunk_count": 11,
+      "retrieved_pages": [
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1
+        ],
+        [
+          24,
+          2,
+          2
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          2,
+          2
+        ],
+        [
+          26,
+          1,
+          1
+        ],
+        [
+          26,
+          2,
+          2
+        ]
+      ],
+      "verdict": "WARN",
+      "assessment": "Üç dosyadan birer satır ve fiziksel sayfa verdi. OCR/işaret/süre belirsizliğini kullanıcı metnine taşıdı; bunlar kesin klinik bilgi olarak doğrulanmadı. İlk deneme oturum hatası, giriş sonrası aynı soru çalıştı.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 18,
+      "dimension": "missing_clinical_information",
+      "course": 2,
+      "question": "Bir hastaya kesin hangi ortodontik apareyi seçmeliyim? Yaş, ölçüm ve muayene bilgisi vermiyorum. Notlardan hasta verisi uydurma; karar vermek için eksik olan bilgileri açıkla.",
+      "start": "2026-10-17T12:33:17.163Z",
+      "assistantBefore": 21,
+      "attempt": 2,
+      "end": "2026-10-17T12:34:12.990Z",
+      "answer": "",
+      "status": "Yapay zekâ sağlayıcısının soruyu anlama yanıtı doğrulanamadı. Mesajını yeniden gönderebilirsin.",
+      "links": [],
+      "observed_elapsed_ms": 55827,
+      "attempts": 2,
+      "trace": "1e32e7aa9bbb4587a560e284f9bbbea7",
+      "model_calls": 1,
+      "send_to_last_model_event_seconds": 12.343,
+      "planner_ms": 8077,
+      "generation_ms": [],
+      "provider_first_text_ms": [],
+      "verdict": "FAIL",
+      "assessment": "Giriş sonrası aynı soru da PlannerContractError: invalid planner text ile reddedildi; cevap üretilmedi. Model çağrısı STOP/success=True, hata yerel doğrulamada. Hangi alanın sınırı aştığı ham model cevabı tutulmadığından kesin değil.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 19,
+      "dimension": "large_scope_load_generation",
+      "course": 6,
+      "question": "Bu dersteki akademik notların farklı ana konularını kapsayan 20 zorlayıcı çoktan seçmeli soru hazırla. Tanıtım veya etkinlik dosyasını ders bilgisi sayma. 1–20 eksiksiz numaralandır, her soruda A–E şıkları olsun. Cevap anahtarını şimdilik gösterme.",
+      "start": "2026-10-17T12:34:12.991Z",
+      "assistantBefore": 3,
+      "end": "2026-10-17T12:36:40.053Z",
+      "answer": "Dental AI Akademik\nSoru 1\n\nPeriodontal risk değerlendirmesinde birlikte ele alınan boyutlar hangisinde doğru verilmiştir?\n\nA) Plak indeksi, kanama skoru ve diş mobilitesi\n\nB) Hastalığın ortaya çıkma olasılığı, mevcut hastalığın ilerlemesi ve tedaviye verilecek yanıt\n\nC) Sigara miktarı, kan şekeri ve vücut kitle indeksi\n\nD) Yaş, cinsiyet ve etnik köken\n\nE) Tedavi maliyeti, hasta memnuniyeti ve bakım süresi\n\nSoru 2\n\nRisk tahmin modelleri hakkında notlarda hangi ifade yer alır?\n\nA) Bir değişkenin hastalıkla ilişkili bulunması, modelin tahmin gücünü kanıtlar.\n\nB) Tahmin modelleri geliştirme ve doğrulama gerektirir.\n\nC) Risk skoru, gelecekteki hastalık sonucunu kesin olarak belirler.\n\nD) İlişki araştırmaları ile tahmin modelleri aynı soruyu yanıtlar.\n\nE) Tahmin modelinin hangi hastalarda kullanıldığı önemsizdir.\n\nSoru 3\n\nSigara öyküsü ve değiştirilebilir risk yönetimi için notlarda hangisi vurgulanır?\n\nA) Sigara kullanımı değiştirilemez bir özellik olarak yalnızca kaydedilmelidir.\n\nB) Bırakma konusu ele alınmadan yalnızca mevcut kullanım kaydı yeterlidir.\n\nC) Mevcut kullanım ve bırakma öyküsü önemlidir; bırakma, değiştirilebilir riskin yönetiminin parçasıdır.\n\nD) Bırakma, periodontal sağlık açısından hiç araştırılmamıştır.\n\nE) Sigara kullanımı yalnızca sistemik hastalık açısından önemlidir.\n\nSoru 4\n\nSigara kullanan hastalarda gingival damarlara ilişkin notlarda hangi bulgu bildirilmiştir?\n\nA) Sigara kullananlarda damar yoğunluğu, kullanmayanlarla aynı bulunmuştur.\n\nB) Sigara yalnızca kemik damarlarını etkilemektedir.\n\nC) Bir kapsam derlemesinde, sigara kullananlarla kullanmayanlar arasında damar yoğunluğu farkı bildirilmiştir.\n\nD) Gingival damar yapısı sigaradan etkilenmez, yalnızca yaşla değişir.\n\nE) Sigara, damar işlevini artırarak inflamasyon belirtilerini güçlendirir.\n\nSoru 5\n\nDiyabet ve periodontal değerlendirme için notlarda hangisi doğrudur?\n\nA) Diyabet homojen bir hastalık olduğundan tüm diyabetli hastalar aynı periodontal risk grubunda değerlendirilir.\n\nB) Diyabet, akut ve kısa süreli bir metabolik bozukluktur.\n\nC) Diyabet heterojen bir kronik hastalıktır; diyabetli bütün hastalar periodontal açıdan aynı özelliklere sahip kabul edilmemelidir.\n\nD) Diyabetin varlığı yeterlidir; metabolik kontrol değerlendirmeye alınmaz.\n\nE) Diyabet yalnızca periodontal kemik dokusunu etkiler.\n\nSoru 6\n\nPeriodontal tedavinin glisemik kontrolü etkileyip etkilemediği konusunda sunum nasıl bir durum bildirir?\n\nA) Tedavinin glisemik kontrolü iyileştirdiği kesin olarak gösterilmiştir.\n\nB) Tedavinin glisemik kontrolü kötüleştirdiği kesin olarak gösterilmiştir.\n\nC) Bu soru klinik açıdan önemlidir, ancak sunumda bu soruya kesin yanıt verilmemiştir.\n\nD) Bu ilişki yalnızca tip 1 diyabette araştırılmıştır.\n\nE) Glisemik kontrol ile periodontal tedavi arasında hiçbir ilişki olmadığı belirtilmiştir.\n\nSoru 7\n\nParanhos ve arkadaşlarının 2023 sistematik derleme ve meta-analizinde, obezite ile cerrahi olmayan periodontal tedavi yanıtı hakkında hangi sonuç belirtilmiştir?\n\nA) Obez bireylerde tedavi yanıtı kesin olarak daha kötüdür.\n\nB) Obezite ile tedavi yanıtı arasında her zaman anlamlı bir fark vardır.\n\nC) Obez ve obez olmayan bireylerde tedavi yanıtına ilişkin kanıt, az sayıda kaliteli çalışma ve değişken bulgular nedeniyle sınırlıdır.\n\nD) Obez bireylerde cerrahi olmayan tedavi hiçbir zaman uygulanamaz.\n\nE) Derleme, obezitenin tedavi yanıtını yalnızca olumlu etkilediğini bulmuştur.\n\nSoru 8\n\nObezite ve diş eti oluğu sıvısı sitokinleri ilişkisi hakkında notlarda hangi ifade yer alır?\n\nA) Obez ve obez olmayan bireylerin sitokin sonuçları tamamen tutarlıdır.\n\nB) Her sitokin, bütün çalışmalarda aynı yönde değişmektedir.\n\nC) Obezite ile sitokin değişimi arasındaki ilişki kanıtlanmış ve tek yönlüdür.\n\nD) Obez ve obez olmayan bireylerle yapılan karşılaştırmaların sonuçları tamamen tutarlı değildir.\n\nE) Diş eti oluğu sıvısındaki sitokinler obezitede hiç araştırılmamıştır.\n\nSoru 9\n\nMarruganti ve arkadaşlarının çoklu hastalık yaklaşımında periodontitis, diyabet ve obezite için ortak değerlendirme alanları hangileridir?\n\nA) Kemik yoğunluğu, diş mobilitesi, plak indeksi ve kanama\n\nB) Sistemik inflamasyon, insülin direnci, metabolik işlev bozukluğu, yaşam tarzı ve sosyal koşullar\n\nC) Ağız hijyeni, diş fırçalama sıklığı ve florür kullanımı\n\nD) Yaş, genetik yatkınlık, biyolojik cinsiyet ve etnik köken\n\nE) Tükrük akışı, asidite ve kalsiyum düzeyi\n\nSoru 10\n\nYaşam tarzı değişikliklerinin periodontal sonuçlar üzerindeki kanıtı hakkında hangisi doğrudur?\n\nA) Kanıt, diyabet ve obezite alanındaki kadar gelişmiştir.\n\nB) Kanıt, diyabet ve obezite alanındakinden daha gelişmiştir.\n\nC) Kanıt, diyabet ve obezite alanındaki kadar gelişmiş değildir.\n\nD) Yaşam tarzının periodontal sonuçlara etkisi tamamen kanıtlanmıştır.\n\nE) Yaşam tarzı değişikliklerinin periodontal sonuçlardaki kanıtı hiç araştırılmamıştır.\n\nSoru 11\n\nYaşlı hastada ağız bakımı değerlendirmesinde notlarda hangi unsurlar sayılır?\n\nA) Kan grubu, diş rengi ve yaş\n\nB) El becerisi ve görme, bilişsel ve fiziksel işlev, bakımda yardım gereksinimi ve bakım hizmetlerine erişim\n\nC) Sigara paket yılı, kan basıncı ve kolesterol düzeyi\n\nD) Diş sayısı, protez tipi ve radyografi yoğunluğu\n\nE) Yalnızca kronolojik yaş ve hastanın cinsiyeti\n\nSoru 12\n\nZhou ve arkadaşlarının yaklaşımına göre immün yaşlanma ve inflamatuvar yaşlanma ile ilgili hangi yorum doğrudur?\n\nA) Mekanizmanın tanımlanması, belirli yaştaki bireyin kaybedeceği kemik miktarını hesaplamaya olanak verir.\n\nB) Mekanizma bilgisi bireysel tahmin sağlamaz; klinik durum doğrudan değerlendirilmelidir.\n\nC) Alveoler kemik döngüsü yalnızca kemik hücreleri tarafından düzenlenir.\n\nD) İmmün sistem ile kemik döngüsü arasında bir etkileşim yoktur.\n\nE) Yaşla ilişkili periodontal yıkım tamamen açıklanmış durumdadır.\n\nSoru 13\n\nGao ve arkadaşlarının 2024 sistematik derlemesinde incelenen genetik araştırmalar hakkında hangisi belirtilmiştir?\n\nA) Araştırmaların çoğu Avrupa kökenli veya benzer örneklemlere dayanmaktadır.\n\nB) Araştırmaların tamamı Asya kökenli katılımcılarla yapılmıştır.\n\nC) Derlemedeki bütün çalışmalar aynı hastalık tanımını kullanmıştır.\n\nD) Derlemede değerlendirilen araştırma sayısı 50'dir.\n\nE) Tek bir genetik açıklama bütün hastalar için kullanılabilir bulunmuştur.\n\nSoru 14\n\nCastro dos Santos ve arkadaşlarının incelemesinde cinsiyet ile tedaviye klinik yanıt arasındaki ilişki hakkında ne bildirilmiştir?\n\nA) Cinsiyet, genel değerlendirmede tedaviye yanıtı belirleyen bir özellik olarak ortaya çıkmıştır.\n\nB) Cinsiyet, tedavi yanıtını yalnızca kadınlarda belirlemiştir.\n\nC) Genel sonuçta cinsiyet belirleyici çıkmamış, bazı alt gruplarda farklılıklar bildirilmiştir.\n\nD) Erkeklerde tedavi yanıtı her zaman kadınlardan düşük bulunmuştur.\n\nE) Çalışma yalnızca tek bir randomize klinik araştırmayı incelemiştir.\n\nSoru 15\n\nAilede erken diş kaybı öyküsü ve genetik değerlendirme hakkında notlarda hangi ifade yer alır?\n\nA) Aile öyküsü genetik tanıdır ve tek başına kesin tanı koydurur.\n\nB) Ailede erken diş kaybı olduğunda kaybın nedeni açıklığa kavuşturulmalıdır; her diş kaybı periodontal hastalıktan kaynaklanmaz.\n\nC) Ailede erken diş kaybı her zaman periodontal hastalığın kanıtıdır.\n\nD) Genç bireylerde klinik tarama yapılmasına gerek yoktur.\n\nE) Aile öyküsü belirli bir genetik bozukluğu gösterir.\n\nSoru 16\n\nEpigenetik bulgular ve rutin klinik kullanım hakkında notlarda hangi ifade bulunur?\n\nA) Epigenetik bir farklılığın bulunması, klinikte kullanılabilecek bir risk testinin geliştirildiği anlamına gelir.\n\nB) Epigenetik bulgu, rutin klinik test anlamına gelmez.\n\nC) Epigenetik, DNA dizisindeki değişiklikleri ifade eder ve rutin testlerle ölçülür.\n\nD) Epigenetik ve genetik kavramları aynı anlama gelir.\n\nE) Epigenetik, çevresel etkenlerden tamamen bağımsızdır.\n\nSoru 17\n\nSosyal determinantlara örnek olarak notlarda hangi göstergeler sayılmıştır?\n\nA) Yaş ve kalıtsal yapı\n\nB) Biyolojik cinsiyet ve yaş\n\nC) Eğitim ve gelir\n\nD) Aile öyküsü ve genetik yatkınlık\n\nE) Diş sayısı ve periodontal cep derinliği\n\nSoru 18\n\nFleming ve arkadaşlarının periodontal sağlık eşitsizliklerini ele aldığı bağlam hangisidir?\n\nA) Yalnızca bireysel fırçalama alışkanlıkları\n\nB) Sistemik ırkçılık, eğitim, klinik bakım ve hasta davranışları\n\nC) Yalnızca kalıtsal genetik varyantlar\n\nD) Yalnızca hormonal farklılıklar\n\nE) Yalnızca diş hekimi sayısındaki farklılıklar\n\nSoru 19\n\nKapsamlı periodontal değerlendirme ve determinantlar hakkında hangisi doğrudur?\n\nA) Yaş, genetik öykü veya sosyal koşullar kapsamlı periodontal değerlendirmenin yerini alır.\n\nB) Hiçbir determinant kapsamlı periodontal değerlendirmenin yerini tutmaz.\n\nC) Biyolojik cinsiyet, periodontal muayeneden daha kesin bilgi verir.\n\nD) Etnik köken, tek başına değerlendirmenin tamamını oluşturur.\n\nE) Aile öyküsü, klinik muayeneye gerek bırakmaz.\n\nSoru 20\n\nGillone ve arkadaşlarının araştırmasında erkekler hakkında ne bildirilmiştir ve bu bulgu nasıl yorumlanmalıdır?\n\nA) Erkekler her zaman yüksek risk taşıdığından bireysel muayene gerekmez.\n\nB) Erkeklerde daha fazla periodontitis bildirilmiştir; bu grup düzeyinde bir gözlemdir ve bireysel riski belirlemez.\n\nC) Erkeklerde periodontitis hiç bildirilmemiştir.\n\nD) Bulgu, bütün toplumlara aynen aktarılabilir.\n\nE) Kadınlardaki düşük risk, erkek hastada da düşük risk olduğunu gösterir.",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 147062,
+      "attempts": 1,
+      "trace": "1c71a552caa34e3082038aafc43d3df0",
+      "model_calls": 4,
+      "send_to_last_model_event_seconds": 119.51,
+      "planner_ms": 7376,
+      "generation_ms": [
+        38716,
+        41681,
+        56555
+      ],
+      "provider_first_text_ms": [
+        "20995",
+        "24097",
+        "42802"
+      ],
+      "retrieved_chunk_count": 128,
+      "retrieved_pages": [
+        [
+          34,
+          1,
+          1
+        ],
+        [
+          34,
+          1,
+          1
+        ],
+        [
+          34,
+          1,
+          1
+        ],
+        [
+          34,
+          2,
+          2
+        ],
+        [
+          34,
+          2,
+          2
+        ],
+        [
+          34,
+          2,
+          2
+        ],
+        [
+          34,
+          3,
+          3
+        ],
+        [
+          34,
+          3,
+          3
+        ],
+        [
+          34,
+          3,
+          3
+        ],
+        [
+          34,
+          4,
+          4
+        ],
+        [
+          34,
+          4,
+          4
+        ],
+        [
+          34,
+          5,
+          5
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          6,
+          6
+        ],
+        [
+          34,
+          7,
+          7
+        ],
+        [
+          34,
+          7,
+          7
+        ],
+        [
+          34,
+          7,
+          7
+        ],
+        [
+          34,
+          7,
+          7
+        ],
+        [
+          34,
+          7,
+          7
+        ],
+        [
+          34,
+          8,
+          8
+        ],
+        [
+          34,
+          8,
+          8
+        ],
+        [
+          34,
+          8,
+          8
+        ],
+        [
+          35,
+          1,
+          1
+        ],
+        [
+          35,
+          2,
+          2
+        ],
+        [
+          35,
+          2,
+          2
+        ],
+        [
+          35,
+          3,
+          3
+        ],
+        [
+          35,
+          4,
+          4
+        ],
+        [
+          35,
+          5,
+          5
+        ],
+        [
+          35,
+          6,
+          6
+        ],
+        [
+          35,
+          7,
+          7
+        ],
+        [
+          35,
+          8,
+          8
+        ],
+        [
+          35,
+          8,
+          8
+        ],
+        [
+          35,
+          9,
+          9
+        ],
+        [
+          35,
+          10,
+          10
+        ],
+        [
+          35,
+          11,
+          11
+        ],
+        [
+          35,
+          12,
+          12
+        ],
+        [
+          35,
+          13,
+          13
+        ],
+        [
+          35,
+          14,
+          14
+        ],
+        [
+          35,
+          15,
+          15
+        ],
+        [
+          35,
+          16,
+          16
+        ],
+        [
+          35,
+          17,
+          17
+        ],
+        [
+          35,
+          18,
+          18
+        ],
+        [
+          35,
+          19,
+          19
+        ],
+        [
+          35,
+          20,
+          20
+        ],
+        [
+          35,
+          20,
+          20
+        ],
+        [
+          35,
+          21,
+          21
+        ],
+        [
+          36,
+          1,
+          1
+        ],
+        [
+          36,
+          2,
+          2
+        ],
+        [
+          36,
+          3,
+          3
+        ],
+        [
+          36,
+          4,
+          4
+        ],
+        [
+          36,
+          5,
+          5
+        ],
+        [
+          36,
+          6,
+          6
+        ],
+        [
+          36,
+          7,
+          7
+        ],
+        [
+          36,
+          8,
+          8
+        ],
+        [
+          36,
+          8,
+          8
+        ],
+        [
+          36,
+          9,
+          9
+        ],
+        [
+          36,
+          9,
+          9
+        ],
+        [
+          36,
+          10,
+          10
+        ],
+        [
+          36,
+          10,
+          10
+        ],
+        [
+          36,
+          11,
+          11
+        ],
+        [
+          36,
+          12,
+          12
+        ],
+        [
+          36,
+          12,
+          12
+        ],
+        [
+          36,
+          13,
+          13
+        ],
+        [
+          36,
+          13,
+          13
+        ],
+        [
+          36,
+          14,
+          14
+        ],
+        [
+          36,
+          15,
+          15
+        ],
+        [
+          36,
+          15,
+          15
+        ],
+        [
+          36,
+          16,
+          16
+        ],
+        [
+          36,
+          17,
+          17
+        ],
+        [
+          36,
+          17,
+          17
+        ],
+        [
+          36,
+          18,
+          18
+        ],
+        [
+          36,
+          18,
+          18
+        ],
+        [
+          36,
+          18,
+          18
+        ],
+        [
+          36,
+          18,
+          18
+        ],
+        [
+          36,
+          18,
+          18
+        ],
+        [
+          36,
+          19,
+          19
+        ],
+        [
+          36,
+          20,
+          20
+        ],
+        [
+          36,
+          20,
+          20
+        ],
+        [
+          36,
+          21,
+          21
+        ],
+        [
+          36,
+          21,
+          21
+        ],
+        [
+          37,
+          1,
+          1
+        ],
+        [
+          37,
+          1,
+          1
+        ],
+        [
+          37,
+          2,
+          2
+        ],
+        [
+          37,
+          3,
+          3
+        ],
+        [
+          37,
+          4,
+          4
+        ],
+        [
+          37,
+          5,
+          5
+        ],
+        [
+          37,
+          5,
+          5
+        ],
+        [
+          37,
+          6,
+          6
+        ],
+        [
+          37,
+          7,
+          7
+        ],
+        [
+          37,
+          8,
+          8
+        ],
+        [
+          37,
+          9,
+          9
+        ],
+        [
+          37,
+          9,
+          9
+        ],
+        [
+          37,
+          10,
+          10
+        ],
+        [
+          37,
+          10,
+          10
+        ],
+        [
+          37,
+          11,
+          11
+        ],
+        [
+          37,
+          12,
+          12
+        ],
+        [
+          37,
+          13,
+          13
+        ],
+        [
+          37,
+          13,
+          13
+        ],
+        [
+          37,
+          13,
+          13
+        ],
+        [
+          37,
+          13,
+          13
+        ],
+        [
+          37,
+          14,
+          14
+        ],
+        [
+          37,
+          14,
+          14
+        ],
+        [
+          37,
+          14,
+          14
+        ],
+        [
+          37,
+          15,
+          15
+        ],
+        [
+          37,
+          15,
+          15
+        ],
+        [
+          37,
+          16,
+          16
+        ],
+        [
+          37,
+          17,
+          17
+        ],
+        [
+          37,
+          18,
+          18
+        ],
+        [
+          37,
+          18,
+          18
+        ],
+        [
+          37,
+          19,
+          19
+        ],
+        [
+          37,
+          20,
+          20
+        ],
+        [
+          37,
+          21,
+          21
+        ],
+        [
+          37,
+          22,
+          22
+        ],
+        [
+          37,
+          23,
+          23
+        ]
+      ],
+      "verdict": "REVIEW",
+      "assessment": "20 soru, kesintisiz 1–20 ve her harften 20 şık var; cevap anahtarı yok. Birçok çeldirici her zaman/hiçbir/sadece ifadeleriyle kolay eleniyor; zorlayıcılık zayıf. Bütün yeni periodontal olgular/yazar atıfları bağımsız asıl PDF denetiminden geçmedi.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    },
+    {
+      "id": 20,
+      "dimension": "short_request_during_large_request",
+      "course": 6,
+      "question": "Risk indikatörünü yalnız bu ders notlarına göre tek cümlede tanımla ve kaynak dosya/sayfayı belirt. Soru veya PDF üretme.",
+      "concurrent_with": 16,
+      "start": "2026-10-17T12:11:25.863Z",
+      "assistantBefore": 2,
+      "end": "2026-10-17T12:11:55.521Z",
+      "answer": "Dental AI Akademik\n\nRisk indikatörü, hastalıkla ilişkili olan ancak kanıtı daha sınırlı bulunan özelliktir (Periodontolojide-risk-Neyi-degerlendirmek-istiyoruz.pdf, sayfa 5).",
+      "status": "",
+      "links": [],
+      "observed_elapsed_ms": 29658,
+      "attempts": 1,
+      "trace": "b2bfbebc2eff4b9680d60e822b78a147",
+      "model_calls": 2,
+      "send_to_last_model_event_seconds": 17.981,
+      "planner_ms": 6779,
+      "generation_ms": [
+        3208
+      ],
+      "provider_first_text_ms": [
+        "2414"
+      ],
+      "retrieved_chunk_count": 2,
+      "retrieved_pages": [
+        [
+          35,
+          5,
+          5
+        ],
+        [
+          36,
+          5,
+          5
+        ]
+      ],
+      "verdict": "PASS",
+      "assessment": "Başka dersteki ağır 16. istek sürerken kısa risk indikatörü sorusu 17,981 saniyede son model çıktısına ulaştı; ağır işin bitmesini beklemedi. Bu yalnız iki eşzamanlı isteğin gözlemidir.",
+      "timing_definition": "browser send timestamp to last provider-response/plan-failure log; not exact network completion or first visible token"
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "attempt": null,
+      "start": "2026-10-17T12:00:21.262Z",
+      "end": "2026-10-17T12:01:08.452Z",
+      "status": ""
+    },
+    {
+      "id": 2,
+      "attempt": null,
+      "start": "2026-10-17T12:01:08.452Z",
+      "end": "2026-10-17T12:01:38.314Z",
+      "status": ""
+    },
+    {
+      "id": 3,
+      "attempt": null,
+      "start": "2026-10-17T12:01:38.314Z",
+      "end": "2026-10-17T12:02:02.861Z",
+      "status": ""
+    },
+    {
+      "id": 4,
+      "attempt": null,
+      "start": "2026-10-17T12:02:02.862Z",
+      "end": "2026-10-17T12:02:27.704Z",
+      "status": ""
+    },
+    {
+      "id": 5,
+      "attempt": null,
+      "start": "2026-10-17T12:02:27.704Z",
+      "end": "2026-10-17T12:02:58.473Z",
+      "status": ""
+    },
+    {
+      "id": 6,
+      "attempt": null,
+      "start": "2026-10-17T12:02:58.473Z",
+      "end": "2026-10-17T12:03:18.567Z",
+      "status": ""
+    },
+    {
+      "id": 7,
+      "attempt": null,
+      "start": "2026-10-17T12:03:18.567Z",
+      "end": "2026-10-17T12:03:51.197Z",
+      "status": ""
+    },
+    {
+      "id": 8,
+      "attempt": null,
+      "start": "2026-10-17T12:03:51.197Z",
+      "end": "2026-10-17T12:04:21.479Z",
+      "status": ""
+    },
+    {
+      "id": 9,
+      "attempt": null,
+      "start": "2026-10-17T12:04:32.290Z",
+      "end": "2026-10-17T12:05:14.471Z",
+      "status": ""
+    },
+    {
+      "id": 10,
+      "attempt": null,
+      "start": "2026-10-17T12:05:14.471Z",
+      "end": "2026-10-17T12:06:02.286Z",
+      "status": ""
+    },
+    {
+      "id": 11,
+      "attempt": null,
+      "start": "2026-10-17T12:06:02.287Z",
+      "end": "2026-10-17T12:06:40.477Z",
+      "status": ""
+    },
+    {
+      "id": 12,
+      "attempt": null,
+      "start": "2026-10-17T12:06:40.478Z",
+      "end": "2026-10-17T12:07:18.407Z",
+      "status": ""
+    },
+    {
+      "id": 13,
+      "attempt": null,
+      "start": "2026-10-17T12:07:18.408Z",
+      "end": "2026-10-17T12:08:33.182Z",
+      "status": ""
+    },
+    {
+      "id": 14,
+      "attempt": null,
+      "start": "2026-10-17T12:08:33.183Z",
+      "end": "2026-10-17T12:09:20.513Z",
+      "status": ""
+    },
+    {
+      "id": 15,
+      "attempt": null,
+      "start": "2026-10-17T12:09:20.514Z",
+      "end": "2026-10-17T12:10:08.620Z",
+      "status": ""
+    },
+    {
+      "id": 20,
+      "attempt": null,
+      "start": "2026-10-17T12:11:25.863Z",
+      "end": "2026-10-17T12:11:55.521Z",
+      "status": ""
+    },
+    {
+      "id": 16,
+      "attempt": null,
+      "start": "2026-10-17T12:10:08.622Z",
+      "end": "2026-10-17T12:12:57.318Z",
+      "status": ""
+    },
+    {
+      "id": 17,
+      "attempt": null,
+      "start": "2026-10-17T12:12:57.320Z",
+      "end": "2026-10-17T12:13:46.481Z",
+      "status": "Oturumunuz sona ermiş."
+    },
+    {
+      "id": 18,
+      "attempt": null,
+      "start": "2026-10-17T12:13:46.482Z",
+      "end": "2026-10-17T12:14:17.330Z",
+      "status": "Oturumunuz sona ermiş."
+    },
+    {
+      "id": 17,
+      "attempt": 2,
+      "start": "2026-10-17T12:32:32.405Z",
+      "end": "2026-10-17T12:33:17.160Z",
+      "status": ""
+    },
+    {
+      "id": 18,
+      "attempt": 2,
+      "start": "2026-10-17T12:33:17.163Z",
+      "end": "2026-10-17T12:34:12.990Z",
+      "status": "Yapay zekâ sağlayıcısının soruyu anlama yanıtı doğrulanamadı. Mesajını yeniden gönderebilirsin."
+    },
+    {
+      "id": 19,
+      "attempt": null,
+      "start": "2026-10-17T12:34:12.991Z",
+      "end": "2026-10-17T12:36:40.053Z",
+      "status": ""
+    }
+  ],
+  "verdict_counts": {
+    "PASS": 11,
+    "WARN": 4,
+    "REVIEW": 2,
+    "FAIL": 3
+  },
+  "limits": [
+    "Production commit 5367fef; PR135 not deployed.",
+    "No 60k concurrent-user/load or broad security test.",
+    "No authoritative billing total or token-cost comparison.",
+    "After credential delivery the browser blocked further source PDF downloads; no alternative secret/session extraction was attempted. All periodontal facts in case19 are not claimed verified.",
+    "Browser observation durations include polling/inspection delay; log-derived response times are reported separately.",
+    "Authentication handoff waiting time is excluded from request latency."
+  ],
+  "question_set_19_structure": {
+    "numbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "option_counts": {
+      "A": 20,
+      "B": 20,
+      "C": 20,
+      "D": 20,
+      "E": 20
+    }
+  }
+}
