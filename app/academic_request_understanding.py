@@ -46,6 +46,8 @@ SCHEMA = {
         'complete_sections': {'type': 'boolean'},
         'each_document': {'type': 'boolean'},
         'export_previous_answer': {'type': 'boolean'},
+        'append_previous_pdf': {'type': 'boolean'},
+        'pdf_addition_turns': {'type': 'array', 'items': {'type': 'integer'}, 'maxItems': 8},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
@@ -54,6 +56,7 @@ SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
 SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source', 'complete_sections', 'each_document'])
 SCHEMA['required'].append('export_previous_answer')
+SCHEMA['required'].extend(['append_previous_pdf', 'pdf_addition_turns'])
 SCHEMA['properties'].update({
     'exam_topics': {'type':'array','maxItems':32,'items':{'type':'string'}},
     'grade_previous_set': {'type':'boolean'},
@@ -63,7 +66,20 @@ SCHEMA['properties'].update({
     'show_quiz_answers': {'type':'boolean'},
 })
 SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics'])
-SYSTEM = '''export_previous_answer is true ONLY when the current request asks to export
+SYSTEM = '''append_previous_pdf is true when the current request asks to ADD already completed
+chat content (tables, explanations, mnemonics, etc.) to an earlier existing PDF,
+preserving that PDF's contents. For example "Bunları o PDF'ye ekle kral".
+Set output_format=pdf, operation=answer and export_previous_answer=false.
+pdf_addition_turns lists the zero-based indices of the ASSISTANT turns in recent_dialogue
+whose existing contents should be appended, in chronological order. Only select
+non-PDF assistant answers. Use [] only when the reference is the immediately
+preceding non-PDF assistant answer. The application combines the saved PDF and
+selected completed answers verbatim; no retrieval or new table generation is needed.
+If the user asks to create NEW tables/content rather than append existing content,
+append_previous_pdf=false and pdf_addition_turns=[]. For unrelated/text requests
+both append_previous_pdf=false and pdf_addition_turns=[]. Never treat adding to
+an existing PDF as exporting just the most recent answer into a standalone PDF.
+export_previous_answer is true ONLY when the current request asks to export
 the immediately preceding assistant answer as a PDF without changing its content.
 Set output_format=pdf and operation=answer. The application will copy that completed answer exactly;
 no new factual answer, source search or content generation is needed. For any
@@ -247,6 +263,8 @@ class StudyRequest:
     complete_sections: bool = True
     each_document: bool = False
     export_previous_answer: bool = False
+    append_previous_pdf: bool = False
+    pdf_addition_turns: tuple[int, ...] = ()
     exam_topics: tuple[str, ...] = ()
     grade_previous_set: bool = False
     quiz_answers: tuple = ()
@@ -311,6 +329,8 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('each_document', False)
         data.setdefault('complete_sections', True)  # Compatibility with older contracts.
         data.setdefault('export_previous_answer', False)
+        data.setdefault('append_previous_pdf', False)
+        data.setdefault('pdf_addition_turns', [])
         data.setdefault('exam_topics', [])
         data.setdefault('grade_previous_set', False)
         data.setdefault('quiz_answers', [])
@@ -325,6 +345,17 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if (type(data['export_previous_answer']) is not bool or
             (data['export_previous_answer'] and (data['output_format'] != 'pdf' or data['operation'] != 'answer'))):
         raise PlannerContractError('invalid previous answer export')
+    turns = data['pdf_addition_turns']
+    if (type(data['append_previous_pdf']) is not bool
+            or not isinstance(turns, list) or len(turns) > 8
+            or any(type(i) is not int or not 0 <= i < 8 for i in turns)
+            or len(set(turns)) != len(turns)
+            or (turns and not data['append_previous_pdf'])
+            or (data['append_previous_pdf'] and (data['output_format'] != 'pdf'
+                or data['operation'] != 'answer' or data['export_previous_answer']
+                or data['grade_previous_set']))):
+        raise PlannerContractError('invalid PDF append')
+    data['pdf_addition_turns'] = tuple(sorted(turns))
     for name, limit in [('resolved_query', 8000), ('clarification', 1200)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text: ' + name + (' type' if not isinstance(data[name], str) else ' length/control'))
@@ -390,7 +421,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -420,7 +451,8 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     """One call at most; preserves messages intact rather than clipping meaning."""
     started = time.perf_counter()
     trace_id = uuid.uuid4().hex
-    turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', ''))}
+    turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', '')),
+              **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
     # Put the active request last, after its historical context.
     from app.academic_direct_request import previous_source_request
@@ -499,7 +531,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     return interpret_request(question, history, call=call, source_outline=source_outline, provider_name=target.provider)
 
 
-def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, **kwargs):
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, **kwargs):
     """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
@@ -523,7 +555,12 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.grade_previous_set:
+    if getattr(plan, 'append_previous_pdf', False):
+        from app.academic_pdf_revision import append_saved_pdf
+        result = append_saved_pdf(session, message_model=message_model, plan=plan,
+            owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
+            history=kwargs.get('recent_history') or [])
+    elif plan.grade_previous_set:
         from app.academic_quiz import grade_previous_quiz
         result = RetrievalResult(resolved_query=plan.resolved_query,
             retrieval_mode='generated_quiz_grade', evidence_sufficient=True,
