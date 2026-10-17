@@ -198,3 +198,13 @@ def test_bad_provider_model_pair_and_cached_usage(monkeypatch):
         'cache_creation_input_tokens': 20, 'output_tokens': 7}}) == (130, 7, 137)
     assert _backoff_seconds(529, 1, None) == 2
     assert _backoff_seconds(529, 1, 180) == 180
+
+
+def test_incomplete_thinking_response_still_records_billed_tokens(provider,monkeypatch):
+    response(monkeypatch,events=frames(
+        {'type':'message_start','message':{'usage':{'input_tokens':11}}},
+        *ending('max_tokens')))
+    with pytest.raises(StudyProviderError):list(provider.generate_stream(**kwargs()))
+    ledger=transport.record_api_result.call_args.kwargs
+    assert not ledger['success']
+    assert ledger['response_json']['usage']=={'input_tokens':11,'output_tokens':7}

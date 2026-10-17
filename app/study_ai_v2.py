@@ -92,6 +92,8 @@ def _generation_targets() -> list[ProviderTarget]:
 
 
 def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) -> list[dict]:
+    if retrieval.study_task.get('quick_action') and retrieval.study_task.get('operation')!='generate_questions':
+        return []
     if retrieval.study_task.get('document_sample'):
         # Independent per-file inventories use only this turn's representative
         # sources; an earlier answer is not evidence for an unsampled page.
@@ -173,7 +175,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
            if retrieval.study_task.get('operation') == 'generate_questions' else "")
         + ("TEKRAR EDİLMEYECEK ÖNCEKİ SORULAR (bilgi kaynağı değildir):\n"
            + json.dumps(prior_questions(history), ensure_ascii=False) + "\n\n"
-           if retrieval.study_task.get('operation') == 'generate_questions' else "")
+           if retrieval.study_task.get('operation') == 'generate_questions' and not retrieval.study_task.get('quiz_contract') else "")
         + (f"BU TURUN İSTENEN SORU ADEDİ: {retrieval.study_task['count']}. "
            f"Soru 1'den Soru {retrieval.study_task['count']}'ye kadar tek bir sıra halinde "
            "istenen adedin tamamını üret. 5 veya 10 soruluk varsayılan bir listeye dönme. "
@@ -473,6 +475,21 @@ def _stream_source_batches(course_title, question, history, retrieval):
         yield from stream_rag_v2(course_title,question,history,direct)
         retrieval.generated_quiz=direct.generated_quiz
         return
+    if (retrieval.study_task.get('quick_action')
+            and retrieval.study_task.get('source_kind','notes')=='notes'
+            and all(not child.visual_sources and not child.attachments for child in retrieval.source_batches)):
+        contexts=list(dict.fromkeys(context for child in retrieval.source_batches for context in child.note_context))
+        # A bounded complete text input can be judged directly. No clipping of
+        # topics, source versions or evidence, and no extra token-count API call.
+        if sum(map(len,contexts))<=192000 and sum(len(c.encode('utf-8')) for c in contexts)<=256000:
+            from dataclasses import replace
+            direct=replace(retrieval,source_batches=[],note_context=contexts)
+            if len(_prompt(course_title,question,direct,history).encode('utf-8'))<=300000:
+                logger.info('Academic text packing trace=%s batches=%s contexts=%s chars=%s direct=1',
+                    retrieval.semantic_trace_id,len(retrieval.source_batches),len(contexts),sum(map(len,contexts)))
+                yield from stream_rag_v2(course_title,question,history,direct)
+                retrieval.generated_quiz=direct.generated_quiz
+                return
     outputs = []
     synthesis_chars = 0
     source_questions = retrieval.study_task.get('source_kind') == 'questions'
@@ -639,6 +656,7 @@ def stream_rag_v2(
                 from app.academic_quiz import QUIZ_SCHEMA, CONTRACT_PROMPT
                 generation_options['response_schema'] = QUIZ_SCHEMA
                 prompt += CONTRACT_PROMPT
+                prompt += '\nJSON sözleşmesi bu turda başlık/Markdown ve anahtarı gizleme talimatlarının yerini alır: correct/rationale uygulamanın özel kaydıdır, öğrenciye doğrudan gösterilmez. Kökleri başlık işareti veya numara olmadan stem alanına yaz. Cevapları saklama, JSON alanlarını eksiksiz doldur.'
                 prompt += '\nÖnceki setlerin fact kayıtları: ' + json.dumps([q['fact'] for h in history for q in (h.get('quiz') or {}).get('questions',[])], ensure_ascii=False)
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
@@ -649,7 +667,7 @@ def stream_rag_v2(
             # both; the earlier Gemini-sized cap truncated a real 20-item turn.
             if target.provider == 'anthropic' and (
                     retrieval.study_task.get('batch_partial')
-                    or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
+                    or structured_quiz or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
                 output_budget = 16000
             pieces = []
             for chunk in provider.generate_stream(
