@@ -284,12 +284,15 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             result.source_material_ids.append(evidence.material_id)
     # This means candidates exist, not that a rule engine proved factual support.
     result.evidence_sufficient = bool(result.evidence)
-    # The planner has not seen the selected pages and cannot know whether OCR
-    # omitted crossed-out options, answer marks or handwritten corrections.
+    # OCR is prepared once by the indexing worker and is usable evidence.
+    # Its extraction method alone must not trigger another paid visual read.
+    # Inspect originals only when the request actually needs visual evidence.
     scanned_pages = set()
+    selected_pages = set()
     if result.evidence:
         selected_pages = {(item.material_id, page) for item in result.evidence
                           for page in range(item.page_start, item.page_end + 1)}
+    if result.evidence and request_plan.needs_visual:
         checkpoints = session.exec(text('''SELECT p.material_id,p.page_number
             FROM studyindexpage p JOIN studymaterial m
               ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id

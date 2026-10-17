@@ -154,8 +154,13 @@ not the number of source questions to read. Preserve that number in count and
 resolved_query even when the user writes it as a Turkish word.
 Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
-requested. needs_visual is true when the task needs an actual source diagram,
-image, marked region or table. These fields control source retrieval directly. continue_source is true only
+requested. needs_visual is true only when answering requires inspecting actual
+source pixels: a diagram's geometry, an image, a marked answer, or handwriting.
+Indexed OCR text is already available; ordinary summaries, explanations, new
+questions and source-question transcription do not require re-reading scans.
+Asking to CREATE a table is an output-format request, not visual inspection.
+A source table that can be answered from indexed text also needs no image.
+These fields control source retrieval directly. continue_source is true only
 for continuing the previously paginated SOURCE question list, never for a fresh
 request or a request to restart from the beginning.
 Solving or grading questions that the assistant just generated refers to the

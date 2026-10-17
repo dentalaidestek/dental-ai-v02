@@ -22,7 +22,8 @@ def db():
             page_start int, page_end int, content_kind text, chunk_index int, semantic_json text)'''))
         session.exec(text('''CREATE TEMP TABLE studyindexpage (
             owner_user_id bigint,course_id bigint,material_id bigint,index_version text,
-            page_number int,extraction_method text)'''))
+            page_number int,extraction_method text,
+            text_content text,status text DEFAULT 'EXTRACTED')'''))
         session.exec(text("INSERT INTO studymaterial VALUES (1,17,'v1','READY',NULL,'fixture',23)"))
         from app.academic_chunk_links import _CACHE
         _CACHE.clear()
@@ -151,39 +152,59 @@ def test_every_allowed_planner_search_reaches_real_postgres(db,count):
 
 
 @pytest.mark.parametrize('scope',['topic','course'])
-def test_selected_scanned_pages_are_owned_active_and_require_original_visuals(db,monkeypatch,scope):
+def test_explicit_visual_request_keeps_owned_active_originals(db,monkeypatch,scope):
     from app.academic_request_understanding import StudyRequest
     from app.academic_semantic_retrieval import retrieve_semantic_context
     add(db,1,'hipofiz'); add(db,2,'hipofiz')
     db.exec(text("ALTER TABLE studymaterial ADD COLUMN file_path text DEFAULT 'private/source.pdf', ADD COLUMN mime_type text DEFAULT 'application/pdf'"))
-    db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'v1',1,'LOCAL_OCR:test'), (17,23,1,'v1',2,'PDF_TEXT'), (17,23,1,'v0',2,'LOCAL_OCR:old'), (99,23,1,'v1',2,'LOCAL_OCR:foreign'), (17,99,1,'v1',2,'LOCAL_OCR:other-course')"))
+    db.exec(text("INSERT INTO studyindexpage(owner_user_id,course_id,material_id,index_version,page_number,extraction_method) VALUES (17,23,1,'v1',1,'LOCAL_OCR:test'), (17,23,1,'v1',2,'PDF_TEXT'), (17,23,1,'v0',2,'LOCAL_OCR:old'), (99,23,1,'v1',2,'LOCAL_OCR:foreign'), (17,99,1,'v1',2,'LOCAL_OCR:other-course')"))
     if scope=='course':
         import app.academic_semantic_retrieval as current
         monkeypatch.setattr(current,'get_or_build_coverage_plan',lambda *a,**k:None)
         monkeypatch.setattr(current,'_coverage_hydration_ids',lambda *a,**k:[1,2])
-    plan=StudyRequest('Hipofiz anlat','answer',scope,None,None,'',('hipofiz',) if scope=='topic' else ())
+    plan=StudyRequest('Hipofiz görselini anlat','answer',scope,None,None,'',('hipofiz',) if scope=='topic' else (),needs_visual=True)
     result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
-    assert {(v['material_id'],v['page_number']) for v in result.visual_sources} == {(1,1)}
+    assert {(v['material_id'],v['page_number']) for v in result.visual_sources} == {(1,1),(1,2)}
     assert result.visual_sources[0]['index_version']=='v1'
     assert 'OCR KAYNAK UYARISI' in result.note_context[0]
     assert '\n'.join(result.note_context).count('hipofiz') == 1  # Digital page survives; OCR does not compete.
     assert len(result.evidence) == 2
     assert result.source_coverage_complete == (scope=='course')
     if scope=='course':
-        # The original scan covers other chunks on that page, but a partial
-        # digital transcription does not cover omitted digital-page chunks.
+        # Explicit inspection includes both originals and covers other chunks
+        # on those pages; an entirely unselected page remains uncovered.
         add(db,3,'hidden OCR chunk')
         db.exec(text('UPDATE studyindexchunk SET page_start=1,page_end=1 WHERE id=3'))
         result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
         assert result.source_coverage_complete
         db.exec(text('UPDATE studyindexchunk SET page_start=2,page_end=2 WHERE id=3'))
         result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
-        assert not result.source_coverage_complete
+        assert result.source_coverage_complete
         db.exec(text('DELETE FROM studyindexchunk WHERE id=3'))
         # An indexed page with no selected chunk is not magically covered.
-        db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'v1',3,'EMPTY')"))
+        db.exec(text("INSERT INTO studyindexpage(owner_user_id,course_id,material_id,index_version,page_number,extraction_method) VALUES (17,23,1,'v1',3,'EMPTY')"))
         result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
         assert not result.source_coverage_complete
+
+
+def test_ordinary_ocr_answer_uses_published_text_without_originals(db):
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_semantic_retrieval import retrieve_semantic_context
+    from app.study_retrieval_v2 import materialize_visual_sources
+    from unittest.mock import Mock
+    add(db,1,'hipofiz OCR metni')
+    add(db,2,'hipofiz FOREIGN',owner=99)
+    add(db,3,'hipofiz STALE',version='v0')
+    db.exec(text("INSERT INTO studyindexpage(owner_user_id,course_id,material_id,index_version,page_number,extraction_method,text_content) VALUES (17,23,1,'v1',1,'LOCAL_OCR:test','hipofiz OCR metni')"))
+    plan=StudyRequest('Hipofiz anlat','answer','topic',None,None,'',('hipofiz',))
+    result=retrieve_semantic_context(db,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert [e.chunk_id for e in result.evidence]==[1]
+    assert 'hipofiz OCR metni' in '\n'.join(result.note_context)
+    assert not result.visual_sources and not result.attachments
+    factory=Mock(side_effect=AssertionError('unexpected original-page I/O'))
+    materialize_visual_sources(factory,result)
+    factory.assert_not_called()
 
 
 def test_comparison_keeps_rare_subject_in_bounded_pool(db):
