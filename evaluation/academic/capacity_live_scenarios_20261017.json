@@ -1,0 +1,134 @@
+{
+  "status": "NOT_RUN_PRIVATE_COURSE_ACCESS_REJECTED",
+  "scope": "Synthetic plan only. No live questions sent in this audit.",
+  "cases": [
+    {
+      "id": 1,
+      "name": "definition",
+      "course": "Perio didem",
+      "prompt": "Multimorbiditeyi notlara göre iki cümlede açıkla ve sayfa kaynağını yaz.",
+      "criterion": "Narrow retrieval, time to first text, calls and source accuracy.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 2,
+      "name": "comparison",
+      "course": "Perio didem",
+      "prompt": "Diyabet ile obezitenin periodontal sonuçlarla ilişkisini yalnız notlardaki bilgilerle bir tabloda karşılaştır.",
+      "criterion": "Balanced sources and bounded scope.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 3,
+      "name": "followup",
+      "course": "Perio didem",
+      "prompt": "Bu tablodaki sonuçları üç maddelik kısa bir tekrar notuna dönüştür.",
+      "criterion": "Referent retention without whole-course expansion.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 4,
+      "name": "quiz5",
+      "course": "Perio didem",
+      "prompt": "Risk bilgisinin hastaya aktarılması hakkında notlardan beş çoktan seçmeli soru hazırla; cevapları gösterme.",
+      "criterion": "Validated count, uniqueness, hidden key and output latency.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 5,
+      "name": "grading",
+      "course": "Perio didem",
+      "prompt": "Son hazırladığın beş soruya cevaplarım: 1A 2B 3C 4D 5E. Puanla.",
+      "criterion": "Use stored key; no full-course rescan or generation. Requires quiz5 success.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 6,
+      "name": "summary",
+      "course": "Perio didem",
+      "prompt": "Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.",
+      "criterion": "Exact preset, one normal generation and no planner/source-summary calls.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 7,
+      "name": "teach",
+      "course": "Perio didem",
+      "prompt": "Bu ders notlarındaki tüm konuları bana bir hoca gibi ayrıntılı öğret. Her başlığı ayrı işle, mantığını kur ve notların desteklediği örneklerle açıkla. Bilgiyi ezberletmek yerine anlamamı sağla.",
+      "criterion": "Long-output completion, source coverage and private PDF after PR137 deployment.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 8,
+      "name": "pdf",
+      "course": "Perio didem",
+      "prompt": "Son tamamlanmış cevabı hiç değiştirmeden PDF olarak ver.",
+      "criterion": "No new content generation or source rescan; owned download.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 9,
+      "name": "exclusion",
+      "course": "Perio didem",
+      "prompt": "Dersin ilk not dosyasını hariç tutarak diğer notların ana başlıklarını kısaca listele.",
+      "criterion": "Manifest-based exclusion, no excluded source in answer.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 10,
+      "name": "unknown",
+      "course": "Perio didem",
+      "prompt": "Notlarda desteklenmiyorsa belirt: Bu notları yazan kişinin doğum tarihi nedir?",
+      "criterion": "Unsupported answer handling without invented personal data.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 11,
+      "name": "ortho_definition",
+      "course": "Orto",
+      "prompt": "Gonion noktasını yalnız bu dersteki kaynaklara göre tanımla; kaynak bulunmuyorsa bunu belirt.",
+      "criterion": "Narrow retrieval and correct cited definition if supported.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 12,
+      "name": "ortho_compare",
+      "course": "Orto",
+      "prompt": "NA ve NB ölçümlerini notlarda varsa bir tabloda karşılaştır; kaynakta olmayan bilgiyi ekleme.",
+      "criterion": "Two-subject retrieval and topic change.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 13,
+      "name": "short",
+      "course": "Orto",
+      "prompt": "Bu karşılaştırmayı tek cümlede hatırlat.",
+      "criterion": "Short follow-up does not inherit broad quiz/teaching tasks.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 14,
+      "name": "count20",
+      "course": "Orto",
+      "prompt": "Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.",
+      "criterion": "Count, repetition, complete output, call count and input/output tokens.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 15,
+      "name": "mixed_load",
+      "course": "BOTH",
+      "prompt": null,
+      "criterion": "At most two normal approved questions concurrently while navigating; measure accepted/rejected requests and navigation latency. No production stress flood.",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": 16,
+      "name": "disconnect",
+      "course": "Perio didem",
+      "prompt": null,
+      "criterion": "Observe disconnect/reconnect completion semantics only on an explicitly approved test turn; current academic stream is not a durable job.",
+      "status": "NOT_RUN"
+    }
+  ]
+}

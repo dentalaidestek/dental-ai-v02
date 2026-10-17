@@ -4328,7 +4328,7 @@ async def shutdown_consultation_deadline_worker():
 
 
 @app.get("/notes", response_class=HTMLResponse)
-def study_notes_index(request: Request, q: str = ""):
+def study_notes_index(request: Request, q: str = "", before: Optional[int] = None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4338,25 +4338,28 @@ def study_notes_index(request: Request, q: str = ""):
         course_query = (
             select(StudyCourse)
             .where(StudyCourse.owner_user_id == user.id)
-            .order_by(StudyCourse.updated_at.desc())
+            .order_by(StudyCourse.updated_at.desc(), StudyCourse.id.desc())
         )
         if query_text:
             course_query = course_query.where(StudyCourse.title.ilike(f"%{query_text}%"))
-        courses = s.exec(course_query).all()
-        cards = []
-        for course in courses:
-            materials = s.exec(
-                select(StudyMaterial)
-                .where(StudyMaterial.course_id == course.id)
-                .where(StudyMaterial.owner_user_id == user.id)
-                .order_by(StudyMaterial.created_at.desc())
-            ).all()
-            cards.append({"course": course, "material_count": len(materials)})
+        if before is not None:
+            anchor = select(StudyCourse.updated_at).where(
+                StudyCourse.id == before, StudyCourse.owner_user_id == user.id).scalar_subquery()
+            course_query = course_query.where((StudyCourse.updated_at < anchor) | (
+                (StudyCourse.updated_at == anchor) & (StudyCourse.id < before)))
+        page = s.exec(course_query.limit(51)).all()
+        courses = page[:50]
+        course_ids = [course.id for course in courses]
+        counts = dict(s.exec(select(StudyMaterial.course_id, func.count(StudyMaterial.id)).where(
+            StudyMaterial.course_id.in_(course_ids), StudyMaterial.owner_user_id == user.id
+        ).group_by(StudyMaterial.course_id)).all()) if course_ids else {}
+        cards = [{"course": course, "material_count": counts.get(course.id, 0)} for course in courses]
+        next_before = courses[-1].id if len(page) > 50 else None
 
     return templates.TemplateResponse(
         request=request,
         name="notes.html",
-        context={"course_cards": cards, "q": query_text},
+        context={"course_cards": cards, "q": query_text, "next_before": next_before, "before": before},
     )
 
 
@@ -4405,11 +4408,11 @@ def study_course_detail(request: Request, course_id: int):
             .where(StudyMaterial.owner_user_id == user.id)
             .order_by(StudyMaterial.created_at.desc())
         ).all()
-        message_count = len(s.exec(
-            select(StudyChatMessage)
+        message_count = s.exec(
+            select(func.count(StudyChatMessage.id))
             .where(StudyChatMessage.course_id == course_id)
             .where(StudyChatMessage.owner_user_id == user.id)
-        ).all())
+        ).one()
 
     return templates.TemplateResponse(
         request=request,
@@ -4818,18 +4821,18 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         course = _owned_study_course(s, user, course_id)
         if not course:
             return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
-        materials = s.exec(
-            select(StudyMaterial)
+        material_count = s.exec(
+            select(func.count(StudyMaterial.id))
             .where(StudyMaterial.course_id == course_id)
             .where(StudyMaterial.owner_user_id == user.id)
-            .order_by(StudyMaterial.created_at.asc())
-        ).all()
+        ).one()
         messages = s.exec(
             select(StudyChatMessage)
             .where(StudyChatMessage.course_id == course_id)
             .where(StudyChatMessage.owner_user_id == user.id)
-            .order_by(StudyChatMessage.id)
+            .order_by(StudyChatMessage.id.desc()).limit(40)
         ).all()
+        messages = list(reversed(messages))
         v2_ready = (
             course_v2_ready(
                 s, material_model=StudyMaterial,
@@ -4844,8 +4847,8 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         headers={"Cache-Control": "private, no-store"},
         context={
             "course": course,
-            "material_count": len(materials),
-            "messages": messages[-40:],
+            "material_count": material_count,
+            "messages": messages,
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
             "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
