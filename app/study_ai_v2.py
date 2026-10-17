@@ -558,7 +558,7 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
-    if retrieval.retrieval_mode in {'previous_answer_pdf', 'generated_quiz_grade'} and retrieval.prepared_answer:
+    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'generated_quiz_grade'} and retrieval.prepared_answer:
         logger.info('Academic flow trace=%s stage=response origin=%s', trace_id, retrieval.retrieval_mode)
         yield retrieval.prepared_answer
         return
