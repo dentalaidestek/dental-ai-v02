@@ -59,3 +59,15 @@ def test_unnumbered_source_questions_stay_distinct_and_do_not_gain_invented_numb
     answer=render_inventory(records,3)
     assert '2 benzersiz' in answer and answer.count('numarasız soru')==2
     assert 'soru None' not in answer and 'soru 1' not in answer
+
+
+def test_shared_source_topics_prevent_free_labels_from_fragmenting_frequency():
+    evidence=[SimpleNamespace(material_id=1,page_start=4,page_end=5,display_name='Owned.pdf')]
+    records=parse_inventory(json.dumps({'questions':[record(topic='Kıkırdak'),record(page=5,number='22',topic='İzojen grup',text='İzojen hücre grupları hangi dokuda bulunur? A) Kıkırdak B) Kompakt kemik C) Mine D) Dentin E) Pulpa')]}),
+        evidence,topic_labels=['Kıkırdak','Kemik'])
+    assert records[0]['topic']=='Kıkırdak'
+    assert records[1]['topic']=='Sınıflandırılamayan sorular'
+    answer=render_inventory(records)
+    assert '| Kıkırdak | 1 |' in answer
+    assert '1 soru ortak konu sözlüğüne eşleştirilemedi' in answer
+    assert '| İzojen grup' not in answer

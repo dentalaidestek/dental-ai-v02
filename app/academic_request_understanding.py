@@ -33,7 +33,7 @@ SCHEMA = {
             'source questions must be inspected. Null only when no output count is requested; '
             'do not use the number of source files or source questions.'},
         'difficulty': {'type': ['string', 'null']},
-        'clarification': {'type': 'string'},
+        'clarification': {'type': 'string', 'maxLength': 1200},
         'source_kind': {'type': 'string', 'enum': ['notes', 'questions', 'question_patterns']},
         'depth': {'type': 'string', 'enum': ['standard', 'detailed']},
         'needs_visual': {'type': 'boolean'},
@@ -54,6 +54,15 @@ SCHEMA['required'].append('source_sections')
 SCHEMA['required'].append('output_format')
 SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source', 'complete_sections', 'each_document'])
 SCHEMA['required'].append('export_previous_answer')
+SCHEMA['properties'].update({
+    'exam_topics': {'type':'array','maxItems':32,'items':{'type':'string'}},
+    'grade_previous_set': {'type':'boolean'},
+    'quiz_answers': {'type':'array','maxItems':200,'items':{'type':'object',
+        'properties':{'number':{'type':'integer'},'choice':{'type':'string','enum':list('ABCDE')}},
+        'required':['number','choice'],'additionalProperties':False}},
+    'show_quiz_answers': {'type':'boolean'},
+})
+SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics'])
 SYSTEM = '''export_previous_answer is true ONLY when the current request asks to export
 the immediately preceding assistant answer as a PDF without changing its content.
 Set output_format=pdf and operation=answer. The application will copy that completed answer exactly;
@@ -149,19 +158,38 @@ asks for an evidence-based estimate, not an unsupported prediction or a refusal
 because the notes do not contain a future exam. Retrieve the question index;
 past exams need not have appeared in the heading outline. Preserve a genuinely
 topic-specific scope, otherwise use course scope for the pattern analysis.
+For question_patterns ranking, exam_topics is a shared broad-topic vocabulary for ALL
+source batches. Select up to 32 exact headings from source_outline.sections covering
+the course, at the same broad level, not separate labels for each question or detail.
+For other tasks use []. Unmatched questions will be counted separately without
+inventing a topic. Never use exam_topics to filter out source questions.
 For question_patterns ranking, count is the requested number of topic rows,
 not the number of source questions to read. Preserve that number in count and
 resolved_query even when the user writes it as a Turkish word.
 Never infer past-exam intent from merely
 requesting new questions. depth is detailed only when substantial detail is
-requested. needs_visual is true when the task needs an actual source diagram,
-image, marked region or table. These fields control source retrieval directly. continue_source is true only
+requested. needs_visual is true only when answering requires inspecting actual
+source pixels: a diagram's geometry, an image, a marked answer, or handwriting.
+Indexed OCR text is already available; ordinary summaries, explanations, new
+questions and source-question transcription do not require re-reading scans.
+Asking to CREATE a table is an output-format request, not visual inspection.
+A source table that can be answered from indexed text also needs no image.
+These fields control source retrieval directly. continue_source is true only
 for continuing the previously paginated SOURCE question list, never for a fresh
 request or a request to restart from the beginning.
 Solving or grading questions that the assistant just generated refers to the
 conversation's question set, NOT the uploaded question index. Use solve + notes
 and restate the referenced questions' subjects/searches; preserve which set and
-question numbers the user means. For the entire generated set use course scope.
+question numbers the user means. An entire generated set is NOT an entire course.
+Use topic scope and its actual subjects, never course scope merely to grade all questions.
+grade_previous_set=true ONLY when the user submits choices to grade the most recent
+assistant-generated question set. operation=solve, source_kind=notes, needs_visual=false.
+quiz_answers contains the submitted numbered A–E choices (unnumbered sequences start
+at question 1). Do not invent missing choices. The server grades using the stored key;
+no source scan is required. For all other requests grade_previous_set=false and quiz_answers=[].
+show_quiz_answers is true only if the user explicitly requests the answer key with a NEW set.
+Use false otherwise. clarification must be at most 1200 characters; normally one short
+question. Missing patient data calls for asking for the absent data without inventing it.
 Reformatting existing exam questions is NOT generate_questions and does not
 require solving them: use answer + questions, preserving the requested format
 in resolved_query. All existing questions means course scope. Do not replace
@@ -178,7 +206,11 @@ format from old unrelated turns. A genuine follow-up may ask to change the
 current study answer into a PDF. Return the requested content normally; the
 application creates the real file after the answer is complete. Never tell
 the user to print/save the browser page or invent a download link.
-source_files contains only explicitly requested document filenames (including
+source_outline.files is an owned published filename inventory, not source facts.
+For explicit document exclusions select the remaining relevant files from this
+inventory using source_files BEFORE content retrieval. Never invent omitted names.
+When files_complete=false do not assume the listed files are the entire course.
+source_files contains only explicitly requested or positively selected non-excluded document filenames (including
 their extensions), never IDs or paths. source_pages contains explicitly selected
 PDF page numbers, expanding a requested page range. These are source boundaries,
 not question numbers, output counts or clinical values. For 'question 14 on pages
@@ -215,6 +247,10 @@ class StudyRequest:
     complete_sections: bool = True
     each_document: bool = False
     export_previous_answer: bool = False
+    exam_topics: tuple[str, ...] = ()
+    grade_previous_set: bool = False
+    quiz_answers: tuple = ()
+    show_quiz_answers: bool = False
 
 
 @dataclass(frozen=True)
@@ -275,6 +311,10 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('each_document', False)
         data.setdefault('complete_sections', True)  # Compatibility with older contracts.
         data.setdefault('export_previous_answer', False)
+        data.setdefault('exam_topics', [])
+        data.setdefault('grade_previous_set', False)
+        data.setdefault('quiz_answers', [])
+        data.setdefault('show_quiz_answers', False)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -285,9 +325,27 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if (type(data['export_previous_answer']) is not bool or
             (data['export_previous_answer'] and (data['output_format'] != 'pdf' or data['operation'] != 'answer'))):
         raise PlannerContractError('invalid previous answer export')
-    for name, limit in [('resolved_query', 8000), ('clarification', 300)]:
+    for name, limit in [('resolved_query', 8000), ('clarification', 1200)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
-            raise PlannerContractError('invalid planner text')
+            raise PlannerContractError('invalid planner text: ' + name + (' type' if not isinstance(data[name], str) else ' length/control'))
+    if type(data['grade_previous_set']) is not bool or type(data['show_quiz_answers']) is not bool:
+        raise PlannerContractError('invalid quiz flags')
+    answers=data['quiz_answers']
+    if (not isinstance(answers,list) or len(answers)>200 or any(
+            not isinstance(a,dict) or set(a)!={'number','choice'} or type(a['number']) is not int
+            or not 1<=a['number']<=200 or a['choice'] not in list('ABCDE') for a in answers)
+            or len({a['number'] for a in answers})!=len(answers)):
+        raise PlannerContractError('invalid quiz answers')
+    if data['grade_previous_set']:
+        if data['operation']!='solve' or not answers or data['source_kind']!='notes':
+            raise PlannerContractError('invalid grading request')
+    elif answers:
+        raise PlannerContractError('unexpected quiz answers')
+    data['quiz_answers']=tuple((a['number'],a['choice']) for a in answers)
+    topics=data['exam_topics']
+    if not isinstance(topics,list) or len(topics)>32 or any(not isinstance(x,str) or not x.strip() or len(x)>400 or '\x00' in x for x in topics):
+        raise PlannerContractError('invalid exam topics')
+    data['exam_topics']=tuple(dict.fromkeys(topics))
     subjects = data['source_subjects']
     if (not isinstance(subjects, list) or len(subjects) > 16
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
@@ -332,7 +390,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -374,6 +432,9 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     try:
         plan = parse_request(call(prompt), previous_source=previous_source_request(history))
         allowed=set((source_outline or {}).get('sections',[]))
+        if any(topic not in allowed for topic in plan.exam_topics):
+            from dataclasses import replace
+            plan=replace(plan,exam_topics=tuple(t for t in plan.exam_topics if t in allowed))
         if any(section not in allowed for section in plan.source_sections):
             raise PlannerContractError('unknown source section')
         logger.info('Academic flow trace=%s stage=plan provider=%s operation=%s scope=%s count=%s source=%s searches=%s history=%s continue=%s',
@@ -456,7 +517,12 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.operation != 'clarify' and plan.export_previous_answer:
+    if plan.grade_previous_set:
+        from app.academic_quiz import grade_previous_quiz
+        result = RetrievalResult(resolved_query=plan.resolved_query,
+            retrieval_mode='generated_quiz_grade', evidence_sufficient=True,
+            prepared_answer=grade_previous_quiz(kwargs.get('recent_history'),plan.quiz_answers))
+    elif plan.operation != 'clarify' and plan.export_previous_answer:
         previous = next((str(item.get('content') or '') for item in
             reversed(kwargs.get('recent_history') or [])
             if str(item.get('role','')).upper() == 'ASSISTANT' and str(item.get('content') or '').strip()), '')
@@ -475,6 +541,10 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
     else:
         result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=not bool(plan.source_subjects),
                                           query_embedding=query_embedding, **kwargs)
+    result.study_task['exam_topics'] = list(plan.exam_topics)
+    if plan.operation == 'generate_questions':
+        result.study_task['quiz_contract'] = True
+        result.study_task['show_quiz_answers'] = plan.show_quiz_answers
     result.semantic_planner_attempted = understanding.attempted
     result.study_task['retrieval_queries'] = list(understanding.plan.retrieval_queries)
     result.study_task['source_sections'] = list(understanding.plan.source_sections)

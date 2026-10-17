@@ -66,7 +66,9 @@ def _source_heading_rows(rows):
         # Prefer explicit page text; only a changed metadata path without a
         # printed heading supplies a new fallback section.
         changed_path = ' > ' in stored and stored != last_stored
-        if changed_path and not literal_structure:
+        printed_path = stored and ' > ' in stored and any(
+            line.strip() == stored for line in str(row[7] or '').splitlines())
+        if changed_path and (not literal_structure or printed_path):
             previous = stored
             consecutive = False
         last_stored = stored
@@ -304,4 +306,8 @@ def planner_source_outline(session, *, owner_user_id, course_id, query='', histo
         if len(selected) >= 96 or size + length > 8000:
             continue
         selected.append(heading); size += length
-    return {'sections':selected,'complete':len(selected)==len(headings)}
+    from sqlalchemy import text
+    names=session.exec(text("SELECT display_name FROM studymaterial WHERE owner_user_id=:owner AND course_id=:course AND deleted_at IS NULL AND index_status='READY' ORDER BY id LIMIT 65"),params={'owner':owner_user_id,'course':course_id}).all()
+    files=[str(row[0]) for row in names[:64] if row[0] and len(str(row[0]))<=400]
+    return {'sections':selected,'complete':len(selected)==len(headings),
+            'files':files,'files_complete':len(names)<=64}

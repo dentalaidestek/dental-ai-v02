@@ -200,16 +200,15 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
     from sqlalchemy import text
     from app.academic_semantic_retrieval import retrieve_semantic_context
     from app.study_retrieval_v2 import RetrievalResult
-    # Only original visual pages count toward the page budget. Fifty short
-    # digital text slides need not become fifty calls or be cut at page eight.
+    # Indexed OCR text has the same text budget as native text. Do not query
+    # PDF byte sizes or split by scan count for ordinary text requests.
     visual_metadata = session.exec(text(
         "SELECT p.material_id,p.page_number,COALESCE(length(p.visual_pdf_bytes),0) FROM studyindexpage p JOIN studymaterial m "
         "ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id AND m.course_id=p.course_id "
         "AND m.active_index_version=p.index_version WHERE p.owner_user_id=:owner AND p.course_id=:course "
-        "AND m.index_status='READY' AND m.deleted_at IS NULL "
-        "AND (:all_pages OR p.extraction_method LIKE '%OCR%' OR p.extraction_method='IMAGE')"),
-        params={'owner':owner_user_id,'course':course_id,'all_pages':request_plan.needs_visual}).all()
-    visual_pages = None if request_plan.needs_visual else {(int(r[0]),int(r[1])) for r in visual_metadata}
+        "AND m.index_status='READY' AND m.deleted_at IS NULL"),
+        params={'owner':owner_user_id,'course':course_id}).all() if request_plan.needs_visual else []
+    visual_pages = None if request_plan.needs_visual else set()
     visual_page_bytes = {(int(r[0]),int(r[1])):int(r[2] or 0) for r in visual_metadata if len(r)>2}
     questions = getattr(request_plan,'source_kind','notes') in {'questions', 'question_patterns'}
     inventory = getattr(request_plan,'source_kind','notes') == 'question_patterns'

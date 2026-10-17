@@ -85,9 +85,10 @@ def temporary_note_database(url, rows, documents):
                             page=row[3],kind=row[6],idx=row[13],metadata=row[14]))
         db.exec(text('''CREATE TEMP TABLE studyindexpage (
             owner_user_id bigint,course_id bigint,material_id bigint,index_version text,
-            page_number int,extraction_method text)'''))
+            page_number int,extraction_method text,text_content text,status text)'''))
         for page in sorted({int(row[3]) for row in rows}):
-            db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'fixture',:p,'PDF_TEXT')"),params={'p':page})
+            body='\n'.join(str(row[7]) for row in rows if int(row[3])==page)
+            db.exec(text("INSERT INTO studyindexpage VALUES (17,23,1,'fixture',:p,'PDF_TEXT',:body,'EXTRACTED')"),params={'p':page,'body':body})
         try:
             yield db
         finally:

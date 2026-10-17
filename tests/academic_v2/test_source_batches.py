@@ -29,10 +29,11 @@ def test_frequency_inventory_uses_fewer_batches_without_losing_start_pages(monke
     plan=StudyRequest('Count exam topics','answer','course',3,None,'',(),source_kind='question_patterns')
     result=retrieve_row_batches(session,rows=rows,owner_user_id=17,course_id=23,
         query='Count exam topics',request_plan=plan)
-    assert len(result.source_batches)==2
+    assert len(result.source_batches)==1
     starts=[tuple(pair) for batch in result.source_batches for pair in batch.study_task['question_start_pages']]
     assert sorted(starts)==[(1,p) for p in range(1,13)]
-    assert all(len(batch.evidence)<=8 for batch in result.source_batches)
+    assert len(result.source_batches[0].evidence)==12
+    session.exec.assert_not_called()  # No PDF metadata lookup for indexed text.
 
 
 def test_selected_page_reader_enforces_owner_course_version_status_and_exact_file(monkeypatch):
@@ -148,6 +149,33 @@ def test_character_budget_splits_without_discarding_remainder():
     assert len(batches) > 1
     with pytest.raises(ValueError, match='exceeds'):
         partition_source_rows([row(1,1,text='a'*2000)],max_chars=1200)
+
+
+def test_128_indexed_chunks_on_21_scan_pages_need_one_text_generation(monkeypatch):
+    from unittest.mock import Mock
+    from app.academic_request_understanding import StudyRequest
+    from app.academic_source_batches import retrieve_row_batches
+    from app.study_retrieval_v2 import RetrievalResult
+    import app.study_ai_v2 as generation
+    rows=[row(i,(i-1)%21+1,text='Indexed OCR fact. '*20) for i in range(1,129)]
+    def retrieve(*args,_source_rows,**kwargs):
+        return RetrievalResult(note_context=[r[7] for r in _source_rows],evidence_sufficient=True,
+            study_task={'operation':'generate_questions','count':20,'scope':'course'})
+    monkeypatch.setattr('app.academic_semantic_retrieval.retrieve_semantic_context',retrieve)
+    session=Mock()
+    plan=StudyRequest('20 soru hazırla','generate_questions','course',20,None,'',())
+    result=retrieve_row_batches(session,rows=rows,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert not result.source_batches and len(result.note_context)==128
+    session.exec.assert_not_called()
+    model=Mock()
+    answer='\n\n'.join(f'### Soru {n}\nKavram {n} hangi tanıma karşılık gelir?\nA) Tanım' for n in range(1,21))
+    model.generate_stream.return_value=iter([answer])
+    monkeypatch.setattr(generation,'target_available',lambda target:True)
+    monkeypatch.setattr(generation,'get_provider',lambda name:model)
+    monkeypatch.setattr(generation,'report_target_success',lambda target:None)
+    assert generation.ask_rag_v2('Course',plan.resolved_query,[],result)==answer
+    assert model.generate_stream.call_count==1
 
 
 def test_question_pages_stay_whole_and_boundary_has_continuation():

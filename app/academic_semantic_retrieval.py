@@ -253,6 +253,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
                 _linked_candidates(session, selection_rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit,source_sections=request_plan.source_sections,
                                    expand_related=request_plan.complete_sections or request_plan.depth=='detailed'))
+        section_ids={int(row[0]) for row in rows} if isinstance(rows,SectionEvidenceRows) else set()
         ids={int(row[0]) for row in native_matches}
         rows=[*native_matches,*(row for row in rows if int(row[0]) not in ids)]
         if query_embedding:
@@ -263,6 +264,11 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             from app.study_retrieval_v2 import _question_page_context_rows
             rows = _question_page_context_rows(session, owner_user_id=owner_user_id,
                 course_id=course_id, seeds=rows)
+        if section_ids and request_plan.complete_sections:
+            vocabulary=get_course_links(session,owner_user_id=owner_user_id,course_id=course_id)
+            selections=(list(request_plan.source_sections) or list(request_plan.source_subjects or searches))
+            fully_named=all(vocabulary.selected_section_ids((heading,)) or vocabulary.named_section_ids(heading) for heading in selections)
+            result.study_task['requested_sections_complete']=bool(fully_named and section_ids<={int(row[0]) for row in rows})
         result.retrieval_mode = 'hybrid_candidates' if result.used_semantic_search else 'lexical_candidates'
     logger.info('Academic source retrieval mode=%s candidates=%s limit=%s',
                 result.retrieval_mode, len(rows), limit)
@@ -284,12 +290,15 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             result.source_material_ids.append(evidence.material_id)
     # This means candidates exist, not that a rule engine proved factual support.
     result.evidence_sufficient = bool(result.evidence)
-    # The planner has not seen the selected pages and cannot know whether OCR
-    # omitted crossed-out options, answer marks or handwritten corrections.
+    # OCR is prepared once by the indexing worker and is usable evidence.
+    # Its extraction method alone must not trigger another paid visual read.
+    # Inspect originals only when the request actually needs visual evidence.
     scanned_pages = set()
+    selected_pages = set()
     if result.evidence:
         selected_pages = {(item.material_id, page) for item in result.evidence
                           for page in range(item.page_start, item.page_end + 1)}
+    if result.evidence and request_plan.needs_visual:
         checkpoints = session.exec(text('''SELECT p.material_id,p.page_number
             FROM studyindexpage p JOIN studymaterial m
               ON m.id=p.material_id AND m.owner_user_id=p.owner_user_id

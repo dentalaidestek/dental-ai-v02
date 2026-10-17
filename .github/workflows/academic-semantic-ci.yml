@@ -38,7 +38,7 @@ jobs:
       - name: Verify planner, evidence gates and real owned FTS
         env:
           ACADEMIC_TEST_DATABASE_URL: postgresql+psycopg2://academic:academic-test-only@localhost:5432/academic
-        run: python -m pytest -q tests/academic_v2/test_direct_request.py tests/academic_v2/test_source_batches.py tests/academic_v2/test_batch_generation.py tests/academic_v2/test_semantic_request_understanding.py tests/academic_v2/test_gemini_only_flow.py tests/academic_v2/test_semantic_postgres.py tests/academic_v2/test_ali_kiki_flow.py tests/academic_v2/test_retrieval_recovery.py tests/test_study_retrieval_v2.py tests/academic_v2/test_retrieval_behavior.py tests/academic_v2/test_static_invariants.py
+        run: python -m pytest -q tests/academic_v2/test_direct_request.py tests/academic_v2/test_source_batches.py tests/academic_v2/test_batch_generation.py tests/academic_v2/test_semantic_request_understanding.py tests/academic_v2/test_gemini_only_flow.py tests/academic_v2/test_semantic_postgres.py tests/academic_v2/test_source_matching_matrix.py tests/academic_v2/test_native_page_evidence.py tests/academic_v2/test_adaptive_evidence_context.py tests/academic_v2/test_dense_retrieval.py tests/academic_v2/test_quiz_contract.py tests/academic_v2/test_exam_inventory.py tests/academic_v2/test_question_output.py tests/academic_v2/test_ali_kiki_flow.py tests/academic_v2/test_retrieval_recovery.py tests/test_study_retrieval_v2.py tests/academic_v2/test_retrieval_behavior.py tests/academic_v2/test_static_invariants.py
       - name: Run authorized real Gemini note flow when secure key is configured
         if: contains(github.event.head_commit.message, '[real-gemini]') || inputs.run_live == true
         env:

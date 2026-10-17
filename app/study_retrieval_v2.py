@@ -216,6 +216,7 @@ class RetrievalResult:
     batch_materializer: object = None
     # Server-owned completed answer, only for an explicit unchanged PDF export.
     prepared_answer: str = ''
+    generated_quiz: dict | None = None
 
 
 @dataclass(frozen=True)

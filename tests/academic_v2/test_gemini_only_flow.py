@@ -117,6 +117,27 @@ def test_visual_material_lookup_is_owned_and_uses_materializer_contract(monkeypa
     assert session.exec.call_args.kwargs['params']['course'] == 23
 
 
+@pytest.mark.parametrize('kind,operation', [('notes','answer'),('notes','generate_questions'),('questions','solve')])
+def test_indexed_ocr_is_used_without_original_page_io(monkeypatch, session, kind, operation):
+    import app.academic_semantic_retrieval as current
+    from app.study_retrieval_v2 import materialize_visual_sources
+    body='OCR metni: bağışıklık yanıtı yaşla değişir.'
+    selected=row(1,body,'QUESTION' if kind=='questions' else 'TEXT')
+    monkeypatch.setattr('app.academic_native_evidence.selected_native_pages',lambda *a,**k:{})
+    monkeypatch.setattr('app.study_retrieval_v2._question_page_context_rows',lambda *a,**k:k['seeds'])
+    plan=StudyRequest('Notlardan cevapla',operation,'topic',20 if operation=='generate_questions' else None,
+                      None,'',('bağışıklık',),source_kind=kind)
+    # Any scan/file lookup would return an original and expose a regression.
+    session.exec.side_effect=AssertionError('ordinary text request read original-page metadata')
+    result=current.retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan,_source_rows=[selected])
+    assert body in '\n'.join(result.note_context)
+    assert not result.visual_sources and not result.attachments and not result.ocr_reading_hints
+    no_io=Mock(side_effect=AssertionError('ordinary text request opened materialization session'))
+    materialize_visual_sources(no_io,result)
+    no_io.assert_not_called()
+
+
 def test_both_chat_endpoints_have_only_gemini_gateway():
     source = (Path(__file__).resolve().parents[2] / 'app/main.py').read_text()
     tree = ast.parse(source)
@@ -178,7 +199,7 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
 
 
 @pytest.mark.parametrize('scope,total,expected', [('topic',12,12),('course',12,12),('course',35,35)])
-def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,total,expected):
+def test_explicit_visual_evidence_supplies_bounded_original_pages(monkeypatch,session,scope,total,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
     rows = [row(i, 'ANB konu bilgisi') for i in range(1,total+1)]
@@ -192,7 +213,7 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
         return Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)]),
                     first=Mock(return_value=(0,0,total)))
     session.exec.side_effect = database
-    plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
+    plan=StudyRequest('ANB görselini anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else (),needs_visual=True)
     result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
     children=result.source_batches or [result]
     visuals=[source for child in children for source in child.visual_sources]
@@ -227,7 +248,7 @@ def test_originals_include_every_page_of_a_multi_page_chunk(monkeypatch,session)
     monkeypatch.setattr(current,'_fts_rows',Mock(return_value=[tuple(candidate)]))
     session.exec.side_effect=[Mock(all=Mock(return_value=[(1,5),(1,6),(1,7)])),
         Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')]))]
-    plan=StudyRequest('Explain alpha','explain','topic',None,None,'',('alpha',))
+    plan=StudyRequest('Explain alpha diagram','explain','topic',None,None,'',('alpha',),needs_visual=True)
     result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,
         query=plan.resolved_query,request_plan=plan)
     assert [item['page_number'] for item in result.visual_sources]==[5,6,7]
