@@ -48,6 +48,12 @@
         </a>
         {% endfor %}
     </div>
+    {% if next_before %}
+    <a class="study-primary-button" href="/notes?before={{ next_before }}&amp;q={{ q|urlencode }}">Sonraki dersler →</a>
+    {% endif %}
+    {% if before %}
+    <a class="study-back-link" href="/notes?q={{ q|urlencode }}">← İlk sayfa</a>
+    {% endif %}
     {% else %}
     <section class="study-empty-state">
         <div class="study-empty-icon">📚</div>

@@ -294,7 +294,20 @@
         if (attach) attach.disabled=true;
         const data = new FormData();
         data.append('message', text);
-        let answer='',artifact=null,pdfOutput=false;
+        let answer='',artifact=null,pdfOutput=false,renderTimer=null;
+        const renderPending = () => {
+            renderTimer=null;
+            pending.classList.remove('pending');
+            pending.querySelector('.study-chat-markdown').innerHTML=pdfOutput ? 'PDF hazırlanıyor...' : safeMarkdown(answer);
+            scrollChatBottom();
+        };
+        const scheduleRender = () => {
+            if (renderTimer === null) renderTimer=setTimeout(renderPending,100);
+        };
+        const cancelRender = () => {
+            if (renderTimer !== null) clearTimeout(renderTimer);
+            renderTimer=null;
+        };
         try {
             const endpoint = v2Streaming ? '/notes/courses/'+courseId+'/ai/ask-stream' : '/notes/courses/'+courseId+'/ai/ask';
             const response = await fetch(endpoint, {method:'POST', body:data, credentials:'same-origin'});
@@ -323,18 +336,19 @@
                         if (event.type==='done') { finished=true; artifact=event.artifact || null; }
                         if (event.type==='delta') {
                             answer+=event.text||'';
-                            pending.classList.remove('pending');
-                            pending.querySelector('.study-chat-markdown').innerHTML=pdfOutput ? 'PDF hazırlanıyor...' : safeMarkdown(answer);
-                            scrollChatBottom();
+                            scheduleRender();
                         }
                     }
                     if (part.done) break;
                 }
                 if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
+                cancelRender();
+                renderPending();
             }
             addPdfArtifact(pending,artifact);
             scrollChatBottom();
         } catch (err) {
+            cancelRender();
             if (answer) {
                 pending.classList.remove('pending');
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(answer);
@@ -349,6 +363,7 @@
             if (!input.value.trim()) input.value=text;
             status.textContent = err.message || 'Bir hata oluştu.';
         } finally {
+            cancelRender();
             send.disabled=false;
             if (attach) attach.disabled=uploading;
             applyIndexReadiness();

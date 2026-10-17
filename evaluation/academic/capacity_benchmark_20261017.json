@@ -1,0 +1,58 @@
+{
+  "dataset": {
+    "distinct_owner_ids": 60000,
+    "courses": 60200,
+    "messages_on_active_course": 5000
+  },
+  "limits": "SQLite, warm local process; auth/readiness/templates stubbed. No PostgreSQL, network, LLM or 60k concurrency.",
+  "results": [
+    {
+      "version": "before",
+      "route": "study_notes_index",
+      "median_ms": 43.942,
+      "queries": 202,
+      "message_objects_loaded": 0,
+      "response_items": 201
+    },
+    {
+      "version": "before",
+      "route": "study_ai_page",
+      "median_ms": 45.228,
+      "queries": 3,
+      "message_objects_loaded": 5000,
+      "response_items": 40
+    },
+    {
+      "version": "before",
+      "route": "study_course_detail",
+      "median_ms": 62.579,
+      "queries": 3,
+      "message_objects_loaded": 5000,
+      "response_items": 0
+    },
+    {
+      "version": "after",
+      "route": "study_notes_index",
+      "median_ms": 1.053,
+      "queries": 2,
+      "message_objects_loaded": 0,
+      "response_items": 50
+    },
+    {
+      "version": "after",
+      "route": "study_ai_page",
+      "median_ms": 1.012,
+      "queries": 3,
+      "message_objects_loaded": 40,
+      "response_items": 40
+    },
+    {
+      "version": "after",
+      "route": "study_course_detail",
+      "median_ms": 3.201,
+      "queries": 3,
+      "message_objects_loaded": 0,
+      "response_items": 0
+    }
+  ]
+}

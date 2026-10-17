@@ -5,6 +5,7 @@ This router intentionally reuses the production models/helpers. It does not
 create a second business-logic stack or introduce polling.
 """
 from datetime import datetime, timedelta
+from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 import json, uuid
 import os
@@ -60,15 +61,24 @@ def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,
 
 @router.post("/patients/{patient_id}/media")
 async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:UploadFile=File(...),tooth_number:str=Form(""),note:str=Form(""),media_type:str=Form("PHOTO")):
+    return await run_in_threadpool(_mobile_upload_media_sync, patient_id, user, file, tooth_number, note, media_type)
+
+
+def _mobile_upload_media_sync(patient_id, user, file, tooth_number, note, media_type):
     allowed={".jpg",".jpeg",".png",".webp"}
     name=Path(file.filename or "").name; ext=Path(name).suffix.lower()
     if ext not in allowed: raise HTTPException(status_code=422,detail="Desteklenmeyen görüntü formatı.")
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
+        s.close()  # Release the DB connection before image/R2 I/O.
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         dest=Path("uploads")/stored; dest.parent.mkdir(parents=True,exist_ok=True)
         _copy_validated_image(file, dest, MOBILE_MAX_IMAGE_BYTES)
         storage_persist_file(dest)
+        current=s.get(User,user.id)
+        if not current or not current.is_active:
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+        _user_owned_patient(s,current,patient_id)
         row=PatientMedia(patient_id=patient_id,owner_user_id=user.id,original_filename=name,stored_filename=stored,file_path=str(dest),media_type=(media_type or "PHOTO")[:40],tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
         s.add(row); s.commit(); s.refresh(row)
         return {"ok":True,"media":{"id":row.id,"filename":row.original_filename,"media_type":row.media_type}}
@@ -80,6 +90,7 @@ def mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):
         _user_owned_patient(s,user,patient_id)
         row=s.get(PatientMedia,media_id)
         if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        s.close()  # Remote storage must not hold a DB pool slot.
         try: path=storage_ensure_local(row.file_path)
         except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")
         types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}
@@ -250,9 +261,10 @@ def mobile_consultation_message_media(case_id:int,message_id:int,user=Depends(_m
         c=s.get(ConsultationCase,case_id); m=s.get(ConsultationMessage,message_id)
         if not c or user.id not in {c.requester_user_id,c.expert_user_id} or not m or m.case_id!=case_id or not m.media_path:
             raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        s.close()  # Remote storage must not hold a DB pool slot.
         try:
             path=storage_ensure_local(m.media_path)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404,detail="Medya dosyası bulunamadı.") from exc
         media_type={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".pdf":"application/pdf"}.get(path.suffix.lower(),"application/octet-stream")
-        return FileResponse(path,media_type=media_type,filename=path.name)
+        return FileResponse(path,media_type=media_type,filename=path.name,headers={"Cache-Control":"private, no-store"})

@@ -1,7 +1,9 @@
 """Native Dental AI API using the production storage and durable work queue."""
+from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 from PIL import Image
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -14,7 +16,7 @@ from sqlmodel import Session, select
 from app.main import (
     Analysis, ImageAsset, Patient, User, engine,
     _enqueue_work, _latest_work,
-    classify_dental_image, storage_ensure_local, storage_persist_file,
+    classify_dental_image, storage_ensure_local, storage_persist_file, storage_delete,
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
 from app.mobile_api import _mobile_user
@@ -77,61 +79,73 @@ async def create_mobile_analysis(
     clinical_notes: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
+    return await run_in_threadpool(_create_mobile_analysis_sync, user, patient_id, tooth_number, clinical_notes, images)
+
+
+def _create_mobile_analysis_sync(user, patient_id, tooth_number, clinical_notes, images):
     valid = [x for x in images if x and x.filename]
     if not valid or len(valid) > 4:
         raise HTTPException(status_code=422, detail="1 ile 4 arasında görüntü yükleyin.")
-
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
         if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
 
-        analysis = Analysis(
-            patient_id=patient_id,
-            tooth_number=(tooth_number or "").strip() or None,
-            clinical_notes=(clinical_notes or "").strip() or None,
-            status="ANALYZING",
-        )
-        session.add(analysis)
-        session.commit()
-        session.refresh(analysis)
-
-        allowed = {".jpg", ".jpeg", ".png", ".webp"}
-        assets = []
+    # Validate and persist files without occupying a DB connection. Do not
+    # create an ANALYZING row until the whole intake is ready to enqueue.
+    staged, references = [], []
+    committed = commit_started = False
+    try:
         for image in valid:
             name = Path(image.filename).name
             ext = Path(name).suffix.lower()
-            if ext not in allowed:
+            if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
                 continue
-            stored = f"analysis_{analysis.id}_{uuid.uuid4().hex}{ext}"
+            stored = f"analysis_{uuid.uuid4().hex}{ext}"
             destination = Path("uploads") / stored
             destination.parent.mkdir(parents=True, exist_ok=True)
+            references.append(str(destination))
             _copy_validated_analysis_image(image, destination)
             storage_persist_file(destination)
-            assets.append(ImageAsset(
-                analysis_id=analysis.id,
-                original_filename=name,
-                stored_filename=stored,
-                file_path=str(destination),
-                image_type=classify_dental_image(str(destination)),
-            ))
-
-        if not assets:
-            session.delete(analysis)
-            session.commit()
+            staged.append(dict(original_filename=name, stored_filename=stored,
+                file_path=str(destination), image_type=classify_dental_image(str(destination))))
+        if not staged:
             raise HTTPException(status_code=422, detail="Desteklenen görüntü formatı bulunamadı.")
-
-        session.add_all(assets)
-        session.flush()
-        job = _enqueue_work(session, "VISION", "ANALYSIS", analysis.id)
-        realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
-        session.commit(); on_loop(_publish_realtime_event,realtime)
-        return {
-            "ok": True,
-            "analysis_id": analysis.id,
-            "status": analysis.status,
-            "job_id": job.id,
-        }
+        with Session(engine, expire_on_commit=False) as session:
+            patient = session.get(Patient, patient_id)
+            owner = session.get(User, user.id)
+            if not owner or not owner.is_active or not patient or (
+                    owner.role != "ADMIN" and patient.owner_user_id != owner.id):
+                raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+            analysis = Analysis(patient_id=patient_id,
+                tooth_number=(tooth_number or "").strip() or None,
+                clinical_notes=(clinical_notes or "").strip() or None, status="ANALYZING")
+            session.add(analysis)
+            session.flush()
+            session.add_all([ImageAsset(analysis_id=analysis.id, **item) for item in staged])
+            session.flush()
+            job = _enqueue_work(session, "VISION", "ANALYSIS", analysis.id)
+            realtime = _record_realtime_event(session, user.id, "ANALYSIS_CREATED", "analysis", analysis.id,
+                {"analysis_id": analysis.id, "patient_id": patient_id, "status": analysis.status,
+                 "tooth_number": analysis.tooth_number})
+            result = {"ok": True, "analysis_id": analysis.id, "status": analysis.status, "job_id": job.id}
+            # A transport failure during COMMIT can be ambiguous. Never delete
+            # objects that may already be referenced by committed rows.
+            commit_started = True
+            session.commit()
+            committed = True
+        try:
+            on_loop(_publish_realtime_event, realtime)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Mobile analysis realtime deferred type=%s", type(exc).__name__)
+        return result
+    finally:
+        if not committed and not commit_started:
+            for reference in references:
+                try:
+                    storage_delete(reference)
+                except Exception as exc:
+                    logging.getLogger(__name__).warning("Mobile analysis intake cleanup failed type=%s", type(exc).__name__)
 
 
 @router.get("/analyses/{analysis_id}")
@@ -144,6 +158,8 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
             .order_by(ImageAsset.id)
         ).all()
 
+        job = _latest_work(session, "ANALYSIS", analysis.id)
+        session.close()
         result = None
         if analysis.result_path:
             try:
@@ -152,7 +168,6 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
             except (OSError, ValueError, TypeError):
                 result = None
 
-        job = _latest_work(session, "ANALYSIS", analysis.id)
         return {
             "analysis": {
                 "id": analysis.id,
@@ -214,6 +229,7 @@ def mobile_analysis_image(
         asset = session.get(ImageAsset, asset_id)
         if not asset or asset.analysis_id != analysis.id:
             raise HTTPException(status_code=404, detail="Görüntü bulunamadı.")
+        session.close()  # Remote storage must not hold a DB pool slot.
         try:
             path = storage_ensure_local(asset.file_path)
         except FileNotFoundError as exc:

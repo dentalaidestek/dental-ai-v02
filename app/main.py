@@ -55,6 +55,7 @@ from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
 from app.request_limits import RequestLimits
+from app.browser_origin import BrowserOriginGuard
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -2586,6 +2587,7 @@ app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BY
 
 from app.object_cache import StorageScopeMiddleware
 app.add_middleware(StorageScopeMiddleware)
+app.add_middleware(BrowserOriginGuard)
 
 
 
@@ -4328,7 +4330,7 @@ async def shutdown_consultation_deadline_worker():
 
 
 @app.get("/notes", response_class=HTMLResponse)
-def study_notes_index(request: Request, q: str = ""):
+def study_notes_index(request: Request, q: str = "", before: Optional[int] = None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4338,25 +4340,28 @@ def study_notes_index(request: Request, q: str = ""):
         course_query = (
             select(StudyCourse)
             .where(StudyCourse.owner_user_id == user.id)
-            .order_by(StudyCourse.updated_at.desc())
+            .order_by(StudyCourse.updated_at.desc(), StudyCourse.id.desc())
         )
         if query_text:
             course_query = course_query.where(StudyCourse.title.ilike(f"%{query_text}%"))
-        courses = s.exec(course_query).all()
-        cards = []
-        for course in courses:
-            materials = s.exec(
-                select(StudyMaterial)
-                .where(StudyMaterial.course_id == course.id)
-                .where(StudyMaterial.owner_user_id == user.id)
-                .order_by(StudyMaterial.created_at.desc())
-            ).all()
-            cards.append({"course": course, "material_count": len(materials)})
+        if before is not None:
+            anchor = select(StudyCourse.updated_at).where(
+                StudyCourse.id == before, StudyCourse.owner_user_id == user.id).scalar_subquery()
+            course_query = course_query.where((StudyCourse.updated_at < anchor) | (
+                (StudyCourse.updated_at == anchor) & (StudyCourse.id < before)))
+        page = s.exec(course_query.limit(51)).all()
+        courses = page[:50]
+        course_ids = [course.id for course in courses]
+        counts = dict(s.exec(select(StudyMaterial.course_id, func.count(StudyMaterial.id)).where(
+            StudyMaterial.course_id.in_(course_ids), StudyMaterial.owner_user_id == user.id
+        ).group_by(StudyMaterial.course_id)).all()) if course_ids else {}
+        cards = [{"course": course, "material_count": counts.get(course.id, 0)} for course in courses]
+        next_before = courses[-1].id if len(page) > 50 else None
 
     return templates.TemplateResponse(
         request=request,
         name="notes.html",
-        context={"course_cards": cards, "q": query_text},
+        context={"course_cards": cards, "q": query_text, "next_before": next_before, "before": before},
     )
 
 
@@ -4405,11 +4410,11 @@ def study_course_detail(request: Request, course_id: int):
             .where(StudyMaterial.owner_user_id == user.id)
             .order_by(StudyMaterial.created_at.desc())
         ).all()
-        message_count = len(s.exec(
-            select(StudyChatMessage)
+        message_count = s.exec(
+            select(func.count(StudyChatMessage.id))
             .where(StudyChatMessage.course_id == course_id)
             .where(StudyChatMessage.owner_user_id == user.id)
-        ).all())
+        ).one()
 
     return templates.TemplateResponse(
         request=request,
@@ -4818,18 +4823,18 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         course = _owned_study_course(s, user, course_id)
         if not course:
             return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
-        materials = s.exec(
-            select(StudyMaterial)
+        material_count = s.exec(
+            select(func.count(StudyMaterial.id))
             .where(StudyMaterial.course_id == course_id)
             .where(StudyMaterial.owner_user_id == user.id)
-            .order_by(StudyMaterial.created_at.asc())
-        ).all()
+        ).one()
         messages = s.exec(
             select(StudyChatMessage)
             .where(StudyChatMessage.course_id == course_id)
             .where(StudyChatMessage.owner_user_id == user.id)
-            .order_by(StudyChatMessage.id)
+            .order_by(StudyChatMessage.id.desc()).limit(40)
         ).all()
+        messages = list(reversed(messages))
         v2_ready = (
             course_v2_ready(
                 s, material_model=StudyMaterial,
@@ -4844,8 +4849,8 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         headers={"Cache-Control": "private, no-store"},
         context={
             "course": course,
-            "material_count": len(materials),
-            "messages": messages[-40:],
+            "material_count": material_count,
+            "messages": messages,
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
             "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
@@ -5933,6 +5938,10 @@ def program_delete(request: Request, event_id: int):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    return _dashboard_response(request)
+
+
+def _dashboard_response(request: Request, ai_context=None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -5990,6 +5999,7 @@ def home(request: Request):
             "dashboard_event": dashboard_event,
             "dashboard_event_label": dashboard_event_label,
             "local_now": local_now,
+            **(ai_context or {}),
         }
     )
 
@@ -9776,7 +9786,7 @@ def browse_tooth_charts(request: Request, q: str = ""):
 
 
 @app.get("/patients", response_class=HTMLResponse)
-def all_patients(request: Request):
+def all_patients(request: Request, q: str = "", before: Optional[int] = None):
     user = get_current_user(request)
 
     if not user:
@@ -9788,13 +9798,22 @@ def all_patients(request: Request):
         if user.role != "ADMIN":
             query = query.where(Patient.owner_user_id == user.id)
 
-        patients = s.exec(query).all()
+        query_text = (q or "").strip()[:200]
+        if query_text:
+            pattern = f"%{query_text}%"
+            query = query.where(sa_or(Patient.first_name.ilike(pattern), Patient.last_name.ilike(pattern),
+                Patient.anonymous_id.ilike(pattern), Patient.phone.ilike(pattern)))
+        if before is not None:
+            query = query.where(Patient.id < before)
+        page = s.exec(query.limit(51)).all()
+        patients = page[:50]
+        next_before = patients[-1].id if len(page) > 50 else None
 
     return templates.TemplateResponse(
         request=request,
         name="patients_all.html",
         context={
-            "patients": patients,
+            "patients": patients, "q": query_text, "before": before, "next_before": next_before,
         },
     )
 
@@ -13920,6 +13939,8 @@ def ai_ask(
         return RedirectResponse("/login", status_code=303)
 
     question = question.strip()
+    if len(question) > 8000:
+        return HTMLResponse("Soru en fazla 8000 karakter olabilir.", status_code=400)
 
     answer = None
     error = None
@@ -13943,46 +13964,15 @@ Hekimin sorusu:
         try:
             from app.ai_provider import ask_ai
             answer = ask_ai(prompt)
-        except Exception as e:
-            error = str(e)
+        except Exception as exc:
+            logger.warning("Direct AI question failed type=%s", type(exc).__name__)
+            error = "Yanıt şu anda oluşturulamadı. Lütfen kısa süre sonra tekrar deneyin."
 
-    with Session(engine, expire_on_commit=False) as s:
-        patient_query = select(Patient).order_by(Patient.id.desc())
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
-        patients = s.exec(patient_query).all()
-
-        analysis_query = (
-            select(Analysis)
-            .join(Patient, Analysis.patient_id == Patient.id)
-            .order_by(Analysis.id.desc())
-        )
-        if user.role != "ADMIN":
-            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
-        analyses = s.exec(analysis_query).all()
-
-        records = s.exec(select(ClinicalRecord)).all()
-
-        guest_analyses = s.exec(
-            select(GuestAnalysis)
-            .where(GuestAnalysis.owner_user_id == user.id)
-            .order_by(GuestAnalysis.id.desc())
-            .limit(5)
-        ).all()
-
-    return templates.TemplateResponse(
-        request=request,
-        name="dashboard.html",
-        context={
-            "patients": patients,
-            "analyses": analyses,
-            "records": records,
-            "guest_analyses": guest_analyses,
-            "ai_question": question,
-            "ai_answer": answer,
-            "ai_error": error,
-        },
-    )
+    # The dashboard already bounds its queries and prepares program/profile
+    # context. Do not reload complete patient/analysis/clinical collections.
+    return _dashboard_response(request, {
+        'ai_question': question, 'ai_answer': answer, 'ai_error': error,
+    })
 
 
 from app.membership_verification import register as register_membership_verification, state as membership_state
