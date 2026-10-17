@@ -204,3 +204,105 @@ def test_visual_hydration_uses_one_owned_bounded_read(pdf_client,monkeypatch,byt
     finally:
         event.remove(main.engine,'before_cursor_execute',capture)
         with retrieval._PAGE_PDF_CACHE_LOCK:retrieval._PAGE_PDF_CACHE.clear()
+
+
+def _append_plan(**changes):
+    from app.academic_request_understanding import StudyRequest
+    return StudyRequest(resolved_query='Mevcut tabloları önceki PDF’ye ekle',
+        operation='answer', scope='topic', count=None, difficulty=None,
+        clarification='', output_format='pdf', append_previous_pdf=True, **changes)
+
+
+def test_pdf_append_copies_saved_contents_and_tables_without_model(pdf_client, monkeypatch):
+    from app.academic_request_understanding import UnderstandingResult, retrieve_understood_course_context
+    from app.study_ai_v2 import ask_rag_v2
+    from app.academic_pdf import render_pdf
+    from pypdf import PdfReader
+    from io import BytesIO
+    main, client = pdf_client
+    table = '| Risk | Açıklama |\n| --- | --- |\n| Sigara | Kanamayı gizleyebilir. |'
+    with Session(main.engine) as session:
+        session.add(main.StudyChatMessage(id=5, owner_user_id=1, course_id=1,
+            role='ASSISTANT', mode='RAG_V2_HYBRID_STREAM', content=table))
+        session.commit()
+        history = [{'role':'ASSISTANT', 'id':5, 'mode':'RAG_V2_HYBRID_STREAM', 'content':table}]
+        def forbidden(*args, **kwargs):
+            raise AssertionError('Appending existing answers must not retrieve or generate content')
+        monkeypatch.setattr('app.academic_semantic_retrieval.retrieve_semantic_context', forbidden)
+        monkeypatch.setattr('app.study_ai_v2.get_provider', forbidden)
+        result = retrieve_understood_course_context(session,
+            understanding=UnderstandingResult(plan=_append_plan()), message_model=main.StudyChatMessage,
+            owner_user_id=1, course_id=1, recent_history=history)
+        answer = ask_rag_v2('Orto', 'Bunları o PDF ekle kral', history, result)
+        assert answer == 'Pronasale: Burun ucu.\n\n' + table
+        assert session.get(main.StudyChatMessage,1).content == 'Pronasale: Burun ucu.'
+    text = '\n'.join(p.extract_text() for p in PdfReader(BytesIO(render_pdf('Orto', answer))).pages)
+    assert 'Pronasale' in text and 'Sigara' in text and 'Kanamayı gizleyebilir.' in text
+    assert client.get('/notes/courses/1/ai/messages/1/pdf').status_code == 200
+
+
+@pytest.mark.parametrize('problem', ['no_base', 'foreign_addition', 'deleted_addition', 'pdf_addition', 'too_long'])
+def test_pdf_append_fails_closed_without_standalone_replacement(pdf_client, problem):
+    from app.academic_pdf_revision import append_saved_pdf
+    main, _ = pdf_client
+    with Session(main.engine) as session:
+        session.add(main.StudyChatMessage(id=5, owner_user_id=2 if problem=='foreign_addition' else 1,
+            course_id=1, role='ASSISTANT', mode='RAG_V2_HYBRID_STREAM',
+            content='x'*240000 if problem=='too_long' else 'Tablo satırı'))
+        if problem=='no_base':
+            session.delete(session.get(main.StudyChatMessage,1))
+        session.commit()
+        history = [{'role':'ASSISTANT','id':6 if problem=='deleted_addition' else 5,
+                    'mode':'RAG_V2_HYBRID_STREAM_PDF' if problem=='pdf_addition' else 'RAG_V2_HYBRID_STREAM'}]
+        result = append_saved_pdf(session, message_model=main.StudyChatMessage,
+            plan=_append_plan(), owner_user_id=1, course_id=1, history=history)
+        assert not result.evidence_sufficient and not result.prepared_answer
+        assert result.clarification
+
+
+def test_pdf_append_can_select_multiple_completed_turns_and_find_base_outside_window(pdf_client):
+    from app.academic_pdf_revision import append_saved_pdf
+    main, _ = pdf_client
+    with Session(main.engine) as session:
+        for n in range(5,15):
+            session.add(main.StudyChatMessage(id=n, owner_user_id=1, course_id=1,
+                role='ASSISTANT', content=f'Tablo {n}', mode='RAG_V2_HYBRID_STREAM'))
+        session.commit()
+        history = [{'id':n,'role':'ASSISTANT','mode':'RAG_V2_HYBRID_STREAM'} for n in range(7,15)]
+        result = append_saved_pdf(session, message_model=main.StudyChatMessage,
+            plan=_append_plan(pdf_addition_turns=(0,7)), owner_user_id=1, course_id=1, history=history)
+        assert result.prepared_answer == 'Pronasale: Burun ucu.\n\nTablo 7\n\nTablo 14'
+
+
+@pytest.mark.parametrize('stream', [True, False])
+def test_append_endpoint_saves_combined_revision_and_owned_pdf(pdf_client, monkeypatch, stream):
+    import json
+    from sqlmodel import select
+    from app.academic_request_understanding import UnderstandingResult
+    main, client = pdf_client
+    table = '| Risk | Sonuç |\n| --- | --- |\n| Diyabet | Kontrol önemlidir. |'
+    with Session(main.engine) as session:
+        session.add(main.StudyMaterial(course_id=1,owner_user_id=1,original_filename='note.pdf',
+            display_name='Not',stored_filename='note.pdf',file_path='unused',material_type='PDF',
+            mime_type='application/pdf',size_bytes=10))
+        session.add(main.StudyChatMessage(id=5,owner_user_id=1,course_id=1,
+            role='ASSISTANT',content=table,mode='RAG_V2_HYBRID_STREAM'))
+        session.commit()
+    monkeypatch.setattr(main,'study_v2_streaming_enabled',lambda:True)
+    monkeypatch.setattr(main,'course_v2_ready',lambda *a,**kw:True)
+    monkeypatch.setattr(main,'classify_course_scope',lambda *a:'DENTAL')
+    monkeypatch.setattr('app.academic_chunk_links.planner_source_outline',lambda *a,**kw:[])
+    monkeypatch.setattr('app.academic_request_understanding.understand_study_request',
+        lambda *a,**kw:UnderstandingResult(plan=_append_plan()))
+    path='/notes/courses/1/ai/ask-stream' if stream else '/notes/courses/1/ai/ask'
+    response=client.post(path,data={'message':'Bunları o PDF ekle kral'})
+    assert response.status_code==200
+    data=[json.loads(line) for line in response.text.splitlines()][-1] if stream else response.json()
+    assert ('type' not in data or data['type']=='done') and 'artifact' in data
+    with Session(main.engine) as session:
+        saved=session.exec(select(main.StudyChatMessage).where(main.StudyChatMessage.id>5,
+            main.StudyChatMessage.role=='ASSISTANT')).one()
+        assert saved.content=='Pronasale: Burun ucu.\n\n'+table
+        assert saved.mode.endswith('_PDF')
+        assert session.get(main.StudyChatMessage,1).content=='Pronasale: Burun ucu.'
+    assert client.get(data['artifact']['url']).content.startswith(b'%PDF-')
