@@ -59,3 +59,8 @@ python scripts/benchmark_academic_capacity.py --baseline /path/to/pre-change-mai
 The user requested questions against the existing system. The signed-in browser reached the course list, but automatic approval review rejected selecting “Perio didem” because accessing private course notes was not authorized by naming/approving that course. No workaround or private-note query was attempted. Newly prepared live scenarios are marked NOT_RUN pending explicit approval for Perio didem and Orto. Historical logs and local synthetic tests are not substituted for those live responses.
 
 No production merge, deploy, plan change or stress flood was performed.
+
+
+## Same-day broader follow-up
+
+The missing local argon2 import was resolved using already installed dependencies; no requirements change. A wider platform review adds native upload/download isolation, intake failure handling, browser-origin checks, bounded patient listing, legacy AI dashboard reuse and authentication memory/body bounds. Two focused groups total 470 passing tests, with 14 PostgreSQL tests skipped. See `evaluation/system/system_audit_20261017.md` for the exact scope, evidence and remaining gaps. Automatic approval review still blocks live private-course question tests despite the continuation request; no new live questions were sent. All changes remain staged in the PR, with no production merge/deploy.

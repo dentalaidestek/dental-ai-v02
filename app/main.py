@@ -55,6 +55,7 @@ from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
 from app.request_limits import RequestLimits
+from app.browser_origin import BrowserOriginGuard
 import psycopg2
 from app.xray_trace import (
     begin_xray_trace,
@@ -2586,6 +2587,7 @@ app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BY
 
 from app.object_cache import StorageScopeMiddleware
 app.add_middleware(StorageScopeMiddleware)
+app.add_middleware(BrowserOriginGuard)
 
 
 
@@ -5936,6 +5938,10 @@ def program_delete(request: Request, event_id: int):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    return _dashboard_response(request)
+
+
+def _dashboard_response(request: Request, ai_context=None):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -5993,6 +5999,7 @@ def home(request: Request):
             "dashboard_event": dashboard_event,
             "dashboard_event_label": dashboard_event_label,
             "local_now": local_now,
+            **(ai_context or {}),
         }
     )
 
@@ -9779,7 +9786,7 @@ def browse_tooth_charts(request: Request, q: str = ""):
 
 
 @app.get("/patients", response_class=HTMLResponse)
-def all_patients(request: Request):
+def all_patients(request: Request, q: str = "", before: Optional[int] = None):
     user = get_current_user(request)
 
     if not user:
@@ -9791,13 +9798,22 @@ def all_patients(request: Request):
         if user.role != "ADMIN":
             query = query.where(Patient.owner_user_id == user.id)
 
-        patients = s.exec(query).all()
+        query_text = (q or "").strip()[:200]
+        if query_text:
+            pattern = f"%{query_text}%"
+            query = query.where(sa_or(Patient.first_name.ilike(pattern), Patient.last_name.ilike(pattern),
+                Patient.anonymous_id.ilike(pattern), Patient.phone.ilike(pattern)))
+        if before is not None:
+            query = query.where(Patient.id < before)
+        page = s.exec(query.limit(51)).all()
+        patients = page[:50]
+        next_before = patients[-1].id if len(page) > 50 else None
 
     return templates.TemplateResponse(
         request=request,
         name="patients_all.html",
         context={
-            "patients": patients,
+            "patients": patients, "q": query_text, "before": before, "next_before": next_before,
         },
     )
 
@@ -13923,6 +13939,8 @@ def ai_ask(
         return RedirectResponse("/login", status_code=303)
 
     question = question.strip()
+    if len(question) > 8000:
+        return HTMLResponse("Soru en fazla 8000 karakter olabilir.", status_code=400)
 
     answer = None
     error = None
@@ -13946,46 +13964,15 @@ Hekimin sorusu:
         try:
             from app.ai_provider import ask_ai
             answer = ask_ai(prompt)
-        except Exception as e:
-            error = str(e)
+        except Exception as exc:
+            logger.warning("Direct AI question failed type=%s", type(exc).__name__)
+            error = "Yanıt şu anda oluşturulamadı. Lütfen kısa süre sonra tekrar deneyin."
 
-    with Session(engine, expire_on_commit=False) as s:
-        patient_query = select(Patient).order_by(Patient.id.desc())
-        if user.role != "ADMIN":
-            patient_query = patient_query.where(Patient.owner_user_id == user.id)
-        patients = s.exec(patient_query).all()
-
-        analysis_query = (
-            select(Analysis)
-            .join(Patient, Analysis.patient_id == Patient.id)
-            .order_by(Analysis.id.desc())
-        )
-        if user.role != "ADMIN":
-            analysis_query = analysis_query.where(Patient.owner_user_id == user.id)
-        analyses = s.exec(analysis_query).all()
-
-        records = s.exec(select(ClinicalRecord)).all()
-
-        guest_analyses = s.exec(
-            select(GuestAnalysis)
-            .where(GuestAnalysis.owner_user_id == user.id)
-            .order_by(GuestAnalysis.id.desc())
-            .limit(5)
-        ).all()
-
-    return templates.TemplateResponse(
-        request=request,
-        name="dashboard.html",
-        context={
-            "patients": patients,
-            "analyses": analyses,
-            "records": records,
-            "guest_analyses": guest_analyses,
-            "ai_question": question,
-            "ai_answer": answer,
-            "ai_error": error,
-        },
-    )
+    # The dashboard already bounds its queries and prepares program/profile
+    # context. Do not reload complete patient/analysis/clinical collections.
+    return _dashboard_response(request, {
+        'ai_question': question, 'ai_answer': answer, 'ai_error': error,
+    })
 
 
 from app.membership_verification import register as register_membership_verification, state as membership_state

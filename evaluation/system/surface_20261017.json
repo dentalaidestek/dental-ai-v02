@@ -1,0 +1,1793 @@
+{
+  "python_files": 91,
+  "source_route_declarations": 255,
+  "caveat": "Source declarations include unmounted compatibility routes. Hints require manual review; ownership and runtime authorization are not proved.",
+  "routes": [
+    {
+      "file": "app/main.py",
+      "line": 2595,
+      "name": "about_page",
+      "method": "GET",
+      "path_expression": "'/about'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2607,
+      "name": "legal_index",
+      "method": "GET",
+      "path_expression": "'/legal'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2619,
+      "name": "contact_page",
+      "method": "GET",
+      "path_expression": "'/contact'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2744,
+      "name": "support_request_page",
+      "method": "GET",
+      "path_expression": "'/support-request'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2783,
+      "name": "support_request_fragment",
+      "method": "GET",
+      "path_expression": "'/support-request/fragment'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2810,
+      "name": "contact_submit",
+      "method": "POST",
+      "path_expression": "'/support-request'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2842,
+      "name": "support_ticket_user_conversation",
+      "method": "GET",
+      "path_expression": "'/support-request/{ticket_id}/conversation'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2866,
+      "name": "support_ticket_user_reply",
+      "method": "POST",
+      "path_expression": "'/support-request/{ticket_id}/reply'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2899,
+      "name": "support_ticket_user_read",
+      "method": "POST",
+      "path_expression": "'/support-request/{ticket_id}/read'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2911,
+      "name": "legal_document",
+      "method": "GET",
+      "path_expression": "'/legal/{document}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2932,
+      "name": "register_page",
+      "method": "GET",
+      "path_expression": "'/register'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 2941,
+      "name": "register_user",
+      "method": "POST",
+      "path_expression": "'/register'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3130,
+      "name": "account_page",
+      "method": "GET",
+      "path_expression": "'/account'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3205,
+      "name": "profile_photo",
+      "method": "GET",
+      "path_expression": "'/profile-photo/{user_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3228,
+      "name": "account_profile_photo",
+      "method": "POST",
+      "path_expression": "'/account/profile-photo'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3257,
+      "name": "change_professional_title",
+      "method": "POST",
+      "path_expression": "'/account/professional-title'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3325,
+      "name": "professional_title_document_page",
+      "method": "GET",
+      "path_expression": "'/account/professional-title/document'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3334,
+      "name": "professional_title_document_upload",
+      "method": "POST",
+      "path_expression": "'/account/professional-title/document'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3379,
+      "name": "change_username",
+      "method": "POST",
+      "path_expression": "'/account/username'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3449,
+      "name": "change_display_name",
+      "method": "POST",
+      "path_expression": "'/account/display-name'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3496,
+      "name": "begin_email_change",
+      "method": "POST",
+      "path_expression": "'/account/email'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3544,
+      "name": "confirm_email_change",
+      "method": "POST",
+      "path_expression": "'/account/email/confirm'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3592,
+      "name": "change_password",
+      "method": "POST",
+      "path_expression": "'/account/password'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3666,
+      "name": "login_page",
+      "method": "GET",
+      "path_expression": "'/login'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3690,
+      "name": "verify_email",
+      "method": "POST",
+      "path_expression": "'/verify-email'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3707,
+      "name": "login_user",
+      "method": "POST",
+      "path_expression": "'/login'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3770,
+      "name": "mobile_expert_device_check",
+      "method": "POST",
+      "path_expression": "'/api/mobile/expert/device/check'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3801,
+      "name": "mobile_expert_device_verify",
+      "method": "POST",
+      "path_expression": "'/api/mobile/expert/device/verify'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3818,
+      "name": "forgot_password_page",
+      "method": "GET",
+      "path_expression": "'/forgot-password'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3827,
+      "name": "forgot_password_request",
+      "method": "POST",
+      "path_expression": "'/forgot-password'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3909,
+      "name": "reset_password_page",
+      "method": "GET",
+      "path_expression": "'/reset-password'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 3953,
+      "name": "reset_password",
+      "method": "POST",
+      "path_expression": "'/reset-password'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4049,
+      "name": "logout_user",
+      "method": "POST",
+      "path_expression": "'/logout'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4077,
+      "name": "embedded_panorama_viewer",
+      "method": "GET",
+      "path_expression": "'/vision-ui/viewer'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4083,
+      "name": "embedded_regional_viewer",
+      "method": "GET",
+      "path_expression": "'/vision-ui/intraoral-viewer'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4089,
+      "name": "embedded_radiograph_viewer",
+      "method": "GET",
+      "path_expression": "'/vision-ui/radiograph-viewer'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4095,
+      "name": "embedded_radiograph_viewer_js",
+      "method": "GET",
+      "path_expression": "'/radiograph-viewer.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4100,
+      "name": "embedded_viewer_js",
+      "method": "GET",
+      "path_expression": "'/viewer-v3.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4105,
+      "name": "embedded_viewer_patientmesh_js",
+      "method": "GET",
+      "path_expression": "'/viewer-v3-patientmesh.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4110,
+      "name": "embedded_viewer_finalfix_js",
+      "method": "GET",
+      "path_expression": "'/viewer-v3-finalfix.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4115,
+      "name": "embedded_viewer_postfix_js",
+      "method": "GET",
+      "path_expression": "'/viewer-v3-postfix.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4120,
+      "name": "embedded_intraoral_viewer_js",
+      "method": "GET",
+      "path_expression": "'/intraoral-viewer.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4124,
+      "name": "protected_upload",
+      "method": "GET",
+      "path_expression": "'/uploads/{filename}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4333,
+      "name": "study_notes_index",
+      "method": "GET",
+      "path_expression": "'/notes'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4369,
+      "name": "create_study_course",
+      "method": "POST",
+      "path_expression": "'/notes/courses'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4398,
+      "name": "study_course_detail",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4427,
+      "name": "rename_study_course",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/rename'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4446,
+      "name": "delete_study_course",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4543,
+      "name": "upload_study_materials",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/materials'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4703,
+      "name": "study_material_file",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}/materials/{material_id}/file'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4722,
+      "name": "study_material_page_text",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}/materials/{material_id}/pages/{page_number}/text'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4779,
+      "name": "delete_study_material",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/materials/{material_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4818,
+      "name": "study_ai_page",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}/ai'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4862,
+      "name": "study_answer_pdf",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}/ai/messages/{message_id}/pdf'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4904,
+      "name": "study_ai_index_status",
+      "method": "GET",
+      "path_expression": "'/notes/courses/{course_id}/ai/index-status'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 4971,
+      "name": "study_ai_ask",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/ai/ask'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5226,
+      "name": "study_ai_ask_stream",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/ai/ask-stream'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5403,
+      "name": "study_trace_diagnostics",
+      "method": "GET",
+      "path_expression": "'/notes/diagnostics/trace'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5415,
+      "name": "clear_study_ai_chat",
+      "method": "POST",
+      "path_expression": "'/notes/courses/{course_id}/ai/clear'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5436,
+      "name": "features_page",
+      "method": "GET",
+      "path_expression": "'/features'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5448,
+      "name": "program_page",
+      "method": "GET",
+      "path_expression": "'/program'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5527,
+      "name": "program_new_page",
+      "method": "GET",
+      "path_expression": "'/program/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5584,
+      "name": "program_create",
+      "method": "POST",
+      "path_expression": "'/program/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5657,
+      "name": "program_edit_page",
+      "method": "GET",
+      "path_expression": "'/program/{event_id}/edit'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5705,
+      "name": "program_edit",
+      "method": "POST",
+      "path_expression": "'/program/{event_id}/edit'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5788,
+      "name": "program_copy_to_days",
+      "method": "POST",
+      "path_expression": "'/program/{event_id}/copy'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5882,
+      "name": "program_complete",
+      "method": "POST",
+      "path_expression": "'/program/{event_id}/complete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5914,
+      "name": "program_delete",
+      "method": "POST",
+      "path_expression": "'/program/{event_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 5940,
+      "name": "home",
+      "method": "GET",
+      "path_expression": "'/'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6647,
+      "name": "expert_support_rules",
+      "method": "GET",
+      "path_expression": "'/expert-support/rules'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6661,
+      "name": "expert_support_rules_accept",
+      "method": "POST",
+      "path_expression": "'/expert-support/rules/accept'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6678,
+      "name": "expert_support_performance",
+      "method": "GET",
+      "path_expression": "'/expert-support/performance'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6700,
+      "name": "expert_support_performance_info",
+      "method": "GET",
+      "path_expression": "'/expert-support/performance-info'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6708,
+      "name": "admin_consultation_report_review",
+      "method": "GET",
+      "path_expression": "'/admin/consultation-review/{case_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6727,
+      "name": "admin_delete_consultation_messages",
+      "method": "POST",
+      "path_expression": "'/admin/consultation-review/{case_id}/delete-messages'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6747,
+      "name": "admin_consultation_report_media",
+      "method": "GET",
+      "path_expression": "'/admin/consultation-review/{case_id}/message-media/{message_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6766,
+      "name": "admin_consultation_dispute_review",
+      "method": "GET",
+      "path_expression": "'/admin/consultation-disputes/{case_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6786,
+      "name": "admin_consultation_dispute_media",
+      "method": "GET",
+      "path_expression": "'/admin/consultation-disputes/{case_id}/message-media/{message_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6807,
+      "name": "admin_expert_verifications",
+      "method": "GET",
+      "path_expression": "'/admin/expert-verifications'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6815,
+      "name": "admin_expert_verification_update",
+      "method": "POST",
+      "path_expression": "'/admin/expert-verifications/{profile_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6825,
+      "name": "admin_expert_credential_document",
+      "method": "GET",
+      "path_expression": "'/admin/expert-verifications/{profile_id}/document'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6847,
+      "name": "expert_support_public_profile",
+      "method": "GET",
+      "path_expression": "'/expert-support/expert/{expert_user_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6883,
+      "name": "expert_support_directory",
+      "method": "GET",
+      "path_expression": "'/expert-support'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6934,
+      "name": "expert_support_availability_watch",
+      "method": "POST",
+      "path_expression": "'/expert-support/availability-watch'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 6954,
+      "name": "expert_support_availability_update",
+      "method": "POST",
+      "path_expression": "'/expert-support/availability'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7021,
+      "name": "expert_support_profile_page",
+      "method": "GET",
+      "path_expression": "'/expert-support/profile'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7051,
+      "name": "expert_support_profile_save",
+      "method": "POST",
+      "path_expression": "'/expert-support/profile'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7192,
+      "name": "expert_support_request_page",
+      "method": "GET",
+      "path_expression": "'/expert-support/request/{expert_user_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7229,
+      "name": "expert_support_request_create",
+      "method": "POST",
+      "path_expression": "'/expert-support/request/{expert_user_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7505,
+      "name": "consultation_messages_inbox",
+      "method": "GET",
+      "path_expression": "'/messages'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7534,
+      "name": "consultation_message_row",
+      "method": "GET",
+      "path_expression": "'/messages/{case_id}/row'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7572,
+      "name": "consultation_deleted_messages",
+      "method": "GET",
+      "path_expression": "'/messages/deleted'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7593,
+      "name": "consultation_message_delete_for_user",
+      "method": "POST",
+      "path_expression": "'/messages/{case_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7613,
+      "name": "consultation_message_restore_for_user",
+      "method": "POST",
+      "path_expression": "'/messages/{case_id}/restore'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7664,
+      "name": "web_push_service_worker",
+      "method": "GET",
+      "path_expression": "'/push-sw.js'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7673,
+      "name": "account_push_config",
+      "method": "GET",
+      "path_expression": "'/account/push/config'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7687,
+      "name": "account_push_subscribe",
+      "method": "POST",
+      "path_expression": "'/account/push/subscribe'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7731,
+      "name": "account_push_unsubscribe",
+      "method": "POST",
+      "path_expression": "'/account/push/unsubscribe'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7775,
+      "name": "account_notifications",
+      "method": "GET",
+      "path_expression": "'/account/notifications'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7812,
+      "name": "account_notifications_read_all",
+      "method": "POST",
+      "path_expression": "'/account/notifications/read-all'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7854,
+      "name": "account_notification_read",
+      "method": "POST",
+      "path_expression": "'/account/notifications/{notice_id}/read'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7871,
+      "name": "account_admin_notices",
+      "method": "GET",
+      "path_expression": "'/account/admin-notices'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7888,
+      "name": "account_admin_notice_read",
+      "method": "POST",
+      "path_expression": "'/account/admin-notices/{notice_id}/read'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7902,
+      "name": "consultation_live_status",
+      "method": "GET",
+      "path_expression": "'/messages/live-status'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 7997,
+      "name": "consultation_unread_count",
+      "method": "GET",
+      "path_expression": "'/messages/unread-count'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8007,
+      "name": "expert_support_cases",
+      "method": "GET",
+      "path_expression": "'/expert-support/cases'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8025,
+      "name": "expert_support_case_room",
+      "method": "GET",
+      "path_expression": "'/expert-support/cases/{case_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8088,
+      "name": "expert_support_case_media",
+      "method": "GET",
+      "path_expression": "'/expert-support/cases/{case_id}/media/{case_media_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8112,
+      "name": "expert_support_expert_response",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/expert-response'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8197,
+      "name": "expert_support_proposal_decision",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/proposal'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8257,
+      "name": "expert_support_media_message",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/media-message'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8345,
+      "name": "expert_support_message_media",
+      "method": "GET",
+      "path_expression": "'/expert-support/cases/{case_id}/message-media/{message_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8363,
+      "name": "expert_support_annotate_message",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/annotate/{message_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8399,
+      "name": "consultation_block_user",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/block'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8412,
+      "name": "consultation_unblock_user",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/unblock'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8426,
+      "name": "consultation_report_user",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/report'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8464,
+      "name": "expert_support_message",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/message'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 8539,
+      "name": "expert_support_messages_live",
+      "method": "GET",
+      "path_expression": "'/expert-support/cases/{case_id}/messages-live'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9204,
+      "name": "realtime_sync_events",
+      "method": "GET",
+      "path_expression": "'/sync/events'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9300,
+      "name": "realtime_sync_socket",
+      "method": "WEBSOCKET",
+      "path_expression": "'/ws/sync'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9417,
+      "name": "expert_support_case_socket",
+      "method": "WEBSOCKET",
+      "path_expression": "'/ws/expert-support/cases/{case_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9475,
+      "name": "expert_support_review",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/review'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9503,
+      "name": "expert_support_complete",
+      "method": "POST",
+      "path_expression": "'/expert-support/cases/{case_id}/complete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9613,
+      "name": "new_patient",
+      "method": "GET",
+      "path_expression": "'/patients/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9631,
+      "name": "create_patient",
+      "method": "POST",
+      "path_expression": "'/patients/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9749,
+      "name": "browse_tooth_charts",
+      "method": "GET",
+      "path_expression": "'/tooth-charts'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9789,
+      "name": "all_patients",
+      "method": "GET",
+      "path_expression": "'/patients'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9822,
+      "name": "search_patients",
+      "method": "GET",
+      "path_expression": "'/patients/search'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9863,
+      "name": "create_treatment",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/treatment/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9905,
+      "name": "new_treatment",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/treatment/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 9928,
+      "name": "update_tooth_status",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/teeth/{tooth_number}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10051,
+      "name": "tooth_history",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/teeth/{tooth_number}/history'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10138,
+      "name": "tooth_chart",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/teeth'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10239,
+      "name": "patient_realtime_snapshot",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/realtime'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10256,
+      "name": "edit_patient",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/edit'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10312,
+      "name": "delete_patient",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10334,
+      "name": "patient_detail",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10429,
+      "name": "upload_patient_media",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/media'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10523,
+      "name": "patient_media_file",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media/{media_id}/file'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10547,
+      "name": "delete_patient_media",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/media/{media_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10572,
+      "name": "delete_all_patient_media",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/media/delete-all'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10603,
+      "name": "all_analyses",
+      "method": "GET",
+      "path_expression": "'/analyses'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10671,
+      "name": "xray_trace_diagnostics",
+      "method": "GET",
+      "path_expression": "'/analysis/diagnostics/trace'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10683,
+      "name": "analysis_choice",
+      "method": "GET",
+      "path_expression": "'/analysis/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10696,
+      "name": "guest_analysis_new",
+      "method": "GET",
+      "path_expression": "'/analysis/guest/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 10709,
+      "name": "new_analysis",
+      "method": "GET",
+      "path_expression": "'/analysis/new/{patient_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11080,
+      "name": "work_status",
+      "method": "GET",
+      "path_expression": "'/jobs/{job_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11091,
+      "name": "cancel_work",
+      "method": "POST",
+      "path_expression": "'/jobs/{job_id}/cancel'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11106,
+      "name": "retry_work",
+      "method": "POST",
+      "path_expression": "'/jobs/{job_id}/retry'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11136,
+      "name": "guest_final_analysis",
+      "method": "POST",
+      "path_expression": "'/analysis/guest/{analysis_id}/final'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11142,
+      "name": "final_analysis",
+      "method": "POST",
+      "path_expression": "'/analysis/{analysis_id}/final'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11717,
+      "name": "create_guest_analysis",
+      "method": "POST",
+      "path_expression": "'/analysis/guest/new'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11795,
+      "name": "create_analysis",
+      "method": "POST",
+      "path_expression": "'/analysis/new/{patient_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11933,
+      "name": "legacy_admin_hidden",
+      "method": "GET",
+      "path_expression": "'/admin'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11991,
+      "name": "healthz",
+      "method": "GET",
+      "path_expression": "'/healthz'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 11996,
+      "name": "readyz",
+      "method": "GET",
+      "path_expression": "'/readyz'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12006,
+      "name": "site_runtime_config",
+      "method": "GET",
+      "path_expression": "'/site/runtime-config'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12018,
+      "name": "admin_first_setup_page",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/setup'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12027,
+      "name": "admin_first_setup",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/setup'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12048,
+      "name": "admin_center",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12171,
+      "name": "admin_center_login_get",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/login'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12176,
+      "name": "admin_center_login",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/login'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12290,
+      "name": "admin_center_user_detail",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12316,
+      "name": "admin_center_expert_profile_update",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}/expert-profile'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12358,
+      "name": "admin_center_settings",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/settings'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12374,
+      "name": "admin_center_broadcast",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/broadcast'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12404,
+      "name": "admin_center_support_fragment",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/support-fragment'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12448,
+      "name": "admin_center_support_conversation",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/support/{ticket_id}/conversation'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12473,
+      "name": "admin_center_support_read",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/support/{ticket_id}/read'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12486,
+      "name": "admin_center_support_message",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/support/{ticket_id}/message'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12532,
+      "name": "admin_center_support_update",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/support/{ticket_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12579,
+      "name": "admin_center_report_update",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/reports/{report_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12621,
+      "name": "admin_center_user_status",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}/status'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12645,
+      "name": "admin_center_delete_user",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12699,
+      "name": "delete_own_account",
+      "method": "POST",
+      "path_expression": "'/account/delete'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12746,
+      "name": "admin_center_expert_status",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}/expert-status'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12771,
+      "name": "admin_center_notice",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/users/{user_id}/notice'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12795,
+      "name": "admin_center_verify",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/expert-verifications/{profile_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12846,
+      "name": "admin_title_change_document",
+      "method": "GET",
+      "path_expression": "ADMIN_CENTER_PATH + '/expert-title-changes/{change_id}/document'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12868,
+      "name": "admin_title_change_decision",
+      "method": "POST",
+      "path_expression": "ADMIN_CENTER_PATH + '/expert-title-changes/{change_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12933,
+      "name": "start_guest_clinical_analysis",
+      "method": "GET",
+      "path_expression": "'/analysis/guest/{analysis_id}/clinical'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 12946,
+      "name": "guest_analysis_result",
+      "method": "GET",
+      "path_expression": "'/analysis/guest/{analysis_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13026,
+      "name": "save_analysis_viewer_note",
+      "method": "POST",
+      "path_expression": "'/analysis/{analysis_id}/viewer-note'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13047,
+      "name": "save_guest_viewer_note",
+      "method": "POST",
+      "path_expression": "'/analysis/guest/{analysis_id}/viewer-note'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13067,
+      "name": "save_viewer_finding",
+      "method": "POST",
+      "path_expression": "'/analysis/{analysis_id}/viewer-finding'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13083,
+      "name": "viewer_analyze",
+      "method": "POST",
+      "path_expression": "'/analysis/{analysis_id}/viewer-analyze'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13102,
+      "name": "guest_viewer_analyze",
+      "method": "POST",
+      "path_expression": "'/analysis/guest/{analysis_id}/viewer-analyze'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13132,
+      "name": "viewer_result",
+      "method": "GET",
+      "path_expression": "'/analysis/{analysis_id}/viewer-result'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13154,
+      "name": "guest_viewer_result",
+      "method": "GET",
+      "path_expression": "'/analysis/guest/{analysis_id}/viewer-result'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13176,
+      "name": "analysis_asset",
+      "method": "GET",
+      "path_expression": "'/analysis-assets/{analysis_id}/asset/{asset_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13198,
+      "name": "analysis_asset_vision",
+      "method": "GET",
+      "path_expression": "'/analysis-assets/{analysis_id}/asset/{asset_id}/vision'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13228,
+      "name": "guest_analysis_viewer",
+      "method": "GET",
+      "path_expression": "'/analysis/guest/{analysis_id}/viewer'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13242,
+      "name": "guest_analysis_asset",
+      "method": "GET",
+      "path_expression": "'/analysis/guest-assets/{analysis_id}/{asset_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13260,
+      "name": "guest_analysis_asset_vision",
+      "method": "GET",
+      "path_expression": "'/analysis/guest-assets/{analysis_id}/{asset_id}/vision'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13289,
+      "name": "analysis_primary_asset",
+      "method": "GET",
+      "path_expression": "'/analysis-assets/{analysis_id}/primary'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13321,
+      "name": "analysis_viewer",
+      "method": "GET",
+      "path_expression": "'/analysis/{analysis_id}/viewer'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13343,
+      "name": "analyze_selected_tooth",
+      "method": "POST",
+      "path_expression": "'/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13367,
+      "name": "analysis_result",
+      "method": "GET",
+      "path_expression": "'/analysis/{analysis_id}'"
+    },
+    {
+      "file": "app/main.py",
+      "line": 13932,
+      "name": "ai_ask",
+      "method": "POST",
+      "path_expression": "'/ai/ask'"
+    },
+    {
+      "file": "app/membership_verification.py",
+      "line": 95,
+      "name": "verification_page",
+      "method": "GET",
+      "path_expression": "'/account/verification'"
+    },
+    {
+      "file": "app/membership_verification.py",
+      "line": 102,
+      "name": "submit",
+      "method": "POST",
+      "path_expression": "'/account/verification'"
+    },
+    {
+      "file": "app/membership_verification.py",
+      "line": 150,
+      "name": "document_view",
+      "method": "GET",
+      "path_expression": "'/account/verification/{verification_id}/document'"
+    },
+    {
+      "file": "app/membership_verification.py",
+      "line": 165,
+      "name": "admin_page",
+      "method": "GET",
+      "path_expression": "'/admin/member-verifications'"
+    },
+    {
+      "file": "app/membership_verification.py",
+      "line": 181,
+      "name": "review",
+      "method": "POST",
+      "path_expression": "'/admin/member-verifications/{verification_id}'"
+    },
+    {
+      "file": "app/mobile_analysis_api.py",
+      "line": 75,
+      "name": "create_mobile_analysis",
+      "method": "POST",
+      "path_expression": "'/analyses'"
+    },
+    {
+      "file": "app/mobile_analysis_api.py",
+      "line": 152,
+      "name": "mobile_analysis",
+      "method": "GET",
+      "path_expression": "'/analyses/{analysis_id}'"
+    },
+    {
+      "file": "app/mobile_analysis_api.py",
+      "line": 205,
+      "name": "start_mobile_analysis",
+      "method": "POST",
+      "path_expression": "'/analyses/{analysis_id}/ai'"
+    },
+    {
+      "file": "app/mobile_analysis_api.py",
+      "line": 222,
+      "name": "mobile_analysis_image",
+      "method": "GET",
+      "path_expression": "'/analyses/{analysis_id}/assets/{asset_id}'"
+    },
+    {
+      "file": "app/mobile_analysis_api.py",
+      "line": 246,
+      "name": "mobile_analysis_history",
+      "method": "GET",
+      "path_expression": "'/analyses'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 196,
+      "name": "register_e2ee_device",
+      "method": "PUT",
+      "path_expression": "'/e2ee/device'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 237,
+      "name": "get_e2ee_user_keys",
+      "method": "GET",
+      "path_expression": "'/e2ee/users/{user_id}/keys'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 256,
+      "name": "get_e2ee_user_key",
+      "method": "GET",
+      "path_expression": "'/e2ee/users/{user_id}/key'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 262,
+      "name": "revoke_e2ee_device",
+      "method": "DELETE",
+      "path_expression": "'/e2ee/device/{device_id}'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 281,
+      "name": "mobile_login",
+      "method": "POST",
+      "path_expression": "'/auth/login'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 335,
+      "name": "mobile_verify_email",
+      "method": "POST",
+      "path_expression": "'/auth/verify-email'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 349,
+      "name": "mobile_logout",
+      "method": "POST",
+      "path_expression": "'/auth/logout'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 365,
+      "name": "mobile_me",
+      "method": "GET",
+      "path_expression": "'/me'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 371,
+      "name": "mobile_dashboard",
+      "method": "GET",
+      "path_expression": "'/dashboard'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 430,
+      "name": "mobile_patients",
+      "method": "GET",
+      "path_expression": "'/patients'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 503,
+      "name": "mobile_create_patient",
+      "method": "POST",
+      "path_expression": "'/patients'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 551,
+      "name": "mobile_schedule",
+      "method": "GET",
+      "path_expression": "'/schedule'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 577,
+      "name": "mobile_create_schedule",
+      "method": "POST",
+      "path_expression": "'/schedule'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 598,
+      "name": "mobile_update_tooth",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/teeth/{tooth_number}'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 651,
+      "name": "mobile_patient_detail",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 754,
+      "name": "mobile_notifications",
+      "method": "GET",
+      "path_expression": "'/notifications'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 768,
+      "name": "mobile_notification_read",
+      "method": "POST",
+      "path_expression": "'/notifications/{notice_id}/read'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 777,
+      "name": "mobile_experts",
+      "method": "GET",
+      "path_expression": "'/consultations/experts'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 795,
+      "name": "mobile_consultations",
+      "method": "GET",
+      "path_expression": "'/consultations'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 827,
+      "name": "mobile_consultation",
+      "method": "GET",
+      "path_expression": "'/consultations/{case_id}'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 841,
+      "name": "mobile_academic_courses",
+      "method": "GET",
+      "path_expression": "'/academic/courses'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 857,
+      "name": "mobile_academic_messages",
+      "method": "GET",
+      "path_expression": "'/academic/courses/{course_id}/messages'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 867,
+      "name": "mobile_patient_media_upload",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/media'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 926,
+      "name": "mobile_create_consultation",
+      "method": "POST",
+      "path_expression": "'/consultations'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 941,
+      "name": "mobile_send_consultation_message",
+      "method": "POST",
+      "path_expression": "'/consultations/{case_id}/messages'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 953,
+      "name": "mobile_academic_ask",
+      "method": "POST",
+      "path_expression": "'/academic/courses/{course_id}/ask'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 967,
+      "name": "mobile_experts_alias",
+      "method": "GET",
+      "path_expression": "'/experts'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 988,
+      "name": "mobile_patient_media",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media'"
+    },
+    {
+      "file": "app/mobile_api.py",
+      "line": 1001,
+      "name": "mobile_patient_media_file",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media/{media_id}/file'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 41,
+      "name": "mobile_analysis_history",
+      "method": "GET",
+      "path_expression": "'/analyses'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 54,
+      "name": "mobile_patient_media",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 63,
+      "name": "mobile_upload_media",
+      "method": "POST",
+      "path_expression": "'/patients/{patient_id}/media'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 88,
+      "name": "mobile_media_file",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media/{media_id}/file'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 100,
+      "name": "mobile_media_meta",
+      "method": "GET",
+      "path_expression": "'/patients/{patient_id}/media/{media_id}'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 109,
+      "name": "mobile_notifications",
+      "method": "GET",
+      "path_expression": "'/notifications'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 118,
+      "name": "mobile_notification_read",
+      "method": "POST",
+      "path_expression": "'/notifications/{notice_id}/read'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 127,
+      "name": "mobile_experts",
+      "method": "GET",
+      "path_expression": "'/experts'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 146,
+      "name": "mobile_create_consultation",
+      "method": "POST",
+      "path_expression": "'/consultations'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 185,
+      "name": "mobile_consultations",
+      "method": "GET",
+      "path_expression": "'/consultations'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 194,
+      "name": "mobile_consultation",
+      "method": "GET",
+      "path_expression": "'/consultations/{case_id}'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 207,
+      "name": "mobile_consultation_message",
+      "method": "POST",
+      "path_expression": "'/consultations/{case_id}/messages'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 242,
+      "name": "mobile_academic_courses",
+      "method": "GET",
+      "path_expression": "'/academic/courses'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 249,
+      "name": "mobile_academic_ask",
+      "method": "POST",
+      "path_expression": "'/academic/courses/{course_id}/ask'"
+    },
+    {
+      "file": "app/mobile_modern_api_v3.py",
+      "line": 259,
+      "name": "mobile_consultation_message_media",
+      "method": "GET",
+      "path_expression": "'/consultations/{case_id}/media/{message_id}'"
+    },
+    {
+      "file": "app/profile_hub.py",
+      "line": 61,
+      "name": "documents",
+      "method": "GET",
+      "path_expression": "'/account/documents'"
+    },
+    {
+      "file": "app/profile_hub.py",
+      "line": 66,
+      "name": "expert_document",
+      "method": "POST",
+      "path_expression": "'/account/documents/expert'"
+    }
+  ],
+  "async_io_review_hints": []
+}

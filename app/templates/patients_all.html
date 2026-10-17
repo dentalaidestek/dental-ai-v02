@@ -5,7 +5,7 @@
     <div><span class="directory-kicker">Hasta Yönetimi</span><h1>Hastalar</h1><p>Kayıtlı hastalarınızı görüntüleyin ve yönetin.</p></div>
     <a class="directory-add" href="/patients/new">＋ Yeni Hasta</a>
   </header>
-  <div class="directory-search"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="patientListSearch" type="search" placeholder="Hasta adı, numarası veya telefonu ile ara..." autocomplete="off"></div>
+  <form class="directory-search" method="get" action="/patients"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="patientListSearch" name="q" value="{{ q }}" type="search" placeholder="Hasta adı, numarası veya telefonu ile ara..." autocomplete="off"><button type="submit" class="study-neutral-action">Ara</button></form>
   <div class="directory-list" id="patientDirectoryList">
     {% for patient in patients %}
     <a class="directory-row" href="/patients/{{ patient.id }}" data-patient-id="{{ patient.id }}" data-patient-search data-search="{{ (patient.first_name or '')|lower }} {{ (patient.last_name or '')|lower }} {{ (patient.anonymous_id or '')|lower }} {{ (patient.phone or '')|lower }}">
@@ -15,6 +15,8 @@
     </a>
     {% endfor %}
   </div>
+  {% if next_before %}<a class="study-primary-button" href="/patients?before={{ next_before }}&amp;q={{ q|urlencode }}">Sonraki hastalar →</a>{% endif %}
+  {% if before %}<a class="study-back-link" href="/patients?q={{ q|urlencode }}">← İlk sayfa</a>{% endif %}
   <p class="directory-no-match" id="patientNoMatch" hidden>Eşleşen hasta bulunamadı.</p>
   <div class="directory-empty" id="patientDirectoryEmpty"{% if patients %} hidden{% endif %}>Henüz kayıtlı hasta bulunmuyor.<a href="/patients/new">İlk hastayı ekle</a></div>
 </section>
@@ -22,7 +24,7 @@
 (()=>{const q=document.getElementById('patientListSearch'),list=document.getElementById('patientDirectoryList'),noMatch=document.getElementById('patientNoMatch'),empty=document.getElementById('patientDirectoryEmpty');if(!q||!list)return;
 const filter=()=>{const v=q.value.trim().toLocaleLowerCase('tr-TR');let n=0;list.querySelectorAll('.directory-row').forEach(r=>{const ok=!v||(r.dataset.search||'').includes(v);r.hidden=!ok;if(ok)n++;});if(noMatch)noMatch.hidden=n!==0||!list.children.length;if(empty)empty.hidden=Boolean(list.children.length);};
 q.addEventListener('input',filter);
-window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row){row=document.createElement('a');row.className='directory-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.dataset.patientSearch='';row.innerHTML='<span class="directory-avatar" data-patient-field="initials"></span><span class="directory-copy"><strong data-patient-field="display_name"></strong><small data-patient-field="anonymous_label"></small><small data-patient-field="phone_label"></small></span><span class="directory-chevron">›</span>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}filter();});
+window.addEventListener('dai:patient-record',e=>{const p=e.detail;if(!p?.id)return;let row=list.querySelector('[data-patient-id="'+p.id+'"]');if(!row && {{ 'true' if before else 'false' }})return;if(!row){row=document.createElement('a');row.className='directory-row';row.href='/patients/'+p.id;row.dataset.patientId=p.id;row.dataset.patientSearch='';row.innerHTML='<span class="directory-avatar" data-patient-field="initials"></span><span class="directory-copy"><strong data-patient-field="display_name"></strong><small data-patient-field="anonymous_label"></small><small data-patient-field="phone_label"></small></span><span class="directory-chevron">›</span>';list.prepend(row);window.__daiApplyPatientRecord?.(p);}while(list.children.length>50)list.lastElementChild.remove();filter();});
 window.addEventListener('dai:patient-deleted',filter);filter();})();
 </script>
 {% endblock %}

@@ -5,12 +5,15 @@ from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 _ACADEMIC_QUESTION = re.compile(r'^/notes/courses/[^/]+/ai/ask(?:-stream)?/?$')
+_TEXT_ACTIONS = {'/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/account/password'}
+_MOBILE_AUTH = re.compile(r'^/api/mobile/v1/auth/[^/]+/?$')
 _MOBILE_ACADEMIC_QUESTION = re.compile(r'^/api/mobile/v1/academic/courses/[^/]+/ask/?$')
 
 
 def _academic_question(scope):
     return scope.get('method') == 'POST' and bool(
-        _ACADEMIC_QUESTION.fullmatch(scope.get('path', ''))
+        scope.get('path') in {'/ai/ask', '/ai/ask/'}
+        or _ACADEMIC_QUESTION.fullmatch(scope.get('path', ''))
         or _MOBILE_ACADEMIC_QUESTION.fullmatch(scope.get('path', '')))
 
 
@@ -41,7 +44,10 @@ class RequestLimits:
                                headers={'Retry-After': '5'})(scope, receive, send)
             return
         headers = dict(scope.get('headers', []))
-        body_limit = min(self.max_bytes, 65536) if academic else self.max_bytes
+        text_action = academic or (scope.get('method') == 'POST' and (
+            scope.get('path', '').rstrip('/') in _TEXT_ACTIONS
+            or _MOBILE_AUTH.fullmatch(scope.get('path', ''))))
+        body_limit = min(self.max_bytes, 65536) if text_action else self.max_bytes
         try:
             if int(headers.get(b'content-length', b'0')) > body_limit:
                 await JSONResponse({'detail': 'Upload too large'}, status_code=413)(scope, receive, send)

@@ -6,6 +6,7 @@ mobile clients do not create a second authentication system.
 """
 
 from datetime import datetime, timedelta
+from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 import json
 import os
@@ -871,6 +872,10 @@ async def mobile_patient_media_upload(
     note:Optional[str]=Form(None),
     user:User=Depends(_mobile_user),
 ):
+    return await run_in_threadpool(_mobile_patient_media_upload_sync, patient_id, image, file, tooth_number, note, user)
+
+
+def _mobile_patient_media_upload_sync(patient_id, image, file, tooth_number, note, user):
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422,detail="Görüntü seçin.")
@@ -881,11 +886,16 @@ async def mobile_patient_media_upload(
         patient=session.get(Patient,patient_id)
         if not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
             raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+        session.close()  # Release the DB connection before image/R2 I/O.
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         destination=Path("uploads")/"patient-media"/stored
         destination.parent.mkdir(parents=True,exist_ok=True)
         _copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)
         storage_persist_file(destination)
+        current=session.get(User,user.id)
+        patient=session.get(Patient,patient_id)
+        if not current or not current.is_active or not patient or (current.role!="ADMIN" and patient.owner_user_id!=user.id):
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
         media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
             original_filename=Path(image.filename).name,stored_filename=stored,
             file_path=str(destination),media_type="PHOTO",
@@ -993,6 +1003,7 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
         if not patient or not media or media.patient_id!=patient_id or (user.role!="ADMIN" and (patient.owner_user_id!=user.id or media.owner_user_id!=user.id)):
             raise HTTPException(status_code=404,detail="Görüntü bulunamadı.")
+        session.close()  # Remote storage must not hold a DB pool slot.
         try:path=storage_ensure_local(media.file_path)
         except FileNotFoundError:raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
         from fastapi.responses import FileResponse

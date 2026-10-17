@@ -1,6 +1,11 @@
 import hashlib
 import hmac
 import secrets
+from contextlib import contextmanager
+import os
+import threading
+
+from fastapi import HTTPException
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -12,16 +17,38 @@ _PASSWORD_HASHER = PasswordHasher(
     parallelism=1,
 )
 
+# Argon2 uses ~19 MiB per operation. Bound concurrent web/native hashing
+# together instead of allowing every HTTP worker to allocate that memory.
+_password_slots = threading.BoundedSemaphore(
+    max(1, min(8, int(os.getenv('DENTAL_MAX_PASSWORD_OPERATIONS', '4')))))
+
+
+@contextmanager
+def _password_operation():
+    if not _password_slots.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail='Giriş işlemleri şu anda yoğun. Kısa süre sonra yeniden deneyin.',
+                            headers={'Retry-After': '2'})
+    try:
+        yield
+    finally:
+        _password_slots.release()
+
 
 def hash_password(password: str) -> str:
     """Hash new passwords with Argon2id."""
-    return _PASSWORD_HASHER.hash(password)
+    with _password_operation():
+        return _PASSWORD_HASHER.hash(password)
 
 
 def verify_password(password: str, stored: str) -> bool:
     """Verify Argon2id and legacy PBKDF2 hashes during the migration window."""
     if not stored:
         return False
+    with _password_operation():
+        return _verify_password(password, stored)
+
+
+def _verify_password(password: str, stored: str) -> bool:
     if stored.startswith("$argon2"):
         try:
             return _PASSWORD_HASHER.verify(stored, password)
