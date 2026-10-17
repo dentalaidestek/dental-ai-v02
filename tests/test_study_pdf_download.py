@@ -135,8 +135,8 @@ def test_stream_advertises_only_completed_requested_pdf(pdf_client,monkeypatch,o
             file_path='/synthetic/ortodonti.pdf',material_type='PDF',mime_type='application/pdf',size_bytes=100))
         session.commit()
     plan=SimpleNamespace(output_format=output_format,operation='answer')
-    retrieval=SimpleNamespace(evidence_sufficient=True,source_material_ids=[],evidence=[],
-        visual_sources=[],source_batches=[],attachments=[])
+    from app.study_retrieval_v2 import RetrievalResult
+    retrieval=RetrievalResult(evidence_sufficient=True)
     monkeypatch.setattr(main,'study_v2_streaming_enabled',lambda:True)
     monkeypatch.setattr(main,'course_v2_ready',lambda *args,**kwargs:True)
     monkeypatch.setattr(main,'classify_course_scope',lambda *args:'DENTAL')
