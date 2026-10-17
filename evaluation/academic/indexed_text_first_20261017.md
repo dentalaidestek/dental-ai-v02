@@ -17,7 +17,7 @@ This was introduced to preserve answer marks, corrections and other information 
 
 ## Verification
 
-- 205 focused planner/retrieval/batch/static tests passed in 1.08 seconds.
+- 222 focused planner/retrieval/batch/static/generation/PDF-download tests passed in 2.76 seconds (six dependency deprecation warnings).
 - Three additional PostgreSQL-compatible PGlite tests passed in 0.59 seconds: ordinary OCR text with foreign/stale exclusion and zero original-page materialization; explicit visuals for topic and course scopes.
 - A 128-chunk / 21-page synthetic case fits the text budget, avoids visual metadata reads and uses one generation call instead of source extraction/synthesis. This excludes the separate planner call and is not a live latency measurement.
 - Existing test expectations that all OCR pages require visual input were updated to request explicit inspection. The PostgreSQL fixture gained the native-text/status columns used by the existing retrieval implementation.
