@@ -92,7 +92,8 @@ For MECHANICAL PDF file operations instead use pdf_tools, operation=answer, no
 pdf_edits, no note searches. Select sources from owned generated PDFs or uploaded
 PDF filenames in source_outline. generated + turn=null selects the latest PDF;
 otherwise turn is its zero-based recent_dialogue index. Uploaded sources use the
-EXACT filename and turn=null. part selects a zero-based output of a previously
+EXACT filename and turn=null. For generated sources filename may be empty, or
+the exact output name to select a named part. part selects a zero-based output of a previously
 split PDF (normally 0). Never invent database ids, URLs or filesystem paths.
 action=inspect lists page count and actual form field names, outputs=[].
 action=extract_text returns original selectable text without rewriting it;
@@ -106,6 +107,12 @@ Do not generate academic text for these operations. Preserve figures/layout.
 Fill interactive forms using exact field names (inspect first if unknown) and
 values copied from the current request, not invented facts; /Yes and /Off are
 checkbox states. Do not sign a digital signature. Use pdf_tools=null for other tasks.
+Example: rotate the first output of the latest generated PDF 90 degrees:
+{"action":"transform","sources":[{"kind":"generated","turn":null,"filename":"","part":0}],
+"outputs":[{"name":"Döndürülmüş PDF","segments":[{"source":0,"pages":[],"exclude":[],"rotation":90}],"fields":[]}]}
+Include every key shown. Use integer page/source/part/rotation values, not strings.
+For a named output use its exact name in filename. A page-based PDF is still
+kind=generated (not kind=pages or recipe). Never copy internal recipe/source IDs.
 Text-content revisions use pdf_edits only for editable_pdf.kind=text. A page-based
 PDF (kind=pages) supports page/form tools; do not edit its internal recipe as text.
 Support insertion anywhere, deletion, replacement, rewriting a paragraph, table
@@ -443,8 +450,10 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         from app.academic_pdf_tools import validate_tools
         try:
             validate_tools(data['pdf_tools'])
-        except ValueError:
-            raise PlannerContractError('invalid PDF tool contract') from None
+        except ValueError as exc:
+            # Tool validation errors contain fixed diagnostic labels, never
+            # model values, filenames, source text or filesystem paths.
+            raise PlannerContractError('invalid PDF tool contract: '+str(exc)) from None
         expected='pdf' if data['pdf_tools']['action']=='transform' else 'text'
         if (data['operation']!='answer' or data['output_format']!=expected
             or data['pdf_edits'] or data['append_previous_pdf'] or data['export_previous_answer']

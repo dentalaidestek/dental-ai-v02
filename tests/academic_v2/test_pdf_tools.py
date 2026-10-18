@@ -131,6 +131,22 @@ def test_nested_recipe_respects_page_order_and_parent_deletion(owned):
     session.delete(session.get(main.StudyChatMessage,30)); session.commit()
     with pytest.raises(PDFToolError): download(owned,second.prepared_answer)
 
+
+def test_generated_output_name_selects_owned_split_part(owned):
+    first=prepare(owned,tool(sources=[source('uploaded','original.pdf')],outputs=[
+        output('First',[segment(pages=[1])]),output('Last',[segment(pages=[4])])]))
+    session,main,_=owned
+    session.add(main.StudyChatMessage(id=30,owner_user_id=1,course_id=6,role='ASSISTANT',
+        mode='RAG_V2_PDF',content=first.prepared_answer));session.commit()
+    selected=prepare(owned,tool(sources=[source(filename='Last.pdf')],
+        outputs=[output(segments=[segment(rotation=90)])]))
+    assert selected.evidence_sufficient,selected.clarification
+    reader=PdfReader(BytesIO(download(owned,selected.prepared_answer)))
+    assert len(reader.pages)==1 and reader.pages[0].rotation==90
+    assert 'ORIGINAL PAGE 4' in reader.pages[0].extract_text()
+    wrong=prepare(owned,tool(sources=[source(filename='Foreign.pdf')]))
+    assert not wrong.evidence_sufficient and not wrong.prepared_answer
+
 @pytest.mark.parametrize('pages,exclude',[([5],[]),([],[1,2,3,4]),([0],[]),([-5],[])])
 def test_invalid_or_empty_page_selection_never_advertises_pdf(owned,pages,exclude):
     result=prepare(owned,tool(sources=[source('uploaded','original.pdf')],

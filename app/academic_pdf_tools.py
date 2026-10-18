@@ -66,7 +66,6 @@ def validate_tools(tool):
             or not isinstance(source['filename'],str) or len(source['filename'])>400
             or '\x00' in source['filename']
             or (source['turn'] is not None and (type(source['turn']) is not int or not 0<=source['turn']<8))
-            or (source['kind']=='generated' and source['filename'])
             or (source['kind']=='uploaded' and (not source['filename'].strip() or source['turn'] is not None or source['part']))):
             raise PDFToolError('PDF kaynağı geçersiz.')
     if tool['action']=='transform' and not outputs:
@@ -336,7 +335,17 @@ def _prepare_operations(session,*,message_model,material_model,plan,owner_user_i
                     row=_owned_row(session,message_model,turn.get('id'),owner_user_id,course_id)
                 if row is None or row.role!='ASSISTANT' or not row.mode.endswith('_PDF'):
                     raise PDFToolError('İşlenecek oluşturulmuş PDF bulunamadı.')
-                refs.append({'kind':'message','id':row.id,'digest':_digest(row.content),'part':source['part']})
+                part=source['part']
+                if source['filename']:
+                    from app.academic_pdf import pdf_filename
+                    files=output_files(row.content,course_id,row.id)
+                    names=[item['name'] for item in files] if files else [pdf_filename(title)]
+                    matches=[i for i,name in enumerate(names)
+                        if name.casefold()==pdf_filename(source['filename']).casefold()]
+                    if len(matches)!=1 or (part and part!=matches[0]):
+                        raise PDFToolError('İstenen dosya adı seçilen PDF çıktısıyla eşleşmiyor.')
+                    part=matches[0]
+                refs.append({'kind':'message','id':row.id,'digest':_digest(row.content),'part':part})
             else:
                 rows=list(session.exec(select(material_model).where(
                     material_model.owner_user_id==owner_user_id,material_model.course_id==course_id,
