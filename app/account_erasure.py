@@ -126,6 +126,9 @@ def begin_account_erasure(
     # Academic chat text is user-authored content and is not needed for retained
     # payment/dispute references. Courses can be removed after material jobs hold
     # the deletion references they need.
+    from app.academic_learning import erase as erase_learning
+    from app.academic_study_runs import erase as erase_runs
+    erase_learning(session,user_id);erase_runs(session,user_id,purge=True)
     for msg in session.exec(select(StudyChatMessage).where(StudyChatMessage.owner_user_id == user_id)).all():
         from app.academic_remote_pdf import queue_erasure
         queue_erasure(session,msg)
@@ -163,3 +166,4 @@ def begin_account_erasure(
         detail=f"actor={actor}; registration_block={int(block_registration)}",
     ))
     return extra_storage
+

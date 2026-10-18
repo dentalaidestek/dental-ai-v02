@@ -37,11 +37,17 @@
     {% if material_count > 0 %}
     <div class="study-quick-prompts study-quick-prompts-clean">
         <button type="button" data-prompt="Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.">Özetle</button>
-        <button type="button" data-prompt="Bu ders notlarındaki tüm konuları bana bir hoca gibi ayrıntılı öğret. Her başlığı ayrı işle, mantığını kur ve notların desteklediği örneklerle açıkla. Bilgiyi ezberletmek yerine anlamamı sağla.">Bana Öğret</button>
+        <button type="button" data-prompt="Bu ders notlarıyla adım adım çalışalım. İlk konudan başla: kısa bir açıklama ve nottan bir örnek ver, sonra anlamamı kontrol eden tek bir soru sor ve yanıtımı bekle. Sonraki anlatımı cevabıma göre ayarla.">Bana Öğret</button>
         <button type="button" data-prompt="Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.">Soru Hazırla</button>
     </div>
     {% endif %}
 
+    <details style="margin:8px 16px;padding:10px;border:1px solid #dce4ed;border-radius:12px">
+        <summary>Çalışma durumum</summary>
+        <p id="studyLearningSummary">Çalışma kayıtların yükleniyor...</p>
+        <button type="button" id="studyReviewButton" disabled>Eksiklerimden 5 soru hazırla</button>
+        <small style="display:block;margin-top:6px">Kayıtlı soru değerlendirmelerine dayanır; öğrenme düzeyinin kesin ölçümü değildir.</small>
+    </details>
     <section class="study-chat study-chat-scroll study-chat-clean-scroll" id="studyChat" aria-live="polite">
         {% if messages %}
             {% for msg in messages %}
@@ -113,7 +119,7 @@
     function applyIndexReadiness() {
         const blocked = materialCount > 0 && !v2Ready;
         input.disabled = !materialCount || blocked || uploading;
-        send.disabled = !materialCount || blocked || uploading;
+        send.disabled = !materialCount || blocked || uploading || !!activeRun;
         document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
         if (blocked) status.textContent='Ders notları hazırlanıyor. Bu sayfa açıkken otomatik devam edecek.';
     }
@@ -284,84 +290,94 @@
         return article;
     }
 
-    async function sendMessage(text) {
-        text = (text || '').trim();
-        if (!text || send.disabled) return;
-        if (!materialCount) {
-            status.textContent='Bu derste henüz not yok. Önce PDF veya fotoğraf ekle.';
-            return;
-        }
-        status.textContent='';
-        const userMessage = addMessage('user', text, false, true);
-        const pending = addMessage('assistant','',true,true);
-        input.value='';
-        input.style.height='auto';
-        send.disabled=true;
-        if (attach) attach.disabled=true;
-        const data = new FormData();
-        data.append('message', text);
-        let answer='',artifact=null,pdfOutput=false;
+    let activeRun=null, runTimer=null;
+    function setWorking(value) {
+        send.disabled=value;
+        if (attach) attach.disabled=value || uploading;
+    }
+    async function refreshLearning() {
+        const label=document.getElementById('studyLearningSummary');
+        if (!label) return;
         try {
-            const endpoint = v2Streaming ? '/notes/courses/'+courseId+'/ai/ask-stream' : '/notes/courses/'+courseId+'/ai/ask';
-            const response = await fetch(endpoint, {method:'POST', body:data, credentials:'same-origin'});
-            if (!v2Streaming) {
-                const result = await response.json();
-                if (!response.ok || !result.ok) throw new Error(result.error || 'AI isteği tamamlanamadı.');
+            const response=await fetch('/notes/courses/'+courseId+'/ai/learning',{credentials:'same-origin'});
+            const data=await response.json();
+            if (!data.ok) return;
+            const info=data.learning;
+            label.textContent=info.practiced_facts+' bilgi çalışıldı · '+info.correct+' doğru · '+info.wrong+' yanlış · '+info.due_count+' tekrar zamanı geldi';
+            document.getElementById('studyReviewButton').disabled=!info.practiced_facts;
+        } catch (_) {}
+    }
+    async function followRun(id,pending,userMessage) {
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id,{credentials:'same-origin'});
+            const data=await response.json();
+            if (!response.ok || !data.ok) throw new Error('Çalışmanın durumuna erişilemedi.');
+            const run=data.run;
+            status.textContent=run.stage || 'Çalışma sürüyor';
+            if (run.partial) {
                 pending.classList.remove('pending');
-                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(result.answer);
-                artifact=result.artifact || null;
-            } else {
-                if (!response.ok || !response.body) {
-                    const result = await response.json().catch(() => ({}));
-                    throw new Error(result.error || 'AI akışı başlatılamadı.');
-                }
-                const reader=response.body.getReader(),decoder=new TextDecoder();
-                let buffer='',finished=false;
-                while (true) {
-                    const part=await reader.read();
-                    buffer+=decoder.decode(part.value||new Uint8Array(),{stream:!part.done});
-                    const lines=buffer.split('\n');buffer=lines.pop()||'';
-                    for (const line of lines) {
-                        if (!line.trim()) continue;
-                        const event=JSON.parse(line);
-                        if (event.type==='error') throw new Error(event.error||'AI akışı kesildi.');
-                        if (event.type==='format' && event.format==='pdf') pdfOutput=true;
-                        if (event.type==='done') { finished=true; artifact=event.artifact || null; }
-                        if (event.type==='delta') {
-                            answer+=event.text||'';
-                            pending.classList.remove('pending');
-                            pending.querySelector('.study-chat-markdown').innerHTML=pdfOutput ? 'PDF hazırlanıyor...' : safeMarkdown(answer);
-                            scrollChatBottom();
-                        }
-                    }
-                    if (part.done) break;
-                }
-                if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
+                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.partial);
             }
-            pending.classList.remove('pending');
-            addPdfArtifact(pending,artifact);
-            scrollChatBottom();
-        } catch (err) {
-            if (answer) {
+            if (run.status==='DONE') {
                 pending.classList.remove('pending');
-                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(answer);
-                const warning=document.createElement('p');
-                warning.className='study-incomplete-notice';
-                warning.textContent='Bu yanıt tamamlanmadı ve sohbet geçmişine kaydedilmedi.';
-                pending.querySelector('.study-chat-content').appendChild(warning);
-            } else {
-                pending.remove();
-                userMessage.remove();
+                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
+                addPdfArtifact(pending,run.artifact || null);
+                status.textContent='';activeRun=null;setWorking(false);refreshLearning();
+                scrollChatBottom();return;
             }
-            if (!input.value.trim()) input.value=text;
-            status.textContent = err.message || 'Bir hata oluştu.';
-        } finally {
-            send.disabled=false;
-            if (attach) attach.disabled=uploading;
-            applyIndexReadiness();
-            input.focus();
+            if (!['QUEUED','RUNNING'].includes(run.status)) {
+                pending.remove();userMessage.remove();
+                if (!input.value.trim()) input.value=run.question || '';
+                status.textContent=run.error || 'Çalışma tamamlanamadı.';
+                activeRun=null;setWorking(false);return;
+            }
+            runTimer=setTimeout(()=>followRun(id,pending,userMessage),document.hidden?8000:1500);
+        } catch (error) {
+            // A lost browser connection does not stop or restart the server job.
+            status.textContent='Bağlantı bekleniyor. Çalışman sunucuda devam ediyor.';
+            runTimer=setTimeout(()=>followRun(id,pending,userMessage),5000);
         }
     }
+    async function sendMessage(text) {
+        text=(text || '').trim();
+        if (!text || send.disabled || activeRun) return;
+        if (!materialCount) {status.textContent='Önce ders notu ekle.';return;}
+        setWorking(true);status.textContent='Çalışma başlatılıyor...';
+        const data=new FormData();data.append('message',text);
+        const key=crypto.randomUUID().replaceAll('-','');data.append('request_key',key);
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/runs',{method:'POST',body:data,credentials:'same-origin'});
+            const result=await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'Çalışma başlatılamadı.');
+            input.value='';input.style.height='auto';
+            const userMessage=addMessage('user',text,false,true);
+            const pending=addMessage('assistant','',true,true);
+            activeRun=result.run.id;followRun(activeRun,pending,userMessage);
+        } catch (error) {
+            status.textContent=error.message || 'Çalışma başlatılamadı.';setWorking(false);
+            // If submission reached the server, recover it instead of submitting again.
+            resumeRun();
+        }
+    }
+    async function resumeRun() {
+        if (activeRun || !materialCount) return;
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/runs/active',{credentials:'same-origin'});
+            const data=await response.json();
+            if (!data.ok || !data.run) return;
+            const run=data.run;
+            if (run.status==='INTERRUPTED') {status.textContent=run.error;return;}
+            const userMessage=addMessage('user',run.question,false,true);
+            const pending=addMessage('assistant','',true,true);
+            activeRun=run.id;setWorking(true);followRun(activeRun,pending,userMessage);
+        } catch (_) {}
+    }
+    document.addEventListener('visibilitychange',()=>{
+        if (!document.hidden && !activeRun) resumeRun();
+    });
+    const reviewButton=document.getElementById('studyReviewButton');
+    if (reviewButton) reviewButton.addEventListener('click',()=>sendMessage('Son değerlendirmelerimde yanlış yaptığım veya tekrar zamanı gelen konulardan, notlara dayanarak 5 yeni soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.'));
+    refreshLearning();resumeRun();
 
     async function uploadChatFiles() {
         const selected=Array.from(filesInput.files || []);
@@ -411,3 +427,4 @@
 })();
 </script>
 {% endblock %}
+

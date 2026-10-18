@@ -89,6 +89,8 @@ SCHEMA['required'].append('pdf_tools')
 from app.academic_remote_pdf import SCHEMA as REMOTE_PDF_SCHEMA
 SCHEMA['properties']['pdf_document'] = REMOTE_PDF_SCHEMA
 SCHEMA['required'].append('pdf_document')
+SCHEMA['properties']['distinct_topics']={'type':'boolean','description':'True only when the user requires every generated question to use a different broad main topic. Clarify if available main topics cannot support the requested count.'}
+SCHEMA['required'].append('distinct_topics')
 SYSTEM = '''REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
 ALL requests to change, color, highlight, inspect/edit layout, split/merge/rotate
 or otherwise work on an EXISTING PDF through pdf_document, operation=answer,
@@ -114,6 +116,20 @@ or tell the user to paste a generated PDF's text. If the user also asks to expan
 detail or update that PDF, output_format=pdf and supply the uploaded sources needed
 to verify and fill missing headings. Preserve the complete contextual request.
 For genuinely unrelated non-PDF work use pdf_document=null.
+PERSISTENT LEARNING CONTEXT: source_outline.learning.active_request describes the
+last substantive study task; use it only to resolve genuine follow-ups, never to
+override a new independent request. source_outline.learning.active_quiz is the
+saved active question set even if it is older than recent_dialogue. Use its saved
+questions/key for answer-key and grading requests. For requests about the student's
+weak or due topics use learning.review to form source searches; these records are
+learning history, not independent factual evidence. Retrieve the original notes.
+Uploaded notes are supplied from their already-published extraction/OCR index by
+default. Do NOT request raw source PDFs for explanation, summary, lesson expansion
+or textual heading coverage. Set pdf_document.original_pdf_sources ONLY to the
+selected keys whose actual page graphics, original layout, images, forms or
+mechanical page edits are required by the current request. Never include all files
+merely because one PDF is being edited. Keep the edited generated PDF plus only
+the necessary uploaded sources. Text coverage does not prove coverage of graphics.
 When remote_pdf_enabled is absent/false, use the legacy PDF tools below.
 PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
@@ -391,6 +407,7 @@ class StudyRequest:
     quiz_key_corrections: tuple[dict, ...] = ()
     pdf_tools: dict | None = None
     pdf_document: dict | None = None
+    distinct_topics: bool = False
 
 
 @dataclass(frozen=True)
@@ -443,6 +460,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     data = json.loads(raw)
     if isinstance(data,dict):
         data.setdefault('source_sections',[])  # Older persisted/mock contracts.
+        data.setdefault('distinct_topics',False)
         data.setdefault('output_format','text')
         data.setdefault('source_files', [])
         data.setdefault('source_pages', [])
@@ -635,6 +653,8 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             raise PlannerContractError('missing clarification')
     elif not data['resolved_query'].strip() or data['clarification'].strip():
         raise PlannerContractError('inconsistent interpretation')
+    if type(data['distinct_topics']) is not bool:
+        raise PlannerContractError('invalid distinct topic requirement')
     return StudyRequest(**data)
 
 
@@ -646,10 +666,11 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
               **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
-    recent_quiz = None
+    recent_quiz = ((source_outline or {}).get('learning') or {}).get('active_quiz')
     from app.academic_question_output import question_blocks
     for index in range(len(turns)-1, -1, -1):
-        if turns[index]['role'].upper() == 'ASSISTANT' and question_blocks(turns[index]['content']):
+        if turns[index]['role'].upper() == 'ASSISTANT' and (
+                (history or [])[-8:][index].get('quiz') or question_blocks(turns[index]['content'])):
             recent_quiz = (history or [])[-8:][index].get('quiz')
             if recent_quiz:
                 # Exact questions/options remain available, without duplicating
@@ -667,7 +688,10 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
             turn['content']=describe_recipe(turn['content'])
     # Put the active request last, after its historical context.
     from app.academic_direct_request import previous_source_request
-    prompt = json.dumps({'source_outline': source_outline or {'sections': [], 'complete': False},
+    outline=dict(source_outline or {'sections': [], 'complete': False})
+    if 'learning' in outline:
+        outline['learning']={key:value for key,value in outline['learning'].items() if key!='active_quiz'}
+    prompt = json.dumps({'source_outline': outline,
                          'recent_source_request': previous_source_request(history),
                          'recent_dialogue': turns, 'recent_quiz': recent_quiz,
                          'request': question}, ensure_ascii=False)
@@ -768,6 +792,8 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
+    if type(plan.distinct_topics) is not bool:
+        raise PlannerContractError('invalid distinct topic requirement')
     if plan.pdf_document:
         from app.academic_remote_pdf import prepare
         result=prepare(session,message_model=message_model,material_model=material_model,
@@ -837,10 +863,30 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=not bool(plan.source_subjects),
                                           query_embedding=query_embedding, **kwargs)
     result.study_task['quick_action'] = understanding.outcome == 'quick_action'
+    result.study_task['distinct_topics']=plan.distinct_topics
     if pdf_session_factory is not None:
         result.study_task['remote_session_factory']=pdf_session_factory
         result.study_task['remote_context']={'owner':kwargs['owner_user_id'],
             'course':kwargs['course_id'],'title':pdf_title}
+        if plan.output_format=='pdf' and not plan.pdf_document and material_model is not None:
+            from app.academic_remote_pdf import digest
+            ids=set(result.source_material_ids)
+            for child in result.source_batches:
+                ids.update(child.source_material_ids)
+            from sqlmodel import select
+            refs=[]
+            rows=session.exec(select(material_model).where(material_model.id.in_(sorted(ids)),
+                material_model.owner_user_id==kwargs['owner_user_id'],
+                material_model.course_id==kwargs['course_id'])).all() if ids else []
+            if {row.id for row in rows}!=ids:
+                raise ValueError('PDF source index changed')
+            for row in rows:
+                if (row is None or row.owner_user_id!=kwargs['owner_user_id']
+                        or row.course_id!=kwargs['course_id'] or row.deleted_at is not None
+                        or row.index_status!='READY' or not row.active_index_version):
+                    raise ValueError('PDF source index changed')
+                refs.append({'kind':'index','id':row.id,'digest':digest(row.active_index_version)})
+            result.study_task['remote_evidence_refs']=refs
     result.study_task['exam_topics'] = list(plan.exam_topics)
     if plan.operation == 'generate_questions':
         result.study_task['quiz_contract'] = True

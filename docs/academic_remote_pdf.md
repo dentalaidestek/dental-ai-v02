@@ -15,9 +15,14 @@ they are not rendered on the web service. Existing binary PDFs are uploaded as
 files. Legacy page-edit recipes are reconstructed in Claude's workspace from
 their owned sources and a server-built document plan, without local rendering.
 Text-only legacy documents preserve their content; their original pagination
-must be checked in the live visual evaluation. Plain generation and quiz generation retain their current source grounding
-and validation, then export the completed answer in a separate Claude file call.
-This extra formatting call consumes tokens; it is not a free local conversion.
+must be checked in the live visual evaluation. A new explicitly requested lesson
+PDF uses one file-generation call directly from selected indexed evidence when
+the complete text fits the existing bounded context. It does not first generate
+the same lesson as a chat answer. Quiz generation retains its validated set/key
+and exact-answer export path; automatic long-answer exports also preserve the
+completed answer. Those paths still incur a separate file-formatting call.
+The semantic interpretation call remains separate; one generation is not a claim
+of one total API request. A server-tool job may pause/resume internally.
 `pause_turn` may resume at most twice, with a 240-second message-execution budget.
 There is no provider fallback and model-written code is never executed locally.
 
@@ -59,11 +64,27 @@ first original PDF, inspect its downloaded pages and measure actual usage. Unit
 tests simulate Anthropic HTTP/file responses and are not a live skill evaluation.
 
 
-Existing-PDF follow-ups also support `output_format=text`: the planner supplies the
-owned generated file and relevant uploaded source PDFs to the same isolated skill.
-The skill must actually inspect the files before returning a text answer; no new
-PDF is created for a normal short inspection. Source references are revalidated
-after processing. Requests to expand/update a summary remain PDF jobs, with the
-original summary and required full source documents supplied together. This avoids
-asking users to paste the text of a PDF the application already owns. Coverage
-claims must distinguish supplied readable sources from missing/unreadable material.
+Existing-PDF follow-ups support `output_format=text`. For ordinary content questions,
+the owned generated PDF is read through Claude's existing native PDF attachment
+support; published note text/OCR is supplied as text. This path does not open the
+PDF skill/container or upload files to the Files API. Legacy page recipes or larger
+binary inputs can still require the bounded file workspace.
+
+Uploaded note sources default to their active published `StudyIndexPage` text/OCR,
+with filename, page numbers and extraction method. Complete text coverage requires
+a completed index job and every expected page; missing/unpublished checkpoints fail
+without silently re-OCRing or sending a large PDF. Aggregate indexed source text is
+bounded at 256,000 UTF-8 bytes. Empty/unreadable page text remains explicitly marked;
+text evidence does not establish coverage of page graphics. The planner may select
+`original_pdf_sources` only for sources whose original visuals, layout, forms or
+mechanical page operations are required. Generated binary PDFs still retain their
+original bytes for editing. Index references bind ownership and active generation
+and are rechecked after reading/creation and on download, without fetching source
+PDF blobs to validate an index reference.
+
+Ordinary text source batches that fit the existing 192,000-character / 256,000-byte
+budget are packed into one generation regardless of whether the request came from
+a quick-action button. Larger and visual work retains the existing batching path;
+no requested source is silently truncated. The PDF export path remains separate
+for validated quizzes and already-completed answers. No live latency or dollar
+savings are claimed solely from these mocked transport regression tests.

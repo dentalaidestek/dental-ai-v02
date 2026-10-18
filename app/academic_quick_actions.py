@@ -1,7 +1,7 @@
 """Exact server-defined UI commands; free-form student language still uses the planner."""
 PROMPTS = {
     'summarize': 'Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.',
-    'teach': 'Bu ders notlarındaki tüm konuları bana bir hoca gibi ayrıntılı öğret. Her başlığı ayrı işle, mantığını kur ve notların desteklediği örneklerle açıkla. Bilgiyi ezberletmek yerine anlamamı sağla.',
+    'teach': 'Bu ders notlarıyla adım adım çalışalım. İlk konudan başla: kısa bir açıklama ve nottan bir örnek ver, sonra anlamamı kontrol eden tek bir soru sor ve yanıtımı bekle. Sonraki anlatımı cevabıma göre ayarla.',
     'generate_questions': 'Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.',
 }
 
@@ -18,3 +18,4 @@ def quick_action_plan(message):
     return StudyRequest(message,operation,'course',20 if operation=='generate_questions' else None,
         'zorlayıcı' if operation=='generate_questions' else None,'',
         depth='detailed' if operation=='teach' else 'standard',complete_sections=False)
+
