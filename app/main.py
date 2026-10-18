@@ -9305,6 +9305,24 @@ def _socket_case_authorized(user_id, case_id, *, mark_read=False, through_id=Non
         return True
 
 
+@app.post("/expert-support/cases/{case_id}/read")
+@offload
+def consultation_mark_read(request: Request, case_id: int, background_tasks: BackgroundTasks,
+                           through_id: int = Form(...)):
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
+    if not _socket_origin_allowed(request):
+        return JSONResponse({"ok": False, "error": "İstek kaynağı doğrulanamadı."}, status_code=403)
+    receipt = _socket_case_authorized(user.id, case_id, mark_read=True, through_id=through_id)
+    if not receipt:
+        return JSONResponse({"ok": False, "error": "Okundu bilgisi kaydedilemedi."}, status_code=403)
+    for event in receipt['events']:
+        background_tasks.add_task(_publish_realtime_event, event)
+    return {"ok": True, "case_id": case_id, "user_id": user.id,
+            "through_id": receipt['through_id'], "at": receipt['at']}
+
+
 @app.websocket("/ws/sync")
 async def realtime_sync_socket(websocket: WebSocket):
     if not _socket_origin_allowed(websocket):
