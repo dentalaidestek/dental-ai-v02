@@ -585,6 +585,13 @@ def stream_rag_v2(
         try:
             content=generate(**job)
         except Exception as exc:
+            import traceback
+            frames=traceback.extract_tb(exc.__traceback__)
+            origin=frames[-1] if frames else None
+            logger.error('Academic remote PDF failed trace=%s type=%s origin=%s:%s code=%s reason=%s',
+                trace_id,type(exc).__name__,origin.name if origin else None,
+                origin.lineno if origin else None,getattr(exc,'code',None),
+                str(exc) if isinstance(exc,StudyProviderError) else 'internal_error')
             raise StudyAIError('Claude PDF işlemini tamamlayamadı; önceki dosyan korunuyor.') from exc
         if job.get('output_format')=='text':
             yield content
