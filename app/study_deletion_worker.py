@@ -70,7 +70,11 @@ def run_deletion_slice(session: Session) -> str:
         if job['storage_reference']:
             storage_delete(job['storage_reference'])
         if job['provider_file_name']:
-            delete_provider_file(job['provider_file_name'], strict=True)
+            if job['provider_file_name'].startswith('anthropic-file:'):
+                from app.study_anthropic_files import ClaudeFiles
+                ClaudeFiles().delete(job['provider_file_name'].split(':',1)[1])
+            else:
+                delete_provider_file(job['provider_file_name'], strict=True)
     except Exception as exc:
         session.rollback()
         _finish(session, job, status='FAILED', error=type(exc).__name__)
