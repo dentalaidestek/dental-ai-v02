@@ -114,6 +114,13 @@ or tell the user to paste a generated PDF's text. If the user also asks to expan
 detail or update that PDF, output_format=pdf and supply the uploaded sources needed
 to verify and fill missing headings. Preserve the complete contextual request.
 For genuinely unrelated non-PDF work use pdf_document=null.
+Uploaded notes are supplied from their already-published extraction/OCR index by
+default. Do NOT request raw source PDFs for explanation, summary, lesson expansion
+or textual heading coverage. Set pdf_document.original_pdf_sources ONLY to the
+selected keys whose actual page graphics, original layout, images, forms or
+mechanical page edits are required by the current request. Never include all files
+merely because one PDF is being edited. Keep the edited generated PDF plus only
+the necessary uploaded sources. Text coverage does not prove coverage of graphics.
 When remote_pdf_enabled is absent/false, use the legacy PDF tools below.
 PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
@@ -841,6 +848,25 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         result.study_task['remote_session_factory']=pdf_session_factory
         result.study_task['remote_context']={'owner':kwargs['owner_user_id'],
             'course':kwargs['course_id'],'title':pdf_title}
+        if plan.output_format=='pdf' and not plan.pdf_document and material_model is not None:
+            from app.academic_remote_pdf import digest
+            ids=set(result.source_material_ids)
+            for child in result.source_batches:
+                ids.update(child.source_material_ids)
+            from sqlmodel import select
+            refs=[]
+            rows=session.exec(select(material_model).where(material_model.id.in_(sorted(ids)),
+                material_model.owner_user_id==kwargs['owner_user_id'],
+                material_model.course_id==kwargs['course_id'])).all() if ids else []
+            if {row.id for row in rows}!=ids:
+                raise ValueError('PDF source index changed')
+            for row in rows:
+                if (row is None or row.owner_user_id!=kwargs['owner_user_id']
+                        or row.course_id!=kwargs['course_id'] or row.deleted_at is not None
+                        or row.index_status!='READY' or not row.active_index_version):
+                    raise ValueError('PDF source index changed')
+                refs.append({'kind':'index','id':row.id,'digest':digest(row.active_index_version)})
+            result.study_task['remote_evidence_refs']=refs
     result.study_task['exam_topics'] = list(plan.exam_topics)
     if plan.operation == 'generate_questions':
         result.study_task['quiz_contract'] = True
