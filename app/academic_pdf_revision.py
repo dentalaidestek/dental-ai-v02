@@ -46,6 +46,9 @@ def append_saved_pdf(session, *, message_model, plan, owner_user_id, course_id, 
     ).order_by(message_model.id.desc()).limit(1)).first()
     if base is None or not base.content.strip():
         return unavailable('Bu sohbette eklenecek içeriğin öncesinde oluşturulmuş PDF bulunamadı. Hangi PDF’ye ekleyelim?')
+    from app.academic_pdf_tools import is_recipe
+    if is_recipe(base.content):
+        return unavailable('Bu dosyaya metin eklemek için özgün metin PDF’sini seçin; sayfa birleştirme bu dosyada kullanılabilir.')
     parts = [base.content]
     for row in rows:
         if row.content not in parts:
@@ -115,8 +118,12 @@ def planner_pdf_outline(session, message_model, owner_user_id, course_id, outlin
     result = dict(outline) if isinstance(outline, dict) else {}
     base = latest_owned_pdf(session, message_model, owner_user_id, course_id)
     if base is not None:
-        result['editable_pdf'] = {'content': base.content,
+        from app.academic_pdf_tools import is_recipe,output_files
+        result['editable_pdf'] = {'kind':'pages' if is_recipe(base.content) else 'text',
+            'content':'[Dosya sayfa işlemleriyle oluşturuldu; metin düzenlemesi için özgün metin PDF’sini seçin.]' if is_recipe(base.content) else base.content,
             'revision': hashlib.sha256(base.content.encode('utf-8')).hexdigest()}
+        if is_recipe(base.content):
+            result['editable_pdf']['outputs']=[x['name'] for x in output_files(base.content,course_id,base.id)]
     return result
 
 
@@ -186,6 +193,9 @@ def prepare_pdf_revision(session, *, message_model, plan, owner_user_id, course_
         )).first() if candidate.get('is_pdf') or str(candidate.get('mode', '')).endswith('_PDF') else None
     if base is None or not base.content.strip():
         return unavailable('Düzenlenecek önceki PDF bulunamadı. Hangi PDF’yi düzenleyelim?')
+    from app.academic_pdf_tools import is_recipe
+    if is_recipe(base.content):
+        return unavailable('Bu PDF sayfa işlemleriyle oluşturulmuş. Metin değişikliği için özgün metin PDF’sini seçin; sayfa ve form işlemleri bu dosyada kullanılabilir.')
     if (plan.pdf_base_turn is None and snapshot
             and hashlib.sha256(base.content.encode('utf-8')).hexdigest() != snapshot):
         return unavailable('PDF bu sırada güncellenmiş. Son sürüm üzerinde isteğini yeniden gönderir misin?')
