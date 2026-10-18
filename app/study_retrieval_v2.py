@@ -217,6 +217,7 @@ class RetrievalResult:
     # Server-owned completed answer, only for an explicit unchanged PDF export.
     prepared_answer: str = ''
     generated_quiz: dict | None = None
+    pdf_revision: dict | None = None
 
 
 @dataclass(frozen=True)

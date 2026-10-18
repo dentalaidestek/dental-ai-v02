@@ -49,7 +49,7 @@
                 <div class="study-chat-content">
                     <div class="study-chat-role">{{ 'Dental AI Akademik' if msg.role == 'ASSISTANT' else 'Sen' }}</div>
                     {% if msg.role == 'ASSISTANT' and msg.mode and msg.mode.endswith('_PDF') %}
-                    <div class="study-chat-markdown">{{ 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' if msg.mode.endswith('_LONG_PDF') else 'İstediğin PDF hazır.' }}</div>
+                    <div class="study-chat-markdown">{{ 'İstediğin değişiklikler uygulanarak PDF güncellendi.' if msg.mode.endswith('_EDITED_PDF') else 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' if msg.mode.endswith('_LONG_PDF') else 'İstediğin PDF hazır.' }}</div>
                     <a class="study-pdf-file" href="/notes/courses/{{ course.id }}/ai/messages/{{ msg.id }}/pdf" download>
                         <span class="study-pdf-badge">PDF</span>
                         <span>{{ course.title }}.pdf<small>PDF dosyasını indir</small></span>
@@ -246,7 +246,7 @@
         const detail=document.createElement('small'); detail.textContent='PDF dosyasını indir';
         label.appendChild(detail); link.appendChild(badge); link.appendChild(label);
         article.querySelector('.study-chat-content').appendChild(link);
-        article.querySelector('.study-chat-markdown').textContent=artifact.reason === 'long_answer' ? 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' : 'İstediğin PDF hazır.';
+        article.querySelector('.study-chat-markdown').textContent=artifact.reason === 'updated' ? 'İstediğin değişiklikler uygulanarak PDF güncellendi.' : artifact.reason === 'long_answer' ? 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' : 'İstediğin PDF hazır.';
     }
 
     function isNearBottom() {

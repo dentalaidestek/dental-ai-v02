@@ -29,9 +29,9 @@ def pdf_filename(title):
     return (title or 'Ders notları') + '.pdf'
 
 
-def pdf_artifact(course_id, message_id, title, *, automatic=False):
+def pdf_artifact(course_id, message_id, title, *, automatic=False, updated=False):
     return {'type': 'pdf', 'name': pdf_filename(title),
-            'reason': 'long_answer' if automatic else 'requested',
+            'reason': 'updated' if updated else 'long_answer' if automatic else 'requested',
             'url': f'/notes/courses/{int(course_id)}/ai/messages/{int(message_id)}/pdf'}
 
 

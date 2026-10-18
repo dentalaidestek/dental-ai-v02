@@ -569,3 +569,34 @@ def test_each_document_request_uses_representative_per_file_reader(monkeypatch):
         owner_user_id=17,course_id=23,query='Her dosyadan bir konu')
     reader.assert_called_once()
     assert reader.call_args.kwargs['owner_user_id']==17
+
+
+def test_append_pdf_is_distinct_from_export_or_new_generation():
+    plan=parse_request(raw(operation='answer',retrieval_queries=[],output_format='pdf',
+        append_previous_pdf=True,pdf_addition_turns=[3,1]))
+    assert plan.append_previous_pdf and not plan.export_previous_answer
+    assert plan.pdf_addition_turns==(1,3)
+
+
+@pytest.mark.parametrize('overrides', [
+    {'output_format':'text'}, {'operation':'explain'}, {'export_previous_answer':True},
+    {'pdf_addition_turns':[True]}, {'pdf_addition_turns':[-1]},
+    {'pdf_addition_turns':[8]}, {'pdf_addition_turns':[1,1]},
+    {'append_previous_pdf':False,'pdf_addition_turns':[0]},
+])
+def test_invalid_append_contract_is_rejected(overrides):
+    from app.academic_request_understanding import PlannerContractError
+    fields=dict(operation='answer',output_format='pdf',append_previous_pdf=True)
+    fields.update(overrides)
+    with pytest.raises(PlannerContractError):
+        parse_request(raw(**fields))
+
+
+def test_append_pdf_does_not_prepare_a_paid_embedding():
+    from app.academic_dense_retrieval import prepare_query_embedding
+    plan=parse_request(raw(operation='answer',output_format='pdf',append_previous_pdf=True))
+    def forbidden():
+        raise AssertionError('PDF append must not query vectors')
+    assert prepare_query_embedding(SimpleNamespace(plan=plan),session_factory=forbidden,
+        owner_user_id=1,course_id=1) is None
+

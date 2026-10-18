@@ -5041,7 +5041,7 @@ def study_ai_ask(
                 .order_by(StudyChatMessage.id.desc()).limit(8)
             ).all()
             history = [
-                {"role": row.role, "content": row.content}
+                {"role": row.role, "content": row.content, "id": row.id, "mode": row.mode}
                 for row in reversed(history_rows)
             ]
 
@@ -5068,6 +5068,9 @@ def study_ai_ask(
             from app.academic_quick_actions import is_quick_action
             source_outline = {} if is_quick_action(clean_message) else planner_source_outline(s, owner_user_id=user.id,
                 course_id=course_id, query=clean_message, history=history)
+            if not is_quick_action(clean_message):
+                from app.academic_pdf_revision import planner_pdf_outline
+                source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)
             s.close()
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
@@ -5081,6 +5084,8 @@ def study_ai_ask(
                 rag_result = retrieve_understood_course_context(
                     retrieval_session,
                     understanding=understanding,
+                    message_model=StudyChatMessage,
+                    pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id,
                     course_id=course_id,
@@ -5173,7 +5178,7 @@ def study_ai_ask(
                     source_ids_json=source_json,
                     source_evidence_json=pack_evidence(
                         evidence_json, getattr(rag_result,'generated_quiz',None), answer, source_versions),
-                    mode=("RAG_V2_HYBRID_LONG_PDF" if automatic_pdf(answer, rag_result) else "RAG_V2_HYBRID_PDF") if export_pdf else "RAG_V2_HYBRID",
+                    mode=("RAG_V2_HYBRID_EDITED_PDF" if rag_result.study_task.get('pdf_revision_applied') else "RAG_V2_HYBRID_LONG_PDF" if automatic_pdf(answer, rag_result) else "RAG_V2_HYBRID_PDF") if export_pdf else "RAG_V2_HYBRID",
                 )
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
@@ -5181,7 +5186,7 @@ def study_ai_ask(
                 save_session.commit()
                 if export_pdf:
                     from app.academic_pdf import pdf_artifact
-                    artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, rag_result))
+                    artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, rag_result), updated=bool(rag_result.study_task.get('pdf_revision_applied')))
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
@@ -5259,7 +5264,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             .where(StudyChatMessage.owner_user_id == user.id)
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
-        history = [{"role": row.role, "content": row.content} for row in reversed(history_rows)]
+        history = [{"role": row.role, "content": row.content, "id": row.id, "mode": row.mode} for row in reversed(history_rows)]
         source_versions = _study_source_versions(s, user.id, course_id)
         from app.academic_quiz import restore_quizzes, pack_evidence
         restore_quizzes(history, list(reversed(history_rows)), source_versions)
@@ -5268,6 +5273,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         from app.academic_quick_actions import is_quick_action
         source_outline = {} if is_quick_action(clean_message) else planner_source_outline(s, owner_user_id=user.id,
             course_id=course_id, query=clean_message, history=history)
+        if not is_quick_action(clean_message):
+            from app.academic_pdf_revision import planner_pdf_outline
+            source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
         understanding = understand_study_request(clean_message, history, source_outline=source_outline)
@@ -5278,7 +5286,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 retrieval = retrieve_understood_course_context(
-                    retrieval_session, understanding=understanding,
+                    retrieval_session, understanding=understanding, message_model=StudyChatMessage,
+                    pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id, course_id=course_id,
                     query=clean_message, recent_history=history,
@@ -5377,7 +5386,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                     course_id=course_id, owner_user_id=owner_user_id,
                     role="ASSISTANT", content=answer,
                     source_ids_json=recovered_source_json,
-                    mode=("RAG_V2_HYBRID_STREAM_LONG_PDF" if automatic_pdf(answer, prepared) else "RAG_V2_HYBRID_STREAM_PDF") if export_pdf else "RAG_V2_HYBRID_STREAM",
+                    mode=("RAG_V2_HYBRID_STREAM_EDITED_PDF" if prepared.study_task.get('pdf_revision_applied') else "RAG_V2_HYBRID_STREAM_LONG_PDF" if automatic_pdf(answer, prepared) else "RAG_V2_HYBRID_STREAM_PDF") if export_pdf else "RAG_V2_HYBRID_STREAM",
                     source_evidence_json=pack_evidence(
                         recovered_evidence_json, getattr(prepared,'generated_quiz',None), answer, source_versions),
                 )
@@ -5385,7 +5394,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
-                artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, prepared)) if export_pdf else None
+                artifact = pdf_artifact(course_id, assistant_message.id, course_title, automatic=automatic_pdf(answer, prepared), updated=bool(prepared.study_task.get('pdf_revision_applied'))) if export_pdf else None
             yield json.dumps({'type': 'done', **({'artifact': artifact} if artifact else {})}, ensure_ascii=False) + '\n'
         except GeneratorExit:
             # Client disconnected: incomplete answers are never persisted.
