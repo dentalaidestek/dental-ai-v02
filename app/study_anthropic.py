@@ -28,12 +28,13 @@ def _output_schema(schema):
     # Only the transport encodes this field; parse_request validates the full
     # decoded tool plan before any file or database operation is performed.
     properties = schema.get('properties', {})
-    if 'pdf_tools' in properties:
-        tool_schema = properties['pdf_tools']
-        properties['pdf_tools'] = {'type': 'string', 'description':
-            'For no mechanical PDF operation return an empty string. Otherwise return '
-            'a JSON-encoded object matching this schema, not prose: ' +
-            json.dumps(tool_schema, ensure_ascii=False, separators=(',', ':'))}
+    for field in ('pdf_tools','pdf_document'):
+        if field in properties:
+            tool_schema = properties[field]
+            properties[field] = {'type': 'string', 'description':
+                'When this PDF tool is unused return an empty string. Otherwise return '
+                'a JSON-encoded object matching this schema, not prose: ' +
+                json.dumps(tool_schema, ensure_ascii=False, separators=(',', ':'))}
     def visit(node):
         if not isinstance(node, dict):
             return
