@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 REVISION = 12
 
 
-def require_schema(engine):
+def require_schema(engine,*,require_study=False):
     try:
         with engine.connect() as connection:
             revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
@@ -20,6 +20,34 @@ def require_schema(engine):
         raise RuntimeError('Run python -m app.migrate before starting this service') from exc
     if revision != REVISION:
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
+    if require_study:
+        inspector=inspect(engine)
+        if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun')):
+            raise RuntimeError('Run python -m app.migrate to create the academic study tables')
+
+
+def _create_study_tables(connection):
+    from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
+    from app.academic_study_runs import StudyRun
+    for model in (StudyLearningState,StudyReview,StudyAttempt,StudyRun):
+        model.__table__.create(connection,checkfirst=True)
+
+
+def _upgrade_learning_schema(main):
+    if main.engine.dialect.name!='postgresql':return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):return False
+        revision=connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision!=12:return False
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
+        revision=connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision!=12:raise RuntimeError('Schema changed during release migration')
+        _create_study_tables(connection)
+        # These are independent additive tables. Preserve the existing baseline
+        # revision so already-deployed external OCR/clinical workers remain compatible.
+    return True
 
 
 def _upgrade_recent_schema(main):
@@ -56,6 +84,7 @@ def _upgrade_recent_schema(main):
         from app.membership_verification import MembershipVerification
         main.ConsultationMediaDeletion.__table__.create(connection, checkfirst=True)
         MembershipVerification.__table__.create(connection, checkfirst=True)
+        _create_study_tables(connection)
         logger.warning('migration.recent begin=retention_backfill')
         main._backfill_legacy_deadline_jobs_if_needed(bind=connection)
         connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
@@ -65,6 +94,8 @@ def _upgrade_recent_schema(main):
 
 def apply():
     from app import main
+    if _upgrade_learning_schema(main):
+        return
     if _upgrade_recent_schema(main):
         return
     # A dedicated migration process owns the advisory lock through all of the
@@ -139,3 +170,4 @@ def apply():
 
 if __name__ == '__main__':
     apply()
+
