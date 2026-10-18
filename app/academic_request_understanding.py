@@ -92,7 +92,8 @@ SCHEMA['required'].append('pdf_document')
 SYSTEM = '''REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
 ALL requests to change, color, highlight, inspect/edit layout, split/merge/rotate
 or otherwise work on an EXISTING PDF through pdf_document, operation=answer,
-output_format=pdf. Set pdf_tools=null, pdf_edits=[], append_previous_pdf=false,
+output_format=pdf for file creation/changes, output_format=text for reading,
+inspection, coverage checks and questions ABOUT an existing PDF. Set pdf_tools=null, pdf_edits=[], append_previous_pdf=false,
 export_previous_answer=false. pdf_document.sources contains ONLY exact key values
 from source_outline.pdf_catalog; instructions preserves the user's full requested
 change and any relevant request from previous dialogue (including colors/traps).
@@ -105,7 +106,14 @@ content yourself. Do not claim color/layout changes are unsupported. Ask only if
 multiple genuinely plausible documents remain. Never include DB IDs or file IDs.
 For NEW source-backed answers/questions that should become PDFs use the normal
 operation and output_format=pdf, pdf_document=null; the server exports the completed
-answer through the remote PDF skill. For non-PDF work use pdf_document=null.
+answer through the remote PDF skill. Questions such as "did every uploaded PDF/topic make it into this summary?" MUST
+use pdf_document with BOTH the generated summary key AND the relevant uploaded PDF
+keys. The catalog lists real accessible files; names in history are not their full
+contents. Never route an existing-document inspection to ordinary chunk retrieval
+or tell the user to paste a generated PDF's text. If the user also asks to expand,
+detail or update that PDF, output_format=pdf and supply the uploaded sources needed
+to verify and fill missing headings. Preserve the complete contextual request.
+For genuinely unrelated non-PDF work use pdf_document=null.
 When remote_pdf_enabled is absent/false, use the legacy PDF tools below.
 PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
@@ -474,7 +482,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             validate_plan(data['pdf_document'])
         except (ValueError,TypeError):
             raise PlannerContractError('invalid remote PDF plan') from None
-        if (data['operation']!='answer' or data['output_format']!='pdf' or data['pdf_tools']
+        if (data['operation']!='answer' or data['output_format'] not in {'pdf','text'} or data['pdf_tools']
             or data['pdf_edits'] or data['append_previous_pdf'] or data['export_previous_answer']
             or data['grade_previous_set'] or data['reveal_previous_key']):
             raise PlannerContractError('incompatible remote PDF plan')
@@ -764,7 +772,8 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_remote_pdf import prepare
         result=prepare(session,message_model=message_model,material_model=material_model,
             owner=kwargs['owner_user_id'],course=kwargs['course_id'],title=pdf_title,
-            plan=plan.pdf_document,query=kwargs.get('query',''),session_factory=pdf_session_factory)
+            plan=plan.pdf_document,query=kwargs.get('query',''),session_factory=pdf_session_factory,
+            output_format=plan.output_format)
     elif remote_pdf_enabled() and (
             plan.pdf_tools or plan.pdf_edits or plan.append_previous_pdf):
         result=RetrievalResult(retrieval_mode='interpretation_unavailable',
@@ -850,3 +859,4 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
                 [item.chunk_id for item in result.evidence],
                 [(item.material_id, item.page_start, item.page_end) for item in result.evidence])
     return result
+
