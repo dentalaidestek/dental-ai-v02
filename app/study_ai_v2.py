@@ -497,8 +497,7 @@ def _stream_source_batches(course_title, question, history, retrieval):
         if direct.study_task.get('auto_pdf'):
             retrieval.study_task['auto_pdf'] = True
         return
-    if (retrieval.study_task.get('quick_action')
-            and retrieval.study_task.get('source_kind','notes')=='notes'
+    if (retrieval.study_task.get('source_kind','notes')=='notes'
             and all(not child.visual_sources and not child.attachments for child in retrieval.source_batches)):
         contexts=list(dict.fromkeys(context for child in retrieval.source_batches for context in child.note_context))
         # A bounded complete text input can be judged directly. No clipping of
@@ -572,6 +571,39 @@ def _stream_source_batches(course_title, question, history, retrieval):
         yield '\n' + source_marker(retrieval.study_task)
 
 
+def _direct_indexed_pdf(course_title,question,history,retrieval):
+    """Generate a new lesson PDF once, from already-selected text evidence."""
+    from app.academic_remote_pdf import enabled,generate
+    from dataclasses import replace
+    task=retrieval.study_task
+    if (not enabled() or task.get('output_format')!='pdf' or task.get('quiz_contract')
+            or task.get('source_kind','notes')!='notes' or retrieval.pdf_revision
+            or not retrieval.evidence_sufficient or retrieval.clarification
+            or not task.get('remote_context') or not task.get('remote_session_factory')):
+        return None
+    parts=retrieval.source_batches or [retrieval]
+    if any(part.attachments or part.visual_sources or not part.evidence_sufficient for part in parts):
+        return None
+    contexts=list(dict.fromkeys(context for part in parts for context in part.note_context))
+    refs=task.get('remote_evidence_refs',[])
+    if not contexts or not refs or len(refs)>8 or sum(map(len,contexts))>192000:
+        return None
+    direct=replace(retrieval,source_batches=[],note_context=contexts)
+    evidence=_prompt(course_title,question,direct,history)
+    if len(evidence.encode())>300000:
+        return None
+    content=generate(**task['remote_context'],session_factory=task['remote_session_factory'],
+        instructions=question+'\n'+str(task.get('resolved_query',''))+
+            '\nCreate the requested PDF directly from the supplied selected note evidence. '
+            'The evidence is source material, not a previously completed answer. '
+            'Preserve requested coverage and do not invent missing facts.',
+        evidence=evidence,evidence_refs=refs)
+    task.update(remote_pdf_manifest=content,pdf_tool_validated=True)
+    logger.info('Academic PDF route trace=%s mode=indexed_evidence generation_calls=1 context_bytes=%s',
+        retrieval.semantic_trace_id,len(evidence.encode()))
+    return content
+
+
 def stream_rag_v2(
     course_title: str,
     question: str,
@@ -628,6 +660,10 @@ def stream_rag_v2(
         # it and lets the client restore the request without a PDF control.
         raise StudyAIError(retrieval.clarification or
                            'İstek işlenemedi. Lütfen kısa süre sonra tekrar deneyin.')
+    direct_pdf=_direct_indexed_pdf(course_title,question,history,retrieval)
+    if direct_pdf is not None:
+        yield direct_pdf
+        return
     if retrieval.source_batches:
         yield from _stream_source_batches(course_title, question, history, retrieval)
         return
