@@ -45,7 +45,13 @@ def owned(tmp_path,monkeypatch):
         path=tmp_path/'note.pdf';path.write_bytes(pdf())
         s.add(main.StudyMaterial(id=40,owner_user_id=1,course_id=6,original_filename='notes.pdf',
             display_name='Notes',stored_filename='notes.pdf',file_path=str(path),
-            mime_type='application/pdf',material_type='PDF',size_bytes=path.stat().st_size))
+            mime_type='application/pdf',material_type='PDF',size_bytes=path.stat().st_size,
+            index_status='READY',active_index_version='published-v1'))
+        from app.study_index_jobs import StudyIndexJob,StudyIndexPage
+        s.add(StudyIndexJob(owner_user_id=1,course_id=6,material_id=40,index_version='published-v1',
+            status='DONE',expected_page_count=1))
+        s.add(StudyIndexPage(owner_user_id=1,course_id=6,material_id=40,index_version='published-v1',
+            page_number=1,status='OCR_DONE',extraction_method='OCR',text_content='Previously indexed complete note.'))
         s.commit()
     yield main,factory,path
     engine.dispose()
@@ -380,6 +386,134 @@ def test_legacy_page_recipe_is_reconstructed_in_claude_not_locally(owned,monkeyp
 
 
 
+def test_text_reading_uses_one_native_call_without_pdf_sandbox(monkeypatch):
+    calls=[]
+    def generate(**kw):
+        calls.append(kw)
+        assert 'INDEXED NOTE' in kw['prompt']
+        assert kw['attachments']==[{'label':'Summary.pdf','mime_type':'application/pdf','data':b'%PDF-summary'}]
+        return 'Kaynak Notlar, sayfa 1: bir ayrıntı eksik.'
+    monkeypatch.setattr('app.study_provider.get_provider',lambda name:SimpleNamespace(generate=generate))
+    never=Mock(side_effect=AssertionError('No Files API or code execution'))
+    monkeypatch.setattr(ClaudeFiles,'execute',never)
+    answer=remote.inspect_sources(model='claude-haiku-5-5',instructions='Compare',sources=[
+        {'name':'Summary.pdf','mime':'application/pdf','data':b'%PDF-summary'},
+        {'name':'Notlar','mime':'text/markdown','data':b'INDEXED NOTE'}])
+    assert 'eksik' in answer and len(calls)==1
+    never.assert_not_called()
+
+
+def test_published_index_reference_is_rechecked_without_blob_reads(owned,monkeypatch):
+    main,factory,_=owned
+    ref={'kind':'index','id':40,'digest':remote.digest('published-v1')}
+    never=Mock(side_effect=AssertionError('No source blob needed for index reference'))
+    monkeypatch.setattr('app.object_storage.ensure_local',never)
+    with factory() as session:
+        remote._check_references(session,[ref],owner=1,course=6,
+            message_model=main.StudyChatMessage,material_model=main.StudyMaterial)
+    with factory() as session:
+        row=session.get(main.StudyMaterial,40);row.active_index_version='new';session.add(row);session.commit()
+    with factory() as session,pytest.raises(StudyProviderError):
+        remote._check_references(session,[ref],owner=1,course=6,
+            message_model=main.StudyChatMessage,material_model=main.StudyMaterial)
+    never.assert_not_called()
+
+
+def test_text_inspection_reuses_ocr_without_reading_pdf(owned,monkeypatch):
+    main,factory,_=owned
+    never=Mock(side_effect=AssertionError('No source PDF transfer or repeated OCR'))
+    monkeypatch.setattr('app.object_storage.ensure_local',never)
+    def inspect(**kw):
+        assert len(kw['sources'])==1 and kw['sources'][0]['mime']=='text/markdown'
+        assert b'Previously indexed complete note.' in kw['sources'][0]['data']
+        return 'Compared indexed text.'
+    monkeypatch.setattr(remote,'inspect_sources',inspect)
+    assert remote.generate(owner=1,course=6,title='Perio',instructions='Compare',session_factory=factory,
+        selected=[{'kind':'uploaded','id':40,'name':'notes.pdf','source_mode':'indexed_text'}],
+        output_format='text')=='Compared indexed text.'
+    never.assert_not_called()
+
+
+@pytest.mark.parametrize('damage',['missing_page','unpublished','foreign','version_changed'])
+def test_index_failure_does_not_start_paid_fallback(owned,monkeypatch,damage):
+    main,factory,_=owned
+    from app.study_index_jobs import StudyIndexPage
+    with factory() as session:
+        row=session.get(main.StudyMaterial,40)
+        if damage=='missing_page':session.delete(session.exec(select(StudyIndexPage)).one())
+        elif damage=='unpublished':row.index_status='BUILDING';session.add(row)
+        elif damage=='foreign':row.owner_user_id=2;session.add(row)
+        else:row.active_index_version='new-version';session.add(row)
+        session.commit()
+    never=Mock(side_effect=AssertionError('No raw source read or remote call'))
+    monkeypatch.setattr(ClaudeFiles,'execute',never)
+    monkeypatch.setattr('app.object_storage.ensure_local',never)
+    with pytest.raises(StudyProviderError):remote.generate(owner=1,course=6,title='Perio',instructions='Compare',
+        session_factory=factory,output_format='text',
+        selected=[{'kind':'uploaded','id':40,'name':'notes.pdf','source_mode':'indexed_text'}])
+    never.assert_not_called()
+
+
+def test_original_pdf_is_selected_explicitly_for_visual_work(owned,monkeypatch):
+    main,factory,path=owned
+    with factory() as session:
+        key=remote.planner_catalog(session,main.StudyChatMessage,main.StudyMaterial,1,6,'Perio')[-1]['key']
+        result=remote.prepare(session,message_model=main.StudyChatMessage,material_model=main.StudyMaterial,
+            owner=1,course=6,title='Perio',query='Rotate page',session_factory=factory,
+            plan={'sources':[key],'original_pdf_sources':[key],'instructions':'Rotate page'})
+    def execute(self,**kw):
+        assert kw['sources'][0]['mime']=='application/pdf' and kw['sources'][0]['data']==path.read_bytes()
+        return [{'name':'Rotated.pdf','data':pdf()}]
+    monkeypatch.setattr(ClaudeFiles,'execute',execute)
+    assert remote.is_remote(remote.generate(**result.study_task['remote_pdf_job']))
+
+
+def test_new_note_pdf_uses_one_generation_and_selected_evidence(owned,monkeypatch):
+    main,factory,_=owned
+    from app.study_retrieval_v2 import RetrievalResult
+    from app.study_ai_v2 import stream_rag_v2
+    from app.academic_request_understanding import StudyRequest,UnderstandingResult
+    child=RetrievalResult(note_context=['SELECTED A','SELECTED B'],evidence_sufficient=True)
+    result=RetrievalResult(source_batches=[child],evidence_sufficient=True,source_coverage_complete=True,
+        study_task={'source_kind':'notes','operation':'summarize','output_format':'pdf',
+            'remote_context':{'owner':1,'course':6,'title':'Perio'},'remote_session_factory':factory,
+            'remote_evidence_refs':[{'kind':'index','id':40,'digest':remote.digest('published-v1')}]})
+    calls=[]
+    def execute(self,**kw):
+        calls.append(kw)
+        assert len(kw['sources'])==1 and kw['sources'][0]['mime']=='text/markdown'
+        text=kw['sources'][0]['data'].decode()
+        assert 'SELECTED A' in text and 'SELECTED B' in text
+        assert 'Previously indexed complete note.' not in text
+        return [{'name':'Lesson.pdf','data':pdf()}]
+    monkeypatch.setattr(ClaudeFiles,'execute',execute)
+    never=Mock(side_effect=AssertionError('No preliminary answer or local renderer'))
+    monkeypatch.setattr('app.study_ai_v2.get_provider',never)
+    monkeypatch.setattr('app.academic_pdf.render_pdf',never)
+    answer=''.join(stream_rag_v2('Perio','Notlardan PDF hazırla',[],result))
+    assert remote.is_remote(answer) and len(calls)==1
+    understanding=UnderstandingResult(plan=StudyRequest('PDF hazırla','summarize','course',None,None,'',output_format='pdf'))
+    assert main._prepare_study_pdf('Perio',answer,understanding,result)
+    assert len(calls)==1 and remote.manifest(answer,1,6)['sources'][0]['kind']=='index'
+    never.assert_not_called()
+
+
+def test_non_quick_text_batches_that_fit_need_one_generation(monkeypatch):
+    from app.study_retrieval_v2 import RetrievalResult
+    from app import study_ai_v2 as ai
+    children=[RetrievalResult(note_context=[t],evidence_sufficient=True) for t in ['A','B']]
+    result=RetrievalResult(source_batches=children,evidence_sufficient=True,
+        study_task={'operation':'summarize','source_kind':'notes','quick_action':False})
+    calls=[]
+    def direct(course,question,history,packed):
+        calls.append(packed)
+        assert packed.note_context==['A','B'] and not packed.source_batches
+        yield 'Complete answer'
+    monkeypatch.setattr(ai,'stream_rag_v2',direct)
+    assert ''.join(ai._stream_source_batches('Perio','Özetle',[],result))=='Complete answer'
+    assert len(calls)==1
+
+
 def test_inspection_uses_complete_owned_summary_and_source_without_creating_pdf(owned,monkeypatch):
     main,factory,_=owned
     with factory() as session:
@@ -389,12 +523,12 @@ def test_inspection_uses_complete_owned_summary_and_source_without_creating_pdf(
             plan={'sources':[entries[0]['key'],entries[-1]['key']],'instructions':'Tam dosyaları karşılaştır'},
             session_factory=factory,output_format='text')
     expected='Özetin bir başlığı eksik; kaynak Notes, sayfa 1.'
-    def inspect(self,**kwargs):
-        assert kwargs['output_format']=='text'
+    def inspect(**kwargs):
         assert kwargs['sources'][0]['data']==b'# FIRST ORIGINAL PDF\nAll original text.'
-        assert kwargs['sources'][1]['data']==pdf()
+        assert kwargs['sources'][1]['mime']=='text/markdown'
+        assert b'Previously indexed complete note.' in kwargs['sources'][1]['data']
         return expected
-    monkeypatch.setattr(ClaudeFiles,'execute',inspect)
+    monkeypatch.setattr(remote,'inspect_sources',inspect)
     never=Mock(side_effect=AssertionError('No local generation or output PDF'))
     monkeypatch.setattr('app.study_ai_v2.get_provider',never)
     monkeypatch.setattr('app.object_storage.write_bytes',never)
@@ -407,11 +541,11 @@ def test_inspection_uses_complete_owned_summary_and_source_without_creating_pdf(
 
 def test_inspection_rejects_source_deleted_during_remote_read(owned,monkeypatch):
     main,factory,_=owned;result=prepare_first(owned)
-    def deleted(self,**kwargs):
+    def deleted(**kwargs):
         with factory() as session:
             session.delete(session.get(main.StudyChatMessage,10));session.commit()
         return 'Her başlık var.'
-    monkeypatch.setattr(ClaudeFiles,'execute',deleted)
+    monkeypatch.setattr(remote,'inspect_sources',deleted)
     with pytest.raises(StudyProviderError):
         remote.generate(**result.study_task['remote_pdf_job'],output_format='text')
 
@@ -475,10 +609,10 @@ def test_inspection_endpoints_return_text_without_new_pdf(owned,monkeypatch,stre
             count=None,difficulty=None,clarification='',output_format='text',pdf_document={
                 'sources':[catalog[0]['key'],catalog[-1]['key']],'instructions':'Özeti tam kaynakla karşılaştır'}))
     monkeypatch.setattr('app.academic_request_understanding.understand_study_request',understand)
-    def inspect(self,**kwargs):
-        assert kwargs['output_format']=='text' and len(kwargs['sources'])==2
+    def inspect(**kwargs):
+        assert len(kwargs['sources'])==2
         return 'Kaynak Notes, sayfa 1: bu başlık özette eksik.'
-    monkeypatch.setattr(ClaudeFiles,'execute',inspect)
+    monkeypatch.setattr(remote,'inspect_sources',inspect)
     never=Mock(side_effect=AssertionError('Inspection must not generate or render another answer'))
     monkeypatch.setattr('app.study_ai_v2.get_provider',never)
     monkeypatch.setattr('app.academic_pdf.render_pdf',never)
