@@ -37,7 +37,7 @@ Each request starts a fresh container; no container ID is persisted or shared
 between users. Chat clearing, course deletion and account erasure queue stored
 output deletion. Uncommitted files are removed or queued for cleanup.
 
-Limits: 8 source files, 32 MiB total source bytes, 8 final PDFs, 8 MiB per output,
+Limits: 8 source files, 32 MiB per source and 64 MiB total source bytes, 8 final PDFs, 8 MiB per output,
 32 MiB total output bytes, 500 output pages, two concurrent file jobs per process.
 These are process bounds, not a distributed capacity or 60,000-user guarantee.
 

@@ -16,6 +16,7 @@ from app.study_router_state import record_api_result
 logger = logging.getLogger('uvicorn.error.academic_files')
 MAX_FILE = 8 * 1024 * 1024
 MAX_TOTAL = 32 * 1024 * 1024
+MAX_INPUT_TOTAL = 64 * 1024 * 1024
 _capabilities = {}
 _lock = threading.Lock()
 
@@ -123,7 +124,7 @@ class ClaudeFiles:
         try:
             for i, source in enumerate(sources):
                 total += len(source['data'])
-                if total > MAX_TOTAL or i >= 8:
+                if total > MAX_INPUT_TOTAL or i >= 8:
                     raise StudyProviderError('PDF kaynak kapsamı işlem sınırını aşıyor.')
                 ext = 'pdf' if source['mime'] == 'application/pdf' else 'md'
                 ident = self.upload(source['data'], name=f'source_{i}.{ext}', mime=source['mime'])

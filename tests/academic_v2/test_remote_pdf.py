@@ -214,6 +214,27 @@ def test_native_files_api_tool_skill_and_download_cleanup(transport):
     assert {path for path,kw in calls if kw.get('method')=='DELETE'}=={'/files/file_input0','/files/file_output'}
 
 
+@pytest.mark.parametrize('sizes,allowed',[([30,30],True),([30,30,10],False)])
+def test_input_bundle_has_separate_bounded_budget(transport,monkeypatch,sizes,allowed):
+    import app.study_anthropic_files as module
+    client,calls,_,_=transport
+    monkeypatch.setattr(module,'MAX_TOTAL',40)
+    monkeypatch.setattr(module,'MAX_INPUT_TOTAL',64)
+    original=client.json_request
+    def response(path,**kwargs):
+        result=original(path,**kwargs)
+        if path=='/messages':result['content'].append({'type':'text','text':'Kaynaklar karşılaştırıldı.'})
+        return result
+    client.json_request=response
+    kwargs=dict(model='claude-haiku-5-5',instructions='Compare',title='Perio',output_format='text',
+        sources=[{'name':str(i),'data':b'x'*size,'mime':'application/pdf'} for i,size in enumerate(sizes)])
+    if allowed:
+        assert client.execute(**kwargs)=='Kaynaklar karşılaştırıldı.'
+    else:
+        with pytest.raises(StudyProviderError,match='kaynak kapsamı'):client.execute(**kwargs)
+    assert {p for p,k in calls if k.get('method')=='DELETE'} >= {'/files/file_input0','/files/file_input1'}
+
+
 def test_untrusted_file_citation_never_downloaded(transport):
     client,calls,_,_=transport;original=client.json_request
     def response(path,**kwargs):
