@@ -126,6 +126,9 @@ def recipe_data(content):
 
 
 def output_files(content,course_id,message_id):
+    from app.academic_remote_pdf import is_remote,output_files as remote_files
+    if is_remote(content):
+        return remote_files(content,course_id,message_id)
     if not is_recipe(content):
         return []
     try:
@@ -139,6 +142,9 @@ def output_files(content,course_id,message_id):
 
 
 def describe_recipe(content):
+    from app.academic_remote_pdf import is_remote,describe
+    if is_remote(content):
+        return describe(content)
     try:
         names=[output['name'] for output in recipe_data(content)['outputs']]
         return '[PDF dosya çıktıları: '+', '.join(names)+'. Sayfa/form işlemleri uygulanmış dosya; özgün metin yanıtı değildir.]'
