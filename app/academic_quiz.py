@@ -19,7 +19,26 @@ QUIZ_SCHEMA = {'type':'object','properties':{'questions':{'type':'array','items'
 CONTRACT_PROMPT = '''\nSORU VERİ SÖZLEŞMESİ: Yalnız JSON questions üret. Her soruda stem, tam beş options (A–E sırasıyla, harf öneki olmadan), correct (A–E), rationale, fact, source, material_id ve page olsun. material_id/page verilen kanıtta bulunmalı. Kaynak bilgisini dosya/sayfa olarak yaz. fact sorunun sınadığı bilginin kısa, kanonik ifadesidir; öncüllü soruda farklı öncülleri tek bir tanıma indirgeme. Önceki fact ile aynı bilgiyi yeniden sorma. Öncüllü biçim istenmişse stem içinde ayrı satırlarda I., II., III. bulunmalı; options bunların kombinasyonları olmalıdır. Güncel düzeltme mesajında önceki etkin isteğin adet, ana başlık çeşitliliği, alt başlık ve zorluk koşullarını da koru. rationale doğru şıkkı kaynakla açıklar; kaynaktan doğrulanmayan cevap anahtarı üretme. Doğru şık pozitif soru kökünde aynen yazılı olmasın. Çeldiriciler aynı kavram düzeyinde, makul ve benzer uzunlukta olsun; bariz mutlak ifadelerle zorluğu düşürme. Kök, seçenekler ve tek doğru cevap birbiriyle tutarlı olsun. Anahtarın kullanıcıya gösterimini uygulama yapar.\n'''
 
 
-def parse_quiz(raw, count, history=(), evidence=None):
+_quality=QUIZ_SCHEMA['properties']['questions']['items']
+_quality['properties'].update({
+    'topic':{'type':'string','description':'Distinct broad source topic, not a cosmetic title.'},
+    'asked_truth':{'type':'boolean','description':'True if the stem asks for true statements, false if it asks for false statements. True for ordinary questions.'},
+    'statements':{'type':'array','maxItems':5,'items':{'type':'object','properties':{
+        'text':{'type':'string'},'true':{'type':'boolean'}},'required':['text','true'],'additionalProperties':False}},
+    'option_combinations':{'type':'array','maxItems':5,'items':{'type':'array','maxItems':5,'items':{'type':'integer'}}}})
+_quality['required'].extend(['topic','asked_truth','statements','option_combinations'])
+CONTRACT_PROMPT+='''\nKALİTE DENETİMİ: Her soruda gerçek ana kaynak konusunu topic alanına yaz.
+Öncüllü sorularda statements içinde öncül metinlerini sırayla ve kaynağa göre
+doğru/yanlış değerlerini true alanında ver. asked_truth kökün doğru öncülleri
+istediğinde true, yanlış öncülleri istediğinde false olsun. option_combinations beş şıkkın
+öncül numaralarını A–E sırasıyla taşısın; örneğin I ve III için [1,3]. Doğru
+şıkkın kombinasyonu tam olarak doğru öncülleri içermeli. Öncülsüz sorularda bu
+iki dizi boş olsun. Kullanıcıya bu denetim verilerini gösterme. Kaynağa ve
+gerekçene göre öncüllerin doğruluğunu, tek doğru şıkkı ve konu dağılımını aynı
+üretimde kontrol et; yalnız biçimsel olarak geçerli bir set hazırlama.\n'''
+
+
+def parse_quiz(raw, count, history=(), evidence=None,*,require_quality=False,distinct_topics=False):
     data=json.loads(raw)
     if not isinstance(data,dict) or set(data)!={'questions'} or not isinstance(data['questions'],list):
         raise ValueError('invalid quiz structure')
@@ -30,7 +49,10 @@ def parse_quiz(raw, count, history=(), evidence=None):
     allowed={(e.material_id,p):e.display_name for e in (evidence or []) for p in range(e.page_start,e.page_end+1)}
     seen=[]
     for q in questions:
-        if not isinstance(q,dict) or set(q)!={'stem','options','correct','rationale','fact','source','material_id','page'}:
+        required={'stem','options','correct','rationale','fact','source','material_id','page'}
+        quality={'topic','asked_truth','statements','option_combinations'}
+        if (not isinstance(q,dict) or not required<=set(q) or set(q)-required-quality
+                or (set(q)&quality and not quality<=set(q)) or (require_quality and not quality<=set(q))):
             raise ValueError('invalid quiz question')
         if any(not isinstance(q[k],str) or not q[k].strip() or len(q[k])>4000 for k in ('stem','rationale','fact','source')):
             raise ValueError('invalid quiz text')
@@ -46,6 +68,39 @@ def parse_quiz(raw, count, history=(), evidence=None):
             raise ValueError('invalid quiz options')
         if len({question_stem(x) for x in opts})!=5 or q['correct'] not in list('ABCDE'):
             raise ValueError('invalid quiz key')
+        if quality<=set(q):
+            if not isinstance(q['topic'],str) or not 0<len(q['topic'].strip())<=160 or type(q['asked_truth']) is not bool:
+                raise ValueError('invalid quiz topic')
+            statements=q['statements'];combinations=q['option_combinations']
+            if not isinstance(statements,list) or not isinstance(combinations,list) or len(statements)>5:
+                raise ValueError('invalid statement metadata')
+            if statements:
+                if not 2<=len(statements)<=5 or len(combinations)!=5:
+                    raise ValueError('invalid statement count')
+                for statement in statements:
+                    if (not isinstance(statement,dict) or set(statement)!={'text','true'}
+                            or type(statement['true']) is not bool or not isinstance(statement['text'],str)
+                            or not statement['text'].strip()
+                            or question_stem(statement['text']) not in question_stem(q['stem'])):
+                        raise ValueError('statement outside question stem')
+                for combo in combinations:
+                    if (not isinstance(combo,list) or any(type(i) is not int or not 1<=i<=len(statements) for i in combo)
+                            or len(set(combo))!=len(combo)):
+                        raise ValueError('invalid statement combination')
+                romans={'I':1,'II':2,'III':3,'IV':4,'V':5}
+                for option,combo in zip(opts,combinations):
+                    words=question_stem(option)
+                    shown={romans[t] for t in re.findall(r'\b(?:III|II|IV|I|V)\b',option.upper())}
+                    if words in {'hepsi','tumu','tamami'}:shown=set(range(1,len(statements)+1))
+                    elif words in {'hicbiri','hic birisi'}:shown=set()
+                    elif not shown:raise ValueError('unreadable statement option')
+                    if shown!=set(combo):raise ValueError('displayed statement combination mismatch')
+                truths={i for i,s in enumerate(statements,1) if s['true']==q['asked_truth']}
+                matches=[i for i,combo in enumerate(combinations) if set(combo)==truths]
+                if matches!=['ABCDE'.index(q['correct'])] or len({tuple(sorted(c)) for c in combinations})!=5:
+                    raise ValueError('statement key mismatch')
+            elif combinations or re.search(r'(?m)^\s*(?:I|II|III)[.)]\s',q['stem']):
+                raise ValueError('missing statement metadata')
         fact=question_stem(q['fact'])
         if any(same_question(fact,question_stem(old)) for old in previous+seen):
             raise ValueError('repeated quiz fact')
@@ -55,6 +110,8 @@ def parse_quiz(raw, count, history=(), evidence=None):
         negative={'yanlis','yanlistir','degil','degildir','haric'}
         if len(correct.split())>=2 and len(correct)>=12 and not (set(stem.split()) & negative) and f' {correct} ' in f' {stem} ':
             raise ValueError('quiz answer exposed in stem')
+    if distinct_topics and len({question_stem(q.get('topic','')) for q in questions})!=len(questions):
+        raise ValueError('repeated main topic')
     if question_set_issues(render_quiz(data),count,history):
         raise ValueError('repeated quiz stem')
     return data
@@ -103,7 +160,7 @@ def previous_quiz_key(history, corrections=()):
     for item in reversed(history or []):
         if str(item.get('role', '')).upper() != 'ASSISTANT':
             continue
-        if question_blocks(item.get('content') or ''):
+        if item.get('quiz') or question_blocks(item.get('content') or ''):
             quiz = item.get('quiz')
             break
     else:
@@ -127,7 +184,7 @@ def grade_previous_quiz(history, answers, corrections=()):
     for item in reversed(history or []):
         if str(item.get('role','')).upper()!='ASSISTANT':
             continue
-        if question_blocks(item.get('content') or ''):
+        if item.get('quiz') or question_blocks(item.get('content') or ''):
             quiz=item.get('quiz')
             break
     else:
@@ -157,3 +214,4 @@ def grade_previous_quiz(history, answers, corrections=()):
     table='| Soru | Yanıtın | Anahtar | Sonuç |\n|---|---|---|---|\n'+'\n'.join(rows)
     explanations='\n\n'.join(f"**Soru {n}:** {q['rationale']} ({q['source']})" for n,q in enumerate(questions,1))
     return f'{table}\n\nToplam {len(questions)} soru: {correct} doğru, {wrong} yanlış, {blank} boş.\n\n{explanations}'
+
