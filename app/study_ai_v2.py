@@ -127,8 +127,9 @@ def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) 
     # Filtering by operation erased the referent of "these" for explanation,
     # summary and teaching follow-ups even when retrieval found every source.
     from app.academic_pdf_tools import is_recipe,describe_recipe
+    from app.academic_remote_pdf import is_remote
     return [{**item,'content':describe_recipe(item['content'])}
-        if str(item.get('role','')).upper()=='ASSISTANT' and is_recipe(item.get('content')) else item
+        if str(item.get('role','')).upper()=='ASSISTANT' and (is_recipe(item.get('content')) or is_remote(item.get('content'))) else item
         for item in list(history or [])[-8:]]
 
 
@@ -173,7 +174,7 @@ def _prompt(course_title: str, question: str, retrieval: RetrievalResult, histor
         + ("BAŞLIK KAPSAMI: İstenen adlandırılmış başlıkların yayımlanmış indeksteki bütün kayıtları verildi. Dersin tamamının verilmemesinden bu başlıkların eksik olduğunu çıkarma. Okunamayan metni ayrıca belirt; sırf kapsam uyarısı nedeniyle desteklenen listeye varsayımsal eksik öğeler ekleme.\n\n"
            if retrieval.study_task.get('requested_sections_complete') else "")
         + "İSTEĞİ YERİNE GETİR:\n"
-        f"Yapılandırılmış görev alanları: {json.dumps(retrieval.study_task, ensure_ascii=False)}\n"
+        f"Yapılandırılmış görev alanları: {json.dumps({k:v for k,v in retrieval.study_task.items() if not k.startswith('remote_')}, ensure_ascii=False)}\n"
         "Bu turun görevi KULLANICININ ÖZGÜN MESAJI'dır. Önceki konuşma yalnız gerçek "
         "takip sorularının bağlamıdır; geçmişte kalan görevleri yeniden yerine getirme. "
         "Güncel mesaj bağımsız bir soruysa önceki soru hazırlama, adet veya biçim isteğini taşıma. "
@@ -578,6 +579,16 @@ def stream_rag_v2(
     retrieval: RetrievalResult,
 ) -> Iterator[str]:
     trace_id = retrieval.semantic_trace_id
+    if retrieval.retrieval_mode=='remote_pdf':
+        from app.academic_remote_pdf import generate
+        job=retrieval.study_task['remote_pdf_job']
+        try:
+            content=generate(**job)
+        except Exception as exc:
+            raise StudyAIError('Claude PDF işlemini tamamlayamadı; önceki dosyan korunuyor.') from exc
+        retrieval.study_task.update(remote_pdf_manifest=content,pdf_tool_validated=True,pdf_revision_applied=True)
+        yield content
+        return
     if getattr(retrieval, 'pdf_revision', None):
         from dataclasses import replace
         from app.academic_pdf_revision import generated_patch_content, apply_pdf_edits
