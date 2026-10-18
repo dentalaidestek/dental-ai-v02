@@ -73,6 +73,8 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
+from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
+from app.academic_study_runs import StudyRun
 from app.academic_recovery_store import AcademicRecoveryEvent
 from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
@@ -4254,7 +4256,7 @@ def _startup_database():
         else:
             from app.migrate import require_schema
             logger.warning("startup.step begin=require_schema")
-            require_schema(engine)
+            require_schema(engine,require_study=True)
             logger.warning("startup.step end=require_schema")
     else:
         init_db()
@@ -4285,6 +4287,8 @@ async def startup():
     logger.warning("startup.trace end=run_in_threadpool")
     logger.warning("startup.trace begin=start_colocated_worker_task")
     app.state.study_v2_worker_task = start_colocated_worker_task()
+    from app.academic_study_runs import recover as recover_study_runs
+    await run_in_threadpool(recover_study_runs,engine)
     logger.warning("startup.trace end=start_colocated_worker_task")
     from app.work_worker import embedded
     app.state.work_task = asyncio.create_task(embedded()) if os.getenv("DENTAL_WORK_EXECUTION", "external") == "embedded" else None
@@ -4478,6 +4482,9 @@ def delete_study_course(request: Request, course_id: int):
             from app.academic_remote_pdf import queue_erasure
             queue_erasure(s,message)
             s.delete(message)
+        from app.academic_learning import erase as erase_learning
+        from app.academic_study_runs import erase as erase_runs
+        erase_learning(s,user.id,course_id);erase_runs(s,user.id,course_id,purge=True)
         delete_course_rag_index(s, owner_user_id=user.id, course_id=course_id)
         s.delete(course)
         s.commit()
@@ -5014,6 +5021,17 @@ def _study_source_versions(session, owner_user_id, course_id, *, lock=False):
             for row in session.exec(query.execution_options(populate_existing=True)).all()]
 
 
+def _study_learning_context(session,owner,course,versions,history):
+    from app.academic_learning import context,quiz_anchor
+    anchor=quiz_anchor(session,owner,course,versions)
+    if anchor and not any(item.get('id')==anchor['id'] for item in history):history.insert(0,anchor)
+    result=context(session,owner,course,versions)
+    # Expose the exact active set outside the sliding dialogue window. Database
+    # IDs stay server-side; the planner needs question content and saved keys.
+    if anchor:result['active_quiz']=anchor['quiz']
+    return result
+
+
 @app.post("/notes/courses/{course_id}/ai/ask")
 def study_ai_ask(
     request: Request,
@@ -5021,7 +5039,10 @@ def study_ai_ask(
     background_tasks: BackgroundTasks,
     message: str = Form(...),
 ):
-    user = get_current_user(request)
+    return _run_owned_study_request(request,course_id,background_tasks,message,user=get_current_user(request))
+
+
+def _run_owned_study_request(request,course_id,background_tasks,message,*,user):
     if not user:
         return JSONResponse({"ok": False, "error": "Oturumunuz sona ermiş."}, status_code=401)
 
@@ -5115,6 +5136,7 @@ def study_ai_ask(
             source_versions = _study_source_versions(s, user.id, course_id)
             from app.academic_quiz import restore_quizzes, pack_evidence
             restore_quizzes(history, list(reversed(history_rows)), source_versions)
+            learner=_study_learning_context(s,user.id,course_id,source_versions,history)
             course_title = course.title
             from app.academic_chunk_links import planner_source_outline
             from app.academic_quick_actions import is_quick_action
@@ -5129,6 +5151,7 @@ def study_ai_ask(
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
             from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
+            source_outline['learning']=learner
             understanding = understand_study_request(clean_message, history, source_outline=source_outline)
             from app.academic_dense_retrieval import prepare_query_embedding
             query_embedding = prepare_query_embedding(understanding,
@@ -5147,6 +5170,7 @@ def study_ai_ask(
                     query=clean_message,
                     recent_history=history,
                 )
+                rag_result.study_task['learning']={key:value for key,value in learner.items() if key!='active_quiz'}
                 if rag_result.visual_sources and rag_result.evidence_sufficient:
                     materialize_visual_sources(lambda: Session(engine, expire_on_commit=False), rag_result)
             if rag_result.source_batches:
@@ -5172,12 +5196,13 @@ def study_ai_ask(
                 materialize_visual_sources(
                     lambda: Session(engine, expire_on_commit=False), rag_result,
                 )
-            answer = ask_study_ai_v2(
-                course_title,
-                clean_message,
-                history,
-                rag_result,
-            )
+            run_id=getattr(request.state,'academic_run_id',None)
+            if run_id:
+                from app.academic_study_runs import generation
+                answer=''.join(generation(engine,run_id,stream_study_ai_v2(course_title,clean_message,history,rag_result),
+                    pdf=bool(understanding.plan and understanding.plan.output_format=='pdf')))
+            else:
+                answer=ask_study_ai_v2(course_title,clean_message,history,rag_result)
             from app.academic_long_answer import automatic_pdf
             export_pdf = _prepare_study_pdf(course_title, answer, understanding, rag_result)
             answer=rag_result.study_task.get('remote_pdf_manifest',answer)
@@ -5239,6 +5264,14 @@ def study_ai_ask(
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
+                save_session.flush()
+                from app.academic_learning import remember
+                remember(save_session,owner=user.id,course=course_id,assistant_id=assistant_message.id,
+                    plan=understanding.plan,quiz=rag_result.generated_quiz,history=history,versions=source_versions)
+                if run_id:
+                    from app.academic_study_runs import complete_in_transaction
+                    complete_in_transaction(save_session,run_id=run_id,owner=user.id,course=course_id,
+                        message_id=assistant_message.id)
                 save_session.commit()
                 rag_result.study_task['remote_pdf_committed']=True
                 if export_pdf:
@@ -5282,6 +5315,70 @@ def study_ai_ask(
             discard(rag_result.study_task)
     public_answer = 'İstediğin PDF hazır.' if rag_result.study_task.get('pdf_tool_validated') else answer
     return JSONResponse({"ok": True, "answer": public_answer, **({'artifact': artifact} if export_pdf else {})})
+
+
+@app.post('/notes/courses/{course_id}/ai/runs')
+def study_run_create(request:Request,course_id:int,background_tasks:BackgroundTasks,
+                     message:str=Form(...),request_key:str=Form(...)):
+    from app.academic_study_runs import enqueue,payload,wake
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False,'error':'Oturumunuz sona ermiş.'},status_code=401)
+    question=message.strip()
+    if not 1<=len(question)<=8000 or not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
+        return JSONResponse({'ok':False,'error':'Geçerli bir çalışma isteği gönder.'},status_code=400)
+    try:
+        with Session(engine,expire_on_commit=False) as session:
+            course=session.exec(select(StudyCourse).where(StudyCourse.id==course_id,
+                StudyCourse.owner_user_id==user.id).with_for_update()).first()
+            if course is None:return JSONResponse({'ok':False,'error':'Ders bulunamadı.'},status_code=404)
+            if not course_v2_ready(session,material_model=StudyMaterial,owner_user_id=user.id,course_id=course_id):
+                return JSONResponse({'ok':False,'error':'Ders notları henüz hazır değil.'},status_code=409)
+            row=enqueue(session,owner=user.id,course=course_id,question=question,key=request_key)
+            session.commit();result=payload(session,row)
+        background_tasks.add_task(wake,engine)
+        return JSONResponse({'ok':True,'run':result},status_code=202)
+    except ValueError as exc:
+        return JSONResponse({'ok':False,'error':str(exc)},status_code=409)
+
+
+@app.get('/notes/courses/{course_id}/ai/runs/active')
+def study_run_active(request:Request,course_id:int,background_tasks:BackgroundTasks):
+    from app.academic_study_runs import payload,wake
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    with Session(engine) as session:
+        if not _owned_study_course(session,user,course_id):return JSONResponse({'ok':False},status_code=404)
+        row=session.exec(select(StudyRun).where(StudyRun.owner_user_id==user.id,StudyRun.course_id==course_id,
+            StudyRun.status.in_(['QUEUED','RUNNING','INTERRUPTED']))
+            .order_by(StudyRun.id.desc()).limit(1)).first()
+        result=payload(session,row) if row else None
+    if row and row.status=='QUEUED':background_tasks.add_task(wake,engine)
+    return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
+
+
+@app.get('/notes/courses/{course_id}/ai/runs/{run_id}')
+def study_run_status(request:Request,course_id:int,run_id:int):
+    from app.academic_study_runs import payload
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    with Session(engine) as session:
+        row=session.exec(select(StudyRun).where(StudyRun.id==run_id,
+            StudyRun.owner_user_id==user.id,StudyRun.course_id==course_id)).first()
+        if row is None or not _owned_study_course(session,user,course_id):
+            return JSONResponse({'ok':False},status_code=404)
+        result=payload(session,row)
+    return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
+
+
+@app.get('/notes/courses/{course_id}/ai/learning')
+def study_learning_status(request:Request,course_id:int):
+    from app.academic_learning import context
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    with Session(engine) as session:
+        if not _owned_study_course(session,user,course_id):return JSONResponse({'ok':False},status_code=404)
+        result=context(session,user.id,course_id,_study_source_versions(session,user.id,course_id))
+    return JSONResponse({'ok':True,'learning':result},headers={'Cache-Control':'no-store'})
 
 
 @app.post("/notes/courses/{course_id}/ai/ask-stream")
@@ -5329,6 +5426,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         source_versions = _study_source_versions(s, user.id, course_id)
         from app.academic_quiz import restore_quizzes, pack_evidence
         restore_quizzes(history, list(reversed(history_rows)), source_versions)
+        learner=_study_learning_context(s,user.id,course_id,source_versions,history)
         course_title = course.title
         from app.academic_chunk_links import planner_source_outline
         from app.academic_quick_actions import is_quick_action
@@ -5341,6 +5439,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 if item.mime_type == 'application/pdf' and not getattr(item, 'deleted_at', None)][:64]
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
+        source_outline['learning']=learner
         understanding = understand_study_request(clean_message, history, source_outline=source_outline)
         from app.academic_dense_retrieval import prepare_query_embedding
         query_embedding = prepare_query_embedding(understanding,
@@ -5357,6 +5456,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                     owner_user_id=user.id, course_id=course_id,
                     query=clean_message, recent_history=history,
                 )
+                retrieval.study_task['learning']={key:value for key,value in learner.items() if key!='active_quiz'}
         except Exception as exc:
             logger.exception("Academic V2 streaming retrieval failed")
             return JSONResponse({"ok": False, "error": "Akademik bağlam hazırlanamadı."}, status_code=502)
@@ -5460,6 +5560,10 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
+                save_session.flush()
+                from app.academic_learning import remember
+                remember(save_session,owner=user.id,course=course_id,assistant_id=assistant_message.id,
+                    plan=understanding.plan,quiz=prepared.generated_quiz,history=history,versions=source_versions)
                 save_session.commit()
                 prepared.study_task['remote_pdf_committed']=True
                 artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, prepared), updated=bool(prepared.study_task.get('pdf_revision_applied'))) if export_pdf else None
@@ -5502,7 +5606,8 @@ def clear_study_ai_chat(request: Request, course_id: int):
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        course = _owned_study_course(s, user, course_id)
+        course = s.exec(select(StudyCourse).where(StudyCourse.id==course_id,
+            StudyCourse.owner_user_id==user.id).with_for_update()).first()
         if not course:
             return HTMLResponse("Ders bulunamadı veya erişim yetkiniz yok.", status_code=404)
         messages = s.exec(
@@ -5514,6 +5619,9 @@ def clear_study_ai_chat(request: Request, course_id: int):
             from app.academic_remote_pdf import queue_erasure
             queue_erasure(s,item)
             s.delete(item)
+        from app.academic_learning import erase as erase_learning
+        from app.academic_study_runs import erase as erase_runs
+        erase_learning(s,user.id,course_id,keep_reviews=True);erase_runs(s,user.id,course_id)
         delete_course_rag_memory(s, owner_user_id=user.id, course_id=course_id)
         s.commit()
     return RedirectResponse(f"/notes/courses/{course_id}/ai", status_code=303)
@@ -14110,3 +14218,4 @@ _mobile_mounted_routes = {(method, route.path) for route in app.routes for metho
 mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
     if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
 app.include_router(mobile_modern_router)
+
