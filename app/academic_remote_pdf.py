@@ -242,7 +242,7 @@ def _queue_cleanup(session_factory,owner):
 
 def generate(*,owner,course,title,instructions,session_factory,selected=(),markdown=None,preserve_quiz=None,output_format="pdf"):
     from app.academic_provider_config import academic_target
-    from app.study_anthropic_files import ClaudeFiles,MAX_TOTAL
+    from app.study_anthropic_files import ClaudeFiles,MAX_TOTAL,MAX_INPUT_TOTAL
     from app.object_storage import ensure_local,write_bytes,delete
     from app.academic_pdf import pdf_filename
     from app.academic_pdf_tools import is_recipe,_snapshot
@@ -260,7 +260,7 @@ def generate(*,owner,course,title,instructions,session_factory,selected=(),markd
         def add_source(name,raw,mime):
             nonlocal total
             total+=len(raw)
-            if total>MAX_TOTAL or len(sources)>=8:
+            if total>MAX_INPUT_TOTAL or len(sources)>=8:
                 raise StudyProviderError('PDF kaynak kapsamı işlem sınırını aşıyor.')
             index=len(sources);ext='pdf' if mime=='application/pdf' else 'md'
             sources.append({'name':name,'data':raw,'mime':mime})
@@ -312,7 +312,7 @@ def generate(*,owner,course,title,instructions,session_factory,selected=(),markd
             add_source(item['name'],data,'application/pdf')
         if markdown is not None:
             add_source('Tamamlanmış doğrulanmış yanıt; içeriği aynen koru',markdown.encode(),'text/markdown')
-        if total>MAX_TOTAL or not sources:
+        if total>MAX_INPUT_TOTAL or not sources:
             raise StudyProviderError('PDF kaynak kapsamı geçersiz veya çok büyük.')
         register,done=_queue_cleanup(session_factory,owner)
         outputs=ClaudeFiles(cleanup_register=register,cleanup_done=done).execute(model=target.model,
