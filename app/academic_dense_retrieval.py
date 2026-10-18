@@ -28,6 +28,8 @@ def prepare_query_embedding(understanding, *, session_factory, owner_user_id, co
     if getattr(getattr(understanding,'plan',None),'grade_previous_set',False):
         return None
     plan=getattr(understanding,'plan',None)
+    if getattr(plan,'pdf_document',None):
+        return None
     if plan and getattr(plan,'pdf_edits',()) and not any(e['source']=='generate' for e in plan.pdf_edits):
         return None
     if not plan or getattr(plan,'export_previous_answer',False) or getattr(plan,'append_previous_pdf',False) or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
