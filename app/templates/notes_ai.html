@@ -338,6 +338,7 @@
                 }
                 if (!finished) throw new Error('AI akışı tamamlanmadan kesildi.');
             }
+            pending.classList.remove('pending');
             addPdfArtifact(pending,artifact);
             scrollChatBottom();
         } catch (err) {

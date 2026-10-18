@@ -86,7 +86,28 @@ SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answer
 from app.academic_pdf_tools import TOOL_SCHEMA
 SCHEMA['properties']['pdf_tools'] = TOOL_SCHEMA
 SCHEMA['required'].append('pdf_tools')
-SYSTEM = '''PDF EDITING: When the user requests changes to an existing PDF, set
+from app.academic_remote_pdf import SCHEMA as REMOTE_PDF_SCHEMA
+SCHEMA['properties']['pdf_document'] = REMOTE_PDF_SCHEMA
+SCHEMA['required'].append('pdf_document')
+SYSTEM = '''REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
+ALL requests to change, color, highlight, inspect/edit layout, split/merge/rotate
+or otherwise work on an EXISTING PDF through pdf_document, operation=answer,
+output_format=pdf. Set pdf_tools=null, pdf_edits=[], append_previous_pdf=false,
+export_previous_answer=false. pdf_document.sources contains ONLY exact key values
+from source_outline.pdf_catalog; instructions preserves the user's full requested
+change and any relevant request from previous dialogue (including colors/traps).
+The catalog is chronological: first means the first original matching document,
+not the newest transformed file. Generated files belong to the chat, not only to
+uploaded documents. Match misspelled/spaced titles using catalog names, summaries
+and dialogue; never declare a file absent merely because it is not uploaded.
+Use the remote PDF skill to apply styles and identify trap points from supplied
+content yourself. Do not claim color/layout changes are unsupported. Ask only if
+multiple genuinely plausible documents remain. Never include DB IDs or file IDs.
+For NEW source-backed answers/questions that should become PDFs use the normal
+operation and output_format=pdf, pdf_document=null; the server exports the completed
+answer through the remote PDF skill. For non-PDF work use pdf_document=null.
+When remote_pdf_enabled is absent/false, use the legacy PDF tools below.
+PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
 For MECHANICAL PDF file operations instead use pdf_tools, operation=answer, no
 pdf_edits, no note searches. Select sources from owned generated PDFs or uploaded
@@ -361,6 +382,7 @@ class StudyRequest:
     reveal_previous_key: bool = False
     quiz_key_corrections: tuple[dict, ...] = ()
     pdf_tools: dict | None = None
+    pdf_document: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -408,7 +430,7 @@ class PlannerContractError(ValueError):
 
 
 def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
-    if not isinstance(raw, str) or len(raw) > 10000:
+    if not isinstance(raw, str) or len(raw) > 20000:
         raise PlannerContractError('invalid planner output size')
     data = json.loads(raw)
     if isinstance(data,dict):
@@ -432,6 +454,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('reveal_previous_key', False)
         data.setdefault('quiz_key_corrections', [])
         data.setdefault('pdf_tools', None)
+        data.setdefault('pdf_document', None)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -439,13 +462,26 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         raise PlannerContractError('invalid operation/scope')
     if data['output_format'] not in ('text', 'pdf'):
         raise PlannerContractError('invalid output format')
-    if isinstance(data['pdf_tools'], str):
-        if len(data['pdf_tools']) > 120000:
-            raise PlannerContractError('PDF tool contract too large')
+    for field in ('pdf_tools','pdf_document'):
+        if isinstance(data[field],str):
+            try:
+                data[field]=json.loads(data[field]) if data[field].strip() else None
+            except ValueError:
+                raise PlannerContractError('invalid encoded PDF plan') from None
+    if data['pdf_document'] is not None:
+        from app.academic_remote_pdf import validate_plan
         try:
-            data['pdf_tools'] = json.loads(data['pdf_tools']) if data['pdf_tools'].strip() else None
-        except ValueError:
-            raise PlannerContractError('invalid encoded PDF tool contract') from None
+            validate_plan(data['pdf_document'])
+        except (ValueError,TypeError):
+            raise PlannerContractError('invalid remote PDF plan') from None
+        if (data['operation']!='answer' or data['output_format']!='pdf' or data['pdf_tools']
+            or data['pdf_edits'] or data['append_previous_pdf'] or data['export_previous_answer']
+            or data['grade_previous_set'] or data['reveal_previous_key']):
+            raise PlannerContractError('incompatible remote PDF plan')
+        data['retrieval_queries']=[]
+        data['source_sections']=[]
+        data['source_subjects']=[]
+        data['reuse_previous_source']=False
     if data['pdf_tools'] is not None:
         from app.academic_pdf_tools import validate_tools
         try:
@@ -568,7 +604,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not data['pdf_tools'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not data['pdf_tools'] and not data['pdf_document'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -618,7 +654,8 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
                 turn['content'] = '[Güncel PDF metni source_outline.editable_pdf.content alanında.]'
     from app.academic_pdf_tools import is_recipe,describe_recipe
     for turn in turns:
-        if turn['role'].upper()=='ASSISTANT' and is_recipe(turn['content']):
+        from app.academic_remote_pdf import is_remote
+        if turn['role'].upper()=='ASSISTANT' and (is_recipe(turn['content']) or is_remote(turn['content'])):
             turn['content']=describe_recipe(turn['content'])
     # Put the active request last, after its historical context.
     from app.academic_direct_request import previous_source_request
@@ -698,10 +735,11 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     return interpret_request(question, history, call=call, source_outline=source_outline, provider_name=target.provider)
 
 
-def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, material_model=None, pdf_title='Ders notları', pdf_snapshot=None, **kwargs):
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, material_model=None, pdf_title='Ders notları', pdf_snapshot=None, pdf_session_factory=None, **kwargs):
     """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
+    from app.academic_remote_pdf import enabled as remote_pdf_enabled
     if understanding.plan is None:
         failures = {
             'timeout': 'Sorunu anlamlandırırken yapay zekâ sağlayıcısının yanıt süresi doldu. Yanıt oluşturulmadı; mesajını yeniden gönderebilirsin.',
@@ -722,7 +760,16 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if plan.pdf_tools:
+    if plan.pdf_document:
+        from app.academic_remote_pdf import prepare
+        result=prepare(session,message_model=message_model,material_model=material_model,
+            owner=kwargs['owner_user_id'],course=kwargs['course_id'],title=pdf_title,
+            plan=plan.pdf_document,query=kwargs.get('query',''),session_factory=pdf_session_factory)
+    elif remote_pdf_enabled() and (
+            plan.pdf_tools or plan.pdf_edits or plan.append_previous_pdf):
+        result=RetrievalResult(retrieval_mode='interpretation_unavailable',
+            clarification='PDF isteğinin uzak dosya planı doğrulanamadı. Lütfen yeniden gönderir misin?')
+    elif plan.pdf_tools:
         from app.academic_pdf_tools import prepare_operations
         result=prepare_operations(session,message_model=message_model,material_model=material_model,
             plan=plan,owner_user_id=kwargs['owner_user_id'],course_id=kwargs['course_id'],
@@ -781,6 +828,10 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         result = retrieve_semantic_context(session, request_plan=plan, prefer_full_context=not bool(plan.source_subjects),
                                           query_embedding=query_embedding, **kwargs)
     result.study_task['quick_action'] = understanding.outcome == 'quick_action'
+    if pdf_session_factory is not None:
+        result.study_task['remote_session_factory']=pdf_session_factory
+        result.study_task['remote_context']={'owner':kwargs['owner_user_id'],
+            'course':kwargs['course_id'],'title':pdf_title}
     result.study_task['exam_topics'] = list(plan.exam_topics)
     if plan.operation == 'generate_questions':
         result.study_task['quiz_contract'] = True

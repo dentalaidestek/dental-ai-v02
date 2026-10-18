@@ -34,7 +34,7 @@ def pdf_artifact(course_id, message_id, title, *, automatic=False, updated=False
     from app.academic_pdf_tools import output_files
     files=output_files(content,course_id,message_id)
     if files:
-        return {**files[0],'reason':'requested','files':files}
+        return {**files[0],'reason':'updated' if updated else 'long_answer' if automatic else 'requested','files':files}
     return {'type': 'pdf', 'name': pdf_filename(title),
             'reason': 'updated' if updated else 'long_answer' if automatic else 'requested',
             'url': f'/notes/courses/{int(course_id)}/ai/messages/{int(message_id)}/pdf'}
