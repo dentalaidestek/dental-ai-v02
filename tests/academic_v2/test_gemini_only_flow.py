@@ -29,11 +29,11 @@ def test_lexical_group_bound_matches_planner_contract():
     value.exec.return_value.all.return_value=[]
     kwargs=dict(owner_user_id=17,course_id=23,lexical_query='"subject"',query_vector=None,
                 embedding_provider='',embedding_model='',limit=48)
-    _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(MAX_SOURCE_SEARCHES)))
-    assert len(value.exec.call_args.kwargs['params']['lexical_groups'])==MAX_SOURCE_SEARCHES
+    _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(2*MAX_SOURCE_SEARCHES)))
+    assert len(value.exec.call_args.kwargs['params']['lexical_groups'])==2*MAX_SOURCE_SEARCHES
     assert value.exec.call_args.kwargs['params']['group_candidate_limit']>=1
     with pytest.raises(ValueError,match='invalid lexical search groups'):
-        _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(MAX_SOURCE_SEARCHES+1)))
+        _fts_rows(value,**kwargs,lexical_groups=tuple('"subject"' for _ in range(2*MAX_SOURCE_SEARCHES+1)))
 
 
 @pytest.fixture

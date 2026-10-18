@@ -10,13 +10,13 @@ QUIZ_SCHEMA = {'type':'object','properties':{'questions':{'type':'array','items'
         'options':{'type':'array','items':{'type':'string'},'minItems':5,'maxItems':5},
         'correct':{'type':'string','enum':list('ABCDE')},
         'rationale':{'type':'string'},
-        'fact':{'type':'string','description':'Canonical source fact being tested; reuse the same wording for the same fact.'},
+        'fact':{'type':'string','description':'Source-supported knowledge tested, including the distinct claims of a multi-statement question; reuse the same wording for the same knowledge.'},
         'source':{'type':'string','description':'Filename and page supporting the correct choice.'},
         'material_id':{'type':'integer'},'page':{'type':'integer'}},
     'required':['stem','options','correct','rationale','fact','source','material_id','page'],'additionalProperties':False}}},
     'required':['questions'],'additionalProperties':False}
 
-CONTRACT_PROMPT = '''\nSORU VERİ SÖZLEŞMESİ: Yalnız JSON questions üret. Her soruda stem, tam beş options (A–E sırasıyla, harf öneki olmadan), correct (A–E), rationale, fact, source, material_id ve page olsun. material_id/page verilen kanıtta bulunmalı. Kaynak bilgisini dosya/sayfa olarak yaz. fact sorulan tek olgunun kısa, kanonik ifadesidir; önceki fact ile aynı bilgiyi yeniden sorma. rationale doğru şıkkı kaynakla açıklar; kaynaktan doğrulanmayan cevap anahtarı üretme. Doğru şık pozitif soru kökünde aynen yazılı olmasın. Çeldiriciler aynı kavram düzeyinde, makul ve benzer uzunlukta olsun; bariz mutlak ifadelerle zorluğu düşürme. Kök, seçenekler ve tek doğru cevap birbiriyle tutarlı olsun. Anahtarın kullanıcıya gösterimini uygulama yapar.\n'''
+CONTRACT_PROMPT = '''\nSORU VERİ SÖZLEŞMESİ: Yalnız JSON questions üret. Her soruda stem, tam beş options (A–E sırasıyla, harf öneki olmadan), correct (A–E), rationale, fact, source, material_id ve page olsun. material_id/page verilen kanıtta bulunmalı. Kaynak bilgisini dosya/sayfa olarak yaz. fact sorunun sınadığı bilginin kısa, kanonik ifadesidir; öncüllü soruda farklı öncülleri tek bir tanıma indirgeme. Önceki fact ile aynı bilgiyi yeniden sorma. Öncüllü biçim istenmişse stem içinde ayrı satırlarda I., II., III. bulunmalı; options bunların kombinasyonları olmalıdır. Güncel düzeltme mesajında önceki etkin isteğin adet, ana başlık çeşitliliği, alt başlık ve zorluk koşullarını da koru. rationale doğru şıkkı kaynakla açıklar; kaynaktan doğrulanmayan cevap anahtarı üretme. Doğru şık pozitif soru kökünde aynen yazılı olmasın. Çeldiriciler aynı kavram düzeyinde, makul ve benzer uzunlukta olsun; bariz mutlak ifadelerle zorluğu düşürme. Kök, seçenekler ve tek doğru cevap birbiriyle tutarlı olsun. Anahtarın kullanıcıya gösterimini uygulama yapar.\n'''
 
 
 def parse_quiz(raw, count, history=(), evidence=None):
@@ -96,6 +96,23 @@ def restore_quizzes(history, rows, versions):
                 item['quiz']=quiz
         except (ValueError,TypeError,KeyError,AttributeError):
             continue
+
+
+def previous_quiz_key(history):
+    """Display the model's saved key; never infer answers or select an older set."""
+    for item in reversed(history or []):
+        if str(item.get('role', '')).upper() != 'ASSISTANT':
+            continue
+        if question_blocks(item.get('content') or ''):
+            quiz = item.get('quiz')
+            break
+    else:
+        quiz = None
+    if not quiz:
+        return 'Bu son soru setinin doğrulanmış cevap anahtarı kayıtlı değil. Kaynaklarıyla yeniden doğrulanmadan cevap anahtarı gösterilemiyor.'
+    return '### Cevap anahtarı\n\n' + '\n\n'.join(
+        f"**{number}. {question['correct']}** — {question['rationale']} ({question['source']})"
+        for number, question in enumerate(quiz['questions'], 1))
 
 
 def grade_previous_quiz(history, answers):

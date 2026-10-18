@@ -31,6 +31,20 @@ ACADEMIC_V2_MODEL = "gemini-3.5-flash-lite"
 BATCH_NO_SUPPORT = '<!--ACADEMIC_BATCH_NO_SUPPORT-->'
 V2_SYSTEM_PROMPT = STUDY_SYSTEM_PROMPT + '''
 
+İSTEK DENETİMİ SENİN GÖREVİNDİR:
+Yanıtı göndermeden önce güncel özgün mesajdaki bütün koşulları kendi içinde tek tek
+denetle ve eksikleri aynı yanıtta düzelt. Kullanıcı önceki yanıtın bir kusurunu
+bildiriyorsa yalnız o kusuru düzeltirken önceki etkin isteğin diğer koşullarını koru.
+Yeni ve bağımsız bir görevde geçmiş koşulları taşıma. Öncüllü soru istendiğinde
+öncülleri soru kökünde I., II., III. olarak ayrı satırlara yaz; A–E seçenekleri
+bu öncüllerin kombinasyonları olsun. İstenen alt başlıkları farklı öncüllerde işle;
+aynı bilgiyi farklı cümlelerle tekrarlayarak öncül sayısını doldurma.
+Farklı ana konulardan soru istendiğinde önce konu dağılımını planla; mevcut farklı
+ana konular yeterliyken aynı geniş konunun alt başlıklarına yığılma. Her sorunun
+kökte kısa konu başlığını göster. Kaynak kapsamı yetersizse bunu açıkça belirt.
+JSON yalnız taşıma biçimidir; kullanıcının içerik, öncül, kapsam ve zorluk
+koşullarını iptal etmez. Bu denetimi ayrı bir cevap veya yeni çağrı istemeden yap.
+
 BU TURUN ÖNCELİĞİ:
 Son mesajdaki KULLANICININ ÖZGÜN MESAJI güncel görevi belirler. Önceki konuşmayı
 yalnız gerçek devam istekleri ve göndermeler için kullan. Bağımsız yeni soruda
@@ -580,7 +594,7 @@ def stream_rag_v2(
         retrieval.study_task['pdf_revision_applied'] = True
         yield answer
         return
-    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade'} and retrieval.prepared_answer:
+    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade', 'generated_quiz_key'} and retrieval.prepared_answer:
         logger.info('Academic flow trace=%s stage=response origin=%s', trace_id, retrieval.retrieval_mode)
         yield retrieval.prepared_answer
         return
@@ -697,7 +711,7 @@ def stream_rag_v2(
                 from app.academic_quiz import QUIZ_SCHEMA, CONTRACT_PROMPT
                 generation_options['response_schema'] = QUIZ_SCHEMA
                 prompt += CONTRACT_PROMPT
-                prompt += '\nJSON sözleşmesi bu turda başlık/Markdown ve anahtarı gizleme talimatlarının yerini alır: correct/rationale uygulamanın özel kaydıdır, öğrenciye doğrudan gösterilmez. Kökleri başlık işareti veya numara olmadan stem alanına yaz. Cevapları saklama, JSON alanlarını eksiksiz doldur.'
+                prompt += '\nJSON sözleşmesi yalnız taşıma biçimini belirler; özgün isteğin soru biçimi ve bütün içerik koşulları geçerlidir. correct/rationale uygulamanın özel kaydıdır, öğrenciye doğrudan gösterilmez. Kısa konu başlığını, soru kökünü ve istenmişse ayrı satırlardaki I., II., III. öncülleri stem alanına koy; A–E kombinasyonlarını options alanına koy. Soru numarasını uygulama ekler. Cevapları saklama, JSON alanlarını eksiksiz doldur. Seti göndermeden önce önceki etkin isteğin de korunması gereken koşullarını denetle ve eksikleri düzelt.'
                 prompt += '\nÖnceki setlerin fact kayıtları: ' + json.dumps([q['fact'] for h in history for q in (h.get('quiz') or {}).get('questions',[])], ensure_ascii=False)
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
