@@ -133,3 +133,36 @@ def test_statement_set_keeps_original_request_and_uses_one_generation_call(monke
     assert 'Cevap anahtarı' not in output
     assert result.generated_quiz['questions'][0]['correct']=='C'
 
+
+def test_planner_reviews_actual_options_and_saved_rationale_in_its_existing_call():
+    saved=quiz()
+    saved['questions'][0]['correct']='B'  # Letter disagrees with the I+II rationale.
+    history=[{'role':'ASSISTANT','content':render_quiz(saved),'quiz':saved}]
+    correction={'number':1,'choice':'C','rationale':'I ve II doğrudur; bu birleşim C şıkkındadır.'}
+    call=Mock(return_value=plan_json(quiz_key_corrections=[correction]))
+    result=interpret_request('Cevapları ne peki?',history,call=call,provider_name='anthropic')
+    call.assert_called_once()
+    sent=json.loads(call.call_args.args[0])
+    assert sent['recent_quiz']==saved
+    assert sent['recent_dialogue'][0]['content'].startswith('[Son soru setinin tam içeriği')
+    answer=previous_quiz_key(history,result.plan.quiz_key_corrections)
+    assert '**1. C**' in answer and '**1. B**' not in answer
+    assert 'Not.pdf, sayfa 2' in answer
+    assert saved['questions'][0]['correct']=='B'  # No silent mutation of history.
+
+
+@pytest.mark.parametrize('corrections',[
+    [{'number':1,'choice':'Z','rationale':'No'}],
+    [{'number':1,'choice':'C','rationale':''}],
+    [{'number':1,'choice':'C','rationale':'x'},{'number':1,'choice':'D','rationale':'y'}],
+])
+def test_invalid_key_review_cannot_change_the_saved_set(corrections):
+    with pytest.raises(ValueError):
+        parse_request(plan_json(quiz_key_corrections=corrections))
+
+
+def test_key_review_cannot_address_a_question_outside_the_latest_set():
+    saved=quiz();history=[{'role':'ASSISTANT','content':render_quiz(saved),'quiz':saved}]
+    answer=previous_quiz_key(history,[{'number':2,'choice':'A','rationale':'Wrong set'}])
+    assert 'eşleşmedi' in answer and '**1.' not in answer
+
