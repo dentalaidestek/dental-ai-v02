@@ -7,6 +7,16 @@ from app.academic_request_understanding import StudyRequest, UnderstandingResult
 from app.academic_semantic_retrieval import retrieve_semantic_context
 
 
+def test_academic_generation_model_can_change_without_adding_a_fallback_chain(monkeypatch):
+    from app.study_ai_v2 import _generation_targets
+    monkeypatch.setenv('STUDY_ACADEMIC_GENERATION_MODEL','gemini-3.1-flash-lite')
+    targets=_generation_targets()
+    assert [(target.provider,target.model) for target in targets]==[('gemini','gemini-3.1-flash-lite')]
+    monkeypatch.setenv('STUDY_ACADEMIC_GENERATION_MODEL','other:gemini-x,gemini-y')
+    with pytest.raises(Exception,match='model ayarı'):
+        _generation_targets()
+
+
 def row(ident, body, kind='TEXT'):
     return (ident, 1, 'note', ident, ident, None, kind, body, 1, .2, None, None, .2, ident, '{}')
 
@@ -86,9 +96,12 @@ def test_partial_candidates_are_not_falsely_certified_as_complete(monkeypatch, s
 def test_question_source_filter_obeys_gemini_instead_of_question_keyword(monkeypatch, session):
     import app.academic_semantic_retrieval as current
     monkeypatch.setattr(current, '_fts_rows', Mock(return_value=[row(1, 'hipofiz'), row(2, 'hipofiz sorusu', 'QUESTION')]))
+    expand=Mock(side_effect=lambda session,**kwargs:kwargs['seeds'])
+    monkeypatch.setattr('app.study_retrieval_v2._question_page_context_rows',expand)
     plan = StudyRequest('Hipofiz kaynak sorusunu çöz', 'solve', 'topic', None, None, '', ('hipofiz',), source_kind='questions')
     result = retrieve_semantic_context(session, owner_user_id=17, course_id=23, query='Onu yap', request_plan=plan)
     assert [item.chunk_id for item in result.evidence] == [2]
+    assert [r[0] for r in expand.call_args.kwargs['seeds']]==[2]
 
 
 def test_visual_material_lookup_is_owned_and_uses_materializer_contract(monkeypatch, session):
@@ -102,6 +115,27 @@ def test_visual_material_lookup_is_owned_and_uses_materializer_contract(monkeypa
     assert result.visual_sources[0]['page_number'] == 1
     assert session.exec.call_args.kwargs['params']['owner'] == 17
     assert session.exec.call_args.kwargs['params']['course'] == 23
+
+
+@pytest.mark.parametrize('kind,operation', [('notes','answer'),('notes','generate_questions'),('questions','solve')])
+def test_indexed_ocr_is_used_without_original_page_io(monkeypatch, session, kind, operation):
+    import app.academic_semantic_retrieval as current
+    from app.study_retrieval_v2 import materialize_visual_sources
+    body='OCR metni: bağışıklık yanıtı yaşla değişir.'
+    selected=row(1,body,'QUESTION' if kind=='questions' else 'TEXT')
+    monkeypatch.setattr('app.academic_native_evidence.selected_native_pages',lambda *a,**k:{})
+    monkeypatch.setattr('app.study_retrieval_v2._question_page_context_rows',lambda *a,**k:k['seeds'])
+    plan=StudyRequest('Notlardan cevapla',operation,'topic',20 if operation=='generate_questions' else None,
+                      None,'',('bağışıklık',),source_kind=kind)
+    # Any scan/file lookup would return an original and expose a regression.
+    session.exec.side_effect=AssertionError('ordinary text request read original-page metadata')
+    result=current.retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan,_source_rows=[selected])
+    assert body in '\n'.join(result.note_context)
+    assert not result.visual_sources and not result.attachments and not result.ocr_reading_hints
+    no_io=Mock(side_effect=AssertionError('ordinary text request opened materialization session'))
+    materialize_visual_sources(no_io,result)
+    no_io.assert_not_called()
 
 
 def test_both_chat_endpoints_have_only_gemini_gateway():
@@ -164,8 +198,8 @@ def test_model_question_task_count_and_source_kind_reach_final_prompt(monkeypatc
     assert prompt.endswith('20 soru hazırla')
 
 
-@pytest.mark.parametrize('scope,total,expected', [('topic',12,8),('course',12,12),('course',35,32)])
-def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual_hint(monkeypatch,session,scope,total,expected):
+@pytest.mark.parametrize('scope,total,expected', [('topic',12,12),('course',12,12),('course',35,35)])
+def test_explicit_visual_evidence_supplies_bounded_original_pages(monkeypatch,session,scope,total,expected):
     import app.academic_semantic_retrieval as current
     from types import SimpleNamespace
     rows = [row(i, 'ANB konu bilgisi') for i in range(1,total+1)]
@@ -173,21 +207,27 @@ def test_scanned_evidence_supplies_bounded_original_pages_without_planner_visual
     monkeypatch.setattr(current,'get_or_build_coverage_plan',Mock(return_value=SimpleNamespace()))
     monkeypatch.setattr(current,'_coverage_hydration_ids',Mock(return_value=list(range(1,total+1))))
     monkeypatch.setattr(current,'_coverage_evidence_rows',Mock(return_value=rows))
-    session.exec.side_effect = [
-        Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)])),
-        Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')])),
-        Mock(first=Mock(return_value=(0,0,total))),
-    ]
-    plan=StudyRequest('ANB anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else ())
+    def database(query, **kwargs):
+        if 'SELECT id,file_path' in str(query):
+            return Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')]))
+        return Mock(all=Mock(return_value=[(1,i) for i in range(1,total+1)]),
+                    first=Mock(return_value=(0,0,total)))
+    session.exec.side_effect = database
+    plan=StudyRequest('ANB görselini anlat','answer',scope,None,None,'',('ANB',) if scope=='topic' else (),needs_visual=True)
     result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,query=plan.resolved_query,request_plan=plan)
-    assert len(result.visual_sources)==expected
-    assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in result.visual_sources)
-    assert 'OCR KAYNAK UYARISI' in result.note_context[0]
-    assert 'ANB konu bilgisi' not in '\n'.join(result.note_context)
+    children=result.source_batches or [result]
+    visuals=[source for child in children for source in child.visual_sources]
+    contexts=[context for child in children for context in child.note_context]
+    assert len(visuals)==expected
+    assert {(s['material_id'],s['page_number']) for s in visuals}=={(1,i) for i in range(1,total+1)}
+    assert all(len(child.visual_sources)<=(16 if scope=='course' and result.source_batches else 32 if scope=='course' else 8) for child in children)
+    assert all(s['owner_user_id']==17 and s['index_version']=='v1' for s in visuals)
+    assert all('OCR KAYNAK UYARISI' in child.note_context[0] for child in children)
+    assert 'ANB konu bilgisi' not in '\n'.join(contexts)
     assert len(result.evidence)==total  # OCR remains usable for search and provenance.
-    assert sum('ekli orijinal sayfayı incele' in c for c in result.note_context)==expected
-    assert sum('bilgi kanıtı olarak kullanma' in c for c in result.note_context)==total-expected
-    assert result.source_coverage_complete == (scope=='course' and total==expected)
+    assert sum('ekli orijinal sayfayı incele' in c for c in contexts)==expected
+    assert not any('bilgi kanıtı olarak kullanma' in c for c in contexts)
+    assert result.source_coverage_complete == (scope=='course' and not result.source_batches)
     assert session.exec.call_args_list[0].kwargs['params']['course']==23
 
 
@@ -199,6 +239,21 @@ def test_prompt_describes_actual_coverage_without_inventing_missing_sources(comp
     prompt=_prompt('Course','20 soru hazırla',result)
     assert ('bütün parçalar ve sayfalar' in prompt)==complete
     assert ('Ders kapsamı sınırlı temsili parçalardan oluşur' in prompt)==(not complete)
+
+
+def test_originals_include_every_page_of_a_multi_page_chunk(monkeypatch,session):
+    import app.academic_semantic_retrieval as current
+    candidate=list(row(1,'OCR reference'))
+    candidate[3:5]=[5,7]
+    monkeypatch.setattr(current,'_fts_rows',Mock(return_value=[tuple(candidate)]))
+    session.exec.side_effect=[Mock(all=Mock(return_value=[(1,5),(1,6),(1,7)])),
+        Mock(all=Mock(return_value=[(1,'private/source.pdf','application/pdf','fixture','v1')]))]
+    plan=StudyRequest('Explain alpha diagram','explain','topic',None,None,'',('alpha',),needs_visual=True)
+    result=retrieve_semantic_context(session,owner_user_id=17,course_id=23,
+        query=plan.resolved_query,request_plan=plan)
+    assert [item['page_number'] for item in result.visual_sources]==[5,6,7]
+    assert 'OCR reference' not in '\n'.join(result.note_context)
+    assert 'ekli orijinal sayfayı incele' in result.note_context[-1]
 
 
 @pytest.mark.parametrize('operation', ['explain', 'compare', 'teach', 'summarize'])
@@ -330,9 +385,56 @@ def test_gemini_active_task_follows_original_attachment_without_extra_call(monke
             return {'candidates':[{'content':{'parts':[{'text':'Answer'}]}}]}
         monkeypatch.setattr(provider,'_request_json',request)
     kwargs=dict(model='test',system_prompt='Grounded',history=[],prompt='CURRENT QUESTION',
-        attachments=[{'label':'source page','data':b'original','mime_type':'application/pdf'}])
+        attachments=[{'label':'source page','data':b'original','mime_type':'application/pdf',
+                      'media_resolution':'MEDIA_RESOLUTION_HIGH'}])
     answer=''.join(provider.generate_stream(**kwargs)) if streaming else provider.generate(**kwargs)
     assert answer=='Answer' and len(payloads)==1
     parts=payloads[0]['contents'][-1]['parts']
     assert parts[0]=={'text':'source page'} and 'inline_data' in parts[1]
     assert parts[-1]=={'text':'CURRENT QUESTION'}
+    assert parts[1]['media_resolution']=={'level':'MEDIA_RESOLUTION_HIGH'}
+
+
+def test_source_transcription_does_not_copy_corrupt_ocr_or_blank_page_placeholder():
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    result=RetrievalResult(note_context=['Orijinal sayfayı incele'],evidence_sufficient=True,
+        study_task={'operation':'answer','source_kind':'questions'},
+        attachments=[dict(material_id=7,page_number=4,data=b'original')],
+        ocr_reading_hints=[dict(material_id=7,page_start=4,page_end=4,text='FALSE_BLANK_PAGE_OCR')])
+    assert 'FALSE_BLANK_PAGE_OCR' not in _prompt('Course','Soruyu aynen aktar',result)
+
+
+def test_selected_original_transcription_does_not_recycle_previous_misreading():
+    from app.study_ai_v2 import _prompt
+    from app.study_retrieval_v2 import RetrievalResult
+    result=RetrievalResult(note_context=['Orijinal sayfa 3 ve 4'],
+        resolved_query='Orto.pdf sayfa 3 ve 4 içindeki soru 14 bütün şıklarıyla',
+        study_task={'source_kind':'questions','operation':'answer',
+                    'source_files':['Orto.pdf'],'source_pages':[3,4]})
+    prompt=_prompt('Orto','Aynen aktar',result,
+        [{'role':'ASSISTANT','content':'PREVIOUS-INCORRECT-TRANSCRIPTION'}])
+    assert 'PREVIOUS-INCORRECT-TRANSCRIPTION' not in prompt
+    assert result.resolved_query in prompt
+
+
+def test_gemini_stream_schema_is_call_local_and_does_not_leak(monkeypatch):
+    import json
+    from contextlib import nullcontext
+    import app.study_provider as transport
+    provider=transport.GeminiStudyProvider();provider.api_key='test-only'
+    payloads=[]
+    def http(request,**kwargs):
+        payloads.append(json.loads(request.data))
+        response=Mock(status=200,headers={})
+        response.__iter__=Mock(return_value=iter([b'data: {"candidates":[{"content":{"parts":[{"text":"Answer"}]},"finishReason":"STOP"}]}\n']))
+        return nullcontext(response)
+    monkeypatch.setattr(transport,'urlopen',http)
+    monkeypatch.setattr(transport,'router_target_available',lambda *a:True)
+    monkeypatch.setattr(transport,'provider_reservation',lambda *a:nullcontext())
+    monkeypatch.setattr(transport,'record_api_result',lambda **k:None)
+    args=dict(model='test',system_prompt='Test',history=[],prompt='Test')
+    list(provider.generate_stream(**args,response_schema={'type':'object'}))
+    list(provider.generate_stream(**args))
+    assert payloads[0]['generationConfig']['responseJsonSchema']=={'type':'object'}
+    assert 'responseJsonSchema' not in payloads[1]['generationConfig']
