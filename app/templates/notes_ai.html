@@ -50,10 +50,12 @@
                     <div class="study-chat-role">{{ 'Dental AI Akademik' if msg.role == 'ASSISTANT' else 'Sen' }}</div>
                     {% if msg.role == 'ASSISTANT' and msg.mode and msg.mode.endswith('_PDF') %}
                     <div class="study-chat-markdown">{{ 'İstediğin değişiklikler uygulanarak PDF güncellendi.' if msg.mode.endswith('_EDITED_PDF') else 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' if msg.mode.endswith('_LONG_PDF') else 'İstediğin PDF hazır.' }}</div>
-                    <a class="study-pdf-file" href="/notes/courses/{{ course.id }}/ai/messages/{{ msg.id }}/pdf" download>
+                    {% for file in (pdf_files|default({})).get(msg.id, [{'url':'/notes/courses/' ~ course.id ~ '/ai/messages/' ~ msg.id ~ '/pdf', 'name':course.title ~ '.pdf'}]) %}
+                    <a class="study-pdf-file" href="{{ file.url }}" download>
                         <span class="study-pdf-badge">PDF</span>
-                        <span>{{ course.title }}.pdf<small>PDF dosyasını indir</small></span>
+                        <span>{{ file.name }}<small>PDF dosyasını indir</small></span>
                     </a>
+                    {% endfor %}
                     {% else %}
                     <div class="study-chat-markdown">{{ msg.content }}</div>
                     {% endif %}
@@ -236,9 +238,13 @@
     document.querySelectorAll('.study-chat-markdown').forEach(el => { el.innerHTML = safeMarkdown(el.textContent); });
 
     function addPdfArtifact(article, artifact) {
+        if (Array.isArray(artifact?.files)) {
+            artifact.files.slice(0,16).forEach(file => addPdfArtifact(article, {...file, reason:artifact.reason}));
+            return;
+        }
         if (!artifact || artifact.type !== 'pdf' || typeof artifact.url !== 'string') return;
-        const expected = new RegExp('^/notes/courses/'+courseId+'/ai/messages/[1-9][0-9]*/pdf$');
-        if (!expected.test(artifact.url) || article.querySelector('.study-pdf-file')) return;
+        const expected = new RegExp('^/notes/courses/'+courseId+'/ai/messages/[1-9][0-9]*/pdf(?:\\?part=(?:[0-9]|1[0-5]))?$');
+        if (!expected.test(artifact.url) || [...article.querySelectorAll('.study-pdf-file')].some(link => link.getAttribute('href') === artifact.url)) return;
         const link = document.createElement('a');
         link.className='study-pdf-file'; link.href=artifact.url; link.download=artifact.name || 'ders-notlari.pdf';
         const badge=document.createElement('span'); badge.className='study-pdf-badge'; badge.textContent='PDF';
