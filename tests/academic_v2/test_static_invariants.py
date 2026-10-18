@@ -68,9 +68,10 @@ _stream_body = generation.split("def stream_rag_v2(", 1)[1]
 _stream_prefix = _stream_body.split("required_attachment_types =", 1)[0]
 assert "not retrieval.evidence_sufficient" in _stream_prefix
 assert "Şu an baktığım ders notlarında bu sorunun cevabını bulamadım" in _stream_prefix
-# A well-formed unsupported question needs an honest source gap, not a request
-# to restate the same question. Actual ambiguity is handled by the planner.
-assert "biraz daha açık yazar mısın" not in _stream_prefix
+# Clarifications now come from the validated interpretation/retrieval result;
+# the generator must return that message before selecting a provider.
+assert "if retrieval.clarification:" in _stream_prefix
+assert "yield retrieval.clarification" in _stream_prefix
 assert "_generation_targets()" not in _stream_prefix
 assert "Eksik başlıklar tamamlama görevi değildir" in generation
 assert "class EvidenceSufficiency" in retrieval
