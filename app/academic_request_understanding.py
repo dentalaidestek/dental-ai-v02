@@ -48,6 +48,17 @@ SCHEMA = {
         'export_previous_answer': {'type': 'boolean'},
         'append_previous_pdf': {'type': 'boolean'},
         'pdf_addition_turns': {'type': 'array', 'items': {'type': 'integer'}, 'maxItems': 8},
+        'pdf_base_turn': {'type': ['integer', 'null']},
+        'pdf_edits': {'type': 'array', 'maxItems': 8, 'items': {'type': 'object',
+            'properties': {
+                'action': {'type': 'string', 'enum': ['append', 'prepend', 'insert_before', 'insert_after', 'replace', 'delete']},
+                'target': {'type': 'string'},
+                'extent': {'type': 'string', 'enum': ['match', 'section']},
+                'source': {'type': 'string', 'enum': ['chat', 'literal', 'generate', 'none']},
+                'content': {'type': 'string'},
+                'turns': {'type': 'array', 'maxItems': 8, 'items': {'type': 'integer'}},
+            }, 'required': ['action', 'target', 'extent', 'source', 'content', 'turns'],
+            'additionalProperties': False}},
     },
     'required': ['resolved_query', 'retrieval_queries', 'operation', 'scope', 'count', 'difficulty', 'clarification', 'source_kind', 'depth', 'needs_visual', 'continue_source'],
     'additionalProperties': False,
@@ -57,6 +68,7 @@ SCHEMA['required'].append('output_format')
 SCHEMA['required'].extend(['source_files', 'source_pages', 'source_subjects', 'reuse_previous_source', 'complete_sections', 'each_document'])
 SCHEMA['required'].append('export_previous_answer')
 SCHEMA['required'].extend(['append_previous_pdf', 'pdf_addition_turns'])
+SCHEMA['required'].extend(['pdf_edits', 'pdf_base_turn'])
 SCHEMA['properties'].update({
     'exam_topics': {'type':'array','maxItems':32,'items':{'type':'string'}},
     'grade_previous_set': {'type':'boolean'},
@@ -66,19 +78,38 @@ SCHEMA['properties'].update({
     'show_quiz_answers': {'type':'boolean'},
 })
 SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics'])
-SYSTEM = '''append_previous_pdf is true when the current request asks to ADD already completed
-chat content (tables, explanations, mnemonics, etc.) to an earlier existing PDF,
-preserving that PDF's contents. For example "Bunları o PDF'ye ekle kral".
-Set output_format=pdf, operation=answer and export_previous_answer=false.
-pdf_addition_turns lists the zero-based indices of the ASSISTANT turns in recent_dialogue
-whose existing contents should be appended, in chronological order. Only select
-non-PDF assistant answers. Use [] only when the reference is the immediately
-preceding non-PDF assistant answer. The application combines the saved PDF and
-selected completed answers verbatim; no retrieval or new table generation is needed.
-If the user asks to create NEW tables/content rather than append existing content,
-append_previous_pdf=false and pdf_addition_turns=[]. For unrelated/text requests
-both append_previous_pdf=false and pdf_addition_turns=[]. Never treat adding to
-an existing PDF as exporting just the most recent answer into a standalone PDF.
+SYSTEM = '''PDF EDITING: When the user requests changes to an existing PDF, set
+output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
+Support insertion anywhere, deletion, replacement, rewriting a paragraph, table
+cells/rows, and adding new source-backed content. Preserve every unrequested part.
+pdf_edits is an ordered list, at most eight edits on the ORIGINAL document:
+action append/prepend has target="" and extent=match; insert_before/insert_after/
+replace/delete needs a UNIQUE exact target substring copied from the document.
+For a whole named Markdown section, target is its exact heading (including #)
+and extent=section; this includes its subordinate headings, stopping before the
+next heading of equal/higher level. Otherwise extent=match edits only that text.
+source=chat copies existing completed non-PDF ASSISTANT answers selected by zero-based
+turns indices; content="". source=literal uses content copied EXACTLY from the
+current user request, with turns=[]; do not invent factual text in the planner.
+source=generate, content="", turns=[] asks the existing notes-grounded answer model
+to create ONLY the requested replacement/insertion. resolved_query preserves ALL
+edit instructions, target locations, and their mapping to each edit; retrieval_queries
+and source_subjects describe the facts needed for generated content, not editing verbs.
+For deletion use source=none, content="", turns=[]. For purely mechanical edits,
+no note search is needed; use retrieval_queries=[] and source_subjects=[].
+The latest owned PDF text, when available, is source_outline.editable_pdf.content.
+pdf_base_turn=null selects this latest PDF. Only when explicitly referring to an
+earlier PDF visible in recent_dialogue, set pdf_base_turn to its is_pdf=true turn.
+Never guess a numeric page as a text position; if the requested location cannot be
+identified uniquely, operation=clarify, pdf_edits=[], pdf_base_turn=null.
+For non-edit requests pdf_edits=[], pdf_base_turn=null. When pdf_edits is nonempty,
+append_previous_pdf=false and pdf_addition_turns=[]. This is an editing request,
+not a new standalone answer or a regeneration of the entire PDF.
+append_previous_pdf and pdf_addition_turns are legacy compatibility fields.
+Always return false and [] for new requests; use pdf_edits for any insertion of
+already completed chat content, including "Bunları o PDF'ye ekle kral". With no
+position specified use action=append, source=chat, selecting the referenced turns.
+Never treat adding to an existing PDF as exporting only the latest answer.
 export_previous_answer is true ONLY when the current request asks to export
 the immediately preceding assistant answer as a PDF without changing its content.
 Set output_format=pdf and operation=answer. The application will copy that completed answer exactly;
@@ -265,6 +296,8 @@ class StudyRequest:
     export_previous_answer: bool = False
     append_previous_pdf: bool = False
     pdf_addition_turns: tuple[int, ...] = ()
+    pdf_edits: tuple[dict, ...] = ()
+    pdf_base_turn: int | None = None
     exam_topics: tuple[str, ...] = ()
     grade_previous_set: bool = False
     quiz_answers: tuple = ()
@@ -331,6 +364,8 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('export_previous_answer', False)
         data.setdefault('append_previous_pdf', False)
         data.setdefault('pdf_addition_turns', [])
+        data.setdefault('pdf_edits', [])
+        data.setdefault('pdf_base_turn', None)
         data.setdefault('exam_topics', [])
         data.setdefault('grade_previous_set', False)
         data.setdefault('quiz_answers', [])
@@ -356,6 +391,12 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
                 or data['grade_previous_set']))):
         raise PlannerContractError('invalid PDF append')
     data['pdf_addition_turns'] = tuple(sorted(turns))
+    from app.academic_pdf_revision import validate_edit_contract
+    try:
+        validate_edit_contract(data)
+    except ValueError as exc:
+        raise PlannerContractError('invalid PDF edits') from exc
+    data['pdf_edits'] = tuple(data['pdf_edits'])
     for name, limit in [('resolved_query', 8000), ('clarification', 1200)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text: ' + name + (' type' if not isinstance(data[name], str) else ' length/control'))
@@ -421,7 +462,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -454,6 +495,11 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', '')),
               **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
+    editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
+    if editable:
+        for index, turn in enumerate(turns):
+            if turn.get('is_pdf') and turn['content'] == editable['content']:
+                turn['content'] = '[Güncel PDF metni source_outline.editable_pdf.content alanında.]'
     # Put the active request last, after its historical context.
     from app.academic_direct_request import previous_source_request
     prompt = json.dumps({'source_outline': source_outline or {'sections': [], 'complete': False},
@@ -531,7 +577,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     return interpret_request(question, history, call=call, source_outline=source_outline, provider_name=target.provider)
 
 
-def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, **kwargs):
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, pdf_snapshot=None, **kwargs):
     """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
@@ -555,7 +601,23 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if getattr(plan, 'append_previous_pdf', False):
+    if getattr(plan, 'pdf_edits', ()):
+        from app.academic_pdf_revision import prepare_pdf_revision
+        result = prepare_pdf_revision(session, message_model=message_model, plan=plan,
+            owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
+            history=kwargs.get('recent_history') or [], query=kwargs.get('query', ''), snapshot=pdf_snapshot)
+        if getattr(result, 'pdf_revision', None):
+            from dataclasses import replace
+            revision = result.pdf_revision
+            content_plan = replace(plan, pdf_edits=(), pdf_base_turn=None, output_format='text')
+            if plan.operation != 'clarify' and plan.scope == 'course':
+                from app.academic_source_batches import retrieve_source_batches
+                result = retrieve_source_batches(session, request_plan=content_plan, **kwargs)
+            else:
+                result = retrieve_semantic_context(session, request_plan=content_plan,
+                    prefer_full_context=not bool(plan.source_subjects), query_embedding=query_embedding, **kwargs)
+            result.pdf_revision = revision
+    elif getattr(plan, 'append_previous_pdf', False):
         from app.academic_pdf_revision import append_saved_pdf
         result = append_saved_pdf(session, message_model=message_model, plan=plan,
             owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
