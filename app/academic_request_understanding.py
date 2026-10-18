@@ -77,8 +77,12 @@ SCHEMA['properties'].update({
         'required':['number','choice'],'additionalProperties':False}},
     'show_quiz_answers': {'type':'boolean'},
     'reveal_previous_key': {'type':'boolean'},
+    'quiz_key_corrections': {'type':'array','maxItems':200,'items':{'type':'object',
+        'properties':{'number':{'type':'integer'},'choice':{'type':'string','enum':list('ABCDE')},
+                      'rationale':{'type':'string'}},
+        'required':['number','choice','rationale'],'additionalProperties':False}},
 })
-SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics','reveal_previous_key'])
+SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics','reveal_previous_key','quiz_key_corrections'])
 SYSTEM = '''PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
 Support insertion anywhere, deletion, replacement, rewriting a paragraph, table
@@ -232,8 +236,16 @@ request or a request to restart from the beginning.
 When the user asks for the answers/key/explanations of the most recent assistant-generated
 set (including a short follow-up), use reveal_previous_key=true, operation=answer,
 source_kind=notes, scope=topic, retrieval_queries=[], source_subjects=[], needs_visual=false.
-The server already holds the model's verified correct choices, explanations and sources;
-do not plan a new source search or regenerate that set. This flag is ONLY for the most
+recent_quiz contains the latest server-restored quiz, including its saved key and rationale.
+Before revealing it, compare EACH correct letter against its actual A-E option and the
+saved rationale. The saved letter is not proof of correctness. In statement questions,
+map the true I/II/III combination to the actual option letter. If a saved letter or
+rationale contradicts the question or its own explanation, put ONLY those corrections
+in quiz_key_corrections (number, choice, clean source-supported rationale). Do not
+repeat confused drafting notes or invent new facts. Use [] when all entries agree.
+Use this route only when recent_quiz is present and this consistency review is possible;
+otherwise use source-grounded solve. No additional review call is needed: do it here.
+Do not plan a new source search or regenerate that set. This flag is ONLY for the most
 recent generated set, never an older set, selected questions or a request to independently
 recheck/challenge a key. For those requests use normal source-grounded solve.
 Solving or grading questions that the assistant just generated refers to the
@@ -315,6 +327,7 @@ class StudyRequest:
     quiz_answers: tuple = ()
     show_quiz_answers: bool = False
     reveal_previous_key: bool = False
+    quiz_key_corrections: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -384,6 +397,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('quiz_answers', [])
         data.setdefault('show_quiz_answers', False)
         data.setdefault('reveal_previous_key', False)
+        data.setdefault('quiz_key_corrections', [])
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -416,6 +430,16 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             raise PlannerContractError('invalid planner text: ' + name + (' type' if not isinstance(data[name], str) else ' length/control'))
     if any(type(data[name]) is not bool for name in ('grade_previous_set','show_quiz_answers','reveal_previous_key')):
         raise PlannerContractError('invalid quiz flags')
+    corrections = data['quiz_key_corrections']
+    if (not isinstance(corrections, list) or len(corrections) > 200 or any(
+            not isinstance(item, dict) or set(item) != {'number','choice','rationale'}
+            or type(item['number']) is not int or not 1 <= item['number'] <= 200
+            or item['choice'] not in list('ABCDE') or not isinstance(item['rationale'], str)
+            or not item['rationale'].strip() or len(item['rationale']) > 4000
+            for item in corrections) or len({item['number'] for item in corrections}) != len(corrections)
+            or (corrections and not data['reveal_previous_key'])):
+        raise PlannerContractError('invalid quiz key corrections')
+    data['quiz_key_corrections'] = tuple(corrections)
     if data['reveal_previous_key']:
         if (data['operation'] != 'answer' or data['source_kind'] != 'notes'
                 or data['grade_previous_set'] or data['export_previous_answer']
@@ -520,6 +544,16 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
               **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
+    recent_quiz = None
+    from app.academic_question_output import question_blocks
+    for index in range(len(turns)-1, -1, -1):
+        if turns[index]['role'].upper() == 'ASSISTANT' and question_blocks(turns[index]['content']):
+            recent_quiz = (history or [])[-8:][index].get('quiz')
+            if recent_quiz:
+                # Exact questions/options remain available, without duplicating
+                # the entire quiz in both dialogue and structured metadata.
+                turns[index]['content'] = '[Son soru setinin tam içeriği recent_quiz alanında.]'
+            break
     if editable:
         for index, turn in enumerate(turns):
             if turn.get('is_pdf') and turn['content'] == editable['content']:
@@ -528,7 +562,8 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     from app.academic_direct_request import previous_source_request
     prompt = json.dumps({'source_outline': source_outline or {'sections': [], 'complete': False},
                          'recent_source_request': previous_source_request(history),
-                         'recent_dialogue': turns, 'request': question}, ensure_ascii=False)
+                         'recent_dialogue': turns, 'recent_quiz': recent_quiz,
+                         'request': question}, ensure_ascii=False)
     if len(prompt.encode('utf-8')) > PLANNER_INPUT_MAX_BYTES:
         return UnderstandingResult(outcome='input_budget', trace_id=trace_id)
     try:
@@ -650,7 +685,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_quiz import previous_quiz_key
         result = RetrievalResult(resolved_query=plan.resolved_query,
             retrieval_mode='generated_quiz_key', evidence_sufficient=True,
-            prepared_answer=previous_quiz_key(kwargs.get('recent_history')))
+            prepared_answer=previous_quiz_key(kwargs.get('recent_history'), plan.quiz_key_corrections))
     elif plan.grade_previous_set:
         from app.academic_quiz import grade_previous_quiz
         result = RetrievalResult(resolved_query=plan.resolved_query,
