@@ -27,6 +27,21 @@ def test_long_pdf_paginates_without_omitting_last_table_row():
     assert 'Soru 1' in text and 'Soru 150' in text
 
 
+def test_exam_questions_and_their_options_stay_together_when_they_fit():
+    questions='\n\n'.join(
+        f'### Soru {n}\nKonu {n}\n'+'\n\n'.join(
+            f'{label} {n} numaralı sorunun açıklaması ve karşılaştırma bilgisi.'
+            for label in ['I.', 'II.', 'III.', 'A)', 'B)', 'C)', 'D)', 'E)'])
+        for n in range(1,11))
+    reader=PdfReader(BytesIO(render_pdf('Öncüllü sınav soruları',questions)))
+    pages=[page.extract_text() for page in reader.pages]
+    assert len(pages)>1
+    for number in range(1,11):
+        containing=[text for text in pages if f'Soru {number}\n' in text]
+        assert len(containing)==1
+        assert f'E) {number} numaralı sorunun' in containing[0]
+
+
 @pytest.mark.parametrize('body', ['', 'x'*240001, '<!--ACADEMIC_SOURCE_REQUEST:abc-->'])
 def test_invalid_pdf_content_never_advertises_a_file(body):
     with pytest.raises(AcademicPDFError): render_pdf('Not',body)
