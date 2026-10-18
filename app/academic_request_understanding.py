@@ -432,6 +432,13 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         raise PlannerContractError('invalid operation/scope')
     if data['output_format'] not in ('text', 'pdf'):
         raise PlannerContractError('invalid output format')
+    if isinstance(data['pdf_tools'], str):
+        if len(data['pdf_tools']) > 120000:
+            raise PlannerContractError('PDF tool contract too large')
+        try:
+            data['pdf_tools'] = json.loads(data['pdf_tools']) if data['pdf_tools'].strip() else None
+        except ValueError:
+            raise PlannerContractError('invalid encoded PDF tool contract') from None
     if data['pdf_tools'] is not None:
         from app.academic_pdf_tools import validate_tools
         try:

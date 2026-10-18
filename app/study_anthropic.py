@@ -23,6 +23,17 @@ logger = logging.getLogger('uvicorn.error.study_anthropic')
 def _output_schema(schema):
     """Adapt transport constraints; the planner still validates its full contract."""
     schema = deepcopy(schema)
+    # Keep the existing planner grammar small. Nested nullable page/form plans
+    # add many grammar states to an already wide academic request contract.
+    # Only the transport encodes this field; parse_request validates the full
+    # decoded tool plan before any file or database operation is performed.
+    properties = schema.get('properties', {})
+    if 'pdf_tools' in properties:
+        tool_schema = properties['pdf_tools']
+        properties['pdf_tools'] = {'type': 'string', 'description':
+            'For no mechanical PDF operation return an empty string. Otherwise return '
+            'a JSON-encoded object matching this schema, not prose: ' +
+            json.dumps(tool_schema, ensure_ascii=False, separators=(',', ':'))}
     def visit(node):
         if not isinstance(node, dict):
             return
@@ -205,7 +216,13 @@ class AnthropicStudyProvider(StudyProvider):
         except urllib.error.HTTPError as exc:
             code, headers = exc.code, exc.headers
             # Raw provider errors may contain source/user text. Never log them.
-            logger.warning('Academic upstream failure provider=anthropic code=%s', code)
+            body = exc.read(16384).decode('utf-8', errors='replace').lower()
+            reason = ('schema_complexity' if 'schema' in body and any(
+                word in body for word in ('complex', 'compil', 'nesting')) else
+                'schema_argument' if 'schema' in body else
+                'billing' if any(word in body for word in ('credit balance', 'billing')) else
+                'request_argument')
+            logger.warning('Academic upstream failure provider=anthropic code=%s reason=%s', code, reason)
             raise StudyProviderError('Akademik AI sağlayıcı isteği başarısız oldu.',
                 code=code, retryable=code in self.RETRYABLE_HTTP_CODES, tracked=True) from exc
         except StudyProviderError as exc:
