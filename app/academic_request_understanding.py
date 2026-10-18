@@ -255,6 +255,8 @@ question numbers the user means. An entire generated set is NOT an entire course
 Use topic scope and its actual subjects, never course scope merely to grade all questions.
 grade_previous_set=true ONLY when the user submits choices to grade the most recent
 assistant-generated question set. operation=solve, source_kind=notes, needs_visual=false.
+Perform the same recent_quiz option/letter/rationale consistency review before grading;
+quiz_key_corrections may accompany grade_previous_set as well as reveal_previous_key.
 quiz_answers contains the submitted numbered A–E choices (unnumbered sequences start
 at question 1). Do not invent missing choices. The server grades using the stored key;
 no source scan is required. For all other requests grade_previous_set=false and quiz_answers=[].
@@ -437,7 +439,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or item['choice'] not in list('ABCDE') or not isinstance(item['rationale'], str)
             or not item['rationale'].strip() or len(item['rationale']) > 4000
             for item in corrections) or len({item['number'] for item in corrections}) != len(corrections)
-            or (corrections and not data['reveal_previous_key'])):
+            or (corrections and not (data['reveal_previous_key'] or data['grade_previous_set']))):
         raise PlannerContractError('invalid quiz key corrections')
     data['quiz_key_corrections'] = tuple(corrections)
     if data['reveal_previous_key']:
@@ -690,7 +692,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_quiz import grade_previous_quiz
         result = RetrievalResult(resolved_query=plan.resolved_query,
             retrieval_mode='generated_quiz_grade', evidence_sufficient=True,
-            prepared_answer=grade_previous_quiz(kwargs.get('recent_history'),plan.quiz_answers))
+            prepared_answer=grade_previous_quiz(kwargs.get('recent_history'),plan.quiz_answers,plan.quiz_key_corrections))
     elif plan.operation != 'clarify' and plan.export_previous_answer:
         previous = next((str(item.get('content') or '') for item in
             reversed(kwargs.get('recent_history') or [])

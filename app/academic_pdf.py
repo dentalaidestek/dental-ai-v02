@@ -92,7 +92,7 @@ def _render(title, answer):
     from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, KeepTogether
     _fonts()
     styles = {
         'body': ParagraphStyle('body', fontName='DentalSans', fontSize=10, leading=15, spaceAfter=7,
@@ -156,6 +156,24 @@ def _render(title, answer):
             story.append(Paragraph(_inline(re.sub(r'^[-*•]\s+','',line)),styles['bullet'],bulletText='•'))
         else:
             story.append(Paragraph(_inline(line),styles['body']))
+    # Keep an exam question and its options on one page when they fit. An
+    # oversized block may still split normally instead of failing the export.
+    grouped=[]
+    question=[]
+    for item in story:
+        plain=item.getPlainText().strip() if isinstance(item,Paragraph) else ''
+        starts_question=bool(re.fullmatch(r'Soru\s+\d+\s*[:.)-]?',plain,re.I))
+        ends_question=plain.casefold()=='cevap anahtarı'
+        if (starts_question or ends_question) and question:
+            grouped.append(KeepTogether(question))
+            question=[]
+        if starts_question or (question and not ends_question):
+            question.append(item)
+        else:
+            grouped.append(item)
+    if question:
+        grouped.append(KeepTogether(question))
+    story=grouped
     def footer(canvas, doc):
         canvas.saveState()
         canvas.setFont('DentalSans',8)

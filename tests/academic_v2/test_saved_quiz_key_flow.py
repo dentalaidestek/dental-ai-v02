@@ -166,3 +166,16 @@ def test_key_review_cannot_address_a_question_outside_the_latest_set():
     answer=previous_quiz_key(history,[{'number':2,'choice':'A','rationale':'Wrong set'}])
     assert 'eşleşmedi' in answer and '**1.' not in answer
 
+
+def test_grading_uses_the_same_model_reviewed_key_as_key_display():
+    saved=quiz();saved['questions'][0]['correct']='B'
+    history=[{'role':'ASSISTANT','content':render_quiz(saved),'quiz':saved}]
+    correction={'number':1,'choice':'C','rationale':'I ve II doğru; seçenek C.'}
+    plan=parse_request(plan_json(reveal_previous_key=False,grade_previous_set=True,
+        operation='solve',quiz_answers=[{'number':1,'choice':'C'}],
+        quiz_key_corrections=[correction]))
+    result=retrieve_understood_course_context(Mock(),understanding=UnderstandingResult(plan=plan),
+        recent_history=history,owner_user_id=1,course_id=6)
+    assert '1 doğru, 0 yanlış' in result.prepared_answer
+    assert saved['questions'][0]['correct']=='B'
+
