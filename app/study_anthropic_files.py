@@ -139,7 +139,7 @@ class ClaudeFiles:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise StudyProviderError('PDF işleminin süresi doldu.')
-                payload = {'model': model, 'max_tokens': 8192, 'system': SYSTEM if output_format=='pdf' else INSPECT_SYSTEM,
+                payload = {'model': model, 'max_tokens': 16384, 'system': SYSTEM if output_format=='pdf' else INSPECT_SYSTEM,
                     'messages': messages, 'container': container,
                     'tools': [{'type': 'code_execution_20260521', 'name': 'code_execution'}]}
                 started = time.monotonic()
@@ -227,6 +227,9 @@ class ClaudeFiles:
 
 
 SYSTEM = '''Create/edit downloadable PDFs using the provided PDF skill and code execution.
+Keep full extracted source text in sandbox files. Inspect all relevant pages but
+print only concise targeted findings from tools, never repeated complete documents
+or binary/base64 data. Reserve the response budget for completing and verifying files.
 The server's top-level virtual_documents are reconstruction plans for legacy PDFs.
 Build each selected virtual document in this sandbox from its referenced source_N
 uploads and selected output segments (page order/exclusions/rotation/form values),
@@ -268,6 +271,11 @@ Answer the user's question as text. Do not create or advertise a new PDF.
 Actually read the uploaded files with code execution before answering. Never claim
 that a supplied generated PDF is inaccessible merely because it came from the chat.
 Use the skill guidance once and read files programmatically; do not retype full text.
+Keep complete extracted text in sandbox files; inspect every relevant page there.
+Do not dump complete documents, repeated page text or binary/base64 into tool output.
+Print only concise per-page headings and targeted comparisons needed for the answer.
+Unless asked for an exhaustive report, group related findings into a concise coverage
+report rather than repeating the source text. Do not sacrifice source coverage.
 For coverage questions compare the complete generated document against all supplied
 source documents, identify covered/partial/missing headings, and cite human filenames
 and page numbers. Distinguish verified omissions from unreadable or absent sources.
