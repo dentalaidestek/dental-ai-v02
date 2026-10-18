@@ -76,8 +76,9 @@ SCHEMA['properties'].update({
         'properties':{'number':{'type':'integer'},'choice':{'type':'string','enum':list('ABCDE')}},
         'required':['number','choice'],'additionalProperties':False}},
     'show_quiz_answers': {'type':'boolean'},
+    'reveal_previous_key': {'type':'boolean'},
 })
-SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics'])
+SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics','reveal_previous_key'])
 SYSTEM = '''PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
 Support insertion anywhere, deletion, replacement, rewriting a paragraph, table
@@ -190,8 +191,12 @@ Use course scope only when the user requests the whole uploaded course/notes,
 all topics or a new source-wide study task. A named topic remains topic scope
 unless the user explicitly asks for course-wide selection. 'Detailed' alone
 never means whole course. All topic qualifiers stay in resolved_query.
-For generate_questions include count/difficulty/format in resolved_query and
-put count/difficulty in their fields too. For course scope use an explicit
+For generate_questions include count/difficulty/format in resolved_query.
+Preserve every requested constraint, including statement structure, topic diversity,
+subtopic coverage and hidden answers. A correction of the previous set keeps the
+original active request's other constraints; restate the entire corrected task,
+not only the newest complaint. Choose these semantics yourself from the dialogue.
+Put count/difficulty in their fields too. For course scope use an explicit
 'Tüm ders notlarından ...' restatement. For topic tasks use a direct request
 such as '<qualified subjects> hakkında ...'. If count is absent use null,
 not an invented default. Teach means preparing/explaining a lesson, not merely
@@ -224,6 +229,13 @@ A source table that can be answered from indexed text also needs no image.
 These fields control source retrieval directly. continue_source is true only
 for continuing the previously paginated SOURCE question list, never for a fresh
 request or a request to restart from the beginning.
+When the user asks for the answers/key/explanations of the most recent assistant-generated
+set (including a short follow-up), use reveal_previous_key=true, operation=answer,
+source_kind=notes, scope=topic, retrieval_queries=[], source_subjects=[], needs_visual=false.
+The server already holds the model's verified correct choices, explanations and sources;
+do not plan a new source search or regenerate that set. This flag is ONLY for the most
+recent generated set, never an older set, selected questions or a request to independently
+recheck/challenge a key. For those requests use normal source-grounded solve.
 Solving or grading questions that the assistant just generated refers to the
 conversation's question set, NOT the uploaded question index. Use solve + notes
 and restate the referenced questions' subjects/searches; preserve which set and
@@ -302,6 +314,7 @@ class StudyRequest:
     grade_previous_set: bool = False
     quiz_answers: tuple = ()
     show_quiz_answers: bool = False
+    reveal_previous_key: bool = False
 
 
 @dataclass(frozen=True)
@@ -370,6 +383,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('grade_previous_set', False)
         data.setdefault('quiz_answers', [])
         data.setdefault('show_quiz_answers', False)
+        data.setdefault('reveal_previous_key', False)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -400,8 +414,18 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     for name, limit in [('resolved_query', 8000), ('clarification', 1200)]:
         if not isinstance(data[name], str) or len(data[name]) > limit or '\x00' in data[name]:
             raise PlannerContractError('invalid planner text: ' + name + (' type' if not isinstance(data[name], str) else ' length/control'))
-    if type(data['grade_previous_set']) is not bool or type(data['show_quiz_answers']) is not bool:
+    if any(type(data[name]) is not bool for name in ('grade_previous_set','show_quiz_answers','reveal_previous_key')):
         raise PlannerContractError('invalid quiz flags')
+    if data['reveal_previous_key']:
+        if (data['operation'] != 'answer' or data['source_kind'] != 'notes'
+                or data['grade_previous_set'] or data['export_previous_answer']
+                or data['append_previous_pdf'] or data['pdf_edits']):
+            raise PlannerContractError('invalid answer key request')
+        # These fields are unused for a saved-key read. No source/embedding work.
+        data['retrieval_queries'] = []
+        data['source_subjects'] = []
+        data['source_sections'] = []
+        data['reuse_previous_source'] = False
     answers=data['quiz_answers']
     if (not isinstance(answers,list) or len(answers)>200 or any(
             not isinstance(a,dict) or set(a)!={'number','choice'} or type(a['number']) is not int
@@ -462,7 +486,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -622,6 +646,11 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         result = append_saved_pdf(session, message_model=message_model, plan=plan,
             owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
             history=kwargs.get('recent_history') or [])
+    elif plan.reveal_previous_key:
+        from app.academic_quiz import previous_quiz_key
+        result = RetrievalResult(resolved_query=plan.resolved_query,
+            retrieval_mode='generated_quiz_key', evidence_sufficient=True,
+            prepared_answer=previous_quiz_key(kwargs.get('recent_history')))
     elif plan.grade_previous_set:
         from app.academic_quiz import grade_previous_quiz
         result = RetrievalResult(resolved_query=plan.resolved_query,
