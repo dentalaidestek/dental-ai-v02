@@ -127,6 +127,8 @@ def begin_account_erasure(
     # payment/dispute references. Courses can be removed after material jobs hold
     # the deletion references they need.
     for msg in session.exec(select(StudyChatMessage).where(StudyChatMessage.owner_user_id == user_id)).all():
+        from app.academic_remote_pdf import queue_erasure
+        queue_erasure(session,msg)
         session.delete(msg)
     for course in session.exec(select(StudyCourse).where(StudyCourse.owner_user_id == user_id)).all():
         session.delete(course)
