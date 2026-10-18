@@ -98,7 +98,7 @@ def restore_quizzes(history, rows, versions):
             continue
 
 
-def previous_quiz_key(history):
+def previous_quiz_key(history, corrections=()):
     """Display the model's saved key; never infer answers or select an older set."""
     for item in reversed(history or []):
         if str(item.get('role', '')).upper() != 'ASSISTANT':
@@ -110,9 +110,16 @@ def previous_quiz_key(history):
         quiz = None
     if not quiz:
         return 'Bu son soru setinin doğrulanmış cevap anahtarı kayıtlı değil. Kaynaklarıyla yeniden doğrulanmadan cevap anahtarı gösterilemiyor.'
+    questions = [dict(question) for question in quiz['questions']]
+    if any(not 1 <= item['number'] <= len(questions) for item in corrections):
+        return 'Cevap anahtarı kontrolü son soru setiyle eşleşmedi. Yanıt hazırlanamadı.'
+    for item in corrections:
+        question = questions[item['number']-1]
+        question['correct'] = item['choice']
+        question['rationale'] = item['rationale']
     return '### Cevap anahtarı\n\n' + '\n\n'.join(
         f"**{number}. {question['correct']}** — {question['rationale']} ({question['source']})"
-        for number, question in enumerate(quiz['questions'], 1))
+        for number, question in enumerate(questions, 1))
 
 
 def grade_previous_quiz(history, answers):
