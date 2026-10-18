@@ -126,7 +126,10 @@ def _generation_history(retrieval: RetrievalResult, history: list[dict] | None) 
     # in _prompt, never as provider-role examples or factual note evidence.
     # Filtering by operation erased the referent of "these" for explanation,
     # summary and teaching follow-ups even when retrieval found every source.
-    return list(history or [])[-8:]
+    from app.academic_pdf_tools import is_recipe,describe_recipe
+    return [{**item,'content':describe_recipe(item['content'])}
+        if str(item.get('role','')).upper()=='ASSISTANT' and is_recipe(item.get('content')) else item
+        for item in list(history or [])[-8:]]
 
 
 def _prompt(course_title: str, question: str, retrieval: RetrievalResult, history: list[dict] | None = None) -> str:
@@ -594,7 +597,7 @@ def stream_rag_v2(
         retrieval.study_task['pdf_revision_applied'] = True
         yield answer
         return
-    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade', 'generated_quiz_key'} and retrieval.prepared_answer:
+    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade', 'generated_quiz_key', 'pdf_tool_text', 'pdf_tool_document'} and retrieval.prepared_answer:
         logger.info('Academic flow trace=%s stage=response origin=%s', trace_id, retrieval.retrieval_mode)
         yield retrieval.prepared_answer
         return

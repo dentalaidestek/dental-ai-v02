@@ -83,8 +83,31 @@ SCHEMA['properties'].update({
         'required':['number','choice','rationale'],'additionalProperties':False}},
 })
 SCHEMA['required'].extend(['grade_previous_set','quiz_answers','show_quiz_answers','exam_topics','reveal_previous_key','quiz_key_corrections'])
+from app.academic_pdf_tools import TOOL_SCHEMA
+SCHEMA['properties']['pdf_tools'] = TOOL_SCHEMA
+SCHEMA['required'].append('pdf_tools')
 SYSTEM = '''PDF EDITING: When the user requests changes to an existing PDF, set
 output_format=pdf, operation=answer, export_previous_answer=false and pdf_edits.
+For MECHANICAL PDF file operations instead use pdf_tools, operation=answer, no
+pdf_edits, no note searches. Select sources from owned generated PDFs or uploaded
+PDF filenames in source_outline. generated + turn=null selects the latest PDF;
+otherwise turn is its zero-based recent_dialogue index. Uploaded sources use the
+EXACT filename and turn=null. part selects a zero-based output of a previously
+split PDF (normally 0). Never invent database ids, URLs or filesystem paths.
+action=inspect lists page count and actual form field names, outputs=[].
+action=extract_text returns original selectable text without rewriting it;
+outputs=[] means all pages. action=transform creates PDF outputs, output_format=pdf;
+inspect/extract_text use output_format=text. Every output has a name, segments and
+fields. Each segment selects a source index, page numbers in the requested order,
+excluded page numbers, and clockwise rotation (0/90/180/270). pages=[] selects all;
+negative page numbers count from the end (-1 is last). Page selection, removal,
+reordering, rotation and merging use segments; splitting uses multiple outputs.
+Do not generate academic text for these operations. Preserve figures/layout.
+Fill interactive forms using exact field names (inspect first if unknown) and
+values copied from the current request, not invented facts; /Yes and /Off are
+checkbox states. Do not sign a digital signature. Use pdf_tools=null for other tasks.
+Text-content revisions use pdf_edits only for editable_pdf.kind=text. A page-based
+PDF (kind=pages) supports page/form tools; do not edit its internal recipe as text.
 Support insertion anywhere, deletion, replacement, rewriting a paragraph, table
 cells/rows, and adding new source-backed content. Preserve every unrequested part.
 pdf_edits is an ordered list, at most eight edits on the ORIGINAL document:
@@ -330,6 +353,7 @@ class StudyRequest:
     show_quiz_answers: bool = False
     reveal_previous_key: bool = False
     quiz_key_corrections: tuple[dict, ...] = ()
+    pdf_tools: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -400,6 +424,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         data.setdefault('show_quiz_answers', False)
         data.setdefault('reveal_previous_key', False)
         data.setdefault('quiz_key_corrections', [])
+        data.setdefault('pdf_tools', None)
     if not isinstance(data, dict) or set(data) != set(SCHEMA['required']):
         raise PlannerContractError('invalid planner schema')
     if (not isinstance(data['operation'], str) or not isinstance(data['scope'], str)
@@ -407,6 +432,21 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
         raise PlannerContractError('invalid operation/scope')
     if data['output_format'] not in ('text', 'pdf'):
         raise PlannerContractError('invalid output format')
+    if data['pdf_tools'] is not None:
+        from app.academic_pdf_tools import validate_tools
+        try:
+            validate_tools(data['pdf_tools'])
+        except ValueError:
+            raise PlannerContractError('invalid PDF tool contract') from None
+        expected='pdf' if data['pdf_tools']['action']=='transform' else 'text'
+        if (data['operation']!='answer' or data['output_format']!=expected
+            or data['pdf_edits'] or data['append_previous_pdf'] or data['export_previous_answer']
+            or data['grade_previous_set'] or data['reveal_previous_key'] or data['quiz_key_corrections']):
+            raise PlannerContractError('incompatible PDF tool request')
+        data['retrieval_queries']=[]
+        data['source_subjects']=[]
+        data['source_sections']=[]
+        data['reuse_previous_source']=False
     if (type(data['export_previous_answer']) is not bool or
             (data['export_previous_answer'] and (data['output_format'] != 'pdf' or data['operation'] != 'answer'))):
         raise PlannerContractError('invalid previous answer export')
@@ -512,7 +552,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not data['pdf_tools'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -560,6 +600,10 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
         for index, turn in enumerate(turns):
             if turn.get('is_pdf') and turn['content'] == editable['content']:
                 turn['content'] = '[Güncel PDF metni source_outline.editable_pdf.content alanında.]'
+    from app.academic_pdf_tools import is_recipe,describe_recipe
+    for turn in turns:
+        if turn['role'].upper()=='ASSISTANT' and is_recipe(turn['content']):
+            turn['content']=describe_recipe(turn['content'])
     # Put the active request last, after its historical context.
     from app.academic_direct_request import previous_source_request
     prompt = json.dumps({'source_outline': source_outline or {'sections': [], 'complete': False},
@@ -638,7 +682,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     return interpret_request(question, history, call=call, source_outline=source_outline, provider_name=target.provider)
 
 
-def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, pdf_snapshot=None, **kwargs):
+def retrieve_understood_course_context(session, *, understanding: UnderstandingResult, query_embedding=None, message_model=None, material_model=None, pdf_title='Ders notları', pdf_snapshot=None, **kwargs):
     """Every chat request needs a validated plan; never fall back after planner failure."""
     from app.study_retrieval_v2 import RetrievalResult
     from app.academic_semantic_retrieval import retrieve_semantic_context
@@ -662,7 +706,12 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
             retrieval_mode='interpretation_unavailable', clarification=message,
             semantic_planner_attempted=True, semantic_trace_id=understanding.trace_id)
     plan = understanding.plan
-    if getattr(plan, 'pdf_edits', ()):
+    if plan.pdf_tools:
+        from app.academic_pdf_tools import prepare_operations
+        result=prepare_operations(session,message_model=message_model,material_model=material_model,
+            plan=plan,owner_user_id=kwargs['owner_user_id'],course_id=kwargs['course_id'],
+            history=kwargs.get('recent_history') or [],query=kwargs.get('query',''),title=pdf_title)
+    elif getattr(plan, 'pdf_edits', ()):
         from app.academic_pdf_revision import prepare_pdf_revision
         result = prepare_pdf_revision(session, message_model=message_model, plan=plan,
             owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
@@ -697,6 +746,9 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         previous = next((str(item.get('content') or '') for item in
             reversed(kwargs.get('recent_history') or [])
             if str(item.get('role','')).upper() == 'ASSISTANT' and str(item.get('content') or '').strip()), '')
+        from app.academic_pdf_tools import is_recipe
+        if is_recipe(previous):
+            previous=''
         result = RetrievalResult(resolved_query=plan.resolved_query,
             retrieval_mode='previous_answer_pdf', prepared_answer=previous,
             evidence_sufficient=bool(previous),

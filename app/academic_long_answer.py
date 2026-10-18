@@ -20,7 +20,8 @@ def _without_repeated_tail(previous, following):
 
 
 def automatic_pdf(answer, retrieval):
-    if (getattr(retrieval, 'study_task', None) or {}).get('pdf_revision_applied'):
+    task = getattr(retrieval, 'study_task', None) or {}
+    if task.get('pdf_revision_applied') or task.get('pdf_tool_validated'):
         return False
     return bool(retrieval.evidence_sufficient and (
         (getattr(retrieval, 'study_task', None) or {}).get('auto_pdf') or len(answer) >= AUTO_PDF_CHARS))
