@@ -4475,6 +4475,8 @@ def delete_study_course(request: Request, course_id: int):
             )
             s.delete(material)
         for message in messages:
+            from app.academic_remote_pdf import queue_erasure
+            queue_erasure(s,message)
             s.delete(message)
         delete_course_rag_index(s, owner_user_id=user.id, course_id=course_id)
         s.delete(course)
@@ -4849,7 +4851,8 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
             "messages": messages[-40:],
             "pdf_files": {msg.id: output_files(
                 msg.content, course_id, msg.id) for msg in messages[-40:]
-                if msg.role == 'ASSISTANT' and msg.content.startswith('<!--ACADEMIC_PDF_TOOL_V1-->')},
+                if msg.role == 'ASSISTANT' and (msg.content.startswith('<!--ACADEMIC_PDF_TOOL_V1-->')
+                    or msg.content.startswith('<!--ACADEMIC_REMOTE_PDF_V1-->'))},
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
             "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
@@ -4876,8 +4879,18 @@ def study_answer_pdf(request: Request, course_id: int, message_id: int, part: in
         title, content = course.title, answer.content
     download_title = title
     try:
+        from app.academic_remote_pdf import is_remote,manifest,read,check_dependencies
         from app.academic_pdf_tools import is_recipe, render_owned_recipe, recipe_data
-        if is_recipe(content):
+        if is_remote(content):
+            files=manifest(content,user.id,course_id)['files']
+            if not 0<=part<len(files):
+                return HTMLResponse('PDF çıktısı bulunamadı.',status_code=404)
+            download_title=files[part]['name']
+            with Session(engine,expire_on_commit=False) as dependency_session:
+                check_dependencies(dependency_session,content,owner=user.id,course=course_id,
+                    message_model=StudyChatMessage,material_model=StudyMaterial)
+            data=read(content,owner=user.id,course=course_id,part=part)
+        elif is_recipe(content):
             outputs = recipe_data(content)['outputs']
             if not 0 <= part < len(outputs):
                 return HTMLResponse('PDF çıktısı bulunamadı.', status_code=404)
@@ -4905,6 +4918,21 @@ def _prepare_study_pdf(course_title, answer, understanding, retrieval):
         return False
     if retrieval.study_task.get('pdf_tool_validated'):
         # The owned PDF tool already rendered and verified every output.
+        return True
+    from app.academic_remote_pdf import enabled,generate
+    if enabled():
+        context=retrieval.study_task.get('remote_context')
+        factory=retrieval.study_task.get('remote_session_factory')
+        if not context or factory is None:
+            raise StudyAIError('PDF erişim bağlamı doğrulanamadı.')
+        from app.academic_long_answer import automatic_pdf
+        retrieval.study_task['remote_pdf_automatic']=automatic_pdf(answer,retrieval)
+        try:
+            content=generate(**context,instructions=understanding.plan.resolved_query if understanding.plan else '',
+                session_factory=factory,markdown=answer,preserve_quiz=getattr(retrieval,'generated_quiz',None))
+        except Exception as exc:
+            raise StudyAIError('Claude PDF dosyasını tamamlayamadı; eksik dosya kaydedilmedi.') from exc
+        retrieval.study_task.update(remote_pdf_manifest=content,pdf_tool_validated=True)
         return True
     from app.academic_pdf_tools import is_recipe
     if is_recipe(answer):
@@ -5111,6 +5139,7 @@ def study_ai_ask(
                     retrieval_session,
                     understanding=understanding,
                     message_model=StudyChatMessage, material_model=StudyMaterial, pdf_title=course_title,
+                    pdf_session_factory=lambda: Session(engine,expire_on_commit=False),
                     pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id,
@@ -5151,6 +5180,7 @@ def study_ai_ask(
             )
             from app.academic_long_answer import automatic_pdf
             export_pdf = _prepare_study_pdf(course_title, answer, understanding, rag_result)
+            answer=rag_result.study_task.get('remote_pdf_manifest',answer)
             # === TEMP_STUDY_TRACE_ASK_GENERATION_DONE_BEGIN ===
             trace_event(
                 "ask.generation.success",
@@ -5210,6 +5240,7 @@ def study_ai_ask(
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
+                rag_result.study_task['remote_pdf_committed']=True
                 if export_pdf:
                     from app.academic_pdf import pdf_artifact
                     artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, rag_result), updated=bool(rag_result.study_task.get('pdf_revision_applied')))
@@ -5245,7 +5276,10 @@ def study_ai_ask(
         )
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
         return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
-
+    finally:
+        from app.academic_remote_pdf import discard
+        if 'rag_result' in locals():
+            discard(rag_result.study_task)
     public_answer = 'İstediğin PDF hazır.' if rag_result.study_task.get('pdf_tool_validated') else answer
     return JSONResponse({"ok": True, "answer": public_answer, **({'artifact': artifact} if export_pdf else {})})
 
@@ -5317,6 +5351,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 retrieval = retrieve_understood_course_context(
                     retrieval_session, understanding=understanding, message_model=StudyChatMessage,
                     material_model=StudyMaterial, pdf_title=course_title,
+                    pdf_session_factory=lambda: Session(engine,expire_on_commit=False),
                     pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id, course_id=course_id,
@@ -5396,6 +5431,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 raise StudyAIError("Akademik AI boş yanıt döndürdü.")
             from app.academic_long_answer import automatic_pdf
             export_pdf = _prepare_study_pdf(course_title, answer, understanding, prepared)
+            answer=prepared.study_task.get('remote_pdf_manifest',answer)
             with Session(engine, expire_on_commit=False) as save_session:
                 live_course = save_session.exec(
                     select(StudyCourse)
@@ -5425,6 +5461,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
                 save_session.commit()
+                prepared.study_task['remote_pdf_committed']=True
                 artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, prepared), updated=bool(prepared.study_task.get('pdf_revision_applied'))) if export_pdf else None
             yield json.dumps({'type': 'done', **({'artifact': artifact} if artifact else {})}, ensure_ascii=False) + '\n'
         except GeneratorExit:
@@ -5435,6 +5472,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             safe_error = (str(exc) if isinstance(exc, StudyAIError) else
                           "Yanıt tamamlanamadı. Lütfen kısa süre sonra tekrar deneyin.")
             yield json.dumps({"type": "error", "error": safe_error}, ensure_ascii=False) + "\n"
+        finally:
+            from app.academic_remote_pdf import discard
+            discard(retrieval.study_task)
 
     return StreamingResponse(
         generate_stream(),
@@ -5471,6 +5511,8 @@ def clear_study_ai_chat(request: Request, course_id: int):
             .where(StudyChatMessage.owner_user_id == user.id)
         ).all()
         for item in messages:
+            from app.academic_remote_pdf import queue_erasure
+            queue_erasure(s,item)
             s.delete(item)
         delete_course_rag_memory(s, owner_user_id=user.id, course_id=course_id)
         s.commit()
