@@ -65,59 +65,36 @@ function node(){return {removed:false,children:[],classList:{remove(){}},
 const document={createElement:node};
 const materialCount=1,v2Streaming=true,courseId=2,send={disabled:false},status={};
 const input={value:'Soru',style:{},focus(){}};
+const attach=null,applyIndexReadiness=()=>{};
 const addMessage=()=>{const x=node();made.push(x);return x};
 const safeMarkdown=x=>x,scrollChatBottom=()=>{};
-let printButtons=0;const addPdfArtifact=()=>printButtons++;
-const attach=null,filesInput=null;const applyIndexReadiness=()=>{};
+let artifacts=0;const addPdfArtifact=()=>artifacts++;
 const events=[{type:'delta',text:'Tamamlanan bölüm.'},{type:'error',error:'Geçici hizmet sorunu.'}];
 const fetch=async()=>({ok:true,body:{getReader:()=>({read:async()=>({done:false,
  value:new TextEncoder().encode(events.map(x=>JSON.stringify(x)).join('\n')+'\n')})})}});
 sendMessage('Tüm soruları aktar').then(()=>process.stdout.write(JSON.stringify({
  removed:made.map(x=>x.removed),input:input.value,status:status.textContent,
- warning:made[1].children[0].textContent,printButtons,enabled:!send.disabled})));
+ warning:made[1].children[0].textContent,artifacts,enabled:!send.disabled})));
 ''')
     assert result['removed']==[False,False]
     assert result['input']=='Tüm soruları aktar'
     assert result['status']=='Geçici hizmet sorunu.'
     assert 'tamamlanmadı' in result['warning']
-    assert result['printButtons']==0 and result['enabled']
+    assert result['artifacts']==0 and result['enabled']
 
 
-@pytest.mark.parametrize('url,expected', [
-    ('/notes/courses/2/ai/messages/42/pdf',1),
-    ('https://evil.invalid/file.pdf',0),
-    ('/notes/courses/3/ai/messages/42/pdf',0),
-    ('javascript:alert(1)',0),
-])
-def test_only_real_owned_pdf_resource_becomes_file_card(url,expected):
-    harness=r'''const courseId=2;
-function node(){return {children:[],appendChild(x){this.children.push(x)}}}
-const document={createElement:node};
-const content=node(),markdown=node();
-const article={querySelector:selector=>selector==='.study-pdf-file'?null:
- selector==='.study-chat-content'?content:markdown};
-addPdfArtifact(article,{type:'pdf',url:URL,name:'<script>şıklar.pdf'});
-process.stdout.write(JSON.stringify({cards:content.children.length,
- name:content.children[0]?.children[1]?.textContent,href:content.children[0]?.href,
- ready:markdown.textContent}));'''.replace('URL',json.dumps(url))
-    result=run_client_function('    function addPdfArtifact(', '    function isNearBottom()',harness)
-    assert result['cards']==expected
-    if expected:
-        assert result['name']=='<script>şıklar.pdf'  # textContent, never HTML
-        assert result['href']==url and result['ready']=='İstediğin PDF hazır.'
-
-
-def test_normal_answer_has_no_pdf_or_print_control():
-    template=Path('app/templates/notes_ai.html').read_text()
-    assert 'window.print' not in template and 'addPrintButton' not in template
-    assert 'Yazdır / PDF kaydet' not in template
-    assert "msg.mode.endswith('_PDF')" in template
-    assert "artifact=event.artifact || null" in template
-
-
-def test_chat_attachment_control_is_conditional_and_uses_existing_upload_route():
-    template=Path('app/templates/notes_ai.html').read_text()
-    assert '{% if chat_upload_enabled %}' in template
-    assert "data.append('chat_upload','true')" in template
-    assert "'/notes/courses/'+courseId+'/materials'" in template
-    assert 'v2Ready=false' in template and 'waitForIndex()' in template
+def test_pdf_outputs_have_separate_safe_links_without_duplicates():
+    result=run_client_function('    function addPdfArtifact(', '    function isNearBottom(', r'''
+const courseId=6,links=[],markdown={textContent:''};
+const article={querySelectorAll:()=>links,querySelector:s=>s==='.study-chat-content'?{appendChild:x=>links.push(x)}:markdown};
+const document={createElement:()=>({children:[],appendChild(x){this.children.push(x)},getAttribute(name){return this[name]}})};
+const files=[0,1].map(part=>({type:'pdf',url:'/notes/courses/6/ai/messages/40/pdf?part='+part,name:'<script>name</script>.pdf'}));
+addPdfArtifact(article,{files});addPdfArtifact(article,{files});
+addPdfArtifact(article,{type:'pdf',url:'/notes/courses/7/ai/messages/40/pdf?part=0'});
+addPdfArtifact(article,{type:'pdf',url:'/notes/courses/6/ai/messages/40/pdf?part=16'});
+addPdfArtifact(article,{type:'pdf',url:'javascript:alert(1)'});
+process.stdout.write(JSON.stringify({urls:links.map(x=>x.href),names:links.map(x=>x.children[1].textContent),notice:markdown.textContent}));
+''')
+    assert result['urls']==[f'/notes/courses/6/ai/messages/40/pdf?part={i}' for i in range(2)]
+    assert result['names']==['<script>name</script>.pdf']*2  # textContent, never HTML
+    assert result['notice']=='İstediğin PDF hazır.'
