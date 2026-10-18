@@ -356,3 +356,117 @@ def test_legacy_page_recipe_is_reconstructed_in_claude_not_locally(owned,monkeyp
     fake_execute(monkeypatch,check)
     assert remote.is_remote(ask_rag_v2('Perio','PDF renkli olsun',[],result))
     never.assert_not_called()
+
+
+
+def test_inspection_uses_complete_owned_summary_and_source_without_creating_pdf(owned,monkeypatch):
+    main,factory,_=owned
+    with factory() as session:
+        entries=remote.planner_catalog(session,main.StudyChatMessage,main.StudyMaterial,1,6,'Perio')
+        result=remote.prepare(session,message_model=main.StudyChatMessage,material_model=main.StudyMaterial,
+            owner=1,course=6,title='Perio',query='Özet bütün yüklenen başlıkları kapsıyor mu?',
+            plan={'sources':[entries[0]['key'],entries[-1]['key']],'instructions':'Tam dosyaları karşılaştır'},
+            session_factory=factory,output_format='text')
+    expected='Özetin bir başlığı eksik; kaynak Notes, sayfa 1.'
+    def inspect(self,**kwargs):
+        assert kwargs['output_format']=='text'
+        assert kwargs['sources'][0]['data']==b'# FIRST ORIGINAL PDF\nAll original text.'
+        assert kwargs['sources'][1]['data']==pdf()
+        return expected
+    monkeypatch.setattr(ClaudeFiles,'execute',inspect)
+    never=Mock(side_effect=AssertionError('No local generation or output PDF'))
+    monkeypatch.setattr('app.study_ai_v2.get_provider',never)
+    monkeypatch.setattr('app.object_storage.write_bytes',never)
+    from app.study_ai_v2 import ask_rag_v2
+    assert ask_rag_v2('Perio','Eksik var mı?',[],result)==expected
+    assert 'pdf_tool_validated' not in result.study_task
+    assert 'remote_pdf_manifest' not in result.study_task
+    never.assert_not_called()
+
+
+def test_inspection_rejects_source_deleted_during_remote_read(owned,monkeypatch):
+    main,factory,_=owned;result=prepare_first(owned)
+    def deleted(self,**kwargs):
+        with factory() as session:
+            session.delete(session.get(main.StudyChatMessage,10));session.commit()
+        return 'Her başlık var.'
+    monkeypatch.setattr(ClaudeFiles,'execute',deleted)
+    with pytest.raises(StudyProviderError):
+        remote.generate(**result.study_task['remote_pdf_job'],output_format='text')
+
+
+def test_native_inspection_returns_text_without_download_or_pdf_advertisement(transport):
+    client,calls,turns,_=transport;original=client.json_request
+    def response(path,**kwargs):
+        result=original(path,**kwargs)
+        if path=='/messages':
+            result['content'].append({'type':'text','text':'İkinci başlık kısmen kapsanmış; kaynak Notes, sayfa 1.'})
+        return result
+    client.json_request=response
+    answer=client.execute(model='claude-haiku-5-5',instructions='Kapsamı kontrol et',title='Perio',
+        sources=[{'name':'Özet','data':pdf(),'mime':'application/pdf'}],output_format='text')
+    assert answer.startswith('İkinci başlık')
+    assert not any(path.endswith('/content') for path,_ in calls)
+    assert 'Do not create' in turns[0]['system']
+    assert {path for path,kw in calls if kw.get('method')=='DELETE'}=={'/files/file_input0','/files/file_output'}
+
+
+@pytest.mark.parametrize('blocks',[
+    [{'type':'text','text':'Her başlık var.'}],
+    [{'type':'bash_code_execution_tool_result','content':{'type':'bash_code_execution_tool_result_error'}},
+     {'type':'text','text':'Her başlık var.'}],
+    [{'type':'bash_code_execution_tool_result','content':{'type':'bash_code_execution_result'}},
+     {'type':'text','text':'Dosya file_secret_identifier /mnt/data/source.pdf'}]])
+def test_native_inspection_rejects_unread_files_or_internal_references(transport,blocks):
+    client,_,_,_=transport;original=client.json_request
+    def response(path,**kwargs):
+        result=original(path,**kwargs)
+        if path=='/messages':result['content']=blocks
+        return result
+    client.json_request=response
+    with pytest.raises(StudyProviderError):
+        client.execute(model='claude-haiku-5-5',instructions='Kontrol',title='Perio',sources=[],output_format='text')
+
+
+def test_text_pdf_plan_is_valid_and_disables_chunk_retrieval():
+    from app.academic_request_understanding import parse_request
+    from app.academic_request_understanding import StudyRequest
+    from dataclasses import asdict
+    data=asdict(StudyRequest(resolved_query='Özette eksik başlık var mı?',operation='answer',scope='topic',
+        count=None,difficulty=None,clarification='',output_format='text',
+        pdf_document={'sources':['p_'+'a'*24,'u_'+'b'*24],'instructions':'Özeti notlarla karşılaştır'}))
+    parsed=parse_request(json.dumps(data))
+    assert parsed.pdf_document and not parsed.retrieval_queries and parsed.output_format=='text'
+
+
+@pytest.mark.parametrize('stream',[True,False])
+def test_inspection_endpoints_return_text_without_new_pdf(owned,monkeypatch,stream):
+    from fastapi.testclient import TestClient
+    from app.academic_request_understanding import StudyRequest,UnderstandingResult
+    main,factory,_=owned
+    monkeypatch.setattr(main,'study_v2_streaming_enabled',lambda:True)
+    monkeypatch.setattr(main,'course_v2_ready',lambda *a,**k:True)
+    monkeypatch.setattr(main,'classify_course_scope',lambda *a:'DENTAL')
+    monkeypatch.setattr('app.academic_chunk_links.planner_source_outline',lambda *a,**k:{})
+    def understand(query,history,source_outline):
+        catalog=source_outline['pdf_catalog']
+        return UnderstandingResult(plan=StudyRequest(resolved_query=query,operation='answer',scope='topic',
+            count=None,difficulty=None,clarification='',output_format='text',pdf_document={
+                'sources':[catalog[0]['key'],catalog[-1]['key']],'instructions':'Özeti tam kaynakla karşılaştır'}))
+    monkeypatch.setattr('app.academic_request_understanding.understand_study_request',understand)
+    def inspect(self,**kwargs):
+        assert kwargs['output_format']=='text' and len(kwargs['sources'])==2
+        return 'Kaynak Notes, sayfa 1: bu başlık özette eksik.'
+    monkeypatch.setattr(ClaudeFiles,'execute',inspect)
+    never=Mock(side_effect=AssertionError('Inspection must not generate or render another answer'))
+    monkeypatch.setattr('app.study_ai_v2.get_provider',never)
+    monkeypatch.setattr('app.academic_pdf.render_pdf',never)
+    response=TestClient(main.app).post('/notes/courses/6/ai/ask'+('-stream' if stream else ''),
+        data={'message':'Özet bütün başlıkları kapsıyor mu?'})
+    assert response.status_code==200,response.text
+    assert 'eksik' in response.text and 'artifact' not in response.text and 'ACADEMIC_REMOTE' not in response.text
+    with factory() as session:
+        saved=session.exec(select(main.StudyChatMessage).where(main.StudyChatMessage.id>30,
+            main.StudyChatMessage.role=='ASSISTANT')).one()
+        assert 'eksik' in saved.content and not saved.mode.endswith('_PDF')
+    never.assert_not_called()

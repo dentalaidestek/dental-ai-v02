@@ -57,3 +57,13 @@ Rollout: run local regressions, review the isolated PR, then merge/deploy with
 scoped approval and enable the flag. Verify a paid live request to restyle the
 first original PDF, inspect its downloaded pages and measure actual usage. Unit
 tests simulate Anthropic HTTP/file responses and are not a live skill evaluation.
+
+
+Existing-PDF follow-ups also support `output_format=text`: the planner supplies the
+owned generated file and relevant uploaded source PDFs to the same isolated skill.
+The skill must actually inspect the files before returning a text answer; no new
+PDF is created for a normal short inspection. Source references are revalidated
+after processing. Requests to expand/update a summary remain PDF jobs, with the
+original summary and required full source documents supplied together. This avoids
+asking users to paste the text of a PDF the application already owns. Coverage
+claims must distinguish supplied readable sources from missing/unreadable material.

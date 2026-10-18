@@ -586,6 +586,9 @@ def stream_rag_v2(
             content=generate(**job)
         except Exception as exc:
             raise StudyAIError('Claude PDF işlemini tamamlayamadı; önceki dosyan korunuyor.') from exc
+        if job.get('output_format')=='text':
+            yield content
+            return
         retrieval.study_task.update(remote_pdf_manifest=content,pdf_tool_validated=True,pdf_revision_applied=True)
         yield content
         return
@@ -862,3 +865,4 @@ def ask_rag_v2(
     retrieval: RetrievalResult,
 ) -> str:
     return "".join(stream_rag_v2(course_title, question, history, retrieval)).strip()
+
