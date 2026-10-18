@@ -95,6 +95,11 @@ def read(content,*,owner,course,part=0):
 
 def check_dependencies(session,content,*,owner,course,message_model,material_model):
     """Snapshot owned dependencies, then release SQL before checking stored bytes."""
+    _check_references(session,manifest(content,owner,course)['sources'],owner=owner,course=course,
+        message_model=message_model,material_model=material_model)
+
+
+def _check_references(session,refs,*,owner,course,message_model,material_model):
     from app.object_storage import ensure_local
     from app.academic_pdf_tools import is_recipe,recipe_data
     checks=[];seen=set();count=0
@@ -122,7 +127,7 @@ def check_dependencies(session,content,*,owner,course,message_model,material_mod
             else:
                 checks.append((row.file_path,ref['digest']))
             seen.remove(key)
-    visit(manifest(content,owner,course)['sources'])
+    visit(refs)
     session.rollback()
     for path,expected in checks:
         local=Path(ensure_local(path))
@@ -185,11 +190,13 @@ def validate_plan(value):
         raise ValueError('invalid remote PDF plan')
 
 
-def prepare(session,*,message_model,material_model,owner,course,title,plan,query,session_factory):
+def prepare(session,*,message_model,material_model,owner,course,title,plan,query,session_factory,output_format="pdf"):
     from app.study_retrieval_v2 import RetrievalResult
     if not enabled() or session_factory is None:
         raise StudyProviderError('Uzak PDF çalışma ortamı etkin değil.')
     validate_plan(plan)
+    if output_format not in {'pdf','text'}:
+        raise StudyProviderError('PDF çıktı biçimi geçersiz.')
     available={item['key']:item for item in catalog(session,message_model,material_model,owner,course,title)}
     selected=[];quiz=None
     for key in plan['sources']:
@@ -199,7 +206,7 @@ def prepare(session,*,message_model,material_model,owner,course,title,plan,query
         selected.append({'name':item['name'],'part':item['part'],'kind':item['origin'],
             'id':row.id,'content':row.content if item['origin']=='generated' else '',
             'path':getattr(row,'file_path',''),'size':getattr(row,'size_bytes',0)})
-        if len(plan['sources'])==1 and item['origin']=='generated':
+        if output_format=='pdf' and len(plan['sources'])==1 and item['origin']=='generated':
             from app.academic_quiz import parse_quiz
             from app.main import _study_source_versions
             try:
@@ -214,7 +221,7 @@ def prepare(session,*,message_model,material_model,owner,course,title,plan,query
     return RetrievalResult(evidence_sufficient=True,resolved_query=query,retrieval_mode='remote_pdf',generated_quiz=quiz,
         study_task={'remote_pdf_job':{'owner':owner,'course':course,'title':title,
             'instructions':query+'\n\nBağlamdaki istek: '+plan['instructions'],'selected':selected,
-            'session_factory':session_factory,'preserve_quiz':quiz},'output_format':'pdf'})
+            'session_factory':session_factory,'preserve_quiz':quiz,**({'output_format':'text'} if output_format=='text' else {})},'output_format':output_format})
 
 
 def _queue_cleanup(session_factory,owner):
@@ -233,13 +240,15 @@ def _queue_cleanup(session_factory,owner):
     return register,done
 
 
-def generate(*,owner,course,title,instructions,session_factory,selected=(),markdown=None,preserve_quiz=None):
+def generate(*,owner,course,title,instructions,session_factory,selected=(),markdown=None,preserve_quiz=None,output_format="pdf"):
     from app.academic_provider_config import academic_target
     from app.study_anthropic_files import ClaudeFiles,MAX_TOTAL
     from app.object_storage import ensure_local,write_bytes,delete
     from app.academic_pdf import pdf_filename
     from app.academic_pdf_tools import is_recipe,_snapshot
     from pypdf import PdfReader
+    if output_format not in {'pdf','text'} or (output_format=='text' and markdown is not None):
+        raise StudyProviderError('PDF çıktı biçimi geçersiz.')
     target=academic_target('generation')
     if target.provider!='anthropic':
         raise StudyProviderError('Uzak PDF için Claude sağlayıcısı gerekiyor.')
@@ -307,7 +316,14 @@ def generate(*,owner,course,title,instructions,session_factory,selected=(),markd
             raise StudyProviderError('PDF kaynak kapsamı geçersiz veya çok büyük.')
         register,done=_queue_cleanup(session_factory,owner)
         outputs=ClaudeFiles(cleanup_register=register,cleanup_done=done).execute(model=target.model,
-            instructions=instructions,title=title,sources=sources,documents=documents)
+            instructions=instructions,title=title,sources=sources,documents=documents,
+            **({'output_format':'text'} if output_format=='text' else {}))
+        if output_format=='text':
+            from app.main import StudyChatMessage,StudyMaterial
+            with session_factory() as session:
+                _check_references(session,refs,owner=owner,course=course,
+                    message_model=StudyChatMessage,material_model=StudyMaterial)
+            return outputs
         data={'owner':owner,'course':course,'files':[],'sources':refs};pages=0;quiz_text=[]
         for output in outputs:
             raw=output['data']
@@ -394,3 +410,4 @@ def discard(task):
             with factory() as session:
                 queue_erasure(session,SimpleNamespace(content=task['remote_pdf_manifest'],
                     owner_user_id=data['owner'],course_id=data['course']));session.commit()
+
