@@ -116,11 +116,22 @@ def latest_owned_pdf(session, message_model, owner_user_id, course_id):
 
 def planner_pdf_outline(session, message_model, owner_user_id, course_id, outline):
     result = dict(outline) if isinstance(outline, dict) else {}
+    from app.academic_remote_pdf import enabled,is_remote,planner_catalog
+    if enabled():
+        from app.main import StudyMaterial,StudyCourse
+        course=session.get(StudyCourse,course_id)
+        if course is None or course.owner_user_id!=owner_user_id:
+            return result
+        result['remote_pdf_enabled']=True
+        result['pdf_catalog']=planner_catalog(session,message_model,StudyMaterial,owner_user_id,course_id,course.title)
+        # Selection needs the catalog, not a duplicate full copy of the latest
+        # PDF. Only the selected full source is uploaded to the file workspace.
+        return result
     base = latest_owned_pdf(session, message_model, owner_user_id, course_id)
     if base is not None:
         from app.academic_pdf_tools import is_recipe,output_files
-        result['editable_pdf'] = {'kind':'pages' if is_recipe(base.content) else 'text',
-            'content':'[Dosya sayfa işlemleriyle oluşturuldu; metin düzenlemesi için özgün metin PDF’sini seçin.]' if is_recipe(base.content) else base.content,
+        result['editable_pdf'] = {'kind':'pages' if is_recipe(base.content) or is_remote(base.content) else 'text',
+            'content':'[Dosya kataloğundan kaynak seçerek uzak PDF becerisini kullan.]' if is_recipe(base.content) or is_remote(base.content) else base.content,
             'revision': hashlib.sha256(base.content.encode('utf-8')).hexdigest()}
         if is_recipe(base.content):
             result['editable_pdf']['outputs']=[x['name'] for x in output_files(base.content,course_id,base.id)]
