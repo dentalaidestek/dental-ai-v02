@@ -4810,8 +4810,8 @@ def delete_study_material(request: Request, course_id: int, material_id: int):
 
 
 @app.get("/notes/courses/{course_id}/ai", response_class=HTMLResponse)
-def study_ai_page(request: Request, course_id: int, background_tasks: BackgroundTasks):    from app.academic_pdf_tools import output_files
-
+def study_ai_page(request: Request, course_id: int, background_tasks: BackgroundTasks):
+    from app.academic_pdf_tools import output_files
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -4846,10 +4846,10 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         context={
             "course": course,
             "material_count": len(materials),
-            "messages": messages[-40:],            "pdf_files": {msg.id: output_files(
+            "messages": messages[-40:],
+            "pdf_files": {msg.id: output_files(
                 msg.content, course_id, msg.id) for msg in messages[-40:]
                 if msg.role == 'ASSISTANT' and msg.content.startswith('<!--ACADEMIC_PDF_TOOL_V1-->')},
-
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
             "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
@@ -4857,8 +4857,8 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
     )
 
 
-@app.get('/notes/courses/{course_id}/ai/messages/{message_id}/pdf')def study_answer_pdf(request: Request, course_id: int, message_id: int, part: int = 0):
-
+@app.get('/notes/courses/{course_id}/ai/messages/{message_id}/pdf')
+def study_answer_pdf(request: Request, course_id: int, message_id: int, part: int = 0):
     from fastapi.responses import Response
     from urllib.parse import quote
     from app.academic_pdf import render_pdf, pdf_filename
@@ -4873,9 +4873,10 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         )).first() if course else None
         if not answer or not answer.mode.endswith('_PDF'):
             return HTMLResponse('PDF bulunamadı veya erişim yetkiniz yok.', status_code=404)
-        title, content = course.title, answer.content    download_title = title
-
-    try:        from app.academic_pdf_tools import is_recipe, render_owned_recipe, recipe_data
+        title, content = course.title, answer.content
+    download_title = title
+    try:
+        from app.academic_pdf_tools import is_recipe, render_owned_recipe, recipe_data
         if is_recipe(content):
             outputs = recipe_data(content)['outputs']
             if not 0 <= part < len(outputs):
@@ -4889,12 +4890,11 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
             if part:
                 return HTMLResponse('PDF çıktısı bulunamadı.', status_code=404)
             data = render_pdf(title, content)
-
     except Exception as exc:
         logger.warning('Academic PDF download failed type=%s', type(exc).__name__)
         return HTMLResponse('PDF şu anda hazırlanamadı. Lütfen tekrar deneyin.', status_code=503)
-    return Response(data, media_type='application/pdf', headers={        'Content-Disposition': "attachment; filename=ders-notlari.pdf; filename*=UTF-8''" + quote(pdf_filename(download_title), safe=''),
-
+    return Response(data, media_type='application/pdf', headers={
+        'Content-Disposition': "attachment; filename=ders-notlari.pdf; filename*=UTF-8''" + quote(pdf_filename(download_title), safe=''),
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
     })
 
@@ -4902,13 +4902,13 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
 def _prepare_study_pdf(course_title, answer, understanding, retrieval):
     from app.academic_pdf import pdf_requested, render_pdf
     if not pdf_requested(understanding, retrieval, answer):
-        return False    if retrieval.study_task.get('pdf_tool_validated'):
+        return False
+    if retrieval.study_task.get('pdf_tool_validated'):
         # The owned PDF tool already rendered and verified every output.
         return True
     from app.academic_pdf_tools import is_recipe
     if is_recipe(answer):
         raise StudyAIError('PDF işlem kaydı bu işlemde doğrulanamadı.')
-
     try:
         # Validate a real file before advertising its owned download resource.
         # Later downloads render the immutable saved answer without an AI call.
@@ -5094,9 +5094,9 @@ def study_ai_ask(
                 course_id=course_id, query=clean_message, history=history)
             if not is_quick_action(clean_message):
                 from app.academic_pdf_revision import planner_pdf_outline
-                source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)                source_outline['pdf_files'] = [item.original_filename for item in materials
+                source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)
+                source_outline['pdf_files'] = [item.original_filename for item in materials
                     if item.mime_type == 'application/pdf' and not getattr(item, 'deleted_at', None)][:64]
-
             s.close()
             # Language interpretation runs outside a DB transaction. It never
             # receives source documents, credentials or ownership identifiers.
@@ -5109,8 +5109,8 @@ def study_ai_ask(
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 rag_result = retrieve_understood_course_context(
                     retrieval_session,
-                    understanding=understanding,                    message_model=StudyChatMessage, material_model=StudyMaterial, pdf_title=course_title,
-
+                    understanding=understanding,
+                    message_model=StudyChatMessage, material_model=StudyMaterial, pdf_title=course_title,
                     pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id,
@@ -5211,8 +5211,8 @@ def study_ai_ask(
                 save_session.add(live_course)
                 save_session.commit()
                 if export_pdf:
-                    from app.academic_pdf import pdf_artifact                    artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, rag_result), updated=bool(rag_result.study_task.get('pdf_revision_applied')))
-
+                    from app.academic_pdf import pdf_artifact
+                    artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, rag_result), updated=bool(rag_result.study_task.get('pdf_revision_applied')))
 
             # === TEMP_STUDY_TRACE_ASK_COMPLETE_BEGIN ===
             trace_event(
@@ -5245,9 +5245,9 @@ def study_ai_ask(
         )
         # === TEMP_STUDY_TRACE_ASK_AI_ERROR_END ===
         return JSONResponse({"ok": False, "error": "Akademik AI yanıtı oluşturulamadı. Lütfen daha sonra tekrar deneyin."}, status_code=502)
+
     public_answer = 'İstediğin PDF hazır.' if rag_result.study_task.get('pdf_tool_validated') else answer
     return JSONResponse({"ok": True, "answer": public_answer, **({'artifact': artifact} if export_pdf else {})})
-
 
 
 @app.post("/notes/courses/{course_id}/ai/ask-stream")
@@ -5302,9 +5302,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             course_id=course_id, query=clean_message, history=history)
         if not is_quick_action(clean_message):
             from app.academic_pdf_revision import planner_pdf_outline
-            source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)            source_outline['pdf_files'] = [item.original_filename for item in materials
+            source_outline = planner_pdf_outline(s, StudyChatMessage, user.id, course_id, source_outline)
+            source_outline['pdf_files'] = [item.original_filename for item in materials
                 if item.mime_type == 'application/pdf' and not getattr(item, 'deleted_at', None)][:64]
-
         s.close()
         from app.academic_request_understanding import understand_study_request, retrieve_understood_course_context
         understanding = understand_study_request(clean_message, history, source_outline=source_outline)
@@ -5315,8 +5315,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         try:
             with Session(engine, expire_on_commit=False) as retrieval_session:
                 retrieval = retrieve_understood_course_context(
-                    retrieval_session, understanding=understanding, message_model=StudyChatMessage,                    material_model=StudyMaterial, pdf_title=course_title,
-
+                    retrieval_session, understanding=understanding, message_model=StudyChatMessage,
+                    material_model=StudyMaterial, pdf_title=course_title,
                     pdf_snapshot=(source_outline.get('editable_pdf') or {}).get('revision'),
                     query_embedding=query_embedding,
                     owner_user_id=user.id, course_id=course_id,
@@ -5388,9 +5388,9 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 if not pdf_announced and prepared.evidence_sufficient and (
                         answer_chars >= AUTO_PDF_CHARS or prepared.study_task.get('auto_pdf')):
                     pdf_announced = True
-                    yield json.dumps({'type': 'format', 'format': 'pdf'}) + '\n'                if not prepared.study_task.get('pdf_tool_validated'):
+                    yield json.dumps({'type': 'format', 'format': 'pdf'}) + '\n'
+                if not prepared.study_task.get('pdf_tool_validated'):
                     yield json.dumps({"type": "delta", "text": piece}, ensure_ascii=False) + "\n"
-
             answer = "".join(pieces).strip()
             if not answer:
                 raise StudyAIError("Akademik AI boş yanıt döndürdü.")
@@ -5424,8 +5424,8 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
                 save_session.add(assistant_message)
                 live_course.updated_at = _utcnow_naive()
                 save_session.add(live_course)
-                save_session.commit()                artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, prepared), updated=bool(prepared.study_task.get('pdf_revision_applied'))) if export_pdf else None
-
+                save_session.commit()
+                artifact = pdf_artifact(course_id, assistant_message.id, course_title, content=answer, automatic=automatic_pdf(answer, prepared), updated=bool(prepared.study_task.get('pdf_revision_applied'))) if export_pdf else None
             yield json.dumps({'type': 'done', **({'artifact': artifact} if artifact else {})}, ensure_ascii=False) + '\n'
         except GeneratorExit:
             # Client disconnected: incomplete answers are never persisted.
