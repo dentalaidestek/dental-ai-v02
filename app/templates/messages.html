@@ -73,12 +73,13 @@ function applyIncomingMessage(data){
   sortMessageRows();applyMessageFilters();
 }
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMessageCountdown();else ensureMessageCountdown();});
-window.addEventListener("dai:case-read",e=>{const id=Number(e.detail?.case_id||0),row=document.querySelector('.message-row[data-case-id="'+id+'"]');if(!row)return;row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();applyMessageFilters();sortMessageRows();});
+window.addEventListener("dai:case-read",e=>{const id=Number(e.detail?.case_id||0),row=document.querySelector('.message-row[data-case-id="'+id+'"]');if(!row)return;if(e.detail?.through_id&&Number(row.dataset.lastMessageId||0)>Number(e.detail.through_id)){refreshConversationCard(id,true);return;}row.dataset.unread="0";row.classList.remove("unread");row.querySelector(".message-unread")?.remove();applyMessageFilters();sortMessageRows();});
 window.addEventListener("dai:messages-view-restored",()=>{ensureMessageCountdown();document.querySelectorAll(".message-row[data-case-id]").forEach(row=>{const id=Number(row.dataset.caseId||0);if(id)refreshConversationCard(id,true);});});
 window.addEventListener("dai:realtime-resync",reconcileMessagesView);
 window.addEventListener("dai:sync-event",e=>{
   const evt=e.detail||{},data=evt.payload||{};
   if(evt.event_type==="MESSAGE_CREATED")applyIncomingMessage(data);
+  else if(evt.event_type==="CASE_READ"&&Number(data.user_id)===Number({{ user.id|tojson }}))refreshConversationCard(Number(data.case_id||0),true);
   else if(evt.event_type==="CASE_CREATED"||evt.event_type==="CASE_STATUS_UPDATED")refreshConversationCard(Number(data.case_id||0),true);
 });
 </script>
