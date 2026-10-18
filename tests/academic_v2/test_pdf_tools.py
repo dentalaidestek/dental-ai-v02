@@ -155,6 +155,27 @@ def test_model_selected_tools_bypass_retrieval_and_generation(owned,monkeypatch)
     assert generation.ask_rag_v2('Perio','PDF sayfasını döndür',[],result).startswith(PREFIX)
     never.assert_not_called()
 
+
+def test_anthropic_compact_tool_transport_retains_full_validation():
+    from app.academic_request_understanding import SCHEMA, PlannerContractError
+    from app.study_anthropic import _output_schema
+    from copy import deepcopy
+    original=deepcopy(SCHEMA)
+    transport=_output_schema(SCHEMA)
+    assert transport['properties']['pdf_tools']['type']=='string'
+    assert 'segments' in transport['properties']['pdf_tools']['description']
+    assert SCHEMA==original
+    raw=dict(resolved_query='PDF böl',operation='answer',scope='topic',count=None,
+        difficulty=None,clarification='',retrieval_queries=[],source_subjects=[],
+        source_kind='notes',depth='standard',needs_visual=False,continue_source=False,output_format='pdf',
+        pdf_tools=json.dumps(tool()))
+    assert parse_request(json.dumps(raw)).pdf_tools==tool()
+    for value in ['not JSON','[]',json.dumps({'action':'unsafe'})]:
+        raw['pdf_tools']=value
+        with pytest.raises(PlannerContractError):parse_request(json.dumps(raw))
+    raw.update(pdf_tools='',retrieval_queries=['risk'],output_format='text')
+    assert parse_request(json.dumps(raw)).pdf_tools is None
+
 def test_unbounded_arbitrary_sources_and_paths_are_rejected():
     for mutate in [lambda x:x['sources'][0].update(kind='url',filename='https://bad.invalid'),
                    lambda x:x['outputs'][0]['segments'][0].update(source=-1),
