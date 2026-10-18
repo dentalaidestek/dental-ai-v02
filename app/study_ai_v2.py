@@ -96,6 +96,16 @@ açıklayıcı parantez veya anatomik ayrıntı ekleme.
 '''
 
 
+V2_SYSTEM_PROMPT+='''\nÖĞRENME AKIŞI: learning alanı öğrencinin çalışma geçmişidir, klinik bilgi kaynağı değildir.
+Öğretme isteklerinde öğrencinin seviyesini cevabından anlamaya çalış. Adım adım çalışma
+istendiğinde tek kavramı kısa açıkla, kaynağın desteklediği bir örnek kullan ve tek
+anlama kontrolü sorup bekle. Önceki cevabı yanlışsa gerekçesini açıkla ve benzer yeni
+bir kontrol sorusuyla dene; bütün dersi aynı turda dökme. Yanlış yapılan veya tekrarı
+gelen konular istendiğinde learning.review bilgisini kullan, fakat açıklamalarını
+bu turdaki ders notu kanıtlarına dayandır. Kayıtlı puanları öğrenmenin kesin ölçümü
+gibi sunma. Yeni bağımsız bir istekte önceki çalışma koşullarını zorla sürdürme.\n'''
+
+
 def _generation_targets() -> list[ProviderTarget]:
     """Academic V2 uses exactly one generation provider/model; no fallback chain."""
     from app.academic_provider_config import academic_target
@@ -481,6 +491,13 @@ def _source_batch_outputs(course_title, question, history, retrieval, synthesize
 
 def _stream_source_batches(course_title, question, history, retrieval):
     operation = retrieval.study_task.get('operation')
+    if operation=='teach' and retrieval.study_task.get('quick_action') and retrieval.source_batches:
+        from dataclasses import replace
+        first=retrieval.source_batches[0]
+        lesson=replace(first,study_task={**retrieval.study_task,'stepwise_teaching':True},
+            source_coverage_complete=False,semantic_trace_id=retrieval.semantic_trace_id)
+        yield from stream_rag_v2(course_title,question,history,lesson)
+        return
     # A single complete text batch already fits the normal generation budget.
     # Preserve its original evidence rather than paying to summarize it first.
     if (len(retrieval.source_batches)==1
@@ -818,7 +835,8 @@ def stream_rag_v2(
                 if structured_quiz:
                     from app.academic_quiz import parse_quiz, render_quiz
                     try:
-                        quiz=parse_quiz(answer,retrieval.study_task.get('count'),history,retrieval.evidence)
+                        quiz=parse_quiz(answer,retrieval.study_task.get('count'),history,retrieval.evidence,
+                            require_quality=True,distinct_topics=retrieval.study_task.get('distinct_topics',False))
                     except (ValueError,TypeError,KeyError) as exc:
                         # One bounded repair reuses evidence; no rejected set is emitted.
                         logger.info('Academic quiz validation trace=%s repair=1 reason=%s',trace_id,type(exc).__name__)
@@ -829,7 +847,8 @@ def stream_rag_v2(
                         if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                             raise StudyAIError('Soru seti uzunluk sınırında kaldı; set kaydedilmedi.')
                         try:
-                            quiz=parse_quiz(repaired,retrieval.study_task.get('count'),history,retrieval.evidence)
+                            quiz=parse_quiz(repaired,retrieval.study_task.get('count'),history,retrieval.evidence,
+                                require_quality=True,distinct_topics=retrieval.study_task.get('distinct_topics',False))
                         except (ValueError,TypeError,KeyError) as final_exc:
                             raise StudyAIError('Soru setinin anahtar veya tekrar kontrolü tamamlanamadı; set kaydedilmedi.') from final_exc
                     retrieval.generated_quiz=quiz
