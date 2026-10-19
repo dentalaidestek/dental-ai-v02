@@ -38,13 +38,25 @@ gerekçene göre öncüllerin doğruluğunu, tek doğru şıkkı ve konu dağıl
 üretimde kontrol et; yalnız biçimsel olarak geçerli bir set hazırlama.\n'''
 
 
+class QuizValidationError(ValueError):
+    """Fixed internal reason; never includes source or model response text."""
+
+
+def quiz_failure_reason(exc):
+    if isinstance(exc, QuizValidationError):
+        return str(exc)
+    if isinstance(exc, json.JSONDecodeError):
+        return 'invalid quiz JSON'
+    return 'invalid quiz structure'
+
+
 def parse_quiz(raw, count, history=(), evidence=None,*,require_quality=False,distinct_topics=False):
     data=json.loads(raw)
     if not isinstance(data,dict) or set(data)!={'questions'} or not isinstance(data['questions'],list):
-        raise ValueError('invalid quiz structure')
+        raise QuizValidationError('invalid quiz structure')
     questions=data['questions']
     if not 1<=len(questions)<=200 or (type(count) is int and len(questions)!=count):
-        raise ValueError('invalid quiz count')
+        raise QuizValidationError('invalid quiz count')
     previous=[q['fact'] for h in history for q in (h.get('quiz') or {}).get('questions',[])]
     allowed={(e.material_id,p):e.display_name for e in (evidence or []) for p in range(e.page_start,e.page_end+1)}
     seen=[]
@@ -53,67 +65,67 @@ def parse_quiz(raw, count, history=(), evidence=None,*,require_quality=False,dis
         quality={'topic','asked_truth','statements','option_combinations'}
         if (not isinstance(q,dict) or not required<=set(q) or set(q)-required-quality
                 or (set(q)&quality and not quality<=set(q)) or (require_quality and not quality<=set(q))):
-            raise ValueError('invalid quiz question')
+            raise QuizValidationError('invalid quiz question')
         if any(not isinstance(q[k],str) or not q[k].strip() or len(q[k])>4000 for k in ('stem','rationale','fact','source')):
-            raise ValueError('invalid quiz text')
+            raise QuizValidationError('invalid quiz text')
         if type(q['material_id']) is not int or type(q['page']) is not int or q['page']<1:
-            raise ValueError('invalid quiz source')
+            raise QuizValidationError('invalid quiz source')
         key=(q['material_id'],q['page'])
         if evidence is not None:
             if key not in allowed:
-                raise ValueError('quiz source outside selected evidence')
+                raise QuizValidationError('quiz source outside selected evidence')
             q['source']=f'{allowed[key]}, sayfa {key[1]}'
         opts=q['options']
         if not isinstance(opts,list) or len(opts)!=5 or any(not isinstance(x,str) or not x.strip() or len(x)>2000 for x in opts):
-            raise ValueError('invalid quiz options')
+            raise QuizValidationError('invalid quiz options')
         if len({question_stem(x) for x in opts})!=5 or q['correct'] not in list('ABCDE'):
-            raise ValueError('invalid quiz key')
+            raise QuizValidationError('invalid quiz key')
         if quality<=set(q):
             if not isinstance(q['topic'],str) or not 0<len(q['topic'].strip())<=160 or type(q['asked_truth']) is not bool:
-                raise ValueError('invalid quiz topic')
+                raise QuizValidationError('invalid quiz topic')
             statements=q['statements'];combinations=q['option_combinations']
             if not isinstance(statements,list) or not isinstance(combinations,list) or len(statements)>5:
-                raise ValueError('invalid statement metadata')
+                raise QuizValidationError('invalid statement metadata')
             if statements:
                 if not 2<=len(statements)<=5 or len(combinations)!=5:
-                    raise ValueError('invalid statement count')
+                    raise QuizValidationError('invalid statement count')
                 for statement in statements:
                     if (not isinstance(statement,dict) or set(statement)!={'text','true'}
                             or type(statement['true']) is not bool or not isinstance(statement['text'],str)
                             or not statement['text'].strip()
                             or question_stem(statement['text']) not in question_stem(q['stem'])):
-                        raise ValueError('statement outside question stem')
+                        raise QuizValidationError('statement outside question stem')
                 for combo in combinations:
                     if (not isinstance(combo,list) or any(type(i) is not int or not 1<=i<=len(statements) for i in combo)
                             or len(set(combo))!=len(combo)):
-                        raise ValueError('invalid statement combination')
+                        raise QuizValidationError('invalid statement combination')
                 romans={'I':1,'II':2,'III':3,'IV':4,'V':5}
                 for option,combo in zip(opts,combinations):
                     words=question_stem(option)
                     shown={romans[t] for t in re.findall(r'\b(?:III|II|IV|I|V)\b',option.upper())}
                     if words in {'hepsi','tumu','tamami'}:shown=set(range(1,len(statements)+1))
                     elif words in {'hicbiri','hic birisi'}:shown=set()
-                    elif not shown:raise ValueError('unreadable statement option')
-                    if shown!=set(combo):raise ValueError('displayed statement combination mismatch')
+                    elif not shown:raise QuizValidationError('unreadable statement option')
+                    if shown!=set(combo):raise QuizValidationError('displayed statement combination mismatch')
                 truths={i for i,s in enumerate(statements,1) if s['true']==q['asked_truth']}
                 matches=[i for i,combo in enumerate(combinations) if set(combo)==truths]
                 if matches!=['ABCDE'.index(q['correct'])] or len({tuple(sorted(c)) for c in combinations})!=5:
-                    raise ValueError('statement key mismatch')
+                    raise QuizValidationError('statement key mismatch')
             elif combinations or re.search(r'(?m)^\s*(?:I|II|III)[.)]\s',q['stem']):
-                raise ValueError('missing statement metadata')
+                raise QuizValidationError('missing statement metadata')
         fact=question_stem(q['fact'])
         if any(same_question(fact,question_stem(old)) for old in previous+seen):
-            raise ValueError('repeated quiz fact')
+            raise QuizValidationError('repeated quiz fact')
         seen.append(q['fact'])
         stem=question_stem(q['stem'])
         correct=question_stem(opts['ABCDE'.index(q['correct'])])
         negative={'yanlis','yanlistir','degil','degildir','haric'}
         if len(correct.split())>=2 and len(correct)>=12 and not (set(stem.split()) & negative) and f' {correct} ' in f' {stem} ':
-            raise ValueError('quiz answer exposed in stem')
+            raise QuizValidationError('quiz answer exposed in stem')
     if distinct_topics and len({question_stem(q.get('topic','')) for q in questions})!=len(questions):
-        raise ValueError('repeated main topic')
+        raise QuizValidationError('repeated main topic')
     if question_set_issues(render_quiz(data),count,history):
-        raise ValueError('repeated quiz stem')
+        raise QuizValidationError('repeated quiz stem')
     return data
 
 
