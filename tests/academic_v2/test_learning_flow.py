@@ -270,3 +270,29 @@ def test_worker_pins_stored_pdf_without_http_scope_and_releases_each_job(course_
         assert object_cache._scope.get() is None
         assert all(handle.closed for handle in handles)
     assert len(readers)==2 and readers[0] is not readers[1]
+
+
+def test_saved_quiz_pdf_export_keeps_questions_and_key_outside_recent_window(monkeypatch):
+    from app.academic_request_understanding import retrieve_understood_course_context
+    from app.academic_quiz import render_quiz
+    from app import study_ai_v2 as ai
+    saved=quiz()
+    history=[{'role':'ASSISTANT','content':'Stored PDF','quiz':saved}]+[
+        {'role':'ASSISTANT','content':'Unrelated explanation'} for _ in range(10)]
+    export=plan(export_previous_quiz=True,show_quiz_answers=True,output_format='pdf')
+    result=retrieve_understood_course_context(None,understanding=UnderstandingResult(plan=export),
+        owner_user_id=1,course_id=6,query='Sorular ve anahtar PDF olsun',recent_history=history)
+    assert result.retrieval_mode=='generated_quiz_export'
+    assert result.prepared_answer==render_quiz(saved,True)
+    assert result.generated_quiz==saved
+    monkeypatch.setattr(ai,'get_provider',lambda *a:pytest.fail('No new answer generation for exact export'))
+    assert ''.join(ai.stream_rag_v2('Perio','PDF',history,result))==result.prepared_answer
+
+
+def test_saved_quiz_export_cannot_grade_or_reveal_only_key():
+    from dataclasses import asdict
+    from app.academic_request_understanding import parse_request,PlannerContractError
+    export=plan(export_previous_quiz=True,show_quiz_answers=True,output_format='pdf')
+    assert parse_request(json.dumps(asdict(export))).export_previous_quiz
+    invalid={**asdict(export),'reveal_previous_key':True}
+    with pytest.raises(PlannerContractError):parse_request(json.dumps(invalid))
