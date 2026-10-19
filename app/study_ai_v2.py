@@ -85,6 +85,12 @@ Farklı kavramlara ait ayrı tanımları 'veya' ile tek tanımda birleştirme. H
 ifadeyi sorulan kavrama ait kaynakla doğrula; karşılaştırmada tarafları ayrı tut.
 Her akademik tanım ve olguyu verilen kaynak dosya/sayfa atfıyla ilişkilendir.
 Kullanıcı kaynak istiyorsa atfı atlama; kısa cevapta da dosya ve sayfayı belirt.
+Öğretme yanıtında da açıklamanın ardından kısa bir dosya/sayfa kaynak satırı ver;
+kontrol sorusunun cevabını bu satırda açıklama.
+Sorunun zorluğu, yalnız her zaman/yalnız/asla gibi sözcükleri fark etmeye dayanmasın.
+Çeldiricileri yakın kavram, ilişki yönü veya kanıt düzeyinin makul karışıklıklarından
+kur; doğru ve yanlış seçeneklerin uzunluk ve anlatımını benzer tut. Göndermeden önce
+her seçeneği aynı kaynak tanımıyla denetle, belirsiz veya ikinci doğruyu düzelt.
 Tabloda atıfları ilgili hücre veya kaynak sütununda ver, yeni veri satırı ekleme.
 Kullanıcı tablo istediğinde gerçek Markdown tablosu yaz: başlık satırı, ayırıcı
 satır ve | ile ayrılan veri hücreleri kullan. Tabloyu madde listesine çevirme.
@@ -741,6 +747,7 @@ def stream_rag_v2(
             if isinstance(provider, (GeminiStudyProvider, AnthropicStudyProvider)):
                 from copy import copy
                 provider = copy(provider)  # Isolate finish state between concurrent sections.
+                provider.cache_static_system = True
                 # Section extraction has its own shared recovery budget. Only
                 # the final answer gets this single pre-output capacity retry.
                 provider.capacity_retry = not retrieval.study_task.get('batch_partial', False)
