@@ -85,3 +85,21 @@ def test_repair_receives_exact_validation_failure_and_never_emits_bad_set(monkey
 def test_unexpected_error_text_is_not_disclosed_as_repair_diagnostic():
     from app.academic_quiz import quiz_failure_reason
     assert quiz_failure_reason(ValueError('private model text'))=='invalid quiz structure'
+
+
+def test_numbered_truth_metadata_does_not_duplicate_statement_prose():
+    q=question()
+    q['statements']=[{'number':i,'true':s['true']} for i,s in enumerate(q['statements'],1)]
+    assert validate(q)['questions'][0]['correct']=='D'
+
+
+@pytest.mark.parametrize('damage',['order','missing_stem','duplicate_stem','wrong_truth','empty_statement'])
+def test_numbered_truth_metadata_still_enforces_display_and_key(damage):
+    q=question()
+    q['statements']=[{'number':i,'true':s['true']} for i,s in enumerate(q['statements'],1)]
+    if damage=='order':q['statements'][1]['number']=1
+    elif damage=='missing_stem':q['stem']=q['stem'].replace('II. Risk kesin sonuçtur.\n','')
+    elif damage=='duplicate_stem':q['stem']=q['stem'].replace('III.','II.')
+    elif damage=='wrong_truth':q['statements'][1]['true']=True
+    else:q['stem']=q['stem'].replace('Risk kesin sonuçtur.','')
+    with pytest.raises(ValueError):validate(q)

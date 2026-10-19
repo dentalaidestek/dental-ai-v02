@@ -32,7 +32,7 @@ def prepare_query_embedding(understanding, *, session_factory, owner_user_id, co
         return None
     if plan and getattr(plan,'pdf_edits',()) and not any(e['source']=='generate' for e in plan.pdf_edits):
         return None
-    if not plan or getattr(plan,'export_previous_answer',False) or getattr(plan,'append_previous_pdf',False) or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
+    if not plan or getattr(plan,'export_previous_answer',False) or getattr(plan,'export_previous_quiz',False) or getattr(plan,'append_previous_pdf',False) or plan.operation=='clarify' or plan.scope!='topic' or not plan.retrieval_queries:
         return None
     from app.study_provider import GeminiStudyProvider, get_embedding_target, get_embedding_dimensions, target_available
     target=get_embedding_target()
@@ -134,3 +134,4 @@ def hybrid_candidates(linked, ranked, searches, limit):
                 if len(picked)>=limit:
                     return picked
     return picked
+

@@ -667,7 +667,7 @@ def stream_rag_v2(
         retrieval.study_task['pdf_revision_applied'] = True
         yield answer
         return
-    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade', 'generated_quiz_key', 'pdf_tool_text', 'pdf_tool_document'} and retrieval.prepared_answer:
+    if retrieval.retrieval_mode in {'previous_answer_pdf', 'appended_answer_pdf', 'edited_answer_pdf', 'generated_quiz_grade', 'generated_quiz_key', 'generated_quiz_export', 'pdf_tool_text', 'pdf_tool_document'} and retrieval.prepared_answer:
         logger.info('Academic flow trace=%s stage=response origin=%s', trace_id, retrieval.retrieval_mode)
         yield retrieval.prepared_answer
         return

@@ -95,6 +95,8 @@ SCHEMA['properties']['pdf_document'] = REMOTE_PDF_SCHEMA
 SCHEMA['required'].append('pdf_document')
 SCHEMA['properties']['distinct_topics']={'type':'boolean','description':'True only when the user requires every generated question to use a different broad main topic. Clarify if available main topics cannot support the requested count.'}
 SCHEMA['required'].append('distinct_topics')
+SCHEMA['properties']['export_previous_quiz']={'type':'boolean','description':'Export the exact saved active quiz questions, even outside recent dialogue. Include its saved key only if show_quiz_answers=true. Never regenerate questions.'}
+SCHEMA['required'].append('export_previous_quiz')
 SYSTEM = '''CURRENT DELIVERABLE FIRST: Select operation from what the current user
 wants produced, not the previous assistant response or the source file type.
 Creating a new practice/exam question set, or correcting/regenerating that set,
@@ -109,6 +111,17 @@ still uses generate_questions. Exporting an ALREADY completed question set witho
 changing its contents, revealing its key, grading supplied answers, or editing an
 existing PDF file uses the dedicated rules below instead. Do not create a fresh
 set when the user only asks for the saved set's answers.
+
+SAVED QUIZ EXPORT: When the user wants a previously generated question set itself
+as a PDF or shown again without changing questions/options, set export_previous_quiz=true,
+operation=answer, source_kind=notes, pdf_document=null, export_previous_answer=false,
+reveal_previous_key=false, grade_previous_set=false and no searches. Use recent_quiz,
+including its persistent saved set outside recent_dialogue. Set show_quiz_answers=true
+only when the user also requests its key/explanations. Preserve separate answer-page
+and layout instructions in resolved_query. A request for QUESTIONS PLUS KEY is this
+export, not reveal_previous_key (which exports only the key). If the referenced set
+does not match the saved set or visible dialogue, clarify rather than use another set.
+For all other requests export_previous_quiz=false.
 
 REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
 ALL requests to change, color, highlight, inspect/edit layout, split/merge/rotate
@@ -427,6 +440,7 @@ class StudyRequest:
     pdf_tools: dict | None = None
     pdf_document: dict | None = None
     distinct_topics: bool = False
+    export_previous_quiz: bool = False
 
 
 @dataclass(frozen=True)
@@ -480,6 +494,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if isinstance(data,dict):
         data.setdefault('source_sections',[])  # Older persisted/mock contracts.
         data.setdefault('distinct_topics',False)
+        data.setdefault('export_previous_quiz',False)
         data.setdefault('output_format','text')
         data.setdefault('source_files', [])
         data.setdefault('source_pages', [])
@@ -547,6 +562,16 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
     if (type(data['export_previous_answer']) is not bool or
             (data['export_previous_answer'] and (data['output_format'] != 'pdf' or data['operation'] != 'answer'))):
         raise PlannerContractError('invalid previous answer export')
+    if type(data['export_previous_quiz']) is not bool:
+        raise PlannerContractError('invalid saved quiz export')
+    if data['export_previous_quiz']:
+        if (data['operation']!='answer' or data['source_kind']!='notes'
+                or data['pdf_document'] or data['pdf_tools'] or data['pdf_edits']
+                or data['export_previous_answer'] or data['append_previous_pdf']
+                or data['reveal_previous_key'] or data['grade_previous_set'] or data['quiz_key_corrections']):
+            raise PlannerContractError('incompatible saved quiz export')
+        data['retrieval_queries']=[];data['source_sections']=[];data['source_subjects']=[]
+        data['reuse_previous_source']=False
     turns = data['pdf_addition_turns']
     if (type(data['append_previous_pdf']) is not bool
             or not isinstance(turns, list) or len(turns) > 8
@@ -649,7 +674,7 @@ def parse_request(raw: str, *, previous_source=None) -> StudyRequest:
             or any(not isinstance(x, str) or not x.strip() or len(x) > 160
                    or '\x00' in x or not re.search(r'[^\W_]+', x, re.UNICODE) for x in searches)):
         raise PlannerContractError('invalid retrieval queries')
-    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not data['pdf_tools'] and not data['pdf_document'] and not searches and not sections and not files and not pages:
+    if data['scope'] == 'topic' and data['operation'] != 'clarify' and not data['export_previous_answer'] and not data['export_previous_quiz'] and not data['append_previous_pdf'] and not data['pdf_edits'] and not data['grade_previous_set'] and not data['reveal_previous_key'] and not data['pdf_tools'] and not data['pdf_document'] and not searches and not sections and not files and not pages:
         raise PlannerContractError('missing topic search')
     # These branches never consume search phrases. Canonicalize this unused
     # field instead of discarding an otherwise usable model interpretation.
@@ -684,6 +709,13 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', '')),
               **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
+    # Server cursors/source markers are decoded separately from the original
+    # history below. Base64 metadata is not conversational evidence and wastes
+    # planner tokens; preserve all visible text and the original server state.
+    for turn in turns:
+        turn['content']=re.sub(
+            r'\n?<!--(?:ACADEMIC_Q_CURSOR:\d+:\d+|ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+)-->',
+            '',turn['content'])
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
     recent_quiz = ((source_outline or {}).get('learning') or {}).get('active_quiz')
     from app.academic_question_output import question_blocks
@@ -849,6 +881,15 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         result = append_saved_pdf(session, message_model=message_model, plan=plan,
             owner_user_id=kwargs['owner_user_id'], course_id=kwargs['course_id'],
             history=kwargs.get('recent_history') or [])
+    elif plan.export_previous_quiz:
+        from app.academic_quiz import parse_quiz,render_quiz
+        saved=next((item.get('quiz') for item in reversed(kwargs.get('recent_history') or []) if item.get('quiz')),None)
+        if not saved:
+            from app.study_ai import StudyAIError
+            raise StudyAIError('Aktarılacak doğrulanmış soru seti bulunamadı; önceki bir set kullanılmadı.')
+        quiz=parse_quiz(json.dumps(saved),len(saved['questions']))
+        result=RetrievalResult(resolved_query=plan.resolved_query,retrieval_mode='generated_quiz_export',
+            evidence_sufficient=True,prepared_answer=render_quiz(quiz,plan.show_quiz_answers),generated_quiz=quiz)
     elif plan.reveal_previous_key:
         from app.academic_quiz import previous_quiz_key
         result = RetrievalResult(resolved_query=plan.resolved_query,
