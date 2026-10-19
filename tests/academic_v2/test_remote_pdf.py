@@ -391,6 +391,7 @@ def test_text_reading_uses_one_native_call_without_pdf_sandbox(monkeypatch):
     def generate(**kw):
         calls.append(kw)
         assert 'INDEXED NOTE' in kw['prompt']
+        assert kw['max_output_tokens']==16000  # Includes adaptive thinking.
         assert kw['attachments']==[{'label':'Summary.pdf','mime_type':'application/pdf','data':b'%PDF-summary'}]
         return 'Kaynak Notlar, sayfa 1: bir ayrıntı eksik.'
     monkeypatch.setattr('app.study_provider.get_provider',lambda name:SimpleNamespace(generate=generate))
