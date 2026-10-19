@@ -142,13 +142,20 @@ def focused_selected_rows(rows, request_plan):
     if not searches or not rows:
         return rows
     from app.academic_semantic_retrieval import _balanced_candidates
+    by_file = {}
+    for row in rows:
+        by_file.setdefault(int(row[1]), []).append(row)
     selected = set()
-    for phrase in searches:
-        pool = _balanced_candidates(rows, (phrase,), max(1, len(rows)),
-                                   allow_unmatched=False, best_match_only=True)
-        if not pool:
-            return rows
-        selected.update(int(row[0]) for row in pool)
+    for file_rows in by_file.values():
+        file_ids = set()
+        for phrase in searches:
+            pool = _balanced_candidates(file_rows, (phrase,), len(file_rows),
+                                       allow_unmatched=False, best_match_only=True)
+            if not pool:
+                file_ids = {int(row[0]) for row in file_rows}
+                break
+            file_ids.update(int(row[0]) for row in pool)
+        selected.update(file_ids)
     return [row for row in rows if int(row[0]) in selected]
 
 
