@@ -79,6 +79,7 @@ class AnthropicStudyProvider(StudyProvider):
         self._capacity_recovery_used = False
         self._stream_state = threading.local()
         self.response_schema = None
+        self.cache_static_system = False
 
     @property
     def last_finish_reason(self):
@@ -115,7 +116,12 @@ class AnthropicStudyProvider(StudyProvider):
         effort = os.getenv('STUDY_ANTHROPIC_EFFORT', 'medium').strip().lower()
         if effort not in {'low', 'medium', 'high', 'xhigh', 'max'}:
             raise StudyProviderError('Akademik AI düşünme ayarı geçersiz.', code=400)
-        payload = {'model': model, 'system': system_prompt, 'messages': messages,
+        # Only explicitly opted-in academic constants are cached; user history,
+        # retrieved notes and attachments remain outside the cache breakpoint.
+        system = ([{'type': 'text', 'text': system_prompt,
+                    'cache_control': {'type': 'ephemeral'}}]
+                  if self.cache_static_system and system_prompt else system_prompt)
+        payload = {'model': model, 'system': system, 'messages': messages,
                    'max_tokens': max_output_tokens, 'stream': stream,
                    'output_config': {'effort': effort}}
         # Haiku's adaptive thinking uses the model default sampling settings.
@@ -243,11 +249,14 @@ class AnthropicStudyProvider(StudyProvider):
                 success=success, status_code=code, latency_ms=elapsed,
                 response_headers=headers, response_json={'usage': usage} if usage else None)
             logger.info('Academic provider timing provider=anthropic model=%s mode=%s '
-                        'total_ms=%s first_text_ms=%s finish=%s success=%s input_tokens=%s output_tokens=%s',
+                        'total_ms=%s first_text_ms=%s finish=%s success=%s input_tokens=%s output_tokens=%s '
+                        'cache_read_tokens=%s cache_write_tokens=%s',
                         model, 'stream' if payload['stream'] else 'json', elapsed,
                         first_text_ms, self.last_finish_reason, success,
                         meta.get('prompt_tokens') if isinstance(meta,dict) else None,
-                        meta.get('output_tokens') if isinstance(meta,dict) else None)
+                        meta.get('output_tokens') if isinstance(meta,dict) else None,
+                        usage.get('cache_read_input_tokens', 0),
+                        usage.get('cache_creation_input_tokens', 0))
 
     def _run(self, payload):
         emitted = False
@@ -269,3 +278,4 @@ class AnthropicStudyProvider(StudyProvider):
 
     def generate_stream(self, **kwargs):
         yield from self._run(self._payload(**kwargs, stream=True))
+
