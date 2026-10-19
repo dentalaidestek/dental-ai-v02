@@ -239,7 +239,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             from app.academic_native_evidence import matching_native_pages
             native_matches,native_complete=matching_native_pages(session,
                 owner_user_id=owner_user_id,course_id=course_id,
-                searches=request_plan.source_subjects or request_plan.retrieval_queries)
+                searches=searches)
         ranked_rows=rows
         native_ids={int(row[0]) for row in native_matches}
         # Recovered complete native pages must participate in lexical selection,
@@ -250,7 +250,7 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
         # Retain the independently ranked/section-linked evidence as well.
         rows = (_balanced_candidates(rows, searches, limit)
                 if request_plan.source_kind == 'questions' else
-                _linked_candidates(session, selection_rows, request_plan.source_subjects or searches, owner_user_id=owner_user_id,
+                _linked_candidates(session, selection_rows, searches, owner_user_id=owner_user_id,
                                    course_id=course_id, limit=limit,source_sections=request_plan.source_sections,
                                    expand_related=request_plan.complete_sections or request_plan.depth=='detailed'))
         section_ids={int(row[0]) for row in rows} if isinstance(rows,SectionEvidenceRows) else set()
@@ -419,3 +419,4 @@ def retrieve_semantic_context(session, *, owner_user_id, course_id, query,
             and int(totals[1])==0 and int(totals[2])>0
             and scanned_pages <= originals)
     return result
+
