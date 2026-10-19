@@ -52,3 +52,36 @@ def test_old_saved_quizzes_remain_readable_but_new_generation_requires_metadata(
     for key in ('topic','asked_truth','statements','option_combinations'):old.pop(key)
     assert parse_quiz(json.dumps({'questions':[old]}),1)
     with pytest.raises(ValueError):parse_quiz(json.dumps({'questions':[old]}),1,require_quality=True)
+
+
+def test_repair_receives_exact_validation_failure_and_never_emits_bad_set(monkeypatch):
+    from types import SimpleNamespace
+    from app import study_ai_v2 as ai
+    from app.study_retrieval_v2 import RetrievalResult
+    invalid=question();invalid['correct']='C'
+    replies=iter([json.dumps({'questions':[invalid]}),json.dumps({'questions':[question()]})])
+    calls=[]
+    class Provider:
+        last_finish_reason='STOP'
+        def generate_stream(self,**options):
+            calls.append(options)
+            yield next(replies)
+    target=SimpleNamespace(provider='test',model='test')
+    monkeypatch.setattr(ai,'_generation_targets',lambda:[target])
+    monkeypatch.setattr(ai,'target_available',lambda t:True)
+    monkeypatch.setattr(ai,'get_provider',lambda p:Provider())
+    monkeypatch.setattr(ai,'report_target_success',lambda t:None)
+    monkeypatch.setattr(ai,'_prompt',lambda *a:'Source-backed question request')
+    result=RetrievalResult(note_context=['Risk olasılıktır.'],evidence_sufficient=True,
+        evidence=[SimpleNamespace(material_id=1,page_start=1,page_end=1,display_name='Not.pdf')],
+        study_task={'operation':'generate_questions','quiz_contract':True,'count':1})
+    answer=''.join(ai.stream_rag_v2('Perio','Bir soru',[],result))
+    assert len(calls)==2
+    assert 'Kesin denetim nedeni: statement key mismatch' in calls[1]['prompt']
+    assert result.generated_quiz['questions'][0]['correct']=='D'
+    assert '"correct"' not in answer and 'Cevap anahtarı' not in answer
+
+
+def test_unexpected_error_text_is_not_disclosed_as_repair_diagnostic():
+    from app.academic_quiz import quiz_failure_reason
+    assert quiz_failure_reason(ValueError('private model text'))=='invalid quiz structure'

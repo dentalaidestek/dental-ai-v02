@@ -110,10 +110,15 @@ def _drain(engine):
                 session.expunge(user)
             request=Request({'type':'http','headers':[], 'state':{'academic_run_id':run.id}})
             background=BackgroundTasks()
-            response=main._run_owned_study_request(request,run.course_id,background,run.question,user=user)
-            if background.tasks:
-                import asyncio
-                asyncio.run(background())
+            # Executor threads do not inherit the HTTP storage-reader scope.
+            # Pin downloaded files for this job only, including its background
+            # tasks, then release readers before claiming another job.
+            from app.object_cache import scope
+            with scope():
+                response=main._run_owned_study_request(request,run.course_id,background,run.question,user=user)
+                if background.tasks:
+                    import asyncio
+                    asyncio.run(background())
             payload=json.loads(response.body)
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)

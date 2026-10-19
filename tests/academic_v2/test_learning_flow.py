@@ -246,3 +246,27 @@ def test_version_twelve_upgrade_does_not_replay_historical_migrations(monkeypatc
     assert migration._upgrade_learning_schema(SimpleNamespace(engine=engine))
     assert created==[True] and not any('ALTER TABLE' in sql or 'retention' in sql for sql in statements)
     assert not any('UPDATE dental_schema_revision' in sql for sql in statements)
+
+
+def test_worker_pins_stored_pdf_without_http_scope_and_releases_each_job(course_env,monkeypatch,tmp_path):
+    main,engine,client=course_env
+    fake_generation(main,monkeypatch)
+    from app import object_cache
+    monkeypatch.setenv('R2_CACHE_DIR',str(tmp_path/'cache'))
+    readers=[];handles=[]
+    def stream(*args):
+        def download(path,size):path.write_bytes(b'%PDF-test')
+        path=object_cache.materialize('source.pdf',metadata=lambda:{'ContentLength':9},download=download)
+        reader=object_cache._scope.get()
+        readers.append(reader);handles.extend(reader.values())
+        assert path.read_bytes()==b'%PDF-test'
+        yield 'PDF okundu.'
+    monkeypatch.setattr(main,'stream_study_ai_v2',stream)
+    assert object_cache._scope.get() is None
+    for key in ('a','b'):
+        ident=client.post('/notes/courses/6/ai/runs',data={'message':'PDF incele','request_key':key*32}).json()['run']['id']
+        runs._drain(engine)
+        assert client.get(f'/notes/courses/6/ai/runs/{ident}').json()['run']['status']=='DONE'
+        assert object_cache._scope.get() is None
+        assert all(handle.closed for handle in handles)
+    assert len(readers)==2 and readers[0] is not readers[1]
