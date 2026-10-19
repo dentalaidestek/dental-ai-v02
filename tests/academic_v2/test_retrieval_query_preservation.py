@@ -93,7 +93,7 @@ def test_full_coverage_and_explicit_page_requests_are_not_topic_truncated():
 def test_unmatched_search_keeps_owned_file_instead_of_claiming_no_evidence():
     from app.academic_source_batches import focused_selected_rows
     rows=selected_rows()
-    assert focused_selected_rows(rows,selected_plan(retrieval_queries=('bilinmeyen terim',))) is rows
+    assert focused_selected_rows(rows,selected_plan(retrieval_queries=('bilinmeyen terim',))) == rows
 
 
 def test_equally_relevant_pages_are_retained_without_arbitrary_top_k():
@@ -101,3 +101,14 @@ def test_equally_relevant_pages_are_retained_without_arbitrary_top_k():
     rows=selected_rows()
     rows.append((5,37,'Selected.pdf',15,15,None,'TEXT',rows[1][7],5,None,None,None,1.0,5))
     assert [r[3] for r in focused_selected_rows(rows,selected_plan())]==[2,14,15]
+
+
+def test_multiple_selected_files_keep_independent_evidence_and_fallbacks():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    # A second file's shorter match must not be crowded out by the first file.
+    rows.extend([(5,38,'Other.pdf',1,1,None,'TEXT','Genetik testler klinik yarar.',5,None,None,None,1.0,5),
+                 (6,38,'Other.pdf',2,2,None,'TEXT','İlişkinin araştırıldığı farklı örneklem.',6,None,None,None,1.0,6)])
+    result=focused_selected_rows(rows,selected_plan(source_files=('Selected.pdf','Other.pdf'),retrieval_queries=('istatistiksel',)))
+    assert {r[1] for r in result}=={37,38}
+    assert {r[0] for r in result}=={1,2,5,6}
