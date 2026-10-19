@@ -833,14 +833,15 @@ def stream_rag_v2(
             elif checked_set:
                 answer = ''.join(pieces)
                 if structured_quiz:
-                    from app.academic_quiz import parse_quiz, render_quiz
+                    from app.academic_quiz import parse_quiz, render_quiz, quiz_failure_reason
                     try:
                         quiz=parse_quiz(answer,retrieval.study_task.get('count'),history,retrieval.evidence,
                             require_quality=True,distinct_topics=retrieval.study_task.get('distinct_topics',False))
                     except (ValueError,TypeError,KeyError) as exc:
                         # One bounded repair reuses evidence; no rejected set is emitted.
-                        logger.info('Academic quiz validation trace=%s repair=1 reason=%s',trace_id,type(exc).__name__)
-                        repair_prompt=prompt+'\nÖnceki JSON seti doğrulanamadı. Kök-şık-anahtar uyumunu, adedi, tekrar ve cevap sızıntısını düzelt.\n'+answer
+                        reason=quiz_failure_reason(exc)
+                        logger.info('Academic quiz validation trace=%s repair=1 reason=%s',trace_id,reason)
+                        repair_prompt=prompt+'\nÖnceki JSON seti doğrulanamadı. Kesin denetim nedeni: '+reason+'. Bu hatayı gider; bütün zorunlu alanları ve kullanıcı koşullarını koru. Kaynak atfını verilen material_id/page çiftlerinden seç. Kök-şık-anahtar uyumunu, adedi, tekrar ve cevap sızıntısını düzelt. Tam düzeltilmiş JSON setini döndür.\n'+answer
                         repaired=''.join(provider.generate_stream(model=target.model,system_prompt=V2_SYSTEM_PROMPT,
                             history=[],prompt=repair_prompt,attachments=generation_attachments,temperature=0.22,
                             max_output_tokens=output_budget,**generation_options))
@@ -850,6 +851,8 @@ def stream_rag_v2(
                             quiz=parse_quiz(repaired,retrieval.study_task.get('count'),history,retrieval.evidence,
                                 require_quality=True,distinct_topics=retrieval.study_task.get('distinct_topics',False))
                         except (ValueError,TypeError,KeyError) as final_exc:
+                            logger.warning('Academic quiz validation trace=%s repair=failed reason=%s',
+                                trace_id,quiz_failure_reason(final_exc))
                             raise StudyAIError('Soru setinin anahtar veya tekrar kontrolü tamamlanamadı; set kaydedilmedi.') from final_exc
                     retrieval.generated_quiz=quiz
                     answer=render_quiz(quiz,retrieval.study_task.get('show_quiz_answers',False))
