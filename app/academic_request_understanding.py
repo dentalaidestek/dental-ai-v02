@@ -811,6 +811,7 @@ def understand_study_request(question: str, history: list[dict], *, source_outli
     provider.max_attempts = 1
     provider.capacity_retry = True
     provider.response_schema = SCHEMA
+    provider.cache_static_system = True
     def call(prompt):
         logger.info('Academic planner provider=%s model=%s timeout_seconds=%s', target.provider, model, provider.timeout)
         return provider.generate(model=model, system_prompt=SYSTEM, history=[], prompt=prompt,
