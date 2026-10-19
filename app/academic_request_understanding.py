@@ -25,7 +25,11 @@ SCHEMA = {
         'resolved_query': {'type': 'string'},
         'retrieval_queries': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_SOURCE_SEARCHES},
         'source_sections': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': MAX_SOURCE_SEARCHES},
-        'operation': {'type': 'string', 'enum': list(OPERATIONS)},
+        'operation': {'type': 'string', 'enum': list(OPERATIONS), 'description':
+            'Classify the CURRENT requested deliverable. Creating or revising practice '
+            'questions is generate_questions, including statement/combination questions '
+            'with hidden answers. answer means answering a question, never creating a quiz. '
+            'Prior PDF work does not change a new quiz request into answer.'},
         'scope': {'type': 'string', 'enum': ['topic', 'course']},
         'count': {'type': ['integer', 'null'], 'description':
             'Explicit requested output item count: questions for question generation, '
@@ -91,7 +95,22 @@ SCHEMA['properties']['pdf_document'] = REMOTE_PDF_SCHEMA
 SCHEMA['required'].append('pdf_document')
 SCHEMA['properties']['distinct_topics']={'type':'boolean','description':'True only when the user requires every generated question to use a different broad main topic. Clarify if available main topics cannot support the requested count.'}
 SCHEMA['required'].append('distinct_topics')
-SYSTEM = '''REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
+SYSTEM = '''CURRENT DELIVERABLE FIRST: Select operation from what the current user
+wants produced, not the previous assistant response or the source file type.
+Creating a new practice/exam question set, or correcting/regenerating that set,
+MUST use operation=generate_questions. This includes I/II/III statement questions,
+A-E combination choices, different topics and hidden answer keys. Keep all those
+constraints in resolved_query. Use distinct_topics=true for different main topics.
+For example, "Risk, sigara ve diyabetten birer tane toplam 3 öncüllü soru hazırla,
+cevapları gösterme" means generate_questions, count=3, distinct_topics=true,
+show_quiz_answers=false, pdf_document=null. Merely using uploaded PDF notes as
+sources is not working on an existing PDF. A new quiz following a PDF discussion
+still uses generate_questions. Exporting an ALREADY completed question set without
+changing its contents, revealing its key, grading supplied answers, or editing an
+existing PDF file uses the dedicated rules below instead. Do not create a fresh
+set when the user only asks for the saved set's answers.
+
+REMOTE PDF WORKSPACE: If source_outline.remote_pdf_enabled=true, route
 ALL requests to change, color, highlight, inspect/edit layout, split/merge/rotate
 or otherwise work on an EXISTING PDF through pdf_document, operation=answer,
 output_format=pdf for file creation/changes, output_format=text for reading,
