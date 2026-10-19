@@ -24,12 +24,15 @@ _quality['properties'].update({
     'topic':{'type':'string','description':'Distinct broad source topic, not a cosmetic title.'},
     'asked_truth':{'type':'boolean','description':'True if the stem asks for true statements, false if it asks for false statements. True for ordinary questions.'},
     'statements':{'type':'array','maxItems':5,'items':{'type':'object','properties':{
-        'text':{'type':'string'},'true':{'type':'boolean'}},'required':['text','true'],'additionalProperties':False}},
+        'number':{'type':'integer','description':'Exact Roman-numeral position in stem: I=1, II=2, III=3.'},
+        'true':{'type':'boolean'}},'required':['number','true'],'additionalProperties':False}},
     'option_combinations':{'type':'array','maxItems':5,'items':{'type':'array','maxItems':5,'items':{'type':'integer'}}}})
 _quality['required'].extend(['topic','asked_truth','statements','option_combinations'])
 CONTRACT_PROMPT+='''\nKALİTE DENETİMİ: Her soruda gerçek ana kaynak konusunu topic alanına yaz.
-Öncüllü sorularda statements içinde öncül metinlerini sırayla ve kaynağa göre
-doğru/yanlış değerlerini true alanında ver. asked_truth kökün doğru öncülleri
+Öncüllü sorularda stem içinde her öncülü ayrı satırda I., II., III. biçiminde yaz.
+statements içinde aynı sırayla yalnız number (I=1, II=2, III=3) ve kaynağa göre
+doğru/yanlış değerini true alanında ver; öncül metnini ikinci kez yazma.
+asked_truth kökün doğru öncülleri
 istediğinde true, yanlış öncülleri istediğinde false olsun. option_combinations beş şıkkın
 öncül numaralarını A–E sırasıyla taşısın; örneğin I ve III için [1,3]. Doğru
 şıkkın kombinasyonu tam olarak doğru öncülleri içermeli. Öncülsüz sorularda bu
@@ -89,17 +92,29 @@ def parse_quiz(raw, count, history=(), evidence=None,*,require_quality=False,dis
             if statements:
                 if not 2<=len(statements)<=5 or len(combinations)!=5:
                     raise QuizValidationError('invalid statement count')
-                for statement in statements:
-                    if (not isinstance(statement,dict) or set(statement)!={'text','true'}
-                            or type(statement['true']) is not bool or not isinstance(statement['text'],str)
-                            or not statement['text'].strip()
-                            or question_stem(statement['text']) not in question_stem(q['stem'])):
-                        raise QuizValidationError('statement outside question stem')
+                romans={'I':1,'II':2,'III':3,'IV':4,'V':5}
+                numbered=all(isinstance(s,dict) and set(s)=={'number','true'} for s in statements)
+                if numbered:
+                    displayed=list(re.finditer(r'(?m)^\s*(III|II|IV|I|V)[.)]\s+',q['stem']))
+                    if ([romans[m.group(1)] for m in displayed]!=list(range(1,len(statements)+1))
+                            or any(not q['stem'][m.end():displayed[i+1].start() if i+1<len(displayed) else len(q['stem'])].strip()
+                                   for i,m in enumerate(displayed))):
+                        raise QuizValidationError('invalid displayed statement numbering')
+                    if any(type(s['number']) is not int or s['number']!=i or type(s['true']) is not bool
+                           for i,s in enumerate(statements,1)):
+                        raise QuizValidationError('invalid statement metadata numbering')
+                else:
+                    # Existing saved sets used duplicated statement text.
+                    for statement in statements:
+                        if (not isinstance(statement,dict) or set(statement)!={'text','true'}
+                                or type(statement['true']) is not bool or not isinstance(statement['text'],str)
+                                or not statement['text'].strip()
+                                or question_stem(statement['text']) not in question_stem(q['stem'])):
+                            raise QuizValidationError('statement outside question stem')
                 for combo in combinations:
                     if (not isinstance(combo,list) or any(type(i) is not int or not 1<=i<=len(statements) for i in combo)
                             or len(set(combo))!=len(combo)):
                         raise QuizValidationError('invalid statement combination')
-                romans={'I':1,'II':2,'III':3,'IV':4,'V':5}
                 for option,combo in zip(opts,combinations):
                     words=question_stem(option)
                     shown={romans[t] for t in re.findall(r'\b(?:III|II|IV|I|V)\b',option.upper())}
