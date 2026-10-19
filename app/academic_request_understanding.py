@@ -684,6 +684,13 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
     turns = [{'role': str(x.get('role', '')), 'content': str(x.get('content', '')),
               **({'is_pdf': str(x.get('mode', '')).endswith('_PDF')} if 'mode' in x else {})}
              for x in (history or [])[-8:]]
+    # Server cursors/source markers are decoded separately from the original
+    # history below. Base64 metadata is not conversational evidence and wastes
+    # planner tokens; preserve all visible text and the original server state.
+    for turn in turns:
+        turn['content']=re.sub(
+            r'\n?<!--(?:ACADEMIC_Q_CURSOR:\d+:\d+|ACADEMIC_SOURCE_REQUEST:[A-Za-z0-9_=-]+)-->',
+            '',turn['content'])
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
     recent_quiz = ((source_outline or {}).get('learning') or {}).get('active_quiz')
     from app.academic_question_output import question_blocks
