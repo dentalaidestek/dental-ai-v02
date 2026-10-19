@@ -47,3 +47,57 @@ def test_internal_markers_are_not_paid_planner_context_but_source_state_survives
     assert payload['recent_source_request']['retrieval_queries']==['genetik testler']
     assert '<!--ACADEMIC_' in history[0]['content']
     assert 'ACADEMIC_SOURCE_REQUEST' not in json.dumps(payload)
+
+
+def selected_plan(**changes):
+    from dataclasses import replace
+    plan=StudyRequest(resolved_query='Genetik testler',operation='answer',scope='topic',
+        count=None,difficulty=None,clarification='',complete_sections=False,
+        source_files=('Selected.pdf',),source_subjects=('genetik testler',),
+        retrieval_queries=('istatistiksel ilişki klinik yarar',))
+    return replace(plan,**changes)
+
+
+def selected_rows():
+    def row(ident,page,text):
+        return (ident,37,'Selected.pdf',page,page,None,'TEXT',text,ident,None,None,None,1.0,ident)
+    return [row(1,2,'Genetik testler hakkında giriş.'),
+            row(2,14,'Genetik testler: istatistiksel ilişki klinik yarar değildir.'),
+            row(3,20,'Gelir eğitim ve sosyal koşullar.'),
+            row(4,21,'Yaş ve biyolojik cinsiyet değiştirilemez.')]
+
+
+def test_explicit_file_topic_keeps_normalized_answer_page_without_unrelated_pages():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    assert [r[3] for r in focused_selected_rows(rows,selected_plan())]==[2,14]
+    assert len(rows)==4
+
+
+def test_compared_subjects_each_keep_their_own_evidence_inside_selected_file():
+    from app.academic_source_batches import focused_selected_rows
+    plan=selected_plan(source_subjects=('sosyal koşullar','biyolojik cinsiyet'),
+                       retrieval_queries=('gelir eğitim','yaş değiştirilemez'))
+    assert [r[3] for r in focused_selected_rows(selected_rows(),plan)]==[20,21]
+
+
+def test_full_coverage_and_explicit_page_requests_are_not_topic_truncated():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    for changes in ({'complete_sections':True},{'scope':'course'},
+                    {'source_pages':(14,20)}, {'needs_visual':True},
+                    {'source_sections':('Genetik',)}, {'source_kind':'questions'}):
+        assert focused_selected_rows(rows,selected_plan(**changes)) is rows
+
+
+def test_unmatched_search_keeps_owned_file_instead_of_claiming_no_evidence():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    assert focused_selected_rows(rows,selected_plan(retrieval_queries=('bilinmeyen terim',))) is rows
+
+
+def test_equally_relevant_pages_are_retained_without_arbitrary_top_k():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    rows.append((5,37,'Selected.pdf',15,15,None,'TEXT',rows[1][7],5,None,None,None,1.0,5))
+    assert [r[3] for r in focused_selected_rows(rows,selected_plan())]==[2,14,15]

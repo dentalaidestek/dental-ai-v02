@@ -4,6 +4,9 @@ This module only plans source work. It makes no model calls and does not label
 OCR or a model response as verified facts.
 """
 from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger('uvicorn.error.academic_source_batches')
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,33 @@ def load_owned_source_rows(session, *, owner_user_id, course_id):
         after = ids[-1]
 
 
+def focused_selected_rows(rows, request_plan):
+    """Rank within an already owned file boundary; never search other files.
+
+    Exact pages, visual reads and exhaustive/section requests keep their full
+    coverage. Unmatched planner searches retain the original bounded source
+    instead of turning morphology differences into a false absence claim.
+    """
+    if (not request_plan.source_files or request_plan.source_pages
+            or request_plan.scope != 'topic' or request_plan.source_kind != 'notes'
+            or request_plan.complete_sections or request_plan.source_sections
+            or request_plan.needs_visual):
+        return rows
+    searches = tuple(dict.fromkeys((*request_plan.source_subjects,
+                                    *request_plan.retrieval_queries)))
+    if not searches or not rows:
+        return rows
+    from app.academic_semantic_retrieval import _balanced_candidates
+    selected = set()
+    for phrase in searches:
+        pool = _balanced_candidates(rows, (phrase,), max(1, len(rows)),
+                                   allow_unmatched=False, best_match_only=True)
+        if not pool:
+            return rows
+        selected.update(int(row[0]) for row in pool)
+    return [row for row in rows if int(row[0]) in selected]
+
+
 def retrieve_source_batches(session, *, owner_user_id, course_id, query,
                             request_plan, recent_history=None, **kwargs):
     from app.academic_semantic_retrieval import retrieve_semantic_context
@@ -130,6 +160,10 @@ def retrieve_source_batches(session, *, owner_user_id, course_id, query,
         rows = list(load_owned_selected_rows(session, owner_user_id=owner_user_id,
             course_id=course_id, source_files=request_plan.source_files,
             source_pages=request_plan.source_pages))
+        original_count = len(rows)
+        rows = focused_selected_rows(rows, request_plan)
+        logger.info('Academic selected source candidates before=%s after=%s scope=%s',
+                    original_count, len(rows), request_plan.scope)
     else:
         loader = load_owned_question_rows if request_plan.source_kind in {'questions', 'question_patterns'} else load_owned_source_rows
         rows = list(loader(session, owner_user_id=owner_user_id, course_id=course_id))
@@ -248,3 +282,4 @@ def retrieve_row_batches(session, *, rows, owner_user_id, course_id, query,
                 seen_evidence.add(item.chunk_id)
     result.source_material_ids = list(dict.fromkeys(item.material_id for item in result.evidence))
     return result
+
