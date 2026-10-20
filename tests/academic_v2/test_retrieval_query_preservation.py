@@ -112,3 +112,22 @@ def test_multiple_selected_files_keep_independent_evidence_and_fallbacks():
     result=focused_selected_rows(rows,selected_plan(source_files=('Selected.pdf','Other.pdf'),retrieval_queries=('istatistiksel',)))
     assert {r[1] for r in result}=={37,38}
     assert {r[0] for r in result}=={1,2,5,6}
+
+
+def test_course_explanations_retrieve_all_notes_instead_of_sampled_coverage(monkeypatch):
+    from app import academic_source_batches as batches
+    from app import academic_semantic_retrieval as semantic
+    from app.academic_request_understanding import UnderstandingResult,retrieve_understood_course_context
+    from app.study_retrieval_v2 import RetrievalResult
+    calls=[]
+    def retrieve(session,**kwargs):
+        calls.append(kwargs['request_plan'].operation)
+        return RetrievalResult(evidence_sufficient=True,retrieval_mode='source_batches')
+    monkeypatch.setattr(batches,'retrieve_source_batches',retrieve)
+    monkeypatch.setattr(semantic,'retrieve_semantic_context',lambda *a,**k: (_ for _ in ()).throw(AssertionError('sampled course coverage')))
+    for operation in ('answer','explain','compare','teach','summarize','generate_questions'):
+        plan=selected_plan(scope='course',operation=operation,source_files=(),source_subjects=(),retrieval_queries=())
+        result=retrieve_understood_course_context(None,understanding=UnderstandingResult(plan=plan,outcome='ok'),
+            owner_user_id=1,course_id=6,query='Hepsini detaylandır',recent_history=[])
+        assert result.retrieval_mode=='source_batches'
+    assert calls==['answer','explain','compare','teach','summarize','generate_questions']
