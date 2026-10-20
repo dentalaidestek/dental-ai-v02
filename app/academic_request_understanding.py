@@ -360,6 +360,9 @@ conversation's question set, NOT the uploaded question index. Use solve + notes
 and restate the referenced questions' subjects/searches; preserve which set and
 question numbers the user means. An entire generated set is NOT an entire course.
 Use topic scope and its actual subjects, never course scope merely to grade all questions.
+learning.quiz_answers records the user's clicked choices for the active recent_quiz.
+Use those choices when the user refers to their selection; their presence alone is
+not a new request to grade, reveal answers or generate another set.
 grade_previous_set=true ONLY when the user submits choices to grade the most recent
 assistant-generated question set. operation=solve, source_kind=notes, needs_visual=false.
 Perform the same recent_quiz option/letter/rationale consistency review before grading;
@@ -723,11 +726,15 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
             '',turn['content'])
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
     recent_quiz = ((source_outline or {}).get('learning') or {}).get('active_quiz')
+    selected_quiz = bool(((source_outline or {}).get('learning') or {}).get('quiz_answers'))
     from app.academic_quiz import is_quiz_turn
     for index in range(len(turns)-1, -1, -1):
         if turns[index]['role'].upper() == 'ASSISTANT' and (
                 is_quiz_turn({**turns[index], 'quiz': (history or [])[-8:][index].get('quiz')})):
-            recent_quiz = (history or [])[-8:][index].get('quiz')
+            candidate = (history or [])[-8:][index].get('quiz')
+            if selected_quiz and recent_quiz and candidate != recent_quiz:
+                continue
+            recent_quiz = candidate
             if recent_quiz:
                 # Exact questions/options remain available, without duplicating
                 # the entire quiz in both dialogue and structured metadata.
