@@ -11,6 +11,18 @@
 .study-chat-composer .study-attach-button { flex-shrink:0; background:transparent; color:#14243b; font-size:24px; }
 .study-upload-files { font-size:13px; padding:6px 12px; color:#475569; max-height:80px; overflow:auto; }
 .study-incomplete-notice { color:#9b2c2c; margin-top:10px; }
+
+.study-progress{margin:8px 16px;border:1px solid #dce4ed;border-radius:16px;background:#fff;color:#14243b;flex-shrink:0;overflow:hidden}
+.study-progress summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;cursor:pointer;list-style:none}
+.study-progress summary::-webkit-details-marker{display:none}.study-progress summary>span:first-child{display:grid;gap:4px;min-width:0}.study-progress summary small{font-size:12px;color:#64748b}
+.study-progress summary:after{content:'⌄';font-size:18px}.study-progress[open] summary:after{transform:rotate(180deg)}
+.study-progress-indicator{margin-left:auto;font-size:11px;font-weight:700;border-radius:20px;padding:5px 9px;background:#edf5f4;color:#17665d;white-space:nowrap}
+.study-progress-body{border-top:1px solid #edf0f4;padding:14px 16px;max-height:42vh;overflow:auto;overscroll-behavior:contain}.study-progress-body>p{margin:0 0 12px;font-size:13px;line-height:1.5}.study-progress-body h3{font-size:13px;margin:16px 0 8px}
+.study-progress-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.study-progress-stat{border-radius:10px;background:#f4f7fb;padding:10px 8px;display:grid;gap:4px}.study-progress-stat strong{font-size:20px}.study-progress-stat small{font-size:11px;color:#526176}
+.study-progress-next{padding:12px;margin-top:12px;border-radius:12px;background:#eef4fa}.study-progress-next small{font-size:10px;letter-spacing:.07em;color:#4e6580}.study-progress-next p{font-size:13px;margin:5px 0 0;line-height:1.5}
+.study-progress-topics{list-style:none;padding:0;margin:0;display:grid;gap:8px}.study-progress-topics li{padding:10px 12px;border:1px solid #e3e9ef;border-radius:10px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.study-progress-topics small{display:block;font-size:11px;color:#64748b;margin-top:4px}.study-progress-tag{display:inline-block;font-size:10px;color:#925220;background:#fff3df;padding:2px 7px;border-radius:12px;margin-bottom:5px}
+.study-progress-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.study-progress-actions button{border:0;border-radius:10px;padding:10px 13px;background:#102a43;color:white;font-size:12px;cursor:pointer}.study-progress-actions button:last-child{background:#f0f4f8;color:#243b53}.study-progress-actions button:disabled{opacity:.5;cursor:default}.study-progress-note{display:block;color:#64748b;font-size:11px;line-height:1.5;margin-top:9px}
+@media(max-width:480px){.study-progress{margin:6px 10px}.study-progress summary{padding:11px 12px}.study-progress-body{padding:12px;max-height:38vh}.study-progress-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -42,11 +54,20 @@
     </div>
     {% endif %}
 
-    <details style="margin:8px 16px;padding:10px;border:1px solid #dce4ed;border-radius:12px">
-        <summary>Çalışma durumum</summary>
-        <p id="studyLearningSummary">Çalışma kayıtların yükleniyor...</p>
-        <button type="button" id="studyReviewButton" disabled>Eksiklerimden 5 soru hazırla</button>
-        <small style="display:block;margin-top:6px">Kayıtlı soru değerlendirmelerine dayanır; öğrenme düzeyinin kesin ölçümü değildir.</small>
+    <details class="study-progress" id="studyProgress">
+        <summary><span><strong>Çalışma durumum</strong><small id="studyProgressHint">Kayıtların yükleniyor</small></span><span class="study-progress-indicator" id="studyProgressState">Hazırlanıyor</span></summary>
+        <div class="study-progress-body">
+            <p id="studyLearningSummary" role="status" aria-live="polite">Çalışma kayıtların yükleniyor...</p>
+            <div class="study-progress-stats" id="studyLearningStats"></div>
+            <div class="study-progress-next"><small>SIRADAKİ ADIM</small><p id="studyLearningNext">Kayıtların kontrol ediliyor.</p></div>
+            <p class="study-progress-note" id="studyLearningTask"></p>
+            <h3>Öncelikli tekrarlar</h3>
+            <ul id="studyLearningTopics" class="study-progress-topics"></ul>
+            <p class="study-progress-note" id="studyLearningEmpty" hidden>Henüz değerlendirilmiş bir cevabın yok. Bir soru setini yanıtladığında zorlandığın bilgiler burada görünür.</p>
+            <div class="study-progress-actions"><button type="button" id="studyReviewButton" disabled>Eksiklerimden 5 soru</button><button type="button" id="studyProgressRefresh">Güncelle</button></div>
+            <small class="study-progress-note" id="studyLearningUpdated"></small>
+            <small class="study-progress-note">Bu alan soru değerlendirmelerine dayanır. Henüz sorulmamış konular için öğrenildi veya eksik kararı verilmez.</small>
+        </div>
     </details>
     <section class="study-chat study-chat-scroll study-chat-clean-scroll" id="studyChat" aria-live="polite">
         {% if messages %}
@@ -294,18 +315,54 @@
     function setWorking(value) {
         send.disabled=value;
         if (attach) attach.disabled=value || uploading;
+        if(learningInfo)renderLearning(learningInfo);
+    }
+    let learningInfo=null, learningBusy=false, learningTimer=null;
+    const learningChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('academic-learning-'+courseId):null;
+    const learningText=(id,value)=>{document.getElementById(id).textContent=value;};
+    function renderLearning(info) {
+        const facts=Number(info.practiced_facts)||0, correct=Number(info.correct)||0, wrong=Number(info.wrong)||0;
+        const due=Number(info.due_count)||0, weak=Number(info.weak_count)||0;
+        learningText('studyProgressHint',facts?weak+' bilgiye odaklan · '+due+' tekrar bekliyor':'Cevaplarını değerlendirerek başlayalım');
+        learningText('studyProgressState',activeRun?'Çalışıyor':due?'Tekrar zamanı':weak?'Pekiştirme gerekli':facts?'Güncel':'İlk adım');
+        learningText('studyLearningSummary',facts?facts+' farklı bilgi üzerinde soru yanıtladın. Sonuçlar değerlendirdikçe güncellenir.':'Henüz değerlendirilmiş bir cevabın yok. Konu anlatımı okumak tek başına öğrenme puanı oluşturmaz.');
+        const stats=document.getElementById('studyLearningStats');stats.replaceChildren();
+        for (const [value,label] of [[facts,'Çalışılan bilgi'],[correct,'Doğru yanıt'],[wrong,'Yanlış yanıt'],[due,'Tekrar bekliyor']]) {
+            const box=document.createElement('div');box.className='study-progress-stat';
+            const number=document.createElement('strong'),caption=document.createElement('small');number.textContent=value;caption.textContent=label;box.append(number,caption);stats.append(box);
+        }
+        const next=weak?'Önce zorlandığın '+weak+' bilgiyi pekiştir. Yanlışlarından yeni sorularla başlayabilirsin.':due?'Tekrar zamanı gelen '+due+' bilgiyi yeni sorularla hatırla.':facts?'Şimdilik zamanı gelen tekrar yok. Yeni sorularla farklı konuları çalışabilirsin.':'Bir soru seti hazırla ve cevaplarını gönder. Eksiklerin değerlendirmeden sonra burada belirecek.';
+        learningText('studyLearningNext',activeRun?'Yanıtın hazırlanıyor. Tamamlanınca çalışma kayıtların otomatik güncellenecek.':next);
+        const topics=document.getElementById('studyLearningTopics');topics.replaceChildren();
+        const dateText=value=>{const date=new Date(value);return Number.isNaN(date.getTime())?'':date.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
+        for (const item of info.review || []) {
+            const li=document.createElement('li'),tag=document.createElement('span'),fact=document.createElement('div'),source=document.createElement('small');
+            tag.className='study-progress-tag';tag.textContent=item.needs_practice?'Pekiştir':item.due?'Tekrar zamanı':'Planlandı';
+            fact.textContent=item.fact;source.textContent=(item.source || '')+' · '+item.correct+' doğru / '+item.wrong+' yanlış'+(item.due_at?' · '+(item.due?'Tekrar zamanı geldi':dateText(item.due_at)):'');li.append(tag,fact,source);topics.append(li);
+        }
+        document.getElementById('studyLearningEmpty').hidden=!!facts;
+        const reviewButton=document.getElementById('studyReviewButton');
+        reviewButton.disabled=!!activeRun;
+        reviewButton.textContent=weak || due?'Eksiklerimden 5 soru':facts?'Yeni 5 soru hazırla':'İlk 5 sorumu hazırla';
+        const task=(info.active_request || {}).resolved_query || '';
+        learningText('studyLearningTask',task?'Son çalışma: '+task:'');
+        learningText('studyLearningUpdated',info.last_practiced_at?'Son değerlendirme: '+dateText(info.last_practiced_at):'Yeni değerlendirmeler bu ekrana otomatik yansır.');
+        clearTimeout(learningTimer);
+        if (!document.hidden && info.next_due_at) {
+            const delay=new Date(info.next_due_at).getTime()-Date.now()+1000;
+            if(delay>0) learningTimer=setTimeout(refreshLearning,Math.min(delay,2147483647));
+        }
     }
     async function refreshLearning() {
-        const label=document.getElementById('studyLearningSummary');
-        if (!label) return;
+        if(learningBusy || document.hidden)return;
+        learningBusy=true;
         try {
-            const response=await fetch('/notes/courses/'+courseId+'/ai/learning',{credentials:'same-origin'});
-            const data=await response.json();
-            if (!data.ok) return;
-            const info=data.learning;
-            label.textContent=info.practiced_facts+' bilgi çalışıldı · '+info.correct+' doğru · '+info.wrong+' yanlış · '+info.due_count+' tekrar zamanı geldi';
-            document.getElementById('studyReviewButton').disabled=!info.practiced_facts;
-        } catch (_) {}
+            const response=await fetch('/notes/courses/'+courseId+'/ai/learning',{credentials:'same-origin',cache:'no-store'});
+            if(!response.ok)throw new Error('unavailable');
+            const data=await response.json();if(!data.ok || !data.learning)throw new Error('unavailable');
+            learningInfo=data.learning;renderLearning(learningInfo);
+        } catch (_) {learningText('studyProgressState','Bağlantı bekleniyor');learningText('studyLearningUpdated','Kayıtlar güncellenemedi. Güncelle düğmesiyle tekrar deneyebilirsin.');}
+        finally{learningBusy=false;}
     }
     async function followRun(id,pending,userMessage) {
         try {
@@ -314,6 +371,8 @@
             if (!response.ok || !data.ok) throw new Error('Çalışmanın durumuna erişilemedi.');
             const run=data.run;
             status.textContent=run.stage || 'Çalışma sürüyor';
+            learningText('studyProgressState','Çalışıyor');
+            learningText('studyLearningNext',run.stage || 'Yanıtın hazırlanıyor. Tamamlanınca kayıtların güncellenecek.');
             if (run.partial) {
                 pending.classList.remove('pending');
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.partial);
@@ -322,7 +381,7 @@
                 pending.classList.remove('pending');
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
                 addPdfArtifact(pending,run.artifact || null);
-                status.textContent='';activeRun=null;setWorking(false);refreshLearning();
+                status.textContent='';activeRun=null;setWorking(false);refreshLearning();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
@@ -352,7 +411,7 @@
             input.value='';input.style.height='auto';
             const userMessage=addMessage('user',text,false,true);
             const pending=addMessage('assistant','',true,true);
-            activeRun=result.run.id;followRun(activeRun,pending,userMessage);
+            activeRun=result.run.id;setWorking(true);followRun(activeRun,pending,userMessage);
         } catch (error) {
             status.textContent=error.message || 'Çalışma başlatılamadı.';setWorking(false);
             // If submission reached the server, recover it instead of submitting again.
@@ -373,10 +432,15 @@
         } catch (_) {}
     }
     document.addEventListener('visibilitychange',()=>{
-        if (!document.hidden && !activeRun) resumeRun();
+        if(document.hidden)clearTimeout(learningTimer);
+        else {refreshLearning();if(!activeRun)resumeRun();}
     });
     const reviewButton=document.getElementById('studyReviewButton');
-    if (reviewButton) reviewButton.addEventListener('click',()=>sendMessage('Son değerlendirmelerimde yanlış yaptığım veya tekrar zamanı gelen konulardan, notlara dayanarak 5 yeni soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.'));
+    if (reviewButton) reviewButton.addEventListener('click',()=>sendMessage(learningInfo && (learningInfo.weak_count || learningInfo.due_count)?'Son değerlendirmelerimde yanlış yaptığım veya tekrar zamanı gelen konulardan, notlara dayanarak 5 yeni soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.':'Bu ders notlarından farklı konuları kapsayan 5 yeni çoktan seçmeli soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.'));
+    document.getElementById('studyProgressRefresh').addEventListener('click',refreshLearning);
+    document.getElementById('studyProgress').addEventListener('toggle',event=>{if(event.target.open)refreshLearning();});
+    if(learningChannel)learningChannel.onmessage=refreshLearning;
+    window.addEventListener('focus',refreshLearning);
     refreshLearning();resumeRun();
 
     async function uploadChatFiles() {
