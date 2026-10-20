@@ -296,3 +296,29 @@ def test_saved_quiz_export_cannot_grade_or_reveal_only_key():
     assert parse_request(json.dumps(asdict(export))).export_previous_quiz
     invalid={**asdict(export),'reveal_previous_key':True}
     with pytest.raises(PlannerContractError):parse_request(json.dumps(invalid))
+
+
+def test_learning_panel_priorities_due_dates_and_source_isolation(course_env):
+    _,engine,_=course_env
+    from datetime import datetime,timezone
+    versions=[(40,'notes.pdf',1,'v1',None)]
+    instant=learning.now()
+    with Session(engine) as session:
+        for key,wrong,streak,delay in [('weak',2,0,10),('due',0,2,-1),('later',1,1,30)]:
+            session.add(learning.StudyReview(owner_user_id=1,course_id=6,fact_key=key,
+                source_stamp=learning.stamp(versions),fact=key,source='Notes.pdf, sayfa 1',
+                correct=streak,wrong=wrong,streak=streak,due_at=instant+timedelta(minutes=delay)))
+        session.add(learning.StudyReview(owner_user_id=2,course_id=6,fact_key='private',
+            source_stamp=learning.stamp(versions),fact='Other student',source='Private',wrong=10))
+        session.commit()
+        result=learning.context(session,1,6,versions)
+        assert result['practiced_facts']==3 and result['weak_count']==1 and result['due_count']==1
+        assert [item['fact'] for item in result['review']]==['weak','due','later']
+        assert result['review'][0]['needs_practice'] is True
+        assert result['review'][1]['due'] is True
+        assert result['review'][2]['needs_practice'] is False
+        assert datetime.fromisoformat(result['next_due_at']).utcoffset()==timedelta(0)
+        assert datetime.fromisoformat(result['next_due_at'])>datetime.now(timezone.utc)
+        assert result['last_practiced_at']
+        changed=learning.context(session,1,6,[('different version',)])
+        assert changed['weak_count']==0 and changed['review']==[] and changed['next_due_at'] is None
