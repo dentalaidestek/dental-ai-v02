@@ -150,7 +150,8 @@ def focused_selected_rows(rows, request_plan):
         file_ids = set()
         for phrase in searches:
             pool = _balanced_candidates(file_rows, (phrase,), len(file_rows),
-                                       allow_unmatched=False, best_match_only=True)
+                                       allow_unmatched=False,
+                                       best_match_only=request_plan.operation != 'generate_questions')
             if not pool:
                 file_ids = {int(row[0]) for row in file_rows}
                 break
