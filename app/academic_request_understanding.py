@@ -723,10 +723,10 @@ def interpret_request(question: str, history: list[dict], *, call, source_outlin
             '',turn['content'])
     editable = (source_outline or {}).get('editable_pdf') if isinstance(source_outline, dict) else None
     recent_quiz = ((source_outline or {}).get('learning') or {}).get('active_quiz')
-    from app.academic_question_output import question_blocks
+    from app.academic_quiz import is_quiz_turn
     for index in range(len(turns)-1, -1, -1):
         if turns[index]['role'].upper() == 'ASSISTANT' and (
-                (history or [])[-8:][index].get('quiz') or question_blocks(turns[index]['content'])):
+                is_quiz_turn({**turns[index], 'quiz': (history or [])[-8:][index].get('quiz')})):
             recent_quiz = (history or [])[-8:][index].get('quiz')
             if recent_quiz:
                 # Exact questions/options remain available, without duplicating

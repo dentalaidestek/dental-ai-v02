@@ -116,3 +116,14 @@ def test_bare_answers_get_results_without_unsolicited_explanations():
     assert '**Soru ' not in result and question()['rationale'] not in result
     explained=grade_previous_quiz(history,((1,'D'),(2,'B')),explain=True)
     assert question()['rationale'] in explained and question()['source'] in explained
+
+
+def test_previous_detailed_feedback_does_not_hide_active_quiz():
+    from app.academic_quiz import grade_previous_quiz,previous_quiz_key
+    history=[{'role':'ASSISTANT','content':'Original set','quiz':{'questions':[question()]}}]
+    receipt=grade_previous_quiz(history,((1,'B'),),explain=True)
+    history.append({'role':'ASSISTANT','content':receipt})
+    assert '| 1 | D | D | Doğru |' in grade_previous_quiz(history,((1,'D'),))
+    assert '**1. D**' in previous_quiz_key(history)
+    history.append({'role':'ASSISTANT','content':'### Soru 1\nYeni soru hangisidir?\nA) Bir\nB) İki'})
+    assert 'kayıtlı değil' in grade_previous_quiz(history,((1,'A'),))

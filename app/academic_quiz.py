@@ -182,12 +182,22 @@ def restore_quizzes(history, rows, versions):
             continue
 
 
+def is_quiz_turn(item):
+    """A stored grading receipt is feedback, even when it has Soru headings."""
+    if item.get('quiz'):
+        return True
+    content=item.get('content') or ''
+    if content.lstrip().startswith('| Soru | Yanıtın | Anahtar | Sonuç |\n|---|---|---|---|'):
+        return False
+    return bool(question_blocks(content))
+
+
 def previous_quiz_key(history, corrections=()):
     """Display the model's saved key; never infer answers or select an older set."""
     for item in reversed(history or []):
         if str(item.get('role', '')).upper() != 'ASSISTANT':
             continue
-        if item.get('quiz') or question_blocks(item.get('content') or ''):
+        if is_quiz_turn(item):
             quiz = item.get('quiz')
             break
     else:
@@ -211,7 +221,7 @@ def grade_previous_quiz(history, answers, corrections=(), *, explain=False):
     for item in reversed(history or []):
         if str(item.get('role','')).upper()!='ASSISTANT':
             continue
-        if item.get('quiz') or question_blocks(item.get('content') or ''):
+        if is_quiz_turn(item):
             quiz=item.get('quiz')
             break
     else:
