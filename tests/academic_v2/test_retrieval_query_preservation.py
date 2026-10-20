@@ -131,3 +131,11 @@ def test_course_explanations_retrieve_all_notes_instead_of_sampled_coverage(monk
             owner_user_id=1,course_id=6,query='Hepsini detaylandır',recent_history=[])
         assert result.retrieval_mode=='source_batches'
     assert calls==['answer','explain','compare','teach','summarize','generate_questions']
+
+
+def test_new_quiz_preserves_supporting_pages_beyond_single_best_lexical_hit():
+    from app.academic_source_batches import focused_selected_rows
+    rows=selected_rows()
+    rows.append((5,37,'Selected.pdf',15,15,None,'TEXT','Klinik yarar testin yönetimi iyileştirmesidir.',5,None,None,None,1.0,5))
+    plan=selected_plan(operation='generate_questions')
+    assert {r[3] for r in focused_selected_rows(rows,plan)}=={2,14,15}
