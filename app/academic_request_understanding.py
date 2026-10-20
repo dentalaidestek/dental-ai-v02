@@ -916,7 +916,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_document_samples import retrieve_document_samples
         result = retrieve_document_samples(session, request_plan=plan, **kwargs)
     elif plan.operation != 'clarify' and (plan.source_files or plan.source_pages or plan.source_kind == 'question_patterns' or (plan.scope == 'course' and (
-            (plan.source_kind == 'notes' and plan.operation in {'teach', 'summarize', 'generate_questions', 'solve'})
+            plan.source_kind == 'notes'
             or (plan.source_kind == 'questions' and not plan.continue_source)))):
         from app.academic_source_batches import retrieve_source_batches
         result = retrieve_source_batches(session, request_plan=plan, **kwargs)
