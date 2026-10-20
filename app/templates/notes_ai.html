@@ -312,7 +312,7 @@
         label.textContent = role === 'assistant' ? 'Dental AI Akademik' : 'Sen';
         const body = document.createElement('div');
         body.className='study-chat-markdown';
-        body.innerHTML = pending ? '<span class="study-thinking">Yanıt hazırlanıyor...</span>' : safeMarkdown(text);
+        body.innerHTML = pending ? '<span class="study-thinking" role="status" aria-live="polite">Yanıt hazırlanıyor...</span>' : safeMarkdown(text);
         content.appendChild(label);
         content.appendChild(body);
         article.appendChild(content);
@@ -458,12 +458,15 @@
             const data=await response.json();
             if (!response.ok || !data.ok) throw new Error('Çalışmanın durumuna erişilemedi.');
             const run=data.run;
-            status.textContent=run.stage || 'Çalışma sürüyor';
+            status.textContent='';
+            const thinking=pending.querySelector('.study-thinking');
+            if(thinking) thinking.textContent=run.stage || 'Yanıt hazırlanıyor...';
             learningText('studyProgressState','Çalışıyor');
-            learningText('studyLearningNext',run.stage || 'Yanıtın hazırlanıyor. Tamamlanınca kayıtların güncellenecek.');
+
             if (run.partial) {
-                pending.classList.remove('pending');
-                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.partial);
+                let partial=pending.querySelector('.study-run-partial');
+                if(!partial){partial=document.createElement('div');partial.className='study-run-partial';pending.querySelector('.study-chat-markdown').appendChild(partial);}
+                partial.innerHTML=safeMarkdown(run.partial);
             }
             if (run.status==='DONE') {
                 pending.dataset.messageId=run.message_id;
@@ -482,7 +485,9 @@
             runTimer=setTimeout(()=>followRun(id,pending,userMessage),document.hidden?8000:1500);
         } catch (error) {
             // A lost browser connection does not stop or restart the server job.
-            status.textContent='Bağlantı bekleniyor. Çalışman sunucuda devam ediyor.';
+            status.textContent='';
+            const thinking=pending.querySelector('.study-thinking');
+            if(thinking) thinking.textContent='Bağlantı bekleniyor. Çalışman sunucuda devam ediyor.';
             runTimer=setTimeout(()=>followRun(id,pending,userMessage),5000);
         }
     }
