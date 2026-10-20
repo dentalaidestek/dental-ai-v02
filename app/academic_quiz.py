@@ -206,7 +206,7 @@ def previous_quiz_key(history, corrections=()):
         for number, question in enumerate(questions, 1))
 
 
-def grade_previous_quiz(history, answers, corrections=()):
+def grade_previous_quiz(history, answers, corrections=(), *, explain=False):
     # Nearest assistant question set only. Never silently grade an older set.
     for item in reversed(history or []):
         if str(item.get('role','')).upper()!='ASSISTANT':
@@ -239,6 +239,9 @@ def grade_previous_quiz(history, answers, corrections=()):
             wrong+=1;status='Yanlış'
         rows.append(f"| {n} | {choice or '—'} | {q['correct']} | {status} |")
     table='| Soru | Yanıtın | Anahtar | Sonuç |\n|---|---|---|---|\n'+'\n'.join(rows)
+    summary=f'{table}\n\nToplam {len(questions)} soru: {correct} doğru, {wrong} yanlış, {blank} boş.'
+    if not explain:
+        return summary
     explanations='\n\n'.join(f"**Soru {n}:** {q['rationale']} ({q['source']})" for n,q in enumerate(questions,1))
-    return f'{table}\n\nToplam {len(questions)} soru: {correct} doğru, {wrong} yanlış, {blank} boş.\n\n{explanations}'
+    return f'{summary}\n\n{explanations}'
 
