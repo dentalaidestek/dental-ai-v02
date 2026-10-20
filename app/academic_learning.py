@@ -88,15 +88,22 @@ def context(session,owner,course,versions):
     if current and current.source_stamp!=stamp(versions):active={}
     from sqlalchemy import func,case
     filters=(StudyReview.owner_user_id==owner,StudyReview.course_id==course,StudyReview.source_stamp==stamp(versions))
-    count,correct,wrong,due=session.exec(select(func.count(StudyReview.id),func.coalesce(func.sum(StudyReview.correct),0),
-        func.coalesce(func.sum(StudyReview.wrong),0),func.coalesce(func.sum(case((StudyReview.due_at<=now(),1),else_=0)),0))
+    count,correct,wrong,due,weak_count,next_due,last_practiced=session.exec(select(func.count(StudyReview.id),func.coalesce(func.sum(StudyReview.correct),0),
+        func.coalesce(func.sum(StudyReview.wrong),0),func.coalesce(func.sum(case((StudyReview.due_at<=now(),1),else_=0)),0),
+        func.coalesce(func.sum(case(((StudyReview.wrong>0)&(StudyReview.streak==0),1),else_=0)),0),
+        func.min(case((StudyReview.due_at>now(),StudyReview.due_at),else_=None)),
+        func.max(StudyReview.updated_at))
         .where(*filters)).one()
     weak=session.exec(select(StudyReview).where(*filters)
-        .order_by((StudyReview.wrong-StudyReview.correct).desc(),StudyReview.due_at).limit(6)).all()
+        .order_by(case(((StudyReview.wrong>0)&(StudyReview.streak==0),0),else_=1),
+                  case((StudyReview.due_at<=now(),0),else_=1),StudyReview.due_at).limit(6)).all()
     return {'active_request':active,'practiced_facts':count,'due_count':due,
-        'correct':correct,'wrong':wrong,
+        'correct':correct,'wrong':wrong,'weak_count':weak_count,
+        'next_due_at':next_due.replace(tzinfo=timezone.utc).isoformat() if next_due else None,
+        'last_practiced_at':last_practiced.replace(tzinfo=timezone.utc).isoformat() if last_practiced else None,
         'review':[{'fact':row.fact,'source':row.source,'due':row.due_at<=now(),
-            'correct':row.correct,'wrong':row.wrong} for row in weak]}
+            'correct':row.correct,'wrong':row.wrong,'needs_practice':row.wrong>0 and row.streak==0,
+            'due_at':row.due_at.replace(tzinfo=timezone.utc).isoformat()} for row in weak]}
 
 
 def remember(session,*,owner,course,assistant_id,plan,quiz,history,versions):
