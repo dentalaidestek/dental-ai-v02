@@ -20,11 +20,16 @@
 .study-progress summary:after{content:'⌄';font-size:18px}.study-progress[open] summary:after{transform:rotate(180deg)}
 .study-progress-indicator{margin-left:auto;font-size:11px;font-weight:700;border-radius:20px;padding:5px 9px;background:#edf5f4;color:#17665d;white-space:nowrap}
 .study-progress-body{border-top:1px solid #edf0f4;padding:14px 16px;max-height:42vh;overflow:auto;overscroll-behavior:contain}.study-progress-body>p{margin:0 0 12px;font-size:13px;line-height:1.5}.study-progress-body h3{font-size:13px;margin:16px 0 8px}
-.study-progress-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.study-progress-stat{border-radius:10px;background:#f4f7fb;padding:10px 8px;display:grid;gap:4px}.study-progress-stat strong{font-size:20px}.study-progress-stat small{font-size:11px;color:#526176}
+.study-progress-overview,.study-progress-results{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;border:1px solid #dce4ed;border-radius:12px;overflow:hidden}
+.study-progress-overview caption,.study-progress-results caption{text-align:left;font-weight:700;padding:0 0 9px;color:#14243b}
+.study-progress-overview th,.study-progress-results th{background:#102a43;color:#fff;text-align:left;font-weight:600;font-size:12px;padding:11px 12px}
+.study-progress-overview td,.study-progress-overview tbody th,.study-progress-results td{padding:11px 12px;border-bottom:1px solid #e5ebf1;vertical-align:top;line-height:1.5}
+.study-progress-overview tbody th{background:#fff;color:#243b53;font-weight:400}.study-progress-overview tr:last-child>* , .study-progress-results tr:last-child td{border-bottom:0}.study-progress-overview td{text-align:center;font-weight:700;font-size:16px;width:80px}.study-progress-overview thead th:last-child{text-align:center}
+.study-progress-table-scroll{max-width:100%;overflow-x:auto}.study-progress-results{table-layout:fixed;min-width:380px}.study-progress-results th:first-child{width:50%}.study-progress-results th:nth-child(2),.study-progress-results th:nth-child(3){width:12%;text-align:center}.study-progress-results th:last-child{width:26%}.study-progress-results td:nth-child(2),.study-progress-results td:nth-child(3){text-align:center;font-weight:700;font-variant-numeric:tabular-nums}.study-progress-results td:nth-child(2){color:#17665d}.study-progress-results td:nth-child(3){color:#a33d35}.study-progress-results td{overflow-wrap:anywhere}.study-progress-results tbody tr:nth-child(even){background:#f8fafc}.study-progress-results details summary{display:block;padding:0;color:#14243b;font-size:12px;line-height:1.5;cursor:pointer}.study-progress-results details summary:after{display:none}.study-progress-results details[open] summary{font-weight:600}.study-progress-results details p{font-size:12px;margin:8px 0 4px}.study-progress-results details small{display:block;font-size:11px;color:#64748b}.study-progress-results .study-progress-tag{display:block;width:fit-content;margin:0 0 5px}
 .study-progress-next{padding:12px;margin-top:12px;border-radius:12px;background:#eef4fa}.study-progress-next small{font-size:10px;letter-spacing:.07em;color:#4e6580}.study-progress-next p{font-size:13px;margin:5px 0 0;line-height:1.5}
 .study-progress-topics{list-style:none;padding:0;margin:0;display:grid;gap:8px}.study-progress-topics li{padding:10px 12px;border:1px solid #e3e9ef;border-radius:10px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.study-progress-topics small{display:block;font-size:11px;color:#64748b;margin-top:4px}.study-progress-tag{display:inline-block;font-size:10px;color:#925220;background:#fff3df;padding:2px 7px;border-radius:12px;margin-bottom:5px}
 .study-progress-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.study-progress-actions button{border:0;border-radius:10px;padding:10px 13px;background:#102a43;color:white;font-size:12px;cursor:pointer}.study-progress-actions button:last-child{background:#f0f4f8;color:#243b53}.study-progress-actions button:disabled{opacity:.5;cursor:default}.study-progress-note{display:block;color:#64748b;font-size:11px;line-height:1.5;margin-top:9px}
-@media(max-width:480px){.study-progress{margin:6px 10px}.study-progress summary{padding:11px 12px}.study-progress-body{padding:12px;max-height:38vh}.study-progress-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.study-progress{margin:6px 10px}.study-progress summary{padding:11px 12px}.study-progress-body{padding:12px;max-height:38vh}.study-progress-results td,.study-progress-results th{padding:9px 7px}.study-progress-results{font-size:12px}}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -60,11 +65,11 @@
         <summary><span><strong>Çalışma durumum</strong><small id="studyProgressHint">Kayıtların yükleniyor</small></span><span class="study-progress-indicator" id="studyProgressState">Hazırlanıyor</span></summary>
         <div class="study-progress-body">
             <p id="studyLearningSummary" role="status" aria-live="polite">Çalışma kayıtların yükleniyor...</p>
-            <div class="study-progress-stats" id="studyLearningStats"></div>
+            <table class="study-progress-overview"><caption>Genel sonuçların</caption><thead><tr><th scope="col">Gösterge</th><th scope="col">Toplam</th></tr></thead><tbody id="studyLearningStats"></tbody></table>
             <div class="study-progress-next"><small>SIRADAKİ ADIM</small><p id="studyLearningNext">Kayıtların kontrol ediliyor.</p></div>
             <p class="study-progress-note" id="studyLearningTask"></p>
             <h3>Öncelikli tekrarlar</h3>
-            <ul id="studyLearningTopics" class="study-progress-topics"></ul>
+            <div class="study-progress-table-scroll" tabindex="0" role="region" aria-label="Konu sonuçları tablosu"><table class="study-progress-results"><caption>Konu bazında soru sonuçları</caption><thead><tr><th scope="col">Çalışılan bilgi ve kaynak</th><th scope="col">Doğru</th><th scope="col">Yanlış</th><th scope="col">Tekrar</th></tr></thead><tbody id="studyLearningTopics"></tbody></table></div>
             <p class="study-progress-note" id="studyLearningEmpty" hidden>Henüz değerlendirilmiş bir cevabın yok. Bir soru setini yanıtladığında zorlandığın bilgiler burada görünür.</p>
             <div class="study-progress-actions"><button type="button" id="studyReviewButton" disabled>Eksiklerimden 5 soru</button><button type="button" id="studyProgressRefresh">Güncelle</button></div>
             <small class="study-progress-note" id="studyLearningUpdated"></small>
@@ -329,18 +334,19 @@
         learningText('studyProgressState',activeRun?'Çalışıyor':due?'Tekrar zamanı':weak?'Pekiştirme gerekli':facts?'Güncel':'İlk adım');
         learningText('studyLearningSummary',facts?facts+' farklı bilgi üzerinde soru yanıtladın. Sonuçlar değerlendirdikçe güncellenir.':'Henüz değerlendirilmiş bir cevabın yok. Konu anlatımı okumak tek başına öğrenme puanı oluşturmaz.');
         const stats=document.getElementById('studyLearningStats');stats.replaceChildren();
-        for (const [value,label] of [[facts,'Çalışılan bilgi'],[correct,'Doğru yanıt'],[wrong,'Yanlış yanıt'],[due,'Tekrar bekliyor']]) {
-            const box=document.createElement('div');box.className='study-progress-stat';
-            const number=document.createElement('strong'),caption=document.createElement('small');number.textContent=value;caption.textContent=label;box.append(number,caption);stats.append(box);
+        for (const [label,value] of [['Değerlendirilen toplam yanıt',correct+wrong],['Doğru yanıt',correct],['Yanlış yanıt',wrong],['Soru yanıtladığın farklı bilgi',facts],['Şimdi tekrar etmen gereken bilgi',due]]) {
+            const row=document.createElement('tr'),name=document.createElement('th'),total=document.createElement('td');name.scope='row';name.textContent=label;total.textContent=value;row.append(name,total);stats.append(row);
         }
         const next=weak?'Önce zorlandığın '+weak+' bilgiyi pekiştir. Yanlışlarından yeni sorularla başlayabilirsin.':due?'Tekrar zamanı gelen '+due+' bilgiyi yeni sorularla hatırla.':facts?'Şimdilik zamanı gelen tekrar yok. Yeni sorularla farklı konuları çalışabilirsin.':'Bir soru seti hazırla ve cevaplarını gönder. Eksiklerin değerlendirmeden sonra burada belirecek.';
         learningText('studyLearningNext',activeRun?'Yanıtın hazırlanıyor. Tamamlanınca çalışma kayıtların otomatik güncellenecek.':next);
         const topics=document.getElementById('studyLearningTopics');topics.replaceChildren();
         const dateText=value=>{const date=new Date(value);return Number.isNaN(date.getTime())?'':date.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});};
         for (const item of info.review || []) {
-            const li=document.createElement('li'),tag=document.createElement('span'),fact=document.createElement('div'),source=document.createElement('small');
-            tag.className='study-progress-tag';tag.textContent=item.needs_practice?'Pekiştir':item.due?'Tekrar zamanı':'Planlandı';
-            fact.textContent=item.fact;source.textContent=(item.source || '')+' · '+item.correct+' doğru / '+item.wrong+' yanlış'+(item.due_at?' · '+(item.due?'Tekrar zamanı geldi':dateText(item.due_at)):'');li.append(tag,fact,source);topics.append(li);
+            const row=document.createElement('tr'),topic=document.createElement('td'),right=document.createElement('td'),wrongCell=document.createElement('td'),repeat=document.createElement('td');
+            const details=document.createElement('details'),title=document.createElement('summary'),fact=document.createElement('p'),source=document.createElement('small');
+            const text=String(item.fact || '');title.textContent=text.length>95?text.slice(0,92)+'…':text;title.title='Bilginin tamamını ve kaynağını göster';fact.textContent=text;source.textContent='Kaynak: '+(item.source || 'Belirtilmedi');details.append(title,fact,source);topic.append(details);
+            right.textContent=Number(item.correct)||0;wrongCell.textContent=Number(item.wrong)||0;
+            const tag=document.createElement('span');tag.className='study-progress-tag';tag.textContent=item.needs_practice?'Pekiştir':item.due?'Zamanı geldi':'Planlandı';repeat.append(tag,document.createTextNode(item.due?'Şimdi':item.due_at?dateText(item.due_at):'—'));row.append(topic,right,wrongCell,repeat);topics.append(row);
         }
         document.getElementById('studyLearningEmpty').hidden=!!facts;
         const reviewButton=document.getElementById('studyReviewButton');
