@@ -30,6 +30,9 @@
 .study-progress-topics{list-style:none;padding:0;margin:0;display:grid;gap:8px}.study-progress-topics li{padding:10px 12px;border:1px solid #e3e9ef;border-radius:10px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.study-progress-topics small{display:block;font-size:11px;color:#64748b;margin-top:4px}.study-progress-tag{display:inline-block;font-size:10px;color:#925220;background:#fff3df;padding:2px 7px;border-radius:12px;margin-bottom:5px}
 .study-progress-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.study-progress-actions button{border:0;border-radius:10px;padding:10px 13px;background:#102a43;color:white;font-size:12px;cursor:pointer}.study-progress-actions button:last-child{background:#f0f4f8;color:#243b53}.study-progress-actions button:disabled{opacity:.5;cursor:default}.study-progress-note{display:block;color:#64748b;font-size:11px;line-height:1.5;margin-top:9px}
 @media(max-width:480px){.study-progress{margin:6px 10px}.study-progress summary{padding:11px 12px}.study-progress-body{padding:12px;max-height:38vh}.study-progress-results td,.study-progress-results th{padding:9px 7px}.study-progress-results{font-size:12px}}
+
+.study-quiz-card{border:1px solid #dce4ed;border-radius:14px;padding:16px;margin:14px 0;background:#fff}.study-quiz-card h3{font-size:14px;margin:0 0 10px;color:#102a43}.study-quiz-stem{white-space:pre-line;line-height:1.65;margin:0 0 14px}.study-quiz-options{display:grid;gap:8px}.study-quiz-option{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid #dce4ed;border-radius:11px;padding:11px 12px;background:#f8fafc;color:#14243b;font:inherit;font-size:14px;line-height:1.5;cursor:pointer}.study-quiz-option>span:first-child{display:grid;place-items:center;flex:0 0 27px;height:27px;border:1px solid #cbd5e1;border-radius:50%;font-size:12px;font-weight:700}.study-quiz-option:hover:not(:disabled){border-color:#345a7c;background:#eef4fa}.study-quiz-option:focus-visible{outline:3px solid #93b5df;outline-offset:2px}.study-quiz-option:disabled{cursor:default;opacity:1}.study-quiz-option.is-correct{background:#eef9f2;border-color:#419668;color:#145c35}.study-quiz-option.is-wrong{background:#fff1f0;border-color:#c65c55;color:#8d2f29}.study-quiz-option[aria-pressed=true]>span:first-child{background:#102a43;color:white;border-color:#102a43}.study-quiz-feedback{margin:12px 0 0;font-weight:600;font-size:14px}.study-quiz-feedback.is-correct{color:#17653c}.study-quiz-feedback.is-wrong{color:#a13e35}.study-quiz-hint{font-size:12px;color:#64748b;margin:0 0 8px}
+@media(max-width:480px){.study-quiz-card{padding:12px}.study-quiz-option{font-size:13px;padding:10px}}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -79,7 +82,7 @@
     <section class="study-chat study-chat-scroll study-chat-clean-scroll" id="studyChat" aria-live="polite">
         {% if messages %}
             {% for msg in messages %}
-            <article class="study-chat-message {{ 'assistant' if msg.role == 'ASSISTANT' else 'user' }}">
+            <article class="study-chat-message {{ 'assistant' if msg.role == 'ASSISTANT' else 'user' }}" data-message-id="{{ msg.id }}">
                 <div class="study-chat-content">
                     <div class="study-chat-role">{{ 'Dental AI Akademik' if msg.role == 'ASSISTANT' else 'Sen' }}</div>
                     {% if msg.role == 'ASSISTANT' and msg.mode and msg.mode.endswith('_PDF') %}
@@ -318,6 +321,79 @@
         return article;
     }
 
+    let quizLoading=false,quizRefreshQueued=false;
+    function showQuizResult(card,result) {
+        if(!result || typeof result.correct!=='boolean' || !/^[A-E]$/.test(result.correct_choice) || !/^[A-E]$/.test(result.selected))return false;
+        card.dataset.answered='true';
+        card.querySelectorAll('.study-quiz-option').forEach(button=>{
+            button.disabled=true;const choice=button.dataset.choice;
+            button.setAttribute('aria-pressed',String(choice===result.selected));
+            button.classList.toggle('is-correct',choice===result.correct_choice);
+            button.classList.toggle('is-wrong',choice===result.selected && !result.correct);
+        });
+        const feedback=card.querySelector('.study-quiz-feedback');
+        feedback.className='study-quiz-feedback '+(result.correct?'is-correct':'is-wrong');
+        feedback.textContent=result.correct?'Doğru. Cevap: '+result.correct_choice+'.':'Yanlış. Doğru cevap: '+result.correct_choice+'.';
+        return true;
+    }
+    async function selectQuizChoice(card,messageId,number,choice) {
+        if(card.dataset.busy || card.dataset.answered)return;
+        card.dataset.busy='true';card.querySelectorAll('button').forEach(button=>button.disabled=true);
+        const feedback=card.querySelector('.study-quiz-feedback');feedback.textContent='Kontrol ediliyor…';
+        try {
+            const formData=new FormData();formData.append('number',number);formData.append('choice',choice);
+            const response=await fetch('/notes/courses/'+courseId+'/ai/quizzes/'+messageId+'/answers',{
+                method:'POST',body:formData,credentials:'same-origin'});
+            const data=await response.json();
+            if(!response.ok || !data.ok || !data.result)throw new Error(data.error || 'Yanıt kaydedilemedi. Tekrar dene.');
+            if(!showQuizResult(card,data.result))throw new Error('Yanıt doğrulanamadı. Tekrar dene.');refreshLearning();
+            if(learningChannel)learningChannel.postMessage('updated');
+        } catch(error) {
+            feedback.className='study-quiz-feedback is-wrong';feedback.textContent=error.message;
+            card.querySelectorAll('button').forEach(button=>button.disabled=false);
+        } finally{delete card.dataset.busy;}
+    }
+    function renderInteractiveQuiz(quiz) {
+        const id=Number(quiz.message_id);if(!Number.isSafeInteger(id) || id<1)return;
+        const article=chat.querySelector('article.assistant[data-message-id="'+id+'"]');
+        if(!article)return;
+        if(article.querySelector('.study-quiz-card')){
+            for(const question of quiz.questions || []){
+                const card=article.querySelector('.study-quiz-card[data-question-number="'+Number(question.number)+'"]');
+                if(card && question.result && !card.dataset.busy)showQuizResult(card,question.result);
+            }
+            return;
+        }
+        const body=article.querySelector('.study-chat-markdown');if(!body)return;
+        const fragment=document.createDocumentFragment(),hint=document.createElement('p');
+        hint.className='study-quiz-hint';hint.textContent='Şıkkı seç; sonucu hemen altında gör. İlk cevabın kaydedilir.';fragment.append(hint);
+        for(const question of quiz.questions || []) {
+            if(!Array.isArray(question.options) || question.options.length!==5)continue;
+            const card=document.createElement('section'),heading=document.createElement('h3'),stem=document.createElement('p'),options=document.createElement('div'),feedback=document.createElement('p');
+            card.className='study-quiz-card';card.dataset.questionNumber=question.number;heading.textContent='Soru '+question.number;
+            stem.className='study-quiz-stem';stem.textContent=question.stem;
+            options.className='study-quiz-options';options.setAttribute('role','group');options.setAttribute('aria-label','Soru '+question.number+' şıkları');
+            feedback.className='study-quiz-feedback';feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');
+            question.options.forEach((text,index)=>{
+                const choice='ABCDE'[index],button=document.createElement('button'),letter=document.createElement('span'),label=document.createElement('span');
+                button.type='button';button.className='study-quiz-option';button.dataset.choice=choice;button.setAttribute('aria-pressed','false');
+                letter.textContent=choice;label.textContent=text;button.append(letter,label);
+                button.addEventListener('click',()=>selectQuizChoice(card,id,question.number,choice));options.append(button);
+            });
+            card.append(heading,stem,options,feedback);if(question.result)showQuizResult(card,question.result);fragment.append(card);
+        }
+        body.replaceChildren(fragment);
+    }
+    async function refreshQuizzes() {
+        if(document.hidden)return;
+        if(quizLoading){quizRefreshQueued=true;return;}quizLoading=true;
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/quizzes',{credentials:'same-origin',cache:'no-store'});
+            if(!response.ok)return;const data=await response.json();if(data.ok)(data.quizzes || []).forEach(renderInteractiveQuiz);
+        } catch(_){/* Original readable questions remain if controls cannot load. */}
+        finally{quizLoading=false;if(quizRefreshQueued){quizRefreshQueued=false;refreshQuizzes();}}
+    }
+
     let activeRun=null, runTimer=null;
     function setWorking(value) {
         send.disabled=value;
@@ -387,10 +463,11 @@
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.partial);
             }
             if (run.status==='DONE') {
+                pending.dataset.messageId=run.message_id;
                 pending.classList.remove('pending');
                 pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
                 addPdfArtifact(pending,run.artifact || null);
-                status.textContent='';activeRun=null;setWorking(false);refreshLearning();if(learningChannel)learningChannel.postMessage('updated');
+                status.textContent='';activeRun=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
@@ -442,15 +519,15 @@
     }
     document.addEventListener('visibilitychange',()=>{
         if(document.hidden)clearTimeout(learningTimer);
-        else {refreshLearning();if(!activeRun)resumeRun();}
+        else {refreshLearning();refreshQuizzes();if(!activeRun)resumeRun();}
     });
     const reviewButton=document.getElementById('studyReviewButton');
     if (reviewButton) reviewButton.addEventListener('click',()=>sendMessage(learningInfo && (learningInfo.weak_count || learningInfo.due_count)?'Son değerlendirmelerimde yanlış yaptığım veya tekrar zamanı gelen konulardan, notlara dayanarak 5 yeni soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.':'Bu ders notlarından farklı konuları kapsayan 5 yeni çoktan seçmeli soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.'));
     document.getElementById('studyProgressRefresh').addEventListener('click',refreshLearning);
     document.getElementById('studyProgress').addEventListener('toggle',event=>{if(event.target.open)refreshLearning();});
-    if(learningChannel)learningChannel.onmessage=refreshLearning;
-    window.addEventListener('focus',refreshLearning);
-    refreshLearning();resumeRun();
+    if(learningChannel)learningChannel.onmessage=()=>{refreshLearning();refreshQuizzes();};
+    window.addEventListener('focus',()=>{refreshLearning();refreshQuizzes();});
+    refreshLearning();refreshQuizzes();resumeRun();
 
     async function uploadChatFiles() {
         const selected=Array.from(filesInput.files || []);

@@ -322,3 +322,87 @@ def test_learning_panel_priorities_due_dates_and_source_isolation(course_env):
         assert result['last_practiced_at']
         changed=learning.context(session,1,6,[('different version',)])
         assert changed['weak_count']==0 and changed['review']==[] and changed['next_due_at'] is None
+
+
+def saved_interactive_quiz(main,engine):
+    from app.academic_quiz import pack_evidence
+    with Session(engine) as session:
+        versions=main._study_source_versions(session,1,6)
+        content='### Soru 1\nRisk nedir?\nA) Olasılık\nB) Kesin sonuç\nC) Tanı\nD) Tedavi\nE) Yaş'
+        row=main.StudyChatMessage(owner_user_id=1,course_id=6,role='ASSISTANT',content=content,mode='RAG_V2')
+        row.source_evidence_json=pack_evidence('[]',quiz(),content,versions)
+        session.add(row);session.commit();return row.id
+
+
+def test_interactive_selection_is_immediate_owned_and_idempotent(course_env,monkeypatch):
+    main,engine,client=course_env
+    from app import study_provider
+    monkeypatch.setattr(study_provider,'get_provider',lambda *a,**k:(_ for _ in ()).throw(AssertionError('No model call permitted')))
+    mid=saved_interactive_quiz(main,engine)
+    initial=client.get('/notes/courses/6/ai/quizzes').json()
+    question=initial['quizzes'][0]['questions'][0]
+    assert question['result'] is None and 'correct' not in question and 'rationale' not in question
+    assert question['options']==quiz()['questions'][0]['options']
+    url=f'/notes/courses/6/ai/quizzes/{mid}/answers'
+    first=client.post(url,data={'number':1,'choice':'b'}).json()
+    assert first['ok'] and first['result']=={'selected':'B','correct':False,'correct_choice':'A'}
+    second=client.post(url,data={'number':1,'choice':'A'}).json()
+    assert second['already_answered'] and second['result']==first['result']
+    refreshed=client.get('/notes/courses/6/ai/quizzes').json()
+    assert refreshed['quizzes'][0]['questions'][0]['result']==first['result']
+    info=client.get('/notes/courses/6/ai/learning').json()['learning']
+    assert info['wrong']==1 and info['correct']==0 and info['weak_count']==1
+    assert info['quiz_answers']==[{'number':1,'choice':'B'}]
+    assert '_quiz_selection' not in info['active_request']
+    assert client.post(url,data={'number':0,'choice':'A'}).status_code==400
+    assert client.post(url,data={'number':1,'choice':'Z'}).status_code==400
+    assert client.post(url,data={'number':2,'choice':'A'}).status_code==409
+    monkeypatch.setattr(main,'get_current_user',lambda request:SimpleNamespace(id=2,role='DOCTOR'))
+    assert client.get('/notes/courses/6/ai/quizzes').status_code==404
+    assert client.post(url,data={'number':1,'choice':'A'}).status_code==404
+
+
+def test_interactive_quiz_rejects_changed_sources_and_tampered_text(course_env):
+    main,engine,client=course_env
+    mid=saved_interactive_quiz(main,engine)
+    with Session(engine) as session:
+        message=session.get(main.StudyChatMessage,mid);message.content+=' changed';session.add(message);session.commit()
+    assert client.get('/notes/courses/6/ai/quizzes').json()['quizzes']==[]
+    assert client.post(f'/notes/courses/6/ai/quizzes/{mid}/answers',data={'number':1,'choice':'A'}).status_code==409
+    mid=saved_interactive_quiz(main,engine)
+    with Session(engine) as session:
+        material=session.get(main.StudyMaterial,40);material.active_index_version='v2';session.add(material);session.commit()
+    assert client.get('/notes/courses/6/ai/quizzes').json()['quizzes']==[]
+    assert client.post(f'/notes/courses/6/ai/quizzes/{mid}/answers',data={'number':1,'choice':'A'}).status_code==409
+
+
+def test_previous_chat_grade_is_restored_without_recounting_on_tap(course_env):
+    main,engine,client=course_env
+    from app.academic_quiz import grade_previous_quiz
+    mid=saved_interactive_quiz(main,engine)
+    history=[{'id':mid,'role':'ASSISTANT','content':'Saved','quiz':quiz()}]
+    with Session(engine) as session:
+        versions=main._study_source_versions(session,1,6)
+        learning.remember(session,owner=1,course=6,assistant_id=mid,plan=plan(grade_previous_set=True,
+            quiz_answers=((1,'B'),)),quiz=None,history=history,versions=versions)
+        session.add(main.StudyChatMessage(owner_user_id=1,course_id=6,role='ASSISTANT',
+            content=grade_previous_quiz(history,((1,'B'),),explain=True),mode='RAG_V2'))
+        session.commit()
+    existing=client.get('/notes/courses/6/ai/quizzes').json()['quizzes'][0]['questions'][0]['result']
+    assert existing=={'selected':'B','correct':False,'correct_choice':'A'}
+    answer=client.post(f'/notes/courses/6/ai/quizzes/{mid}/answers',data={'number':1,'choice':'A'}).json()
+    assert answer['already_answered'] and answer['result']==existing
+    info=client.get('/notes/courses/6/ai/learning').json()['learning']
+    assert info['wrong']==1 and info['correct']==0
+
+
+def test_clicked_quiz_anchor_is_not_replaced_by_newer_unselected_set():
+    from app.academic_request_understanding import interpret_request
+    selected=quiz();newer={'questions':[{**quiz()['questions'][0],'fact':'Another subject'}]}
+    history=[{'role':'ASSISTANT','id':1,'content':'Selected set','quiz':selected},
+             {'role':'ASSISTANT','id':2,'content':'Newer set','quiz':newer}]
+    captured=[]
+    def call(prompt):captured.append(json.loads(prompt));return '{}'
+    interpret_request('Seçtiğim şık neden yanlış?',history,call=call,
+        source_outline={'learning':{'active_quiz':selected,'quiz_answers':[{'number':1,'choice':'B'}]}})
+    assert captured[0]['recent_quiz']==selected

@@ -86,6 +86,9 @@ def context(session,owner,course,versions):
     try:active=json.loads(current.active_request_json) if current else {}
     except (ValueError,TypeError):active={}
     if current and current.source_stamp!=stamp(versions):active={}
+    selection=active.pop('_quiz_selection',{})
+    selected_answers=selection.get('answers',[]) if (current and isinstance(selection,dict)
+        and selection.get('message_id')==current.active_quiz_id) else []
     from sqlalchemy import func,case
     filters=(StudyReview.owner_user_id==owner,StudyReview.course_id==course,StudyReview.source_stamp==stamp(versions))
     count,correct,wrong,due,weak_count,next_due,last_practiced=session.exec(select(func.count(StudyReview.id),func.coalesce(func.sum(StudyReview.correct),0),
@@ -97,7 +100,7 @@ def context(session,owner,course,versions):
     weak=session.exec(select(StudyReview).where(*filters)
         .order_by(case(((StudyReview.wrong>0)&(StudyReview.streak==0),0),else_=1),
                   case((StudyReview.due_at<=now(),0),else_=1),StudyReview.due_at).limit(6)).all()
-    return {'active_request':active,'practiced_facts':count,'due_count':due,
+    return {'active_request':active,'quiz_answers':selected_answers,'practiced_facts':count,'due_count':due,
         'correct':correct,'wrong':wrong,'weak_count':weak_count,
         'next_due_at':next_due.replace(tzinfo=timezone.utc).isoformat() if next_due else None,
         'last_practiced_at':last_practiced.replace(tzinfo=timezone.utc).isoformat() if last_practiced else None,
@@ -111,7 +114,12 @@ def remember(session,*,owner,course,assistant_id,plan,quiz,history,versions):
     # A clarification must not erase the task being clarified.
     if plan and plan.operation!='clarify' and not getattr(plan,'grade_previous_set',False) and not getattr(plan,'reveal_previous_key',False):
         keys=('resolved_query','operation','count','difficulty','source_sections','source_files','source_subjects','depth')
-        current.active_request_json=json.dumps({key:getattr(plan,key,None) for key in keys},ensure_ascii=False)
+        request_data={key:getattr(plan,key,None) for key in keys}
+        if not quiz and current.source_stamp==stamp(versions):
+            try:selection=json.loads(current.active_request_json).get('_quiz_selection')
+            except (ValueError,TypeError,AttributeError):selection=None
+            if selection:request_data['_quiz_selection']=selection
+        current.active_request_json=json.dumps(request_data,ensure_ascii=False)
         current.source_stamp=stamp(versions)
     if quiz:current.active_quiz_id=assistant_id
     elif not current.active_quiz_id:

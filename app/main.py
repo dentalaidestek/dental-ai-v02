@@ -14219,3 +14219,7 @@ mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
     if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
 app.include_router(mobile_modern_router)
 
+
+# Owned interactive quiz choices; deterministic grading without provider calls.
+from app.academic_quiz_interactions import router as academic_quiz_interactions_router
+app.include_router(academic_quiz_interactions_router)
