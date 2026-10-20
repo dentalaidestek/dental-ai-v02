@@ -103,3 +103,16 @@ def test_numbered_truth_metadata_still_enforces_display_and_key(damage):
     elif damage=='wrong_truth':q['statements'][1]['true']=True
     else:q['stem']=q['stem'].replace('Risk kesin sonuçtur.','')
     with pytest.raises(ValueError):validate(q)
+
+
+def test_bare_answers_get_results_without_unsolicited_explanations():
+    from app.academic_quiz import grade_previous_quiz
+    quiz={'questions':[question(),question()]}
+    history=[{'role':'ASSISTANT','content':'Saved questions','quiz':quiz}]
+    result=grade_previous_quiz(history,((1,'D'),(2,'B')))
+    assert '| 1 | D | D | Doğru |' in result
+    assert '| 2 | B | D | Yanlış |' in result
+    assert '1 doğru, 1 yanlış, 0 boş' in result
+    assert '**Soru ' not in result and question()['rationale'] not in result
+    explained=grade_previous_quiz(history,((1,'D'),(2,'B')),explain=True)
+    assert question()['rationale'] in explained and question()['source'] in explained
