@@ -330,6 +330,9 @@
             button.setAttribute('aria-pressed',String(choice===result.selected));
             button.classList.toggle('is-correct',choice===result.correct_choice);
             button.classList.toggle('is-wrong',choice===result.selected && !result.correct);
+            const palette=choice===result.correct_choice?['#eef9f2','#145c35','#419668']:choice===result.selected&&!result.correct?['#fff1f0','#8d2f29','#c65c55']:['#f8fafc','#14243b','#dce4ed'];
+            ['background','color','border-color'].forEach((property,index)=>button.style.setProperty(property,palette[index],'important'));
+            button.style.setProperty('opacity','1','important');
         });
         const feedback=card.querySelector('.study-quiz-feedback');
         feedback.className='study-quiz-feedback '+(result.correct?'is-correct':'is-wrong');
