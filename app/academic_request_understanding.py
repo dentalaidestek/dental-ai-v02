@@ -367,6 +367,11 @@ quiz_key_corrections may accompany grade_previous_set as well as reveal_previous
 quiz_answers contains the submitted numbered A–E choices (unnumbered sequences start
 at question 1). Do not invent missing choices. The server grades using the stored key;
 no source scan is required. For all other requests grade_previous_set=false and quiz_answers=[].
+For grading, depth=standard means results only. A bare answer sequence or checking
+choices (including '1 E 2 B mi') uses standard even when the earlier questions were
+hard or an earlier unrelated answer was detailed. Use depth=detailed for grading
+only when the CURRENT user explicitly asks for reasons, explanations or a detailed
+review of the answers. Do not infer that every wrong answer requests an explanation.
 show_quiz_answers is true only if the user explicitly requests the answer key with a NEW set.
 Use false otherwise. clarification must be at most 1200 characters; normally one short
 question. Missing patient data calls for asking for the absent data without inventing it.
@@ -900,7 +905,7 @@ def retrieve_understood_course_context(session, *, understanding: UnderstandingR
         from app.academic_quiz import grade_previous_quiz
         result = RetrievalResult(resolved_query=plan.resolved_query,
             retrieval_mode='generated_quiz_grade', evidence_sufficient=True,
-            prepared_answer=grade_previous_quiz(kwargs.get('recent_history'),plan.quiz_answers,plan.quiz_key_corrections))
+            prepared_answer=grade_previous_quiz(kwargs.get('recent_history'),plan.quiz_answers,plan.quiz_key_corrections,explain=plan.depth=='detailed'))
     elif plan.operation != 'clarify' and plan.export_previous_answer:
         previous = next((str(item.get('content') or '') for item in
             reversed(kwargs.get('recent_history') or [])
