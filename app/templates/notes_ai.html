@@ -41,6 +41,10 @@ body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option{b
 body.study-chat-active #studyChat .study-quiz-option>span:last-child{color:inherit!important;font-weight:400!important}
 body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option.is-correct{background:#eef9f2!important;color:#145c35!important;border-color:#419668!important}
 body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option.is-wrong{background:#fff1f0!important;color:#8d2f29!important;border-color:#c65c55!important}
+body.study-chat-active #studyChat .study-chat-content>.study-answer-actions{display:flex!important;visibility:visible!important;opacity:1!important;gap:5px;margin-top:14px}
+body.study-chat-active #studyChat .study-answer-actions button{display:grid!important;background:transparent!important;color:#68717e!important;box-shadow:none!important;border:0!important;min-width:42px;min-height:42px}
+body.study-chat-active #studyChat .study-answer-actions button[aria-pressed=true]{color:#14243b!important;background:#e9edf2!important}
+body.study-chat-active #studyChat .study-answer-actions svg{display:block!important;visibility:visible!important;width:21px!important;height:21px!important;stroke:currentColor!important}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -104,6 +108,7 @@ body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option.i
                     {% else %}
                     <div class="study-chat-markdown">{{ msg.content }}</div>
                     {% endif %}
+                    {% if msg.role == "ASSISTANT" %}<div class="study-answer-actions" role="group" aria-label="Yanıt işlemleri"><button type="button" aria-label="Kopyala" title="Kopyala"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="3"/><path d="M16 8V6a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h2"/></svg></button><button type="button" aria-label="Beğen" title="Beğen" data-reaction="like" aria-pressed="false"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11H3V10h4Zm0 0 5-7a2 2 0 0 1 2 2l-1 5h5a3 3 0 0 1 3 3l-2 6a3 3 0 0 1-3 2H7"/></svg></button><button type="button" aria-label="Beğenme" title="Beğenme" data-reaction="dislike" aria-pressed="false"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 14V3H3v11h4Zm0 0 5 7a2 2 0 0 0 2-2l-1-5h5a3 3 0 0 0 3-3l-2-6a3 3 0 0 0-3-2H7"/></svg></button><span class="study-reaction-notice" role="status"></span></div>{% endif %}
                 </div>
             </article>
             {% endfor %}
@@ -340,8 +345,11 @@ body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option.i
         article.querySelectorAll('[data-reaction]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.reaction===vote)));
     }
     function addAnswerActions(article){
-        if(!article || !article.classList.contains('assistant') || article.classList.contains('pending') || !article.dataset.messageId || article.querySelector('.study-answer-actions'))return;
-        const bar=document.createElement('div');bar.className='study-answer-actions';bar.setAttribute('role','group');bar.setAttribute('aria-label','Yanıt işlemleri');
+        if(!article || !article.classList.contains('assistant') || article.classList.contains('pending') || !article.dataset.messageId)return;
+        let bar=article.querySelector('.study-answer-actions');
+        if(bar && bar.dataset.bound==='true')return;
+        if(!bar)bar=document.createElement('div');
+        bar.dataset.bound='true';bar.replaceChildren();bar.className='study-answer-actions';bar.setAttribute('role','group');bar.setAttribute('aria-label','Yanıt işlemleri');
         const notice=document.createElement('span');notice.className='study-reaction-notice';notice.setAttribute('role','status');
         for(const [kind,label] of [['copy','Kopyala'],['like','Beğen'],['dislike','Beğenme']]){
             const button=document.createElement('button');button.type='button';button.title=label;button.setAttribute('aria-label',label);
