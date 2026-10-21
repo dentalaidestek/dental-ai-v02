@@ -147,6 +147,8 @@ def _feedback_metadata(value):
     if not value:
         return {}
     data=json.loads(value)
+    if isinstance(data,list):
+        return {'sources':data}
     if not isinstance(data,dict):
         raise ValueError('Invalid message metadata')
     return data
