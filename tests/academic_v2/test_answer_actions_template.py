@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 from jinja2 import Environment,DictLoader
-from bs4 import BeautifulSoup
+import re
 import pytest
 
 @pytest.mark.parametrize('mode',['RAG_V2_HYBRID','RAG_V2_HYBRID_PDF'])
@@ -12,9 +12,9 @@ def test_answer_actions_render_before_javascript_for_owned_answer(mode):
         SimpleNamespace(id=2,role='ASSISTANT',content='Yanıt',mode=mode)]
     html=env.get_template('notes_ai.html').render(course=SimpleNamespace(id=6,title='Ders'),
         material_count=1,messages=messages,v2_streaming=True,v2_ready=True)
-    page=BeautifulSoup(html,'html.parser')
-    assistant=page.select_one('article.assistant')
-    assert assistant.select_one('button[aria-label="Beğen"] svg')
-    assert assistant.select_one('button[aria-label="Beğenme"] svg')
-    assert assistant.select_one('button[aria-label="Kopyala"] svg')
-    assert not page.select_one('article.user .study-answer-actions')
+    articles=re.findall(r'<article[^>]*class="study-chat-message ([^"]+)"[^>]*>(.*?)</article>',html,re.S)
+    assistant=next(body for role,body in articles if role=='assistant')
+    user=next(body for role,body in articles if role=='user')
+    for label in ('Beğen','Beğenme','Kopyala'):
+        assert re.search(r'<button[^>]*aria-label="'+label+r'"[^>]*><svg',assistant)
+    assert 'study-answer-actions' not in user
