@@ -87,7 +87,7 @@ def generation(engine,run_id,iterator,*,pdf=False):
     for part in iterator:
         collected+=part
         if time.monotonic()-last>=2:
-            hidden=pdf or collected.startswith('<!--ACADEMIC_') or len(collected)>12000
+            hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru ')) or len(collected)>12000
             checkpoint(engine,run_id,stage='PDF hazırlanıyor' if hidden else 'Yanıt hazırlanıyor',
                 partial='' if hidden else collected)
             last=time.monotonic()
@@ -187,6 +187,14 @@ def payload(session,row):
         result['answer']=('Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.' if automatic else
             'İstediğin değişiklikler uygulanarak PDF güncellendi.' if updated else 'İstediğin PDF hazır.') if message.mode.endswith('_PDF') else message.content
         result['message_id']=message.id
+        if not message.mode.endswith('_PDF'):
+            from app.academic_quiz_interactions import _loaded,_public,_saved_choices
+            versions=main._study_source_versions(session,row.owner_user_id,row.course_id)
+            restored=_loaded([message],versions)
+            quiz=restored[0].get('quiz') if restored else None
+            if quiz:
+                selected=_saved_choices(session,row.owner_user_id,row.course_id,message.id,quiz,versions)
+                result['quiz']=_public(message.id,quiz,selected)
         if message.mode.endswith('_PDF'):
             result['artifact']=pdf_artifact(row.course_id,message.id,'Ders notları',content=message.content,
                 automatic=automatic,updated=updated)
