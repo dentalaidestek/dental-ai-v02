@@ -808,7 +808,7 @@ def stream_rag_v2(
                     retrieval.study_task.get('batch_partial')
                     or structured_quiz or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
                 output_budget = 16000
-            from app.academic_long_answer import stream_complete_answer, LongAnswerError
+            from app.academic_long_answer import stream_complete_answer, stream_complete_structured_answer, LongAnswerError
             pieces = []
             generation_call = dict(
                 model=target.model,
@@ -823,9 +823,10 @@ def stream_rag_v2(
                 **generation_options,
             )
             try:
-                completed = stream_complete_answer(provider, generation_call, retrieval,
-                    allow_continuation=not generation_options.get('response_schema')
-                    and not retrieval.study_task.get('batch_partial'))
+                completed = (stream_complete_structured_answer(provider, generation_call)
+                    if generation_options.get('response_schema') else
+                    stream_complete_answer(provider, generation_call, retrieval,
+                        allow_continuation=not retrieval.study_task.get('batch_partial')))
                 for chunk in completed:
                     if chunk:
                         emitted = True
@@ -849,9 +850,9 @@ def stream_rag_v2(
                         reason=quiz_failure_reason(exc)
                         logger.info('Academic quiz validation trace=%s repair=1 reason=%s',trace_id,reason)
                         repair_prompt=prompt+'\nÖnceki JSON seti doğrulanamadı. Kesin denetim nedeni: '+reason+'. Bu hatayı gider; bütün zorunlu alanları ve kullanıcı koşullarını koru. Kaynak atfını verilen material_id/page çiftlerinden seç. Kök-şık-anahtar uyumunu, adedi, tekrar ve cevap sızıntısını düzelt. Tam düzeltilmiş JSON setini döndür.\n'+answer
-                        repaired=''.join(provider.generate_stream(model=target.model,system_prompt=V2_SYSTEM_PROMPT,
+                        repaired=''.join(stream_complete_structured_answer(provider,dict(model=target.model,system_prompt=V2_SYSTEM_PROMPT,
                             history=[],prompt=repair_prompt,attachments=generation_attachments,temperature=0.22,
-                            max_output_tokens=output_budget,**generation_options))
+                            max_output_tokens=output_budget,**generation_options)))
                         if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                             raise StudyAIError('Soru seti uzunluk sınırında kaldı; set kaydedilmedi.')
                         try:
