@@ -39,6 +39,8 @@ body :is(
     .messages-filters-compact > a.active,
     .messages-empty-compact a
 ):not(:where(
+    .study-quiz-option,
+    .study-answer-actions button,
     [aria-label="Gönder"],
     #studySendButton,
     .expert-send-circle,
@@ -85,6 +87,8 @@ body :is(
     .messages-filters-compact > a.active,
     .messages-empty-compact a
 ):not(:where(
+    .study-quiz-option,
+    .study-answer-actions button,
     [aria-label="Gönder"],
     #studySendButton,
     .expert-send-circle,
