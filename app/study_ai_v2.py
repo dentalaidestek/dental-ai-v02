@@ -823,7 +823,8 @@ def stream_rag_v2(
                 **generation_options,
             )
             try:
-                completed = (stream_complete_structured_answer(provider, generation_call)
+                completed = (stream_complete_structured_answer(provider, generation_call,
+                        expected_count=retrieval.study_task.get('count') if structured_quiz else None)
                     if generation_options.get('response_schema') else
                     stream_complete_answer(provider, generation_call, retrieval,
                         allow_continuation=not retrieval.study_task.get('batch_partial')))
@@ -852,7 +853,7 @@ def stream_rag_v2(
                         repair_prompt=prompt+'\nÖnceki JSON seti doğrulanamadı. Kesin denetim nedeni: '+reason+'. Bu hatayı gider; bütün zorunlu alanları ve kullanıcı koşullarını koru. Kaynak atfını verilen material_id/page çiftlerinden seç. Kök-şık-anahtar uyumunu, adedi, tekrar ve cevap sızıntısını düzelt. Tam düzeltilmiş JSON setini döndür.\n'+answer
                         repaired=''.join(stream_complete_structured_answer(provider,dict(model=target.model,system_prompt=V2_SYSTEM_PROMPT,
                             history=[],prompt=repair_prompt,attachments=generation_attachments,temperature=0.22,
-                            max_output_tokens=output_budget,**generation_options)))
+                            max_output_tokens=output_budget,**generation_options),expected_count=retrieval.study_task.get('count')))
                         if getattr(provider,'last_finish_reason','UNKNOWN') == 'MAX_TOKENS':
                             raise StudyAIError('Soru seti uzunluk sınırında kaldı; set kaydedilmedi.')
                         try:
