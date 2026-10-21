@@ -31,7 +31,7 @@
 .study-progress-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.study-progress-actions button{border:0;border-radius:10px;padding:10px 13px;background:#102a43;color:white;font-size:12px;cursor:pointer}.study-progress-actions button:last-child{background:#f0f4f8;color:#243b53}.study-progress-actions button:disabled{opacity:.5;cursor:default}.study-progress-note{display:block;color:#64748b;font-size:11px;line-height:1.5;margin-top:9px}
 @media(max-width:480px){.study-progress{margin:6px 10px}.study-progress summary{padding:11px 12px}.study-progress-body{padding:12px;max-height:38vh}.study-progress-results td,.study-progress-results th{padding:9px 7px}.study-progress-results{font-size:12px}}
 
-.study-quiz-card{border:1px solid #dce4ed;border-radius:14px;padding:16px;margin:14px 0;background:#fff}.study-quiz-card h3{font-size:14px;margin:0 0 10px;color:#102a43}.study-quiz-stem{white-space:pre-line;line-height:1.65;margin:0 0 14px}.study-quiz-options{display:grid;gap:8px}.study-quiz-option{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid #dce4ed;border-radius:11px;padding:11px 12px;background:#f8fafc;color:#14243b;font:inherit;font-size:14px;line-height:1.5;cursor:pointer}.study-quiz-option>span:first-child{display:grid;place-items:center;flex:0 0 27px;height:27px;border:1px solid #cbd5e1;border-radius:50%;font-size:12px;font-weight:700}.study-quiz-option:hover:not(:disabled){border-color:#345a7c;background:#eef4fa}.study-quiz-option:focus-visible{outline:3px solid #93b5df;outline-offset:2px}.study-quiz-option:disabled{cursor:default;opacity:1!important}.study-quiz-options button.study-quiz-option{background:#f8fafc!important;color:#14243b!important}.study-quiz-options button.study-quiz-option.is-correct{background:#eef9f2!important;border-color:#419668!important;color:#145c35!important}.study-quiz-options button.study-quiz-option.is-wrong{background:#fff1f0!important;border-color:#c65c55!important;color:#8d2f29!important}.study-quiz-option[aria-pressed=true]>span:first-child{background:#102a43;color:white;border-color:#102a43}.study-quiz-feedback{margin:12px 0 0;font-weight:600;font-size:14px}.study-quiz-feedback.is-correct{color:#17653c}.study-quiz-feedback.is-wrong{color:#a13e35}.study-quiz-hint{font-size:12px;color:#64748b;margin:0 0 8px}
+.study-quiz-card{border:1px solid #dce4ed;border-radius:14px;padding:16px;margin:14px 0;background:#fff}.study-quiz-card h3{font-size:14px;margin:0 0 10px;color:#102a43}.study-quiz-stem{color:#14243b;font-weight:700;white-space:pre-line;line-height:1.65;margin:0 0 14px}.study-quiz-options{display:grid;gap:8px}.study-quiz-option{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;border:1px solid #dce4ed;border-radius:11px;padding:11px 12px;background:#f8fafc;color:#14243b;font:inherit;font-size:14px;line-height:1.5;cursor:pointer}.study-quiz-option>span:first-child{display:grid;place-items:center;flex:0 0 27px;height:27px;border:1px solid #cbd5e1;border-radius:50%;font-size:12px;font-weight:700}.study-quiz-option:hover:not(:disabled){border-color:#345a7c;background:#eef4fa}.study-quiz-option:focus-visible{outline:3px solid #93b5df;outline-offset:2px}.study-quiz-option:disabled{cursor:default;opacity:1!important}.study-quiz-options button.study-quiz-option{background:#f8fafc!important;color:#14243b!important}.study-quiz-options button.study-quiz-option.is-correct{background:#eef9f2!important;border-color:#419668!important;color:#145c35!important}.study-quiz-options button.study-quiz-option.is-wrong{background:#fff1f0!important;border-color:#c65c55!important;color:#8d2f29!important}.study-quiz-option[aria-pressed=true]>span:first-child{background:#102a43;color:white;border-color:#102a43}.study-quiz-feedback{margin:12px 0 0;font-weight:600;font-size:14px}.study-quiz-feedback.is-correct{color:#17653c}.study-quiz-feedback.is-wrong{color:#a13e35}.study-quiz-hint{font-size:12px;color:#64748b;margin:0 0 8px}
 @media(max-width:480px){.study-quiz-card{padding:12px}.study-quiz-option{font-size:13px;padding:10px}}
 .study-answer-actions{display:flex;align-items:center;gap:4px;margin:12px 0 2px;flex-wrap:wrap}.study-answer-actions button{display:grid;place-items:center;min-width:40px;min-height:40px;padding:8px;border:0!important;border-radius:9px;background:transparent!important;color:#80858c!important;cursor:pointer;box-shadow:none!important}.study-answer-actions button:hover{background:#f1f3f5!important}.study-answer-actions button[aria-pressed="true"]{color:#14243b!important;background:#e9edf2!important}.study-answer-actions button[aria-pressed="true"] svg{fill:currentColor;fill-opacity:.18}.study-answer-actions button:focus-visible{outline:2px solid #536e91;outline-offset:2px}.study-answer-actions button:disabled{opacity:.5;cursor:wait}.study-reaction-notice{font-size:12px;color:#64748b}
 </style>
@@ -382,7 +382,7 @@
             button.setAttribute('aria-pressed',String(choice===result.selected));
             button.classList.toggle('is-correct',choice===result.correct_choice);
             button.classList.toggle('is-wrong',choice===result.selected && !result.correct);
-            const palette=choice===result.correct_choice?['#eef9f2','#145c35','#419668']:choice===result.selected&&!result.correct?['#fff1f0','#8d2f29','#c65c55']:['#f8fafc','#14243b','#dce4ed'];
+            const palette=choice===result.correct_choice?['#eef9f2','#145c35','#419668']:choice===result.selected&&!result.correct?['#fff1f0','#8d2f29','#c65c55']:['#ffffff','#14243b','#dce4ed'];
             ['background','color','border-color'].forEach((property,index)=>button.style.setProperty(property,palette[index],'important'));
             button.style.setProperty('opacity','1','important');
         });
@@ -431,6 +431,10 @@
             feedback.className='study-quiz-feedback';feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');
             question.options.forEach((text,index)=>{
                 const choice='ABCDE'[index],button=document.createElement('button'),letter=document.createElement('span'),label=document.createElement('span');
+                button.style.setProperty('background','#ffffff','important');
+                button.style.setProperty('color','#14243b','important');
+                button.style.setProperty('box-shadow','none','important');
+                button.style.setProperty('font-weight','400','important');
                 button.type='button';button.className='study-quiz-option';button.dataset.choice=choice;button.setAttribute('aria-pressed','false');
                 letter.textContent=choice;label.textContent=text;button.append(letter,label);
                 button.addEventListener('click',()=>selectQuizChoice(card,id,question.number,choice));options.append(button);
@@ -523,7 +527,8 @@
             if (run.status==='DONE') {
                 pending.dataset.messageId=run.message_id;
                 pending.classList.remove('pending');
-                pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
+                if(run.quiz) renderInteractiveQuiz(run.quiz);
+                else pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
                 addPdfArtifact(pending,run.artifact || null);
                 addAnswerActions(pending);
                 status.textContent='';activeRun=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
@@ -548,18 +553,21 @@
         text=(text || '').trim();
         if (!text || send.disabled || activeRun) return;
         if (!materialCount) {status.textContent='Önce ders notu ekle.';return;}
-        setWorking(true);status.textContent='Çalışma başlatılıyor...';
+        setWorking(true);status.textContent='';
+        const userMessage=addMessage('user',text,false,true);
+        const pending=addMessage('assistant','',true,true);
+        pending.querySelector('.study-thinking').textContent='Çalışma başlatılıyor...';
+        input.value='';input.style.height='auto';
         const data=new FormData();data.append('message',text);
         const key=crypto.randomUUID().replaceAll('-','');data.append('request_key',key);
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs',{method:'POST',body:data,credentials:'same-origin'});
             const result=await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || 'Çalışma başlatılamadı.');
-            input.value='';input.style.height='auto';
-            const userMessage=addMessage('user',text,false,true);
-            const pending=addMessage('assistant','',true,true);
             activeRun=result.run.id;setWorking(true);followRun(activeRun,pending,userMessage);
         } catch (error) {
+            pending.remove();userMessage.remove();
+            if(!input.value.trim())input.value=text;
             status.textContent=error.message || 'Çalışma başlatılamadı.';setWorking(false);
             // If submission reached the server, recover it instead of submitting again.
             resumeRun();
