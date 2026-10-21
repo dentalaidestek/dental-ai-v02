@@ -91,3 +91,30 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
         if attempt and len(answer) == before:
             raise LongAnswerError('Yanıtın devamı oluşturulamadı; eksik PDF kaydedilmedi.')
         retrieval.study_task['auto_pdf'] = True
+
+
+def stream_complete_structured_answer(provider, options):
+    """Buffer one complete JSON document; only token exhaustion retries it.
+
+    A schema-constrained response cannot safely continue as a second JSON
+    object. Discard its incomplete transport buffer and regenerate the same
+    requested document with more output room, retaining the source evidence.
+    """
+    budget=options['max_output_tokens']
+    for attempt in range(2):
+        call=dict(options,max_output_tokens=budget)
+        chunks=[];size=0
+        for chunk in provider.generate_stream(**call):
+            if not chunk:continue
+            size+=len(chunk)
+            if size>MAX_ANSWER_CHARS:
+                raise LongAnswerError('Soru seti tamamlanamadı; eksik set kaydedilmedi.')
+            chunks.append(chunk)
+        if getattr(provider,'last_finish_reason','UNKNOWN')!='MAX_TOKENS':
+            if not chunks:
+                raise LongAnswerError('Akademik AI boş yanıt döndürdü; eksik set kaydedilmedi.')
+            yield ''.join(chunks)
+            return
+        if attempt==1 or budget>=32768:
+            raise LongAnswerError('Soru seti uzunluk sınırında tamamlanamadı; eksik set kaydedilmedi.')
+        budget=min(32768,max(32000,budget*2))
