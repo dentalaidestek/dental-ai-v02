@@ -135,7 +135,7 @@ class ClaudeFiles:
             execution_seen = False
             final_ids = []
             deadline = time.monotonic() + 240
-            for turn in range(3):
+            for turn in range(8):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise StudyProviderError('PDF işleminin süresi doldu.')
@@ -180,13 +180,29 @@ class ClaudeFiles:
                                 final_ids.append(file_id(citation.get('file_id')))
                 if response.get('stop_reason') == 'end_turn':
                     break
-                if response.get('stop_reason') != 'pause_turn':
+                if response.get('stop_reason') not in {'pause_turn', 'max_tokens'}:
                     raise StudyProviderError('PDF işlemi tamamlanmadan durdu; eksik dosya kaydedilmedi.')
                 ident = (response.get('container') or {}).get('id')
                 if not isinstance(ident, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}', ident):
                     raise StudyProviderError('PDF çalışma ortamı doğrulanamadı.')
                 container = {**container, 'id': ident}
-                messages.append({'role': 'assistant', 'content': blocks})
+                if response.get('stop_reason') == 'max_tokens':
+                    # An interrupted tool input has not executed. Never replay it
+                    # as a complete call or invent a successful tool result.
+                    result_ids = {b.get('tool_use_id') for b in blocks
+                        if b.get('type', '').endswith('tool_result')}
+                    safe_blocks = [b for b in blocks if b.get('type') not in
+                        {'server_tool_use', 'tool_use'} or b.get('id') in result_ids]
+                    if safe_blocks:
+                        messages.append({'role': 'assistant', 'content': safe_blocks})
+                    messages.append({'role': 'user', 'content': [{
+                        'type': 'text', 'text': 'Continue the same task in the same container. '
+                        'The previous response hit its output limit. Inspect existing files first; '
+                        'resume unfinished work without repeating completed work. '
+                        'Reissue any interrupted tool command in smaller complete commands. '
+                        'Only report success after all requested output is complete and verified.'}]})
+                else:
+                    messages.append({'role': 'assistant', 'content': blocks})
             else:
                 raise StudyProviderError('PDF işlemi devam sınırına ulaştı.')
             if output_format=='text':

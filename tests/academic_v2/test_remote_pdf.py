@@ -267,6 +267,25 @@ def test_pause_turn_reuses_only_current_container_and_is_bounded(transport):
     assert len(turns)==2 and 'id' not in turns[0]['container'] and turns[1]['container']['id']=='cntr_current'
 
 
+def test_max_tokens_resumes_in_same_container_without_replaying_partial_tool(transport):
+    client,_,turns,_=transport;original=client.json_request;count=0
+    def response(path,**kwargs):
+        nonlocal count
+        result=original(path,**kwargs)
+        if path=='/messages':
+            count+=1
+            if count==1:
+                result.update(stop_reason='max_tokens',container={'id':'cntr_current'},content=[
+                    {'type':'text','text':'Working'},
+                    {'type':'server_tool_use','id':'partial','name':'bash_code_execution','input':{}}])
+        return result
+    client.json_request=response
+    assert client.execute(model='claude-haiku-5-5',instructions='PDF',title='Perio',sources=[])
+    assert len(turns)==2 and turns[1]['container']['id']=='cntr_current'
+    assert turns[1]['messages'][-1]['role']=='user'
+    assert not any(b.get('id')=='partial' for m in turns[1]['messages'] for b in m['content'])
+
+
 def test_missing_or_incomplete_generated_files_never_claim_success(transport):
     client,_,_,_=transport;original=client.json_request
     def response(path,**kwargs):
@@ -626,3 +645,17 @@ def test_inspection_endpoints_return_text_without_new_pdf(owned,monkeypatch,stre
             main.StudyChatMessage.role=='ASSISTANT')).one()
         assert 'eksik' in saved.content and not saved.mode.endswith('_PDF')
     never.assert_not_called()
+
+
+def test_repeated_max_tokens_is_bounded_and_never_downloads(transport):
+    client,calls,turns,_=transport;original=client.json_request
+    def response(path,**kwargs):
+        result=original(path,**kwargs)
+        if path=='/messages':
+            result.update(stop_reason='max_tokens',container={'id':'cntr_current'})
+        return result
+    client.json_request=response
+    with pytest.raises(StudyProviderError,match='devam sınırına'):
+        client.execute(model='claude-haiku-5-5',instructions='PDF',title='Perio',sources=[])
+    assert len(turns)==8
+    assert not any(path.endswith('/content') for path,_ in calls)
