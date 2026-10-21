@@ -37,3 +37,15 @@ def test_feedback_requires_login(owned,monkeypatch):
     monkeypatch.setattr(main,'get_current_user',lambda r:None)
     assert save_feedback(None,6,10,'like').status_code==401
     assert list_feedback(None,6,'10').status_code==401
+
+
+def test_plain_answer_feedback_preserves_legacy_source_list(owned):
+    main,factory,_=owned
+    sources=[{'material_id':40,'page':1}]
+    with factory() as session:
+        row=session.get(main.StudyChatMessage,10)
+        row.source_evidence_json=json.dumps(sources);session.add(row);session.commit()
+    assert save_feedback(None,6,10,'like').status_code==200
+    with factory() as session:
+        data=json.loads(session.get(main.StudyChatMessage,10).source_evidence_json)
+        assert data['sources']==sources and data['user_feedback']=='like'
