@@ -140,3 +140,63 @@ def select_answer(request:Request,course_id:int,message_id:int,number:int=Form(.
         result=_result(quiz['questions'][number-1],selected[number])
     return JSONResponse({'ok':True,'result':result,'already_answered':repeated},
                         headers={'Cache-Control':'private, no-store'})
+
+
+# Message reactions share the existing owned chat metadata; no schema change.
+def _feedback_metadata(value):
+    if not value:
+        return {}
+    data=json.loads(value)
+    if not isinstance(data,dict):
+        raise ValueError('Invalid message metadata')
+    return data
+
+
+@router.get('/notes/courses/{course_id}/ai/feedback')
+def list_feedback(request:Request,course_id:int,ids:str=''):
+    from app import main
+    user=main.get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    parts=ids.split(',') if ids else []
+    if len(parts)>100 or any(not p.isdecimal() or len(p)>18 for p in parts):
+        return JSONResponse({'ok':False},status_code=400)
+    with Session(main.engine) as session:
+        if not main._owned_study_course(session,user,course_id):
+            return JSONResponse({'ok':False},status_code=404)
+        rows=session.exec(select(main.StudyChatMessage).where(
+            main.StudyChatMessage.owner_user_id==user.id,
+            main.StudyChatMessage.course_id==course_id,
+            main.StudyChatMessage.role=='ASSISTANT',
+            main.StudyChatMessage.id.in_([int(p) for p in parts]))).all() if parts else []
+        votes={}
+        for row in rows:
+            try:vote=_feedback_metadata(row.source_evidence_json).get('user_feedback')
+            except (ValueError,TypeError):continue
+            if vote in {'like','dislike'}:votes[str(row.id)]=vote
+    return JSONResponse({'ok':True,'votes':votes},headers={'Cache-Control':'private, no-store'})
+
+
+@router.post('/notes/courses/{course_id}/ai/messages/{message_id}/feedback')
+def save_feedback(request:Request,course_id:int,message_id:int,vote:str=Form(...)):
+    from app import main
+    user=main.get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    if vote not in {'like','dislike','none'}:
+        return JSONResponse({'ok':False},status_code=400)
+    with Session(main.engine) as session:
+        if not main._owned_study_course(session,user,course_id):
+            return JSONResponse({'ok':False},status_code=404)
+        row=session.exec(select(main.StudyChatMessage).where(
+            main.StudyChatMessage.owner_user_id==user.id,
+            main.StudyChatMessage.course_id==course_id,
+            main.StudyChatMessage.id==message_id,
+            main.StudyChatMessage.role=='ASSISTANT').with_for_update()).first()
+        if not row:return JSONResponse({'ok':False},status_code=404)
+        try:metadata=_feedback_metadata(row.source_evidence_json)
+        except (ValueError,TypeError):
+            return JSONResponse({'ok':False,'error':'Yanıt değerlendirmesi kaydedilemedi.'},status_code=409)
+        if vote=='none':metadata.pop('user_feedback',None)
+        else:metadata['user_feedback']=vote
+        row.source_evidence_json=json.dumps(metadata,ensure_ascii=False)
+        session.add(row);session.commit()
+    return JSONResponse({'ok':True,'vote':vote},headers={'Cache-Control':'private, no-store'})
