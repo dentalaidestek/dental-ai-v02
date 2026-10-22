@@ -1,0 +1,44 @@
+<details class="card voice-exam" id="voice-exam" data-patient-id="{{ patient.id }}">
+  <summary><strong>Sesli muayene</strong><span>Konuş, kontrol et, mevcut alanlara kaydet</span></summary>
+  <div class="voice-exam-body">
+    <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
+    <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin veya girdiğim metnin Gemini ile işlenmesini onaylıyorum.</label>
+    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Kimlik numarası ve iletişim bilgilerini söyleme. Yalnız seçip onayladığın alanlar kaydedilir.</p>
+    <div class="voice-controls">
+      <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
+      <button type="button" data-voice-stop disabled>Duraklat ve işle</button>
+      <button type="button" data-voice-retry hidden>Ses bölümünü tekrar işle</button>
+      <span data-voice-timer>00:00</span>
+    </div>
+    <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. İşledikten sonra devam edebilirsin. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
+    <label class="voice-field">Konuşma metni <textarea data-voice-transcript rows="4" maxlength="18000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
+    <button type="button" data-voice-text disabled>Metinden alanları çıkar</button>
+    <section class="voice-review" hidden>
+      <h3>Kaydetmeden önce kontrol et</h3>
+      <p>Yalnız işaretlediğin alanlar uygulanır. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
+      <div data-voice-fields></div>
+      <p data-voice-uncertain class="voice-help"></p>
+      <fieldset>
+        <legend>Academic AI notlarından kaynak bul</legend>
+        <label class="voice-field">Ders <select data-voice-source-course><option value="">Ders seç</option></select></label>
+        <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
+        <button type="button" data-voice-sources>Notlarda ara</button>
+        <div data-voice-source-results aria-live="polite"></div>
+      </fieldset>
+      <div data-voice-teeth></div>
+      <fieldset data-voice-appointment hidden>
+        <legend>Randevu taslağı</legend>
+        <p data-voice-appointment-quote></p>
+        <label class="voice-check"><input type="checkbox" data-voice-save-appointment> Bu randevuyu programa ekle</label>
+        <label class="voice-field">Başlık <input data-voice-appointment-title value="Kontrol randevusu" maxlength="160"></label>
+        <label class="voice-field">Başlangıç (Türkiye saati) <input type="datetime-local" data-voice-appointment-start></label>
+        <label class="voice-field">Bitiş (isteğe bağlı) <input type="datetime-local" data-voice-appointment-end></label>
+      </fieldset>
+      <label class="voice-check"><input type="checkbox" data-voice-confirm> Seçtiğim alanları ve varsa diş bulgularını / randevuyu kontrol ettim.</label>
+      <button type="button" data-voice-save>Seçilenleri kaydet</button>
+      <button type="button" data-voice-discard>Bu muayene taslağını temizle</button>
+    </section>
+  </div>
+</details>
+<link rel="stylesheet" href="/static/voice-exam.css?v=1">
+<script src="/static/voice-exam.js?v=1" defer></script>
