@@ -61,7 +61,18 @@ def normalize(result):
     if not transcript:
         raise VoiceError('Anlaşılır konuşma bulunamadı. Metni elle girebilirsin.')
     output = {'transcript': transcript, 'fields': {}, 'teeth': [], 'appointment': None,
-              'uncertain': _string(result.get('uncertain', ''), 3000)}
+              'communication': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
+    coaching = result.get('communication', [])
+    if not isinstance(coaching, list) or len(coaching) > 8:
+        raise VoiceError('İletişim değerlendirmesi doğrulanamadı.')
+    for item in coaching:
+        if not isinstance(item, dict):
+            continue
+        quote = _string(item.get('quote', ''), 2000)
+        observation = _string(item.get('observation', ''), 1000)
+        suggestion = _string(item.get('suggestion', ''), 1000)
+        if quote and quote in transcript and observation and suggestion:
+            output['communication'].append(dict(quote=quote, observation=observation, suggestion=suggestion))
     fields = result.get('fields', {})
     if not isinstance(fields, dict):
         raise VoiceError('Muayene alanları doğrulanamadı.')
@@ -99,6 +110,7 @@ def schema():
     quoted = {'type': 'OBJECT', 'properties': {'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'}},
               'required': ['value', 'quote']}
     return {'type': 'OBJECT', 'properties': {
+        'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
         'fields': {'type': 'OBJECT', 'properties': {key: quoted for key in FIELDS}},
         'teeth': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
@@ -119,6 +131,12 @@ hekimin kesin ifade ettiği diş numarası ve mevcut bulguyu koy; soru, şüphe,
 tedavi veya olumsuz ifadeyi diş durumu yapma. Diş numarasını FDI biçiminde yaz.
 Randevu konuşulmuşsa appointment.quote alanına yalnız konuşmadaki cümleyi al;
 takvim tarihi hesaplama. Belirsiz/çelişkili duyulan yerleri uncertain içinde belirt.
+communication dizisinde en çok 8 iletişim geliştirme önerisi ver: hastanın anlamadığını
+söylemesi, açıklanmayan jargon, yanıtlanmayan somut soru gibi yalnız doğrudan alıntıyla
+kanıtlanan gözlemler. quote birebir alıntı, observation sınırlı gözlem, suggestion daha açık
+ve empatik bir ifade olsun. Kayıtta geçmeyeni yapılmamış sayma; konuşmacı belirsizse
+suçlama yapma. Kişilik, duygu, ticari başarı veya satış fırsatı çıkarma; baskı ve gereksiz
+tedavi önerme. Tanı/kontrendikasyon çıkarma. Bu öneriler hasta dosyasına kaydedilmez.
 İstenen JSON dışına çıkma.'''
 
 
