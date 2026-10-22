@@ -143,6 +143,22 @@ def voice_entry(request: Request, q: str = ''):
     return response
 
 
+@router.get('/voice-exams/{patient_id}/session')
+def voice_session(request: Request, patient_id: int):
+    from app import main
+    user, fingerprint, error = _access(request, patient_id)
+    if error is not None:
+        return error
+    with Session(main.engine) as session:
+        patient = _owned(session, main, user, patient_id)
+        if not patient:
+            return _reply({'ok': False}, 404)
+        response = main.templates.TemplateResponse(request=request, name='voice_exam_session.html',
+            context={'patient': patient, 'user': user})
+    response.headers.update(HEADERS)
+    return response
+
+
 @router.get('/voice-exams/capabilities')
 def capabilities(request: Request):
     from app import main
@@ -251,7 +267,7 @@ def anonymous(request: Request):
         session.commit()
     for event in events:
         main.on_loop(main._publish_realtime_event, event)
-    return RedirectResponse('/patients/' + str(patient.id) + '#voice-exam', status_code=303)
+    return RedirectResponse('/voice-exams/' + str(patient.id) + '/session', status_code=303)
 
 
 @router.post('/patients/{patient_id}/voice-exam/audio')

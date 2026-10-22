@@ -461,3 +461,18 @@ def test_voice_entry_lists_only_owned_patients_and_escapes_search(app_client, mo
     assert client.get('/voice-exams',params={'q':'SyntheticName'}).json()['patients'] == [1]
     assert client.get('/voice-exams',params={'q':'%'}).json()['patients'] == []
 
+
+
+def test_standalone_session_is_owned_private_and_anonymous_redirects(app_client, monkeypatch):
+    from fastapi.responses import JSONResponse
+    from app import main
+    client, _ = app_client
+    monkeypatch.setattr(main, 'templates', SimpleNamespace(TemplateResponse=lambda **kw:
+        JSONResponse({'template': kw['name'], 'patient_id': kw['context']['patient'].id})), raising=False)
+    response = client.get('/voice-exams/1/session')
+    assert response.json() == {'template': 'voice_exam_session.html', 'patient_id': 1}
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert client.get('/voice-exams/2/session').status_code == 404
+    result = client.post('/voice-exams/anonymous', follow_redirects=False)
+    assert result.headers['location'].startswith('/voice-exams/')
+    assert result.headers['location'].endswith('/session')

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="voice-entry">
+  <a class="voice-back" href="/voice-exams">← Sesli muayene başlangıcı</a>
+  <h1>Sesli Muayene</h1>
+  <p>Hasta: {{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</p>
+  {% include "voice_exam_panel.html" %}
+</main>
+{% endblock %}
