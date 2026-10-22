@@ -11,3 +11,9 @@ Academic AI/course retrieval is removed. Sources currently match topics against 
 Communication suggestions require an exact transcript quote and stay in the review UI, outside the patient chart. Partial-recording omissions must not be treated as proven clinician failures. Marketing scope and systemic-history persistence require clarification.
 
 Validation: 20 unit/API/template tests pass and JavaScript syntax check passes. Browser, microphone, real Gemini audio, realtime streaming and clinical source-content validation remain outstanding. Draft PR only; no main merge or production deployment.
+
+
+## Privacy changes
+All extracted fields now require opt-in selection. Raw transcript and communication objects are rejected as apply properties/fields. Tooth selection no longer copies a source utterance into its persisted note. Draft discard, successful save and pagehide clear transcript text, quotations, coaching, source query/results, appointment inputs, recording handlers and retained audio references. In-flight browser requests are aborted and stale responses rejected; pending microphone permission cannot reactivate a departed view. Memory reference clearing is not guaranteed physical memory erasure or cancellation of provider-side processing.
+
+Extraction instructions minimize returned transcript to clinically relevant excerpts and exclude unrelated private narratives. This is model instruction, not a proven semantic privacy filter: a clinician still must review every selected field. Audio is transmitted before this text minimization, so provider retention/configuration must be independently verified before enabling real patient use. No claim of legal compliance or zero leakage is made. Current tests: 22 pass, JavaScript syntax passes; real audio/browser validation remains outstanding.
