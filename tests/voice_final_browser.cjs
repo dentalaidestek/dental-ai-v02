@@ -35,6 +35,8 @@ const tick=()=>new Promise(setImmediate);
  assert.equal(get('[data-voice-save]').disabled,false);
  assert.equal(get('[data-voice-stage]').textContent,'Hekim onayı ve kayıt');
  const cachedCount=finalCount;await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,cachedCount,'Same final review must not be paid twice');
+ root.dispatchEvent({type:'input',target:{type:'checkbox',closest:()=>true}});
+ assert.equal(get('[data-voice-save]').disabled,false,'Selecting fields does not invalidate unchanged clinical review');
  const field=get('[data-voice-fields]').children[0].querySelector('textarea');field.value='Hekimin düzeltmesi';
  root.dispatchEvent({type:'input',target:{closest:()=>true}});
  assert.equal(get('[data-voice-save]').disabled,true,'Edited fields invalidate completed review');

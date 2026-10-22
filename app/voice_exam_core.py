@@ -395,8 +395,9 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             logging.getLogger(__name__).info('voice_extract outcome=ok duration_ms=%d fields=%d teeth=%d questions=%d',
                 (time.monotonic()-started)*1000, len(result['fields']), len(result['teeth']), len(result.get('follow_up_questions', [])))
             return result
-        except VoiceError:
-            logging.getLogger(__name__).warning('voice_extract outcome=invalid_output duration_ms=%d', (time.monotonic()-started)*1000)
+        except VoiceError as exc:
+            category = {'Anlaşılır konuşma bulunamadı. Metni elle girebilirsin.': 'empty_clinical_text', 'Ses çözümlemesi tamamlanmadı; kısmi sonuç kaydedilmedi.': 'incomplete_generation', 'Ses çözümlemesi çıktı sınırını aştı.': 'response_size_limit'}.get(str(exc), 'schema_validation')
+            logging.getLogger(__name__).warning('voice_extract outcome=invalid_output category=%s duration_ms=%d', category, (time.monotonic()-started)*1000)
             raise
         except Exception as exc:
             status = getattr(exc, 'code', None)
