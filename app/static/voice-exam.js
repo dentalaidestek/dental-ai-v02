@@ -42,7 +42,7 @@
   async function processAudio(){
     if(!audio||busy)return;if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     busy=true;controls();message('Ses bölümü çözümleniyor…');
-    try{const form=new FormData();form.append('consent','yes');form.append('recording',audio,'exam-audio');const result=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:form,credentials:'same-origin'}));
+    try{const result=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:audio,credentials:'same-origin',headers:{'Content-Type':audio.type,'X-Voice-Consent':'yes'}}));
       if(transcript.value&&transcript.value.length+result.review.transcript.length>18000)throw Error('Konuşma metni sınırına ulaşıldı. Önce bu muayeneyi kaydet.');
       transcript.value+=(transcript.value?'\n':'')+result.review.transcript;merge(result);audio=null;retry.hidden=true;
     }catch(error){message(error.message,true);retry.hidden=false}finally{busy=false;controls()}
