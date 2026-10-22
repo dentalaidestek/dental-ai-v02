@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/voice-exam.css?v=5">
+<section class="voice-entry">
+  <a class="voice-back" href="/">← Ana sayfa</a>
+  <header class="voice-entry-hero">
+    <div><span class="voice-eyebrow">KLİNİK ASİSTANINIZ</span><h1>Sesli Muayene</h1><p>Görüşmeye odaklanın.<br>Muayene notlarını birlikte düzenleyelim.</p></div>
+    <img src="/static/dashboard/mobile/voice_exam.webp" alt="" decoding="async">
+  </header>
+  <p><a class="voice-back" href="/voice-exams/device-check">Mikrofonumu bu cihazda test et →</a></p>
+  <ol class="voice-steps" aria-label="Muayene adımları"><li><b>1</b> Hasta seç</li><li><b>2</b> Görüşmeyi başlat</li><li><b>3</b> Kontrol et ve kaydet</li></ol>
+  <section class="voice-entry-section">
+    <div class="voice-section-heading"><h2>Yeni hastayla başla</h2><span>İsim bilgisi gerekmez</span></div>
+    <p class="voice-help">Yeni bir hasta kaydı açılır. Görüşmede netleşen bilgileri muayene sonunda kontrol ederek ekleyebilirsiniz.</p>
+    <form method="post" action="/voice-exams/anonymous"><button class="voice-primary" type="submit">Yeni hasta ile devam et →</button></form>
+  </section>
+  <section class="voice-entry-section">
+    <h2>Mevcut hastayı seç</h2>
+    <form action="/voice-exams" method="get" class="voice-entry-search"><label for="voice-patient-query">Ad, soyad veya hasta kodu</label><div><input id="voice-patient-query" name="q" value="{{ q }}" maxlength="100" autocomplete="off" placeholder="Hasta ara…"><button type="submit">Ara</button></div></form>
+    <div class="voice-entry-list">
+      {% for patient in patients %}<a href="/patients/{{ patient.id }}#voice-exam"><span class="voice-patient-icon" aria-hidden="true">♙</span><span><strong>{{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</strong><small>Muayene ekranına geç</small></span><b aria-hidden="true">→</b></a>
+      {% else %}<div class="voice-entry-empty"><strong>Hasta bulunamadı</strong><p>Aramayı değiştirin veya yeni hastayla başlayın.</p></div>{% endfor %}
+    </div>
+  </section>
+  <aside class="voice-privacy-note"><strong>Mikrofon sizin kontrolünüzde</strong><p>Hasta seçmek mikrofonu açmaz. Görüşmedeki kişileri bilgilendirip işleme onayını verdikten sonra dinlemeyi başlatırsınız. Kaydedilecek alanları son adımda siz seçersiniz.</p></aside>
+</section>
+{% endblock %}
+

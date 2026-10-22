@@ -1,0 +1,1 @@
+(()=>{const entry=document.querySelector('[data-voice-entry]');if(!entry)return;fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json()).then(data=>{entry.hidden=!data.enabled}).catch(()=>{entry.hidden=true})})();

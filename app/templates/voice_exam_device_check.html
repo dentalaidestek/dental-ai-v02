@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/voice-exam.css?v=7">
+<section class="voice-entry" id="voice-device-check">
+  <a class="voice-back" href="/voice-exams">← Sesli muayene</a>
+  <section class="voice-entry-section">
+    <span class="voice-eyebrow">BU CİHAZDA KONTROL</span><h1>Mikrofon testi</h1>
+    <p class="voice-help">Testi muayenede kullanacağınız telefon veya bilgisayarda açın. Başlatınca mikrofon izni istenir. Birkaç kelime söyleyin; altı saniye boyunca ses seviyesi ve canlı ses biçimine dönüşüm kontrol edilir.</p>
+    <p class="voice-privacy-note">Bu testte ses kaydedilmez, sunucuya veya yapay zekâya gönderilmez. Testin geçmesi Gemini bağlantısını ya da konuşmayı doğru anlamayı doğrulamaz.</p>
+    <div class="voice-controls"><button type="button" data-device-start>Bu cihazın mikrofonunu test et</button><button type="button" data-device-stop disabled>Testi durdur</button></div>
+    <p data-device-status role="status" aria-live="polite">Mikrofon kapalı.</p>
+    <label class="voice-field">Ses seviyesi <meter data-device-level min="0" max="1" value="0" style="width:100%">0</meter></label>
+    <div data-device-results aria-live="polite"></div>
+  </section>
+</section>
+<script src="/static/voice-device-check.js?v=1" defer></script>
+{% endblock %}

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
+<form method="post" action="/voice-exams/anonymous" id="voiceAnonymousEntry" hidden>
+  <button type="submit">Anonim hasta ile sesli muayene başlat</button>
+</form>
+<script>
+fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{if(data?.enabled)document.getElementById('voiceAnonymousEntry').hidden=false}).catch(()=>{});
+</script>
 
 <div class="patient-page">
 

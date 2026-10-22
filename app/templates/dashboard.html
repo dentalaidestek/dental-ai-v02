@@ -1,7 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>.visual-dashboard .visual-empty[hidden]{display:none!important}</style>
+<style>[data-voice-entry][hidden]{display:none!important}.visual-dashboard .visual-empty[hidden]{display:none!important}
+/* Match the existing photographic dashboard cards. */
+.dashboard-home .visual-photo-card .visual-art{background:none}
+.dashboard-home .visual-photo-card .visual-art img{object-position:65% 45%}
+.dashboard-home .visual-photo-card:after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,transparent 25%,rgba(5,25,48,.75));z-index:1}
+.dashboard-home .visual-photo-card .visual-card-copy,.dashboard-home .visual-photo-card .visual-arrow{z-index:2}
+.dashboard-home .visual-photo-card .visual-card-copy strong{color:#fff}
+.dashboard-home .visual-photo-card .visual-card-copy small{color:#e6f3ff}
+@media(max-width:760px){
+.dashboard-home .visual-photo-card:after{display:none}
+.dashboard-home .visual-photo-card:before{background:linear-gradient(90deg,#eff8ff 0%,rgba(239,248,255,.98) 48%,rgba(239,248,255,0) 82%)}
+.dashboard-home .visual-photo-card .visual-card-copy strong{color:#10263e}
+.dashboard-home .visual-photo-card .visual-card-copy small{color:#38576d}
+.dashboard-home .visual-photo-card .visual-art img{object-position:66% 40%}
+}
+</style>
 <div class="visual-dashboard">
   <section class="visual-welcome">
     <div class="visual-welcome-copy">
@@ -21,6 +36,11 @@
   </section>
 
   <section class="visual-card-grid" aria-label="Ana işlemler">
+    <a class="visual-feature-card visual-voice visual-photo-card" data-voice-entry href="/voice-exams" hidden>
+      <div class="visual-art"><img src="/static/dashboard/mobile/voice_exam.webp" alt="" decoding="async"></div>
+      <div class="visual-card-copy"><strong>Sesli Muayene</strong><small>Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et.</small></div><span class="visual-arrow">›</span>
+    </a>
+
     <a class="visual-feature-card visual-patients" href="/patients">
       <div class="visual-art"><img src="/static/dashboard/mobile/patients_clinic.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Hastalar</strong><small>Hasta kayıtlarını yönetin, yeni hasta ekleyin.</small></div><span class="visual-arrow">›</span>
@@ -33,9 +53,9 @@
       <div class="visual-art"><img src="/static/dashboard/mobile/tooth_chart.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Diş Şeması</strong><small>Etkileşimli diş şeması ile kayıt ve planlama yapın.</small></div><span class="visual-arrow">›</span>
     </a>
-      <a class="visual-feature-card visual-expert visual-expert-premium" href="/expert-support">
-      <div class="visual-art visual-expert-art"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="21" r="10"/><path d="M14 54c1-13 8-20 18-20s17 7 18 20M24 38l8 8 8-8M49 16v14M42 23h14"/></svg></div>
-      <div class="visual-card-copy"><strong>Uzmandan Destek Al</strong><small>Vakanız için doğrulanmış bir uzmandan ikinci görüş alın.</small><span class="visual-expert-points"><b>Doğrulanmış uzmanlar</b><b>Güvenli vaka paylaşımı</b></span></div><span class="visual-arrow">›</span>
+      <a class="visual-feature-card visual-expert visual-photo-card" href="/expert-support">
+      <div class="visual-art"><img src="/static/dashboard/mobile/expert_consult.webp" alt="" decoding="async"></div>
+      <div class="visual-card-copy"><strong>Uzmandan Destek Al</strong><small>Vakanız için doğrulanmış bir uzmandan ikinci görüş alın.</small></div><span class="visual-arrow">›</span>
     </a>
 </section>
 
@@ -101,4 +121,5 @@
     }
   });
 </script>
+<script src="/static/voice-exam-entry.js?v=1" defer></script>
 {% endblock %}
