@@ -270,3 +270,17 @@ def test_communication_requires_exact_transcript_evidence():
         {'quote': 'Anlamadım.', 'observation': 'Açıklama ihtiyacı', 'suggestion': 'Daha sade açıkla'},
         {'quote': 'Uydurma', 'observation': 'Eksik', 'suggestion': 'Satış yap'}]})
     assert len(result['communication']) == 1
+
+
+def test_private_coaching_is_not_an_apply_field(app_client):
+    client, engine = app_client
+    body = payload(engine)
+    body['fields'] = {'communication': 'Özel hayat anlatısı'}
+    assert client.post('/patients/1/voice-exam/apply', json=body).status_code == 400
+
+
+def test_raw_transcript_is_not_an_apply_property(app_client):
+    client, engine = app_client
+    body = payload(engine)
+    body['transcript'] = 'Özel görüşme'
+    assert client.post('/patients/1/voice-exam/apply', json=body).status_code == 422
