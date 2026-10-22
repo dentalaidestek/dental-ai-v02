@@ -123,3 +123,7 @@ body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bott
 .voice-session-top b{color:#1881e8}
 .voice-session-page:has(.voice-exam[data-live-state]) .voice-session-patient{display:none}
 @media(max-width:480px){.voice-session-page{margin:12px auto;max-width:calc(100% - 20px)}}
+
+/* Keep failed extraction text and its retry action reachable. */
+.voice-exam[data-show-review="true"]>.voice-exam-body>details:not(.voice-history){display:block!important}
+.voice-exam[data-show-review="true"]>.voice-exam-body>details:not(.voice-history)>summary{display:list-item}
