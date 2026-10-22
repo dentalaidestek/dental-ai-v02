@@ -4,6 +4,27 @@
   const labels={first_name:'Ad',last_name:'Soyad',age:'Yaş',chief_complaint:'Başvuru şikâyeti',medical_history:'Sistemik hastalık / hasta beyanı',medications:'İlaç / hasta beyanı',allergies:'Alerji / hasta beyanı',clinical_findings:'Klinik bulgular',plan:'Hekimin belirttiği plan'};
   const states={CARIES:'Çürük',FILLING:'Dolgu',CROWN:'Kron',ROOT_CANAL:'Kanal tedavisi',EXTRACTED:'Çekilmiş',IMPLANT:'İmplant',OTHER:'Diğer'};
   let available=false,busy=false,recording=false,disposed=false,recorder=null,stream=null,audio=null,timer=null,deadline=null,started=0,revision='',requestKey='',unsaved=false,fieldState={},teethState=[],appointmentQuote='';
+  let epoch=0;const pending=new Set();
+  async function voiceFetch(url,options={}){
+    const at=epoch,controller=new AbortController();pending.add(controller);
+    try{const response=await fetch(url,{...options,signal:controller.signal});
+      const body=await response.json();if(disposed||at!==epoch)throw Error('Görüşme kapatıldı.');
+      return {ok:response.ok,json:async()=>body};
+    }finally{pending.delete(controller)}
+  }
+  function clearPrivateDraft(){
+    epoch++;pending.forEach(c=>c.abort());pending.clear();
+    fieldState={};teethState=[];appointmentQuote='';revision='';requestKey='';audio=null;
+    transcript.value='';unsaved=false;review.hidden=true;retry.hidden=true;
+    for(const selector of ['[data-voice-fields]','[data-voice-teeth]','[data-voice-communication]','[data-voice-source-results]'])$(selector).replaceChildren();
+    $('[data-voice-uncertain]').textContent='';$('[data-voice-appointment-quote]').textContent='';
+    for(const selector of ['[data-voice-source-query]','[data-voice-appointment-start]','[data-voice-appointment-end]'])$(selector).value='';
+    $('[data-voice-appointment-title]').value='Kontrol randevusu';
+    $('[data-voice-save-appointment]').checked=false;$('[data-voice-confirm]').checked=false;
+    consent.checked=false;$('[data-voice-timer]').textContent='00:00';
+    if(recorder){recorder.ondataavailable=null;recorder.onstop=null;recorder.onerror=null;if(recorder.state==='recording')recorder.stop();recorder=null}
+    micOff();busy=false;controls();
+  }
   const key=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   function message(text,error=false){status.textContent=text;status.classList.toggle('voice-error',error)}
   function controls(){start.disabled=!available||busy||recording;stop.disabled=!recording;textButton.disabled=!available||busy||recording;save.disabled=busy||recording;retry.disabled=busy||recording;consent.disabled=busy||recording}
@@ -32,7 +53,7 @@
     Object.entries(data.fields||{}).forEach(([name,item])=>{
       if(!labels[name])return;const old=fieldState[name];
       if(old&&old.value!==item.value){old.value+='\n'+item.value;old.quote+='\n'+item.quote;old.selected=false}
-      else if(!old)fieldState[name]={...item,selected:!['first_name','last_name','age'].includes(name)};
+      else if(!old)fieldState[name]={...item,selected:false};
     });
     for(const item of data.teeth||[])if(!teethState.some(t=>t.tooth===item.tooth&&t.status===item.status))teethState.push(item);
     if(data.appointment?.quote)appointmentQuote=data.appointment.quote;
@@ -43,17 +64,17 @@
   async function processAudio(){
     if(!audio||busy)return;if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     busy=true;controls();message('Ses bölümü çözümleniyor…');
-    try{const result=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:audio,credentials:'same-origin',headers:{'Content-Type':audio.type,'X-Voice-Consent':'yes'}}));
-      if(transcript.value&&transcript.value.length+result.review.transcript.length>18000)throw Error('Konuşma metni sınırına ulaşıldı. Önce bu muayeneyi kaydet.');
+    try{const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:audio,credentials:'same-origin',headers:{'Content-Type':audio.type,'X-Voice-Consent':'yes'}}));
+      if(transcript.value.length+result.review.transcript.length>18000)throw Error('Konuşma metni sınırına ulaşıldı. Önce bu muayeneyi kaydet.');
       transcript.value+=(transcript.value?'\n':'')+result.review.transcript;merge(result);audio=null;retry.hidden=true;
-    }catch(error){message(error.message,true);retry.hidden=false}finally{busy=false;controls()}
+    }catch(error){if(!disposed){message(error.message,true);retry.hidden=false}}finally{busy=false;controls()}
   }
   start.addEventListener('click',async()=>{
     if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     if(audio){message('Önce bekleyen ses bölümünü işle veya taslağı temizle.',true);return}
     if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){message('Bu tarayıcıda ses kaydı yok. Konuşma metnini elle ekleyebilirsin.',true);return}
-    busy=true;controls();
-    try{stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    busy=true;controls();const startEpoch=epoch;
+    try{const acquired=await navigator.mediaDevices.getUserMedia({audio:true});if(disposed||startEpoch!==epoch){acquired.getTracks().forEach(track=>track.stop());return}stream=acquired;
       const mime=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(x=>MediaRecorder.isTypeSupported(x));
       if(!mime)throw Error('Desteklenen ses biçimi yok. Metin girişini kullanabilirsin.');
       recorder=new MediaRecorder(stream,{mimeType:mime});const chunks=[];let size=0,overflow=false;
@@ -67,7 +88,7 @@
   stop.addEventListener('click',()=>{if(recorder?.state==='recording')recorder.stop()});retry.addEventListener('click',processAudio);
   $('[data-voice-sources]').addEventListener('click',async()=>{
     const button=$('[data-voice-sources]'),results=$('[data-voice-source-results]');button.disabled=true;results.textContent='Resmî kaynak dizini kontrol ediliyor…';
-    try{const data=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/sources',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:$('[data-voice-source-query]').value})}));
+    try{const data=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/sources',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:$('[data-voice-source-query]').value})}));
       results.replaceChildren();const notice=document.createElement('p');notice.className='voice-help';notice.textContent=data.notice;results.append(notice);
       for(const item of data.references){const section=document.createElement('details'),heading=document.createElement('summary'),text=document.createElement('p');heading.textContent=item.institution+' · '+item.title;const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Resmî belgeyi aç';text.textContent='Bağlantı kontrolü: '+item.checked_at;section.append(heading,text,link);results.append(section)}
       if(!data.references.length)results.append(document.createTextNode('Bu konuda dizin eşleşmesi bulunamadı; klinik güvenlik değerlendirmesi yapılmadı.'));
@@ -76,21 +97,21 @@
   textButton.addEventListener('click',async()=>{
     if(!consent.checked){message('Metin aktarımı onayını işaretle.',true);return}
     busy=true;controls();message('Metindeki alanlar çıkarılıyor…');
-    try{merge(await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/text',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,consent:true})})))}catch(error){message(error.message,true)}finally{busy=false;controls()}
+    try{merge(await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/text',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,consent:true})})))}catch(error){message(error.message,true)}finally{busy=false;controls()}
   });
   save.addEventListener('click',async()=>{
     if(!$('[data-voice-confirm]').checked){message('Seçilen alanları kontrol edip onay kutusunu işaretle.',true);return}
     currentFields();const fields={};Object.entries(fieldState).forEach(([name,item])=>{if(item.selected&&item.value.trim())fields[name]=item.value.trim()});
-    const teeth=teethState.filter(item=>Array.from(root.querySelectorAll('[data-tooth-key]:checked')).some(input=>input.dataset.toothKey===item.tooth+':'+item.status)).map(item=>({tooth:item.tooth,status:item.status,note:item.quote}));
+    const teeth=teethState.filter(item=>Array.from(root.querySelectorAll('[data-tooth-key]:checked')).some(input=>input.dataset.toothKey===item.tooth+':'+item.status)).map(item=>({tooth:item.tooth,status:item.status,note:'Sesli muayeneden hekim tarafından doğrulandı.'}));
     let appointment=null;if($('[data-voice-save-appointment]').checked)appointment={title:$('[data-voice-appointment-title]').value,start_at:$('[data-voice-appointment-start]').value,end_at:$('[data-voice-appointment-end]').value};
     busy=true;controls();message('Onayladığın alanlar kaydediliyor…');
-    try{const result=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_key:requestKey,revision,confirmed:true,fields,teeth,appointment})}));unsaved=false;location.assign(result.patient_url+'?voice_saved=1')}
+    try{const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_key:requestKey,revision,confirmed:true,fields,teeth,appointment})}));clearPrivateDraft();location.assign(result.patient_url+'?voice_saved=1')}
     catch(error){message(error.message,true)}finally{busy=false;controls()}
   });
-  $('[data-voice-discard]').addEventListener('click',()=>{if(busy||recording)return;if(!confirm('Kaydedilmemiş muayene taslağı temizlensin mi?'))return;fieldState={};teethState=[];appointmentQuote='';revision='';requestKey='';audio=null;unsaved=false;transcript.value='';review.hidden=true;retry.hidden=true;message('Taslak temizlendi.')});
+  $('[data-voice-discard]').addEventListener('click',()=>{if(busy||recording)return;if(!confirm('Kaydedilmemiş muayene taslağı temizlensin mi?'))return;clearPrivateDraft();message('Taslak ve geçici görüşme verileri temizlendi.')});
   window.addEventListener('beforeunload',event=>{if(recording||busy||unsaved||audio){event.preventDefault();event.returnValue=''}});
   transcript.addEventListener('input',()=>{unsaved=!!transcript.value.trim()||Object.keys(fieldState).length>0});
-  window.addEventListener('pagehide',()=>{disposed=true;micOff()});
+  window.addEventListener('pagehide',()=>{disposed=true;clearPrivateDraft()});
   window.addEventListener('pageshow',()=>{disposed=false});
   fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(jsonResponse).then(data=>{available=data.enabled;message(available?'Muayeneyi başlatabilir veya metin ekleyebilirsin.':'Sesli muayene henüz etkinleştirilmedi.');controls()}).catch(()=>message('Sesli muayene durumuna erişilemedi. Sayfayı tekrar açabilirsin.',true));
   if(location.hash==='#voice-exam')root.open=true;
