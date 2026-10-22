@@ -8,6 +8,10 @@ from html.parser import HTMLParser
 
 # Fixed document URLs only: user/model text cannot become a URL or redirect target.
 DOCUMENTS = (
+    ('ada-pregnancy', 'ADA', 'Pregnancy', 'https://www.ada.org/resources/ada-library/oral-health-topics/pregnancy',
+     ('gebelik', 'gebe', 'hamile', 'emzir'), ('pregnan', 'dental', 'consultation', 'medication')),
+    ('ada-hypertension', 'ADA', 'Hypertension', 'https://www.ada.org/resources/ada-library/oral-health-topics/hypertension',
+     ('hipertansiyon', 'tansiyon', 'kan basın'), ('dental', 'blood pressure', 'vasoconstrictor', 'cardiovascular')),
     ('ada-diabetes', 'ADA', 'Diabetes', 'https://www.ada.org/resources/ada-library/oral-health-topics/diabetes',
      ('diyabet', 'diabet', 'şeker', 'metformin', 'insülin'), ('dental', 'treatment', 'glycemic', 'hypoglycemia')),
     ('ada-prophylaxis', 'ADA', 'Antibiotic Prophylaxis Prior to Dental Procedures',
@@ -78,7 +82,7 @@ def _fetch(document):
     return result
 
 
-def retrieve(query):
+def retrieve(query, requests=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = query.casefold()
     selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
@@ -88,9 +92,15 @@ def retrieve(query):
             references.append(_fetch(doc))
         except Exception:
             unavailable.append(doc[0])
+    if requests:
+        from app.voice_exam_live_sources import retrieve_requests
+        found, missing = retrieve_requests(requests)
+        references.extend(found); unavailable.extend(missing)
     try:
         from app.voice_exam_drugs import retrieve_drugs
-        references.extend(retrieve_drugs(query))
+        # Existing small corpus is only a fallback; no bulk loading is required.
+        existing = {item['id'] for item in references}
+        references.extend(item for item in retrieve_drugs(query) if item['id'] not in existing)
     except Exception:
         unavailable.append('local-drug-corpus')
     return {'references': references, 'unavailable': unavailable,

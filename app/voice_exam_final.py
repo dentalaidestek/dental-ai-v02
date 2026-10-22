@@ -48,7 +48,9 @@ def finalize(context, insights, uncertain=""):
         fields['appointment'] = {'value': context['appointment']['quote'], 'quote': context['appointment']['quote']}
     if not fields and not context.get('teeth'):
         raise core.VoiceError('Son değerlendirme için önce muayene bilgisi ekle.')
-    evidence = retrieve(' '.join(item['value'] for item in fields.values()))
+    query = ' '.join(item['value'] for item in fields.values())
+    requests = context.get('source_requests', [])
+    evidence = retrieve(query, requests=requests) if requests else retrieve(query)
     model = os.getenv('VOICE_EXAM_GEMINI_MODEL') or os.getenv('DENTAL_CLINICAL_AI_MODEL', 'gemini-3.5-flash-lite')
     key = os.getenv('GEMINI_API_KEY', '')
     if not key or not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}', model):

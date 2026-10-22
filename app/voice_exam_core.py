@@ -129,7 +129,7 @@ def normalize(result, evidence=None):
     # never solely from a second transcript authored by the model.
     anchor = transcript if evidence is None else evidence
     output = {'transcript': transcript, 'fields': {}, 'teeth': [], 'appointment': None,
-              'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
+              'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'source_requests': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
     coaching = result.get('communication', [])
     if not isinstance(coaching, list) or len(coaching) > 8:
         raise VoiceError('İletişim değerlendirmesi doğrulanamadı.')
@@ -150,6 +150,14 @@ def normalize(result, evidence=None):
         clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'observation', 'question', 'explanation')}
         if clean['quote'] and clean['quote'] in transcript:
             output['decision_barriers'].append({'category': item['category'], **clean})
+    requests = result.get('source_requests', [])
+    if not isinstance(requests, list) or len(requests) > 6:
+        raise VoiceError('Kaynak arama terimleri doğrulanamadı.')
+    for item in requests:
+        if not isinstance(item, dict): continue
+        term = item.get('term', ''); quote = _string(item.get('quote', ''), 1000)
+        if isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term) and quote and quote in anchor:
+            output['source_requests'].append({'term': term.lower().strip(), 'quote': quote})
     questions = result.get('follow_up_questions', [])
     if not isinstance(questions, list) or len(questions) > 8:
         raise VoiceError('Netleştirme soruları doğrulanamadı.')
@@ -210,6 +218,7 @@ def schema():
     quoted = {'type': 'OBJECT', 'properties': {'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'}},
               'required': ['value', 'quote']}
     return {'type': 'OBJECT', 'properties': {
+        'source_requests': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'term': {'type': 'STRING'}, 'quote': {'type': 'STRING'}}, 'required': ['term', 'quote']}},
         **{key: {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'name': {'type': 'STRING'}, 'quote': {'type': 'STRING'}}, 'required': ['name', 'quote']}} for key in ('removed_fields', 'removed_teeth')},
         'follow_up_questions': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'question', 'reason')}, 'priority': {'type': 'STRING', 'enum': ['CLARIFY_NOW', 'REVIEW_AT_END']}}, 'required': ['quote', 'question', 'reason', 'priority']}},
         'decision_barriers': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'observation', 'question', 'explanation')}, 'category': {'type': 'STRING', 'enum': ['COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR']}}, 'required': ['quote', 'observation', 'question', 'explanation', 'category']}},
@@ -273,6 +282,7 @@ alınmışsa removed_fields içine name=alan adı ve birebir quote koy. Önceki 
 hekim tarafından açıkça geri alındıysa removed_teeth içine name=FDI numara ve quote koy.
 Sadece yeni bölümde bahsedilmedi diye hiçbir şeyi kaldırma. Yeni bir olumsuz beyanı
 silmek yerine ilgili alanda koru. Düzeltme kanıtı yoksa bu listeler boş olsun.
+source_requests içinde en çok 6 açıkça konuşulan ilaç için İngilizce jenerik etken madde adı term ve konuşmadaki kısa birebir quote ver. Hasta adı, hastalık cümlesi, adres, telefon veya özel hayat bilgisi arama terimi olmasın. Etken maddesi net olmayan marka adını tahmin etme; soru öner. Bunlar yalnız resmî ilaç belgesini bulmak içindir.
 İstenen JSON dışına çıkma.'''
 
 
@@ -280,12 +290,20 @@ def clinical_context(value):
     """Bounded, transient clinical context. Never accept full transcript/coaching."""
     if not value:
         return {}
-    if not isinstance(value, dict) or set(value) - {'fields', 'teeth', 'appointment'}:
+    if not isinstance(value, dict) or set(value) - {'fields', 'teeth', 'appointment', 'source_requests'}:
         raise VoiceError('Görüşme bağlamı doğrulanamadı.')
     fields = value.get('fields', {})
     if not isinstance(fields, dict) or set(fields) - set(FIELDS):
         raise VoiceError('Görüşme alanları doğrulanamadı.')
     clean = {'fields': {}, 'teeth': []}
+    requests = value.get('source_requests', [])
+    if not isinstance(requests, list) or len(requests) > 6:
+        raise VoiceError('Kaynak arama terimleri doğrulanamadı.')
+    clean['source_requests'] = []
+    for item in requests:
+        if not isinstance(item, dict) or set(item) != {'term', 'quote'} or not isinstance(item.get('term'), str) or not re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', item['term']):
+            raise VoiceError('Kaynak arama terimi doğrulanamadı.')
+        clean['source_requests'].append({'term': item['term'].lower().strip(), 'quote': _string(item['quote'], 1000)})
     appointment = value.get('appointment')
     if appointment:
         if not isinstance(appointment, dict) or set(appointment) - {'quote', 'acceptance_quote'}:
@@ -364,6 +382,9 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             old_teeth = {item['tooth']: item for item in context.get('teeth', []) if item['tooth'] not in result['removed_teeth']}
             old_teeth.update({item['tooth']: item for item in result['teeth']})
             result['teeth'] = list(old_teeth.values())
+            if not result['source_requests']:
+                anchors = ' '.join(item['quote'] for item in result['fields'].values())
+                result['source_requests'] = [item for item in context.get('source_requests', []) if item['quote'] in anchors]
             # Appointment cancellation/correction remains model-controlled; an
             # omitted appointment cannot be silently assumed still agreed.
             if context.get('appointment') and not result['appointment']:

@@ -109,6 +109,17 @@ def _access(request, patient_id):
     return user, fingerprint, None
 
 
+@router.get('/voice-exams/device-check')
+def device_check(request: Request):
+    from app import main
+    user = _user(request)
+    if not user:
+        return RedirectResponse('/login?next=%2Fvoice-exams%2Fdevice-check', status_code=303)
+    response = main.templates.TemplateResponse(request=request, name='voice_exam_device_check.html', context={'user': user})
+    response.headers.update(HEADERS)
+    return response
+
+
 @router.get('/voice-exams')
 def voice_entry(request: Request, q: str = ''):
     from app import main
@@ -253,14 +264,29 @@ async def audio(request: Request, patient_id: int):
             return _reply({'ok': False, 'error': 'Ses aktarımı onayını işaretle.'}, 400)
         # Raw request body avoids UploadFile's temporary-file spooling.
         data = await request.body()
-        mime = core.validate_audio(data, request.headers.get('content-type', ''))
-        encoded = request.headers.get('x-voice-context', '')
-        if len(encoded) > 8000:
-            raise core.VoiceError('Görüşme bağlamı çok uzun.')
-        try:
-            context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
-        except (ValueError, UnicodeError):
-            raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
+        if request.headers.get('content-type') == 'application/vnd.dentalai.voice-packet':
+            if len(data) < 4:
+                raise core.VoiceError('Ses paketi doğrulanamadı.')
+            size = int.from_bytes(data[:4], 'big')
+            if size > core.MAX_CONTEXT or size < 2 or len(data) < 4 + size:
+                raise core.VoiceError('Ses paketi bağlamı doğrulanamadı.')
+            try:
+                context = core.clinical_context(json.loads(data[4:4 + size]))
+            except (ValueError, UnicodeError):
+                raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
+            data = data[4 + size:]
+            mime = core.validate_audio(data, request.headers.get('x-voice-mime', ''))
+        else:
+            # Compatibility for older clients. New clients put larger structured
+            # context in a bounded binary body, not privacy-sensitive proxy headers.
+            mime = core.validate_audio(data, request.headers.get('content-type', ''))
+            encoded = request.headers.get('x-voice-context', '')
+            if len(encoded) > 8000:
+                raise core.VoiceError('Görüşme bağlamı çok uzun.')
+            try:
+                context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
+            except (ValueError, UnicodeError):
+                raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
         result = await run_in_threadpool(core.extract, data=data, mime=mime, **({'context': context} if context else {}))
         # Do not include any existing patient identity or clinical history in the provider request.
         return _reply({'ok': True, 'review': result, 'revision': fingerprint})

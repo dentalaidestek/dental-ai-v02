@@ -13,7 +13,8 @@ def assess(context):
     fields = {key: value for key, value in context.get('fields', {}).items()
               if key not in {'first_name', 'last_name'}}
     query = ' '.join(item['value'] for item in fields.values())
-    evidence = retrieve(query)
+    requests = context.get('source_requests', [])
+    evidence = retrieve(query, requests=requests) if requests else retrieve(query)
     evidence['items'] = []
     if not evidence['references']:
         return evidence
@@ -80,3 +81,4 @@ def grounded_items(result, fields, references):
             continue
         accepted.append(item)
     return accepted
+

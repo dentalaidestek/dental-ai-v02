@@ -32,10 +32,11 @@ provider key. `GEMINI_API_KEY` is required; extraction/final review use
    voice analyses are loaded; arbitrary narrative records are excluded. This is
    not a complete longitudinal medication reconciliation system. Different
    historical/current statements are displayed as unresolved, not silently merged.
-6. Changed disease/medication/allergy/finding/plan values trigger a source review;
-   unchanged values/changed quote wording do not trigger repeated automatic calls.
-   Failed calls are not marked successfully cached. Clinical appraisal remains
-   asynchronous and is not an instantaneous emergency or interaction alarm.
+6. During the conversation the existing extraction call handles complaints,
+   findings, questions and communication feedback. No parallel automatic clinical
+   model call or source download is started for each segment. The normal flow
+   performs one whole-examination final review on Finish. A separate, collapsed
+   optional clinical-check button is available only on explicit clinician demand.
 7. Live Finish flushes audio and waits for pending extraction before requesting
    one final Gemini review. Manual clip/text users have an explicit final-review
    button. It covers summary, clarification questions, contradictions and
@@ -66,8 +67,8 @@ routes do not share that lock, so this is not a system-wide exclusion constraint
 
 ## Public clinical corpus
 
-Four fixed ADA documents remain available: diabetes, prophylaxis,
-anticoagulants/antiplatelets and osteoporosis medicines/MRONJ. Fetches use fixed
+Six fixed ADA documents are available: diabetes, prophylaxis,
+anticoagulants/antiplatelets, osteoporosis medicines/MRONJ, pregnancy and hypertension. Fetches use fixed
 URLs, reject redirects, bound input and cache document-only excerpts for one hour.
 No patient query is sent to these sites.
 
@@ -132,11 +133,11 @@ and operational logging remain to be verified before real-patient use.
 
 ## Validation
 
-68 focused Python tests pass, including ownership/consent, atomic save,
+81 focused Python tests pass, including ownership/consent, atomic save,
 idempotency, optimistic chart revision, original-text evidence, explicit
 retractions, final review/truncation, historical-record scope, source import,
 table preservation, corpus matching, XML safety and rendered templates.
-Four actual-controller Node harnesses pass: cumulative review/minimal save,
+Five actual-controller Node harnesses pass: cumulative review/minimal save,
 finalization drain/failure/retry/edit invalidation/cleanup, Live lifecycle and
 16/44.1/48 kHz PCM resampling/tail flush. Python compilation and JS syntax pass.
 
@@ -145,3 +146,62 @@ are mocked. Real Gemini authentication, clinical-language accuracy, actual
 microphone/browser compatibility, full source coverage, speaker attribution,
 alert latency and retention have **not** been established. These are validation
 boundaries, not completed capabilities. Keep the feature disabled pending them.
+
+## On-demand sources and actual-device verification (follow-up)
+
+A comprehensive local medication archive is not a prerequisite. Extraction now
+returns up to six quotation-anchored, validated English generic ingredient search
+terms. Only those short terms, not patient statements/identity or full context,
+are sent to the fixed official DailyMed service. On demand the server fetches a
+matching generic label, validates its SPL identity, parses the actual XML,
+retains version/date/formulation/jurisdiction and sends bounded evidence into the
+existing final Gemini call. Model-provided URLs, combination substitution,
+redirects, oversized documents and malformed identities are refused. Up to three
+terms are looked up per review; excess/failed terms are explicitly reported as
+uncovered, never cleared. Document-only results are cached for one hour, at most
+128 entries. Existing starter labels remain a fallback; no additional bulk corpus
+was downloaded for this change. Official live lookups for naproxen and amoxicillin
+were actually performed successfully. This verifies source access, not clinical
+accuracy. Pregnancy and hypertension ADA pages were also verified and added, so
+source selection is not limited to medication topics.
+
+The authenticated `/voice-exams/device-check` page tests the current device's
+microphone and the same PCM worklet locally, shows a signal result, shuts down
+after six seconds, and stops on backgrounding, navigation or late permission.
+It records nothing and sends no audio to a provider/server. It does not prove
+Gemini connectivity or clinical speech recognition. A person must run it on the
+actual phone; the cloud environment cannot certify that microphone.
+
+`python -m scripts.check_voice_provider --run-paid-checks --live` is an explicit,
+synthetic-only real-provider smoke check using the environment's existing Gemini
+credential. It performs extraction, final review and optionally the Live
+handshake, printing pass/fail codes only. It never reads patient records. This
+workspace has no Gemini credential: the command returned
+`OPT_IN_OR_PROVIDER_CREDENTIAL_MISSING`; no real-model success is claimed.
+
+Follow-up validation: 81 focused Python tests and five controller/worklet Node
+harnesses. Real-device execution and the credentialed provider check remain
+operational checks, not mocked-test claims. GitHub Actions failures on the prior
+commit returned no job steps/logs; the annotations endpoint is unavailable through
+the connector, so the failure cause remains unverified. Do not equate local tests
+with a successful full repository CI run.
+
+
+## Final workflow simplification
+
+The normal path is patient selection/consent → conversation and cumulative
+extraction → Finish and pending-segment drain → one whole-examination final review
+→ explicit clinician selection/confirmation → atomic save → patient file with a
+save acknowledgement. A phase indicator makes this visible. Earlier communication
+observations remain available in the final results; clarification questions can
+be marked resolved, and changed clinical information invalidates the final review.
+There is no automatic parallel `/clinical` request per segment and identical final
+reviews are reused. Source fetching is bounded evidence retrieval, not a second
+interpretation engine or a new bulk medication project.
+
+Manual audio clips put their bounded 24 KB context in the binary POST body
+instead of oversized proxy headers; legacy raw-audio clients still work. Invalid
+packet lengths are rejected before provider calls. No temporary audio files are
+introduced. Tests cover the packet path and the absence of automatic parallel
+clinical calls, cached final-review reuse, retained communication feedback and
+phase progression. Main and production remain untouched.

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if request.query_params.get('voice_saved') == '1' %}<div class="card" role="status">Onayladığınız sesli muayene bilgileri kaydedildi. Hasta dosyasından kontrol edebilirsiniz.</div>{% endif %}
 <div class="patient-detail-page" data-patient-detail-id="{{ patient.id }}" data-patient-id="{{ patient.id }}">
     <section class="card patient-hero-card">
         <div class="patient-consult-top"><a class="patient-consult-button" href="/expert-support?patient_id={{ patient.id }}">Uzmana Danış</a></div>
@@ -612,3 +613,4 @@ document.addEventListener("keydown", function (event) {
 }
 </style>
 {% endblock %}
+

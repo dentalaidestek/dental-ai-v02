@@ -2,6 +2,7 @@
   <summary><strong>Sesli muayene</strong><span>Konuş, kontrol et, mevcut alanlara kaydet</span></summary>
   <div class="voice-exam-body">
     <header class="voice-session-heading"><span class="voice-eyebrow">SESLİ MUAYENE</span><h2>Görüşmeye hazır mısınız?</h2><p>Hastanızı bilgilendirin, onay verin ve dinlemeyi başlatın.</p></header>
+    <p class="voice-stage" data-voice-stage>Hazırlık</p>
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
     <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin veya girdiğim metnin Gemini ile işlenmesini onaylıyorum.</label>
     <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
@@ -37,7 +38,7 @@
       <h4 class="voice-group-title">Hasta bilgileri ve muayene notları</h4><div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
       <details><summary>Hasta yaklaşımı ve iletişim <small>Yalnız hekime özel öneriler</small></summary><div data-voice-communication></div></details>
-      <section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Hastalık, ilaç, alerji, bulgu veya plan bilgileri değiştiğinde kaynak kontrolü otomatik denenir; aynı bilgiler için tekrarlanmaz. Muayene sonunda bütünsel değerlendirmeye de dahildir. Kaynaklı değerlendirmeler ek Gemini çağrısı kullanabilir; klinik acil durum alarmı değildir.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section>
+      <details><summary>İsteğe bağlı: görüşme sırasında kaynaklı kontrol</summary><section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Normal akışta kaynaklı kontrol, tüm görüşmeyle birlikte muayene sonunda yapılır. Bu düğme yalnız ayrıca kontrol istediğinizde kullanılır ve ek Gemini çağrısı yapabilir. Klinik acil durum alarmı değildir.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section></details>
       <fieldset>
         <legend>Resmî diş hekimliği kaynakları</legend>
         <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
@@ -65,8 +66,8 @@
     </section>
   </div>
 </details>
-<link rel="stylesheet" href="/static/voice-exam.css?v=6">
-<script src="/static/voice-exam.js?v=5" defer></script>
+<link rel="stylesheet" href="/static/voice-exam.css?v=7">
+<script src="/static/voice-exam.js?v=6" defer></script>
 
 <script src="/static/voice-exam-live.js?v=2" defer></script>
 

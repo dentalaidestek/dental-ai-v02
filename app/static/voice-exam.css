@@ -60,3 +60,7 @@
 
 
 .voice-exam .voice-history{padding:16px;border:1px solid #dcecf5;border-radius:14px;margin:16px 0}.voice-exam .voice-history summary{cursor:pointer;font-weight:700}.voice-exam [data-voice-final-results]>section{padding:12px 0;border-top:1px solid #dcecf5}.voice-exam [data-voice-final-results] small{display:block;color:#526478;white-space:pre-wrap;overflow-wrap:anywhere}.voice-exam [data-voice-history-results]{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.voice-exam .voice-final-review{background:#f6fbff}.voice-exam button[data-voice-finalize]{background:#102a46;color:#fff;border-color:#102a46}
+
+.voice-exam .voice-stage{display:inline-flex;padding:6px 12px;border-radius:999px;background:#e9f4fb;color:#163b58;font-size:12px;font-weight:700}.voice-exam .voice-review>details>section{margin-top:12px}
+
+.voice-exam .voice-question-resolved{opacity:.65}.voice-exam .voice-question-resolved>strong{text-decoration:line-through}
