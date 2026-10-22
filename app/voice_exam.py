@@ -5,7 +5,7 @@ import re
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
@@ -23,7 +23,7 @@ class _BodyTooLarge(Exception):
 
 
 class VoiceBodyLimitMiddleware:
-    """Bound multipart bodies before the framework spools audio to disk."""
+    """Bound raw audio and JSON request bodies before handlers buffer them."""
     def __init__(self, app):
         self.app = app
 
@@ -160,22 +160,21 @@ def anonymous(request: Request):
 
 
 @router.post('/patients/{patient_id}/voice-exam/audio')
-async def audio(request: Request, patient_id: int, consent: str = Form(''), recording: UploadFile = File(...)):
+async def audio(request: Request, patient_id: int):
     try:
         user, fingerprint, error = await run_in_threadpool(_access, request, patient_id)
         if error is not None:
             return error
-        if consent != 'yes':
+        if request.headers.get('x-voice-consent') != 'yes':
             return _reply({'ok': False, 'error': 'Ses aktarımı onayını işaretle.'}, 400)
-        data = await recording.read(core.MAX_AUDIO + 1)
-        mime = core.validate_audio(data, recording.content_type or '')
+        # Raw request body avoids UploadFile's temporary-file spooling.
+        data = await request.body()
+        mime = core.validate_audio(data, request.headers.get('content-type', ''))
         result = await run_in_threadpool(core.extract, data=data, mime=mime)
         # Do not include any existing patient identity or clinical history in the provider request.
         return _reply({'ok': True, 'review': result, 'revision': fingerprint})
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
-    finally:
-        await recording.close()
 
 
 class TextInput(BaseModel):
