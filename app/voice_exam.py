@@ -1,9 +1,10 @@
 """Private voice dictation -> editable review -> atomic existing-record updates."""
+import base64
 import hashlib
 import json
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -115,26 +116,28 @@ def source_references(request: Request, patient_id: int, payload: SourceInput):
     user, fingerprint, error = _access(request, patient_id)
     if error is not None:
         return error
-    # Curated official-document directory only. No Academic AI, patient data
-    # transfer, generated citations, or inferred contraindication decisions.
-    query = payload.query.casefold()
-    documents = [
-        ('ADA', 'Antibiotic Prophylaxis Prior to Dental Procedures',
-         'https://www.ada.org/resources/ada-library/oral-health-topics/antibiotic-prophylaxis',
-         ('antibiyotik', 'profilaksi', 'endokardit', 'kalp', 'protez', 'antibiotic')),
-        ('SDCEP / NHS Education for Scotland', 'Published dental guidance',
-         'https://www.sdcep.org.uk/published-guidance/',
-         ('antikoagülan', 'antikoagulan', 'kanama', 'warfarin', 'apiksaban', 'rivaroksaban',
-          'bifosfonat', 'denosumab', 'osteonekroz', 'sedasyon', 'ilaç', 'kontrendikasyon', 'endikasyon')),
-        ('ADA', 'Oral Health Topics',
-         'https://www.ada.org/resources/ada-library/oral-health-topics',
-         ('diyabet', 'diabet', 'gebelik', 'alerji', 'hipertansiyon', 'sistemik', 'diabetes')),
-    ]
-    references = [{'institution': institution, 'title': title, 'url': url,
-                   'checked_at': '2026-10-22', 'kind': 'official_document_link'}
-                  for institution, title, url, terms in documents if any(term in query for term in terms)]
-    return _reply({'ok': True, 'references': references,
-        'notice': 'Resmî kaynak dizininde konu eşleştirmesi. Belge metninde canlı arama veya hastaya özel endikasyon/kontrendikasyon doğrulaması henüz yapılmıyor. Eşleşme bulunmaması güvenli olduğu anlamına gelmez.'})
+    from app.voice_exam_sources import retrieve
+    return _reply({'ok': True, **retrieve(payload.query)})
+
+
+class ClinicalInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    context: dict
+    consent: bool = False
+
+
+@router.post('/patients/{patient_id}/voice-exam/clinical')
+def clinical_review(request: Request, patient_id: int, payload: ClinicalInput):
+    user, fingerprint, error = _access(request, patient_id)
+    if error is not None:
+        return error
+    if not payload.consent:
+        return _reply({'ok': False}, 400)
+    try:
+        from app.voice_exam_clinical import assess
+        return _reply({'ok': True, **assess(payload.context)})
+    except core.VoiceError as exc:
+        return _reply({'ok': False, 'error': str(exc)}, 422)
 
 
 @router.post('/voice-exams/anonymous')
@@ -166,7 +169,14 @@ async def audio(request: Request, patient_id: int):
         # Raw request body avoids UploadFile's temporary-file spooling.
         data = await request.body()
         mime = core.validate_audio(data, request.headers.get('content-type', ''))
-        result = await run_in_threadpool(core.extract, data=data, mime=mime)
+        encoded = request.headers.get('x-voice-context', '')
+        if len(encoded) > 8000:
+            raise core.VoiceError('Görüşme bağlamı çok uzun.')
+        try:
+            context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
+        except (ValueError, UnicodeError):
+            raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
+        result = await run_in_threadpool(core.extract, data=data, mime=mime, **({'context': context} if context else {}))
         # Do not include any existing patient identity or clinical history in the provider request.
         return _reply({'ok': True, 'review': result, 'revision': fingerprint})
     except core.VoiceError as exc:
@@ -177,6 +187,7 @@ class TextInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     transcript: str = Field(min_length=1, max_length=core.MAX_TRANSCRIPT)
     consent: bool = False
+    context: dict = Field(default_factory=dict)
 
 
 @router.post('/patients/{patient_id}/voice-exam/text')
@@ -188,7 +199,7 @@ def text_review(request: Request, patient_id: int, payload: TextInput):
         return _reply({'ok': False, 'error': 'Metin aktarımı onayını işaretle.'}, 400)
     try:
         return _reply({'ok': True, 'revision': fingerprint,
-                       'review': core.extract(transcript=payload.transcript)})
+                       'review': core.extract(transcript=payload.transcript, **({'context': core.clinical_context(payload.context)} if payload.context else {}))})
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
@@ -231,6 +242,18 @@ def _reviewed_fields(fields):
     if age and (not age.isdecimal() or not 0 <= int(age) <= 120):
         raise core.VoiceError('Yaş 0–120 arasında olmalı.')
     return values
+
+
+def appointment_conflict(occurrences, start, end=None):
+    end = end or start
+    for item in occurrences:
+        if item.get('status') != 'ACTIVE':
+            continue
+        other_start = item['start_local']; other_end = item.get('end_local') or other_start
+        if (start == other_start or other_start < start < other_end
+                or start < other_start < end):
+            return True
+    return False
 
 
 @router.post('/patients/{patient_id}/voice-exam/apply')
@@ -277,6 +300,15 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
                 str(patient_id), '', '', 'NONE', None, 'NONE', '')
             if error:
                 return _reply({'ok': False, 'error': error}, 400)
+            # Serialize voice bookings by owner, then include weekly occurrences
+            # in the conflict check using the app's existing calendar expansion.
+            session.exec(select(main.User).where(main.User.id == user.id).with_for_update()).first()
+            local_start = datetime.fromisoformat(payload.appointment.start_at)
+            local_end = datetime.fromisoformat(payload.appointment.end_at) if payload.appointment.end_at else None
+            occurrences = main._user_schedule_occurrences(session, user.id,
+                local_start - timedelta(days=7), (local_end or local_start) + timedelta(days=1))
+            if appointment_conflict(occurrences, local_start, local_end):
+                return _reply({'ok': False, 'error': 'Bu zaman programındaki aktif bir kayıtla çakışıyor. Randevu saatini kontrol et.'}, 409)
             schedule = main.ScheduleEvent(owner_user_id=user.id, **appointment)
             session.add(schedule); session.flush()
             main._sync_program_reminder(session, schedule)
