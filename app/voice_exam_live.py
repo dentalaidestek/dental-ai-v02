@@ -1,6 +1,7 @@
 """Authenticated server-side Gemini Live proxy. No audio persistence or browser API key."""
 import asyncio
 import base64
+import logging
 import json
 import os
 import re
@@ -140,7 +141,9 @@ def register_live(router):
                     await proxy(socket, provider)
         except (WebSocketDisconnect, asyncio.CancelledError):
             pass
-        except Exception:
+        except Exception as exc:
+            # Never log provider bodies or close reasons (may contain private content).
+            logging.getLogger(__name__).warning('voice_live outcome=stopped exception_type=%s', type(exc).__name__)
             try:
                 await socket.send_json({'type': 'error', 'message': 'Canlı bağlantı kesildi. Son konuşma bölümü eksik olabilir. Mikrofon durduruldu; devam etmek için yeniden başlat.'})
             except Exception:

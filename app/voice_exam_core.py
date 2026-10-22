@@ -1,6 +1,8 @@
 """Gemini-only, evidence-backed dictation extraction. No clinical decisions."""
 import base64
 import hashlib
+import logging
+import time
 import json
 import os
 import re
@@ -328,6 +330,7 @@ def clinical_context(value):
 
 
 def extract(*, data=None, mime=None, transcript=None, context=None):
+    started = time.monotonic()
     from app.http_transport import urlopen
     from app.provider_budget import reservation
     from app.clinical_privacy import redact_direct_identifiers
@@ -389,10 +392,17 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             # omitted appointment cannot be silently assumed still agreed.
             if context.get('appointment') and not result['appointment']:
                 result['uncertain'] = (result['uncertain'] + '\nÖnceki randevu ifadesi yeni bölümde doğrulanmadı; tekrar kontrol edin.').strip()
+            logging.getLogger(__name__).info('voice_extract outcome=ok duration_ms=%d fields=%d teeth=%d questions=%d',
+                (time.monotonic()-started)*1000, len(result['fields']), len(result['teeth']), len(result.get('follow_up_questions', [])))
             return result
         except VoiceError:
+            logging.getLogger(__name__).warning('voice_extract outcome=invalid_output duration_ms=%d', (time.monotonic()-started)*1000)
             raise
-        except Exception:
+        except Exception as exc:
+            status = getattr(exc, 'code', None)
+            status = status if isinstance(status, int) and 100 <= status <= 599 else 0
+            logging.getLogger(__name__).warning('voice_extract outcome=provider_or_parse_failure http_status=%d duration_ms=%d',
+                status, (time.monotonic()-started)*1000)
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()

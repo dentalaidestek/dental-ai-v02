@@ -18,7 +18,7 @@
     <h2>Mevcut hastayı seç</h2>
     <form action="/voice-exams" method="get" class="voice-entry-search"><label for="voice-patient-query">Ad, soyad veya hasta kodu</label><div><input id="voice-patient-query" name="q" value="{{ q }}" maxlength="100" autocomplete="off" placeholder="Hasta ara…"><button type="submit">Ara</button></div></form>
     <div class="voice-entry-list">
-      {% for patient in patients %}<a href="/patients/{{ patient.id }}#voice-exam"><span class="voice-patient-icon" aria-hidden="true">♙</span><span><strong>{{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</strong><small>Muayene ekranına geç</small></span><b aria-hidden="true">→</b></a>
+      {% for patient in patients %}<a href="/voice-exams/{{ patient.id }}/session"><span class="voice-patient-icon" aria-hidden="true">♙</span><span><strong>{{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</strong><small>Muayene ekranına geç</small></span><b aria-hidden="true">→</b></a>
       {% else %}<div class="voice-entry-empty"><strong>Hasta bulunamadı</strong><p>Aramayı değiştirin veya yeni hastayla başlayın.</p></div>{% endfor %}
     </div>
   </section>

@@ -1,5 +1,4 @@
-<details class="card voice-exam" id="voice-exam" data-patient-id="{{ patient.id }}">
-  <summary><strong>Sesli muayene</strong><span>Konuş, kontrol et, mevcut alanlara kaydet</span></summary>
+<section class="card voice-exam" id="voice-exam" data-patient-id="{{ patient.id }}">
   <div class="voice-exam-body">
     <header class="voice-session-heading"><span class="voice-eyebrow">SESLİ MUAYENE</span><h2>Görüşmeye hazır mısınız?</h2><p>Hastanızı bilgilendirin, onay verin ve dinlemeyi başlatın.</p></header>
     <p class="voice-stage" data-voice-stage>Hazırlık</p>
@@ -14,9 +13,14 @@
       <button type="button" data-voice-use-history hidden>Doğruladığım bilgileri muayeneye ekle</button>
     </details>
     <section data-live-panel hidden>
-      <h3>Görüşme kontrolü</h3>
+      <h1 class="voice-live-heading">Sesli Muayene</h1>
+      <div class="voice-microphone" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><rect x="25" y="7" width="14" height="31" rx="7" stroke="currentColor" stroke-width="2.7"/><path d="M18 29v4a14 14 0 0 0 28 0v-4M32 47v10M25 57h14" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/><path class="voice-mic-slash" d="M13 50 51 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><span class="voice-mic-check">✓</span></div>
+      <h2 data-live-title aria-live="polite">Başlamaya hazır</h2>
+      <p data-live-subtitle>Mikrofon kapalı</p>
       <p data-live-status role="status">Mikrofon yalnız başlattığında açılır.</p>
-      <div class="voice-controls"><button type="button" data-live-start>Muayeneyi başlat / devam et</button><button type="button" data-live-pause disabled>Duraklat</button><button type="button" data-live-finish disabled>Muayeneyi bitir</button></div>
+      <div class="voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p class="voice-live-timer" data-live-timer aria-label="Dinleme süresi">00:00</p>
+      <div class="voice-controls"><button type="button" data-live-start>Mikrofonu başlat</button><button type="button" data-live-pause disabled>Ⅱ &nbsp; Duraklat</button><button type="button" data-live-finish disabled>Muayeneyi bitir</button><button type="button" data-live-review hidden>Özeti kontrol et</button></div>
       <p data-live-preview class="voice-help" aria-live="off"></p>
       <p class="voice-help">Canlı döküm geçicidir. Bağlantı kesilirse mikrofon kapanır; önceki klinik özet korunur. Klinik değerlendirme konuşma bölümleri işlendikçe güncellenir.</p>
     </section>
@@ -65,9 +69,9 @@
       <button type="button" data-voice-discard>Taslağı temizle</button></div><p class="voice-help">Kayıt tamamlandığında hasta dosyasına dönersiniz.</p>
     </section>
   </div>
-</details>
-<link rel="stylesheet" href="/static/voice-exam.css?v=7">
-<script src="/static/voice-exam.js?v=6" defer></script>
+</section>
+<link rel="stylesheet" href="/static/voice-exam.css?v=9">
+<script src="/static/voice-exam.js?v=7" defer></script>
 
-<script src="/static/voice-exam-live.js?v=2" defer></script>
+<script src="/static/voice-exam-live.js?v=4" defer></script>
 
