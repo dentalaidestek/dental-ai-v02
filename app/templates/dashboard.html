@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>.visual-dashboard .visual-empty[hidden]{display:none!important}</style>
+<style>[data-voice-entry][hidden]{display:none!important}.visual-dashboard .visual-empty[hidden]{display:none!important}</style>
 <div class="visual-dashboard">
   <section class="visual-welcome">
     <div class="visual-welcome-copy">
@@ -21,6 +21,11 @@
   </section>
 
   <section class="visual-card-grid" aria-label="Ana işlemler">
+    <a class="visual-feature-card visual-voice" data-voice-entry href="/voice-exams" hidden>
+      <div class="visual-art"><svg viewBox="0 0 64 64" aria-hidden="true" style="width:64px;height:64px;fill:none;stroke:currentColor;stroke-width:3"><rect x="24" y="8" width="16" height="30" rx="8"/><path d="M17 29v3a15 15 0 0 0 30 0v-3M32 47v10M23 57h18"/></svg></div>
+      <div class="visual-card-copy"><strong>Sesli Muayene</strong><small>Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et.</small></div><span class="visual-arrow">›</span>
+    </a>
+
     <a class="visual-feature-card visual-patients" href="/patients">
       <div class="visual-art"><img src="/static/dashboard/mobile/patients_clinic.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Hastalar</strong><small>Hasta kayıtlarını yönetin, yeni hasta ekleyin.</small></div><span class="visual-arrow">›</span>
@@ -101,4 +106,5 @@
     }
   });
 </script>
+<script src="/static/voice-exam-entry.js?v=1" defer></script>
 {% endblock %}
