@@ -126,8 +126,8 @@ def test_foreign_patient_rejected_before_provider(app_client, monkeypatch, path)
     client, engine = app_client
     monkeypatch.setattr(core, 'extract', lambda **kw: pytest.fail('Provider must not be called'))
     if path == 'audio':
-        result = client.post('/patients/2/voice-exam/audio', data={'consent': 'yes'},
-            files={'recording': ('sample.webm', b'\x1aE\xdf\xa3' + b'x' * 100, 'audio/webm')})
+        result = client.post('/patients/2/voice-exam/audio', content=b'\x1aE\xdf\xa3' + b'x' * 100,
+            headers={'Content-Type': 'audio/webm', 'X-Voice-Consent': 'yes'})
     else:
         result = client.post('/patients/2/voice-exam/' + path,
             json=payload(engine) if path == 'apply' else {'transcript': 'örnek', 'consent': True})
@@ -182,11 +182,31 @@ def test_invalid_or_duplicate_teeth_cannot_apply(app_client):
 def test_audio_limit_and_consent_before_external_processing(app_client, monkeypatch):
     client, _ = app_client
     monkeypatch.setattr(core, 'extract', lambda **kw: pytest.fail('No external request expected'))
-    assert client.post('/patients/1/voice-exam/audio', files={'recording': ('bad.webm', b'x' * 200, 'audio/webm')}).status_code == 400
-    assert client.post('/patients/1/voice-exam/audio', data={'consent': 'yes'},
-        files={'recording': ('bad.webm', b'x' * 200, 'audio/webm')}).status_code == 422
+    assert client.post('/patients/1/voice-exam/audio', content=b'x' * 200, headers={'Content-Type': 'audio/webm'}).status_code == 400
+    assert client.post('/patients/1/voice-exam/audio', content=b'x' * 200,
+        headers={'Content-Type': 'audio/webm', 'X-Voice-Consent': 'yes'}).status_code == 422
     assert client.post('/patients/1/voice-exam/audio', content=b'',
         headers={'Content-Length': str(core.MAX_AUDIO + 100000)}).status_code == 413
+
+
+def test_audio_extract_returns_review_without_writing_clinical_records(app_client, monkeypatch):
+    client, engine = app_client
+    from sqlalchemy import event
+    connections = [0]
+    event.listen(engine, 'checkout', lambda *a: connections.__setitem__(0, connections[0] + 1))
+    event.listen(engine, 'checkin', lambda *a: connections.__setitem__(0, connections[0] - 1))
+    def extract(**kwargs):
+        assert connections[0] == 0
+        assert kwargs['mime'] == 'audio/webm'
+        assert set(kwargs) == {'data', 'mime'}
+        return {'transcript': 'Ağrım var.', 'fields': {}, 'teeth': [], 'uncertain': '', 'appointment': None}
+    monkeypatch.setattr(core, 'extract', extract)
+    result = client.post('/patients/1/voice-exam/audio', content=b'\x1aE\xdf\xa3' + b'x' * 100,
+        headers={'Content-Type': 'audio/webm;codecs=opus', 'X-Voice-Consent': 'yes'})
+    assert result.status_code == 200 and result.json()['review']['transcript'] == 'Ağrım var.'
+    with Session(engine) as session:
+        assert not session.exec(select(Analysis)).all()
+        assert session.get(Patient, 1).chief_complaint == 'Eski şikâyet'
 
 
 def test_normalize_preserves_negation_and_drops_unsupported_claims():
