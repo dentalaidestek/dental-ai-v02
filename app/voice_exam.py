@@ -102,43 +102,39 @@ def capabilities(request: Request):
     user = _user(request)
     if not user:
         return _reply({'ok': False}, 401)
-    courses = []
-    if core.enabled():
-        with Session(main.engine) as session:
-            courses = [{'id': row.id, 'title': row.title} for row in session.exec(
-                select(main.StudyCourse).where(main.StudyCourse.owner_user_id == user.id)
-                .order_by(main.StudyCourse.id.desc()).limit(50)).all()]
-    return _reply({'ok': True, 'enabled': core.enabled(), 'max_audio_bytes': core.MAX_AUDIO, 'courses': courses})
+    return _reply({'ok': True, 'enabled': core.enabled(), 'max_audio_bytes': core.MAX_AUDIO})
 
 
 class SourceInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    course_id: int = Field(gt=0)
     query: str = Field(min_length=3, max_length=400)
 
 
 @router.post('/patients/{patient_id}/voice-exam/sources')
 def source_references(request: Request, patient_id: int, payload: SourceInput):
-    from app import main
     user, fingerprint, error = _access(request, patient_id)
     if error is not None:
         return error
-    with Session(main.engine) as session:
-        if not main._owned_study_course(session, user, payload.course_id):
-            return _reply({'ok': False}, 404)
-        try:
-            from app.study_retrieval_v2 import retrieve_course_context_v2
-            # Existing published-chunk retrieval is provider-free. No clinical
-            # patient record is sent to Academic AI's language model.
-            result = retrieve_course_context_v2(session, owner_user_id=user.id,
-                course_id=payload.course_id, query=payload.query, recent_history=[], limit=5)
-        except Exception:
-            return _reply({'ok': False, 'error': 'Not kaynaklarına şu anda erişilemiyor.'}, 503)
-        references = [{'filename': item.display_name, 'page_start': item.page_start,
-                       'page_end': item.page_end, 'text': item.text[:1600]}
-                      for item in result.evidence[:5]]
+    # Curated official-document directory only. No Academic AI, patient data
+    # transfer, generated citations, or inferred contraindication decisions.
+    query = payload.query.casefold()
+    documents = [
+        ('ADA', 'Antibiotic Prophylaxis Prior to Dental Procedures',
+         'https://www.ada.org/resources/ada-library/oral-health-topics/antibiotic-prophylaxis',
+         ('antibiyotik', 'profilaksi', 'endokardit', 'kalp', 'protez', 'antibiotic')),
+        ('SDCEP / NHS Education for Scotland', 'Published dental guidance',
+         'https://www.sdcep.org.uk/published-guidance/',
+         ('antikoagülan', 'antikoagulan', 'kanama', 'warfarin', 'apiksaban', 'rivaroksaban',
+          'bifosfonat', 'denosumab', 'osteonekroz', 'sedasyon', 'ilaç', 'kontrendikasyon', 'endikasyon')),
+        ('ADA', 'Oral Health Topics',
+         'https://www.ada.org/resources/ada-library/oral-health-topics',
+         ('diyabet', 'diabet', 'gebelik', 'alerji', 'hipertansiyon', 'sistemik', 'diabetes')),
+    ]
+    references = [{'institution': institution, 'title': title, 'url': url,
+                   'checked_at': '2026-10-22', 'kind': 'official_document_link'}
+                  for institution, title, url, terms in documents if any(term in query for term in terms)]
     return _reply({'ok': True, 'references': references,
-                   'notice': 'Bunlar ders notu alıntılarıdır; ilaç etkileşimi veya klinik güvenlik doğrulaması değildir.'})
+        'notice': 'Resmî kaynak dizininde konu eşleştirmesi. Belge metninde canlı arama veya hastaya özel endikasyon/kontrendikasyon doğrulaması henüz yapılmıyor. Eşleşme bulunmaması güvenli olduğu anlamına gelmez.'})
 
 
 @router.post('/voice-exams/anonymous')
