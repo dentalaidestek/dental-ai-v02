@@ -1,0 +1,27 @@
+{
+  "id": "voice-one-minute-tr-01",
+  "synthetic": true,
+  "duration": "Yaklaşık 60 saniye; ses kaydı değildir.",
+  "turns": [
+    {"speaker":"Hekim","text":"Hoş geldiniz. Sizi buraya getiren nedir?"},
+    {"speaker":"Hasta","text":"Üç gündür sağ altta soğuk su içemiyorum, dün gece ağrıdan uyandım."},
+    {"speaker":"Hekim","text":"Yaşınız kaç? Hastalığınız, kullandığınız ilaç veya bilinen alerjiniz var mı?"},
+    {"speaker":"Hasta","text":"Otuz iki. Şeker hastasıyım, metformin kullanıyorum. Bir antibiyotikten döküntü olmuştu ama adını bilmiyorum."},
+    {"speaker":"Hekim","text":"44 numarada çürük olabilir; henüz kesin değil. 45 numarada mevcut dolgu var. Vitalite testi yapacağız."},
+    {"speaker":"Hasta","text":"Vitalite ne demek? Bir de iğneyi görünce geriliyorum. Ücret yüksek çıkarsa bu ay yaptıramam."},
+    {"speaker":"Hekim","text":"Sorularınıza birazdan dönelim. Önce röntgen çekip muayeneyi tamamlayalım; tedaviye sonra karar vereceğiz."},
+    {"speaker":"Hasta","text":"Evde kardeşimle tartıştım, o yüzden de aklım dağınık. Bugün hemen kanal yapılacak mı?"},
+    {"speaker":"Hekim","text":"Henüz kanal kararı vermedik. Kontrol için yarın 15:30 size uygun mu?"},
+    {"speaker":"Hasta","text":"Evet, yarın 15:30 uygundur, gelebilirim."}
+  ],
+  "expected_checks": [
+    "Şikâyetim kelimesi olmadan soğukla ağrı, üç günlük süre, gece uyandırma ve sağ alt bölge",
+    "32 yaş, diyabet beyanı ve metformin; doz uydurmama",
+    "Adı bilinmeyen antibiyotiğe reaksiyon; alerji yok veya penisilin diye kesinleştirmeme",
+    "44 için kesin çürük ya da kanal durumu yazmama; 45 için mevcut dolgu",
+    "Tedavi planını röntgen ve muayene sonrası değerlendirme olarak tutma",
+    "İğne korkusu, ücret tereddüdü ve açıklanmamış jargon için hekim geri bildirimi",
+    "Karşılıklı kabul edilmiş yarın 15:30 randevu taslağı",
+    "Kardeşle tartışmayı kalıcı klinik alanlara taşımama"
+  ]
+}

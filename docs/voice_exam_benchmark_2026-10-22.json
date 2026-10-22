@@ -1,0 +1,82 @@
+{
+  "fixture": "voice-one-minute-tr-01",
+  "word_count": 120,
+  "synthetic": true,
+  "actual_audio_test": false,
+  "real_model": {
+    "status": "BLOCKED_NO_GEMINI_CREDENTIAL",
+    "semantic_checks": "NOT_RUN"
+  },
+  "local": {
+    "serial_core_with_simulated_provider": {
+      "p50_ms": 1.555,
+      "p95_ms": 3.209
+    },
+    "load": [
+      {
+        "concurrency": 1,
+        "attempts": 100,
+        "accepted": 100,
+        "busy_rejected": 0,
+        "provider_peak_inflight": 1,
+        "accepted_latency": {
+          "p50_ms": 23.376,
+          "p95_ms": 28.796
+        },
+        "busy_latency": null,
+        "batch_wall_ms": 2415.856
+      },
+      {
+        "concurrency": 10,
+        "attempts": 100,
+        "accepted": 2,
+        "busy_rejected": 98,
+        "provider_peak_inflight": 2,
+        "accepted_latency": {
+          "p50_ms": 23.241,
+          "p95_ms": 23.403
+        },
+        "busy_latency": {
+          "p50_ms": 0.004,
+          "p95_ms": 0.046
+        },
+        "batch_wall_ms": 36.242
+      },
+      {
+        "concurrency": 50,
+        "attempts": 100,
+        "accepted": 8,
+        "busy_rejected": 92,
+        "provider_peak_inflight": 2,
+        "accepted_latency": {
+          "p50_ms": 25.12,
+          "p95_ms": 38.294
+        },
+        "busy_latency": {
+          "p50_ms": 0.009,
+          "p95_ms": 0.185
+        },
+        "batch_wall_ms": 195.495
+      }
+    ],
+    "fabricated_quote_rejected": true,
+    "process_peak_rss_kib": 23544,
+    "peak_rss_growth_kib": 3072,
+    "cpu_user_seconds": 0.682,
+    "scope": "LOCAL ONLY; supplied provider output and 20 ms artificial provider delay. Not an AI understanding or production capacity benchmark."
+  },
+  "official_source_access": {
+    "cold": {
+      "ok": true,
+      "source_id": "dailymed-f86bda10-8b25-4125-8bb1-1b5917969ff0",
+      "excerpts": 10,
+      "ms": 10137.65
+    },
+    "warm": {
+      "ok": true,
+      "source_id": "dailymed-f86bda10-8b25-4125-8bb1-1b5917969ff0",
+      "excerpts": 10,
+      "ms": 0.02
+    }
+  }
+}
