@@ -28,6 +28,20 @@ Extraction instructions minimize output to clinical content and omit unrelated p
 ## Validation and remaining work
 38 Python API/unit/template tests pass; actual browser-controller code also passes a Node DOM harness covering cumulative context, explicit selection, minimal save, coaching replacement and cleanup. JS syntax and Python compilation pass. All four fixed ADA URLs were successfully fetched with excerpts from this environment.
 
-Outstanding: real Gemini audio/clinical scenarios (no local API key), real-device/browser microphone and lifecycle QA, Gemini Live continuous streaming and immediate alerts, broad professionally reviewed source coverage, structured longitudinal medical profile, clinical correctness and privacy evaluation on synthetic realistic conversations. Existing clips are not continuous realtime listening; these checks occur after processed segments.
+Outstanding: real Gemini audio/clinical scenarios (no local API key), real-device/browser microphone and lifecycle QA, real Gemini Live transport/audio validation and clinical alert latency, broad professionally reviewed source coverage, structured longitudinal medical profile, clinical correctness and privacy evaluation on synthetic realistic conversations. Existing clips are not continuous realtime listening; these checks occur after processed segments.
 
 No main merge or production deployment.
+
+
+## Continuous Live implementation
+The dashboard now has a feature-gated Voice Examination card leading to /voice-exams, an owner-scoped bounded patient search or new anonymous patient creation. Names can later be applied through the existing review.
+
+The /patients/{id}/voice-exam/live WebSocket checks feature state, exact Origin, authenticated active clinician ownership and explicit consent before any provider connection. Gemini credentials stay in a server header. The model defaults to gemini-3.5-transcribe-live; VOICE_EXAM_LIVE_MODEL can override it. VOICE_EXAM_LIVE_ENABLED=0 disables Live separately; all voice functions remain disabled by the overall VOICE_EXAM_ENABLED default.
+
+AudioWorklet converts mono microphone input to PCM16 at 16 kHz in bounded 100 ms packets, including a final partial flush. Interim hypotheses are display-only; finalized transcription batches feed the existing bounded clinical-context extraction/review pipeline. This is continuous microphone streaming, not the 90-second manual recorder; manual clips remain an alternative. Clinical warnings depend on downstream finalized-text extraction and source assessment, not a guaranteed instantaneous medical alarm.
+
+Pause/finish signal audioStreamEnd and wait briefly for a finalized response. Unconfirmed tails are indicated. Backpressure/disconnection stops the microphone and requires explicit restart; finalized clinical context survives in the current page, but missing audio is never replayed or guessed. Backgrounding pauses the microphone. Navigation/discard/save clear transient text and stop resources. No background audio archive or automatic paid reconnect.
+
+Limits: four active proxy streams per process, one per owner per process, 30 minutes per session, bounded PCM frames/rate/provider messages and extraction queue. These are process-local, not a distributed concurrency guarantee. A new stream can resume with clinical context after explicit restart.
+
+Validation: 51 Python tests pass (including WebSocket auth/origin/consent, mocked provider end-to-end transport, flush and malformed frames), plus three Node harnesses for review lifecycle, Live lifecycle and 16/44.1/48 kHz PCM resampling/tail flush. They do not establish real Google authentication, microphone/browser compatibility, transcription quality or clinical accuracy. A real Gemini key is not available in this workspace. Real service/device and retention checks remain required before enabling patient use. No main merge or production deployment.
