@@ -153,8 +153,8 @@ def voice_session(request: Request, patient_id: int):
         patient = _owned(session, main, user, patient_id)
         if not patient:
             return _reply({'ok': False}, 404)
-        response = main.templates.TemplateResponse(request=request, name='voice_exam_session.html',
-            context={'patient': patient, 'user': user})
+    response = main.templates.TemplateResponse(request=request, name='voice_exam_session.html',
+        context={'patient': patient, 'user': user})
     response.headers.update(HEADERS)
     return response
 

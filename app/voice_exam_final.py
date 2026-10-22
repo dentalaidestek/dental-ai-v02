@@ -48,6 +48,9 @@ def finalize(context, insights, uncertain=""):
         fields['appointment'] = {'value': context['appointment']['quote'], 'quote': context['appointment']['quote']}
     if not fields and not context.get('teeth'):
         raise core.VoiceError('Son değerlendirme için önce muayene bilgisi ekle.')
+    for tooth in context.get('teeth', []):
+        value = 'Diş ' + tooth['tooth'] + ': ' + tooth['status']
+        fields['tooth_' + tooth['tooth']] = {'value': value, 'quote': value}
     query = ' '.join(item['value'] for item in fields.values())
     requests = context.get('source_requests', [])
     evidence = retrieve(query, requests=requests) if requests else retrieve(query)
@@ -104,6 +107,11 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
             raise ValueError('Incomplete final review')
         result = json.loads(''.join(p.get('text', '') for p in candidate['content']['parts'] if not p.get('thought')))
         output = {k: _anchored(result.get(k), fields) for k in ('summary', 'questions', 'contradictions')}
+        # A useful summary can always be grounded in the reviewed clinical fields.
+        # Do not invent model findings when all generated anchors were discarded.
+        if not output['summary']:
+            output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
+                                 for name, field in fields.items()][:12]
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'])
         return {**output, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
                 'coverage': evidence['coverage'], 'notice': evidence['notice']}

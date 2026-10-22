@@ -52,7 +52,9 @@ def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching
 def test_fabricated_final_anchor_is_rejected(monkeypatch):
     calls = provider(monkeypatch, {'summary': [{'field': 'allergies', 'quote': 'penisilin', 'text': 'Uydurma'}],
         'questions': [], 'contradictions': [], 'clinical_items': []})
-    assert final.finalize(CONTEXT, [])['summary'] == []
+    summary = final.finalize(CONTEXT, [])['summary']
+    assert summary and all(item['text'] != 'Uydurma' for item in summary)
+    assert all(item['quote'] in CONTEXT['fields'][item['field']]['value'] for item in summary)
     assert len(calls) == 1
 
 

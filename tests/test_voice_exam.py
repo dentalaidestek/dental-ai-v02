@@ -467,8 +467,11 @@ def test_standalone_session_is_owned_private_and_anonymous_redirects(app_client,
     from fastapi.responses import JSONResponse
     from app import main
     client, _ = app_client
-    monkeypatch.setattr(main, 'templates', SimpleNamespace(TemplateResponse=lambda **kw:
-        JSONResponse({'template': kw['name'], 'patient_id': kw['context']['patient'].id})), raising=False)
+    def rendered(**kw):
+        from sqlalchemy import inspect
+        assert inspect(kw['context']['patient']).detached, 'Release DB connection before rendering'
+        return JSONResponse({'template': kw['name'], 'patient_id': kw['context']['patient'].id})
+    monkeypatch.setattr(main, 'templates', SimpleNamespace(TemplateResponse=rendered), raising=False)
     response = client.get('/voice-exams/1/session')
     assert response.json() == {'template': 'voice_exam_session.html', 'patient_id': 1}
     assert response.headers['cache-control'] == 'private, no-store'
