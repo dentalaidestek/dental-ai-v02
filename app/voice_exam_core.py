@@ -231,10 +231,19 @@ def schema():
             'tooth': {'type': 'STRING'}, 'status': {'type': 'STRING', 'enum': sorted(TOOTH_STATES)},
             'quote': {'type': 'STRING'}}, 'required': ['tooth', 'status', 'quote']}},
         'appointment': {'type': 'OBJECT', 'properties': {'quote': {'type': 'STRING'}, 'acceptance_quote': {'type': 'STRING'}}}},
-        'required': ['transcript', 'fields', 'teeth', 'uncertain']}
+        'required': ['transcript', 'fields', 'teeth', 'uncertain', 'appointment', 'communication', 'decision_barriers', 'follow_up_questions', 'source_requests', 'removed_fields', 'removed_teeth']}
 
 
-PROMPT = '''Türkçe diş hekimi-hasta görüşmesini işle. transcript alanında yalnız muayeneyle ilgili
+PROMPT = '''Çıktıyı göndermeden önce konuşmanın BAŞINDAN SONUNA her açık bilgiyi bir kez kontrol et.
+Konuşmacı etiketleri varsa Hekim ve Hasta ifadelerini ayır. chief_complaint yalnız
+hastanın başvuru yakınması/belirtisidir; hekimin çürük gibi bulgusunu buraya koyma.
+Hekimin kesin bulguları clinical_findings ve uygun olduğunda teeth içindedir.
+plan içinde hekimin belirttiği BÜTÜN planları birlikte koru; sonraki röntgen planı
+önceki koşullu işlem seçeneğini iptal etmez. Yapılacak/önerilen işlem yapılmış değildir.
+Randevu konuşulmuş ve kabul edilmişse appointment içinde öneri ve kabul alıntılarını
+mutlaka üret. Her istenen dizi anahtarı çıktıda bulunsun; bilgi yoksa boş dizi yaz.
+Randevu yoksa appointment boş nesne olsun. Korku ve ücret ifadelerini atlama.
+Türkçe diş hekimi-hasta görüşmesini işle. transcript alanında yalnız muayeneyle ilgili
 konuşma bölümlerini tut; ilişki, aile içi olay, cinsellik, iş/gelir ayrıntısı, üçüncü kişi
 isimleri ve muayeneyle ilgisiz özel hayat anlatılarını tekrar etme. Klinik açıdan gerekli
 bir bilgi varsa yalnız en az gerekli klinik özeti çıkar; özel hayat hikâyesini taşıma.
