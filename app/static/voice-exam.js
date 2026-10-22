@@ -36,6 +36,7 @@
     });
     for(const item of data.teeth||[])if(!teethState.some(t=>t.tooth===item.tooth&&t.status===item.status))teethState.push(item);
     if(data.appointment?.quote)appointmentQuote=data.appointment.quote;
+    const coaching=$('[data-voice-communication]');for(const item of data.communication||[]){const p=document.createElement('p');p.textContent='İletişim önerisi: '+item.observation+' · Dayanak: “'+item.quote+'” · Öneri: '+item.suggestion;coaching.append(p)}
     $('[data-voice-uncertain]').textContent=data.uncertain?'Kontrol edilmesi gereken ifade: '+data.uncertain:'';
     render();message('Bölüm işlendi. Alanları kontrol et veya dinlemeye devam et.');
   }
@@ -65,11 +66,11 @@
   });
   stop.addEventListener('click',()=>{if(recorder?.state==='recording')recorder.stop()});retry.addEventListener('click',processAudio);
   $('[data-voice-sources]').addEventListener('click',async()=>{
-    const button=$('[data-voice-sources]'),results=$('[data-voice-source-results]');button.disabled=true;results.textContent='Notlarda aranıyor…';
-    try{const data=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/sources',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({course_id:Number($('[data-voice-source-course]').value),query:$('[data-voice-source-query]').value})}));
+    const button=$('[data-voice-sources]'),results=$('[data-voice-source-results]');button.disabled=true;results.textContent='Resmî kaynak dizini kontrol ediliyor…';
+    try{const data=await jsonResponse(await fetch('/patients/'+root.dataset.patientId+'/voice-exam/sources',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:$('[data-voice-source-query]').value})}));
       results.replaceChildren();const notice=document.createElement('p');notice.className='voice-help';notice.textContent=data.notice;results.append(notice);
-      for(const item of data.references){const section=document.createElement('details'),heading=document.createElement('summary'),text=document.createElement('p');heading.textContent=item.filename+' · sayfa '+item.page_start+(item.page_end!==item.page_start?'–'+item.page_end:'');text.textContent=item.text;section.append(heading,text);results.append(section)}
-      if(!data.references.length)results.append(document.createTextNode('Bu konuda yayımlanmış not parçası bulunamadı.'));
+      for(const item of data.references){const section=document.createElement('details'),heading=document.createElement('summary'),text=document.createElement('p');heading.textContent=item.institution+' · '+item.title;const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Resmî belgeyi aç';text.textContent='Bağlantı kontrolü: '+item.checked_at;section.append(heading,text,link);results.append(section)}
+      if(!data.references.length)results.append(document.createTextNode('Bu konuda dizin eşleşmesi bulunamadı; klinik güvenlik değerlendirmesi yapılmadı.'));
     }catch(error){results.textContent=error.message}finally{button.disabled=false}
   });
   textButton.addEventListener('click',async()=>{
@@ -91,6 +92,6 @@
   transcript.addEventListener('input',()=>{unsaved=!!transcript.value.trim()||Object.keys(fieldState).length>0});
   window.addEventListener('pagehide',()=>{disposed=true;micOff()});
   window.addEventListener('pageshow',()=>{disposed=false});
-  fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(jsonResponse).then(data=>{available=data.enabled;for(const course of data.courses||[]){const option=document.createElement('option');option.value=course.id;option.textContent=course.title;$('[data-voice-source-course]').append(option)}message(available?'Muayeneyi başlatabilir veya metin ekleyebilirsin.':'Sesli muayene henüz etkinleştirilmedi.');controls()}).catch(()=>message('Sesli muayene durumuna erişilemedi. Sayfayı tekrar açabilirsin.',true));
+  fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(jsonResponse).then(data=>{available=data.enabled;message(available?'Muayeneyi başlatabilir veya metin ekleyebilirsin.':'Sesli muayene henüz etkinleştirilmedi.');controls()}).catch(()=>message('Sesli muayene durumuna erişilemedi. Sayfayı tekrar açabilirsin.',true));
   if(location.hash==='#voice-exam')root.open=true;
 })();
