@@ -81,13 +81,19 @@ def _fetch(document):
 def retrieve(query):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = query.casefold()
-    selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])][:3]
+    selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
     references = []; unavailable = []
     for doc in selected:
         try:
             references.append(_fetch(doc))
         except Exception:
             unavailable.append(doc[0])
+    try:
+        from app.voice_exam_drugs import retrieve_drugs
+        references.extend(retrieve_drugs(query))
+    except Exception:
+        unavailable.append('local-drug-corpus')
     return {'references': references, 'unavailable': unavailable,
             'coverage': 'limited',
-            'notice': 'Sınırlı resmî belge kapsamı. Kaynak bulunmaması klinik güvenlik onayı değildir. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
+            'notice': 'Sınırlı resmî belge kapsamı. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
+

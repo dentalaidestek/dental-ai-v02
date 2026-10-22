@@ -100,7 +100,7 @@ def app_client(monkeypatch):
 
 def payload(engine, **updates):
     with Session(engine) as session:
-        revision = core.revision(session.get(Patient, 1))
+        revision = voice._fingerprint(session, sys.modules['app.main'], session.get(Patient, 1))
     return {'request_key': 'a' * 32, 'revision': revision, 'confirmed': True,
             'fields': {'clinical_findings': 'Hekim gözlemi'}, **updates}
 
@@ -309,7 +309,7 @@ def test_calendar_only_resolves_unambiguous_agreed_time(quote, acceptance, expec
 
 def test_context_rejects_transcript_private_coaching_and_oversize():
     for context in ({'transcript': 'özel hayat'}, {'communication': []}, {'fields': {'secret': {}}},
-                    {'fields': {'plan': {'value': 'x'*1501, 'quote': 'q'}}}):
+                    {'fields': {'plan': {'value': 'x'*3001, 'quote': 'q'}}}):
         with pytest.raises(core.VoiceError):
             core.clinical_context(context)
     assert core.clinical_context({'fields': {'medications': {'value': 'metformin', 'quote': 'metformin kullanıyorum'}}})['fields']['medications']['value'] == 'metformin'
@@ -460,3 +460,4 @@ def test_voice_entry_lists_only_owned_patients_and_escapes_search(app_client, mo
     assert result.headers['cache-control'] == 'private, no-store'
     assert client.get('/voice-exams',params={'q':'SyntheticName'}).json()['patients'] == [1]
     assert client.get('/voice-exams',params={'q':'%'}).json()['patients'] == []
+

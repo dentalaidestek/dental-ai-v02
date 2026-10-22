@@ -17,6 +17,7 @@ class El{
   calls.push({url,options});let body;
   if(url.includes('capabilities'))body={ok:true,enabled:true};
   else if(url.endsWith('/text')){n++;body={ok:true,revision:'a'.repeat(64),review:{transcript:'Muayene bölümü '+n,fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'},...(n===2?{medical_history:{value:'Diyabet beyanı',quote:'Şekerim var.'}}:{})},teeth:[],uncertain:'',communication:[{observation:'Açıklama ihtiyacı',quote:'Anlamadım.',suggestion:'Sadeleştir'}]}}}
+  else if(url.endsWith('/finalize'))body={ok:true,revision:'a'.repeat(64),final:{summary:[{field:'chief_complaint',quote:'Soğukta',text:'Soğukta ağrı'}],questions:[],contradictions:[],clinical_items:[],references:[],unavailable:[],notice:'Sınırlı kapsam'}};
   else if(url.endsWith('/apply'))body={ok:true,patient_url:'/patients/1'};
   else throw Error('Unexpected request');
   return {ok:true,json:async()=>body};
@@ -41,6 +42,11 @@ class El{
  get('[data-voice-fields]').children[0].querySelector('input').checked=true;
  get('[data-voice-confirm]').checked=true;
  await get('[data-voice-save]').handlers.click();
+ assert.equal(calls.some(c=>c.url.endsWith('/apply')),false,'Cannot save before final review');
+ await get('[data-voice-finalize]').handlers.click();
+ assert.equal(get('[data-voice-save]').disabled,false);
+ get('[data-voice-confirm]').checked=true;
+ await get('[data-voice-save]').handlers.click();
  const saved=JSON.parse(calls.find(c=>c.url.endsWith('/apply')).options.body);
  assert.deepEqual(Object.keys(saved.fields),['chief_complaint']);
  assert.equal('transcript' in saved,false);assert.equal('communication' in saved,false);
@@ -48,5 +54,6 @@ class El{
  assert.equal(get('[data-voice-consent]').checked,false);
  get('[data-voice-transcript]').value='Temporary sensitive input';events.pagehide();
  assert.equal(get('[data-voice-transcript]').value,'');
- console.log('Browser controller: cumulative context, explicit selection, minimal save and cleanup passed.');
+ console.log('Browser controller: final review gate, cumulative context, explicit selection, minimal save and cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
+

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 MAX_AUDIO = 8 * 1024 * 1024
 MAX_TRANSCRIPT = 18000
 MAX_RESPONSE = 180000
+MAX_CONTEXT = 24000
 MIMES = {'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'}
 FIELDS = ('first_name', 'last_name', 'age', 'chief_complaint', 'medical_history',
           'medications', 'allergies', 'clinical_findings', 'plan')
@@ -29,8 +30,8 @@ def enabled():
 
 def revision(patient):
     values = [getattr(patient, field, None) for field in
-              ('id', 'owner_user_id', 'first_name', 'last_name', 'age', 'chief_complaint')]
-    return hashlib.sha256(json.dumps(values, ensure_ascii=False).encode()).hexdigest()
+              ('id', 'owner_user_id', 'first_name', 'last_name', 'age', 'birth_date', 'chief_complaint')]
+    return hashlib.sha256(json.dumps(values, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
 def _string(value, limit):
@@ -66,6 +67,24 @@ def resolve_appointment(quote, acceptance, now=None):
         return None
     time_text = re.sub(r'(?<!\d)\d{1,2}[./]\d{1,2}[./]\d{4}(?!\d)', '', text)
     times = re.findall(r'(?<![\d:])(\d{1,2})[:.](\d{2})(?!\d)', time_text)
+    if not times:
+        spoken = {'birde': 1, 'ikide': 2, 'üçte': 3, 'dörtte': 4, 'beşte': 5, 'altida': 6,
+                  'yedide': 7, 'sekizde': 8, 'dokuzda': 9, 'onda': 10, 'on birde': 11,
+                  'on ikide': 12, 'on üçte': 13, 'on dörtte': 14, 'on beşte': 15,
+                  'on altida': 16, 'on yedide': 17, 'on sekizde': 18, 'on dokuzda': 19,
+                  'yirmide': 20, 'yirmi birde': 21, 'yirmi ikide': 22, 'yirmi üçte': 23}
+        pattern = r'\bsaat\s+(' + '|'.join(re.escape(k) for k in sorted(spoken, key=len, reverse=True)) + r')\b'
+        matches = re.findall(pattern, text)
+        if len(matches) != 1:
+            return None
+        hour = spoken[matches[0]]
+        afternoon = any(word in text for word in ('öğleden sonra', 'akşam'))
+        morning = any(word in text for word in ('sabah', 'gece'))
+        if afternoon and morning: return None
+        if hour < 12:
+            if afternoon: hour += 12
+            elif not morning: return None
+        times = [(str(hour), '00')]
     if len(times) != 1:
         return None
     hour, minute = map(int, times[0])
@@ -99,15 +118,18 @@ def resolve_appointment(quote, acceptance, now=None):
         return None
 
 
-def normalize(result):
+def normalize(result, evidence=None):
     """Only retain suggestions with an exact quotation in the transcript."""
     if not isinstance(result, dict):
         raise VoiceError('Ses çözümlemesi doğrulanamadı.')
     transcript = _string(result.get('transcript'), MAX_TRANSCRIPT)
     if not transcript:
         raise VoiceError('Anlaşılır konuşma bulunamadı. Metni elle girebilirsin.')
+    # Text evidence must come from the submitted text/prior clinical anchors,
+    # never solely from a second transcript authored by the model.
+    anchor = transcript if evidence is None else evidence
     output = {'transcript': transcript, 'fields': {}, 'teeth': [], 'appointment': None,
-              'communication': [], 'decision_barriers': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
+              'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
     coaching = result.get('communication', [])
     if not isinstance(coaching, list) or len(coaching) > 8:
         raise VoiceError('İletişim değerlendirmesi doğrulanamadı.')
@@ -117,7 +139,7 @@ def normalize(result):
         quote = _string(item.get('quote', ''), 2000)
         observation = _string(item.get('observation', ''), 1000)
         suggestion = _string(item.get('suggestion', ''), 1000)
-        if quote and quote in transcript and observation and suggestion:
+        if quote and quote in anchor and observation and suggestion:
             output['communication'].append(dict(quote=quote, observation=observation, suggestion=suggestion))
     barriers = result.get('decision_barriers', [])
     if not isinstance(barriers, list) or len(barriers) > 5:
@@ -128,6 +150,24 @@ def normalize(result):
         clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'observation', 'question', 'explanation')}
         if clean['quote'] and clean['quote'] in transcript:
             output['decision_barriers'].append({'category': item['category'], **clean})
+    questions = result.get('follow_up_questions', [])
+    if not isinstance(questions, list) or len(questions) > 8:
+        raise VoiceError('Netleştirme soruları doğrulanamadı.')
+    for item in questions:
+        if not isinstance(item, dict) or item.get('priority') not in {'CLARIFY_NOW', 'REVIEW_AT_END'}:
+            continue
+        clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'question', 'reason')}
+        if clean['quote'] and clean['quote'] in anchor and clean['question']:
+            output['follow_up_questions'].append({**clean, 'priority': item['priority']})
+    for key, allowed in (('removed_fields', set(FIELDS)), ('removed_teeth', {f'{q}{n}' for q in range(1, 9) for n in range(1, 9 if q < 5 else 6)})):
+        values = result.get(key, [])
+        if not isinstance(values, list) or len(values) > 52:
+            raise VoiceError('Düzeltme bilgisi doğrulanamadı.')
+        for item in values:
+            if not isinstance(item, dict): continue
+            name = item.get('name'); quote = _string(item.get('quote', ''), 2000)
+            if name in allowed and quote and quote in anchor:
+                output[key].append(name)
     fields = result.get('fields', {})
     if not isinstance(fields, dict):
         raise VoiceError('Muayene alanları doğrulanamadı.')
@@ -137,7 +177,7 @@ def normalize(result):
             continue
         value = _string(item.get('value', ''), 3000)
         quote = _string(item.get('quote', ''), 2000)
-        if value and quote and quote in transcript:
+        if value and quote and quote in anchor:
             if field == 'age' and (not value.isdecimal() or not 0 <= int(value) <= 120):
                 continue
             output['fields'][field] = {'value': value, 'quote': quote}
@@ -150,16 +190,16 @@ def normalize(result):
         number = str(tooth.get('tooth', ''))
         quote = _string(tooth.get('quote', ''), 2000)
         if (re.fullmatch(r'[1-4][1-8]|[5-8][1-5]', number)
-                and tooth.get('status') in TOOTH_STATES and quote and quote in transcript):
+                and tooth.get('status') in TOOTH_STATES and quote and quote in anchor):
             output['teeth'].append({'tooth': number, 'status': tooth['status'], 'quote': quote})
     appointment = result.get('appointment')
     if isinstance(appointment, dict):
         quote = _string(appointment.get('quote', ''), 2000)
         # Keep the utterance, not a model-invented calendar date.
-        if quote and quote in transcript:
+        if quote and quote in anchor:
             output['appointment'] = {'quote': quote}
             acceptance = _string(appointment.get('acceptance_quote', ''), 200)
-            if acceptance and acceptance in transcript:
+            if acceptance and acceptance in anchor:
                 resolved = resolve_appointment(quote, acceptance)
                 if resolved:
                     output['appointment'].update(start_at=resolved, acceptance_quote=acceptance, agreed=True)
@@ -170,6 +210,8 @@ def schema():
     quoted = {'type': 'OBJECT', 'properties': {'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'}},
               'required': ['value', 'quote']}
     return {'type': 'OBJECT', 'properties': {
+        **{key: {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'name': {'type': 'STRING'}, 'quote': {'type': 'STRING'}}, 'required': ['name', 'quote']}} for key in ('removed_fields', 'removed_teeth')},
+        'follow_up_questions': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'question', 'reason')}, 'priority': {'type': 'STRING', 'enum': ['CLARIFY_NOW', 'REVIEW_AT_END']}}, 'required': ['quote', 'question', 'reason', 'priority']}},
         'decision_barriers': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'observation', 'question', 'explanation')}, 'category': {'type': 'STRING', 'enum': ['COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR']}}, 'required': ['quote', 'observation', 'question', 'explanation', 'category']}},
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
@@ -205,8 +247,7 @@ communication dizisinde en çok 8 iletişim geliştirme önerisi ver: hastanın 
 söylemesi, açıklanmayan jargon, yanıtlanmayan somut soru gibi yalnız doğrudan alıntıyla
 kanıtlanan gözlemler. quote birebir alıntı, observation sınırlı gözlem, suggestion daha açık
 ve empatik bir ifade olsun. Kayıtta geçmeyeni yapılmamış sayma; konuşmacı belirsizse
-suçlama yapma. Hasta doğrudan ücret, korku, zaman veya güven konusunda tereddüdünü söylüyorsa
-bunu kesin psikolojik neden değil, görüşmede dile getirilen karar engeli olarak göster.
+suçlama yapma. Hasta ücret, korku, zaman veya güven konusunda açıkça ya da konuşmanın bağlamında güçlü bir dayanakla tereddüt belirtiyorsa bunu sınırlı bir olasılık olarak göster. İlgili sözcüğü birebir söylemesini bekleme; belirsiz nedeni UNCLEAR olarak bırakıp soru öner. Kesin psikolojik neden veya kişilik özelliği çıkarma.
 Özel hayat veya gelir ayrıntısını öneriye kopyalama; alıntıda yalnız gerekli kısa cümleyi
 kullan. Belirsiz neden için açık uçlu soru öner. Hastanın karar hakkını koru.
 Kişilik, gizli duygu, ticari başarı veya satış fırsatı çıkarma; baskı ve gereksiz
@@ -218,6 +259,20 @@ question nedeni açıklığa kavuşturacak empatik soru; explanation hekimin kul
 anlaşılır açıklama olsun. Özel hayat ayrıntılarını, gelir düzeyini veya üçüncü kişileri
 tekrar etme. Ucuz diye uygunsuz tedavi, korkuyu kullanma veya garanti vaat etme.
 Bunlar yalnız geçici hekim geri bildirimidir, hasta dosyasına eklenmez.
+follow_up_questions içinde en çok 8 muayeneye özgü netleştirme sorusu üret.
+Süre, bölge, tetikleyici, sistemik öykü, mevcut ilaç/alerji, işlem planı veya anlaşılmayan
+ifadelerden bu görüşmeyle ilgili olanları değerlendir; sabit soru listesini tekrar etme.
+quote transcript içinde birebir geçen kısa dayanak, question hekimin hastaya sorabileceği
+soru, reason neden netleştirilmesi gerektiği olsun. priority CLARIFY_NOW bilgiyi konuşma
+sırasında netleştirme önceliğidir; klinik aciliyet veya tanı derecesi değildir. Diğerleri
+REVIEW_AT_END olsun. İfade geçmedi diye bilginin yokluğunu kesinleştirme. Acil durum
+algılama, ilaç etkileşimi sonucu veya tedavi önerisi üretme; kaynaklı klinik değerlendirme
+ayrı yapılır. Özel hayatı taşıma, alakasız sorular üretme.
+Önceki alan açıkça yanlış kişiye ait olduğu veya yanlış anlaşıldığı belirtilerek geri
+alınmışsa removed_fields içine name=alan adı ve birebir quote koy. Önceki diş bulgusu
+hekim tarafından açıkça geri alındıysa removed_teeth içine name=FDI numara ve quote koy.
+Sadece yeni bölümde bahsedilmedi diye hiçbir şeyi kaldırma. Yeni bir olumsuz beyanı
+silmek yerine ilgili alanda koru. Düzeltme kanıtı yoksa bu listeler boş olsun.
 İstenen JSON dışına çıkma.'''
 
 
@@ -239,7 +294,7 @@ def clinical_context(value):
     for name, item in fields.items():
         if not isinstance(item, dict) or set(item) - {'value', 'quote'}:
             raise VoiceError('Görüşme alanı doğrulanamadı.')
-        clean['fields'][name] = {key: _string(item.get(key, ''), 1500) for key in ('value', 'quote')}
+        clean['fields'][name] = {key: _string(item.get(key, ''), 3000) for key in ('value', 'quote')}
     teeth = value.get('teeth', [])
     if not isinstance(teeth, list) or len(teeth) > 52:
         raise VoiceError('Görüşme diş alanları doğrulanamadı.')
@@ -249,8 +304,8 @@ def clinical_context(value):
         if str(tooth.get('tooth')) not in {f'{q}{n}' for q in range(1, 9) for n in range(1, 9 if q < 5 else 6)} or tooth.get('status') not in TOOTH_STATES:
             raise VoiceError('Görüşme diş alanı doğrulanamadı.')
         clean['teeth'].append({key: _string(str(tooth.get(key, '')), 1500) for key in ('tooth', 'status', 'quote')})
-    if len(json.dumps(clean, ensure_ascii=False).encode()) > 6000:
-        raise VoiceError('Görüşme bağlamı sınırına ulaşıldı. Mevcut alanları kontrol ederek kaydet.')
+    if len(json.dumps(clean, ensure_ascii=False).encode()) > MAX_CONTEXT:
+        raise VoiceError('Görüşme bağlamı sınırına ulaşıldı. Alanları kısaltıp son değerlendirmeyi yeniden çalıştır.')
     return clean
 
 
@@ -275,7 +330,7 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
                 raise VoiceError('Önce konuşma veya metin ekle.')
             parts = [{'text': redact_direct_identifiers(text)}]
         instruction = PROMPT + '\nÖnceki klinik bağlam: ' + json.dumps(context, ensure_ascii=False)
-        instruction += '\nÖnceki bağlamı yeni bölümle birlikte değerlendir. Çıktı alanları görüşmenin güncel birleşik hâli olsun. Önceki alanı yeni bilgi yoksa koru. Çelişkide eskiyi silme, uncertain içinde iki beyanı belirt. Kesin bir düzeltme varsa son açık düzeltmeyi uygula. Önceki dayanakları klinik transcript içine de al; özel hayatı ekleme.'
+        instruction += '\nÖnceki bağlamı yeni bölümle birlikte değerlendir. Çıktı alanları görüşmenin güncel birleşik hâli olsun. Önceki alanı yeni bilgi yoksa koru. Çelişkide eskiyi silme, uncertain içinde iki beyanı belirt. Önceki kayıt tarihsel olabilir; konuşmada güncelliği doğrulanmadıysa bunu belirt. Kesin bir düzeltme varsa son açık düzeltmeyi uygula. Önceki dayanakları klinik transcript içine de al; özel hayatı ekleme.'
         payload = {'systemInstruction': {'parts': [{'text': instruction}]},
                    'contents': [{'role': 'user', 'parts': parts}],
                    'generationConfig': {'temperature': 0, 'maxOutputTokens': 8192,
@@ -294,10 +349,30 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             if candidate.get('finishReason') != 'STOP':
                 raise VoiceError('Ses çözümlemesi tamamlanmadı; kısmi sonuç kaydedilmedi.')
             text = ''.join(part.get('text', '') for part in candidate['content']['parts'] if not part.get('thought'))
-            return normalize(json.loads(text))
+            evidence = None
+            if data is None:
+                evidence = redact_direct_identifiers(transcript or '') + '\n' + '\n'.join(
+                    item.get('quote', '') for item in context.get('fields', {}).values())
+                evidence += '\n' + '\n'.join(item.get('quote', '') for item in context.get('teeth', []))
+                evidence += '\n' + '\n'.join(context.get('appointment', {}).values())
+            result = normalize(json.loads(text), evidence=evidence)
+            # Missing output is not an explicit correction. Preserve previously
+            # reviewed clinical anchors rather than silently erasing them.
+            for name, item in context.get('fields', {}).items():
+                if name not in result['fields'] and name not in result['removed_fields']:
+                    result['fields'][name] = item
+            old_teeth = {item['tooth']: item for item in context.get('teeth', []) if item['tooth'] not in result['removed_teeth']}
+            old_teeth.update({item['tooth']: item for item in result['teeth']})
+            result['teeth'] = list(old_teeth.values())
+            # Appointment cancellation/correction remains model-controlled; an
+            # omitted appointment cannot be silently assumed still agreed.
+            if context.get('appointment') and not result['appointment']:
+                result['uncertain'] = (result['uncertain'] + '\nÖnceki randevu ifadesi yeni bölümde doğrulanmadı; tekrar kontrol edin.').strip()
+            return result
         except VoiceError:
             raise
         except Exception:
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
+

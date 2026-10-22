@@ -14,7 +14,7 @@ from app import voice_exam_core as core
 
 _lock = threading.Lock()
 _active = set()
-MAX_SECONDS = 1800
+MAX_SECONDS = 570
 PROVIDER_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
 
@@ -152,3 +152,4 @@ def register_live(router):
                 await socket.close()
             except Exception:
                 pass
+

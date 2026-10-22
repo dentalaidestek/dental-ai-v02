@@ -5,6 +5,13 @@
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
     <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin veya girdiğim metnin Gemini ile işlenmesini onaylıyorum.</label>
     <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
+    <details class="voice-history"><summary>Önceki hekim onaylı klinik bilgiler</summary>
+      <p class="voice-help">Yalnız önceki sesli muayenelerde hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Bu alan tüm hasta arşivinin yerine geçmez. Bilgilerin hâlâ güncel olduğunu hastayla doğrulayın.</p>
+      <button type="button" data-voice-history>Önceki kayıtları göster</button>
+      <div data-voice-history-results></div>
+      <label class="voice-check"><input type="checkbox" data-voice-history-confirm> Aktaracağım bilgileri hastayla doğruladım.</label>
+      <button type="button" data-voice-use-history hidden>Doğruladığım bilgileri muayeneye ekle</button>
+    </details>
     <section data-live-panel hidden>
       <h3>Görüşme kontrolü</h3>
       <p data-live-status role="status">Mikrofon yalnız başlattığında açılır.</p>
@@ -12,6 +19,7 @@
       <p data-live-preview class="voice-help" aria-live="off"></p>
       <p class="voice-help">Canlı döküm geçicidir. Bağlantı kesilirse mikrofon kapanır; önceki klinik özet korunur. Klinik değerlendirme konuşma bölümleri işlendikçe güncellenir.</p>
     </section>
+    <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">İşlenen konuşmaya göre önerilen sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
     <details><summary>Alternatif: bölüm kaydı veya metin</summary>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
@@ -29,7 +37,7 @@
       <h4 class="voice-group-title">Hasta bilgileri ve muayene notları</h4><div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
       <details><summary>Hasta yaklaşımı ve iletişim <small>Yalnız hekime özel öneriler</small></summary><div data-voice-communication></div></details>
-      <section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Her işlenen bölümde değişen klinik bilgiler otomatik değerlendirilir. Kaynak varsa ek bir Gemini çağrısı kullanır.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section>
+      <section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Hastalık, ilaç, alerji, bulgu veya plan bilgileri değiştiğinde kaynak kontrolü otomatik denenir; aynı bilgiler için tekrarlanmaz. Muayene sonunda bütünsel değerlendirmeye de dahildir. Kaynaklı değerlendirmeler ek Gemini çağrısı kullanabilir; klinik acil durum alarmı değildir.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section>
       <fieldset>
         <legend>Resmî diş hekimliği kaynakları</legend>
         <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
@@ -45,13 +53,20 @@
         <label class="voice-field">Başlangıç (Türkiye saati) <input type="datetime-local" data-voice-appointment-start></label>
         <label class="voice-field">Bitiş (isteğe bağlı) <input type="datetime-local" data-voice-appointment-end></label>
       </fieldset>
+      <section class="voice-final-review">
+        <h3>Muayene sonu değerlendirmesi</h3>
+        <p class="voice-help">Dinlemeyi bitirdikten ve tüm konuşma bölümleri işlendikten sonra özet, eksik sorular, çelişkiler ve kaynaklı kontrol noktaları birlikte değerlendirilir. Metin veya bölüm kaydı kullandıysanız aşağıdaki düğmeye basın. Alanları değiştirirseniz yeniden değerlendirin.</p>
+        <button type="button" data-voice-finalize>Muayenenin tamamını değerlendir</button>
+        <div data-voice-final-results aria-live="polite"></div>
+      </section>
       <label class="voice-check"><input type="checkbox" data-voice-confirm> Seçtiğim alanları ve varsa diş bulgularını / randevuyu kontrol ettim.</label>
-      <div class="voice-review-actions"><button type="button" data-voice-save>Onayladığım alanları kaydet →</button>
+      <div class="voice-review-actions"><button type="button" data-voice-save disabled>Onayladığım alanları kaydet →</button>
       <button type="button" data-voice-discard>Taslağı temizle</button></div><p class="voice-help">Kayıt tamamlandığında hasta dosyasına dönersiniz.</p>
     </section>
   </div>
 </details>
-<link rel="stylesheet" href="/static/voice-exam.css?v=5">
-<script src="/static/voice-exam.js?v=4" defer></script>
+<link rel="stylesheet" href="/static/voice-exam.css?v=6">
+<script src="/static/voice-exam.js?v=5" defer></script>
 
-<script src="/static/voice-exam-live.js?v=1" defer></script>
+<script src="/static/voice-exam-live.js?v=2" defer></script>
+

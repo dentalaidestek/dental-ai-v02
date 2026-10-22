@@ -57,3 +57,6 @@
 .voice-session-heading{margin-left:-12px;margin-right:-12px;padding:18px 12px}.voice-session-heading h2{font-size:21px}
 .voice-exam [data-live-panel]{padding:12px}.voice-exam .voice-controls button{flex:1 1 130px}.voice-entry h2{font-size:17px}
 }
+
+
+.voice-exam .voice-history{padding:16px;border:1px solid #dcecf5;border-radius:14px;margin:16px 0}.voice-exam .voice-history summary{cursor:pointer;font-weight:700}.voice-exam [data-voice-final-results]>section{padding:12px 0;border-top:1px solid #dcecf5}.voice-exam [data-voice-final-results] small{display:block;color:#526478;white-space:pre-wrap;overflow-wrap:anywhere}.voice-exam [data-voice-history-results]{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.voice-exam .voice-final-review{background:#f6fbff}.voice-exam button[data-voice-finalize]{background:#102a46;color:#fff;border-color:#102a46}

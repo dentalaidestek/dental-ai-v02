@@ -82,6 +82,18 @@ def _owned(session, main, user, ident, *, lock=False):
     return session.exec(statement.with_for_update() if lock else statement).first()
 
 
+def _fingerprint(session, main, patient):
+    base = core.revision(patient)
+    teeth = session.exec(select(main.ToothStatus).where(main.ToothStatus.patient_id == patient.id)
+        .order_by(main.ToothStatus.tooth_number)).all()
+    latest = session.exec(select(main.Analysis.id).where(main.Analysis.patient_id == patient.id)
+        .order_by(main.Analysis.id.desc()).limit(1)).first()
+    if not teeth and latest is None:
+        return base
+    return hashlib.sha256(json.dumps([base, latest, [(t.tooth_number, t.status, t.note) for t in teeth]],
+                                    ensure_ascii=False, default=str).encode()).hexdigest()
+
+
 def _access(request, patient_id):
     from app import main
     if not core.enabled():
@@ -93,7 +105,7 @@ def _access(request, patient_id):
         patient = _owned(session, main, user, patient_id)
         if not patient:
             return None, None, _reply({'ok': False}, 404)
-        fingerprint = core.revision(patient)
+        fingerprint = _fingerprint(session, main, patient)
     return user, fingerprint, None
 
 
@@ -115,7 +127,7 @@ def voice_entry(request: Request, q: str = ''):
                 main.Patient.last_name.ilike(pattern, escape='\\'), main.Patient.anonymous_id.ilike(pattern, escape='\\')))
         patients = session.exec(statement.order_by(main.Patient.id.desc()).limit(30)).all()
     response = main.templates.TemplateResponse(request=request, name='voice_exam_entry.html',
-        context={'patients': patients, 'q': query})
+        context={'patients': patients, 'q': query, 'user': user})
     response.headers.update(HEADERS)
     return response
 
@@ -148,6 +160,55 @@ class ClinicalInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     context: dict
     consent: bool = False
+
+
+class FinalInput(ClinicalInput):
+    insights: list[dict] = Field(default_factory=list, max_length=24)
+    uncertain: str = Field(default='', max_length=3000)
+
+
+@router.post('/patients/{patient_id}/voice-exam/finalize')
+def final_review(request: Request, patient_id: int, payload: FinalInput):
+    user, fingerprint, error = _access(request, patient_id)
+    if error is not None:
+        return error
+    if not payload.consent:
+        return _reply({'ok': False, 'error': 'İşleme onayını kontrol et.'}, 400)
+    try:
+        from app.voice_exam_final import finalize
+        return _reply({'ok': True, 'revision': fingerprint,
+                       'final': finalize(payload.context, payload.insights, payload.uncertain)})
+    except core.VoiceError as exc:
+        return _reply({'ok': False, 'error': str(exc)}, 422)
+
+
+@router.get('/patients/{patient_id}/voice-exam/history')
+def reviewed_history(request: Request, patient_id: int):
+    """Only explicitly saved voice clinical fields, never arbitrary notes or raw audio."""
+    from app import main
+    from app.work_jobs import WorkJob
+    user, fingerprint, error = _access(request, patient_id)
+    if error is not None:
+        return error
+    labels = {'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
+              'allergies': 'Alerji / hasta beyanı'}
+    fields = {}
+    with Session(main.engine) as session:
+        # Join prevents scanning the entire patient archive and excludes non-voice records.
+        rows = session.exec(select(main.Analysis).join(WorkJob, WorkJob.resource_id == main.Analysis.id)
+            .where(main.Analysis.patient_id == patient_id, WorkJob.owner_user_id == user.id,
+                   WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
+            .order_by(main.Analysis.id.desc()).limit(12)).all()
+        for row in rows:
+            for paragraph in (row.clinical_notes or '').split('\n\n'):
+                for name, label in labels.items():
+                    prefix = label + ': '
+                    if name not in fields and paragraph.startswith(prefix):
+                        value = paragraph[len(prefix):].strip()
+                        if value and len(value) <= 3000:
+                            fields[name] = {'value': value, 'quote': value, 'analysis_id': row.id}
+    return _reply({'ok': True, 'revision': fingerprint, 'fields': fields,
+        'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'})
 
 
 @router.post('/patients/{patient_id}/voice-exam/clinical')
@@ -315,7 +376,7 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
                 return _reply({'ok': False}, 409)
             return _reply({'ok': True, 'already_saved': True, 'analysis_id': analysis.id,
                            'patient_url': '/patients/' + str(patient_id)})
-        if core.revision(patient) != payload.revision:
+        if _fingerprint(session, main, patient) != payload.revision:
             return _reply({'ok': False, 'error': 'Hasta bilgileri değişti. Sayfayı yenileyip yeniden kontrol et.'}, 409)
         if payload.appointment:
             appointment, error = main._validate_schedule_input(
@@ -377,3 +438,4 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
 
 from app.voice_exam_live import register_live
 register_live(router)
+
