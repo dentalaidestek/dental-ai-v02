@@ -3,7 +3,7 @@
   const $=s=>root.querySelector(s),status=$('.voice-exam-status'),start=$('[data-voice-start]'),stop=$('[data-voice-stop]'),retry=$('[data-voice-retry]'),textButton=$('[data-voice-text]'),transcript=$('[data-voice-transcript]'),consent=$('[data-voice-consent]'),review=$('.voice-review'),save=$('[data-voice-save]');
   const labels={first_name:'Ad',last_name:'Soyad',age:'Yaş',chief_complaint:'Başvuru şikâyeti',medical_history:'Sistemik hastalık / hasta beyanı',medications:'İlaç / hasta beyanı',allergies:'Alerji / hasta beyanı',clinical_findings:'Klinik bulgular',plan:'Hekimin belirttiği plan'};
   const states={CARIES:'Çürük',FILLING:'Dolgu',CROWN:'Kron',ROOT_CANAL:'Kanal tedavisi',EXTRACTED:'Çekilmiş',IMPLANT:'İmplant',OTHER:'Diğer'};
-  let available=false,busy=false,recording=false,disposed=false,recorder=null,stream=null,audio=null,timer=null,deadline=null,started=0,revision='',requestKey='',unsaved=false,fieldState={},teethState=[],appointmentQuote='',appointmentContext=null;
+  let available=false,busy=false,recording=false,liveActive=false,liveQueue=[],disposed=false,recorder=null,stream=null,audio=null,timer=null,deadline=null,started=0,revision='',requestKey='',unsaved=false,fieldState={},teethState=[],appointmentQuote='',appointmentContext=null;
   let epoch=0,clinicalTimer=null,lastClinicalInput='',clinicalRequest=0;const pending=new Set();
   async function voiceFetch(url,options={}){
     const at=epoch,controller=new AbortController();pending.add(controller);
@@ -13,7 +13,7 @@
     }finally{pending.delete(controller)}
   }
   function clearPrivateDraft(){
-    epoch++;clearTimeout(clinicalTimer);lastClinicalInput='';clinicalRequest++;pending.forEach(c=>c.abort());pending.clear();
+    root.dispatchEvent(new CustomEvent('voice-private-clear'));liveQueue=[];liveActive=false;epoch++;clearTimeout(clinicalTimer);lastClinicalInput='';clinicalRequest++;pending.forEach(c=>c.abort());pending.clear();
     fieldState={};teethState=[];appointmentQuote='';appointmentContext=null;revision='';requestKey='';audio=null;
     transcript.value='';unsaved=false;review.hidden=true;retry.hidden=true;
     for(const selector of ['[data-voice-fields]','[data-voice-teeth]','[data-voice-communication]','[data-voice-source-results]','[data-voice-clinical-results]'])$(selector).replaceChildren();
@@ -27,7 +27,7 @@
   }
   const key=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   function message(text,error=false){status.textContent=text;status.classList.toggle('voice-error',error)}
-  function controls(){start.disabled=!available||busy||recording;stop.disabled=!recording;textButton.disabled=!available||busy||recording;save.disabled=busy||recording;retry.disabled=busy||recording;consent.disabled=busy||recording}
+  function controls(){root.dispatchEvent(new CustomEvent('voice-review-state',{detail:{blocked:busy||recording||!!audio}}));start.disabled=!available||busy||recording||liveActive;stop.disabled=!recording;textButton.disabled=!available||busy||recording||liveActive;save.disabled=busy||recording||liveActive||liveQueue.length>0;retry.disabled=busy||recording;consent.disabled=busy||recording||liveActive}
   function micOff(){clearInterval(timer);clearTimeout(deadline);stream?.getTracks().forEach(track=>track.stop());stream=null;recording=false;controls()}
   function currentFields(){
     root.querySelectorAll('[data-field-row]').forEach(row=>{const item=fieldState[row.dataset.fieldRow];if(item){item.value=row.querySelector('textarea').value;item.selected=row.querySelector('input').checked}});
@@ -63,6 +63,15 @@
     $('[data-voice-uncertain]').textContent=data.uncertain?'Kontrol edilmesi gereken ifade: '+data.uncertain:'';
     render();message('Güncel görüşme özeti hazır. Alanları kontrol et veya dinlemeye devam et.');clearTimeout(clinicalTimer);clinicalTimer=setTimeout(()=>assessClinical(false).catch(error=>message(error.message,true)),1200);
   }
+  async function drainLive(){
+    if(busy||!liveQueue.length||disposed)return;
+    const text=liveQueue.splice(0,liveQueue.length).join(' ');busy=true;controls();message('Görüşmenin klinik özeti güncelleniyor…');
+    try{const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/text',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:text,consent:consent.checked,context:context()})}));transcript.value=result.review.transcript;merge(result)}
+    catch(error){if(!disposed){liveQueue.unshift(text);root.dispatchEvent(new CustomEvent('voice-live-stop'));message(error.message+' Dinleme duraklatıldı. Metin korunuyor; “Metinden alanları çıkar” ile kontrol et.',true);transcript.value=liveQueue.join(' ');liveQueue=[]}}
+    finally{busy=false;controls();if(liveQueue.length)drainLive()}
+  }
+  root.addEventListener('voice-live-state',event=>{liveActive=event.detail.active;controls()});
+  root.addEventListener('voice-live-segment',event=>{if(disposed)return;const text=event.detail.text;if(typeof text!=='string'||!text)return;unsaved=true;liveQueue.push(text);if(liveQueue.join(' ').length>18000){root.dispatchEvent(new CustomEvent('voice-live-stop'));message('İşlenecek konuşma birikti. Dinleme duraklatıldı.',true)}drainLive()});
   async function processAudio(){
     if(!audio||busy)return;if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     busy=true;controls();message('Ses bölümü çözümleniyor…');
@@ -121,8 +130,8 @@
     try{const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_key:requestKey,revision,confirmed:true,fields,teeth,appointment})}));clearPrivateDraft();location.assign(result.patient_url+'?voice_saved=1')}
     catch(error){message(error.message,true)}finally{busy=false;controls()}
   });
-  $('[data-voice-discard]').addEventListener('click',()=>{if(busy||recording)return;if(!confirm('Kaydedilmemiş muayene taslağı temizlensin mi?'))return;clearPrivateDraft();message('Taslak ve geçici görüşme verileri temizlendi.')});
-  window.addEventListener('beforeunload',event=>{if(recording||busy||unsaved||audio){event.preventDefault();event.returnValue=''}});
+  $('[data-voice-discard]').addEventListener('click',()=>{if(busy||recording||liveActive)return;if(!confirm('Kaydedilmemiş muayene taslağı temizlensin mi?'))return;clearPrivateDraft();message('Taslak ve geçici görüşme verileri temizlendi.')});
+  window.addEventListener('beforeunload',event=>{if(recording||liveActive||busy||unsaved||audio){event.preventDefault();event.returnValue=''}});
   transcript.addEventListener('input',()=>{unsaved=!!transcript.value.trim()||Object.keys(fieldState).length>0});
   window.addEventListener('pagehide',()=>{disposed=true;clearPrivateDraft()});
   window.addEventListener('pageshow',()=>{disposed=false});
