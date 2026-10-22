@@ -18,7 +18,8 @@
       <p>Yalnız işaretlediğin alanlar uygulanır. İletişim önerileri hasta dosyasına aktarılmaz. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
       <div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
-      <div data-voice-communication></div>
+      <details><summary>Hasta yaklaşımı ve iletişim</summary><div data-voice-communication></div></details>
+      <section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Her işlenen bölümde değişen klinik bilgiler otomatik değerlendirilir. Kaynak varsa ek bir Gemini çağrısı kullanır.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section>
       <fieldset>
         <legend>Resmî diş hekimliği kaynakları</legend>
         <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
@@ -40,5 +41,5 @@
     </section>
   </div>
 </details>
-<link rel="stylesheet" href="/static/voice-exam.css?v=2">
-<script src="/static/voice-exam.js?v=2" defer></script>
+<link rel="stylesheet" href="/static/voice-exam.css?v=3">
+<script src="/static/voice-exam.js?v=3" defer></script>
