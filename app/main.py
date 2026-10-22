@@ -14223,3 +14223,8 @@ app.include_router(mobile_modern_router)
 # Owned interactive quiz choices; deterministic grading without provider calls.
 from app.academic_quiz_interactions import router as academic_quiz_interactions_router
 app.include_router(academic_quiz_interactions_router)
+
+# Voice examination drafts are reviewed before existing clinical records change.
+from app.voice_exam import router as voice_exam_router, VoiceBodyLimitMiddleware
+app.include_router(voice_exam_router)
+app.add_middleware(VoiceBodyLimitMiddleware)
