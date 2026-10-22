@@ -68,6 +68,7 @@ def app_client(monkeypatch):
     engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
     SQLModel.metadata.create_all(engine)
     main = ModuleType('app.main');main.engine = engine
+    main._user_schedule_occurrences = lambda *args: []
     for model in (User, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
     main.get_current_user = lambda request: (SimpleNamespace(id=1, role=request.headers.get('x-role', 'DOCTOR'), is_active=True)
         if request.headers.get('x-login', '1') == '1' else None)
@@ -253,9 +254,13 @@ def test_disabled_feature_and_anonymous_entry(app_client, monkeypatch):
     assert client.post('/patients/1/voice-exam/apply', json=payload(engine)).status_code == 503
 
 
-def test_official_sources_do_not_use_academic_or_transfer_patient_data(app_client):
+def test_official_sources_do_not_use_academic_or_transfer_patient_data(app_client, monkeypatch):
+    from app import voice_exam_sources as sources
+    def fetched(doc):
+        return dict(id=doc[0], institution=doc[1], title=doc[2], url=doc[3], retrieved_at='now', excerpts=['Verified document paragraph'])
+    monkeypatch.setattr(sources, '_fetch', fetched)
     client, _ = app_client
-    result = client.post('/patients/1/voice-exam/sources', json={'query': 'kalp profilaksi'})
+    result = client.post('/patients/1/voice-exam/sources', json={'query': 'profilaksi'})
     assert result.status_code == 200
     assert result.json()['references'][0]['institution'] == 'ADA'
     assert result.json()['references'][0]['url'].startswith('https://www.ada.org/')
@@ -284,3 +289,110 @@ def test_raw_transcript_is_not_an_apply_property(app_client):
     body = payload(engine)
     body['transcript'] = 'Özel görüşme'
     assert client.post('/patients/1/voice-exam/apply', json=body).status_code == 422
+
+
+@pytest.mark.parametrize('quote,acceptance,expected', [
+    ('Yarın 15:30 gelin.', 'Tamam.', '2026-10-23T15:30'),
+    ('24.10.2026 saat 09:00 gelin.', 'Olur.', '2026-10-24T09:00'),
+    ('Yarın üçte gelin.', 'Tamam.', None),
+    ('Yarın 15:30 gelin.', 'Belki', None),
+    ('Yarın 15:30 veya 16:00 gelin.', 'Tamam.', None),
+    ('Yarın 15:30 olmaz.', 'Tamam.', None),
+    ('23.02.2026 15:30 gelin.', 'Tamam.', None),
+    ('Öbür yarın 15:30 gelin.', 'Tamam.', None),
+])
+def test_calendar_only_resolves_unambiguous_agreed_time(quote, acceptance, expected):
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 10, 22, 12, 0, tzinfo=ZoneInfo('Europe/Istanbul'))
+    assert core.resolve_appointment(quote, acceptance, now) == expected
+
+
+def test_context_rejects_transcript_private_coaching_and_oversize():
+    for context in ({'transcript': 'özel hayat'}, {'communication': []}, {'fields': {'secret': {}}},
+                    {'fields': {'plan': {'value': 'x'*1501, 'quote': 'q'}}}):
+        with pytest.raises(core.VoiceError):
+            core.clinical_context(context)
+    assert core.clinical_context({'fields': {'medications': {'value': 'metformin', 'quote': 'metformin kullanıyorum'}}})['fields']['medications']['value'] == 'metformin'
+
+
+def test_clinical_output_requires_document_and_patient_anchors():
+    from app.voice_exam_clinical import grounded_items
+    field = {'medications': {'value': 'warfarin kullanıyorum'}}
+    sources = [{'id': 'ada', 'excerpts': ['Dental bleeding risk requires assessment.']}]
+    item = dict(source_id='ada', source_quote='bleeding risk', patient_field='medications',
+                patient_quote='warfarin', consideration='Değerlendir', missing_information='İşlem', alternative='')
+    assert grounded_items({'items': [item]}, field, sources) == [item]
+    assert grounded_items({'items': [{**item, 'source_quote': 'fabricated'}]}, field, sources) == []
+    assert grounded_items({'items': [{**item, 'patient_quote': 'aspirin'}]}, field, sources) == []
+    assert grounded_items({'items': [{**item, 'source_id': 'invented'}]}, field, sources) == []
+
+
+def test_sources_fail_closed_without_claiming_safety(monkeypatch):
+    from app import voice_exam_sources as sources
+    def failed(doc):
+        raise TimeoutError()
+    monkeypatch.setattr(sources, '_fetch', failed)
+    result = sources.retrieve('metformin')
+    assert not result['references'] and result['unavailable'] == ['ada-diabetes']
+    assert result['coverage'] == 'limited'
+
+
+def test_clinical_route_requires_consent_and_patient_ownership(app_client):
+    client, _ = app_client
+    body = {'context': {'fields': {}}, 'consent': False}
+    assert client.post('/patients/1/voice-exam/clinical', json=body).status_code == 400
+    assert client.post('/patients/2/voice-exam/clinical', json={**body, 'consent': True}).status_code == 404
+
+
+def test_calendar_conflicts_include_recurring_occurrence_and_point_bookings():
+    start = datetime(2026, 10, 23, 15, 0)
+    occurrence = {'status': 'ACTIVE', 'start_local': start, 'end_local': datetime(2026, 10, 23, 16, 0)}
+    assert voice.appointment_conflict([occurrence], datetime(2026, 10, 23, 15, 30))
+    assert voice.appointment_conflict([occurrence], datetime(2026, 10, 23, 14, 30), datetime(2026, 10, 23, 15, 30))
+    assert not voice.appointment_conflict([occurrence], datetime(2026, 10, 23, 16, 0))
+    assert not voice.appointment_conflict([{**occurrence, 'status': 'COMPLETED'}], start)
+
+
+def test_decision_barriers_require_short_direct_evidence():
+    item = {'category': 'FEAR', 'quote': 'İğneden korkuyorum.', 'observation': 'Korku dile getirildi',
+            'question': 'En çok hangi aşama kaygılandırıyor?', 'explanation': 'Aşamaları anlat'}
+    result = core.normalize({'transcript': 'İğneden korkuyorum.', 'decision_barriers': [item, {**item, 'quote': 'Gelirim yok.'}]})
+    assert result['decision_barriers'] == [item]
+
+
+def test_next_segment_context_reaches_provider_but_private_text_is_rejected(app_client, monkeypatch):
+    client, _ = app_client
+    seen = []
+    def extract(**kwargs):
+        seen.append(kwargs)
+        return {'transcript': 'Metformin kullanıyorum.', 'fields': {}, 'teeth': []}
+    monkeypatch.setattr(core, 'extract', extract)
+    context = {'fields': {'medical_history': {'value': 'Diyabet beyanı', 'quote': 'Şekerim var.'}}}
+    result = client.post('/patients/1/voice-exam/text', json={'transcript': 'Metformin kullanıyorum.', 'consent': True, 'context': context})
+    assert result.status_code == 200 and seen[0]['context']['fields'] == context['fields']
+    result = client.post('/patients/1/voice-exam/text', json={'transcript': 'Örnek', 'consent': True, 'context': {'transcript': 'Özel hayat'}})
+    assert result.status_code == 422 and len(seen) == 1
+
+
+def test_clinical_provider_receives_only_clinical_fields_and_fixed_sources(monkeypatch):
+    from app import voice_exam_clinical as clinical
+    import app.http_transport as transport
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+    monkeypatch.setenv('VOICE_EXAM_GEMINI_MODEL', 'gemini-test')
+    budget = ModuleType('app.provider_budget');budget.reservation = lambda *a: nullcontext()
+    monkeypatch.setitem(sys.modules, 'app.provider_budget', budget)
+    source = dict(id='ada', institution='ADA', title='Example', url='https://www.ada.org/', excerpts=['Dental bleeding risk assessment.'])
+    monkeypatch.setattr(clinical, 'retrieve', lambda query: {'references': [source], 'unavailable': [], 'notice': 'limited'})
+    requests = []
+    class Response:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,limit):return json.dumps({'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':json.dumps({'items':[]})}]}}]}).encode()
+    def urlopen(request, **kwargs):
+        requests.append(json.loads(request.data));return Response()
+    monkeypatch.setattr(transport, 'urlopen', urlopen)
+    result = clinical.assess({'fields': {'first_name': {'value': 'SYNTHETIC_PRIVATE_NAME', 'quote': 'SYNTHETIC_PRIVATE_NAME'},
+        'medications': {'value': 'warfarin', 'quote': 'warfarin'}}})
+    assert result['items'] == [] and len(requests) == 1
+    assert 'SYNTHETIC_PRIVATE_NAME' not in json.dumps(requests)
+    assert 'warfarin' in json.dumps(requests)
