@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card voice-entry">
+  <h1>Sesli muayene</h1>
+  <p>Hastayı seç, görüşmedeki kişileri bilgilendir ve mikrofonu başlat.</p>
+  <form method="post" action="/voice-exams/anonymous"><button type="submit">Yeni hastayla başla</button></form>
+  <p class="voice-help">İsim bilinmiyorsa anonim kayıt açılır. Konuşmada netleşen bilgiler, muayene sonunda kontrol edilerek profile eklenir.</p>
+  <h2>Mevcut hasta</h2>
+  <form action="/voice-exams" method="get" class="voice-controls"><label>Ad, soyad veya hasta kodu <input name="q" value="{{ q }}" maxlength="100" autocomplete="off"></label><button type="submit">Ara</button></form>
+  <div class="voice-entry-list">
+    {% for patient in patients %}<a href="/patients/{{ patient.id }}#voice-exam"><strong>{{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</strong><span>Sesli muayeneye geç →</span></a>
+    {% else %}<p>Hasta bulunamadı. Yeni hastayla başlayabilirsin.</p>{% endfor %}
+  </div>
+</section>
+<style>.voice-entry{max-width:800px;margin:20px auto;padding:20px;background:#fff;color:#14243b;border:1px solid #dce4ed;border-radius:18px}.voice-entry button{min-height:44px;border:0;border-radius:10px;padding:12px 16px;background:#2563eb;color:white;font-weight:600}.voice-entry input{max-width:100%;box-sizing:border-box;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#14243b}.voice-entry-list a{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;padding:16px 0;border-bottom:1px solid #e2e8f0;text-decoration:none;color:#14243b}.voice-entry-list span{color:#2563eb}.voice-entry .voice-help{font-size:13px;color:#64748b;line-height:1.6}</style>
+{% endblock %}
