@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<main class="voice-entry">
-  <a class="voice-back" href="/voice-exams">← Sesli muayene başlangıcı</a>
-  <h1>Sesli Muayene</h1>
-  <p>Hasta: {{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</p>
+<section class="voice-entry voice-session-page">
+  <header class="voice-session-top"><a href="/voice-exams" aria-label="Sesli muayene başlangıcına dön">←</a><span>DENTAL <b>AI</b></span></header>
+  
+  <p class="voice-session-patient">Hasta: {{ ((patient.first_name or '') ~ ' ' ~ (patient.last_name or ''))|trim or patient.anonymous_id }}</p>
   {% include "voice_exam_panel.html" %}
-</main>
+</section>
 {% endblock %}

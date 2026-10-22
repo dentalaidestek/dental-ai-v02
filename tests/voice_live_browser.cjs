@@ -17,7 +17,7 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  const box={document:{getElementById:()=>root,addEventListener:()=>{}},window:{AudioContext:Context,AudioWorkletNode:Worklet,addEventListener:(n,fn)=>events[n]=fn},
   AudioContext:Context,AudioWorkletNode:Worklet,WebSocket:Socket,navigator:{mediaDevices:{getUserMedia:async()=>({getTracks:()=>[{stop:()=>stopped++}]})}},
   location:{protocol:'https:',host:'dentalai.tr'},CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail}},
-  fetch:async()=>({json:async()=>({live_enabled:true})}),setTimeout,clearTimeout};
+  fetch:async()=>({json:async()=>({live_enabled:true})}),setTimeout,clearTimeout,setInterval,clearInterval};
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam-live.js','utf8'),box);
  await get('[data-live-start]').handlers.click();assert.equal(lastSocket,undefined,'No consent means no microphone/socket');
  get('[data-voice-consent]').checked=true;
@@ -25,6 +25,9 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  assert.equal(get('[data-live-pause]').disabled,false);
  assert.equal(get('[data-live-title]').textContent,'Dinleniyor');
  assert.equal(root.dataset.liveState,'listening');
+ assert.equal(get('[data-live-subtitle]').textContent,'Mikrofon açık');
+ assert.equal(get('[data-live-start]').hidden,true);
+ assert.equal(get('[data-live-pause]').hidden,false);
  lastNode.port.onmessage({data:new ArrayBuffer(3200)});
  assert.ok(lastSocket.sent.some(x=>x instanceof ArrayBuffer));
  lastSocket.message({type:'interim',text:'Temporary sensitive preview'});
@@ -34,6 +37,9 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  assert.ok(stopped>0&&closedContexts>0);
  assert.equal(get('[data-live-title]').textContent,'Dinleme tamamlandı');
  assert.equal(root.dataset.liveState,'idle');
+ assert.equal(get('[data-live-subtitle]').textContent,'Mikrofon kapalı');
+ assert.equal(get('[data-live-review]').hidden,false);
+ get('[data-live-review]').handlers.click();assert.equal(root.dataset.showReview,'true');
  assert.equal(get('[data-live-preview]').textContent,'');
  assert.ok(emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text==='Soğuk içemiyorum.'));
  assert.ok(!emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text.includes('sensitive')));

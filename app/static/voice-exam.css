@@ -77,3 +77,49 @@
 .voice-exam:is([data-live-state="connecting"],[data-live-state="listening"],[data-live-state="stopping"])>.voice-exam-body>:not([data-live-panel]){display:none!important}
 .voice-exam:is([data-live-state="connecting"],[data-live-state="listening"],[data-live-state="stopping"]) [data-live-panel]>.voice-help{display:none}
 @media(max-width:480px){.voice-exam [data-live-panel]{padding:24px 0}.voice-exam [data-live-panel] .voice-controls button{flex:1 1 42%}}
+
+/* Approved mobile microphone concept: one centered surface, stacked actions. */
+.voice-session-page{max-width:480px;margin:20px auto;padding:0 12px}
+.voice-session-page .voice-session-patient{font-size:12px;color:#778297;text-align:center}
+.voice-session-page .voice-exam{border:0;box-shadow:none;border-radius:26px}
+.voice-session-page .voice-exam-body{padding:0 24px 24px}
+.voice-exam [data-live-panel]{padding:20px 0 8px;min-height:620px;box-sizing:border-box}
+.voice-live-heading{font-size:28px!important;text-align:center;margin:0 0 48px!important;color:#0c173d!important}
+.voice-microphone{position:relative;width:210px;height:210px;margin:0 auto 24px;border:0;background:#eaf4ff;box-shadow:none!important}
+.voice-microphone svg{width:116px;height:116px}
+.voice-mic-slash,.voice-mic-check{display:none}
+.voice-mic-check{position:absolute;bottom:-3px;left:calc(50% - 20px);width:40px;height:40px;border-radius:50%;background:#122d50;color:#fff;font-size:27px;line-height:40px}
+.voice-exam [data-live-title]{font-size:24px;line-height:1.25;margin:0 0 8px;color:#0c173d}
+.voice-exam [data-live-subtitle]{font-size:18px;color:#7b8498;margin:0 0 12px}
+.voice-exam [data-live-status]{font-size:13px;color:#69788c;margin:8px 0;line-height:1.5}
+.voice-exam[data-live-state="listening"] [data-live-status],.voice-exam[data-live-state="paused"] [data-live-status]{display:none}
+.voice-exam[data-live-state="listening"] [data-live-title]{color:#147747}
+.voice-exam[data-live-state="paused"] [data-live-title]{color:#906000}
+.voice-exam[data-live-state="paused"] .voice-microphone{color:#d89900;background:#fff7df}
+.voice-exam[data-live-state="paused"] .voice-mic-slash,.voice-exam[data-live-state="error"] .voice-mic-slash,.voice-exam[data-live-finished="true"] .voice-mic-slash,.voice-exam[data-live-finished="true"] .voice-mic-check{display:block}
+.voice-exam[data-live-finished="true"] .voice-microphone{background:#eaf4ff;color:#122d50}
+.voice-wave{height:44px;display:flex;align-items:center;justify-content:center;gap:5px;margin:16px auto 8px;color:#65b897;visibility:hidden}
+.voice-wave i{width:4px;height:8px;background:currentColor;border-radius:3px}
+.voice-wave i:nth-child(3n){height:22px}.voice-wave i:nth-child(4n){height:34px}.voice-wave i:nth-child(5n){height:16px}
+.voice-exam[data-live-state="listening"] .voice-wave{visibility:visible}
+.voice-live-timer{font-size:32px;line-height:1.3;color:#0c173d;margin:12px 0 42px;font-variant-numeric:tabular-nums}
+.voice-exam [data-live-panel] .voice-controls{display:flex;flex-direction:column;gap:10px;margin:0}
+.voice-exam [data-live-panel] .voice-controls button{width:100%;flex:none;min-height:54px;border-radius:12px;font-size:16px;background:#fff;border:1.5px solid #142f53;color:#142f53}
+.voice-exam [data-live-panel] button[data-live-start],.voice-exam [data-live-panel] button[data-live-review],.voice-exam[data-live-state="listening"] [data-live-panel] button[data-live-finish]{background:#142f53;color:#fff}
+.voice-exam[data-live-finished="true"] .voice-live-timer{visibility:hidden}
+.voice-exam[data-live-finished="true"] .voice-wave{visibility:hidden}
+.voice-exam:is([data-live-state="paused"],[data-live-state="error"],[data-live-finished="true"])>.voice-exam-body>:not([data-live-panel]){display:none!important}
+.voice-exam[data-show-review="true"]>.voice-exam-body>.voice-review:not([hidden]),.voice-exam[data-show-review="true"]>.voice-exam-body>.voice-exam-status{display:block!important}
+.voice-exam [data-live-panel]>.voice-help{display:none}
+@media(max-width:380px){.voice-session-page .voice-exam-body{padding:0 16px 20px}.voice-microphone{width:180px;height:180px}.voice-live-heading{margin-bottom:36px!important}.voice-exam [data-live-panel]{min-height:560px}}
+
+.voice-wave i{transform:scaleY(var(--voice-level,.15));transition:transform 100ms linear}
+
+body:has(.voice-session-page){background:#f0f7fc}
+body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bottom-nav{display:none!important}
+.voice-session-page{background:#fff;border-radius:26px;padding:26px 12px 12px;box-sizing:border-box}
+.voice-session-top{position:relative;text-align:center;padding:8px 24px 24px;color:#132e52;letter-spacing:.08em;font-weight:700}
+.voice-session-top>a{position:absolute;left:20px;top:3px;color:#132e52;text-decoration:none;font-size:26px;letter-spacing:0;min-width:32px;min-height:32px}
+.voice-session-top b{color:#1881e8}
+.voice-session-page:has(.voice-exam[data-live-state]) .voice-session-patient{display:none}
+@media(max-width:480px){.voice-session-page{margin:12px auto;max-width:calc(100% - 20px)}}
