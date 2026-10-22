@@ -3,7 +3,7 @@
   <div class="voice-exam-body">
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
     <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin veya girdiğim metnin Gemini ile işlenmesini onaylıyorum.</label>
-    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Kimlik numarası ve iletişim bilgilerini söyleme. Yalnız seçip onayladığın alanlar kaydedilir.</p>
+    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
       <button type="button" data-voice-stop disabled>Duraklat ve işle</button>
@@ -11,11 +11,11 @@
       <span data-voice-timer>00:00</span>
     </div>
     <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. İşledikten sonra devam edebilirsin. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
-    <label class="voice-field">Konuşma metni <textarea data-voice-transcript rows="4" maxlength="18000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
+    <label class="voice-field">Muayeneyle ilgili geçici metin <textarea data-voice-transcript rows="4" maxlength="18000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
     <button type="button" data-voice-text disabled>Metinden alanları çıkar</button>
     <section class="voice-review" hidden>
       <h3>Kaydetmeden önce kontrol et</h3>
-      <p>Yalnız işaretlediğin alanlar uygulanır. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
+      <p>Yalnız işaretlediğin alanlar uygulanır. İletişim önerileri hasta dosyasına aktarılmaz. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
       <div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
       <div data-voice-communication></div>
@@ -40,5 +40,5 @@
     </section>
   </div>
 </details>
-<link rel="stylesheet" href="/static/voice-exam.css?v=1">
-<script src="/static/voice-exam.js?v=1" defer></script>
+<link rel="stylesheet" href="/static/voice-exam.css?v=2">
+<script src="/static/voice-exam.js?v=2" defer></script>
