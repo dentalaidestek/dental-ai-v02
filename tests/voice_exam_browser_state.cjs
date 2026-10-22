@@ -3,6 +3,7 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
 class El{
  constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.value='';this.checked=false;this.hidden=false;this.handlers={};this.classList={toggle(){}};this.textContent=''}
  append(...items){this.children.push(...items)} replaceChildren(...items){this.children=items;this.textContent=''}
+ dispatchEvent(event){this.handlers[event.type]?.(event)}
  setAttribute(){} addEventListener(name,fn){this.handlers[name]=fn}
  querySelector(tag){for(const child of this.children){if(child?.tag===tag)return child;const next=child?.querySelector?.(tag);if(next)return next}return null}
 }
@@ -22,7 +23,7 @@ class El{
  };
  const box={document:{getElementById:()=>root,createElement:tag=>new El(tag),createTextNode:text=>({text})},
   window:{addEventListener:(name,fn)=>events[name]=fn},fetch,navigator:{},location:{hash:'',assign:()=>{}},
-  crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,
+  CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,
   setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await new Promise(setImmediate);
