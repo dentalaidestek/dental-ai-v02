@@ -97,13 +97,37 @@ def _access(request, patient_id):
     return user, fingerprint, None
 
 
+@router.get('/voice-exams')
+def voice_entry(request: Request, q: str = ''):
+    from app import main
+    user = _user(request)
+    if not user:
+        return RedirectResponse('/login?next=%2Fvoice-exams', status_code=303)
+    if not core.enabled():
+        return _reply({'ok': False, 'error': 'Sesli muayene henüz etkin değil.'}, 503)
+    query = q.strip()[:100]
+    with Session(main.engine) as session:
+        statement = select(main.Patient).where(main.Patient.owner_user_id == user.id)
+        if query:
+            from sqlalchemy import or_
+            pattern = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+            statement = statement.where(or_(main.Patient.first_name.ilike(pattern, escape='\\'),
+                main.Patient.last_name.ilike(pattern, escape='\\'), main.Patient.anonymous_id.ilike(pattern, escape='\\')))
+        patients = session.exec(statement.order_by(main.Patient.id.desc()).limit(30)).all()
+    response = main.templates.TemplateResponse(request=request, name='voice_exam_entry.html',
+        context={'patients': patients, 'q': query})
+    response.headers.update(HEADERS)
+    return response
+
+
 @router.get('/voice-exams/capabilities')
 def capabilities(request: Request):
     from app import main
     user = _user(request)
     if not user:
         return _reply({'ok': False}, 401)
-    return _reply({'ok': True, 'enabled': core.enabled(), 'max_audio_bytes': core.MAX_AUDIO})
+    from app.voice_exam_live import live_enabled
+    return _reply({'ok': True, 'enabled': core.enabled(), 'live_enabled': live_enabled(), 'max_audio_bytes': core.MAX_AUDIO})
 
 
 class SourceInput(BaseModel):
@@ -350,3 +374,6 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
     if schedule:
         main._wake_program_reminder_worker()
     return _reply({'ok': True, 'analysis_id': analysis.id, 'patient_url': '/patients/' + str(patient_id)})
+
+from app.voice_exam_live import register_live
+register_live(router)
