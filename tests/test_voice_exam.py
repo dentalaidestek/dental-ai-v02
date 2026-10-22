@@ -253,18 +253,20 @@ def test_disabled_feature_and_anonymous_entry(app_client, monkeypatch):
     assert client.post('/patients/1/voice-exam/apply', json=payload(engine)).status_code == 503
 
 
-def test_sources_reuse_owned_published_retriever_without_generation(app_client, monkeypatch):
+def test_official_sources_do_not_use_academic_or_transfer_patient_data(app_client):
     client, _ = app_client
-    module = ModuleType('app.study_retrieval_v2');calls = []
-    def retrieve(session, **kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(evidence=[SimpleNamespace(display_name='Not.pdf', page_start=3, page_end=3, text='Kaynak alıntısı')])
-    module.retrieve_course_context_v2 = retrieve
-    monkeypatch.setitem(sys.modules, 'app.study_retrieval_v2', module)
-    result = client.post('/patients/1/voice-exam/sources', json={'course_id': 1, 'query': 'Alerji'})
-    assert result.status_code == 200 and result.json()['references'][0]['page_start'] == 3
-    assert calls[0]['owner_user_id'] == 1 and calls[0]['recent_history'] == []
-    assert client.post('/patients/1/voice-exam/sources', json={'course_id': 2, 'query': 'Alerji'}).status_code == 404
-    assert client.post('/patients/2/voice-exam/sources', json={'course_id': 1, 'query': 'Alerji'}).status_code == 404
-    assert len(calls) == 1
-    assert client.get('/voice-exams/capabilities').json()['courses'] == [{'id': 1, 'title': 'Notlarım'}]
+    result = client.post('/patients/1/voice-exam/sources', json={'query': 'kalp profilaksi'})
+    assert result.status_code == 200
+    assert result.json()['references'][0]['institution'] == 'ADA'
+    assert result.json()['references'][0]['url'].startswith('https://www.ada.org/')
+    assert client.post('/patients/2/voice-exam/sources', json={'query': 'kalp'}).status_code == 404
+    assert client.post('/patients/1/voice-exam/sources', json={'course_id': 1, 'query': 'kalp'}).status_code == 422
+    assert client.post('/patients/1/voice-exam/sources', json={'query': 'bilinmeyen'}).json()['references'] == []
+    assert 'courses' not in client.get('/voice-exams/capabilities').json()
+
+
+def test_communication_requires_exact_transcript_evidence():
+    result = core.normalize({'transcript': 'Anlamadım.', 'communication': [
+        {'quote': 'Anlamadım.', 'observation': 'Açıklama ihtiyacı', 'suggestion': 'Daha sade açıkla'},
+        {'quote': 'Uydurma', 'observation': 'Eksik', 'suggestion': 'Satış yap'}]})
+    assert len(result['communication']) == 1
