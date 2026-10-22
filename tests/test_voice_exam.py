@@ -396,3 +396,67 @@ def test_clinical_provider_receives_only_clinical_fields_and_fixed_sources(monke
     assert result['items'] == [] and len(requests) == 1
     assert 'SYNTHETIC_PRIVATE_NAME' not in json.dumps(requests)
     assert 'warfarin' in json.dumps(requests)
+
+
+def test_live_socket_denies_cross_owner_and_cross_origin(app_client, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+    client, _ = app_client
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+    for patient, origin in ((2, 'http://testserver'), (1, 'https://evil.example')):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect('/patients/'+str(patient)+'/voice-exam/live', headers={'Origin': origin}):
+                pass
+
+
+def test_live_socket_requires_consent_before_provider_connection(app_client, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+    client, _ = app_client
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
+    with client.websocket_connect('/patients/1/voice-exam/live', headers={'Origin': 'http://testserver'}) as socket:
+        socket.send_json({'type': 'start', 'consent': False})
+        with pytest.raises(WebSocketDisconnect):socket.receive_json()
+
+
+def test_live_proxy_end_to_end_keeps_key_server_side(app_client, monkeypatch):
+    from test_voice_exam_live import Provider
+    client, _ = app_client
+    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-server-secret')
+    budget = ModuleType('app.provider_budget');budget.reservation = lambda *args: nullcontext()
+    monkeypatch.setitem(sys.modules, 'app.provider_budget', budget)
+    connections = []
+    class Connection:
+        async def __aenter__(self):return Provider()
+        async def __aexit__(self, *args):pass
+    def connect(url, **kwargs):
+        connections.append((url, kwargs));return Connection()
+    module = ModuleType('websockets.asyncio.client');module.connect = connect
+    monkeypatch.setitem(sys.modules, 'websockets.asyncio.client', module)
+    with client.websocket_connect('/patients/1/voice-exam/live', headers={'Origin':'http://testserver'}) as socket:
+        socket.send_json({'type':'start','consent':True})
+        assert socket.receive_json() == {'type':'ready'}
+        socket.send_bytes(b'\x00\x00'*1600)
+        assert socket.receive_json()['type'] == 'interim'
+        socket.send_json({'type':'finish'})
+        assert socket.receive_json() == {'type':'final','text':'Soğuk içemiyorum.'}
+        assert socket.receive_json() == {'type':'ended','flushed':True}
+    assert len(connections) == 1
+    url, options = connections[0]
+    assert 'key=' not in url and 'synthetic-server-secret' not in url
+    assert options['additional_headers']['x-goog-api-key'] == 'synthetic-server-secret'
+
+
+def test_voice_entry_lists_only_owned_patients_and_escapes_search(app_client, monkeypatch):
+    from fastapi.responses import JSONResponse
+    from app import main
+    client, engine = app_client
+    def template(**kwargs):
+        context = kwargs['context']
+        return JSONResponse({'patients':[row.id for row in context['patients']]})
+    monkeypatch.setattr(main, 'templates', SimpleNamespace(TemplateResponse=template), raising=False)
+    with Session(engine) as session:
+        patient=session.get(Patient,1);patient.first_name='SyntheticName';session.add(patient);session.commit()
+    result=client.get('/voice-exams')
+    assert result.json()['patients'] == [1]
+    assert result.headers['cache-control'] == 'private, no-store'
+    assert client.get('/voice-exams',params={'q':'SyntheticName'}).json()['patients'] == [1]
+    assert client.get('/voice-exams',params={'q':'%'}).json()['patients'] == []
