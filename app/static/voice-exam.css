@@ -64,3 +64,16 @@
 .voice-exam .voice-stage{display:inline-flex;padding:6px 12px;border-radius:999px;background:#e9f4fb;color:#163b58;font-size:12px;font-weight:700}.voice-exam .voice-review>details>section{margin-top:12px}
 
 .voice-exam .voice-question-resolved{opacity:.65}.voice-exam .voice-question-resolved>strong{text-decoration:line-through}
+
+/* Keep the active consultation focused on one microphone and its state. */
+.voice-exam [data-live-panel]{text-align:center;padding:28px 12px}
+.voice-microphone{width:100px;height:100px;margin:12px auto 20px;display:grid;place-items:center;border-radius:50%;background:#eaf2f9;color:#102a46;border:2px solid #d6e3ef}
+.voice-microphone svg{width:58px;height:58px}
+.voice-exam [data-live-title]{font-size:24px;margin:10px 0}
+.voice-exam [data-live-panel] .voice-controls{justify-content:center}
+.voice-exam[data-live-state="listening"] .voice-microphone{color:#18764a;background:#e5f6ed;border-color:#45a87b;box-shadow:0 0 0 9px #e5f6ed}
+.voice-exam[data-live-state="paused"] .voice-microphone{color:#966313;background:#fff4d9;border-color:#d6b05f}
+.voice-exam[data-live-state="error"] .voice-microphone{color:#a13e35;background:#fff0ee;border-color:#d99088}
+.voice-exam:is([data-live-state="connecting"],[data-live-state="listening"],[data-live-state="stopping"])>.voice-exam-body>:not([data-live-panel]){display:none!important}
+.voice-exam:is([data-live-state="connecting"],[data-live-state="listening"],[data-live-state="stopping"]) [data-live-panel]>.voice-help{display:none}
+@media(max-width:480px){.voice-exam [data-live-panel]{padding:24px 0}.voice-exam [data-live-panel] .voice-controls button{flex:1 1 42%}}

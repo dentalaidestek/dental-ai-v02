@@ -23,6 +23,8 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  get('[data-voice-consent]').checked=true;
  await get('[data-live-start]').handlers.click();await new Promise(setImmediate);await new Promise(setImmediate);
  assert.equal(get('[data-live-pause]').disabled,false);
+ assert.equal(get('[data-live-title]').textContent,'Dinleniyor');
+ assert.equal(root.dataset.liveState,'listening');
  lastNode.port.onmessage({data:new ArrayBuffer(3200)});
  assert.ok(lastSocket.sent.some(x=>x instanceof ArrayBuffer));
  lastSocket.message({type:'interim',text:'Temporary sensitive preview'});
@@ -30,9 +32,12 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  lastSocket.message({type:'final',text:'Soğuk içemiyorum.'});
  get('[data-live-finish]').handlers.click();await new Promise(r=>setTimeout(r,20));
  assert.ok(stopped>0&&closedContexts>0);
+ assert.equal(get('[data-live-title]').textContent,'Dinleme tamamlandı');
+ assert.equal(root.dataset.liveState,'idle');
  assert.equal(get('[data-live-preview]').textContent,'');
  assert.ok(emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text==='Soğuk içemiyorum.'));
  assert.ok(!emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text.includes('sensitive')));
  events.pagehide();assert.equal(get('[data-live-preview]').textContent,'');
  console.log('Live controller: consent, continuous PCM, interim/final separation, finish flush and microphone cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
+

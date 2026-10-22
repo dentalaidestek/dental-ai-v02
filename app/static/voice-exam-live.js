@@ -4,7 +4,10 @@
   const start=panel.querySelector('[data-live-start]'),pause=panel.querySelector('[data-live-pause]'),finish=panel.querySelector('[data-live-finish]'),status=panel.querySelector('[data-live-status]'),preview=panel.querySelector('[data-live-preview]'),consent=root.querySelector('[data-voice-consent]');
   let socket=null,stream=null,ctx=null,node=null,source=null,state='idle',reviewBlocked=false,generation=0,finished=false,batch='',batchTimer=null,setupTimer=null,flushDone=null,sessionTimer=null;
   const announce=(text)=>{status.textContent=text};
-  function stateChanged(next){state=next;start.disabled=reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
+  function stateChanged(next){state=next;root.dataset.liveState=next;
+    const title=panel.querySelector('[data-live-title]');if(title)title.textContent=({idle:finished?'Dinleme tamamlandı':'Başlamaya hazır',connecting:'Mikrofon hazırlanıyor',listening:'Dinleniyor',stopping:'Dinleme durduruluyor',paused:'Duraklatıldı',error:'Dinleme durdu'})[next]||next;
+    start.textContent=['paused','error'].includes(next)?'Dinlemeye devam et':'Mikrofonu başlat';
+    start.disabled=reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
   function microphoneOff(){node?.disconnect();if(node)node.port.onmessage=null;source?.disconnect();stream?.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{});node=null;source=null;stream=null;ctx=null;clearTimeout(setupTimer);clearTimeout(sessionTimer)}
   function emitBatch(){clearTimeout(batchTimer);batchTimer=null;if(!batch)return;const text=batch;batch='';root.dispatchEvent(new CustomEvent('voice-live-segment',{detail:{text}}))}
   function closePrivate(){generation++;clearTimeout(batchTimer);batch='';preview.textContent='';microphoneOff();if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}stateChanged('idle')}
@@ -52,7 +55,9 @@
     if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:end?'finish':'pause'}));else fail('Bağlantı kesildi.');
   }
   start.addEventListener('click',begin);pause.addEventListener('click',()=>stop(false));finish.addEventListener('click',()=>stop(true));
-  root.addEventListener('voice-review-state',event=>{reviewBlocked=event.detail.blocked;start.disabled=reviewBlocked||!['idle','paused','error'].includes(state)});
+  root.addEventListener('voice-review-state',event=>{reviewBlocked=event.detail.blocked;
+    if(finished&&state==='idle'){const title=panel.querySelector('[data-live-title]');if(title)title.textContent=event.detail.finalBusy?'Muayene değerlendiriliyor':event.detail.processing?'Konuşma işleniyor':event.detail.finalReady?'Muayene tamamlandı':'Dinleme tamamlandı'}
+    start.disabled=reviewBlocked||!['idle','paused','error'].includes(state)});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='listening'){stream?.getTracks().forEach(track=>track.stop());stop(false)}});
   root.addEventListener('voice-live-stop',()=>stop(false));root.addEventListener('voice-private-clear',closePrivate);
   window.addEventListener('pagehide',closePrivate);
