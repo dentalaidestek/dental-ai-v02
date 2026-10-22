@@ -54,6 +54,15 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  assert.ok(emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text==='Soğuk içemiyorum.'));
  assert.ok(!emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text.includes('sensitive')));
  events.pagehide();assert.equal(get('[data-live-preview]').textContent,'');
+ const previousSocket=lastSocket;
+ box.navigator.mediaDevices.getUserMedia=async()=>{const e=new Error('denied');e.name='NotAllowedError';throw e};
+ await get('[data-live-start]').handlers.click();
+ assert.equal(lastSocket,previousSocket,'Permission denial must not open provider socket');
+ assert.equal(root.dataset.hasListened,'false');assert.equal(get('[data-live-title]').textContent,'Mikrofon açılamadı');
+ assert.equal(get('[data-live-finish]').hidden,true);assert.equal(get('[data-live-start]').textContent,'Tekrar dene');
+ assert.ok(get('[data-live-status]').textContent.includes('Chrome'));
+ assert.ok(!get('[data-live-status]').textContent.includes('Son konuşma bölümü'));
+ events.pagehide();
  console.log('Live controller: consent, continuous PCM, interim/final separation, finish flush and microphone cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
 

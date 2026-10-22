@@ -36,10 +36,12 @@
   </section>
 
   <section class="visual-card-grid" aria-label="Ana işlemler">
-    <a class="visual-feature-card visual-voice visual-photo-card" data-voice-entry href="/voice-exams" hidden>
+    {% if voice_exam_enabled() and user and user.role in ["DOCTOR", "ADMIN"] %}
+    <a class="visual-feature-card visual-voice visual-photo-card" data-voice-entry href="/voice-exams">
       <div class="visual-art"><img src="/static/dashboard/mobile/voice_exam.webp" alt="" decoding="async"></div>
       <div class="visual-card-copy"><strong>Sesli Muayene</strong><small>Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et.</small></div><span class="visual-arrow">›</span>
     </a>
+    {% endif %}
 
     <a class="visual-feature-card visual-patients" href="/patients">
       <div class="visual-art"><img src="/static/dashboard/mobile/patients_clinic.webp" alt="" decoding="async"></div>
@@ -121,5 +123,6 @@
     }
   });
 </script>
-<script src="/static/voice-exam-entry.js?v=1" defer></script>
+
 {% endblock %}
+

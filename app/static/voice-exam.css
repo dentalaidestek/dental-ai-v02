@@ -127,3 +127,11 @@ body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bott
 /* Keep failed extraction text and its retry action reachable. */
 .voice-exam[data-show-review="true"]>.voice-exam-body>details:not(.voice-history){display:block!important}
 .voice-exam[data-show-review="true"]>.voice-exam-body>details:not(.voice-history)>summary{display:list-item}
+
+/* Preparation needs a compact action, not a second oversized microphone screen. */
+.voice-exam[data-has-listened="false"] .voice-microphone,.voice-exam[data-has-listened="false"] .voice-wave,.voice-exam[data-has-listened="false"] .voice-live-timer{display:none}
+.voice-exam[data-has-listened="false"] [data-live-panel]{min-height:0;padding:18px 0}
+.voice-exam[data-has-listened="false"] .voice-live-heading{font-size:22px!important;margin-bottom:16px!important}
+.voice-exam[data-has-listened="false"] [data-live-title]{font-size:19px}
+.voice-exam[data-has-listened="false"] [data-live-panel]{background:transparent;border:0;box-shadow:none}
+.voice-exam[data-live-state="error"] [data-live-status]{color:#a13e35;text-align:left}

@@ -3,24 +3,27 @@
   const panel=root.querySelector('[data-live-panel]');if(!panel)return;
   const start=panel.querySelector('[data-live-start]'),pause=panel.querySelector('[data-live-pause]'),finish=panel.querySelector('[data-live-finish]'),status=panel.querySelector('[data-live-status]'),preview=panel.querySelector('[data-live-preview]'),consent=root.querySelector('[data-voice-consent]');
   let socket=null,stream=null,ctx=null,node=null,source=null,state='idle',reviewBlocked=false,generation=0,finished=false,batch='',batchTimer=null,setupTimer=null,flushDone=null,sessionTimer=null;
-  let elapsed=0,clock=null,clockStarted=0;
+  let elapsed=0,clock=null,clockStarted=0,hasListened=false;
   const reviewButton=panel.querySelector('[data-live-review]'),subtitle=panel.querySelector('[data-live-subtitle]'),timerLabel=panel.querySelector('[data-live-timer]');
   function drawTime(){if(timerLabel){const seconds=Math.floor((elapsed+(clockStarted?Date.now()-clockStarted:0))/1000);timerLabel.textContent=String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')}}
   function stopClock(){if(clockStarted)elapsed+=Date.now()-clockStarted;clockStarted=0;clearInterval(clock);clock=null;drawTime()}
   const announce=(text)=>{status.textContent=text};
-  function stateChanged(next){state=next;root.dataset.liveState=next;root.dataset.liveFinished=String(finished);
+  function stateChanged(next){state=next;root.dataset.liveState=next;root.dataset.liveFinished=String(finished);root.dataset.hasListened=String(hasListened);root.dataset.liveStarted=String(hasListened||next==='listening');
+    if(next==='listening')hasListened=true;
+    root.dataset.hasListened=String(hasListened);
     if(next==='listening'&&!clockStarted){clockStarted=Date.now();clock=setInterval(drawTime,1000)}else if(next!=='listening')stopClock();
     if(subtitle)subtitle.textContent=next==='listening'?'Mikrofon açık':'Mikrofon kapalı';
     start.hidden=!['idle','paused','error'].includes(next)||finished;pause.hidden=next!=='listening';finish.hidden=!['listening','paused','error'].includes(next)||finished;
     if(reviewButton)reviewButton.hidden=!finished;
     
-    const title=panel.querySelector('[data-live-title]');if(title)title.textContent=({idle:finished?'Dinleme tamamlandı':'Başlamaya hazır',connecting:'Mikrofon hazırlanıyor',listening:'Dinleniyor',stopping:'Dinleme durduruluyor',paused:'Duraklatıldı',error:'Dinleme durdu'})[next]||next;
-    start.textContent=['paused','error'].includes(next)?'▶  Devam et':'Mikrofonu başlat';
+    const title=panel.querySelector('[data-live-title]');if(title)title.textContent=({idle:finished?'Dinleme tamamlandı':'Başlamaya hazır',connecting:'Mikrofon hazırlanıyor',listening:'Dinleniyor',stopping:'Dinleme durduruluyor',paused:'Duraklatıldı',error:hasListened?'Dinleme durdu':'Mikrofon açılamadı'})[next]||next;
+    start.textContent=next==='paused'||(next==='error'&&hasListened)?'▶  Devam et':next==='error'?'Tekrar dene':'Mikrofonu başlat';
+    if(next==='error'&&!hasListened)finish.hidden=true;
     start.disabled=reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused','error'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
   function microphoneOff(){node?.disconnect();if(node)node.port.onmessage=null;source?.disconnect();stream?.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{});node=null;source=null;stream=null;ctx=null;clearTimeout(setupTimer);clearTimeout(sessionTimer)}
   function emitBatch(){clearTimeout(batchTimer);batchTimer=null;if(!batch)return;const text=batch;batch='';root.dispatchEvent(new CustomEvent('voice-live-segment',{detail:{text}}))}
-  function closePrivate(){finished=false;stopClock();elapsed=0;drawTime();root.dataset.showReview='false';generation++;clearTimeout(batchTimer);batch='';preview.textContent='';microphoneOff();if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}stateChanged('idle')}
-  function fail(message){root.dataset.showReview='true';microphoneOff();emitBatch();socket?.close();socket=null;preview.textContent='';stateChanged('error');announce(message+' Son konuşma bölümü eksik olabilir; otomatik yeniden kayıt yapılmadı.')}
+  function closePrivate(){hasListened=false;finished=false;stopClock();elapsed=0;drawTime();root.dataset.showReview='false';generation++;clearTimeout(batchTimer);batch='';preview.textContent='';microphoneOff();if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}stateChanged('idle')}
+  function fail(message){root.dataset.showReview='true';microphoneOff();emitBatch();socket?.close();socket=null;preview.textContent='';stateChanged('error');announce(message+(hasListened?' Son konuşma bölümü eksik olabilir; otomatik yeniden kayıt yapılmadı.':''))}
   async function begin(){
     if(!consent.checked){announce('Önce görüşmedeki kişileri bilgilendirip aktarım onayını işaretle.');return}
     if(reviewBlocked||!['idle','paused','error'].includes(state))return;
@@ -55,7 +58,7 @@
       };
       socket.onerror=()=>{if(at===generation&&state!=='idle')fail('Canlı bağlantı kurulamadı.')};
       socket.onclose=()=>{if(at===generation&&['listening','connecting','stopping'].includes(state))fail('Canlı bağlantı kesildi.')};
-    }catch(error){if(at===generation)fail(error.name==='NotAllowedError'?'Mikrofon izni verilmedi.':'Canlı ses başlatılamadı.')}
+    }catch(error){if(at===generation)fail(error.name==='NotAllowedError'?'Mikrofon erişimi engellendi. Tarayıcıda dentalai.tr site izinlerinden mikrofonu açın. Uygulama içindeyseniz Android uygulama mikrofon iznini de kontrol edin veya sayfayı Chrome’da açın.':error.name==='NotFoundError'?'Kullanılabilir mikrofon bulunamadı. Cihaz bağlantısını kontrol edin.':error.name==='NotReadableError'?'Mikrofon kullanılamıyor. Mikrofonu kullanan diğer uygulamaları kapatıp tekrar deneyin.':'Canlı ses başlatılamadı.')}
   }
   async function stop(end){
     if(['paused','error'].includes(state)&&!end)return;

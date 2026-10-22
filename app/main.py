@@ -14228,3 +14228,7 @@ app.include_router(academic_quiz_interactions_router)
 from app.voice_exam import router as voice_exam_router, VoiceBodyLimitMiddleware
 app.include_router(voice_exam_router)
 app.add_middleware(VoiceBodyLimitMiddleware)
+
+# Render the voice entry with its final visibility; no asynchronous layout jump.
+from app.voice_exam_core import enabled as voice_exam_enabled
+templates.env.globals['voice_exam_enabled'] = voice_exam_enabled
