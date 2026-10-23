@@ -82,8 +82,37 @@ def review(prompt, data, schema, *, extraction=False):
                 logging.getLogger(__name__).warning('voice_claude_extraction wrapper=%s known_keys=%d', wrapper_kind, len(known))
                 if isinstance(nested, dict) and known and set(nested) <= set(schema['required']):
                     overlap = set(result) & set(nested)
-                    if any(result[key] != nested[key] for key in overlap):
-                        raise ValueError('Conflicting extraction wrapper')
+                    def empty(value):
+                        return not value or isinstance(value, dict) and all(empty(v) for v in value.values())
+                    nested = dict(nested)
+                    for key in overlap:
+                        if result[key] == nested[key]:
+                            continue
+                        if key == 'transcript':
+                            nested[key] = data.get('clinical_text', '')
+                        elif empty(result[key]):
+                            continue
+                        elif empty(nested[key]):
+                            nested[key] = result[key]
+                        elif key == 'uncertain' and isinstance(result[key], str) and isinstance(nested[key], str):
+                            nested[key] = result[key] + '\n' + nested[key]
+                        elif key == 'appointment' and isinstance(result[key], dict) and isinstance(nested[key], dict):
+                            evidence = data.get('clinical_text', '')
+                            left = {k: core.appointment_evidence_quote(result[key].get(k, ''), evidence)
+                                    for k in ('quote', 'acceptance_quote')}
+                            right = {k: core.appointment_evidence_quote(nested[key].get(k, ''), evidence)
+                                     for k in ('quote', 'acceptance_quote')}
+                            merged = {}
+                            for name in left:
+                                a, b = left[name], right[name]
+                                if not a or not b or a in b or b in a:
+                                    merged[name] = max((a, b), key=len)
+                                else:
+                                    raise ValueError('Conflicting extraction appointment')
+                            nested[key] = merged
+                        else:
+                            logging.getLogger(__name__).warning('voice_claude_extraction conflict_key=%s', key)
+                            raise ValueError('Conflicting extraction wrapper')
                     result = {key: value for key, value in result.items() if key not in extras} | nested
             missing = set(schema['required']) - set(result)
             logging.getLogger(__name__).warning('voice_claude_extraction missing=%s extra_count=%d',

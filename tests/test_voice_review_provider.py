@@ -102,3 +102,27 @@ def test_extraction_unpacks_single_known_data_wrapper_without_inventing_fields(m
     transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
         {'type': 'tool_use', 'name': 'clinical_extract', 'input': wrapped}]})
     assert provider.review('policy', {}, schema, extraction=True) == {**nested, 'appointment': {}}
+
+
+def test_wrapper_empty_placeholder_and_rewritten_transcript_do_not_hide_facts(monkeypatch):
+    keys = ['clinical_facts', 'fields', 'teeth', 'appointment', 'transcript']
+    schema = {'type': 'OBJECT', 'properties': {}, 'required': keys}
+    text = 'Bugün saat on yedide gelin.'
+    nested = {'clinical_facts': [], 'fields': {}, 'teeth': [], 'transcript': 'Farklı model özeti',
+              'appointment': {'quote': text, 'acceptance_quote': ''}}
+    wrapped = {'transcript': 'Başka özet', 'appointment': {'quote': '', 'acceptance_quote': ''}, 'data': nested}
+    transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': wrapped}]})
+    result = provider.review('policy', {'clinical_text': text}, schema, extraction=True)
+    assert result['appointment']['quote'] == text and result['transcript'] == text
+
+
+def test_wrapper_conflicting_nonempty_clinical_fields_are_rejected(monkeypatch):
+    keys = ['clinical_facts', 'fields', 'teeth', 'appointment']
+    schema = {'type': 'OBJECT', 'properties': {}, 'required': keys}
+    wrapped = {'fields': {'medications': 'A'}, 'data': {
+        'clinical_facts': [], 'fields': {'medications': 'B'}, 'teeth': [], 'appointment': {}}}
+    transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': wrapped}]})
+    with pytest.raises(ValueError, match='Conflicting'):
+        provider.review('policy', {}, schema, extraction=True)
