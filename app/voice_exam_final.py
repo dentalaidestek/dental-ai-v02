@@ -1,12 +1,10 @@
-"""One bounded final Gemini review; transient output, no automatic clinical writes."""
+"""One bounded final Claude review; transient output, no automatic clinical writes."""
 import json
-import os
-import re
-import urllib.request
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
 from app.voice_exam_sources import retrieve
+from app.voice_exam_review_provider import review
 
 
 def private_insights(value):
@@ -57,10 +55,6 @@ def finalize(context, insights, uncertain=""):
     if requests: options['requests'] = requests
     if context.get('literature_topics'): options['topics'] = context['literature_topics']
     evidence = retrieve(query, **options)
-    model = os.getenv('VOICE_EXAM_GEMINI_MODEL') or os.getenv('DENTAL_CLINICAL_AI_MODEL', 'gemini-3.5-flash-lite')
-    key = os.getenv('GEMINI_API_KEY', '')
-    if not key or not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}', model):
-        raise core.VoiceError('Son değerlendirme için Gemini yapılandırması hazır değil.')
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
@@ -69,6 +63,12 @@ def finalize(context, insights, uncertain=""):
         'clinical_items': {'type': 'ARRAY', 'items': {'type': 'OBJECT',
             'properties': {k: {'type': 'STRING'} for k in clinical_keys}, 'required': list(clinical_keys)}}},
         'required': ['summary', 'questions', 'contradictions', 'clinical_items']}
+    # Constrain identifiers at generation as well as checking them after output.
+    anchor_schema['properties']['field']['enum'] = list(fields)
+    clinical_schema = schema['properties']['clinical_items']['items']['properties']
+    clinical_schema['patient_field']['enum'] = list(fields)
+    if evidence['references']:
+        clinical_schema['source_id']['enum'] = [item['id'] for item in evidence['references']]
     prompt = '''Türkçe diş hekimi-hasta görüşmesinin sonunda BÜTÜN geçici klinik bağlamı değerlendir.
 İlaçlarla sınırlı kalma: başvuru yakınması, süre/tetikleyiciler, bulgular, sistemik öykü,
 alerji, mevcut ilaçlar, hekimin söylediği plan, eksik anamnez ve açık çelişkileri incele.
@@ -105,26 +105,10 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
     # Coaching stays in a separate transient UI and is not needed by this clinical call.
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references']}
-    from app.clinical_privacy import redact_direct_identifiers
-    payload = {'systemInstruction': {'parts': [{'text': prompt}]},
-        'contents': [{'role': 'user', 'parts': [{'text': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]}],
-        'generationConfig': {'temperature': 0, 'maxOutputTokens': 8192,
-            'responseMimeType': 'application/json', 'responseSchema': schema}}
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
-        from app.http_transport import urlopen
-        from app.provider_budget import reservation
-        request = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
-            data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
-        with reservation('gemini', model), urlopen(request, timeout=90) as response:
-            raw = response.read(core.MAX_RESPONSE + 1)
-        if len(raw) > core.MAX_RESPONSE:
-            raise ValueError('Response too large')
-        candidate = json.loads(raw)['candidates'][0]
-        if candidate.get('finishReason') != 'STOP':
-            raise ValueError('Incomplete final review')
-        result = json.loads(''.join(p.get('text', '') for p in candidate['content']['parts'] if not p.get('thought')))
+        result = review(prompt, data, schema)
         output = {k: _anchored(result.get(k), fields) for k in ('summary', 'questions', 'contradictions')}
         # A useful summary can always be grounded in the reviewed clinical fields.
         # Do not invent model findings when all generated anchors were discarded.
