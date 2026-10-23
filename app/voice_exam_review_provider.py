@@ -32,9 +32,10 @@ def review(prompt, data, schema, *, extraction=False):
         'system': prompt,
         'messages': [{'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]}
     if extraction:
-        # One forced, non-executable data tool avoids compiling the wide extraction
-        # grammar. normalize() still validates every clinical quotation and value.
+        # A strict, non-executable data tool guarantees the required structures.
+        # normalize() separately validates clinical quotations and values.
         payload['tools'] = [{'name': 'clinical_extract', 'description': 'Return the clinical extraction as structured data only.',
+                             'strict': True,
                              'input_schema': _schema(schema)}]
         payload['tool_choice'] = {'type': 'tool', 'name': 'clinical_extract'}
     else:

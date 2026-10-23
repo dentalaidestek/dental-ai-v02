@@ -81,7 +81,7 @@ def test_extraction_uses_one_forced_data_tool_without_compiled_output_grammar(mo
     assert provider.review('policy', {}, extract_schema, extraction=True) == result
     payload = json.loads(calls[0][0].data)
     assert payload['tool_choice'] == {'type': 'tool', 'name': 'clinical_extract'}
-    assert 'output_config' not in payload and 'strict' not in payload['tools'][0]
+    assert 'output_config' not in payload and payload['tools'][0]['strict'] is True
     assert len(calls) == 1
 
 
