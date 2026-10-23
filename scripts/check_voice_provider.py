@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import os
+from pathlib import Path
 
 
 async def live_check():
@@ -27,19 +28,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-paid-checks', action='store_true')
     parser.add_argument('--live', action='store_true')
+    parser.add_argument('--audio', type=Path, help='Synthetic audio file for an actual audio extraction, instead of the built-in text example')
+    parser.add_argument('--mime', default='audio/mpeg')
     args = parser.parse_args()
     if not args.run_paid_checks or not os.getenv('GEMINI_API_KEY'):
         print(json.dumps({'ok': False, 'code': 'OPT_IN_OR_PROVIDER_CREDENTIAL_MISSING'}));return 2
     try:
         from app.voice_exam_core import extract
         from app.voice_exam_final import finalize
-        result = extract(transcript='Hasta: Soğuk su içince sağ alt dişim ağrıyor. Hekim: Ne zamandır? Hasta: İki gündür.')
+        if args.audio:
+            from app.voice_exam_core import validate_audio
+            data = args.audio.read_bytes()
+            mime = validate_audio(data, args.mime)
+            result = extract(data=data, mime=mime)
+        else:
+            result = extract(transcript='Hasta: Soğuk su içince sağ alt dişim ağrıyor. Hekim: Ne zamandır? Hasta: İki gündür.')
         if not result['fields'].get('chief_complaint'): raise ValueError('No synthetic complaint')
         finalize({'fields': result['fields'], 'teeth': result['teeth']}, [], result['uncertain'])
         if args.live: asyncio.run(live_check())
     except Exception:
         print(json.dumps({'ok': False, 'code': 'SYNTHETIC_PROVIDER_CHECK_FAILED'}));return 1
-    print(json.dumps({'ok': True, 'code': 'SYNTHETIC_PROVIDER_CHECK_PASSED', 'live_handshake': args.live}));return 0
+    print(json.dumps({'ok': True, 'code': 'SYNTHETIC_PROVIDER_CHECK_PASSED', 'live_handshake': args.live, 'audio_extraction': bool(args.audio)}));return 0
 
 
 if __name__ == '__main__': raise SystemExit(main())
