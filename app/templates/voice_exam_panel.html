@@ -25,7 +25,9 @@
       <p class="voice-help">Canlı döküm geçicidir. Bağlantı kesilirse mikrofon kapanır; önceki klinik özet korunur. Klinik değerlendirme konuşma bölümleri işlendikçe güncellenir.</p>
     </section>
     <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">İşlenen konuşmaya göre önerilen sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
-    <details><summary>Alternatif: bölüm kaydı veya metin</summary>
+    <details><summary>Alternatif: ses dosyası, bölüm kaydı veya metin</summary>
+    <label class="voice-field">Ses dosyasıyla dene <input type="file" data-voice-audio-file accept="audio/mpeg,audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mp4,.mp3,.wav,.webm,.ogg,.m4a" disabled></label>
+    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile işlenir; uygulama ses dosyasını saklamaz.</p>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
       <button type="button" data-voice-stop disabled>Duraklat ve işle</button>
@@ -73,7 +75,7 @@
   </div>
 </section>
 <link rel="stylesheet" href="/static/voice-exam.css?v=10">
-<script src="/static/voice-exam.js?v=8" defer></script>
+<script src="/static/voice-exam.js?v=9" defer></script>
 
 <script src="/static/voice-exam-live.js?v=5" defer></script>
 
