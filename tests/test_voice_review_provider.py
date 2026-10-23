@@ -91,3 +91,14 @@ def test_extraction_rejects_wrong_tool_or_incomplete_output(monkeypatch, name, r
         {'type': 'tool_use', 'name': name, 'input': {'items': []}}]})
     with pytest.raises(ValueError): provider.review('policy', {}, SCHEMA, extraction=True)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('encoded', [False, True])
+def test_extraction_unpacks_single_known_data_wrapper_without_inventing_fields(monkeypatch, encoded):
+    keys = ['clinical_facts', 'fields', 'teeth', 'appointment']
+    schema = {'type': 'OBJECT', 'properties': {}, 'required': keys}
+    nested = {'clinical_facts': [], 'fields': {}, 'teeth': []}
+    wrapped = {'appointment': {}, 'data': json.dumps(nested) if encoded else nested}
+    transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': wrapped}]})
+    assert provider.review('policy', {}, schema, extraction=True) == {**nested, 'appointment': {}}

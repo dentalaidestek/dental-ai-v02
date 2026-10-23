@@ -67,6 +67,24 @@ def review(prompt, data, schema, *, extraction=False):
             raise ValueError('Incomplete clinical extraction')
         result = blocks[0].get('input')
         if isinstance(result, dict):
+            # Some tool replies wrap the extraction in one object/JSON string.
+            # Unpack only recognized root keys; never infer medical content.
+            extras = set(result) - set(schema['required'])
+            if len(extras) == 1:
+                nested = result[next(iter(extras))]
+                wrapper_kind = 'object' if isinstance(nested, dict) else 'json' if isinstance(nested, str) else 'other'
+                if isinstance(nested, str):
+                    try:
+                        nested = json.loads(nested)
+                    except (ValueError, TypeError):
+                        nested = None
+                known = set(nested) & set(schema['required']) if isinstance(nested, dict) else set()
+                logging.getLogger(__name__).warning('voice_claude_extraction wrapper=%s known_keys=%d', wrapper_kind, len(known))
+                if isinstance(nested, dict) and known and set(nested) <= set(schema['required']):
+                    overlap = set(result) & set(nested)
+                    if any(result[key] != nested[key] for key in overlap):
+                        raise ValueError('Conflicting extraction wrapper')
+                    result = {key: value for key, value in result.items() if key not in extras} | nested
             missing = set(schema['required']) - set(result)
             logging.getLogger(__name__).warning('voice_claude_extraction missing=%s extra_count=%d',
                 ','.join(sorted(missing)), len(set(result) - set(schema['required'])))
