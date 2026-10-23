@@ -179,3 +179,31 @@ def test_final_only_submits_current_values_not_distracting_speech_quotes(monkeyp
     final.finalize(CONTEXT, [])
     fields = json.loads(calls[0]['contents'][0]['parts'][0]['text'])['clinical_fields']
     assert fields['chief_complaint'] == {'value': 'Soğukta ağrı'}
+
+
+def test_appointment_schema_requires_separate_proposal_and_acceptance():
+    assert core.schema()['properties']['appointment']['required'] == ['quote', 'acceptance_quote']
+
+
+def test_audio_shaped_appointment_normalization_resolves_real_trial_wording():
+    from datetime import datetime
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+    proposal = "Yarın öğleden sonra 3.30'da kontrole gelebilir misiniz?"
+    acceptance = "Yarın 15.30'da gelirim, tamam hocam."
+    now = datetime(2026, 10, 23, 12, 0, tzinfo=ZoneInfo('Europe/Istanbul'))
+    original = core.resolve_appointment
+    with patch.object(core, 'resolve_appointment', side_effect=lambda q, a: original(q, a, now)):
+        result = core.normalize({'transcript': proposal + ' ' + acceptance, 'appointment': {
+            'quote': proposal, 'acceptance_quote': acceptance}})
+    assert result['appointment']['start_at'] == '2026-10-24T15:30'
+    assert result['appointment']['agreed'] is True
+    assert result['appointment']['resolution_status'] == 'agreed'
+
+
+def test_unanchored_or_absent_acceptance_cannot_create_a_calendar_time():
+    proposal = 'Yarın 15:30 gelin.'
+    for acceptance in ('', 'Tamam, gelirim.'):
+        result = core.normalize({'transcript': proposal, 'appointment': {'quote': proposal, 'acceptance_quote': acceptance}})
+        assert not result['appointment'].get('start_at')
+        assert not result['appointment'].get('agreed')

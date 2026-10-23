@@ -483,3 +483,18 @@ def test_standalone_session_is_owned_private_and_anonymous_redirects(app_client,
     result = client.post('/voice-exams/anonymous', follow_redirects=False)
     assert result.headers['location'].startswith('/voice-exams/')
     assert result.headers['location'].endswith('/session')
+
+
+def test_spoken_appointment_saves_on_agreed_day_for_selected_patient_only_once(app_client):
+    from zoneinfo import ZoneInfo
+    client, engine = app_client
+    start = core.resolve_appointment("Yarın öğleden sonra 3.30'da kontrole gelebilir misiniz?",
+        "Yarın 15.30'da gelirim, tamam hocam.", datetime(2026, 10, 23, 12, tzinfo=ZoneInfo('Europe/Istanbul')))
+    assert start == '2026-10-24T15:30'
+    data = payload(engine, fields={}, appointment={'title': 'Kontrol randevusu', 'start_at': start})
+    first = client.post('/patients/1/voice-exam/apply', json=data)
+    assert first.status_code == 200
+    assert client.post('/patients/1/voice-exam/apply', json=data).status_code == 200
+    with Session(engine) as session:
+        event = session.exec(select(ScheduleEvent)).one()
+        assert (event.patient_id, event.owner_user_id, event.start_at) == (1, 1, '2026-10-24T15:30')

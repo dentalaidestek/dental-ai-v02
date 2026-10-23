@@ -232,12 +232,14 @@ def normalize(result, evidence=None):
         quote = _string(appointment.get('quote', ''), 2000)
         # Keep the utterance, not a model-invented calendar date.
         if quote and quote in anchor:
-            output['appointment'] = {'quote': quote}
-            acceptance = _string(appointment.get('acceptance_quote', ''), 200)
+            output['appointment'] = {'quote': quote, 'resolution_status': 'acceptance_missing'}
+            acceptance = _string(appointment.get('acceptance_quote', ''), 1500)
+            if acceptance: output['appointment']['resolution_status'] = 'acceptance_not_anchored'
             if acceptance and acceptance in anchor:
+                output['appointment'].update(acceptance_quote=acceptance, resolution_status='time_unresolved')
                 resolved = resolve_appointment(quote, acceptance)
                 if resolved:
-                    output['appointment'].update(start_at=resolved, acceptance_quote=acceptance, agreed=True)
+                    output['appointment'].update(start_at=resolved, acceptance_quote=acceptance, agreed=True, resolution_status='agreed')
     return output
 
 
@@ -256,7 +258,7 @@ def schema():
         'teeth': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
             'tooth': {'type': 'STRING'}, 'status': {'type': 'STRING', 'enum': sorted(TOOTH_STATES)},
             'quote': {'type': 'STRING'}}, 'required': ['tooth', 'status', 'quote']}},
-        'appointment': {'type': 'OBJECT', 'properties': {'quote': {'type': 'STRING'}, 'acceptance_quote': {'type': 'STRING'}}}},
+        'appointment': {'type': 'OBJECT', 'properties': {'quote': {'type': 'STRING'}, 'acceptance_quote': {'type': 'STRING'}}, 'required': ['quote', 'acceptance_quote']}},
         'required': ['transcript', 'fields', 'teeth', 'uncertain', 'appointment', 'communication', 'decision_barriers', 'follow_up_questions', 'source_requests', 'literature_topics', 'removed_fields', 'removed_teeth']}
 
 
@@ -272,7 +274,12 @@ transcript içinde bu tür hekim önerisi bulunuyorsa plan alanını boş bırak
 dayanakla koşullu biçimini koru. Anlaşılmayan işlem adını tahmin ederek düzeltme.
 Randevu konuşulmuş ve kabul edilmişse appointment içinde öneri ve kabul alıntılarını
 mutlaka üret. Her istenen dizi anahtarı çıktıda bulunsun; bilgi yoksa boş dizi yaz.
-Randevu yoksa appointment boş nesne olsun. Korku ve ücret ifadelerini atlama.
+appointment.quote ve appointment.acceptance_quote her yanıtta bulunmalı; randevu yoksa
+ikisini de boş metin olarak yaz. quote yalnız hekimin son gün/saat önerisidir;
+hastanın kabul cümlesini quote içine birleştirme, acceptance_quote içinde ayrı ver.
+Örnek: quote="Yarın öğleden sonra 3.30’da kontrole gelebilir misiniz?",
+acceptance_quote="Yarın 15.30’da gelirim, tamam hocam.". Kaynaktaki rakam, noktalama
+ve kesme işaretlerini değiştirmeden birebir kopyala. Korku ve ücret ifadelerini atlama.
 Türkçe diş hekimi-hasta görüşmesini işle. transcript alanında yalnız muayeneyle ilgili
 konuşma bölümlerini tut; ilişki, aile içi olay, cinsellik, iş/gelir ayrıntısı, üçüncü kişi
 isimleri ve muayeneyle ilgisiz özel hayat anlatılarını tekrar etme. Klinik açıdan gerekli
@@ -447,6 +454,8 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
                 result['uncertain'] = (result['uncertain'] + '\nÖnceki randevu ifadesi yeni bölümde doğrulanmadı; tekrar kontrol edin.').strip()
             logging.getLogger(__name__).info('voice_extract outcome=ok duration_ms=%d fields=%d teeth=%d questions=%d',
                 (time.monotonic()-started)*1000, len(result['fields']), len(result['teeth']), len(result.get('follow_up_questions', [])))
+            if result['appointment']:
+                logging.getLogger(__name__).warning('voice_appointment status=%s', result['appointment']['resolution_status'])
             return result
         except VoiceError as exc:
             category = {'Anlaşılır konuşma bulunamadı. Metni elle girebilirsin.': 'empty_clinical_text', 'Ses çözümlemesi tamamlanmadı; kısmi sonuç kaydedilmedi.': 'incomplete_generation', 'Ses çözümlemesi çıktı sınırını aştı.': 'response_size_limit'}.get(str(exc), 'schema_validation')
