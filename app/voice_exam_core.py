@@ -573,8 +573,8 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
         except Exception as exc:
             status = getattr(exc, 'code', None)
             status = status if isinstance(status, int) and 100 <= status <= 599 else 0
-            logging.getLogger(__name__).warning('voice_extract outcome=provider_or_parse_failure http_status=%d duration_ms=%d',
-                status, (time.monotonic()-started)*1000)
+            logging.getLogger(__name__).warning('voice_extract outcome=provider_or_parse_failure http_status=%d error_type=%s duration_ms=%d',
+                status, type(exc).__name__, (time.monotonic()-started)*1000)
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
