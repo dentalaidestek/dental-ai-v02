@@ -58,6 +58,7 @@ def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch
     calls = []
     def review(prompt, data, schema):
         calls.append(data)
+        assert schema['properties']['fields']['required'] == list(core.FIELDS)
         return {'transcript': 'Modelin eksik yeniden yazımı', 'fields': {}, 'clinical_facts': []}
     monkeypatch.setattr(provider, 'review', review)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)

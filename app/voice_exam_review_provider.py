@@ -1,7 +1,9 @@
 """One bounded Claude clinical review; no raw audio, retries or provider fallback."""
 import json
+import logging
 import os
 import re
+import urllib.error
 import urllib.request
 
 from app import voice_exam_core as core
@@ -35,8 +37,17 @@ def review(prompt, data, schema):
     request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
         data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
-    with reservation('anthropic', model), urlopen(request, timeout=90) as response:
-        raw = response.read(core.MAX_RESPONSE + 1)
+    try:
+        with reservation('anthropic', model), urlopen(request, timeout=90) as response:
+            raw = response.read(core.MAX_RESPONSE + 1)
+    except urllib.error.HTTPError as exc:
+        # Never log provider messages: they can include user data. Fixed categories only.
+        body = exc.read(65536).decode('utf-8', errors='replace').casefold()
+        category = ('schema_complexity' if 'complex' in body and 'schema' in body else
+                    'schema_optional_limit' if 'optional' in body else
+                    'schema_argument' if 'schema' in body else 'provider_argument')
+        logging.getLogger(__name__).warning('voice_claude_error status=%d category=%s', exc.code, category)
+        raise
     if len(raw) > core.MAX_RESPONSE:
         raise ValueError('Response too large')
     message = json.loads(raw)
