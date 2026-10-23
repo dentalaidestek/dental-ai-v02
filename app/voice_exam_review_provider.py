@@ -28,7 +28,7 @@ def review(prompt, data, schema, *, extraction=False):
     model = (os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5').strip()
     if not key or not re.fullmatch(r'claude-[A-Za-z0-9._-]{1,100}', model):
         raise core.VoiceError('Son değerlendirme için Claude yapılandırması hazır değil.')
-    payload = {'model': model, 'max_tokens': 8192, 'stream': False,
+    payload = {'model': model, 'max_tokens': 16384 if extraction else 8192, 'stream': False,
         'system': prompt,
         'messages': [{'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]}
     if extraction:
@@ -60,9 +60,25 @@ def review(prompt, data, schema, *, extraction=False):
     message = json.loads(raw)
     if extraction:
         blocks = [block for block in message.get('content', []) if block.get('type') == 'tool_use']
+        stop = message.get('stop_reason')
+        logging.getLogger(__name__).warning('voice_claude_extraction stop=%s tools=%d',
+            stop if stop in {'end_turn', 'tool_use', 'max_tokens', 'refusal', 'stop_sequence'} else 'other', len(blocks))
         if message.get('stop_reason') != 'tool_use' or len(blocks) != 1 or blocks[0].get('name') != 'clinical_extract':
             raise ValueError('Incomplete clinical extraction')
         result = blocks[0].get('input')
+        if isinstance(result, dict):
+            missing = set(schema['required']) - set(result)
+            logging.getLogger(__name__).warning('voice_claude_extraction missing=%s extra_count=%d',
+                ','.join(sorted(missing)), len(set(result) - set(schema['required'])))
+            # Optional coaching/checklist omissions do not erase valid clinical facts.
+            # Critical clinical structures must always be present and normalize()
+            # validates their values and quotations before anything reaches the UI.
+            if not {'clinical_facts', 'fields', 'teeth', 'appointment'} <= set(result):
+                raise ValueError('Missing clinical extraction')
+            defaults = {'transcript': '', 'uncertain': '', **{key: [] for key in
+                ('communication', 'decision_barriers', 'follow_up_questions', 'source_requests',
+                 'literature_topics', 'removed_fields', 'removed_teeth')}}
+            result = {key: result.get(key, defaults.get(key)) for key in schema['required']}
     else:
         if message.get('stop_reason') != 'end_turn':
             raise ValueError('Incomplete clinical review')

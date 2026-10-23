@@ -71,7 +71,14 @@ def test_missing_key_cannot_silently_fall_back_to_gemini(monkeypatch):
 def test_extraction_uses_one_forced_data_tool_without_compiled_output_grammar(monkeypatch):
     calls, _ = transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
         {'type': 'tool_use', 'name': 'clinical_extract', 'input': {'items': []}}]})
-    assert provider.review('policy', {}, SCHEMA, extraction=True) == {'items': []}
+    # The real extraction contract always includes these critical structures.
+    extract_schema = {'type': 'OBJECT', 'properties': {key: {'type': 'OBJECT'} for key in
+        ('clinical_facts', 'fields', 'teeth', 'appointment')},
+        'required': ['clinical_facts', 'fields', 'teeth', 'appointment']}
+    result = {key: {} for key in extract_schema['required']}
+    calls, _ = transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': result}]})
+    assert provider.review('policy', {}, extract_schema, extraction=True) == result
     payload = json.loads(calls[0][0].data)
     assert payload['tool_choice'] == {'type': 'tool', 'name': 'clinical_extract'}
     assert 'output_config' not in payload and 'strict' not in payload['tools'][0]
