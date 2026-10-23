@@ -32,7 +32,8 @@ DOCUMENTS = (
      ('dental', 'bleeding', 'physician', 'risk')),
     ('ada-mronj', 'ADA', 'Osteoporosis Medications and Medication-Related Osteonecrosis of the Jaw',
      'https://www.ada.org/resources/ada-library/oral-health-topics/osteoporosis-medications',
-     ('bifosfonat', 'bisfosfonat', 'denosumab', 'alendronat', 'zoledron', 'osteoporoz', 'osteonekroz'),
+     ('bifosfonat', 'bisfosfonat', 'denosumab', 'alendronat', 'zoledron', 'osteoporoz', 'osteonekroz',
+      'kemik erimesi', 'risedronat', 'ibandronat', 'antiresorptive medication osteonecrosis jaw'),
      ('dental', 'risk', 'extraction', 'antiresorptive')),
 )
 _lock = threading.Lock()

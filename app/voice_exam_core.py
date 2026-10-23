@@ -71,6 +71,16 @@ def resolve_appointment(quote, acceptance, now=None):
     now = now or datetime.now(ZoneInfo('Europe/Istanbul'))
     text = quote.casefold().replace('ı', 'i')
     accepted = acceptance.casefold().replace('ı', 'i')
+    sentences = re.split(r'(?<=[.!?])\s+', accepted)
+    if len(sentences) > 1:
+        # Ancillary statements after acceptance (e.g. bringing a document) are not
+        # calendar evidence. Never drop a later correction, time or cancellation.
+        tail = ' '.join(sentences[1:])
+        calendar_or_conflict = (r'\d|\b(?:ama|fakat|ancak|değil|olmaz|iptal|belki|bugün|yarin|'
+            r'sabah|akşam|gece|saat|hafta|pazartesi|sali|çarşamba|perşembe|cuma|cumartesi|pazar)\b|'
+            r'\b(?:gele|gelir|gelme)|' + '|'.join(re.escape(k) for k in SPOKEN_HOURS))
+        if not re.search(calendar_or_conflict, tail):
+            accepted = sentences[0]
     # Natural acceptance may repeat the agreed day/time and address the doctor.
     acceptance_times = re.findall(r'(?<![\d:])(\d{1,2})[:.](\d{2})(?!\d)', accepted)
     acceptance_core = re.sub(r'(?<![\d:])\d{1,2}[:.]\d{2}(?:[’\']?(?:da|de|ta|te))?', ' ', accepted)
@@ -474,6 +484,11 @@ Bir alanda birden çok bilgi varsa ayrı öğe üret. temporality CURRENT, HISTO
 PLANNED, NEGATED veya UNKNOWN olsun. Günlük ilaç yokluğu aralıklı ilaç yokluğu değildir.
 Mevcut ve önceki ilaç, önerilen ilaç, form, doz, uygulama aralığı, son kullanım,
 tetkik sonucu ve sistemik hastalık bilgilerini birbirini silmeden ayrı ayrı koru.
+Geçmiş ilaçlar da medications alanındadır; medical_history yalnız hastalık/tetkik
+öyküsüdür. Devam eden aralıklı tedavi, son dozu geçmişte yapıldı diye bitmiş tedavi
+sayılmaz; mevcut tedavi CURRENT, açıkça bırakılmış önceki tedavi HISTORICAL olur.
+Literatür konularında ilaç/sistemik öykü ile planlanan işlemin ilişkisini önceliklendir;
+aynı görüşmedeki genel ağrı ve restorasyon konuları bu bağlantıyı dışlamasın.
 Önerilen ilaç ve işlem plan alanındadır; kullanılmış/yapılmış gibi yazma.
 Bildiğim yok yanıtını ilgili soruyla değerlendir; bilmiyorum ile eşitleme.
 Söylenmeyen çürük veya yapılmamış çekim etiketi üretme. Belirsiz bulgu OTHER kalabilir.
