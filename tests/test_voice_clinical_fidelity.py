@@ -41,6 +41,17 @@ def test_explicit_caries_is_preserved():
     assert core.normalize({'transcript': quote, 'teeth': [{'tooth': '46', 'status': 'CARIES', 'quote': quote}]})['teeth'][0]['status'] == 'CARIES'
 
 
+@pytest.mark.parametrize('quote,expected', [
+    ('Sağ alt arka dişim kırıldı hocam.', False),
+    ('Numara dişin kalan kısmı dolguya uygun değil.', False),
+    ('46 numaralı diş kırık.', True),
+    ('Kırk altı numaralı diş kırık.', True),
+    ('146 numarası.', False)])
+def test_specific_tooth_requires_an_explicit_fdi_number_in_its_quotation(quote, expected):
+    result = core.normalize({'transcript': quote, 'teeth': [{'tooth': '46', 'status': 'OTHER', 'quote': quote}]})
+    assert bool(result['teeth']) is expected
+
+
 @pytest.mark.parametrize('query,topics', [
     ('', [{'topic': 'antiresorptive medication osteonecrosis jaw'}]),
     ('Kemik erimesi için tedavi alıyorum.', []),
