@@ -1,0 +1,86 @@
+[
+  [
+    "Hekim",
+    "Hoş geldiniz."
+  ],
+  [
+    "Hekim",
+    "Ağzınızdaki rahatsızlık ne zamandır var?"
+  ],
+  [
+    "Hasta",
+    "Birkaç gündür dilim yanıyor hocam."
+  ],
+  [
+    "Hasta",
+    "Ağzımda beyazlıklar da var, yemek yerken rahatsız ediyor."
+  ],
+  [
+    "Hekim",
+    "Kaç yaşındasınız, düzenli kullandığınız ilaç var mı?"
+  ],
+  [
+    "Hasta",
+    "Yetmiş altı yaşındayım."
+  ],
+  [
+    "Hasta",
+    "Bacağımdaki pıhtı tekrar ettiği için yedi yıldır varfarin kullanıyorum."
+  ],
+  [
+    "Hasta",
+    "Günde beş miligram alıyorum."
+  ],
+  [
+    "Hekim",
+    "Kan tahlillerinizi düzenli yaptırıyor musunuz?"
+  ],
+  [
+    "Hekim",
+    "Son INR sonucunuz nasıldı?"
+  ],
+  [
+    "Hasta",
+    "Ayda bir baktırıyorum."
+  ],
+  [
+    "Hasta",
+    "İkiyle üç arasında çıkıyor."
+  ],
+  [
+    "Hasta",
+    "Son kontrolde de öyleydi."
+  ],
+  [
+    "Hekim",
+    "Ağızda mantar enfeksiyonu var."
+  ],
+  [
+    "Hekim",
+    "Mikonazol ağız jeli kullanmayı düşünüyorum."
+  ],
+  [
+    "Hekim",
+    "Henüz başlamadınız, değil mi?"
+  ],
+  [
+    "Hasta",
+    "Hayır, başlamadım."
+  ],
+  [
+    "Hasta",
+    "Kan sulandırıcımı her gün alıyorum."
+  ],
+  [
+    "Hasta",
+    "İkisini birlikte kullanabilir miyim?"
+  ],
+  [
+    "Hekim",
+    "İlaç listenizi ve son tahlilinizi görelim."
+  ],
+  [
+    "Hekim",
+    "Tedavi planını bunları değerlendirip netleştirelim."
+  ]
+]
