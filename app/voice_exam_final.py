@@ -95,12 +95,15 @@ yaşı/dişlenmesi bilinmeyen hastaya genelleme. İlişkisiz yayınları kullanm
 clinical_items: yalnız verilen belge/yayın özeti içeriğiyle desteklenmiş en çok 8 koşullu
 hekim kontrol noktası. patient_field verilen alan; patient_quote onun value içinden,
 source_quote ilgili sources.excerpts içinden birebir alıntı, source_id verilen kaynak.
+source_quote KAYNAĞIN ORİJİNAL DİLİNDE kalsın; çevirme, üç nokta ekleme, kelime
+değiştirme. patient_quote yalnız clinical_fields.value içinden kopyalansın. Türkçe
+açıklamayı consideration alanına yaz. Göndermeden önce her iki alıntıyı birebir kontrol et.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
     # Coaching stays in a separate transient UI and is not needed by this clinical call.
-    data = {'clinical_fields': fields, 'teeth': context.get('teeth', []),
+    data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references']}
     from app.clinical_privacy import redact_direct_identifiers
     payload = {'systemInstruction': {'parts': [{'text': prompt}]},
@@ -131,10 +134,15 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
             {'field': name, 'quote': field['value'], 'text': field['value']}
             for name, field in fields.items() if name not in covered)
         output['summary'] = output['summary'][:12]
-        output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'])
+        rejected_reasons = {}
+        output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'], diagnostics=rejected_reasons)
         review_status = {'source_count': len(evidence['references']),
                          'unavailable_count': len(evidence['unavailable']),
-                         'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items'])}
+                         'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
+                         'rejection_reasons': rejected_reasons}
+        import logging
+        logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
+            len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
         return {**output, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
                 'coverage': evidence['coverage'], 'notice': evidence['notice']}
     except Exception:

@@ -89,3 +89,18 @@ def test_empty_pubmed_status_is_preserved_on_cache_hit(monkeypatch):
     monkeypatch.setattr(pubmed, '_get', lambda *args: (calls.append(args) or b'{"esearchresult":{"idlist":[]}}'))
     first = pubmed.retrieve_literature('ağrı')
     assert first == pubmed.retrieve_literature('ağrı') and first[1] and len(calls) == 1
+
+
+def test_rejection_diagnostics_contain_only_reason_counts():
+    fields = {'allergies': {'value': 'Antibiyotik döküntüsü', 'quote': 'Bir antibiyotik döküntü yapmıştı.'}}
+    refs = [{'id': 's', 'excerpts': ['Original English source excerpt.']}]
+    item = {'source_id': 's', 'source_quote': refs[0]['excerpts'][0], 'patient_field': 'allergies',
+            'patient_quote': fields['allergies']['quote'], 'consideration': 'Test', 'missing_information': '', 'alternative': ''}
+    diagnostics = {}
+    assert grounded_items({'items': [item]}, fields, refs, diagnostics) == []
+    assert diagnostics == {'patient_quote_mismatch': 1}
+    assert fields['allergies']['quote'] not in json.dumps(diagnostics)
+    item.update(patient_quote='Antibiyotik', source_quote='Translated source excerpt')
+    diagnostics = {}
+    assert grounded_items({'items': [item]}, fields, refs, diagnostics) == []
+    assert diagnostics == {'source_quote_mismatch': 1}

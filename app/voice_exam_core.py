@@ -64,7 +64,16 @@ def resolve_appointment(quote, acceptance, now=None):
     now = now or datetime.now(ZoneInfo('Europe/Istanbul'))
     text = quote.casefold().replace('ı', 'i')
     accepted = acceptance.casefold().replace('ı', 'i')
-    if not re.fullmatch(r'(?:evet|tamam|olur|anlaştik|uygun|gelebilirim|gelirim)[.! ]*', accepted):
+    # Natural acceptance may repeat the agreed day/time and address the doctor.
+    acceptance_times = re.findall(r'(?<![\d:])(\d{1,2})[:.](\d{2})(?!\d)', accepted)
+    acceptance_core = re.sub(r'(?<![\d:])\d{1,2}[:.]\d{2}(?:[’\']?(?:da|de|ta|te))?', ' ', accepted)
+    for day_word in ('yarin', 'bugün'):
+        if day_word in acceptance_core:
+            if day_word not in text: return None
+            acceptance_core = acceptance_core.replace(day_word, ' ')
+    acceptance_core = re.sub(r'[.!?,;]+', ' ', acceptance_core)
+    acceptance_core = re.sub(r'\bhocam\b', ' ', acceptance_core).strip()
+    if not re.fullmatch(r'(?:evet|tamam|olur|anlaştik|uygun|gelebilirim|gelirim)(?:\s+(?:evet|tamam|olur|anlaştik|uygun|gelebilirim|gelirim))*', acceptance_core):
         return None
     if any(word in text for word in ('belki', 'değil', 'olmaz', 'iptal', 'geleme', 'uymaz', 'sabah mi', 'akşam mi')):
         return None
@@ -88,9 +97,14 @@ def resolve_appointment(quote, acceptance, now=None):
             if afternoon: hour += 12
             elif not morning: return None
         times = [(str(hour), '00')]
-    if len(times) != 1:
+    afternoon = any(word in text for word in ('öğleden sonra', 'akşam'))
+    morning = any(word in text for word in ('sabah', 'gece'))
+    if afternoon and morning: return None
+    normalized_times = {(int(hour) + (12 if afternoon and int(hour) < 12 else 0), int(minute)) for hour, minute in times}
+    if len(normalized_times) != 1: return None
+    hour, minute = normalized_times.pop()
+    if acceptance_times and {(int(h), int(m)) for h, m in acceptance_times} != {(hour, minute)}:
         return None
-    hour, minute = map(int, times[0])
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         return None
     dates = re.findall(r'(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4})(?!\d)', text)

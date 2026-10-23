@@ -156,3 +156,26 @@ def test_rendered_entry_and_finish_controls_are_present():
     panel = env.get_template('voice_exam_panel.html').render(patient=SimpleNamespace(id=7))
     assert 'data-voice-finalize' in panel and 'data-voice-final-results' in panel
     assert 'data-voice-history-confirm' in panel and 'data-voice-save disabled' in panel
+
+
+@pytest.mark.parametrize('quote,acceptance,expected', [
+    ("Yarın öğleden sonra 3.30'da kontrole gelebilir misiniz?", "Yarın 15.30'da gelirim, tamam hocam.", '2026-10-23T15:30'),
+    ("Yarın öğleden sonra 3.30'da gelin. Yarın 15.30'da gelirim.", "Yarın 15.30'da gelirim, tamam hocam.", '2026-10-23T15:30'),
+    ('Yarın 15:30 gelin.', 'Tamam hocam, gelirim.', '2026-10-23T15:30'),
+    ('Yarın 15:30 gelin.', 'Tamam ama gelemeyebilirim.', None),
+    ('Yarın 15:30 gelin.', 'Yarın 16.30 gelirim, tamam hocam.', None),
+    ('Yarın 15:30 gelin.', 'Bugün 15.30 gelirim, tamam hocam.', None),
+    ('Yarın 15:30 veya 16:00 gelin.', 'Tamam hocam.', None),
+])
+def test_natural_appointment_acceptance_keeps_time_and_day_agreement(quote, acceptance, expected):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 10, 22, 10, 0, tzinfo=ZoneInfo('Europe/Istanbul'))
+    assert core.resolve_appointment(quote, acceptance, now) == expected
+
+
+def test_final_only_submits_current_values_not_distracting_speech_quotes(monkeypatch):
+    calls = provider(monkeypatch, {'summary': [], 'questions': [], 'contradictions': [], 'clinical_items': []})
+    final.finalize(CONTEXT, [])
+    fields = json.loads(calls[0]['contents'][0]['parts'][0]['text'])['clinical_fields']
+    assert fields['chief_complaint'] == {'value': 'Soğukta ağrı'}
