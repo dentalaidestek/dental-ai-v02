@@ -207,3 +207,14 @@ def test_unanchored_or_absent_acceptance_cannot_create_a_calendar_time():
         result = core.normalize({'transcript': proposal, 'appointment': {'quote': proposal, 'acceptance_quote': acceptance}})
         assert not result['appointment'].get('start_at')
         assert not result['appointment'].get('agreed')
+
+
+def test_appointment_quote_formatting_recovers_original_span_without_fuzzy_numbers():
+    proposal = "Yarın öğleden sonra 3.30'da kontrole gelebilir misiniz?"
+    acceptance = "Yarın 15.30'da gelirim, tamam hocam."
+    text = proposal + ' ' + acceptance
+    assert core.appointment_evidence_quote("Yarın öğleden sonra 3:30’da kontrole gelebilir misiniz?", text) == proposal[:-1]
+    assert core.appointment_evidence_quote("YARIN 15:30’da gelirim, tamam hocam", text) == acceptance[:-1]
+    assert not core.appointment_evidence_quote("Yarın 16:30'da gelirim", text)
+    assert not core.appointment_evidence_quote('Tamam gelirim', 'Tamam ama gelirim diyemem.')
+    assert not core.appointment_evidence_quote('Tamam', 'Tamamlayamam.')

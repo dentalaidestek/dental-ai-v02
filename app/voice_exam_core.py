@@ -135,6 +135,26 @@ def resolve_appointment(quote, acceptance, now=None):
         return None
 
 
+def appointment_evidence_quote(quote, evidence):
+    """Recover the original span after formatting-only differences in a quote.
+
+    Case, whitespace, dot/colon time punctuation and apostrophe styles may vary.
+    Every word and numeric token must still occur consecutively, in order.
+    No number translation, date inference or fuzzy semantic matching is allowed.
+    """
+    if not quote: return ''
+    if re.search(r'(?<!\w)' + re.escape(quote) + r'(?!\w)', evidence): return quote
+    pattern = r'\d+|[^\W\d_]+'
+    wanted = [m.group().casefold().replace('ı', 'i').replace('\u0307', '') for m in re.finditer(pattern, quote)]
+    tokens = list(re.finditer(pattern, evidence))
+    if not wanted: return ''
+    values = [m.group().casefold().replace('ı', 'i').replace('\u0307', '') for m in tokens]
+    for index in range(len(values) - len(wanted) + 1):
+        if values[index:index + len(wanted)] == wanted:
+            return evidence[tokens[index].start():tokens[index + len(wanted) - 1].end()]
+    return ''
+
+
 def normalize(result, evidence=None):
     """Only retain suggestions with an exact quotation in the transcript."""
     if not isinstance(result, dict):
@@ -229,11 +249,15 @@ def normalize(result, evidence=None):
             output['teeth'].append({'tooth': number, 'status': tooth['status'], 'quote': quote})
     appointment = result.get('appointment')
     if isinstance(appointment, dict):
-        quote = _string(appointment.get('quote', ''), 2000)
+        raw_quote = _string(appointment.get('quote', ''), 2000)
+        raw_acceptance = _string(appointment.get('acceptance_quote', ''), 1500)
+        quote = appointment_evidence_quote(raw_quote, anchor)
+        acceptance = appointment_evidence_quote(raw_acceptance, anchor)
+        logging.getLogger(__name__).warning('voice_appointment_anchor proposal_present=%d proposal_anchored=%d acceptance_present=%d acceptance_anchored=%d',
+            bool(raw_quote), bool(quote), bool(raw_acceptance), bool(acceptance))
         # Keep the utterance, not a model-invented calendar date.
         if quote and quote in anchor:
             output['appointment'] = {'quote': quote, 'resolution_status': 'acceptance_missing'}
-            acceptance = _string(appointment.get('acceptance_quote', ''), 1500)
             if acceptance: output['appointment']['resolution_status'] = 'acceptance_not_anchored'
             if acceptance and acceptance in anchor:
                 output['appointment'].update(acceptance_quote=acceptance, resolution_status='time_unresolved')
