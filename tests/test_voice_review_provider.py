@@ -66,3 +66,21 @@ def test_missing_key_cannot_silently_fall_back_to_gemini(monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'present-but-not-used')
     with pytest.raises(core.VoiceError, match='Claude'):
         provider.review('policy', {}, SCHEMA)
+
+
+def test_extraction_uses_one_forced_data_tool_without_compiled_output_grammar(monkeypatch):
+    calls, _ = transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': {'items': []}}]})
+    assert provider.review('policy', {}, SCHEMA, extraction=True) == {'items': []}
+    payload = json.loads(calls[0][0].data)
+    assert payload['tool_choice'] == {'type': 'tool', 'name': 'clinical_extract'}
+    assert 'output_config' not in payload and 'strict' not in payload['tools'][0]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('name,reason', [('other_tool', 'tool_use'), ('clinical_extract', 'max_tokens'), ('clinical_extract', 'end_turn')])
+def test_extraction_rejects_wrong_tool_or_incomplete_output(monkeypatch, name, reason):
+    calls, _ = transport(monkeypatch, {'stop_reason': reason, 'content': [
+        {'type': 'tool_use', 'name': name, 'input': {'items': []}}]})
+    with pytest.raises(ValueError): provider.review('policy', {}, SCHEMA, extraction=True)
+    assert len(calls) == 1
