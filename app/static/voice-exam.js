@@ -1,6 +1,7 @@
 (()=>{
   const root=document.getElementById('voice-exam');if(!root||root.dataset.bound)return;root.dataset.bound='true';
   const $=s=>root.querySelector(s),status=$('.voice-exam-status'),start=$('[data-voice-start]'),stop=$('[data-voice-stop]'),retry=$('[data-voice-retry]'),textButton=$('[data-voice-text]'),transcript=$('[data-voice-transcript]'),consent=$('[data-voice-consent]'),review=$('.voice-review'),save=$('[data-voice-save]');
+  const audioFile=$('[data-voice-audio-file]');
   const finalizeButton=$('[data-voice-finalize]');
   let failedLiveText='';
   let finalReady=false,finalBusy=false,finalRequested=false,finalSnapshot='',insights=[],historyFields={},historyRevision='',uncertainties=[],followups=[],sourceRequests=[],unprocessed=false;
@@ -21,6 +22,7 @@
     $('[data-voice-use-history]').hidden=true;$('[data-voice-history-confirm]').checked=false;
     root.dispatchEvent(new CustomEvent('voice-private-clear'));liveQueue=[];liveActive=false;epoch++;clearTimeout(clinicalTimer);lastClinicalInput='';lastClinicalKey='';clinicalRequest++;$('[data-voice-clinical]').disabled=false;pending.forEach(c=>c.abort());pending.clear();
     fieldState={};teethState=[];appointmentQuote='';appointmentContext=null;revision='';requestKey='';audio=null;
+    if(audioFile)audioFile.value='';
     transcript.value='';unsaved=false;review.hidden=true;retry.hidden=true;
     for(const selector of ['[data-voice-fields]','[data-voice-teeth]','[data-voice-communication]','[data-voice-source-results]','[data-voice-clinical-results]'])$(selector).replaceChildren();
     $('[data-voice-uncertain]').textContent='';$('[data-voice-appointment-quote]').textContent='';
@@ -33,7 +35,7 @@
   }
   const key=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   function message(text,error=false){status.textContent=text;status.classList.toggle('voice-error',error)}
-  function controls(){const stage=$('[data-voice-stage]');stage.textContent=finalBusy?'Son değerlendirme':recording||liveActive?'Görüşme sürüyor':busy||liveQueue.length?'Bilgiler işleniyor':finalReady?'Hekim onayı ve kayıt':review.hidden?'Başlamaya hazır':'Muayene taslağı';root.dispatchEvent(new CustomEvent('voice-review-state',{detail:{blocked:busy||recording||!!audio||finalBusy,processing:busy||liveQueue.length>0,finalBusy,finalReady}}));start.disabled=!available||busy||recording||liveActive||finalBusy;stop.disabled=!recording;textButton.disabled=!available||busy||recording||liveActive||finalBusy;save.disabled=!finalReady||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;finalizeButton.disabled=!available||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;const historyBlocked=busy||recording||liveActive||finalBusy;$('[data-voice-history]').disabled=historyBlocked;$('[data-voice-use-history]').disabled=historyBlocked;if(finalRequested&&!busy&&!recording&&!liveActive&&!liveQueue.length&&!finalBusy&&!audio&&!unprocessed){finalRequested=false;Promise.resolve().then(finalizeReview)};retry.disabled=busy||recording;consent.disabled=busy||recording||liveActive||finalBusy}
+  function controls(){if(audioFile)audioFile.disabled=!available||busy||recording||liveActive||finalBusy||!!audio;const stage=$('[data-voice-stage]');stage.textContent=finalBusy?'Son değerlendirme':recording||liveActive?'Görüşme sürüyor':busy||liveQueue.length?'Bilgiler işleniyor':finalReady?'Hekim onayı ve kayıt':review.hidden?'Başlamaya hazır':'Muayene taslağı';root.dispatchEvent(new CustomEvent('voice-review-state',{detail:{blocked:busy||recording||!!audio||finalBusy,processing:busy||liveQueue.length>0,finalBusy,finalReady}}));start.disabled=!available||busy||recording||liveActive||finalBusy;stop.disabled=!recording;textButton.disabled=!available||busy||recording||liveActive||finalBusy;save.disabled=!finalReady||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;finalizeButton.disabled=!available||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;const historyBlocked=busy||recording||liveActive||finalBusy;$('[data-voice-history]').disabled=historyBlocked;$('[data-voice-use-history]').disabled=historyBlocked;if(finalRequested&&!busy&&!recording&&!liveActive&&!liveQueue.length&&!finalBusy&&!audio&&!unprocessed){finalRequested=false;Promise.resolve().then(finalizeReview)};retry.disabled=busy||recording;consent.disabled=busy||recording||liveActive||finalBusy}
   function micOff(){clearInterval(timer);clearTimeout(deadline);stream?.getTracks().forEach(track=>track.stop());stream=null;recording=false;controls()}
   function invalidateFinal(){finalReady=false;finalSnapshot='';$('[data-voice-confirm]').checked=false;$('[data-voice-final-results]').textContent='Bilgiler değişti. Son değerlendirmeyi yeniden çalıştırın.';}
   function currentFields(){
@@ -91,6 +93,28 @@
       transcript.value=failedLiveText||result.review.transcript;merge(result);audio=null;retry.hidden=true;
     }catch(error){if(!disposed){finalRequested=false;message(error.message,true);retry.hidden=false}}finally{busy=false;controls()}
   }
+  function audioDuration(file){
+    return new Promise((resolve,reject)=>{
+      const objectURL=URL.createObjectURL(file),player=new Audio();let timeout;
+      function finish(error){clearTimeout(timeout);player.onloadedmetadata=null;player.onerror=null;player.removeAttribute('src');player.load();URL.revokeObjectURL(objectURL);error?reject(error):resolve()}
+      player.preload='metadata';
+      player.onloadedmetadata=()=>finish(!Number.isFinite(player.duration)||player.duration<=0||player.duration>90.5?Error('Ses dosyası en fazla 90 saniye olmalı. Daha kısa bir bölüm seç.'):null);
+      player.onerror=()=>finish(Error('Ses dosyası okunamadı. MP3, WAV veya WebM biçimini dene.'));
+      timeout=setTimeout(()=>finish(Error('Ses süresi okunamadı. Daha kısa bir MP3 veya WAV dosyası seç.')),8000);player.src=objectURL;
+    });
+  }
+  if(audioFile)audioFile.addEventListener('change',async()=>{
+    const file=audioFile.files?.[0];audioFile.value='';if(!file)return;
+    if(!consent.checked){message('Ses dosyasını işlemeden önce aktarım onayını işaretle.',true);return}
+    if(busy||recording||liveActive||finalBusy||audio||!available)return;
+    if(file.size<100||file.size>8*1024*1024){message('En fazla 8 MB ses dosyası seç.',true);return}
+    const supported=['audio/mpeg','audio/wav','audio/x-wav','audio/webm','audio/ogg','audio/mp4'];
+    if(!supported.includes(file.type)){message('MP3, WAV, WebM, Ogg veya M4A ses dosyası seç.',true);return}
+    busy=true;controls();message('Ses dosyasının süresi kontrol ediliyor…');const at=epoch;
+    try{await audioDuration(file);if(disposed||at!==epoch)return;audio=new Blob([file],{type:file.type==='audio/x-wav'?'audio/wav':file.type});unsaved=true;invalidateFinal()}
+    catch(error){message(error.message,true)}finally{busy=false;controls()}
+    if(!disposed&&at===epoch&&audio)await processAudio();
+  });
   start.addEventListener('click',async()=>{
     if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     if(audio){message('Önce bekleyen ses bölümünü işle veya taslağı temizle.',true);return}
