@@ -41,8 +41,31 @@ def test_explicit_caries_is_preserved():
     assert core.normalize({'transcript': quote, 'teeth': [{'tooth': '46', 'status': 'CARIES', 'quote': quote}]})['teeth'][0]['status'] == 'CARIES'
 
 
+@pytest.mark.parametrize('query,topics', [
+    ('', [{'topic': 'antiresorptive medication osteonecrosis jaw'}]),
+    ('Kemik erimesi için tedavi alıyorum.', []),
+    ('Geçmişte risedronat kullandım.', [])])
+def test_relevant_osteoporosis_source_is_selected_without_requiring_a_risk_diagnosis(monkeypatch, query, topics):
+    from app import voice_exam_sources as sources
+    from app import voice_exam_literature, voice_exam_dergipark, voice_exam_drugs
+    fetched = []
+    def fetch(doc):
+        fetched.append(doc[0])
+        return {'id': doc[0]}
+    monkeypatch.setattr(sources, '_fetch', fetch)
+    monkeypatch.setattr(voice_exam_literature, 'retrieve_literature', lambda *a, **k: ([], []))
+    monkeypatch.setattr(voice_exam_dergipark, 'retrieve_dergipark', lambda *a, **k: ([], []))
+    monkeypatch.setattr(voice_exam_drugs, 'retrieve_drugs', lambda *a, **k: [])
+    result = sources.retrieve(query, topics=topics)
+    assert 'ada-mronj' in fetched
+    assert result['coverage'] == 'limited'
+
+
 @pytest.mark.parametrize('acceptance,expected', [
     ('Tamam hocam, bugün beşte gelirim.', '2026-10-23T17:00'),
+    ('Tamam hocam, bugün beşte gelirim. Kartı da getiririm.', '2026-10-23T17:00'),
+    ('Tamam hocam, bugün beşte gelirim. Ama gelemeyebilirim.', None),
+    ('Tamam hocam, bugün beşte gelirim. Yarın demek istedim.', None),
     ('Tamam hocam, bugün altıda gelirim.', None),
     ('Tamam hocam, bugün sabah beşte gelirim.', None),
     ('Bugün beşte gelemem.', None),
