@@ -8,6 +8,15 @@ from html.parser import HTMLParser
 
 # Fixed document URLs only: user/model text cannot become a URL or redirect target.
 DOCUMENTS = (
+    ('ada-pain-guideline', 'ADA', 'Acute Dental Pain Management Guideline',
+     'https://www.ada.org/resources/research/science/evidence-based-dental-research/pain-management-guideline',
+     ('ağrı', 'sızl', 'soğuk', 'endodontic diagnosis'), ('toothache', 'recommend', 'treatment', 'adolescent')),
+    ('ada-antibiotics-guideline', 'ADA', 'Antibiotics for Dental Pain and Swelling Guideline (2019)',
+     'https://www.ada.org/resources/research/science/evidence-based-dental-research/antibiotics-for-dental-pain-and-swelling',
+     ('apse', 'şişlik', 'enfeksiyon', 'odontogenic infection management'), ('pulpal', 'systemic', 'antibiotic', 'treatment')),
+    ('ada-caries-guideline', 'ADA', 'Restorative Treatments for Caries Lesions Guideline (2023)',
+     'https://www.ada.org/resources/research/science/evidence-based-dental-research/caries-management-clinical-practice-guidelines/evidence-based-clinical-practice-guideline-on-restorative-treatments-for-caries-lesions',
+     ('çürük', 'dolgu', 'dental caries diagnosis management'), ('caries', 'permanent', 'primary', 'restorative')),
     ('ada-pregnancy', 'ADA', 'Pregnancy', 'https://www.ada.org/resources/ada-library/oral-health-topics/pregnancy',
      ('gebelik', 'gebe', 'hamile', 'emzir'), ('pregnan', 'dental', 'consultation', 'medication')),
     ('ada-hypertension', 'ADA', 'Hypertension', 'https://www.ada.org/resources/ada-library/oral-health-topics/hypertension',
@@ -76,7 +85,9 @@ def _fetch(document):
     if not excerpts:
         raise ValueError('No clinical excerpt')
     result = dict(id=ident, institution=institution, title=title, url=url,
-                  retrieved_at=datetime.now(timezone.utc).isoformat(), excerpts=excerpts)
+                  retrieved_at=datetime.now(timezone.utc).isoformat(), excerpts=excerpts,
+                  evidence_level='guideline' if ident.endswith('-guideline') else 'professional_information',
+                  evidence_type='professional_document', clinical_use=True)
     with _lock:
         _cache[ident] = (time.monotonic(), result)
     return result
@@ -84,7 +95,7 @@ def _fetch(document):
 
 def retrieve(query, requests=None, topics=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
-    text = query.casefold()
+    text = (query + ' ' + ' '.join(item.get('topic', '') for item in (topics or []))).casefold()
     selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
     references = []; unavailable = []
     for doc in selected:
@@ -95,6 +106,9 @@ def retrieve(query, requests=None, topics=None):
     from app.voice_exam_literature import retrieve_literature
     literature, missing_literature = retrieve_literature(query, topics=topics)
     references.extend(literature); unavailable.extend(missing_literature)
+    from app.voice_exam_dergipark import retrieve_dergipark
+    local_literature, missing_local = retrieve_dergipark(query, topics=topics)
+    references.extend(local_literature); unavailable.extend(missing_local)
     if requests:
         from app.voice_exam_live_sources import retrieve_requests
         found, missing = retrieve_requests(requests)
@@ -106,7 +120,18 @@ def retrieve(query, requests=None, topics=None):
         references.extend(item for item in retrieve_drugs(query) if item['id'] not in existing)
     except Exception:
         unavailable.append('local-drug-corpus')
+    # A paper indexed in two services must not inflate the evidence count.
+    unique = []; seen = set()
+    for ref in references:
+        doi = ref.get('doi', '').casefold().strip().removeprefix('https://doi.org/')
+        key = 'doi:' + doi if doi else ref['id']
+        if key not in seen:
+            unique.append(ref); seen.add(key)
+    references = unique
+    from app.voice_exam_literature import TOPIC_LABELS
+    for ref in references:
+        ref['topic_labels'] = [TOPIC_LABELS.get(topic, topic) for topic in ref.get('matched_topics', [])]
     return {'references': references, 'unavailable': unavailable,
             'coverage': 'limited',
-            'notice': 'Konuya göre seçilmiş meslek kuruluşu belgeleri ve PubMed yayın özetleri değerlendirilir; kapsamlı sistematik tarama değildir. Yayının PubMed’de indekslenmesi tek başına öneriyi doğrulamaz; tam metin ve hastaya uygunluk hekim tarafından kontrol edilmelidir. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
+            'notice': 'Konuya göre seçilmiş meslek kuruluşu belgeleri, PubMed ve seçilmiş DergiPark diş hekimliği dergilerinin yayın özetleri değerlendirilir; kapsamlı sistematik tarama değildir. DergiPark keşfi sınırlı bir güncellenmiş kayıt penceresidir; tüm arşivi kapsamaz. Dizin/barındırma bilgisi tek başına bilimsel doğruluk onayı değildir. Yayının PubMed’de indekslenmesi tek başına öneriyi doğrulamaz; tam metin ve hastaya uygunluk hekim tarafından kontrol edilmelidir. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
 

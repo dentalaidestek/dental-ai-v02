@@ -27,6 +27,12 @@ TOPICS = (
     ('dental radiography selection', ('röntgen', 'film', 'radyograf')),
     ('temporomandibular disorders diagnosis', ('çene eklem', 'bruksizm', 'diş sık')),
 )
+TOPIC_LABELS = dict(zip((topic for topic, _ in TOPICS), (
+    'Endodontik değerlendirme', 'Çürük ve restoratif tedavi', 'Diyabet ve diş tedavisi',
+    'İlaç alerjisi', 'Dental kaygı', 'Periodontal değerlendirme', 'İmplant değerlendirmesi',
+    'Diş çekimi', 'Dental travma', 'Ağız mukozası lezyonları', 'Gebelikte diş tedavisi',
+    'Antikoagülanlar', 'Çene osteonekrozu', 'Odontojenik enfeksiyon', 'Radyografik değerlendirme',
+    'Çene eklemi bozuklukları')))
 _lock = threading.Lock()
 _request_lock = threading.Lock()
 _capacity = threading.BoundedSemaphore(1)
@@ -51,47 +57,82 @@ def _get(utility, params):
     return raw
 
 
-def retrieve_literature(text, topics=None):
+def selected_topics(text, topics=None):
     allowed = {query for query, _ in TOPICS}
-    selected = list(dict.fromkeys([item['topic'] for item in (topics or []) if item.get('topic') in allowed] +
+    return list(dict.fromkeys([item['topic'] for item in (topics or []) if item.get('topic') in allowed] +
         [query for query, triggers in TOPICS if any(t in text.casefold() for t in triggers)]))[:6]
+
+
+def retrieve_literature(text, topics=None):
+    selected = selected_topics(text, topics)
     if not selected:
         return [], []
-    # One combined search and one abstract fetch, regardless of selected topic count.
-    query = '(' + ' OR '.join('(' + q + ')' for q in selected) + ') AND (dentistry OR dental OR oral) AND (guideline[pt] OR systematic review[pt] OR meta-analysis[pt]) NOT (retracted publication[pt])'
+    key = tuple(selected)
     with _lock:
-        cached = _cache.get(query)
+        cached = _cache.get(key)
         if cached and time.monotonic() - cached[0] < 86400:
-            return cached[1], []
+            return cached[1], cached[2]
     if not _capacity.acquire(blocking=False):
         return [], ['pubmed-busy']
     try:
-        ids = json.loads(_get('esearch.fcgi', {'term': query, 'retmode': 'json', 'retmax': 6, 'sort': 'relevance'}))['esearchresult']['idlist']
-        if not isinstance(ids, list) or len(ids) > 6 or any(not re.fullmatch(r'\d{1,12}', str(i)) for i in ids):
-            raise ValueError('Invalid PubMed identifiers')
-        refs = []
-        if ids:
-            raw = _get('efetch.fcgi', {'id': ','.join(ids), 'retmode': 'xml', 'rettype': 'abstract'})
+        refs = []; missing = []; ids_by_topic = {}; deadline = time.monotonic() + 15
+        # Separate searches keep one common topic from consuming every result slot.
+        for topic in selected:
+            if time.monotonic() > deadline:
+                missing.append('pubmed-search-time-budget'); break
+            query = '(' + topic + ') AND (dentistry OR dental OR oral) AND (guideline[pt] OR systematic review[pt] OR meta-analysis[pt]) NOT (retracted publication[pt] OR retraction of publication[pt])'
+            try:
+                ids = json.loads(_get('esearch.fcgi', {'term': query, 'retmode': 'json', 'retmax': 2, 'sort': 'relevance', 'datetype': 'pdat', 'mindate': str(datetime.now(timezone.utc).year - 10)}))['esearchresult']['idlist']
+                if not isinstance(ids, list) or len(ids) > 2 or any(not isinstance(i, str) or not re.fullmatch(r'\d{1,12}', i) for i in ids):
+                    raise ValueError('Invalid PubMed identifiers')
+                for pmid in ids:
+                    ids_by_topic.setdefault(pmid, []).append(topic)
+                if not ids: missing.append('pubmed-no-match:' + topic)
+            except Exception:
+                missing.append('pubmed-search-unavailable:' + topic)
+        if ids_by_topic:
+            raw = _get('efetch.fcgi', {'id': ','.join(ids_by_topic), 'retmode': 'xml', 'rettype': 'abstract'})
             if b'<!ENTITY' in raw.upper():
                 raise ValueError('Unexpected XML entity')
+            from app.voice_exam_evidence import quality_metadata
             for article in ET.fromstring(raw).findall('.//PubmedArticle'):
                 pmid = article.findtext('.//MedlineCitation/PMID', '')
-                if pmid not in ids:
+                if pmid not in ids_by_topic:
                     continue
-                title = ''.join(article.find('.//ArticleTitle').itertext())
-                excerpts = [''.join(node.itertext()).strip()[:1800] for node in article.findall('.//Abstract/AbstractText')]
-                excerpts = [s for s in excerpts if len(s) >= 80][:3]
-                if not excerpts:
+                if any(n.get('RefType') in {'RetractionIn', 'ExpressionOfConcernIn'} for n in article.findall('.//CommentsCorrections')):
                     continue
+                title_node = article.find('.//ArticleTitle')
+                if title_node is None: continue
+                title = ''.join(title_node.itertext())
+                types = [n.text or '' for n in article.findall('.//PublicationType')]
+                date = article.findtext('.//JournalIssue/PubDate/Year') or article.findtext('.//ArticleDate/Year')
+                if not date:
+                    match = re.search(r'\b(19|20)\d{2}\b', article.findtext('.//PubDate/MedlineDate', ''))
+                    date = match.group() if match else None
+                quality = quality_metadata(title, types, date)
+                if quality is None: continue
+                mesh = {n.text for n in article.findall('.//MeshHeading/DescriptorName')}
+                corrections = {n.get('RefType') for n in article.findall('.//CommentsCorrections')}
+                if ('Animals' in mesh and 'Humans' not in mesh) or corrections & {'ErratumIn', 'CorrectedandRepublishedIn'}:
+                    quality['clinical_use'] = False
+                    quality['quality_notice'] = 'Hayvan çalışması veya düzeltme bildirimi var; klinik öneriye dayanak yapılmadı.'
+                excerpts = [''.join(node.itertext()).strip()[:1600] for node in article.findall('.//Abstract/AbstractText')]
+                excerpts = [s for s in excerpts if len(s) >= 80][:2]
+                if not excerpts: continue
+                doi = next((n.text for n in article.findall('.//ArticleId') if n.get('IdType') == 'doi'), '')
                 refs.append({'id': 'pubmed-' + pmid, 'institution': 'PubMed · ' + article.findtext('.//Journal/Title', ''),
                              'title': title[:500], 'url': 'https://pubmed.ncbi.nlm.nih.gov/' + pmid + '/',
                              'retrieved_at': datetime.now(timezone.utc).isoformat(), 'excerpts': excerpts,
-                             'evidence_type': 'indexed_abstract'})
-        with _lock:
-            if len(_cache) >= 128:
-                _cache.pop(next(iter(_cache)))
-            _cache[query] = (time.monotonic(), refs)
-        return refs, ([] if refs else ['pubmed-no-matching-abstract'])
+                             'evidence_type': 'indexed_abstract', 'doi': doi, 'matched_topics': ids_by_topic[pmid], **quality})
+        for topic in selected:
+            if not any(topic in ref['matched_topics'] and ref['clinical_use'] for ref in refs):
+                missing.append('pubmed-no-clinical-evidence:' + topic)
+        # Preserve partial/error status when cached; do not cache transport failures.
+        if not any('unavailable' in item or 'time-budget' in item for item in missing):
+            with _lock:
+                if len(_cache) >= 128: _cache.pop(next(iter(_cache)))
+                _cache[key] = (time.monotonic(), refs, missing)
+        return refs, list(dict.fromkeys(missing))
     except Exception:
         return [], ['pubmed-unavailable']
     finally:
