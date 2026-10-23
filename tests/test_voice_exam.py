@@ -332,6 +332,8 @@ def test_sources_fail_closed_without_claiming_safety(monkeypatch):
     def failed(doc):
         raise TimeoutError()
     monkeypatch.setattr(sources, '_fetch', failed)
+    from app import voice_exam_literature as literature
+    monkeypatch.setattr(literature, 'retrieve_literature', lambda *args, **kw: ([], []))
     result = sources.retrieve('metformin')
     assert not result['references'] and result['unavailable'] == ['ada-diabetes']
     assert result['coverage'] == 'limited'

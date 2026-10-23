@@ -82,7 +82,7 @@ def _fetch(document):
     return result
 
 
-def retrieve(query, requests=None):
+def retrieve(query, requests=None, topics=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = query.casefold()
     selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
@@ -92,6 +92,9 @@ def retrieve(query, requests=None):
             references.append(_fetch(doc))
         except Exception:
             unavailable.append(doc[0])
+    from app.voice_exam_literature import retrieve_literature
+    literature, missing_literature = retrieve_literature(query, topics=topics)
+    references.extend(literature); unavailable.extend(missing_literature)
     if requests:
         from app.voice_exam_live_sources import retrieve_requests
         found, missing = retrieve_requests(requests)
@@ -105,5 +108,5 @@ def retrieve(query, requests=None):
         unavailable.append('local-drug-corpus')
     return {'references': references, 'unavailable': unavailable,
             'coverage': 'limited',
-            'notice': 'Sınırlı resmî belge kapsamı. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
+            'notice': 'Konuya göre seçilmiş meslek kuruluşu belgeleri ve PubMed yayın özetleri değerlendirilir; kapsamlı sistematik tarama değildir. Yayının PubMed’de indekslenmesi tek başına öneriyi doğrulamaz; tam metin ve hastaya uygunluk hekim tarafından kontrol edilmelidir. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
 

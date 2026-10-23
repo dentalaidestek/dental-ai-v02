@@ -10,6 +10,7 @@ import threading
 import urllib.request
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from app.voice_exam_literature import TOPICS as LITERATURE_TOPICS
 
 MAX_AUDIO = 8 * 1024 * 1024
 MAX_TRANSCRIPT = 18000
@@ -131,7 +132,7 @@ def normalize(result, evidence=None):
     # never solely from a second transcript authored by the model.
     anchor = transcript if evidence is None else evidence
     output = {'transcript': transcript, 'fields': {}, 'teeth': [], 'appointment': None,
-              'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'source_requests': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
+              'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'source_requests': [], 'literature_topics': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
     coaching = result.get('communication', [])
     if not isinstance(coaching, list) or len(coaching) > 8:
         raise VoiceError('İletişim değerlendirmesi doğrulanamadı.')
@@ -160,6 +161,16 @@ def normalize(result, evidence=None):
         term = item.get('term', ''); quote = _string(item.get('quote', ''), 1000)
         if isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term) and quote and quote in anchor:
             output['source_requests'].append({'term': term.lower().strip(), 'quote': quote})
+    from app.voice_exam_literature import TOPICS
+    allowed_topics = {topic for topic, _ in TOPICS}
+    topics = result.get('literature_topics', [])
+    if not isinstance(topics, list) or len(topics) > 6:
+        raise VoiceError('Literatür konuları doğrulanamadı.')
+    for item in topics:
+        if isinstance(item, dict) and item.get('topic') in allowed_topics:
+            quote = _string(item.get('quote', ''), 1000)
+            if quote and quote in anchor:
+                output['literature_topics'].append({'topic': item['topic'], 'quote': quote})
     questions = result.get('follow_up_questions', [])
     if not isinstance(questions, list) or len(questions) > 8:
         raise VoiceError('Netleştirme soruları doğrulanamadı.')
@@ -220,6 +231,7 @@ def schema():
     quoted = {'type': 'OBJECT', 'properties': {'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'}},
               'required': ['value', 'quote']}
     return {'type': 'OBJECT', 'properties': {
+        'literature_topics': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'topic': {'type': 'STRING', 'enum': [topic for topic, _ in LITERATURE_TOPICS]}, 'quote': {'type': 'STRING'}}, 'required': ['topic', 'quote']}},
         'source_requests': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'term': {'type': 'STRING'}, 'quote': {'type': 'STRING'}}, 'required': ['term', 'quote']}},
         **{key: {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {'name': {'type': 'STRING'}, 'quote': {'type': 'STRING'}}, 'required': ['name', 'quote']}} for key in ('removed_fields', 'removed_teeth')},
         'follow_up_questions': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'question', 'reason')}, 'priority': {'type': 'STRING', 'enum': ['CLARIFY_NOW', 'REVIEW_AT_END']}}, 'required': ['quote', 'question', 'reason', 'priority']}},
@@ -231,7 +243,7 @@ def schema():
             'tooth': {'type': 'STRING'}, 'status': {'type': 'STRING', 'enum': sorted(TOOTH_STATES)},
             'quote': {'type': 'STRING'}}, 'required': ['tooth', 'status', 'quote']}},
         'appointment': {'type': 'OBJECT', 'properties': {'quote': {'type': 'STRING'}, 'acceptance_quote': {'type': 'STRING'}}}},
-        'required': ['transcript', 'fields', 'teeth', 'uncertain', 'appointment', 'communication', 'decision_barriers', 'follow_up_questions', 'source_requests', 'removed_fields', 'removed_teeth']}
+        'required': ['transcript', 'fields', 'teeth', 'uncertain', 'appointment', 'communication', 'decision_barriers', 'follow_up_questions', 'source_requests', 'literature_topics', 'removed_fields', 'removed_teeth']}
 
 
 PROMPT = '''Çıktıyı göndermeden önce konuşmanın BAŞINDAN SONUNA her açık bilgiyi bir kez kontrol et.
@@ -240,6 +252,10 @@ hastanın başvuru yakınması/belirtisidir; hekimin çürük gibi bulgusunu bur
 Hekimin kesin bulguları clinical_findings ve uygun olduğunda teeth içindedir.
 plan içinde hekimin belirttiği BÜTÜN planları birlikte koru; sonraki röntgen planı
 önceki koşullu işlem seçeneğini iptal etmez. Yapılacak/önerilen işlem yapılmış değildir.
+Çıktı öncesi özellikle plan alanını kontrol et: "önce film çekelim, sonra dolgu mu kanal mı
+karar verelim" gibi koşullu planlar da plandır; yalnız kesinleşmiş tedaviyi bekleme.
+transcript içinde bu tür hekim önerisi bulunuyorsa plan alanını boş bırakma; birebir
+dayanakla koşullu biçimini koru. Anlaşılmayan işlem adını tahmin ederek düzeltme.
 Randevu konuşulmuş ve kabul edilmişse appointment içinde öneri ve kabul alıntılarını
 mutlaka üret. Her istenen dizi anahtarı çıktıda bulunsun; bilgi yoksa boş dizi yaz.
 Randevu yoksa appointment boş nesne olsun. Korku ve ücret ifadelerini atlama.
@@ -293,6 +309,7 @@ alınmışsa removed_fields içine name=alan adı ve birebir quote koy. Önceki 
 hekim tarafından açıkça geri alındıysa removed_teeth içine name=FDI numara ve quote koy.
 Sadece yeni bölümde bahsedilmedi diye hiçbir şeyi kaldırma. Yeni bir olumsuz beyanı
 silmek yerine ilgili alanda koru. Düzeltme kanıtı yoksa bu listeler boş olsun.
+literature_topics içinde görüşmenin klinik anlamına göre en çok 6 ilgili literatür konusunu verilen topic seçeneklerinden seç; her konu için konuşmadaki birebir quote dayanağını yaz. İlaçla sınırlı kalma: ağrı değerlendirmesi, tanısal belirsizlik, plan, sistemik durum ve işlem öncesi eksikleri kapsa. Eşanlamlıları ve günlük Türkçeyi anlamlandır; yalnız anahtar kelime arama.
 source_requests içinde en çok 6 açıkça konuşulan ilaç için İngilizce jenerik etken madde adı term ve konuşmadaki kısa birebir quote ver. Hasta adı, hastalık cümlesi, adres, telefon veya özel hayat bilgisi arama terimi olmasın. Etken maddesi net olmayan marka adını tahmin etme; soru öner. Bunlar yalnız resmî ilaç belgesini bulmak içindir.
 İstenen JSON dışına çıkma.'''
 
@@ -301,7 +318,7 @@ def clinical_context(value):
     """Bounded, transient clinical context. Never accept full transcript/coaching."""
     if not value:
         return {}
-    if not isinstance(value, dict) or set(value) - {'fields', 'teeth', 'appointment', 'source_requests'}:
+    if not isinstance(value, dict) or set(value) - {'fields', 'teeth', 'appointment', 'source_requests', 'literature_topics'}:
         raise VoiceError('Görüşme bağlamı doğrulanamadı.')
     fields = value.get('fields', {})
     if not isinstance(fields, dict) or set(fields) - set(FIELDS):
@@ -315,6 +332,15 @@ def clinical_context(value):
         if not isinstance(item, dict) or set(item) != {'term', 'quote'} or not isinstance(item.get('term'), str) or not re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', item['term']):
             raise VoiceError('Kaynak arama terimi doğrulanamadı.')
         clean['source_requests'].append({'term': item['term'].lower().strip(), 'quote': _string(item['quote'], 1000)})
+    from app.voice_exam_literature import TOPICS
+    topics = value.get('literature_topics', [])
+    if not isinstance(topics, list) or len(topics) > 6:
+        raise VoiceError('Literatür konuları doğrulanamadı.')
+    clean['literature_topics'] = []
+    for item in topics:
+        if not isinstance(item, dict) or set(item) != {'topic', 'quote'} or item.get('topic') not in {topic for topic, _ in TOPICS}:
+            raise VoiceError('Literatür konusu doğrulanamadı.')
+        clean['literature_topics'].append({'topic': item['topic'], 'quote': _string(item['quote'], 1000)})
     appointment = value.get('appointment')
     if appointment:
         if not isinstance(appointment, dict) or set(appointment) - {'quote', 'acceptance_quote'}:
@@ -394,6 +420,10 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             old_teeth = {item['tooth']: item for item in context.get('teeth', []) if item['tooth'] not in result['removed_teeth']}
             old_teeth.update({item['tooth']: item for item in result['teeth']})
             result['teeth'] = list(old_teeth.values())
+            topic_anchors = ' '.join(item['quote'] for item in result['fields'].values())
+            current_topics = {item['topic']: item for item in context.get('literature_topics', []) if item['quote'] in topic_anchors}
+            current_topics.update({item['topic']: item for item in result['literature_topics']})
+            result['literature_topics'] = list(current_topics.values())[:6]
             if not result['source_requests']:
                 anchors = ' '.join(item['quote'] for item in result['fields'].values())
                 result['source_requests'] = [item for item in context.get('source_requests', []) if item['quote'] in anchors]

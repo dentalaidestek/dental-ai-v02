@@ -42,7 +42,8 @@ def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching
     calls = provider(monkeypatch, result)
     context = {**CONTEXT, 'fields': {**CONTEXT['fields'], 'first_name': {'value': 'PRIVATE_NAME', 'quote': 'PRIVATE_NAME'}}}
     output = final.finalize(context, [{'quote': 'PRIVATE_QUOTE', 'observation': 'PRIVATE_COACHING'}])
-    assert output['summary'] == result['summary'] and output['questions'] == result['questions']
+    assert output['summary'][0] == result['summary'][0] and output['questions'] == result['questions']
+    assert {item['field'] for item in output['summary']} == set(CONTEXT['fields'])
     assert len(calls) == 1
     submitted = calls[0]['contents'][0]['parts'][0]['text']
     assert 'Warfarin' in submitted and 'chief_complaint' in submitted

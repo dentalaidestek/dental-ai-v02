@@ -53,7 +53,10 @@ def finalize(context, insights, uncertain=""):
         fields['tooth_' + tooth['tooth']] = {'value': value, 'quote': value}
     query = ' '.join(item['value'] for item in fields.values())
     requests = context.get('source_requests', [])
-    evidence = retrieve(query, requests=requests) if requests else retrieve(query)
+    options = {}
+    if requests: options['requests'] = requests
+    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    evidence = retrieve(query, **options)
     model = os.getenv('VOICE_EXAM_GEMINI_MODEL') or os.getenv('DENTAL_CLINICAL_AI_MODEL', 'gemini-3.5-flash-lite')
     key = os.getenv('GEMINI_API_KEY', '')
     if not key or not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}', model):
@@ -76,7 +79,14 @@ contradictions: en çok 12 açık çelişki; belirsizliği kesinleştirme. Her �
 verilen clinical_fields anahtarı, quote o alanın value içindeki birebir kısa alıntı,
 text ise hekime Türkçe açıklama olsun. Yaş tek başına risk veya tanı değildir.
 Tarihsel beyanı güncel bilgi sayma. 'Yok', 'bilmiyor' ve 'sorulmadı' farklıdır.
-clinical_items: yalnız verilen resmî belge içeriğiyle desteklenmiş en çok 5 koşullu
+Özeti yalnız randevuya indirgeme: verilen her klinik alanı ayrı değerlendir; özellikle
+şikâyet, sistemik öykü, alerji, ilaç, bulgular ve hekimin planını kapsa.
+Soruları mevcut beyanla ilişkilendir; bilinmeyen antibiyotik reaksiyonu gibi belirsizlikleri
+netleştir. Belgeye dayanan öneri ve hatırlatmaları clinical_items içinde göster.
+PubMed özetlerini tam metin veya resmî kılavuz sayma; yayın türünü ve kanıt sınırını
+gözet, yalnız ilişkili ve alıntıyla desteklenmiş bilgileri kullan. Çocuk/süt dişi yayınını
+yaşı/dişlenmesi bilinmeyen hastaya genelleme. İlişkisiz yayınları kullanma.
+clinical_items: yalnız verilen belge/yayın özeti içeriğiyle desteklenmiş en çok 8 koşullu
 hekim kontrol noktası. patient_field verilen alan; patient_quote onun value içinden,
 source_quote ilgili sources.excerpts içinden birebir alıntı, source_id verilen kaynak.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
@@ -109,11 +119,17 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
         output = {k: _anchored(result.get(k), fields) for k in ('summary', 'questions', 'contradictions')}
         # A useful summary can always be grounded in the reviewed clinical fields.
         # Do not invent model findings when all generated anchors were discarded.
-        if not output['summary']:
-            output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
-                                 for name, field in fields.items()][:12]
+        covered = {item['field'] for item in output['summary']}
+        # Partial model summaries must not hide the other reviewed clinical fields.
+        output['summary'].extend(
+            {'field': name, 'quote': field['value'], 'text': field['value']}
+            for name, field in fields.items() if name not in covered)
+        output['summary'] = output['summary'][:12]
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'])
-        return {**output, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
+        review_status = {'source_count': len(evidence['references']),
+                         'unavailable_count': len(evidence['unavailable']),
+                         'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items'])}
+        return {**output, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
                 'coverage': evidence['coverage'], 'notice': evidence['notice']}
     except Exception:
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None

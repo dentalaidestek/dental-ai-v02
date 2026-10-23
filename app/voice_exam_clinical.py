@@ -14,7 +14,10 @@ def assess(context):
               if key not in {'first_name', 'last_name'}}
     query = ' '.join(item['value'] for item in fields.values())
     requests = context.get('source_requests', [])
-    evidence = retrieve(query, requests=requests) if requests else retrieve(query)
+    options = {}
+    if requests: options['requests'] = requests
+    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    evidence = retrieve(query, **options)
     evidence['items'] = []
     if not evidence['references']:
         return evidence
@@ -67,7 +70,7 @@ Kaynak eşleşmesi tek başına hastada risk olduğu anlamına gelmez. Destek yo
 def grounded_items(result, fields, references):
     sources = {item['id']: item for item in references}
     items = result.get('items', [])
-    if not isinstance(items, list) or len(items) > 5:
+    if not isinstance(items, list) or len(items) > 8:
         raise ValueError()
     accepted = []
     for item in items:
