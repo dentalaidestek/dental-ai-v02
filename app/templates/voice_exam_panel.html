@@ -3,8 +3,8 @@
     <header class="voice-session-heading"><span class="voice-eyebrow">SESLİ MUAYENE</span><h2>Görüşmeye hazır mısınız?</h2><p>Hastanızı bilgilendirin, onay verin ve dinlemeyi başlatın.</p></header>
     <p class="voice-stage" data-voice-stage>Hazırlık</p>
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
-    <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin veya girdiğim metnin Gemini ile, klinik özetin ve kaynakların muayene sonunda Claude ile işlenmesini onaylıyorum.</label>
-    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Muayene sonundaki klinik özet ve kaynaklar Claude’a aktarılır. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
+    <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin Gemini ile metne çevrilmesini; muayeneyle ilgili metnin, klinik bilgilerin ve kaynakların Claude ile işlenmesini onaylıyorum.</label>
+    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Muayeneyle ilgili geçici metinden klinik bilgileri Claude çıkarır; muayene sonunda bu bilgiler ve kaynaklar yine Claude ile değerlendirilir. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
     <details class="voice-history"><summary>Önceki hekim onaylı klinik bilgiler</summary>
       <p class="voice-help">Yalnız önceki sesli muayenelerde hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Bu alan tüm hasta arşivinin yerine geçmez. Bilgilerin hâlâ güncel olduğunu hastayla doğrulayın.</p>
       <button type="button" data-voice-history>Önceki kayıtları göster</button>
@@ -27,7 +27,7 @@
     <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">İşlenen konuşmaya göre önerilen sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
     <details><summary>Alternatif: ses dosyası, bölüm kaydı veya metin</summary>
     <label class="voice-field">Ses dosyasıyla dene <input type="file" data-voice-audio-file accept="audio/mpeg,audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mp4,.mp3,.wav,.webm,.ogg,.m4a" disabled></label>
-    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile işlenir; uygulama ses dosyasını saklamaz.</p>
+    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile yazıya çevrilir, klinik metin Claude ile işlenir; uygulama ses dosyasını saklamaz.</p>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
       <button type="button" data-voice-stop disabled>Duraklat ve işle</button>

@@ -1,0 +1,10 @@
+# Clinical fidelity repair
+Audio files now use Gemini only for transient clinical transcription, followed by Claude for extraction. Text/live transcript input goes directly to Claude extraction. Final source-backed review remains one separate Claude call. Thus audio import adds one semantic extraction request compared with the former combined Gemini call; live/text input replaces Gemini extraction rather than duplicating it. Existing concurrency and provider budgets remain.
+The extractor returns bounded atomic clinical facts, each with one exact input quotation and a current/historical/planned/negated/unknown label. These are folded into existing clinician-editable clinical fields, with no new automatic patient writes or raw transcript persistence. Facts with unsupported quotations/categories are discarded; overlong fields fail explicitly instead of silently truncating.
+The displayed transcript is the supplied clinical text rather than Claude's rewritten transcript. Formatting-only quotation recovery preserves original word/numeric tokens. This cannot recover inaudible speech or guarantee completeness.
+A tooth CARIES candidate requires explicit non-negated caries wording; non-restorability alone cannot create it. Other tooth statuses retain their existing checks.
+Natural spoken acceptance such as same-day "beşte" may agree with an explicit17:00 proposal. Different days/hours, explicit morning conflicts, negation and ambiguous proposals remain rejected.
+Consent now names Gemini transcription and Claude extraction/final review.
+Validation:127 focused Python tests passed, including atomic medication/lab/plan preservation, fabricated fact rejection, caries false-positive rejection, colloquial appointment acceptance/negative cases, text-only Claude routing and prior permission/record safeguards. Final browser lifecycle Node harness passed.
+A live rerun with the frozen implicit case is still required. No unit test establishes overall clinical accuracy, semantic correctness of source entailment, or acoustic intelligibility of the synthetic recording.
+

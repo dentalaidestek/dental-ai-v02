@@ -83,8 +83,9 @@ text ise hekime Türkçe açıklama olsun. Yaş tek başına risk veya tanı de�
 Tarihsel beyanı güncel bilgi sayma. 'Yok', 'bilmiyor' ve 'sorulmadı' farklıdır.
 Özeti yalnız randevuya indirgeme: verilen her klinik alanı ayrı değerlendir; özellikle
 şikâyet, sistemik öykü, alerji, ilaç, bulgular ve hekimin planını kapsa.
-Soruları mevcut beyanla ilişkilendir; bilinmeyen antibiyotik reaksiyonu gibi belirsizlikleri
-netleştir. Belgeye dayanan öneri ve hatırlatmaları clinical_items içinde göster.
+Soruları yalnız mevcut beyanla ilişkilendir; konuşulmamış bir ilaç reaksiyonu ima etme.
+Bildiğim yok yanıtı ilgili soruya göre bilinen alerji yok beyanı olabilir; otomatik bilmiyorum yapma.
+Kesin 24 saatlik hekim önerisine aynı gün verilen gündelik saat kabulü, tek başına çelişki değildir. Belgeye dayanan öneri ve hatırlatmaları clinical_items içinde göster.
 PubMed ve DergiPark özetlerini tam metin veya resmî kılavuz sayma; yayın türünü ve kanıt sınırını
 gözet, yalnız ilişkili ve alıntıyla desteklenmiş bilgileri kullan. clinical_use=false
 olan kaynakları clinical_items dayanağı yapma. Güncel meslek kuruluşu kılavuzlarına
