@@ -27,7 +27,7 @@ def provider(monkeypatch, result, finish='STOP'):
         def __exit__(self, *args): pass
         def read(self, limit):
             return json.dumps({'stop_reason': 'end_turn' if finish == 'STOP' else 'max_tokens',
-                'content': [{'type': 'text', 'text': json.dumps(result)}]}).encode()
+                'content': [{'type': 'text', 'text': json.dumps({k: v for k, v in result.items() if k != 'summary'})}]}).encode()
     def request(req, **options):
         calls.append(json.loads(req.data)); return Response()
     monkeypatch.setattr(transport, 'urlopen', request)
@@ -42,7 +42,8 @@ def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching
     calls = provider(monkeypatch, result)
     context = {**CONTEXT, 'fields': {**CONTEXT['fields'], 'first_name': {'value': 'PRIVATE_NAME', 'quote': 'PRIVATE_NAME'}}}
     output = final.finalize(context, [{'quote': 'PRIVATE_QUOTE', 'observation': 'PRIVATE_COACHING'}])
-    assert output['summary'][0] == result['summary'][0] and output['questions'] == result['questions']
+    assert output['summary'][0]['text'] == CONTEXT['fields'][output['summary'][0]['field']]['value']
+    assert output['questions'] == result['questions']
     assert {item['field'] for item in output['summary']} == set(CONTEXT['fields'])
     assert len(calls) == 1
     submitted = calls[0]['messages'][0]['content']
@@ -57,6 +58,28 @@ def test_fabricated_final_anchor_is_rejected(monkeypatch):
     assert summary and all(item['text'] != 'Uydurma' for item in summary)
     assert all(item['quote'] in CONTEXT['fields'][item['field']]['value'] for item in summary)
     assert len(calls) == 1
+
+
+def test_summary_preserves_negative_finding_without_model_paraphrase(monkeypatch):
+    calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': []})
+    value = '46 numaralı dişin kalan kısmı dolguya uygun değil.'
+    output = final.finalize({'fields': {'clinical_findings': {'value': value, 'quote': value}}}, [])
+    assert output['summary'] == [{'field': 'clinical_findings', 'quote': value, 'text': value}]
+    assert 'summary' not in calls[0]['output_config']['format']['schema']['properties']
+
+
+def test_resolved_colloquial_acceptance_is_not_a_final_contradiction(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    quote = 'Bugün saat on yedide tekrar gelir misiniz?'
+    provider(monkeypatch, {'questions': [], 'contradictions': [
+        {'field': 'appointment', 'quote': quote, 'text': 'On yedi ve beş çelişkili.'}], 'clinical_items': []})
+    original = core.resolve_appointment
+    monkeypatch.setattr(core, 'resolve_appointment', lambda q, a: original(q, a,
+        datetime(2026, 10, 23, 13, tzinfo=ZoneInfo('Europe/Istanbul'))))
+    context = {**CONTEXT, 'appointment': {'quote': quote,
+        'acceptance_quote': 'Tamam hocam, bugün beşte gelirim. Kartı da getiririm.'}}
+    assert final.finalize(context, [])['contradictions'] == []
 
 
 def test_partial_final_response_is_not_success(monkeypatch):
