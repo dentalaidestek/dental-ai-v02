@@ -56,8 +56,9 @@ def test_colloquial_hour_acceptance_requires_same_day_and_same_proposal(acceptan
 def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch):
     from app import voice_exam_review_provider as provider
     calls = []
-    def review(prompt, data, schema):
+    def review(prompt, data, schema, **options):
         calls.append(data)
+        assert options == {'extraction': True}
         assert schema['properties']['fields']['required'] == list(core.FIELDS)
         return {'transcript': 'Modelin eksik yeniden yazımı', 'fields': {}, 'clinical_facts': []}
     monkeypatch.setattr(provider, 'review', review)

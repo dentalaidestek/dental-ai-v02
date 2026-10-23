@@ -23,15 +23,22 @@ def _schema(node):
     return result
 
 
-def review(prompt, data, schema):
+def review(prompt, data, schema, *, extraction=False):
     key = (os.getenv('ANTHROPIC_API_KEY') or '').strip()
     model = (os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5').strip()
     if not key or not re.fullmatch(r'claude-[A-Za-z0-9._-]{1,100}', model):
         raise core.VoiceError('Son değerlendirme için Claude yapılandırması hazır değil.')
     payload = {'model': model, 'max_tokens': 8192, 'stream': False,
         'system': prompt,
-        'messages': [{'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}],
-        'output_config': {'format': {'type': 'json_schema', 'schema': _schema(schema)}}}
+        'messages': [{'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]}
+    if extraction:
+        # One forced, non-executable data tool avoids compiling the wide extraction
+        # grammar. normalize() still validates every clinical quotation and value.
+        payload['tools'] = [{'name': 'clinical_extract', 'description': 'Return the clinical extraction as structured data only.',
+                             'input_schema': _schema(schema)}]
+        payload['tool_choice'] = {'type': 'tool', 'name': 'clinical_extract'}
+    else:
+        payload['output_config'] = {'format': {'type': 'json_schema', 'schema': _schema(schema)}}
     from app.http_transport import urlopen
     from app.provider_budget import reservation
     request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
@@ -51,10 +58,16 @@ def review(prompt, data, schema):
     if len(raw) > core.MAX_RESPONSE:
         raise ValueError('Response too large')
     message = json.loads(raw)
-    if message.get('stop_reason') != 'end_turn':
-        raise ValueError('Incomplete clinical review')
-    result = json.loads(''.join(block.get('text', '') for block in message.get('content', [])
-                              if block.get('type') == 'text'))
+    if extraction:
+        blocks = [block for block in message.get('content', []) if block.get('type') == 'tool_use']
+        if message.get('stop_reason') != 'tool_use' or len(blocks) != 1 or blocks[0].get('name') != 'clinical_extract':
+            raise ValueError('Incomplete clinical extraction')
+        result = blocks[0].get('input')
+    else:
+        if message.get('stop_reason') != 'end_turn':
+            raise ValueError('Incomplete clinical review')
+        result = json.loads(''.join(block.get('text', '') for block in message.get('content', [])
+                                  if block.get('type') == 'text'))
     if not isinstance(result, dict) or set(result) != set(schema['required']):
         raise ValueError('Invalid clinical review')
     return result
