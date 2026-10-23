@@ -70,7 +70,9 @@ Kaynak eşleşmesi tek başına hastada risk olduğu anlamına gelmez. Destek yo
         core._capacity.release()
 
 
-def grounded_items(result, fields, references):
+def grounded_items(result, fields, references, diagnostics=None):
+    def reject(reason):
+        if diagnostics is not None: diagnostics[reason] = diagnostics.get(reason, 0) + 1
     sources = {item['id']: item for item in references}
     items = result.get('items', [])
     if not isinstance(items, list) or len(items) > 8:
@@ -79,12 +81,16 @@ def grounded_items(result, fields, references):
     for item in items:
         if not isinstance(item, dict) or any(not isinstance(item.get(k), str) or len(item[k]) > 1800 for k in
             ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')):
-            continue
+            reject('invalid_item'); continue
         source = sources.get(item['source_id']); field = fields.get(item['patient_field'])
-        if not source or source.get('clinical_use') is False or not field or not item['source_quote'] or not item['patient_quote']:
-            continue
-        if not any(item['source_quote'] in excerpt for excerpt in source['excerpts']) or item['patient_quote'] not in field['value']:
-            continue
+        if not source or not field:
+            reject('unknown_anchor'); continue
+        if source.get('clinical_use') is False:
+            reject('ineligible_source'); continue
+        if not item['patient_quote'] or item['patient_quote'] not in field['value']:
+            reject('patient_quote_mismatch'); continue
+        if not item['source_quote'] or not any(item['source_quote'] in excerpt for excerpt in source['excerpts']):
+            reject('source_quote_mismatch'); continue
         accepted.append(item)
     return accepted
 
