@@ -17,8 +17,8 @@ CONTEXT = {'fields': {'chief_complaint': {'value': 'Soğukta ağrı', 'quote': '
 
 def provider(monkeypatch, result, finish='STOP'):
     import app.http_transport as transport
-    monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-test-secret')
-    monkeypatch.setenv('VOICE_EXAM_GEMINI_MODEL', 'gemini-test')
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'synthetic-test-secret')
+    monkeypatch.setenv('VOICE_EXAM_CLAUDE_MODEL', 'claude-test')
     module = ModuleType('app.provider_budget'); module.reservation = lambda *args: nullcontext()
     monkeypatch.setitem(sys.modules, 'app.provider_budget', module)
     calls = []
@@ -26,8 +26,8 @@ def provider(monkeypatch, result, finish='STOP'):
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def read(self, limit):
-            return json.dumps({'candidates': [{'finishReason': finish, 'content': {
-                'parts': [{'text': json.dumps(result)}]}}]}).encode()
+            return json.dumps({'stop_reason': 'end_turn' if finish == 'STOP' else 'max_tokens',
+                'content': [{'type': 'text', 'text': json.dumps(result)}]}).encode()
     def request(req, **options):
         calls.append(json.loads(req.data)); return Response()
     monkeypatch.setattr(transport, 'urlopen', request)
@@ -45,7 +45,7 @@ def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching
     assert output['summary'][0] == result['summary'][0] and output['questions'] == result['questions']
     assert {item['field'] for item in output['summary']} == set(CONTEXT['fields'])
     assert len(calls) == 1
-    submitted = calls[0]['contents'][0]['parts'][0]['text']
+    submitted = calls[0]['messages'][0]['content']
     assert 'Warfarin' in submitted and 'chief_complaint' in submitted
     assert 'PRIVATE_' not in submitted and 'transcript' not in json.loads(submitted)
 
@@ -177,7 +177,7 @@ def test_natural_appointment_acceptance_keeps_time_and_day_agreement(quote, acce
 def test_final_only_submits_current_values_not_distracting_speech_quotes(monkeypatch):
     calls = provider(monkeypatch, {'summary': [], 'questions': [], 'contradictions': [], 'clinical_items': []})
     final.finalize(CONTEXT, [])
-    fields = json.loads(calls[0]['contents'][0]['parts'][0]['text'])['clinical_fields']
+    fields = json.loads(calls[0]['messages'][0]['content'])['clinical_fields']
     assert fields['chief_complaint'] == {'value': 'Soğukta ağrı'}
 
 

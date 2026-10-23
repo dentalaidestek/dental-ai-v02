@@ -292,6 +292,11 @@ hastanın başvuru yakınması/belirtisidir; hekimin çürük gibi bulgusunu bur
 Hekimin kesin bulguları clinical_findings ve uygun olduğunda teeth içindedir.
 plan içinde hekimin belirttiği BÜTÜN planları birlikte koru; sonraki röntgen planı
 önceki koşullu işlem seçeneğini iptal etmez. Yapılacak/önerilen işlem yapılmış değildir.
+Düşünülen ilaç adı, formu/uygulama yolu ve henüz başlanmadığı bilgisi plan içinde
+açıkça korunsun; sonradan söylenen “ilaç listesini inceleyelim” bunu silmez. Kullanılan
+ilaçlar medications, düşünülen/önerilen ilaçlar plan içinde ayrı kalmalı. Söylenen
+tetkik adı, sonuç, birim ve tarih/belirsizliği medical_history içinde koru; özetlerken
+sayısal sonuçları atlama veya normal diye yeniden yorumlama.
 Çıktı öncesi özellikle plan alanını kontrol et: "önce film çekelim, sonra dolgu mu kanal mı
 karar verelim" gibi koşullu planlar da plandır; yalnız kesinleşmiş tedaviyi bekleme.
 transcript içinde bu tür hekim önerisi bulunuyorsa plan alanını boş bırakma; birebir

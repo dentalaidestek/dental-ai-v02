@@ -61,4 +61,4 @@ def test_final_uses_literature_and_preserves_all_clinical_fields(monkeypatch):
     result = final.finalize(CONTEXT, [])
     assert result['clinical_items'] == [item]
     assert {i['field'] for i in result['summary']} == set(CONTEXT['fields'])
-    assert len(calls) == 1 and 'pubmed-123' in calls[0]['contents'][0]['parts'][0]['text']
+    assert len(calls) == 1 and 'pubmed-123' in calls[0]['messages'][0]['content']
