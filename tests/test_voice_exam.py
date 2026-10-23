@@ -219,7 +219,7 @@ def test_normalize_preserves_negation_and_drops_unsupported_claims():
     assert data['fields']['allergies']['quote'] == 'Alerjim yok.'
 
 
-def test_gemini_only_transport_and_truncation(monkeypatch):
+def test_audio_transcription_is_separate_and_truncation_stops_understanding(monkeypatch):
     import app.http_transport as transport
     monkeypatch.setenv('GEMINI_API_KEY', 'synthetic-key')
     monkeypatch.setenv('VOICE_EXAM_GEMINI_MODEL', 'gemini-test')
@@ -235,12 +235,14 @@ def test_gemini_only_transport_and_truncation(monkeypatch):
                 {'text': json.dumps({'transcript': 'Soğukta ağrıyor.', 'fields': {}, 'teeth': []})}]}}]}).encode()
     def open_request(request, **kw):requests.append(request);return Response()
     monkeypatch.setattr(transport, 'urlopen', open_request)
-    assert core.extract(transcript='Soğukta ağrıyor.')['transcript']
+    monkeypatch.setattr(core, '_understand', lambda text, context: core.normalize({'transcript': text}))
+    audio = b'RIFF' + b'\0' * 4 + b'WAVE' + b'\0' * 100
+    assert core.extract(data=audio, mime='audio/wav')['transcript']
     assert len(requests) == 1 and requests[0].full_url.startswith('https://generativelanguage.googleapis.com/')
     assert 'synthetic-key' not in requests[0].full_url
     assert 'responseSchema' in json.loads(requests[0].data)['generationConfig']
     Response.finish = 'MAX_TOKENS'
-    with pytest.raises(core.VoiceError, match='tamamlanmadı'):core.extract(transcript='Örnek')
+    with pytest.raises(core.VoiceError, match='tamamlanmadı'):core.extract(data=audio, mime='audio/wav')
 
 
 def test_disabled_feature_and_anonymous_entry(app_client, monkeypatch):

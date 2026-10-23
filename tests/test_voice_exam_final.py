@@ -129,6 +129,7 @@ def test_omitted_previous_field_is_preserved_but_explicit_retraction_is_respecte
         def read(self, limit):
             return json.dumps({'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'text': json.dumps(response)}]}}]}).encode()
     monkeypatch.setattr(transport, 'urlopen', lambda *args, **kw: Response())
+    monkeypatch.setattr(core, '_understand', lambda text, context: core.normalize(response, evidence=text))
     context = {'fields': {'allergies': {'value': 'Belirsiz alerji', 'quote': 'Alerjim var.'}}}
     assert 'allergies' in core.extract(transcript='Yanlış anlaşıldı.', context=context)['fields']
     response['removed_fields'] = [{'name': 'allergies', 'quote': 'Yanlış anlaşıldı.'}]
