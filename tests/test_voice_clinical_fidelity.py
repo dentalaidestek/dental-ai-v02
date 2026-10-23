@@ -68,3 +68,17 @@ def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch
     assert output['transcript'] == original
     assert len(calls) == 1 and calls[0]['clinical_text'] == original
     assert 'sources' not in calls[0]  # Extraction is not a second literature review.
+
+
+def test_full_claude_transport_to_normalized_fields(monkeypatch):
+    from test_voice_review_provider import transport
+    text = 'Prolia iğnesi yapıldı. Altı ayda bir.'
+    result = {key: [] for key in core.schema()['required']}
+    result.update(transcript=text, uncertain='', fields={}, appointment={'quote': '', 'acceptance_quote': ''},
+        clinical_facts=[{'field': 'medications', 'value': 'Prolia enjeksiyonu, altı ayda bir',
+                         'quote': text, 'temporality': 'CURRENT'}])
+    calls, _ = transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': result}]})
+    output = core.extract(transcript=text)
+    assert 'Prolia' in output['fields']['medications']['value']
+    assert len(calls) == 1
