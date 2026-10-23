@@ -71,6 +71,13 @@ def resolve_appointment(quote, acceptance, now=None):
     now = now or datetime.now(ZoneInfo('Europe/Istanbul'))
     text = quote.casefold().replace('ı', 'i')
     accepted = acceptance.casefold().replace('ı', 'i')
+    # STT may spell the same spoken hour as 17'de instead of on yedide.
+    hour_words = {hour: word for word, hour in SPOKEN_HOURS.items()}
+    def digit_hour(match):
+        return hour_words.get(int(match[1]), match[0])
+    hour_pattern = r'(?<![\w:])(\d{1,2})[’\']?(?:da|de|ta|te)\b'
+    text = re.sub(hour_pattern, digit_hour, text)
+    accepted = re.sub(hour_pattern, digit_hour, accepted)
     sentences = re.split(r'(?<=[.!?])\s+', accepted)
     if len(sentences) > 1:
         # Ancillary statements after acceptance (e.g. bringing a document) are not

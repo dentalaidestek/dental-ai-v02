@@ -76,6 +76,16 @@ def test_colloquial_hour_acceptance_requires_same_day_and_same_proposal(acceptan
     assert core.resolve_appointment('Bugün saat on yedide tekrar gelir misiniz?', acceptance, now) == expected
 
 
+@pytest.mark.parametrize('acceptance,expected', [
+    ("Tamam hocam, bugün 5'te gelirim. Kartı da getiririm.", '2026-10-23T17:00'),
+    ('Tamam bugün 17’de gelirim.', '2026-10-23T17:00'),
+    ("Bugün 6'da gelirim.", None),
+    ("Bugün sabah 5'te gelirim.", None)])
+def test_stt_numeric_suffixed_hours(acceptance, expected):
+    now = datetime(2026, 10, 23, 13, tzinfo=ZoneInfo('Europe/Istanbul'))
+    assert core.resolve_appointment("Bugün saat 17'de tekrar gelir misiniz?", acceptance, now) == expected
+
+
 def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch):
     from app import voice_exam_review_provider as provider
     calls = []
