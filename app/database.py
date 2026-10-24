@@ -15,13 +15,16 @@ def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False
         raise RuntimeError("Unsupported database backend")
     prefix = f"DENTAL_{role.upper()}_DB"
     pool_size = int(os.getenv(f"{prefix}_POOL_SIZE", "2"))
+    pool_timeout = int(os.getenv(f"{prefix}_POOL_TIMEOUT", "20"))
+    if not 1 <= pool_timeout <= 60:
+        raise RuntimeError(f"{prefix}_POOL_TIMEOUT must be 1..60")
     if not 1 <= pool_size <= 10:
         raise RuntimeError(f"{prefix}_POOL_SIZE must be 1..10")
     return create_engine(
         url,
         pool_size=pool_size,
         max_overflow=0,
-        pool_timeout=5,
+        pool_timeout=pool_timeout,
         pool_pre_ping=True,
         pool_recycle=300,
         connect_args={"connect_timeout": 5, "application_name": f"dental-{role}"},
