@@ -31,6 +31,22 @@ def test_fabricated_fact_and_private_categories_are_not_accepted():
     assert not core.normalize({'transcript': 'İyiyim.', 'clinical_facts': facts})['fields']
 
 
+def test_private_coaching_survives_formatting_only_quote_changes():
+    text = 'Biraz da çekimden korkuyorum. Bugün bitsin istiyorum.'
+    quote = 'Biraz da çekimden korkuyorum, bugün bitsin istiyorum.'
+    result = core.normalize({'transcript': text,
+        'communication': [{'quote': quote, 'observation': 'Korku belirtildi', 'suggestion': 'Endişesini sorun'}],
+        'decision_barriers': [{'quote': quote, 'category': 'FEAR', 'observation': 'Korku belirtildi',
+            'question': 'Neden endişeleniyorsunuz?', 'explanation': 'Adımları anlatın'}],
+        'follow_up_questions': [{'quote': quote, 'priority': 'CLARIFY_NOW',
+            'question': 'Neden endişeleniyorsunuz?', 'reason': 'Kaygıyı anlamak'}]})
+    for key in ('communication', 'decision_barriers', 'follow_up_questions'):
+        assert result[key][0]['quote'] == text.rstrip('.')
+    fabricated = core.normalize({'transcript': text, 'communication': [
+        {'quote': 'Parayı ödeyemiyorum.', 'observation': 'Maddi sorun', 'suggestion': 'Sorun'}]})
+    assert not fabricated['communication']
+
+
 def test_uncertain_spoken_drug_cannot_be_replaced_or_searched_as_another_ingredient():
     quote = 'Haftalık hissedronat hapı kullandım.'
     output = core.normalize({'transcript': quote, 'clinical_facts': [{
