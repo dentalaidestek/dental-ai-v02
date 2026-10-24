@@ -211,7 +211,7 @@ def queue_owned_legacy_course_materials(session, *, material_model, owner_user_i
 
 def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int,
                     upgrade_profile: bool = False, background_tasks=None,
-                    wake_existing: bool = False) -> bool:
+                    wake_existing: bool = False, recovery_poll: bool = False) -> bool:
     queued = 0
     if upgrade_profile:
         from app.work_jobs import WorkCapacity
@@ -228,16 +228,15 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
             session.rollback()
             return False
         if background_tasks is not None:
-            pending = queued or (wake_existing and session.execute(text('''
-                SELECT 1 FROM studymaterial m JOIN studyindexjob j
-                  ON j.material_id=m.id AND j.owner_user_id=m.owner_user_id
-                 AND j.course_id=m.course_id AND j.index_version=m.building_index_version
-                WHERE m.owner_user_id=:owner AND m.course_id=:course
-                  AND m.deleted_at IS NULL AND j.status='QUEUED' LIMIT 1
-            '''), {'owner': owner_user_id, 'course': course_id}).first())
+            from app.academic_index_readiness import course_has_due_build, allow_recovery_poll_wake
+            pending = queued or (wake_existing and course_has_due_build(
+                session, owner_user_id=owner_user_id, course_id=course_id))
+            if pending and not queued and recovery_poll:
+                pending = allow_recovery_poll_wake(owner_user_id=owner_user_id, course_id=course_id)
             if pending:
                 # Wake only after the reservation is durable, never on every
-                # readiness poll. Opening a course can recover a missed wake.
+                # readiness poll. Bounded probes recover a missed wake or an
+                # expired worker lease without altering durable checkpoints.
                 from app.academic_modal_dispatch import wake_academic_modal_indexer
                 background_tasks.add_task(wake_academic_modal_indexer)
     rows = list(session.exec(
@@ -268,3 +267,4 @@ def validate_configuration() -> None:
         raise RuntimeError("STUDY_ACADEMIC_V2_ONLY requires STUDY_ACADEMIC_V2_INDEXING")
     if v2_only_enabled() and not reads_enabled():
         raise RuntimeError("STUDY_ACADEMIC_V2_ONLY requires STUDY_ACADEMIC_V2_READS")
+
