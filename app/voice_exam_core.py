@@ -233,7 +233,10 @@ def normalize(result, evidence=None):
     for item in requests:
         if not isinstance(item, dict): continue
         term = item.get('term', ''); quote = _string(item.get('quote', ''), 1000)
-        if isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term) and quote and quote in anchor:
+        spoken_tokens = set(re.findall(r'[a-z]+', quote.casefold()))
+        term_tokens = re.findall(r'[a-z]+', term.casefold()) if isinstance(term, str) else []
+        if (isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term)
+                and quote and quote in anchor and term_tokens and all(token in spoken_tokens for token in term_tokens)):
             output['source_requests'].append({'term': term.lower().strip(), 'quote': quote})
     from app.voice_exam_literature import TOPICS
     allowed_topics = {topic for topic, _ in TOPICS}
@@ -286,6 +289,10 @@ def normalize(result, evidence=None):
             continue
         quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
         value = _string(fact.get('value', ''), 1000)
+        if fact['field'] == 'medications':
+            # Do not silently replace an uncertain spoken product with a different
+            # active ingredient or dose supplied by the extraction model.
+            value = quote
         if quote and value:
             grouped.setdefault(fact['field'], []).append((labels[fact['temporality']] + ': ' + value, quote))
     for field, items in grouped.items():
@@ -408,9 +415,11 @@ Klinik aciliyet/ilaç etkileşimi sonucu veya tedavi önerisi üretme.
 LITERATURE_TOPICS (en çok 6): şemadaki topic seçeneklerinden klinik anlamla seç ve
 birebir quote ekle. İlaç/sistemik öykü ile planlanan işlemin bağlantısını önceliklendir;
 yalnız ağrı veya ilaç anahtar kelimesi arama. Bunlar risk sonucu değil kaynak konusudur.
-SOURCE_REQUESTS (en çok 6): konuşulan ilaç için güvenle bilinen İngilizce jenerik
-etken madde term ve birebir quote. Belirsiz marka/telaffuzu tahmin etme; netleştirme
-sorusu üret. Hasta kimliği veya cümlesi arama terimi olmasın.
+SOURCE_REQUESTS (en çok 6): yalnız konuşmada açıkça geçen ilaç/ürün adını term olarak
+aynen yaz ve birebir quote ekle. Marka adını başka etken maddeye dönüştürme. Belirsiz
+telaffuzdan başka ilaç adı tahmin etme; netleştirme sorusu üret. Hasta kimliği veya
+cümlesi arama terimi olmasın. medications value da konuşmadaki ifadeyi aynen korusun;
+ürün/etken madde eşleştirmesi çıkarım sırasında yapılmaz.
 UNCERTAIN: yalnız gerçek belirsizliği kısa belirt; eksik bilgiyi doldurma.
 Tüm gerekli dizileri üret; bilgi olmayan dizi boş olsun. Açık klinik beyan bulunan
 konuşmayı yalnız kimlik/randevuya indirgeme; clinical_facts içinde bu beyanları koru.
@@ -436,7 +445,11 @@ def clinical_context(value):
     for item in requests:
         if not isinstance(item, dict) or set(item) != {'term', 'quote'} or not isinstance(item.get('term'), str) or not re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', item['term']):
             raise VoiceError('Kaynak arama terimi doğrulanamadı.')
-        clean['source_requests'].append({'term': item['term'].lower().strip(), 'quote': _string(item['quote'], 1000)})
+        quote = _string(item['quote'], 1000)
+        spoken_tokens = set(re.findall(r'[a-z]+', quote.casefold()))
+        term_tokens = re.findall(r'[a-z]+', item['term'].casefold())
+        if term_tokens and all(token in spoken_tokens for token in term_tokens):
+            clean['source_requests'].append({'term': item['term'].lower().strip(), 'quote': quote})
     from app.voice_exam_literature import TOPICS
     topics = value.get('literature_topics', [])
     if not isinstance(topics, list) or len(topics) > 6:

@@ -18,7 +18,7 @@ def test_atomic_facts_survive_invalid_combined_summary_and_daily_denial():
     data = {'transcript': text, 'fields': {'medications': {'value': 'Eksik özet', 'quote': 'risedronat ve Prolia'}},
         'clinical_facts': [dict(zip(('field', 'value', 'quote', 'temporality'), fact)) for fact in facts]}
     fields = core.normalize(data, evidence=text)['fields']
-    assert 'Geçmiş: Risedronat' in fields['medications']['value']
+    assert 'Geçmiş: Eskiden risedronat' in fields['medications']['value']
     assert 'Güncel: Prolia' in fields['medications']['value']
     assert 'Altı ayda bir' in fields['medications']['value']
     assert 'Planlanan:' in fields['plan']['value'] and 'henüz başlanmadı' in fields['plan']['value']
@@ -29,6 +29,17 @@ def test_fabricated_fact_and_private_categories_are_not_accepted():
     facts = [{'field': field, 'value': 'Uydurma', 'quote': quote, 'temporality': 'CURRENT'}
              for field, quote in [('medications', 'Varfarin kullanıyorum.'), ('private_life', 'İyiyim.')]]
     assert not core.normalize({'transcript': 'İyiyim.', 'clinical_facts': facts})['fields']
+
+
+def test_uncertain_spoken_drug_cannot_be_replaced_or_searched_as_another_ingredient():
+    quote = 'Haftalık hissedronat hapı kullandım.'
+    output = core.normalize({'transcript': quote, 'clinical_facts': [{
+        'field': 'medications', 'value': 'Etidronat kullanmış', 'quote': quote, 'temporality': 'HISTORICAL'}],
+        'source_requests': [{'term': 'etidronate', 'quote': quote}]})
+    assert output['fields']['medications']['value'] == 'Geçmiş: ' + quote
+    assert not output['source_requests']
+    context = core.clinical_context({'source_requests': [{'term': 'etidronate', 'quote': quote}]})
+    assert not context['source_requests']
 
 
 @pytest.mark.parametrize('quote', ['46 dolguya uygun değil.', '46 çürük yok.', '46 çürük olabilir.', '46 çürük var mı?'])
