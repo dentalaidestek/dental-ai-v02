@@ -36,6 +36,26 @@ def _anchored(items, fields):
     return accepted
 
 
+def _contradictions(items, fields):
+    """A contradiction needs two distinct statements, not one vague anchor."""
+    if not isinstance(items, list) or len(items) > 12:
+        raise ValueError('Invalid contradiction checklist')
+    accepted = []
+    keys = {'field', 'quote', 'other_field', 'other_quote', 'text'}
+    for item in items:
+        if not isinstance(item, dict) or set(item) != keys:
+            continue
+        if not all(isinstance(v, str) and len(v) <= 1800 for v in item.values()):
+            continue
+        left, right = fields.get(item['field']), fields.get(item['other_field'])
+        a, b = item['quote'], item['other_quote']
+        if (left and right and a and b and item['text'] and a in left['value'] and b in right['value']
+                and a not in b and b not in a):
+            accepted.append({'field': item['field'], 'quote': a + ' / Karşı ifade: ' + b,
+                             'text': item['text']})
+    return accepted
+
+
 def finalize(context, insights, uncertain=""):
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
@@ -58,13 +78,19 @@ def finalize(context, insights, uncertain=""):
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
+    contradiction_keys = ('field', 'quote', 'other_field', 'other_quote', 'text')
+    contradiction_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in contradiction_keys},
+                            'required': list(contradiction_keys)}
     schema = {'type': 'OBJECT', 'properties': {
-        **{k: {'type': 'ARRAY', 'items': anchor_schema} for k in ('questions', 'contradictions')},
+        'questions': {'type': 'ARRAY', 'items': anchor_schema},
+        'contradictions': {'type': 'ARRAY', 'items': contradiction_schema},
         'clinical_items': {'type': 'ARRAY', 'items': {'type': 'OBJECT',
             'properties': {k: {'type': 'STRING'} for k in clinical_keys}, 'required': list(clinical_keys)}}},
         'required': ['questions', 'contradictions', 'clinical_items']}
     # Constrain identifiers at generation as well as checking them after output.
     anchor_schema['properties']['field']['enum'] = list(fields)
+    for key in ('field', 'other_field'):
+        contradiction_schema['properties'][key]['enum'] = list(fields)
     clinical_schema = schema['properties']['clinical_items']['items']['properties']
     clinical_schema['patient_field']['enum'] = list(fields)
     if evidence['references']:
@@ -78,7 +104,13 @@ questions: bu görüşmeyle ilgili en çok 12
 netleştirme sorusu; bilgi geçmedi diye hekimin sormadığını veya hastada olmadığını iddia etme.
 questions yalnız bilgiyi netleştirsin; klinik işlem/ilaç önerisini bu alana taşıyarak
 kaynak doğrulamasını atlama. Klinik öneri ve hatırlatmalar clinical_items içinde dayanaklı olsun.
-contradictions: en çok 12 açık çelişki; belirsizliği kesinleştirme. Her öğenin field değeri
+contradictions: en çok 12 açık çelişki; aynı kişi/konu/zaman için birbirini dışlayan İKİ
+açık beyan gerekir. field/quote birinci beyan, other_field/other_quote karşı beyanın
+alanı ve birebir alıntısıdır. Tek beyan, eksik bilgi, tercih/plan farkı veya tarihsel
+ilaç ile güncel durum farklılığı çelişki değildir; gerekiyorsa questions kullan.
+'Başka hastalığım yok' önceden belirtilen hastalığı reddetmez; günlük ilaç yokluğu
+aralıklı tedaviyle çelişmez. Kapsam, olumsuzluk ve zaman farklarını koru.
+questions öğesinin field değeri
 verilen clinical_fields anahtarı, quote o alanın value içindeki birebir kısa alıntı,
 text ise hekime Türkçe açıklama olsun. Yaş tek başına risk veya tanı değildir.
 Tarihsel beyanı güncel bilgi sayma. 'Yok', 'bilmiyor' ve 'sorulmadı' farklıdır.
@@ -111,7 +143,8 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
         result = review(prompt, data, schema)
-        output = {k: _anchored(result.get(k), fields) for k in ('questions', 'contradictions')}
+        output = {'questions': _anchored(result.get('questions'), fields),
+                  'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
         output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
                              for name, field in fields.items()][:12]

@@ -60,6 +60,16 @@ def test_fabricated_final_anchor_is_rejected(monkeypatch):
     assert len(calls) == 1
 
 
+def test_contradictions_require_two_distinct_grounded_statements():
+    fields = {'medications': {'value': 'Warfarin kullanıyorum. Warfarin kullanmıyorum.'}}
+    item = {'field': 'medications', 'quote': 'Warfarin kullanıyorum.',
+        'other_field': 'medications', 'other_quote': 'Warfarin kullanmıyorum.', 'text': 'Güncel kullanım teyit edilmeli.'}
+    assert len(final._contradictions([item], fields)) == 1
+    assert not final._contradictions([{**item, 'other_quote': 'Uydurma'}], fields)
+    assert not final._contradictions([{**item, 'other_quote': item['quote']}], fields)
+    assert not final._contradictions([{'field': 'medications', 'quote': item['quote'], 'text': 'Çelişki'}], fields)
+
+
 def test_summary_preserves_negative_finding_without_model_paraphrase(monkeypatch):
     calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': []})
     value = '46 numaralı dişin kalan kısmı dolguya uygun değil.'
