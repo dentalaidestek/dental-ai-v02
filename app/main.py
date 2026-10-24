@@ -1825,7 +1825,7 @@ def _validate_schedule_input(
 
 STUDY_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
 STUDY_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-STUDY_MAX_FILE_BYTES = 25 * 1024 * 1024
+STUDY_MAX_FILE_BYTES = 150 * 1024 * 1024
 STUDY_MAX_UPLOAD_COUNT = 12
 STUDY_AI_MAX_SOURCES = 20
 
@@ -4607,7 +4607,7 @@ def upload_study_materials(
                             break
                         total += len(chunk)
                         if total > STUDY_MAX_FILE_BYTES:
-                            raise ValueError("Bir ders notu dosyası en fazla 25 MB olabilir.")
+                            raise ValueError("Bir ders notu dosyası en fazla 150 MB olabilir.")
                         output.write(chunk)
                 if not _study_file_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
