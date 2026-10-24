@@ -110,6 +110,36 @@
 .voice-exam[data-live-finished="true"] .voice-wave{visibility:hidden}
 .voice-exam:is([data-live-state="paused"],[data-live-state="error"],[data-live-finished="true"])>.voice-exam-body>:not([data-live-panel]){display:none!important}
 .voice-exam[data-show-review="true"]>.voice-exam-body>.voice-review:not([hidden]),.voice-exam[data-show-review="true"]>.voice-exam-body>.voice-exam-status{display:block!important}
+
+/* The final review starts with headings; evidence stays with its finding. */
+.voice-exam[data-final-ready="true"] .voice-live-communication,
+.voice-exam[data-final-ready="true"] .voice-followup-panel{display:none!important}
+.voice-exam[data-final-ready="true"] .voice-final-review>h3,
+.voice-exam[data-final-ready="true"] .voice-final-review>.voice-help,
+.voice-exam[data-final-ready="true"] .voice-final-review>[data-voice-finalize]{display:none}
+.voice-exam .voice-review>.voice-final-review{padding:0;border:0;background:transparent}
+.voice-exam .voice-result-section{border:1px solid #dce4ed;border-radius:12px;background:#fff;margin:10px 0;min-width:0;overflow-wrap:anywhere}
+.voice-exam .voice-result-section>summary{cursor:pointer;padding:15px 14px;font-size:16px;line-height:1.5;font-weight:650;color:#14243b}
+.voice-exam .voice-result-count{display:inline-block;margin-left:8px;border-radius:20px;padding:1px 7px;background:#eaf2f9;font-size:12px;font-weight:600;color:#38576d}
+.voice-exam .voice-result-section>dl,.voice-exam .voice-result-section>p{margin:0;padding:0 14px 14px}
+.voice-exam .voice-result-section article{margin:0 14px;padding:14px 0}
+.voice-exam .voice-result-section dl{margin:0;min-width:0}
+.voice-exam .voice-result-section dl>div+div{margin-top:14px}
+.voice-exam .voice-result-section dt{font-size:12px;font-weight:700;color:#526478;margin-bottom:5px}
+.voice-exam .voice-result-section dd{margin:0;font-size:15px;line-height:1.7;color:#14243b;white-space:pre-wrap;overflow-wrap:anywhere}
+.voice-exam .voice-result-source{display:block;font-size:13px;line-height:1.6;margin:8px 0 14px}
+.voice-exam summary:focus-visible{outline:3px solid #91b4dc;outline-offset:2px;border-radius:10px}
+.voice-exam .voice-save-fields>summary{line-height:1.5;font-size:16px}
+@media(max-width:600px){
+  .voice-session-page{padding:0 10px;margin:12px auto}
+  .voice-session-page .voice-exam-body{padding:0 14px 18px}
+  .voice-exam .voice-review>details,.voice-exam .voice-review>section{padding:12px;margin:12px 0}
+  .voice-exam .voice-final-review>h3{font-size:19px;line-height:1.4;margin:0 0 8px}
+  .voice-exam .voice-result-section>summary{padding:14px 12px}
+  .voice-exam .voice-result-section>dl,.voice-exam .voice-result-section>p{padding:0 12px 14px}
+  .voice-exam .voice-result-section article{margin:0 12px}
+  .voice-exam .voice-save-fields textarea,.voice-exam .voice-save-fields input:not([type="checkbox"]){font-size:16px;line-height:1.6}
+}
 .voice-exam [data-live-panel]>.voice-help{display:none}
 @media(max-width:380px){.voice-session-page .voice-exam-body{padding:0 16px 20px}.voice-microphone{width:180px;height:180px}.voice-live-heading{margin-bottom:36px!important}.voice-exam [data-live-panel]{min-height:560px}}
 
