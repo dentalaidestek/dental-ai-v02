@@ -34,7 +34,7 @@ image = (
         "sqlmodel==0.0.44",
         "SQLAlchemy==2.0.54",
         "psycopg2-binary==2.9.13",
-        "pypdf==6.19.0",
+        "pypdf[crypto]==6.19.0",
         "Pillow==12.3.0",
         "pypdfium2==5.13.0",
         "tesserocr==2.11.0",
