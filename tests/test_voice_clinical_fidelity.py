@@ -132,7 +132,7 @@ def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch
         assert options == {'extraction': True}
         assert schema['properties']['fields']['required'] == list(core.FIELDS[:3])
         assert 'transcript' not in schema['properties']
-        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == list(core.FIELDS[3:])
+        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == [*core.FIELDS[3:], 'patient_concern']
         return {'transcript': 'Modelin eksik yeniden yazımı', 'fields': {}, 'clinical_facts': []}
     monkeypatch.setattr(provider, 'review', review)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)
@@ -166,3 +166,13 @@ def test_long_input_without_grounded_clinical_fields_is_explicitly_incomplete(mo
     assert 'klinik alan çıkarılmadı' in output['uncertain']
     assert 'candidates=0 grounded_fields=0' in caplog.text
     assert 'Çiğnerken' not in caplog.text
+
+
+def test_atomic_private_concern_is_shown_only_as_private_coaching():
+    text = 'Biraz da çekimden korkuyorum.'
+    value = 'Endişenizi en çok hangi aşama artırıyor diye sorun; adımları sakin anlatın.'
+    output = core.normalize({'transcript': text, 'clinical_facts': [
+        {'field': 'patient_concern', 'value': value, 'quote': text, 'temporality': 'CURRENT'}]})
+    assert not output['fields']
+    assert output['communication'] == [{'quote': text, 'observation': text, 'suggestion': value}]
+    assert text not in str(core.clinical_context({'fields': output['fields']}))
