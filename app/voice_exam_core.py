@@ -287,10 +287,16 @@ def normalize(result, evidence=None):
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
-        if not isinstance(fact, dict) or fact.get('field') not in FIELDS[3:] or fact.get('temporality') not in labels:
+        if not isinstance(fact, dict) or fact.get('field') not in (*FIELDS[3:], 'patient_concern') or fact.get('temporality') not in labels:
             continue
         quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
         value = _string(fact.get('value', ''), 1000)
+        if fact['field'] == 'patient_concern':
+            # Private concerns share the atomic evidence contract but never enter
+            # selectable patient-record fields or carried clinical context.
+            if quote and value and len(output['communication']) < 8:
+                output['communication'].append({'quote': quote, 'observation': quote, 'suggestion': value})
+            continue
         if fact['field'] == 'medications':
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
@@ -355,7 +361,7 @@ def schema():
         'decision_barriers': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'observation', 'question', 'explanation')}, 'category': {'type': 'STRING', 'enum': ['COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR']}}, 'required': ['quote', 'observation', 'question', 'explanation', 'category']}},
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'clinical_facts': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
-            'field': {'type': 'STRING', 'enum': list(FIELDS[3:])}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
+            'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
             'temporality': {'type': 'STRING', 'enum': ['CURRENT', 'HISTORICAL', 'PLANNED', 'NEGATED', 'UNKNOWN']}},
             'required': ['field', 'value', 'quote', 'temporality']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
@@ -375,12 +381,16 @@ fields yalnız first_name, last_name ve age içindir. Yeni transcript veya klini
 CLINICAL_FACTS: konuşmayı baştan sona tara; açıkça belirtilen her klinik bilgiyi koru.
 Her öğe bir bilgi içerir: field, value, quote, temporality. En çok 40 öğe.
 field anlamları:
-- chief_complaint: hastanın başvuru yakınması, bölge, süre, tetikleyici ve belirtiler.
+- chief_complaint: hastanın fiziksel başvuru yakınması, bölge, süre, tetikleyici ve belirtiler.
 - medical_history: hastalık, sistemik öykü, tetkik adı/sonuç/birim/tarih.
 - medications: güncel VE geçmiş ilaç, enjeksiyon, form, doz, aralık ve son uygulama.
 - allergies: hastanın alerji beyanı; yok, bilmiyorum ve sorulmadı farklıdır.
 - clinical_findings: hekimin söylediği muayene/film bulgusu; tanı ekleme.
 - plan: hekimin söylediği bütün koşullu/kesin işlem ve ilaç planları; henüz yapılmış sayma.
+- patient_concern: hastanın korku, maliyet, süre, güven veya anlama konusunda ifade
+  ettiği tereddüt/beklenti. Bu bilgiyi atlama veya chief_complaint içine yazma. value
+  hekime yönelik kısa, empatik iletişim/soru önerisidir; quote yalnız gerekli kısa
+  dayanak ifadesidir. Bu tür yalnız geçici hekim önerisine gider, hasta dosyasına gitmez.
 Her value kısa Türkçe kayıt metnidir. Her quote clinical_text içinden tek bir kesintisiz,
 birebir alıntıdır. Sayıları, sözcükleri ve olumsuzlukları alıntıda değiştirme. Ayrı
 cümlelerdeki bilgilerin her biri için ayrı öğe yaz; çok bilgiyi tek alıntıya sığdırma.
@@ -427,7 +437,9 @@ Tüm gerekli dizileri üret; bilgi olmayan dizi boş olsun. Açık klinik beyan 
 konuşmayı yalnız kimlik/randevuya indirgeme; clinical_facts içinde bu beyanları koru.
 Tanı, ilaç başlama/kesme veya klinik güvenlik kararı üretme; kaynaklı değerlendirme
 muayene sonunda ayrı yapılır. İlgisiz özel hayat, iletişim bilgisi, kimlik numarası,
-üçüncü kişi adı veya gelir ayrıntısını hiçbir çıktıya taşıma.'''
+üçüncü kişi adı veya gelir ayrıntısını hiçbir çıktıya taşıma. patient_concern önerileri
+klinik tedavi kararı değildir; hastanın endişesini anlamaya ve anlaşılır açıklamaya
+yöneliktir. Konuşmada dayanağı olan tereddüt/beklentiyi boş geçme.'''
 
 
 def clinical_context(value):
