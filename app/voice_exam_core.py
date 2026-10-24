@@ -293,7 +293,7 @@ def normalize(result, evidence=None):
         if fact['field'] in {'patient_concern', 'clinician_response'}:
             # Private concerns share the atomic evidence contract but never enter
             # selectable patient-record fields or carried clinical context.
-            if quote and value and len(output['communication']) < 8:
+            if quote and value and len(output['communication']) < 24:
                 observation = 'Görüşmede verilen yanıt: ' + quote if fact['field'] == 'clinician_response' else quote
                 output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': value})
             continue
