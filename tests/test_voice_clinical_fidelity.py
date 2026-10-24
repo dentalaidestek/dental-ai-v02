@@ -128,3 +128,14 @@ def test_full_claude_transport_to_normalized_fields(monkeypatch):
     output = core.extract(transcript=text)
     assert 'Prolia' in output['fields']['medications']['value']
     assert len(calls) == 1
+
+
+def test_long_input_without_grounded_clinical_fields_is_explicitly_incomplete(monkeypatch, caplog):
+    from app import voice_exam_review_provider as provider
+    text = 'Hasta: Çiğnerken ağrıyor. Hekim: Film çekelim. ' * 4
+    monkeypatch.setattr(provider, 'review', lambda *a, **k: {
+        'fields': {}, 'clinical_facts': [], 'uncertain': ''})
+    output = core._understand(text, {})
+    assert 'klinik alan çıkarılmadı' in output['uncertain']
+    assert 'candidates=0 grounded_fields=0' in caplog.text
+    assert 'Çiğnerken' not in caplog.text
