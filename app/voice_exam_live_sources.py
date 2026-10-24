@@ -76,7 +76,15 @@ def retrieve_requests(requests):
     # More terms remain explicitly uncovered instead of silently being cleared.
     terms = list(dict.fromkeys(item['term'] for item in requests))
     for term in terms[:3]:
-        try: references.append(lookup(term))
+        try:
+            ref = dict(lookup(term))
+            from app.voice_drug_names import is_spelling_candidate
+            # A verified product label does not verify which drug the patient took.
+            ref['name_resolution'] = 'unconfirmed_spelling_candidate' if any(
+                item['term'] == term and is_spelling_candidate(term, item.get('quote', ''))
+                for item in requests) else 'spoken_name'
+            ref['searched_name'] = term
+            references.append(ref)
         except Exception: unavailable.append('drug:' + term)
     unavailable.extend('drug:' + term for term in terms[3:])
     return references, unavailable

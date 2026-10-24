@@ -8,6 +8,16 @@ from html.parser import HTMLParser
 
 # Fixed document URLs only: user/model text cannot become a URL or redirect target.
 DOCUMENTS = (
+    ('sdcep-drug-interactions', 'SDCEP', 'Drug interactions in dental prescribing',
+     'https://sdcepdentalprescribing.nhs.scot/guidance/supporting-tools/drug-interactions/',
+     ('ilaç', 'antibiyotik', 'drug'), ('macrolide', 'statin', 'interaction', 'prescribe')),
+    ('sps-macrolides-statins', 'NHS SPS', 'Managing interactions between macrolides and statins',
+     'https://sps.nhs.uk/articles/managing-interactions-between-macrolides-and-statins/',
+     ('statin', 'klaritromisin', 'clarithromycin', 'eritromisin', 'erythromycin'),
+     ('clarithromycin', 'simvastatin', 'rosuvastatin', 'contraindicated')),
+    ('gdc-communication', 'General Dental Council', 'Communicate effectively with patients',
+     'https://standards.gdc-uk.org/pages/principle2/principle2',
+     ('communication needs',), ('understand', 'listen', 'cost', 'information')),
     ('ada-pain-guideline', 'ADA', 'Acute Dental Pain Management Guideline',
      'https://www.ada.org/resources/research/science/evidence-based-dental-research/pain-management-guideline',
      ('ağrı', 'sızl', 'soğuk', 'endodontic diagnosis'), ('toothache', 'recommend', 'treatment', 'adolescent')),
@@ -80,7 +90,7 @@ def _fetch(document):
         raise ValueError('Source exceeds limit')
     parser = _Text(); parser.feed(raw.decode('utf-8', errors='replace'))
     paragraphs = [' '.join(p.split()) for p in ''.join(parser.parts).split('\n')]
-    paragraphs = [p for p in paragraphs if len(p) >= 80]
+    paragraphs = [p for p in paragraphs if len(p) >= 25]
     ranked = sorted(enumerate(paragraphs), key=lambda pair: (-sum(t in pair[1].casefold() for t in terms), pair[0]))
     excerpts = [text[:1800] for _, text in ranked[:5] if any(t in text.casefold() for t in terms)]
     if not excerpts:

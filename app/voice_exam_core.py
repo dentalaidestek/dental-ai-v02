@@ -234,10 +234,8 @@ def normalize(result, evidence=None):
     for item in requests:
         if not isinstance(item, dict): continue
         term = item.get('term', ''); quote = appointment_evidence_quote(_string(item.get('quote', ''), 1000), anchor)
-        spoken_tokens = set(re.findall(r'[a-z]+', quote.casefold()))
-        term_tokens = re.findall(r'[a-z]+', term.casefold()) if isinstance(term, str) else []
-        if (isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term)
-                and quote and quote in anchor and term_tokens and all(token in spoken_tokens for token in term_tokens)):
+        from app.voice_drug_names import supported_search_term
+        if quote and quote in anchor and supported_search_term(term, quote):
             output['source_requests'].append({'term': term.lower().strip(), 'quote': quote})
     from app.voice_exam_literature import TOPICS
     allowed_topics = {topic for topic, _ in TOPICS}
@@ -427,9 +425,11 @@ Klinik aciliyet/ilaç etkileşimi sonucu veya tedavi önerisi üretme.
 LITERATURE_TOPICS (en çok 6): şemadaki topic seçeneklerinden klinik anlamla seç ve
 birebir quote ekle. İlaç/sistemik öykü ile planlanan işlemin bağlantısını önceliklendir;
 yalnız ağrı veya ilaç anahtar kelimesi arama. Bunlar risk sonucu değil kaynak konusudur.
-SOURCE_REQUESTS (en çok 6): yalnız konuşmada açıkça geçen ilaç/ürün adını term olarak
-aynen yaz ve birebir quote ekle. Marka adını başka etken maddeye dönüştürme. Belirsiz
-telaffuzdan başka ilaç adı tahmin etme; netleştirme sorusu üret. Hasta kimliği veya
+SOURCE_REQUESTS (en çok 6): konuşmadaki ilaç adını birebir quote ile destekle.
+Türkçe yazım veya küçük ses çözümleme hatasında resmî kaynak aramak için olası
+doğru yazımı term olarak önerebilirsin; bu yalnız arama adayıdır, kesin ilaç kimliği
+değildir. Böyle durumda ilaç kutusu/reçetesiyle doğrulama sorusu da üret. Marka adını
+başka etken maddeye dönüştürme; belirsiz/çok eksik addan ilaç tahmin etme. Hasta kimliği veya
 cümlesi arama terimi olmasın. medications value da konuşmadaki ifadeyi aynen korusun;
 ürün/etken madde eşleştirmesi çıkarım sırasında yapılmaz.
 UNCERTAIN: yalnız gerçek belirsizliği kısa belirt; eksik bilgiyi doldurma.
@@ -460,9 +460,8 @@ def clinical_context(value):
         if not isinstance(item, dict) or set(item) != {'term', 'quote'} or not isinstance(item.get('term'), str) or not re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', item['term']):
             raise VoiceError('Kaynak arama terimi doğrulanamadı.')
         quote = _string(item['quote'], 1000)
-        spoken_tokens = set(re.findall(r'[a-z]+', quote.casefold()))
-        term_tokens = re.findall(r'[a-z]+', item['term'].casefold())
-        if term_tokens and all(token in spoken_tokens for token in term_tokens):
+        from app.voice_drug_names import supported_search_term
+        if supported_search_term(item['term'], quote):
             clean['source_requests'].append({'term': item['term'].lower().strip(), 'quote': quote})
     from app.voice_exam_literature import TOPICS
     topics = value.get('literature_topics', [])
@@ -581,8 +580,22 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             # Missing output is not an explicit correction. Preserve previously
             # reviewed clinical anchors rather than silently erasing them.
             for name, item in context.get('fields', {}).items():
-                if name not in result['fields'] and name not in result['removed_fields']:
+                if name in result['removed_fields']:
+                    continue
+                current = result['fields'].get(name)
+                if not current:
                     result['fields'][name] = item
+                elif name in FIELDS[3:] and current['quote'] in item['quote']:
+                    result['fields'][name] = item
+                elif name in FIELDS[3:] and item['quote'] not in current['quote']:
+                    # Each audio chunk is a delta. A new denial such as 'başka ilaç yok'
+                    # cannot erase the medication named in an earlier chunk. Keep both
+                    # statements for review; an explicit full-field withdrawal is separate.
+                    combined = {'value': item['value'] + '\n' + current['value'],
+                                'quote': item['quote'] + ' | ' + current['quote']}
+                    if any(len(combined[key]) > 3000 for key in combined):
+                        raise VoiceError('Görüşme alanı sınırına ulaşıldı. Önceki özet korunuyor; alanları kısaltın.')
+                    result['fields'][name] = combined
             old_teeth = {item['tooth']: item for item in context.get('teeth', []) if item['tooth'] not in result['removed_teeth']}
             old_teeth.update({item['tooth']: item for item in result['teeth']})
             result['teeth'] = list(old_teeth.values())
@@ -590,9 +603,10 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             current_topics = {item['topic']: item for item in context.get('literature_topics', []) if item['quote'] in topic_anchors}
             current_topics.update({item['topic']: item for item in result['literature_topics']})
             result['literature_topics'] = list(current_topics.values())[:6]
-            if not result['source_requests']:
-                anchors = ' '.join(item['quote'] for item in result['fields'].values())
-                result['source_requests'] = [item for item in context.get('source_requests', []) if item['quote'] in anchors]
+            anchors = ' '.join(item['quote'] for item in result['fields'].values())
+            searches = {item['term']: item for item in context.get('source_requests', []) if item['quote'] in anchors}
+            searches.update({item['term']: item for item in result['source_requests']})
+            result['source_requests'] = list(searches.values())[:6]
             # Appointment cancellation/correction remains model-controlled; an
             # omitted appointment cannot be silently assumed still agreed.
             if context.get('appointment') and not result['appointment']:

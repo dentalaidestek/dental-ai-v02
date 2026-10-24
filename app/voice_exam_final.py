@@ -70,6 +70,8 @@ def finalize(context, insights, uncertain=""):
         value = 'Diş ' + tooth['tooth'] + ': ' + tooth['status']
         fields['tooth_' + tooth['tooth']] = {'value': value, 'quote': value}
     query = ' '.join(item['value'] for item in fields.values())
+    if insights:
+        query += ' communication needs'
     requests = context.get('source_requests', [])
     options = {}
     if requests: options['requests'] = requests
@@ -136,7 +138,27 @@ Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
-    # Coaching stays in a separate transient UI and is not needed by this clinical call.
+    # Short transient communication anchors share this final call, never patient writes.
+    communication_fields = {f'communication_{i}': {'value': item['quote']} for i, item in enumerate(insights)}
+    fields.update(communication_fields)
+    anchor_schema['properties']['field']['enum'] = list(fields)
+    clinical_schema['patient_field']['enum'] = list(fields)
+    prompt += '''
+İletişim alıntılarını communication_ alanlarında ayrıca değerlendir. Dinleme/empati,
+anlaşılabilir dil, anlayışı kontrol etme, kaygı/kontrol ihtiyacı, maliyet, zaman ve
+ortak karar boyutlarını yalnız ilgili beyan varsa ele al. Yapılmış açıklamayı yapılmamış
+sayma; eksik kayıt hekim hatası değildir. GDC iletişim standardını Türkiye mevzuatı
+veya klinik etkinlik araştırması diye sunma. İletişim kontrol noktalarını da verilen
+kaynağın birebir alıntısıyla clinical_items içinde dayanaklandır. Kişilik/niyet çıkarma.
+Kaynakta açıkça yazan kontrendikasyonu hekime açık uyarı olarak bildir; yasak olan
+hastaya otomatik ilaç kesme/başlama kararıdır, kaynaklı kontrendikasyonu gizlemek değildir.
+Tüm mevcut ilaçlar ile planlanan ilaçları birlikte karşılaştır; henüz başlanmamış
+planı gerçekleşmiş kullanım veya yan etki gibi anlatma. Kaynak ilaç adını
+unconfirmed_spelling_candidate olarak işaretliyorsa eşleştirme yalnız adaydır:
+kutu/reçeteyle doğrulamayı açıkça iste, kesin ilaç veya kesin etkileşim sayma.
+Kaynakta destek varsa alternatif antibiyotik veya ilgili hekimle geçici ara verme
+planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakmasını söyleme.
+'''
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references']}
     if not core._capacity.acquire(blocking=False):
@@ -147,12 +169,19 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
         output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
-                             for name, field in fields.items()][:12]
+                             for name, field in fields.items() if not name.startswith('communication_')][:12]
         appointment = context.get('appointment', {})
         if core.resolve_appointment(appointment.get('quote', ''), appointment.get('acceptance_quote', '')):
             output['contradictions'] = [item for item in output['contradictions'] if item['field'] != 'appointment']
         rejected_reasons = {}
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'], diagnostics=rejected_reasons)
+        candidates = {ref['id']: ref.get('searched_name', '') for ref in evidence['references']
+                      if ref.get('name_resolution') == 'unconfirmed_spelling_candidate'}
+        for item in output['clinical_items']:
+            if item['source_id'] in candidates:
+                item['consideration'] = ('İlaç adı eşleştirmesi henüz doğrulanmadı; olası kaynak adı: '
+                    + candidates[item['source_id']] + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
+                    + item['consideration'])
         review_status = {'source_count': len(evidence['references']),
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
