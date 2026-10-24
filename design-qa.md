@@ -1,6 +1,6 @@
 # Voice examination summary design QA
 
-Source visual truth: `generated_images/exec-946b8261-cf0b-4d96-8284-f19ccdfdec90.png` (853 × 1844 pixels; approximately 390 × 843 CSS pixels when normalized).
+Source visual truth: `/workspace/scratch/f1bfb380c74c/generated_images/exec-946b8261-cf0b-4d96-8284-f19ccdfdec90.png` (853 × 1844 pixels; approximately 390 × 843 CSS pixels when normalized).
 
 Implementation: production voice panel template, session template, `voice-exam.js` renderer and `voice-exam.css`. The local `design-preview` builder uses those actual files with clearly synthetic clinical content and fixed library icons. No patient data or provider calls are used for that preview.
 
@@ -25,6 +25,8 @@ Target state: one clinical accordion open, remaining sections closed, narrow mob
 
 - Local renderer, save lifecycle, privacy cleanup and template tests are available and exercised separately; they do not establish visual fidelity.
 - Primary browser interactions and console-error checks remain unverified after the blank-frame capture and security rejection.
-- Authenticated production verification and deployment remain separate: production has not received this branch while Render build minutes are exhausted.
+- Authenticated production check succeeded after secure sign-in. The existing Academic AI course page still shows “Not hazırlığı tamamlanamadı” and its Gönder control is disabled. No message was sent and no patient record was changed. This verifies the current release blocker, not the unreleased UI. Production has not received this branch while Render build minutes are exhausted.
+- 34 Python final-review/template tests and Node renderer/lifecycle/controller checks passed; CI and visual QA are not claimed as passing.
 
 final result: blocked
+
