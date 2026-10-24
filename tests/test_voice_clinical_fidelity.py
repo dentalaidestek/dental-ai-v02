@@ -46,6 +46,16 @@ def test_doctor_response_and_patient_teachback_are_grounded_transient_context():
     assert all('Görüşmede verilen yanıt' in item['observation'] for item in result['communication'])
 
 
+def test_long_dialogue_does_not_drop_answered_needs_after_eighth_communication_fact():
+    quotes = [f'İletişim yanıtı {i}.' for i in range(10)]
+    quotes.append('Bugün temizleyeceksiniz, yeni ilaca başlamıyorum.')
+    facts = [{'field': 'clinician_response', 'value': 'Görüşmede yanıtlandı.',
+              'quote': quote, 'temporality': 'CURRENT'} for quote in quotes]
+    result = core.normalize({'transcript': ' '.join(quotes), 'clinical_facts': facts})
+    assert len(result['communication']) == 11 and not result['fields']
+    assert result['communication'][-1]['quote'] == quotes[-1]
+
+
 def test_private_coaching_survives_formatting_only_quote_changes():
     text = 'Biraz da çekimden korkuyorum. Bugün bitsin istiyorum.'
     quote = 'Biraz da çekimden korkuyorum, bugün bitsin istiyorum.'
