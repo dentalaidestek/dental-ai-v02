@@ -211,7 +211,8 @@ def queue_owned_legacy_course_materials(session, *, material_model, owner_user_i
 
 def course_v2_ready(session: Session, *, material_model, owner_user_id: int, course_id: int,
                     upgrade_profile: bool = False, background_tasks=None,
-                    wake_existing: bool = False, recovery_poll: bool = False) -> bool:
+                    wake_existing: bool = False, recovery_poll: bool = False,
+                    allow_partial: bool = False) -> bool:
     queued = 0
     if upgrade_profile:
         from app.work_jobs import WorkCapacity
@@ -246,6 +247,10 @@ def course_v2_ready(session: Session, *, material_model, owner_user_id: int, cou
         .where(material_model.deleted_at == None)
         .execution_options(populate_existing=True)
     ).all())
+    if allow_partial:
+        # Retrieval already fences chunks to READY, owned, active generations.
+        # A failed sibling or replacement build must not hide published notes.
+        return any(row.index_status == 'READY' and bool(row.active_index_version) for row in rows)
     return bool(rows) and all(
         row.index_status == "READY" and bool(row.active_index_version)
         and (not upgrade_profile or not row.building_index_version)

@@ -25,7 +25,8 @@ def database(monkeypatch):
         connection.execute(text('''CREATE TABLE studymaterial (
             id INTEGER PRIMARY KEY, owner_user_id INTEGER, course_id INTEGER,
             active_index_version TEXT, building_index_version TEXT, mime_type TEXT,
-            deleted_at TIMESTAMP, index_status TEXT, index_error TEXT)'''))
+            deleted_at TIMESTAMP, index_status TEXT, index_error TEXT,
+            display_name TEXT DEFAULT 'not.pdf', original_filename TEXT DEFAULT 'not.pdf')'''))
     class Material:
         pass
     mapper = registry()
@@ -42,7 +43,9 @@ def database(monkeypatch):
 
 
 def add_material(session, mid=4, owner=1, course=7, building='current', active=None, deleted=None):
-    session.execute(text('''INSERT INTO studymaterial VALUES
+    session.execute(text('''INSERT INTO studymaterial
+        (id,owner_user_id,course_id,active_index_version,building_index_version,mime_type,
+         deleted_at,index_status,index_error) VALUES
         (:id,:owner,:course,:active,:building,'application/pdf',:deleted,:state,NULL)'''),
         {'id': mid, 'owner': owner, 'course': course, 'active': active,
          'building': building, 'deleted': deleted, 'state': 'READY' if active else 'PROCESSING'})
@@ -136,7 +139,7 @@ def test_simultaneous_poll_schedules_one_wake(database):
     assert sum(answers) == 1
 
 
-def test_live_status_contract_reports_three_of_four_failed_instead_of_preparing(database):
+def test_live_status_contract_allows_three_ready_files_and_names_failed_fourth(database):
     engine, Material = database
     with Session(engine) as session:
         for mid in (1, 2, 3):
@@ -157,5 +160,38 @@ def test_live_status_contract_reports_three_of_four_failed_instead_of_preparing(
     response = namespace['study_ai_index_status'](SimpleNamespace(query_params={}), 7, tasks)
     data = json.loads(response.body)
     assert data['completed'] == 3 and data['total'] == 4
-    assert data['state'] == 'failed' and data['ready'] is False
+    assert data['state'] == 'partial' and data['ready'] is True
+    assert data['complete'] is False
+    assert data['files'][3]['state'] == 'failed'
+    assert data['files'][3]['filename'] == 'not.pdf'
     assert not tasks.tasks
+
+
+def test_partial_access_uses_only_owned_published_sources_and_keeps_strict_mode(database):
+    engine, Material = database
+    with Session(engine) as session:
+        add_material(session, mid=1, building=None, active='published')
+        add_material(session, mid=2)
+        add_job(session, material_id=2, status='FAILED')
+        assert not service.course_v2_ready(session, material_model=Material, owner_user_id=1, course_id=7)
+        assert service.course_v2_ready(session, material_model=Material, owner_user_id=1, course_id=7, allow_partial=True)
+        assert not service.course_v2_ready(session, material_model=Material, owner_user_id=2, course_id=7, allow_partial=True)
+        session.execute(text("UPDATE studymaterial SET deleted_at=:now WHERE id=1"), {'now': datetime.now()})
+        assert not service.course_v2_ready(session, material_model=Material, owner_user_id=1, course_id=7, allow_partial=True)
+
+
+def test_status_scopes_current_generation_and_hides_worker_exception_secrets(database):
+    from app.academic_material_status import owned_material_status
+    engine, _ = database
+    with Session(engine) as session:
+        add_material(session, mid=1, building='replacement', active='published')
+        add_job(session, material_id=1, index_version='replacement', status='FAILED', last_error='PROVIDER: api key sk-secret-value')
+        add_job(session, material_id=1, index_version='superseded', status='FAILED', last_error='quota')
+        add_material(session, mid=2, owner=9)
+        add_job(session, material_id=2, owner_user_id=9, status='FAILED')
+        result = owned_material_status(session, owner_user_id=1, course_id=7)
+        assert result['total'] == result['completed'] == 1
+        assert result['ready'] and not result['complete']
+        assert result['files'][0]['state'] == 'update_failed'
+        assert result['files'][0]['error_code'] == 'PROVIDER_CONFIGURATION'
+        assert 'sk-secret-value' not in json.dumps(result)
