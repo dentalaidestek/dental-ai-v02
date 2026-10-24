@@ -213,7 +213,7 @@ def normalize(result, evidence=None):
     for item in coaching:
         if not isinstance(item, dict):
             continue
-        quote = _string(item.get('quote', ''), 2000)
+        quote = appointment_evidence_quote(_string(item.get('quote', ''), 2000), anchor)
         observation = _string(item.get('observation', ''), 1000)
         suggestion = _string(item.get('suggestion', ''), 1000)
         if quote and quote in anchor and observation and suggestion:
@@ -225,6 +225,7 @@ def normalize(result, evidence=None):
         if not isinstance(item, dict) or item.get('category') not in {'COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR'}:
             continue
         clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'observation', 'question', 'explanation')}
+        clean['quote'] = appointment_evidence_quote(clean['quote'], transcript)
         if clean['quote'] and clean['quote'] in transcript:
             output['decision_barriers'].append({'category': item['category'], **clean})
     requests = result.get('source_requests', [])
@@ -232,7 +233,7 @@ def normalize(result, evidence=None):
         raise VoiceError('Kaynak arama terimleri doğrulanamadı.')
     for item in requests:
         if not isinstance(item, dict): continue
-        term = item.get('term', ''); quote = _string(item.get('quote', ''), 1000)
+        term = item.get('term', ''); quote = appointment_evidence_quote(_string(item.get('quote', ''), 1000), anchor)
         spoken_tokens = set(re.findall(r'[a-z]+', quote.casefold()))
         term_tokens = re.findall(r'[a-z]+', term.casefold()) if isinstance(term, str) else []
         if (isinstance(term, str) and re.fullmatch(r'[A-Za-z][A-Za-z -]{2,79}', term)
@@ -245,7 +246,7 @@ def normalize(result, evidence=None):
         raise VoiceError('Literatür konuları doğrulanamadı.')
     for item in topics:
         if isinstance(item, dict) and item.get('topic') in allowed_topics:
-            quote = _string(item.get('quote', ''), 1000)
+            quote = appointment_evidence_quote(_string(item.get('quote', ''), 1000), anchor)
             if quote and quote in anchor:
                 output['literature_topics'].append({'topic': item['topic'], 'quote': quote})
     questions = result.get('follow_up_questions', [])
@@ -255,6 +256,7 @@ def normalize(result, evidence=None):
         if not isinstance(item, dict) or item.get('priority') not in {'CLARIFY_NOW', 'REVIEW_AT_END'}:
             continue
         clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'question', 'reason')}
+        clean['quote'] = appointment_evidence_quote(clean['quote'], anchor)
         if clean['quote'] and clean['quote'] in anchor and clean['question']:
             output['follow_up_questions'].append({**clean, 'priority': item['priority']})
     for key, allowed in (('removed_fields', set(FIELDS)), ('removed_teeth', {f'{q}{n}' for q in range(1, 9) for n in range(1, 9 if q < 5 else 6)})):
@@ -505,6 +507,10 @@ def _understand(text, context):
     clinical_count = sum(name in output['fields'] for name in FIELDS[3:])
     logging.getLogger(__name__).warning('voice_clinical_fidelity candidates=%d grounded_fields=%d',
         candidate_count, clinical_count)
+    logging.getLogger(__name__).warning('voice_insight_fidelity communication=%d/%d barriers=%d/%d questions=%d/%d',
+        len(output['communication']), len(result.get('communication', [])),
+        len(output['decision_barriers']), len(result.get('decision_barriers', [])),
+        len(output['follow_up_questions']), len(result.get('follow_up_questions', [])))
     if not clinical_count and len(text) > 120:
         notice = 'Bu bölümden klinik alan çıkarılmadı. Konuşma metnini kontrol edip yeniden işlemeden kaydetmeyin.'
         output['uncertain'] = (output['uncertain'] + '\n' + notice).strip()
