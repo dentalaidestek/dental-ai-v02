@@ -4966,13 +4966,15 @@ def study_ai_index_status(request: Request, course_id: int, background_tasks: Ba
         ready = course_v2_ready(
             s, material_model=StudyMaterial,
             owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
-            background_tasks=background_tasks,
+            background_tasks=background_tasks, wake_existing=True, recovery_poll=True,
         )
         rows=s.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id==user.id)
             .where(StudyMaterial.course_id==course_id).where(StudyMaterial.deleted_at==None)).all()
         completed=sum(row.index_status=='READY' and bool(row.active_index_version)
             and not row.building_index_version for row in rows)
-        failed=any(row.index_status=='FAILED' and not row.building_index_version for row in rows)
+        from app.academic_index_readiness import course_has_failed_build
+        failed=any(row.index_status=='FAILED' and not row.building_index_version for row in rows) or course_has_failed_build(
+            s, owner_user_id=user.id, course_id=course_id)
         outline=None
         last_source_request=None
         if request.query_params.get('outline')=='1':
