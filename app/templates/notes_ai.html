@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set index_state = index_state|default({'files': [], 'completed': 0, 'total': material_count, 'complete': false}) %}
 <style>
 .study-chat-table-wrap { max-width:100%; overflow-x:auto; margin:10px 0; }
 .study-chat-table { width:100%; min-width:360px; border-collapse:collapse; }
@@ -67,6 +68,20 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
         <a href="/notes/courses/{{ course.id }}">PDF veya fotoğraf ekle</a>
         {% endif %}
     </div>
+
+    {% if material_count > 0 %}
+    <details id="studyIndexFiles" class="study-progress" {% if not index_state.complete %}open{% endif %}>
+        <summary><strong id="studyIndexSummary">{{ index_state.completed }}/{{ index_state.total }} dosya kullanılabilir</strong></summary>
+        <div class="study-progress-body">
+            <p id="studyIndexCoverage">{% if not index_state.complete %}Yanıtlar yalnızca hazır dosyalardan oluşturulur. Hazır olmayan dosyalar kullanılmaz.{% else %}Tüm dosyalar hazır.{% endif %}</p>
+            <ul id="studyIndexFileList" style="padding-left:20px;overflow-wrap:anywhere">
+            {% for file in index_state.files %}
+                <li><strong>{{ file.filename }}</strong> — {{ 'Hazır' if file.usable else 'Hazırlanamadı' if file.state == 'failed' else 'Hazırlanıyor' }}{% if file.message %}: {{ file.message }}{% endif %}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    </details>
+    {% endif %}
 
     {% if material_count > 0 %}
     <div class="study-quick-prompts study-quick-prompts-clean">
@@ -149,6 +164,7 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
     let materialCount = {{ material_count }};
     const v2Streaming = {{ 'true' if v2_streaming else 'false' }};
     let v2Ready = {{ 'true' if v2_ready else 'false' }};
+    let indexState = {{ index_state|tojson }};
     const form = document.getElementById('studyChatForm');
     const input = document.getElementById('studyChatInput');
     const send = document.getElementById('studySendButton');
@@ -160,37 +176,52 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
     const chat = document.getElementById('studyChat');
     const status = document.getElementById('studyChatStatus');
 
+    function renderIndexFiles() {
+        const summary = document.getElementById('studyIndexSummary');
+        const list = document.getElementById('studyIndexFileList');
+        const coverage = document.getElementById('studyIndexCoverage');
+        if (!summary || !list || !coverage) return;
+        summary.textContent = indexState.completed+'/'+indexState.total+' dosya kullanılabilir';
+        coverage.textContent = indexState.complete ? 'Tüm dosyalar hazır.' :
+            'Yanıtlar yalnızca hazır dosyalardan oluşturulur. Hazır olmayan dosyalar kullanılmaz.';
+        list.replaceChildren();
+        (indexState.files || []).forEach(file => {
+            const row = document.createElement('li');
+            const name = document.createElement('strong');
+            name.textContent = file.filename;
+            row.appendChild(name);
+            const label = file.usable ? (file.state==='update_failed' ? 'Hazır; güncelleme tamamlanamadı' : 'Hazır') :
+                file.state==='failed' ? 'Hazırlanamadı' : 'Hazırlanıyor';
+            row.appendChild(document.createTextNode(' — '+label+(file.message ? ': '+file.message : '')));
+            list.appendChild(row);
+        });
+    }
+
     function applyIndexReadiness() {
         const blocked = materialCount > 0 && !v2Ready;
         input.disabled = !materialCount || blocked || uploading;
         send.disabled = !materialCount || blocked || uploading || !!activeRun;
         document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
-        if (blocked) status.textContent='Ders notları hazırlanıyor. Bu sayfa açıkken otomatik devam edecek.';
+        if (blocked) status.textContent=indexState.state==='failed' ?
+            'Henüz kullanılabilir dosya yok. Dosyaların durumunu yukarıdan inceleyebilirsin.' :
+            'Ders notları hazırlanıyor. Hazır olan ilk dosyayla çalışmaya başlayabilirsin.';
+        else if (!indexState.complete && !activeRun) status.textContent='Hazır olan '+indexState.completed+' dosyayla çalışabilirsin.';
     }
 
     async function waitForIndex() {
         if (indexTimer) { clearTimeout(indexTimer); indexTimer=null; }
         applyIndexReadiness();
-        if (!materialCount || v2Ready || document.hidden || uploading || indexPolling) return;
+        if (!materialCount || (v2Ready && indexState.complete) || document.hidden || uploading || indexPolling) return;
         indexPolling=true;
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/index-status',{credentials:'same-origin',cache:'no-store'});
             const result=await response.json();
-            if (response.ok && !result.ready) {
-                if (result.state==='failed') {
-                    status.textContent='Not hazırlığı tamamlanamadı. Bu ders için şu anda yanıt hazırlanamıyor.';
-                    return;
-                }
-                if (Number.isInteger(result.completed) && Number.isInteger(result.total)) {
-                    status.textContent='Ders notları hazırlanıyor: '+result.completed+'/'+result.total+' dosya hazır.';
-                }
-            }
-            if (response.ok && result.ready) {
-                v2Ready=true;
+            if (response.ok) {
+                indexState=result;
+                v2Ready=!!result.ready;
+                renderIndexFiles();
                 applyIndexReadiness();
-                status.textContent='Ders notları hazır. Sorunu gönderebilirsin.';
-                setTimeout(() => { if (v2Ready) status.textContent=''; },3000);
-                return;
+                if (result.complete || !(result.files || []).some(file => ['preparing','updating'].includes(file.state))) return;
             }
         } catch (_) {} finally { indexPolling=false; }
         indexTimer=setTimeout(waitForIndex,15000);
@@ -662,4 +693,5 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
 })();
 </script>
 {% endblock %}
+
 

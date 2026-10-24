@@ -4844,11 +4844,14 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
         ).all()
         v2_ready = (
             course_v2_ready(
-                s, material_model=StudyMaterial,
+                s,allow_partial=True,  material_model=StudyMaterial,
                 owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
                 background_tasks=background_tasks, wake_existing=True,
             )
         )
+
+        from app.academic_material_status import owned_material_status
+        index_state = owned_material_status(s, owner_user_id=user.id, course_id=course_id)
 
     return templates.TemplateResponse(
         request=request,
@@ -4864,6 +4867,7 @@ def study_ai_page(request: Request, course_id: int, background_tasks: Background
                     or msg.content.startswith('<!--ACADEMIC_REMOTE_PDF_V1-->'))},
             "v2_streaming": study_v2_streaming_enabled(),
             "v2_ready": v2_ready,
+            "index_state": index_state,
             "chat_upload_enabled": os.getenv('STUDY_CHAT_ATTACHMENTS_ENABLED', '0').lower() in {'1','true','yes'},
         },
     )
@@ -4966,17 +4970,12 @@ def study_ai_index_status(request: Request, course_id: int, background_tasks: Ba
         if not _owned_study_course(s, user, course_id):
             return JSONResponse({"ok": False}, status_code=404)
         ready = course_v2_ready(
-            s, material_model=StudyMaterial,
+            s,allow_partial=True,  material_model=StudyMaterial,
             owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
             background_tasks=background_tasks, wake_existing=True, recovery_poll=True,
         )
-        rows=s.exec(select(StudyMaterial).where(StudyMaterial.owner_user_id==user.id)
-            .where(StudyMaterial.course_id==course_id).where(StudyMaterial.deleted_at==None)).all()
-        completed=sum(row.index_status=='READY' and bool(row.active_index_version)
-            and not row.building_index_version for row in rows)
-        from app.academic_index_readiness import course_has_failed_build
-        failed=any(row.index_status=='FAILED' and not row.building_index_version for row in rows) or course_has_failed_build(
-            s, owner_user_id=user.id, course_id=course_id)
+        from app.academic_material_status import owned_material_status
+        index_state = owned_material_status(s, owner_user_id=user.id, course_id=course_id)
         outline=None
         last_source_request=None
         if request.query_params.get('outline')=='1':
@@ -4989,8 +4988,7 @@ def study_ai_index_status(request: Request, course_id: int, background_tasks: Ba
                 from app.academic_direct_request import previous_source_request
                 last_source_request=previous_source_request([{'role':'ASSISTANT','content':last.content}])
     return JSONResponse(
-        {"ok": True, "ready": ready,"completed":completed,"total":len(rows),
-         "state":"ready" if ready else "failed" if failed else "preparing",
+        {"ok": True, **index_state,
          **({"outline":outline,"last_source_request":last_source_request} if outline is not None else {})},
         headers={"Cache-Control": "no-store"},
     )
@@ -5019,7 +5017,8 @@ def _remember_study_exchange_background(
 
 def _study_source_versions(session, owner_user_id, course_id, *, lock=False):
     query = select(StudyMaterial).where(StudyMaterial.owner_user_id == owner_user_id,
-        StudyMaterial.course_id == course_id, StudyMaterial.deleted_at == None).order_by(StudyMaterial.id)
+        StudyMaterial.course_id == course_id, StudyMaterial.deleted_at == None,
+        StudyMaterial.index_status == 'READY', StudyMaterial.active_index_version != None).order_by(StudyMaterial.id)
     if lock: query = query.with_for_update()
     return [(row.id, row.file_path, row.size_bytes, row.active_index_version, row.building_index_version)
             for row in session.exec(query.execution_options(populate_existing=True)).all()]
@@ -5104,7 +5103,7 @@ def _run_owned_study_request(request,course_id,background_tasks,message,*,user):
             # === TEMP_STUDY_TRACE_ASK_INDEX_STATE_BEGIN ===
             _trace_index_ready = (
                 course_v2_ready(
-                    s, material_model=StudyMaterial,
+                    s,allow_partial=True,  material_model=StudyMaterial,
                     owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
                     background_tasks=background_tasks,
                 )
@@ -5137,6 +5136,7 @@ def _run_owned_study_request(request,course_id,background_tasks,message,*,user):
             # Snapshot authorization/source state, then end the initial read
             # transaction. Retrieval gets its own short-lived session instead of
             # silently reopening this closed request session.
+            materials = [item for item in materials if item.index_status == 'READY' and item.active_index_version and not item.deleted_at]
             source_versions = _study_source_versions(s, user.id, course_id)
             from app.academic_quiz import restore_quizzes, pack_evidence
             restore_quizzes(history, list(reversed(history_rows)), source_versions)
@@ -5335,7 +5335,7 @@ def study_run_create(request:Request,course_id:int,background_tasks:BackgroundTa
             course=session.exec(select(StudyCourse).where(StudyCourse.id==course_id,
                 StudyCourse.owner_user_id==user.id).with_for_update()).first()
             if course is None:return JSONResponse({'ok':False,'error':'Ders bulunamadı.'},status_code=404)
-            if not course_v2_ready(session,material_model=StudyMaterial,owner_user_id=user.id,course_id=course_id):
+            if not course_v2_ready(session,allow_partial=True, material_model=StudyMaterial,owner_user_id=user.id,course_id=course_id):
                 return JSONResponse({'ok':False,'error':'Ders notları henüz hazır değil.'},status_code=409)
             row=enqueue(session,owner=user.id,course=course_id,question=question,key=request_key)
             session.commit();result=payload(session,row)
@@ -5411,7 +5411,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
         if classify_course_scope(course.title, [item.original_filename for item in materials]) == "NON_DENTAL":
             return JSONResponse({"ok": False, "error": "Bu ders diş hekimliği çalışma alanı dışında."}, status_code=400)
         if not course_v2_ready(
-            s, material_model=StudyMaterial,
+            s,allow_partial=True,  material_model=StudyMaterial,
             owner_user_id=user.id, course_id=course_id, upgrade_profile=True,
             background_tasks=background_tasks,
         ):
@@ -5427,6 +5427,7 @@ def study_ai_ask_stream(request: Request, course_id: int, background_tasks: Back
             .order_by(StudyChatMessage.id.desc()).limit(8)
         ).all())
         history = [{"role": row.role, "content": row.content, "id": row.id, "mode": row.mode} for row in reversed(history_rows)]
+        materials = [item for item in materials if item.index_status == 'READY' and item.active_index_version and not item.deleted_at]
         source_versions = _study_source_versions(s, user.id, course_id)
         from app.academic_quiz import restore_quizzes, pack_evidence
         restore_quizzes(history, list(reversed(history_rows)), source_versions)
