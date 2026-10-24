@@ -51,7 +51,8 @@ def test_source_requests_require_actual_quote_and_spoken_drug_term():
         {'term': 'naproksen', 'quote': 'Naproksen kullanıyorum.'},
         {'term': 'naproxen', 'quote': 'Naproksen kullanıyorum.'},
         {'term': 'naproxen', 'quote': 'Uydurma'}, {'term': 'https://evil.example', 'quote': 'Naproksen kullanıyorum.'}]})
-    assert data['source_requests'] == [{'term': 'naproksen', 'quote': 'Naproksen kullanıyorum.'}]
+    assert data['source_requests'] == [{'term': term, 'quote': 'Naproksen kullanıyorum.'}
+                                      for term in ('naproksen', 'naproxen')]
 
 
 def test_device_check_requires_clinician_and_never_calls_provider(app_client, monkeypatch):

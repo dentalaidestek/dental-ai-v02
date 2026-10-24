@@ -35,7 +35,7 @@ def provider(monkeypatch, result, finish='STOP'):
     return calls
 
 
-def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching(monkeypatch):
+def test_one_final_call_covers_context_and_short_communication_without_identity_or_raw_coaching(monkeypatch):
     result = {'summary': [{'field': 'chief_complaint', 'quote': 'Soğukta', 'text': 'Soğukta ağrı beyanı'}],
               'questions': [{'field': 'chief_complaint', 'quote': 'Soğukta', 'text': 'Ne zamandır?'}],
               'contradictions': [], 'clinical_items': []}
@@ -48,7 +48,8 @@ def test_one_final_call_covers_entire_context_and_excludes_identity_and_coaching
     assert len(calls) == 1
     submitted = calls[0]['messages'][0]['content']
     assert 'Warfarin' in submitted and 'chief_complaint' in submitted
-    assert 'PRIVATE_' not in submitted and 'transcript' not in json.loads(submitted)
+    assert 'PRIVATE_NAME' not in submitted and 'PRIVATE_COACHING' not in submitted
+    assert 'PRIVATE_QUOTE' in submitted and 'transcript' not in json.loads(submitted)
 
 
 def test_fabricated_final_anchor_is_rejected(monkeypatch):
@@ -167,6 +168,42 @@ def test_omitted_previous_field_is_preserved_but_explicit_retraction_is_respecte
     assert 'allergies' in core.extract(transcript='Yanlış anlaşıldı.', context=context)['fields']
     response['removed_fields'] = [{'name': 'allergies', 'quote': 'Yanlış anlaşıldı.'}]
     assert 'allergies' not in core.extract(transcript='Yanlış anlaşıldı.', context=context)['fields']
+
+
+def test_next_chunk_denial_preserves_previous_drug_and_other_clinical_facts(monkeypatch):
+    old = {'value': 'Güncel: Simvastatin alıyorum.', 'quote': 'Simvastatin alıyorum.'}
+    context = {'fields': {'medications': old}, 'source_requests': [
+        {'term': 'simvastatin', 'quote': old['quote']}]}
+    response = {'transcript': 'Başka ilaç yok. Klaritromisin düşünüyorum.',
+        'fields': {'medications': {'value': 'Olumsuz beyan: Başka ilaç yok.', 'quote': 'Başka ilaç yok.'}},
+        'teeth': [], 'removed_fields': [], 'removed_teeth': [], 'appointment': {},
+        'literature_topics': [], 'source_requests': [{'term': 'clarithromycin', 'quote': 'Klaritromisin düşünüyorum.'}],
+        'uncertain': ''}
+    monkeypatch.setattr(core, '_understand', lambda *args: {**response, 'fields': dict(response['fields'])})
+    output = core.extract(transcript=response['transcript'], context=context)
+    assert 'Simvastatin alıyorum.' in output['fields']['medications']['value']
+    assert 'Başka ilaç yok.' in output['fields']['medications']['value']
+    assert {r['term'] for r in output['source_requests']} == {'simvastatin', 'clarithromycin'}
+    # The next chunk omits the medication altogether: cumulative state still survives.
+    again = core.extract(transcript=response['transcript'], context={
+        'fields': output['fields'], 'source_requests': output['source_requests']})
+    assert again['fields']['medications']['value'].count('Simvastatin alıyorum.') == 1
+
+
+def test_communication_source_anchor_is_transient_and_not_in_clinical_summary(monkeypatch):
+    calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': [{
+        'source_id': 'gdc', 'source_quote': 'Listen to patients.', 'patient_field': 'communication_0',
+        'patient_quote': 'İğneden korkuyorum.', 'consideration': 'Kaygıyı dinleyin.',
+        'missing_information': '', 'alternative': ''}]})
+    seen = []
+    monkeypatch.setattr(final, 'retrieve', lambda q: seen.append(q) or {
+        'references': [{'id': 'gdc', 'excerpts': ['Listen to patients.']}],
+        'unavailable': [], 'coverage': 'limited', 'notice': ''})
+    output = final.finalize(CONTEXT, [{'quote': 'İğneden korkuyorum.', 'observation': 'Kaygı'}])
+    assert 'communication needs' in seen[0]
+    assert output['clinical_items'][0]['patient_field'] == 'communication_0'
+    assert not any(item['field'].startswith('communication_') for item in output['summary'])
+    assert len(calls) == 1
 
 
 def test_concurrent_tooth_update_invalidates_save_revision(app_client):
