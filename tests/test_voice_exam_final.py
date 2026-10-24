@@ -206,6 +206,22 @@ def test_communication_source_anchor_is_transient_and_not_in_clinical_summary(mo
     assert len(calls) == 1
 
 
+def test_spelling_uncertainty_survives_when_another_guideline_grounds_warning(monkeypatch):
+    calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': [{
+        'source_id': 'guideline', 'source_quote': 'Contraindication requires review.',
+        'patient_field': 'medications', 'patient_quote': 'Simvastati alıyorum.',
+        'consideration': 'İlaç planını gözden geçirin.', 'missing_information': '', 'alternative': ''}]})
+    monkeypatch.setattr(final, 'retrieve', lambda *a, **kw: {
+        'references': [{'id': 'guideline', 'excerpts': ['Contraindication requires review.']}],
+        'unavailable': ['drug:simvastatin'], 'coverage': 'limited', 'notice': ''})
+    ctx = {'fields': {'medications': {'value': 'Simvastati alıyorum.', 'quote': 'Simvastati alıyorum.'}},
+           'source_requests': [{'term': 'simvastatin', 'quote': 'Simvastati alıyorum.'}]}
+    out = final.finalize(ctx, [])
+    assert out['clinical_items'][0]['consideration'].startswith('İlaç adı eşleştirmesi henüz doğrulanmadı')
+    submitted = json.loads(calls[0]['messages'][0]['content'])
+    assert submitted['drug_name_candidates'][0]['term'] == 'simvastatin'
+
+
 def test_concurrent_tooth_update_invalidates_save_revision(app_client):
     from test_voice_exam import ToothStatus
     client, engine = app_client

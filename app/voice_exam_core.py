@@ -78,16 +78,17 @@ def resolve_appointment(quote, acceptance, now=None):
     hour_pattern = r'(?<![\w:])(\d{1,2})[’\']?(?:da|de|ta|te)\b'
     text = re.sub(hour_pattern, digit_hour, text)
     accepted = re.sub(hour_pattern, digit_hour, accepted)
-    sentences = re.split(r'(?<=[.!?])\s+', accepted)
+    text = re.sub(r'\bsaat\s+(\d{1,2})(?![\d:.])\b', lambda m: 'saat ' + digit_hour(m), text)
+    sentences = re.split(r'(?<=[.!?,;])\s+', accepted)
     if len(sentences) > 1:
         # Ancillary statements after acceptance (e.g. bringing a document) are not
         # calendar evidence. Never drop a later correction, time or cancellation.
-        tail = ' '.join(sentences[1:])
         calendar_or_conflict = (r'\d|\b(?:ama|fakat|ancak|değil|olmaz|iptal|belki|bugün|yarin|'
             r'sabah|akşam|gece|saat|hafta|pazartesi|sali|çarşamba|perşembe|cuma|cumartesi|pazar)\b|'
             r'\b(?:gele|gelir|gelme)|' + '|'.join(re.escape(k) for k in SPOKEN_HOURS))
-        if not re.search(calendar_or_conflict, tail):
-            accepted = sentences[0]
+        while len(sentences) > 1 and not re.search(calendar_or_conflict, sentences[-1]):
+            sentences.pop()
+        accepted = ' '.join(sentences)
     # Natural acceptance may repeat the agreed day/time and address the doctor.
     acceptance_times = re.findall(r'(?<![\d:])(\d{1,2})[:.](\d{2})(?!\d)', accepted)
     acceptance_core = re.sub(r'(?<![\d:])\d{1,2}[:.]\d{2}(?:[’\']?(?:da|de|ta|te))?', ' ', accepted)
@@ -285,15 +286,16 @@ def normalize(result, evidence=None):
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
-        if not isinstance(fact, dict) or fact.get('field') not in (*FIELDS[3:], 'patient_concern') or fact.get('temporality') not in labels:
+        if not isinstance(fact, dict) or fact.get('field') not in (*FIELDS[3:], 'patient_concern', 'clinician_response') or fact.get('temporality') not in labels:
             continue
         quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
         value = _string(fact.get('value', ''), 1000)
-        if fact['field'] == 'patient_concern':
+        if fact['field'] in {'patient_concern', 'clinician_response'}:
             # Private concerns share the atomic evidence contract but never enter
             # selectable patient-record fields or carried clinical context.
             if quote and value and len(output['communication']) < 8:
-                output['communication'].append({'quote': quote, 'observation': quote, 'suggestion': value})
+                observation = 'Görüşmede verilen yanıt: ' + quote if fact['field'] == 'clinician_response' else quote
+                output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': value})
             continue
         if fact['field'] == 'medications':
             # Do not silently replace an uncertain spoken product with a different
@@ -359,7 +361,7 @@ def schema():
         'decision_barriers': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'observation', 'question', 'explanation')}, 'category': {'type': 'STRING', 'enum': ['COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR']}}, 'required': ['quote', 'observation', 'question', 'explanation', 'category']}},
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'clinical_facts': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
-            'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
+            'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern', 'clinician_response']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
             'temporality': {'type': 'STRING', 'enum': ['CURRENT', 'HISTORICAL', 'PLANNED', 'NEGATED', 'UNKNOWN']}},
             'required': ['field', 'value', 'quote', 'temporality']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
@@ -389,6 +391,11 @@ field anlamları:
   ettiği tereddüt/beklenti. Bu bilgiyi atlama veya chief_complaint içine yazma. value
   hekime yönelik kısa, empatik iletişim/soru önerisidir; quote yalnız gerekli kısa
   dayanak ifadesidir. Bu tür yalnız geçici hekim önerisine gider, hasta dosyasına gitmez.
+- clinician_response: iletişim ihtiyacına verilen hekim yanıtı, durma işareti/ara verme
+  anlaşması, anlaşılır açıklama ve hastanın kendi sözleriyle geri anlatımı. Bunları
+  ayrı, birebir quote ile koru; value görüşmede neyin zaten açıklanıp yanıtlandığını
+  söylesin. Bu tür de yalnız geçici iletişim bağlamıdır; klinik kayıt alanına gitmez.
+  Hastanın tereddüdünü korurken verilmiş yanıtı atlayıp aynı soruyu yeniden önerme.
 Her value kısa Türkçe kayıt metnidir. Her quote clinical_text içinden tek bir kesintisiz,
 birebir alıntıdır. Sayıları, sözcükleri ve olumsuzlukları alıntıda değiştirme. Ayrı
 cümlelerdeki bilgilerin her biri için ayrı öğe yaz; çok bilgiyi tek alıntıya sığdırma.
