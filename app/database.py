@@ -2,6 +2,7 @@
 import os
 from sqlalchemy.engine import make_url
 from sqlmodel import create_engine
+from app.database_pool import ObservedQueuePool
 
 
 def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False):
@@ -17,8 +18,9 @@ def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False
     pool_size = int(os.getenv(f"{prefix}_POOL_SIZE", "2"))
     if not 1 <= pool_size <= 10:
         raise RuntimeError(f"{prefix}_POOL_SIZE must be 1..10")
-    return create_engine(
+    engine = create_engine(
         url,
+        poolclass=ObservedQueuePool,
         pool_size=pool_size,
         max_overflow=0,
         pool_timeout=5,
@@ -26,3 +28,6 @@ def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False
         pool_recycle=300,
         connect_args={"connect_timeout": 5, "application_name": f"dental-{role}"},
     )
+    engine.pool.diagnostic_role = role
+    return engine
+
