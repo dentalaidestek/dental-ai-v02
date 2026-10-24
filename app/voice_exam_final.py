@@ -96,6 +96,7 @@ def finalize(context, insights, uncertain=""):
     for key in ('field', 'other_field'):
         contradiction_schema['properties'][key]['enum'] = list(fields)
     clinical_schema = schema['properties']['clinical_items']['items']['properties']
+    clinical_schema['title'] = {'type': 'STRING'}
     clinical_schema['patient_field']['enum'] = list(fields)
     if evidence['references']:
         clinical_schema['source_id']['enum'] = [item['id'] for item in evidence['references']]
@@ -135,7 +136,8 @@ hekim kontrol noktası. patient_field verilen alan; patient_quote onun value iç
 source_quote ilgili sources.excerpts içinden birebir alıntı, source_id verilen kaynak.
 source_quote KAYNAĞIN ORİJİNAL DİLİNDE kalsın; çevirme, üç nokta ekleme, kelime
 değiştirme. patient_quote yalnız clinical_fields.value içinden kopyalansın. Türkçe
-açıklamayı consideration alanına yaz. Göndermeden önce her iki alıntıyı birebir kontrol et.
+açıklamayı consideration alanına yaz. title alanına 3–6 kelimelik tarafsız bir konu başlığı yaz;
+başlık yeni klinik iddia eklemesin (ör. İlaç ve tedavi uyumu). Göndermeden önce her iki alıntıyı birebir kontrol et.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
@@ -193,7 +195,13 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         candidates = {ref['id']: ref.get('searched_name', '') for ref in evidence['references']
                       if ref.get('name_resolution') == 'unconfirmed_spelling_candidate'}
         for item in output['clinical_items']:
+            title = item.get('title')
+            if isinstance(title, str) and 0 < len(title.strip()) <= 100:
+                item['title'] = title.strip()
+            else:
+                item.pop('title', None)
             if item['source_id'] in candidates or (name_candidates and item['patient_field'] in {'medications', 'plan'}):
+                item['title'] = 'İlaç adı doğrulaması'
                 names = candidates.get(item['source_id']) or ', '.join(c['term'] for c in name_candidates)
                 item['consideration'] = ('İlaç adı eşleştirmesi henüz doğrulanmadı; olası kaynak adı: '
                     + names + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '

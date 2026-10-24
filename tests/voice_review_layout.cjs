@@ -5,8 +5,8 @@ class Element {
   replaceChildren(...items){this.children=items;this.textContent=''}
 }
 const code=fs.readFileSync('app/static/voice-exam.js','utf8');
-const scope={document:{createElement:tag=>new Element(tag)}};
-vm.createContext(scope);vm.runInContext(code.slice(code.indexOf('  function reviewSection('),code.indexOf('  async function finalizeReview(')),scope);
+const scope={document:{createElement:tag=>new Element(tag),createTextNode:text=>Object.assign(new Element('#text'),{textContent:text})}};
+vm.createContext(scope);vm.runInContext(code.slice(code.indexOf('  function reviewIcon('),code.indexOf('  async function finalizeReview(')),scope);
 const all=node=>[node,...node.children.flatMap(all)];
 const text=node=>all(node).map(x=>x.textContent).join('\n');
 const host=new Element('div');
@@ -28,7 +28,7 @@ assert.equal(all(host).filter(x=>x.textContent===advice.suggestion).length,1);
 assert.ok(text(host).includes('Ara vermeyi teklif edin.'),'Distinct communication advice is preserved');
 const unsafe='<img src=x onerror=alert(1)>';
 scope.renderFinalReview(host,{...result,summary:[{text:unsafe,quote:'Alıntı'}],clinical_items:[],references:[]},[]);
-assert.ok(text(host).includes(unsafe));assert.ok(!all(host).some(x=>x.tag==='img'),'Model output stays plain text');
+assert.ok(text(host).includes(unsafe));assert.ok(all(host).filter(x=>x.tag==='img').every(x=>x.src.startsWith('/static/vendor/tabler/')),'Only fixed library icons are images; model output stays plain text');
 assert.equal(host.children.length,2,'Empty categories do not repeat empty-state notices');
 assert.ok(text(host).includes('Bu sonuç güvenlik onayı değildir.'));
 console.log('Review layout: collapsed headings, duplicate removal, preserved clinical evidence, empty state and plain-text rendering passed.');
