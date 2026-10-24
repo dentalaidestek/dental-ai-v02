@@ -4,6 +4,8 @@ from sqlalchemy import text
 
 def failure_reason(error):
     value = str(error or '').lower()
+    if 'aes' in value and any(name in value for name in ('cryptography', 'pycryptodome')):
+        return 'PDF_AES_SUPPORT_MISSING', 'PDF şifreleme desteği indeksleme çalışanında eksik.'
     rules = [
         ('pdf_page_limit', 'PDF_PAGE_LIMIT', 'PDF, indeksleme sayfa sınırını aşıyor.'),
         ('no_chunks_for_page', 'NO_CHUNKS_FOR_PAGE', 'Bir sayfadan kullanılabilir metin parçası oluşturulamadı.'),
