@@ -20,6 +20,12 @@ assert.equal(all(host).filter(x=>x.textContent==='Soğukta ağrı').length,1,'Ex
 assert.equal(all(host).filter(x=>x.textContent===clinical.source_quote).length,1,'Clinical evidence survives duplicate summary and finding');
 assert.ok(text(host).includes(clinical.missing_information));assert.ok(text(host).includes(clinical.alternative));
 assert.equal(all(host).find(x=>x.className==='voice-result-source').href,result.references[0].url);
+scope.renderFinalReview(host,{...result,clinical_items:[clinical,{...clinical,source_quote:'İkinci belge dayanağı.'}]},[]);
+assert.ok(text(host).includes('İkinci belge dayanağı.'),'Distinct evidence must not be lost when finding and patient quote match');
+const advice={observation:'Kaygı beyanı',quote:'Korkuyorum.',suggestion:'İşlemi açıklayın.'};
+scope.renderFinalReview(host,{...result,summary:[],clinical_items:[]},[advice,advice,{...advice,suggestion:'Ara vermeyi teklif edin.'}]);
+assert.equal(all(host).filter(x=>x.textContent===advice.suggestion).length,1);
+assert.ok(text(host).includes('Ara vermeyi teklif edin.'),'Distinct communication advice is preserved');
 const unsafe='<img src=x onerror=alert(1)>';
 scope.renderFinalReview(host,{...result,summary:[{text:unsafe,quote:'Alıntı'}],clinical_items:[],references:[]},[]);
 assert.ok(text(host).includes(unsafe));assert.ok(!all(host).some(x=>x.tag==='img'),'Model output stays plain text');

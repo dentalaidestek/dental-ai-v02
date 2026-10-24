@@ -181,14 +181,14 @@
     host.replaceChildren();const clinicalKeys=new Set(),seen=new Set(result.clinical_items.map(item=>JSON.stringify([item.consideration?.trim(),item.patient_quote?.trim()])));
     finalList(host,'Muayene özeti',result.summary,seen);
     for(const item of result.clinical_items){
-      const key=JSON.stringify([item.consideration?.trim(),item.patient_quote?.trim()]);if(clinicalKeys.has(key))continue;clinicalKeys.add(key);
+      const key=JSON.stringify([item.consideration,item.patient_quote,item.source_id,item.source_quote,item.missing_information,item.alternative]);if(clinicalKeys.has(key))continue;clinicalKeys.add(key);
       const section=reviewSection(host,reviewHeadline(item.consideration)),body=document.createElement('dl');
       reviewDetail(body,'Dayanak · konuşma',item.patient_quote);reviewDetail(body,'Dayanak · literatür',item.source_quote);
       const source=result.references.find(x=>x.id===item.source_id);
       if(source){const link=document.createElement('a');link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=source.institution+' · '+source.title;link.className='voice-result-source';body.append(link)}
       reviewDetail(body,'Değerlendirme',item.consideration);reviewDetail(body,'Netleştirilecek bilgi',item.missing_information);reviewDetail(body,'Öneri',item.alternative);section.append(body);
     }
-    const communication=insights.filter((item,index,items)=>items.findIndex(other=>other.quote===item.quote&&other.observation===item.observation)===index);
+    const communicationKeys=new Set(),communication=insights.filter(item=>{const key=JSON.stringify([item.quote,item.observation,item.question,item.explanation,item.suggestion]);if(communicationKeys.has(key))return false;communicationKeys.add(key);return true});
     if(communication.length){const section=reviewSection(host,'Hasta yaklaşımı ve iletişim',communication.length);for(const item of communication){const article=document.createElement('article'),body=document.createElement('dl');reviewDetail(body,'Gözlem',item.observation);reviewDetail(body,'Dayanak',item.quote);reviewDetail(body,'Sorulabilecek soru',item.question);reviewDetail(body,'Öneri',item.explanation||item.suggestion);article.append(body);section.append(article)}}
     finalList(host,'Netleştirilecek sorular',result.questions,seen);finalList(host,'Çelişkili bilgiler',result.contradictions,seen);
     const coverage=reviewSection(host,'Kaynaklar ve değerlendirme kapsamı',result.references.length),body=document.createElement('dl');
