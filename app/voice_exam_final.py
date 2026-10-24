@@ -73,6 +73,8 @@ def finalize(context, insights, uncertain=""):
     if insights:
         query += ' communication needs'
     requests = context.get('source_requests', [])
+    from app.voice_drug_names import is_spelling_candidate
+    name_candidates = [item for item in requests if is_spelling_candidate(item['term'], item['quote'])]
     options = {}
     if requests: options['requests'] = requests
     if context.get('literature_topics'): options['topics'] = context['literature_topics']
@@ -150,17 +152,30 @@ ortak karar boyutlarını yalnız ilgili beyan varsa ele al. Yapılmış açıkl
 sayma; eksik kayıt hekim hatası değildir. GDC iletişim standardını Türkiye mevzuatı
 veya klinik etkinlik araştırması diye sunma. İletişim kontrol noktalarını da verilen
 kaynağın birebir alıntısıyla clinical_items içinde dayanaklandır. Kişilik/niyet çıkarma.
+communication_ alanları yalnız kaygı değil verilen yanıt ve geri anlatımı da içerir.
+Bütün bu alıntıları birlikte değerlendir: zaten açıklanmış durma işareti, ara verme,
+işlem açıklaması veya geri anlatımı 'açıklanmadı/kaydı yok' diye sunma. Karşılanmış
+ihtiyacı kısa olumlu gözlemle belirt veya yeni eksik gibi tekrarlama.
 Kaynakta açıkça yazan kontrendikasyonu hekime açık uyarı olarak bildir; yasak olan
 hastaya otomatik ilaç kesme/başlama kararıdır, kaynaklı kontrendikasyonu gizlemek değildir.
 Tüm mevcut ilaçlar ile planlanan ilaçları birlikte karşılaştır; henüz başlanmamış
 planı gerçekleşmiş kullanım veya yan etki gibi anlatma. Kaynak ilaç adını
 unconfirmed_spelling_candidate olarak işaretliyorsa eşleştirme yalnız adaydır:
 kutu/reçeteyle doğrulamayı açıkça iste, kesin ilaç veya kesin etkileşim sayma.
+drug_name_candidates listesi, kaynak bulunamasa bile doğrulanmamış ilaç adı
+eşleştirmelerini gösterir; başka bir kılavuzu kullanmak bu belirsizliği ortadan kaldırmaz.
+Hastada bildirilmemiş farklı bir ilaca ait uyarıyı bu hastaya kontrol noktası diye
+ekleme. İlaç adı açıkken, sırf kutusu görülmedi diye başka bir ilaç kullanıyor
+olabileceğini varsayıp o ilacın kontrendikasyonunu listeleme. Kutu doğrulaması
+genel bir netleştirme olabilir; tek başına yeni bir risk maddesinin gerekçesi değildir.
+Kaynakta 'bu ilaçlar/these drugs' gibi ifadenin dayandığı ilaç listesi alıntıda yoksa,
+o cümleden belirli ilaç için kontrendikasyon veya kaçınma sonucu çıkarma.
 Kaynakta destek varsa alternatif antibiyotik veya ilgili hekimle geçici ara verme
 planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakmasını söyleme.
 '''
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
-            'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references']}
+            'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
+            'drug_name_candidates': name_candidates}
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
@@ -178,9 +193,10 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         candidates = {ref['id']: ref.get('searched_name', '') for ref in evidence['references']
                       if ref.get('name_resolution') == 'unconfirmed_spelling_candidate'}
         for item in output['clinical_items']:
-            if item['source_id'] in candidates:
+            if item['source_id'] in candidates or (name_candidates and item['patient_field'] in {'medications', 'plan'}):
+                names = candidates.get(item['source_id']) or ', '.join(c['term'] for c in name_candidates)
                 item['consideration'] = ('İlaç adı eşleştirmesi henüz doğrulanmadı; olası kaynak adı: '
-                    + candidates[item['source_id']] + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
+                    + names + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
                     + item['consideration'])
         review_status = {'source_count': len(evidence['references']),
                          'unavailable_count': len(evidence['unavailable']),

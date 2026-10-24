@@ -31,6 +31,21 @@ def test_fabricated_fact_and_private_categories_are_not_accepted():
     assert not core.normalize({'transcript': 'İyiyim.', 'clinical_facts': facts})['fields']
 
 
+def test_doctor_response_and_patient_teachback_are_grounded_transient_context():
+    text = 'Elinizi kaldırırsanız duralım. Bugün temizleyeceksiniz, yeni ilaca başlamıyorum.'
+    facts = [{'field': 'clinician_response', 'value': 'Durma işareti açıklandı.',
+              'quote': 'Elinizi kaldırırsanız duralım.', 'temporality': 'CURRENT'},
+             {'field': 'clinician_response', 'value': 'Hasta planı geri anlattı.',
+              'quote': 'Bugün temizleyeceksiniz, yeni ilaca başlamıyorum.', 'temporality': 'CURRENT'},
+             {'field': 'clinician_response', 'value': 'Uydurma yanıt',
+              'quote': 'Her şeyi anladım.', 'temporality': 'CURRENT'}]
+    result = core.normalize({'transcript': text, 'clinical_facts': facts})
+    assert not result['fields']
+    assert len(result['communication']) == 2
+    assert all(item['quote'] in text for item in result['communication'])
+    assert all('Görüşmede verilen yanıt' in item['observation'] for item in result['communication'])
+
+
 def test_private_coaching_survives_formatting_only_quote_changes():
     text = 'Biraz da çekimden korkuyorum. Bugün bitsin istiyorum.'
     quote = 'Biraz da çekimden korkuyorum, bugün bitsin istiyorum.'
@@ -66,6 +81,14 @@ def test_unspoken_or_uncertain_caries_is_not_a_chart_candidate(quote):
 def test_explicit_caries_is_preserved():
     quote = '46 numarada çürük var.'
     assert core.normalize({'transcript': quote, 'teeth': [{'tooth': '46', 'status': 'CARIES', 'quote': quote}]})['teeth'][0]['status'] == 'CARIES'
+
+
+def test_appointment_acceptance_with_work_leave_tail_and_bare_hour():
+    now = datetime(2026, 10, 24, 10, tzinfo=ZoneInfo('Europe/Istanbul'))
+    for proposal in ('Yarın saat on dörtte kontrol için gelebilir misiniz?', 'Yarın saat 14 kontrol için gelebilir misiniz?'):
+        assert core.resolve_appointment(proposal, 'Yarın ikide gelebilirim, işten izin ayarlarım.', now) == '2026-10-25T14:00'
+        assert core.resolve_appointment(proposal, 'Yarın ikide gelebilirim, ama üçte olmaz.', now) is None
+        assert core.resolve_appointment(proposal, 'Yarın ikili gelebilirim.', now) is None
 
 
 @pytest.mark.parametrize('quote,expected', [
@@ -132,7 +155,7 @@ def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch
         assert options == {'extraction': True}
         assert schema['properties']['fields']['required'] == list(core.FIELDS[:3])
         assert 'transcript' not in schema['properties']
-        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == [*core.FIELDS[3:], 'patient_concern']
+        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == [*core.FIELDS[3:], 'patient_concern', 'clinician_response']
         return {'transcript': 'Modelin eksik yeniden yazımı', 'fields': {}, 'clinical_facts': []}
     monkeypatch.setattr(provider, 'review', review)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)
