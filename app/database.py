@@ -15,7 +15,11 @@ def create_app_engine(url: str, *, role: str = "web", allow_sqlite: bool = False
     if parsed.get_backend_name() != "postgresql":
         raise RuntimeError("Unsupported database backend")
     prefix = f"DENTAL_{role.upper()}_DB"
-    pool_size = int(os.getenv(f"{prefix}_POOL_SIZE", "2"))
+    # Page loads fan out into authenticated HTTP probes while embedded workers
+    # use the same web pool. Two slots starved short requests in production.
+    # Keep router pools smaller and retain the explicit hard connection bound.
+    default_size = "4" if role == "web" else "2"
+    pool_size = int(os.getenv(f"{prefix}_POOL_SIZE", default_size))
     if not 1 <= pool_size <= 10:
         raise RuntimeError(f"{prefix}_POOL_SIZE must be 1..10")
     engine = create_engine(

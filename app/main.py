@@ -2307,21 +2307,23 @@ def get_current_user(request: Request) -> Optional[User]:
     token_hash = hash_session_token(token)
 
     with Session(engine, expire_on_commit=False) as s:
-        session_token = s.exec(
-            select(SessionToken).where(
+        authenticated = s.exec(
+            select(SessionToken, User).outerjoin(
+                User, User.id == SessionToken.user_id
+            ).where(
                 SessionToken.token_hash == token_hash
             )
         ).first()
 
-        if not session_token:
-            user = None
-        elif session_token.expires_at <= _utcnow_naive():
-            s.delete(session_token)
-            s.commit()
+        if not authenticated:
             user = None
         else:
-            user = s.get(User, session_token.user_id)
-            if not user or not user.is_active or not user.email_verified_at:
+            session_token, user = authenticated
+            if session_token.expires_at <= _utcnow_naive():
+                s.delete(session_token)
+                s.commit()
+                user = None
+            elif not user or not user.is_active or not user.email_verified_at:
                 user = None
 
     if state is not None:
