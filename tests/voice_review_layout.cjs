@@ -5,7 +5,7 @@ class Element {
   replaceChildren(...items){this.children=items;this.textContent=''}
 }
 const code=fs.readFileSync('app/static/voice-exam.js','utf8');
-const scope={document:{createElement:tag=>new Element(tag),createTextNode:text=>Object.assign(new Element('#text'),{textContent:text})}};
+const scope={labels:{medications:'İlaç / hasta beyanı',allergies:'Alerji / hasta beyanı'},document:{createElement:tag=>new Element(tag),createTextNode:text=>Object.assign(new Element('#text'),{textContent:text})}};
 vm.createContext(scope);vm.runInContext(code.slice(code.indexOf('  function reviewIcon('),code.indexOf('  async function finalizeReview(')),scope);
 const all=node=>[node,...node.children.flatMap(all)];
 const text=node=>all(node).map(x=>x.textContent).join('\n');
@@ -17,6 +17,7 @@ scope.renderFinalReview(host,result,[]);
 assert.equal(host.children.length,3,'Only nonempty summary, clinical finding and source coverage headings');
 assert.ok(host.children.every(x=>x.tag==='details'&&!x.open),'Initial view contains collapsed headings');
 assert.equal(all(host).filter(x=>x.textContent==='Soğukta ağrı').length,1,'Exact duplicate summary removed');
+assert.ok(text(host).includes('Soğuk içemiyorum.'),'Distinct supporting quote remains visible');
 assert.equal(all(host).filter(x=>x.textContent===clinical.source_quote).length,1,'Clinical evidence survives duplicate summary and finding');
 assert.ok(text(host).includes(clinical.missing_information));assert.ok(text(host).includes(clinical.alternative));
 assert.equal(all(host).find(x=>x.className==='voice-result-source').href,result.references[0].url);
@@ -27,6 +28,17 @@ scope.renderFinalReview(host,{...result,summary:[],clinical_items:[]},[advice,ad
 assert.equal(all(host).filter(x=>x.textContent===advice.suggestion).length,1);
 assert.ok(text(host).includes('Ara vermeyi teklif edin.'),'Distinct communication advice is preserved');
 const unsafe='<img src=x onerror=alert(1)>';
+scope.renderFinalReview(host,{...result,summary:[
+  {field:'medications',text:'Yok',quote:'Yok'},
+  {field:'allergies',text:'Yok',quote:'Yok'},
+  {field:'medications',text:'Yok',quote:'Yok'}
+],clinical_items:[],references:[]},[]);
+assert.equal(host.children[0].children.filter(x=>x.tag==='article').length,2,
+  'Equal values in medication and allergy fields are separate facts; only the exact same field can be deduplicated');
+assert.ok(text(host).includes('İlaç / hasta beyanı')&&text(host).includes('Alerji / hasta beyanı'),
+  'Each summary fact identifies the reviewed patient field');
+assert.equal(all(host).filter(x=>x.textContent==='Yok').length,2,
+  'Identical evidence and reviewed value appear only once per field');
 scope.renderFinalReview(host,{...result,summary:[{text:unsafe,quote:'Alıntı'}],clinical_items:[],references:[]},[]);
 assert.ok(text(host).includes(unsafe));assert.ok(all(host).filter(x=>x.tag==='img').every(x=>x.src.startsWith('/static/vendor/tabler/')),'Only fixed library icons are images; model output stays plain text');
 assert.equal(host.children.length,2,'Empty categories do not repeat empty-state notices');

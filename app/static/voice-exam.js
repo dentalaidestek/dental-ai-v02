@@ -173,14 +173,14 @@
     const text=String(value||'Klinik değerlendirme').trim();if(text.length<=100)return text;
     const short=text.slice(0,97);return short.slice(0,short.lastIndexOf(' ')>40?short.lastIndexOf(' '):short.length)+'…';
   }
-  function finalList(host,title,items,seen,kind='file-text'){
-    const unique=items.filter(item=>{const key=JSON.stringify([item.text?.trim(),item.quote?.trim()]);if(!item.text?.trim()||seen.has(key))return false;seen.add(key);return true});
+  function finalList(host,title,items,seen,kind='file-text',withFieldLabels=false){
+    const unique=items.filter(item=>{const key=JSON.stringify([...(item.field?[item.field]:[]),item.text?.trim(),item.quote?.trim()]);if(!item.text?.trim()||seen.has(key))return false;seen.add(key);return true});
     if(!unique.length)return;const section=reviewSection(host,title,unique.length,kind);
-    for(const item of unique){const article=document.createElement('article'),body=document.createElement('dl');reviewDetail(body,'Dayanak',item.quote);reviewDetail(body,'Bilgi',item.text);article.append(body);section.append(article)}
+    for(const item of unique){const article=document.createElement('article'),body=document.createElement('dl');if(item.quote?.trim()!==item.text?.trim())reviewDetail(body,'Dayanak',item.quote);reviewDetail(body,withFieldLabels?(labels[item.field]||'Bilgi'):'Bilgi',item.text);article.append(body);section.append(article)}
   }
   function renderFinalReview(host,result,insights){
     host.replaceChildren();const clinicalKeys=new Set(),seen=new Set(result.clinical_items.map(item=>JSON.stringify([item.consideration?.trim(),item.patient_quote?.trim()])));
-    finalList(host,'Klinik bulgular',result.summary,seen);
+    finalList(host,'Muayene bilgileri',result.summary,seen,'file-text',true);
     for(const item of result.clinical_items){
       const key=JSON.stringify([item.consideration,item.patient_quote,item.source_id,item.source_quote,item.missing_information,item.alternative]);if(clinicalKeys.has(key))continue;clinicalKeys.add(key);
       const section=reviewSection(host,reviewHeadline(item.title||item.consideration),null,'pill'),body=document.createElement('dl');section.className+=' voice-result-clinical';
