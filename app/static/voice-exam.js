@@ -78,7 +78,7 @@
   }
   async function drainLive(){
     if(busy||!liveQueue.length||disposed)return;
-    const text=liveQueue.splice(0,liveQueue.length).join(' ');busy=true;controls();message('Görüşmenin klinik özeti güncelleniyor…');
+    const text=liveQueue.splice(0,liveQueue.length).join(' ');busy=true;controls();message('Konuşma işleniyor; yoğunluk varsa kısa süre sırada bekleyecek.');
     try{const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/text',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:text,consent:consent.checked,context:context()})}));transcript.value=failedLiveText||result.review.transcript;merge(result)}
     catch(error){if(!disposed){unprocessed=true;finalRequested=false;failedLiveText=[failedLiveText,text].filter(Boolean).join(' ');transcript.value=failedLiveText;root.dataset.showReview='true';message(error.message+' Dinleme sürüyorsa devam edebilirsiniz. İşlenemeyen metin korundu; duraklattıktan sonra metinden alanları yeniden çıkarın.',true);if(failedLiveText.length+liveQueue.join(' ').length>18000){root.dispatchEvent(new CustomEvent('voice-live-stop'));message('İşlenemeyen konuşma sınırına ulaşıldı. Duraklatıldı; korunan metni kontrol edin.',true)}}}
     finally{busy=false;controls();if(liveQueue.length)drainLive()}
@@ -88,7 +88,7 @@
   root.addEventListener('voice-live-segment',event=>{if(disposed)return;invalidateFinal();const text=event.detail.text;if(typeof text!=='string'||!text)return;unsaved=true;liveQueue.push(text);if(liveQueue.join(' ').length>18000){root.dispatchEvent(new CustomEvent('voice-live-stop'));message('İşlenecek konuşma birikti. Dinleme duraklatıldı.',true)}drainLive()});
   async function processAudio(){
     if(!audio||busy)return;if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
-    busy=true;controls();message('Ses bölümü çözümleniyor…');
+    busy=true;controls();message('Ses bölümü işleniyor; yoğunluk varsa sırada bekleyecek.');
     try{const metadata=new TextEncoder().encode(JSON.stringify(context()));const header=new Uint8Array(4);new DataView(header.buffer).setUint32(0,metadata.length,false);const packet=new Blob([header,metadata,audio]);const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:packet,credentials:'same-origin',headers:{'Content-Type':'application/vnd.dentalai.voice-packet','X-Voice-Mime':audio.type,'X-Voice-Consent':'yes'}}));
       transcript.value=failedLiveText||result.review.transcript;merge(result);audio=null;retry.hidden=true;
     }catch(error){if(!disposed){finalRequested=false;message(error.message,true);retry.hidden=false}}finally{busy=false;controls()}
@@ -154,7 +154,7 @@
   $('[data-voice-clinical]').addEventListener('click',()=>assessClinical(true).catch(error=>message(error.message,true)));
   textButton.addEventListener('click',async()=>{
     if(!consent.checked){message('Metin aktarımı onayını işaretle.',true);return}
-    invalidateFinal();busy=true;controls();message('Metindeki alanlar çıkarılıyor…');
+    invalidateFinal();busy=true;controls();message('Metin işleniyor; yoğunluk varsa sırada bekleyecek.');
     try{const retried=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/text',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,consent:true,context:context()})}));failedLiveText='';merge(retried)}catch(error){message(error.message,true)}finally{busy=false;controls()}
   });
   function snapshot(){return JSON.stringify({context:context(),insights,uncertain:uncertainties,followups,appointment:[$('[data-voice-appointment-title]').value,$('[data-voice-appointment-start]').value,$('[data-voice-appointment-end]').value]})}

@@ -1,0 +1,56 @@
+{
+  "scope": "LOCAL ONLY. Actual ASGI voice route, real extraction/normalizers; supplied model output and artificial 20 ms provider delay. Not production capacity, real AI/audio accuracy, or PostgreSQL performance.",
+  "queue": {
+    "active": 2,
+    "max_waiters": 8,
+    "wait_timeout_seconds": 30,
+    "persistence": "none"
+  },
+  "bursts": [
+    {
+      "concurrency": 1,
+      "attempts": 100,
+      "completed": 100,
+      "queue_busy": 0,
+      "completed_latency": {
+        "p50_ms": 22.579,
+        "p95_ms": 23.059
+      },
+      "busy_latency": null,
+      "batch_wall_ms": 2287.807,
+      "provider_calls": 100,
+      "provider_peak_inflight": 1
+    },
+    {
+      "concurrency": 10,
+      "attempts": 100,
+      "completed": 100,
+      "queue_busy": 0,
+      "completed_latency": {
+        "p50_ms": 113.538,
+        "p95_ms": 120.978
+      },
+      "busy_latency": null,
+      "batch_wall_ms": 1160.912,
+      "provider_calls": 100,
+      "provider_peak_inflight": 2
+    },
+    {
+      "concurrency": 50,
+      "attempts": 100,
+      "completed": 10,
+      "queue_busy": 90,
+      "completed_latency": {
+        "p50_ms": 136.366,
+        "p95_ms": 180.608
+      },
+      "busy_latency": {
+        "p50_ms": 20.775,
+        "p95_ms": 34.761
+      },
+      "batch_wall_ms": 189.908,
+      "provider_calls": 10,
+      "provider_peak_inflight": 2
+    }
+  ]
+}

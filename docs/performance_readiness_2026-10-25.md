@@ -1,5 +1,7 @@
 # Dental AI performance and capacity review — 2026-10-25
 
+Follow-up: `voice_http_queue_2026-10-25.md` documents the subsequently added bounded HTTP admission queue. Raw-core burst results below record the earlier baseline and bypass that queue.
+
 ## Current assessment
 
 60,000 registered users is a population target, not a verified concurrency level.
