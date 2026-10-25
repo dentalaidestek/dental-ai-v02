@@ -1,0 +1,64 @@
+{
+  "fixture": "voice-one-minute-tr-01",
+  "word_count": 120,
+  "synthetic": true,
+  "actual_audio_test": false,
+  "local": {
+    "serial_core_with_simulated_provider": {
+      "p50_ms": 1.292,
+      "p95_ms": 1.96
+    },
+    "load": [
+      {
+        "concurrency": 1,
+        "attempts": 100,
+        "accepted": 100,
+        "busy_rejected": 0,
+        "provider_peak_inflight": 1,
+        "accepted_latency": {
+          "p50_ms": 21.567,
+          "p95_ms": 22.077
+        },
+        "busy_latency": null,
+        "batch_wall_ms": 2169.246
+      },
+      {
+        "concurrency": 10,
+        "attempts": 100,
+        "accepted": 2,
+        "busy_rejected": 98,
+        "provider_peak_inflight": 2,
+        "accepted_latency": {
+          "p50_ms": 21.76,
+          "p95_ms": 22.04
+        },
+        "busy_latency": {
+          "p50_ms": 0.003,
+          "p95_ms": 0.013
+        },
+        "batch_wall_ms": 24.137
+      },
+      {
+        "concurrency": 50,
+        "attempts": 100,
+        "accepted": 2,
+        "busy_rejected": 98,
+        "provider_peak_inflight": 2,
+        "accepted_latency": {
+          "p50_ms": 22.791,
+          "p95_ms": 23.101
+        },
+        "busy_latency": {
+          "p50_ms": 0.005,
+          "p95_ms": 0.017
+        },
+        "batch_wall_ms": 26.169
+      }
+    ],
+    "fabricated_quote_rejected": true,
+    "process_peak_rss_kib": 23604,
+    "peak_rss_growth_kib": 3200,
+    "cpu_user_seconds": 0.3365,
+    "scope": "LOCAL ONLY; supplied provider output and 20 ms artificial provider delay. Not an AI understanding or production capacity benchmark."
+  }
+}

@@ -1,9 +1,9 @@
 """Synthetic dialogue and bounded local load benchmark.
 
 --local: real validators/controllers with explicitly simulated provider transport.
---real: actual extraction + finalization once, only when GEMINI_API_KEY exists.
+--real: actual text extraction + finalization once, only when ANTHROPIC_API_KEY exists.
 --sources: independently measure actual official source cold/cache lookup.
-Never load production patient records. Local timings are NOT Gemini or Render timings.
+Never load production patient records. Local timings are NOT provider or Render timings.
 """
 import argparse
 import json
@@ -59,7 +59,17 @@ def simulated_transport(delay=0):
         def read(self, limit):
             try:
                 time.sleep(delay)
-                return json.dumps({'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'text': json.dumps(sample_output())}]}}]}).encode()
+                result = sample_output()
+                result['clinical_facts'] = [dict(field=name, value=item['value'], quote=item['quote'],
+                    temporality='PLANNED' if name == 'plan' else 'CURRENT')
+                    for name, item in result['fields'].items() if name not in {'first_name', 'last_name', 'age'}]
+                result['fields'] = {name: item for name, item in result['fields'].items()
+                                    if name in {'first_name', 'last_name', 'age'}}
+                result.pop('transcript')
+                for name in ('source_requests', 'literature_topics', 'removed_fields', 'removed_teeth'):
+                    result.setdefault(name, [])
+                return json.dumps({'stop_reason': 'tool_use', 'content': [
+                    {'type': 'tool_use', 'name': 'clinical_extract', 'input': result}]}).encode()
             finally:
                 with lock: stats['inflight'] -= 1
     def opened(*args, **kwargs):
@@ -67,7 +77,8 @@ def simulated_transport(delay=0):
             stats['calls'] += 1; stats['inflight'] += 1
             stats['peak_inflight'] = max(stats['peak_inflight'], stats['inflight'])
         return Response()
-    with patch.dict(sys.modules, {'app.provider_budget': budget}), patch.dict(os.environ, {'GEMINI_API_KEY':'SYNTHETIC_NOT_A_KEY'}), patch.object(http_transport, 'urlopen', opened):
+    with patch.dict(sys.modules, {'app.provider_budget': budget}), patch.dict(os.environ,
+        {'ANTHROPIC_API_KEY': 'SYNTHETIC_NOT_A_KEY', 'VOICE_EXAM_CLAUDE_MODEL': 'claude-test'}), patch.object(http_transport, 'urlopen', opened):
         yield stats
 
 
@@ -115,7 +126,7 @@ def local():
 
 
 def actual():
-    if not os.getenv('GEMINI_API_KEY'): return {'status':'BLOCKED_NO_GEMINI_CREDENTIAL','semantic_checks':'NOT_RUN'}
+    if not os.getenv('ANTHROPIC_API_KEY'): return {'status':'BLOCKED_NO_CLAUDE_CREDENTIAL','semantic_checks':'NOT_RUN'}
     from app.voice_exam_core import extract
     from app.voice_exam_final import finalize
     _, text=dialogue(); start=time.perf_counter(); review=extract(transcript=text); extracted=time.perf_counter()
