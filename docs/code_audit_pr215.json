@@ -1,0 +1,536 @@
+{
+  "baseline_commit": "83fc5cc64b3173aa08fa191df66887cd4fdc5dd3",
+  "tool": "Bandit",
+  "version": "1.9.4",
+  "python_nonempty_files": 155,
+  "empty_package_files": 3,
+  "python_loc": 46169,
+  "parser_errors": [],
+  "javascript_files_inspected": 9,
+  "raw_alert_count": 71,
+  "raw_severity_counts": {
+    "MEDIUM": 25,
+    "LOW": 45,
+    "HIGH": 1
+  },
+  "alerts": [
+    {
+      "path": "app/academic_dense_retrieval.py",
+      "line": 48,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/academic_dense_retrieval.py",
+      "line": 68,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/academic_modal_dispatch.py",
+      "line": 82,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/academic_page_images.py",
+      "line": 66,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/academic_study_runs.py",
+      "line": 150,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/local_ai_bridge.py",
+      "line": 36,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 2398,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 2500,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 2573,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 3894,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 3911,
+      "rule": "B107",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/main.py",
+      "line": 3936,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/main.py",
+      "line": 4001,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/main.py",
+      "line": 4015,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/main.py",
+      "line": 9546,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 9681,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/main.py",
+      "line": 12222,
+      "rule": "B107",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/mobile_api.py",
+      "line": 314,
+      "rule": "B106",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/mobile_modern_api_v3.py",
+      "line": 159,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/mobile_modern_api_v3.py",
+      "line": 226,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/process_memory.py",
+      "line": 75,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "app/realtime_io.py",
+      "line": 34,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/realtime_io.py",
+      "line": 48,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/study_anthropic.py",
+      "line": 141,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/study_index_jobs.py",
+      "line": 656,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_index_jobs.py",
+      "line": 1041,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_index_jobs.py",
+      "line": 1058,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_index_jobs.py",
+      "line": 1101,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_index_worker.py",
+      "line": 163,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_provider.py",
+      "line": 380,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1182,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1184,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1557,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1604,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1654,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1807,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_retrieval_v2.py",
+      "line": 1970,
+      "rule": "B608",
+      "severity": "MEDIUM",
+      "confidence": "LOW"
+    },
+    {
+      "path": "app/study_router_state.py",
+      "line": 826,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_dergipark.py",
+      "line": 11,
+      "rule": "B405",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_dergipark.py",
+      "line": 58,
+      "rule": "B314",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_literature.py",
+      "line": 8,
+      "rule": "B405",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_literature.py",
+      "line": 98,
+      "rule": "B314",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_live.py",
+      "line": 169,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "app/voice_exam_live.py",
+      "line": 176,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "dental_rag/rag.py",
+      "line": 203,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "design-preview/build_preview.py",
+      "line": 6,
+      "rule": "B701",
+      "severity": "HIGH",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "migrate_v02_auth.py",
+      "line": 10,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "training/baseline_test_harness.py",
+      "line": 78,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/anatomy3d_direct_app.py",
+      "line": 47,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/anatomy_mesh.py",
+      "line": 23,
+      "rule": "B108",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "vision_service/anatomy_mesh.py",
+      "line": 35,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/anatomy_mesh.py",
+      "line": 193,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/anatomy_mesh.py",
+      "line": 206,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/app.py",
+      "line": 186,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/app.py",
+      "line": 190,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/engine.py",
+      "line": 209,
+      "rule": "B106",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "vision_service/engine.py",
+      "line": 211,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "vision_service/engine.py",
+      "line": 215,
+      "rule": "B106",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "vision_service/engine.py",
+      "line": 217,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "vision_service/fetch_model.py",
+      "line": 78,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/fetch_model.py",
+      "line": 112,
+      "rule": "B310",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/fetch_oraldetect_weights.py",
+      "line": 26,
+      "rule": "B615",
+      "severity": "MEDIUM",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/motors/catalog.py",
+      "line": 61,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/motors/registry48.py",
+      "line": 72,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/motors/registry48.py",
+      "line": 73,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/motors/registry48.py",
+      "line": 74,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/motors/registry48.py",
+      "line": 75,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/tvem_client.py",
+      "line": 116,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/validation_matrix.py",
+      "line": 76,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/validation_matrix.py",
+      "line": 77,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "vision_service/validation_matrix.py",
+      "line": 78,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    }
+  ],
+  "confirmed_fixes": [
+    {
+      "id": "mobile-async-send",
+      "path": "app/mobile_api.py",
+      "kind": "functional",
+      "evidence": "Exact HTTP adapter returns500 and does not execute offloaded send beforefix;200/403/409 contracts pass afterawait fix."
+    },
+    {
+      "id": "clinical-cache-policy",
+      "path": "app/main.py",
+      "kind": "privacy_hardening",
+      "evidence": "Cookie/Bearer private replies lack defaultno-store; clinical attachments may retain1yearprivate immutable policy. Actualmiddleware HTTP tests show no-store afterfix."
+    }
+  ],
+  "limitations": [
+    "Not a penetration test or dependency CVE scan.",
+    "No demonstrated public patient-data breach.",
+    "Inline HTML JavaScript/native app code not comprehensively audited.",
+    "Does not purge existing browser cache.",
+    "No main merge or production deployment."
+  ]
+}

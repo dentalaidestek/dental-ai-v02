@@ -206,6 +206,20 @@ def test_communication_source_anchor_is_transient_and_not_in_clinical_summary(mo
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize('title,expected', [('  Hasta iletişimi  ', 'Hasta iletişimi'), ('x' * 101, None), (42, None)])
+def test_optional_review_title_is_bounded_in_the_same_grounded_call(monkeypatch, title, expected):
+    calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': [{
+        'title': title, 'source_id': 'gdc', 'source_quote': 'Listen to patients.',
+        'patient_field': 'communication_0', 'patient_quote': 'İğneden korkuyorum.',
+        'consideration': 'Kaygıyı dinleyin.', 'missing_information': '', 'alternative': ''}]})
+    monkeypatch.setattr(final, 'retrieve', lambda q: {'references': [
+        {'id': 'gdc', 'excerpts': ['Listen to patients.']}], 'unavailable': [], 'notice': '', 'coverage': 'limited'})
+    out = final.finalize(CONTEXT, [{'quote': 'İğneden korkuyorum.', 'observation': 'Kaygı'}])
+    assert out['clinical_items'][0].get('title') == expected
+    assert out['clinical_items'][0]['source_quote'] == 'Listen to patients.'
+    assert len(calls) == 1
+
+
 def test_spelling_uncertainty_survives_when_another_guideline_grounds_warning(monkeypatch):
     calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': [{
         'source_id': 'guideline', 'source_quote': 'Contraindication requires review.',

@@ -7,8 +7,10 @@ import os
 import re
 import threading
 import time
+from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlsplit
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import Request, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 from app import voice_exam_core as core
@@ -17,6 +19,25 @@ _lock = threading.Lock()
 _active = set()
 MAX_SECONDS = 570
 PROVIDER_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
+
+
+@asynccontextmanager
+async def _provider_slot(provider, model):
+    """Offload lease SQL; finish acquisition and release even on cancellation."""
+    from app.provider_budget import reservation
+    manager = reservation(provider, model)
+    async with AsyncExitStack() as stack:
+        entering = asyncio.create_task(run_in_threadpool(manager.__enter__))
+        try:
+            await asyncio.shield(entering)
+        finally:
+            # A cancelled socket must not abandon a slot acquired by its worker.
+            await entering
+            # Cleanup must not queue behind workers waiting for database slots.
+            exit_limiter = CapacityLimiter(1)
+            stack.push_async_exit(lambda *exc: to_thread.run_sync(
+                manager.__exit__, *exc, limiter=exit_limiter))
+        yield
 
 
 def live_enabled():
@@ -132,9 +153,8 @@ def register_live(router):
             if len(initial) > 200 or json.loads(initial) != {'type': 'start', 'consent': True}:
                 return await socket.close(code=1008)
             from websockets.asyncio.client import connect
-            from app.provider_budget import reservation
             # Key only in server-side header; never in browser URL or errors.
-            with reservation('gemini', model):
+            async with _provider_slot('gemini', model):
                 async with connect(PROVIDER_URL, additional_headers={'x-goog-api-key': key},
                     open_timeout=12, close_timeout=3, max_size=65536, max_queue=8,
                     ping_interval=20, ping_timeout=20) as provider:

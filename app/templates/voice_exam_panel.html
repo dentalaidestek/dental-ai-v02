@@ -39,20 +39,17 @@
     <button type="button" data-voice-text disabled>Metinden alanları çıkar</button>
     </details>
     <section class="voice-review" hidden>
-      <header class="voice-review-heading"><span class="voice-eyebrow">KONTROL VE KAYIT</span><h3>Muayene özeti</h3><p>İşlenen konuşma bölümlerinden hazırlanan taslak. Dinleme sürüyorsa özet güncellenmeye devam eder.</p></header><div class="voice-review-note">Kaydetmek istediğiniz alanları işaretleyin ve gerekli düzeltmeleri yapın. İşaretlenmeyen alanlar hasta dosyasına aktarılmaz.</div>
-      <p>Yalnız işaretlediğin alanlar uygulanır. İletişim önerileri hasta dosyasına aktarılmaz. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
+      <header class="voice-review-heading"><span class="voice-eyebrow">Muayene taslağı</span><h3>Muayene özeti</h3><p>Başlıkları açarak dayanakları ve önerileri inceleyin. Kayıt alanlarını kontrol edip onaylayın.</p></header>
+      <section class="voice-final-review">
+        <h3>Muayene sonu değerlendirmesi</h3>
+        <p class="voice-help">Dinlemeyi bitirince tüm bilgiler birlikte değerlendirilir. Klinik metni değiştirirseniz yeniden değerlendirin; kayıt seçimlerini değiştirmek yeni değerlendirme gerektirmez.</p>
+        <button type="button" data-voice-finalize>Muayenenin tamamını değerlendir</button>
+        <div data-voice-final-results aria-live="polite"></div>
+      </section>
+      <details class="voice-save-fields"><summary><img class="voice-result-icon" src="/static/vendor/tabler/folder.svg" width="22" height="22" alt="">Hasta dosyasına kaydedilecek alanlar</summary>
+      <p class="voice-help">İşaretlediğiniz bilgiler kaydedilir. Hastalık, ilaç ve alerjiler hasta beyanı olarak tutulur.</p>
       <h4 class="voice-group-title">Hasta bilgileri ve muayene notları</h4><div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
-      <details><summary>Hasta yaklaşımı ve iletişim <small>Yalnız hekime özel öneriler</small></summary><div data-voice-communication></div></details>
-      <details class="voice-advanced"><summary>Ek kaynak araçları (isteğe bağlı)</summary>
-      <details><summary>İsteğe bağlı: görüşme sırasında kaynaklı kontrol</summary><section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Normal akışta kaynaklı kontrol, tüm görüşmeyle birlikte muayene sonunda yapılır. Bu düğme yalnız ayrıca kontrol istediğinizde kullanılır ve ek Gemini çağrısı yapabilir. Klinik acil durum alarmı değildir.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section></details>
-      <fieldset>
-        <legend>Resmî diş hekimliği kaynakları</legend>
-        <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
-        <button type="button" data-voice-sources>Kaynak bağlantısı bul</button>
-        <div data-voice-source-results aria-live="polite"></div>
-      </fieldset>
-      </details>
       <div data-voice-teeth></div>
       <fieldset data-voice-appointment hidden>
         <legend>Randevu taslağı</legend>
@@ -62,20 +59,26 @@
         <label class="voice-field">Başlangıç (Türkiye saati) <input type="datetime-local" data-voice-appointment-start></label>
         <label class="voice-field">Bitiş (isteğe bağlı) <input type="datetime-local" data-voice-appointment-end></label>
       </fieldset>
-      <section class="voice-final-review">
-        <h3>Muayene sonu değerlendirmesi</h3>
-        <p class="voice-help">Dinlemeyi bitirince tüm bilgiler birlikte değerlendirilir. Klinik metni değiştirirseniz yeniden değerlendirin; kayıt seçimlerini değiştirmek yeni değerlendirme gerektirmez.</p>
-        <button type="button" data-voice-finalize>Muayenenin tamamını değerlendir</button>
-        <div data-voice-final-results aria-live="polite"></div>
-      </section>
-      <label class="voice-check"><input type="checkbox" data-voice-confirm> Seçtiğim alanları ve varsa diş bulgularını / randevuyu kontrol ettim.</label>
-      <div class="voice-review-actions"><button type="button" data-voice-save disabled>Onayladığım alanları kaydet →</button>
-      <button type="button" data-voice-discard>Taslağı temizle</button></div><p class="voice-help">Kayıt tamamlandığında hasta dosyasına dönersiniz.</p>
+      <details class="voice-advanced"><summary>Ek kaynak araçları (isteğe bağlı)</summary>
+      <details><summary>İsteğe bağlı: görüşme sırasında kaynaklı kontrol</summary><section><h3>Hastaya özel klinik kontrol</h3><p class="voice-help">Mevcut görüşme bilgileri ve erişilebilen sınırlı resmî kaynaklarla değerlendirme. Hekim doğrulaması gerekir; otomatik tedavi kararı değildir. Normal akışta kaynaklı kontrol, tüm görüşmeyle birlikte muayene sonunda yapılır. Bu düğme yalnız ayrıca kontrol istediğinizde kullanılır ve ek Gemini çağrısı yapabilir. Klinik acil durum alarmı değildir.</p><button type="button" data-voice-clinical>Güncel bilgilerle değerlendir</button><div data-voice-clinical-results aria-live="polite"></div></section></details>
+      <fieldset>
+        <legend>Resmî diş hekimliği kaynakları</legend>
+        <label class="voice-field">Kontrol etmek istediğin konu <input data-voice-source-query maxlength="400" placeholder="Konu veya ilaç adı; hasta kimliği yazma"></label>
+        <button type="button" data-voice-sources>Kaynak bağlantısı bul</button>
+        <div data-voice-source-results aria-live="polite"></div>
+      </fieldset>
+      </details>
+      <button type="button" data-voice-discard>Taslağı temizle</button>
+      </details>
+      <details class="voice-live-communication"><summary>Hasta yaklaşımı ve iletişim <small>Yalnız hekime özel öneriler</small></summary><div data-voice-communication></div></details>
+      <label class="voice-check"><input type="checkbox" data-voice-confirm> Kaydedilecek bilgileri kontrol ettim.</label>
+      <div class="voice-review-actions"><button type="button" data-voice-save disabled>Onayla ve kaydet</button>
+      </div>
     </section>
   </div>
 </section>
-<link rel="stylesheet" href="/static/voice-exam.css?v=10">
-<script src="/static/voice-exam.js?v=12" defer></script>
+<link rel="stylesheet" href="/static/voice-exam.css?v=12">
+<script src="/static/voice-exam.js?v=16" defer></script>
 
 <script src="/static/voice-exam-live.js?v=5" defer></script>
 

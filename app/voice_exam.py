@@ -1,4 +1,5 @@
 """Private voice dictation -> editable review -> atomic existing-record updates."""
+import asyncio
 import base64
 import hashlib
 import json
@@ -14,9 +15,11 @@ from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from app import voice_exam_core as core
+from app.voice_work_queue import VoiceQueueBusy, queue_for, request_owner, run_voice_worker
 
 router = APIRouter()
 HEADERS = {'Cache-Control': 'private, no-store'}
+AUDIO_UPLOAD_TIMEOUT = 30
 
 
 class _BodyTooLarge(Exception):
@@ -58,6 +61,11 @@ class VoiceBodyLimitMiddleware:
         except _BodyTooLarge:
             if not started:
                 await _reply({'ok': False, 'error': 'Muayene aktarımı boyut sınırını aştı.'}, 413)(scope, receive, send)
+
+
+def _queue_busy(error):
+    return JSONResponse({'ok': False, 'code': 'VOICE_QUEUE_BUSY', 'error': str(error)},
+                        status_code=429, headers={**HEADERS, 'Retry-After': '2'})
 
 
 def _reply(data, status=200):
@@ -195,16 +203,19 @@ class FinalInput(ClinicalInput):
 
 
 @router.post('/patients/{patient_id}/voice-exam/finalize')
-def final_review(request: Request, patient_id: int, payload: FinalInput):
-    user, fingerprint, error = _access(request, patient_id)
+async def final_review(request: Request, patient_id: int, payload: FinalInput):
+    user, fingerprint, error = await run_in_threadpool(_access, request, patient_id)
     if error is not None:
         return error
     if not payload.consent:
         return _reply({'ok': False, 'error': 'İşleme onayını kontrol et.'}, 400)
     try:
         from app.voice_exam_final import finalize
-        return _reply({'ok': True, 'revision': fingerprint,
-                       'final': finalize(payload.context, payload.insights, payload.uncertain)})
+        async with request_owner(request, user.id), queue_for(request).slot(user.id):
+            result = await run_voice_worker(request, finalize, payload.context, payload.insights, payload.uncertain)
+        return _reply({'ok': True, 'revision': fingerprint, 'final': result})
+    except VoiceQueueBusy as exc:
+        return _queue_busy(exc)
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
@@ -239,15 +250,19 @@ def reviewed_history(request: Request, patient_id: int):
 
 
 @router.post('/patients/{patient_id}/voice-exam/clinical')
-def clinical_review(request: Request, patient_id: int, payload: ClinicalInput):
-    user, fingerprint, error = _access(request, patient_id)
+async def clinical_review(request: Request, patient_id: int, payload: ClinicalInput):
+    user, fingerprint, error = await run_in_threadpool(_access, request, patient_id)
     if error is not None:
         return error
     if not payload.consent:
         return _reply({'ok': False}, 400)
     try:
         from app.voice_exam_clinical import assess
-        return _reply({'ok': True, **assess(payload.context)})
+        async with request_owner(request, user.id), queue_for(request).slot(user.id):
+            result = await run_voice_worker(request, assess, payload.context)
+        return _reply({'ok': True, **result})
+    except VoiceQueueBusy as exc:
+        return _queue_busy(exc)
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
@@ -278,34 +293,42 @@ async def audio(request: Request, patient_id: int):
             return error
         if request.headers.get('x-voice-consent') != 'yes':
             return _reply({'ok': False, 'error': 'Ses aktarımı onayını işaretle.'}, 400)
-        # Raw request body avoids UploadFile's temporary-file spooling.
-        data = await request.body()
-        if request.headers.get('content-type') == 'application/vnd.dentalai.voice-packet':
-            if len(data) < 4:
-                raise core.VoiceError('Ses paketi doğrulanamadı.')
-            size = int.from_bytes(data[:4], 'big')
-            if size > core.MAX_CONTEXT or size < 2 or len(data) < 4 + size:
-                raise core.VoiceError('Ses paketi bağlamı doğrulanamadı.')
+        async with request_owner(request, user.id), queue_for(request, upload=True).slot(user.id):
+            # Raw request body avoids UploadFile's temporary-file spooling.
             try:
-                context = core.clinical_context(json.loads(data[4:4 + size]))
-            except (ValueError, UnicodeError):
-                raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
-            data = data[4 + size:]
-            mime = core.validate_audio(data, request.headers.get('x-voice-mime', ''))
-        else:
-            # Compatibility for older clients. New clients put larger structured
-            # context in a bounded binary body, not privacy-sensitive proxy headers.
-            mime = core.validate_audio(data, request.headers.get('content-type', ''))
-            encoded = request.headers.get('x-voice-context', '')
-            if len(encoded) > 8000:
-                raise core.VoiceError('Görüşme bağlamı çok uzun.')
-            try:
-                context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
-            except (ValueError, UnicodeError):
-                raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
-        result = await run_in_threadpool(core.extract, data=data, mime=mime, **({'context': context} if context else {}))
+                data = await asyncio.wait_for(request.body(), timeout=AUDIO_UPLOAD_TIMEOUT)
+            except TimeoutError:
+                return _reply({'ok': False, 'code': 'VOICE_UPLOAD_TIMEOUT',
+                    'error': 'Ses aktarımı zaman aşımına uğradı. Kayıt cihazında korunuyor; bağlantını kontrol edip tekrar dene.'}, 408)
+            if request.headers.get('content-type') == 'application/vnd.dentalai.voice-packet':
+                if len(data) < 4:
+                    raise core.VoiceError('Ses paketi doğrulanamadı.')
+                size = int.from_bytes(data[:4], 'big')
+                if size > core.MAX_CONTEXT or size < 2 or len(data) < 4 + size:
+                    raise core.VoiceError('Ses paketi bağlamı doğrulanamadı.')
+                try:
+                    context = core.clinical_context(json.loads(data[4:4 + size]))
+                except (ValueError, UnicodeError):
+                    raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
+                data = data[4 + size:]
+                mime = core.validate_audio(data, request.headers.get('x-voice-mime', ''))
+            else:
+                # Compatibility for older clients. New clients put larger structured
+                # context in a bounded binary body, not privacy-sensitive proxy headers.
+                mime = core.validate_audio(data, request.headers.get('content-type', ''))
+                encoded = request.headers.get('x-voice-context', '')
+                if len(encoded) > 8000:
+                    raise core.VoiceError('Görüşme bağlamı çok uzun.')
+                try:
+                    context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
+                except (ValueError, UnicodeError):
+                    raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
+            async with queue_for(request).slot(user.id):
+                result = await run_voice_worker(request, core.extract, data=data, mime=mime, **({'context': context} if context else {}))
         # Do not include any existing patient identity or clinical history in the provider request.
         return _reply({'ok': True, 'review': result, 'revision': fingerprint})
+    except VoiceQueueBusy as exc:
+        return _queue_busy(exc)
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
@@ -318,15 +341,19 @@ class TextInput(BaseModel):
 
 
 @router.post('/patients/{patient_id}/voice-exam/text')
-def text_review(request: Request, patient_id: int, payload: TextInput):
-    user, fingerprint, error = _access(request, patient_id)
+async def text_review(request: Request, patient_id: int, payload: TextInput):
+    user, fingerprint, error = await run_in_threadpool(_access, request, patient_id)
     if error is not None:
         return error
     if not payload.consent:
         return _reply({'ok': False, 'error': 'Metin aktarımı onayını işaretle.'}, 400)
     try:
-        return _reply({'ok': True, 'revision': fingerprint,
-                       'review': core.extract(transcript=payload.transcript, **({'context': core.clinical_context(payload.context)} if payload.context else {}))})
+        async with request_owner(request, user.id), queue_for(request).slot(user.id):
+            result = await run_voice_worker(request, core.extract, transcript=payload.transcript,
+                **({'context': core.clinical_context(payload.context)} if payload.context else {}))
+        return _reply({'ok': True, 'revision': fingerprint, 'review': result})
+    except VoiceQueueBusy as exc:
+        return _queue_busy(exc)
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
