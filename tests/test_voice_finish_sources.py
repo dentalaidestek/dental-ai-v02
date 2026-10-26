@@ -126,3 +126,37 @@ def test_local_mode_preserves_closed_keyword_fallback(monkeypatch):
     literature.retrieve_literature('PRIVATE_NAME kanal tedavisi')
     assert {'topic': 'endodontic diagnosis'} in captured
     assert 'PRIVATE_NAME' not in json.dumps(captured)
+
+
+def test_total_source_outage_does_not_charge_for_final_review(monkeypatch):
+    from app import voice_exam_final as final
+    monkeypatch.setattr(final, 'retrieve', lambda *a, **k: {'references': [], 'unavailable': ['pubmed-unavailable']})
+    monkeypatch.setattr(final, 'review', lambda *a: pytest.fail('Source outage should be retryable before the final model call'))
+    with pytest.raises(core.VoiceError, match='Kaynak'):
+        final.finalize({'fields': {'chief_complaint': {'value': 'Ağrı', 'quote': 'Ağrı'}}}, [])
+
+
+def test_retryable_source_status_distinguishes_no_evidence_from_network_failure():
+    assert sources.retryable_unavailable(['pubmed-search-unavailable:endodontic diagnosis'])
+    assert sources.retryable_unavailable(['group:documents'])
+    assert sources.retryable_unavailable(['ada-pain-guideline'])
+    assert sources.retryable_unavailable(['drug:warfarin'])
+    assert not sources.retryable_unavailable(['pubmed-no-match:endodontic diagnosis', 'source-text-budget'])
+
+
+def test_unchanged_source_retry_does_not_call_final_model_again(monkeypatch):
+    from app import voice_exam_final as final
+    from test_voice_exam_final import provider, CONTEXT
+    calls = provider(monkeypatch, {'questions': [], 'contradictions': [], 'clinical_items': []})
+    evidence = {'references': [{'id': 'test', 'excerpts': ['Public evidence'], 'retrieved_at': 'first'}],
+                'unavailable': ['ada-pain-guideline'], 'coverage': 'limited', 'notice': 'Partial'}
+    monkeypatch.setattr(final, 'retrieve', lambda *a, **k: evidence)
+    first = final.finalize(CONTEXT, [])
+    assert first['review_status']['source_retryable']
+    evidence['references'][0]['retrieved_at'] = 'later'
+    second = final.finalize(CONTEXT, [], previous_source_fingerprint=first['source_fingerprint'])
+    assert second['not_modified'] is True
+    assert len(calls) == 1, 'Re-reading identical evidence must not incur another final model call'
+    changed = {**CONTEXT, 'fields': {**CONTEXT['fields'], 'chief_complaint': {'value': 'Yeni ağrı', 'quote': 'Yeni ağrı'}}}
+    assert not final.finalize(changed, [], previous_source_fingerprint=first['source_fingerprint']).get('not_modified')
+    assert len(calls) == 2, 'A source fingerprint must not reuse review for changed clinical context'

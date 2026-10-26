@@ -4,8 +4,8 @@
   const audioFile=$('[data-voice-audio-file]');
   const finalizeButton=$('[data-voice-finalize]');
   let failedLiveText='';
-  const finishDraft=new window.VoiceFinishDraft.FinishDraft();let extractionVersion=-1;
-  let finalReady=false,finalBusy=false,finalRequested=false,finalSnapshot='',insights=[],historyFields={},historyRevision='',uncertainties=[],followups=[],sourceRequests=[],literatureTopics=[],unprocessed=false;
+  const finishDraft=new window.VoiceFinishDraft.FinishDraft();let extractionVersion=-1,pendingAudioResult=null;
+  let finalReady=false,finalRetryable=false,finalBusy=false,finalRequested=false,finalSnapshot='',lastSourceFingerprint='',insights=[],historyFields={},historyRevision='',uncertainties=[],followups=[],sourceRequests=[],literatureTopics=[],unprocessed=false;
   const labels={first_name:'Ad',last_name:'Soyad',age:'Yaş',chief_complaint:'Başvuru şikâyeti',medical_history:'Sistemik hastalık / hasta beyanı',medications:'İlaç / hasta beyanı',allergies:'Alerji / hasta beyanı',clinical_findings:'Klinik bulgular',plan:'Hekimin belirttiği plan'};
   const states={CARIES:'Çürük',FILLING:'Dolgu',CROWN:'Kron',ROOT_CANAL:'Kanal tedavisi',EXTRACTED:'Çekilmiş',IMPLANT:'İmplant',OTHER:'Diğer'};
   let available=false,busy=false,recording=false,liveActive=false,liveQueue=[],disposed=false,recorder=null,stream=null,audio=null,timer=null,deadline=null,started=0,revision='',requestKey='',unsaved=false,fieldState={},teethState=[],appointmentQuote='',appointmentContext=null;
@@ -18,7 +18,7 @@
     }finally{pending.delete(controller)}
   }
   function clearPrivateDraft(){
-    finishDraft.clear();extractionVersion=-1;failedLiveText='';finalReady=false;finalBusy=false;finalRequested=false;finalSnapshot='';insights=[];historyFields={};historyRevision='';uncertainties=[];followups=[];sourceRequests=[];literatureTopics=[];unprocessed=false;$('[data-voice-followups]').replaceChildren();
+    finishDraft.clear();extractionVersion=-1;pendingAudioResult=null;failedLiveText='';finalReady=false;finalRetryable=false;finalBusy=false;finalRequested=false;finalSnapshot='';lastSourceFingerprint='';insights=[];historyFields={};historyRevision='';uncertainties=[];followups=[];sourceRequests=[];literatureTopics=[];unprocessed=false;$('[data-voice-followups]').replaceChildren();
     $('[data-voice-final-results]').replaceChildren();$('[data-voice-history-results]').replaceChildren();
     $('[data-voice-use-history]').hidden=true;$('[data-voice-history-confirm]').checked=false;
     root.dispatchEvent(new CustomEvent('voice-private-clear'));liveQueue=[];liveActive=false;epoch++;clearTimeout(clinicalTimer);lastClinicalInput='';lastClinicalKey='';clinicalRequest++;$('[data-voice-clinical]').disabled=false;pending.forEach(c=>c.abort());pending.clear();
@@ -36,9 +36,9 @@
   }
   const key=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   function message(text,error=false){status.textContent=text;status.classList.toggle('voice-error',error)}
-  function controls(){const transcriptFull=transcript.value.length>=60000||new TextEncoder().encode(transcript.value).length>=180000;transcript.disabled=busy||finalBusy||liveActive;if(audioFile)audioFile.disabled=!available||busy||recording||liveActive||finalBusy||!!audio;const stage=$('[data-voice-stage]');stage.textContent=finalBusy?'Son değerlendirme':recording||liveActive?'Görüşme sürüyor':busy||liveQueue.length?'Bilgiler işleniyor':finalReady?'Hekim onayı ve kayıt':review.hidden?'Başlamaya hazır':'Muayene taslağı';root.dispatchEvent(new CustomEvent('voice-review-state',{detail:{blocked:busy||recording||!!audio||finalBusy||transcriptFull,processing:busy||liveQueue.length>0,finalBusy,finalReady}}));start.disabled=!available||busy||recording||liveActive||finalBusy;stop.disabled=!recording;textButton.disabled=!available||busy||recording||liveActive||finalBusy;save.disabled=!finalReady||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;finalizeButton.disabled=!available||busy||recording||liveActive||finalBusy||!!audio;const historyBlocked=busy||recording||liveActive||finalBusy;$('[data-voice-history]').disabled=historyBlocked;$('[data-voice-use-history]').disabled=historyBlocked;if(finalRequested&&!busy&&!recording&&!liveActive&&!liveQueue.length&&!finalBusy&&!audio&&!unprocessed){finalRequested=false;Promise.resolve().then(finalizeReview)};retry.disabled=busy||recording;consent.disabled=busy||recording||liveActive||finalBusy}
+  function controls(){finalizeButton.textContent=finalRetryable?'Eksik kaynakları yeniden dene':'Muayenenin tamamını değerlendir';const transcriptFull=transcript.value.length>=60000||new TextEncoder().encode(transcript.value).length>=180000;transcript.disabled=busy||finalBusy||liveActive;if(audioFile)audioFile.disabled=!available||busy||recording||liveActive||finalBusy||!!audio||transcript.value.length>=54000;const stage=$('[data-voice-stage]');stage.textContent=finalBusy?'Son değerlendirme':recording||liveActive?'Görüşme sürüyor':busy||liveQueue.length?'Bilgiler işleniyor':finalReady?'Hekim onayı ve kayıt':review.hidden?'Başlamaya hazır':'Muayene taslağı';root.dispatchEvent(new CustomEvent('voice-review-state',{detail:{blocked:busy||recording||!!audio||finalBusy||transcriptFull,processing:busy||liveQueue.length>0,finalBusy,finalReady}}));start.disabled=!available||busy||recording||liveActive||finalBusy||transcript.value.length>=54000;stop.disabled=!recording;textButton.disabled=!available||busy||recording||liveActive||finalBusy||!!audio;save.disabled=!finalReady||busy||recording||liveActive||liveQueue.length>0||finalBusy||!!audio||unprocessed;finalizeButton.disabled=!available||busy||recording||liveActive||finalBusy||!!audio;const historyBlocked=busy||recording||liveActive||finalBusy;$('[data-voice-history]').disabled=historyBlocked;$('[data-voice-use-history]').disabled=historyBlocked;if(finalRequested&&!busy&&!recording&&!liveActive&&!liveQueue.length&&!finalBusy&&!audio&&!unprocessed){finalRequested=false;Promise.resolve().then(finalizeReview)};retry.disabled=busy||recording||liveActive||finalBusy;consent.disabled=busy||recording||liveActive||finalBusy}
   function micOff(){clearInterval(timer);clearTimeout(deadline);stream?.getTracks().forEach(track=>track.stop());stream=null;recording=false;controls()}
-  function invalidateFinal(){finalReady=false;finalSnapshot='';$('[data-voice-confirm]').checked=false;$('[data-voice-final-results]').textContent='Bilgiler değişti. Son değerlendirmeyi yeniden çalıştırın.';}
+  function invalidateFinal(){finalReady=false;finalRetryable=false;finalSnapshot='';lastSourceFingerprint='';$('[data-voice-confirm]').checked=false;$('[data-voice-final-results]').textContent='Bilgiler değişti. Son değerlendirmeyi yeniden çalıştırın.';}
   function currentFields(){
     root.querySelectorAll('[data-field-row]').forEach(row=>{const item=fieldState[row.dataset.fieldRow];if(item){const edited=row.querySelector('textarea').value;if(edited!==item.value)item.edited=true;item.value=edited;item.selected=row.querySelector('input').checked}});
   }
@@ -78,7 +78,7 @@
     clinicalTimer=null; // No automatic second clinical call; complete review runs on Finish.
   }
   async function finishTranscript(){
-    if(disposed||busy||recording||liveActive||finalBusy)return;
+    if(disposed||busy||recording||liveActive||finalBusy||audio)return;
     if(!consent.checked){message('İşleme onayını kontrol et.',true);return}
     if(!transcript.value.trim()){message('Önce konuşma veya metin ekle.',true);return}
     try{finishDraft.set(transcript.value)}catch(error){message(error.message,true);return}
@@ -118,8 +118,17 @@
   async function processAudio(){
     if(!audio||busy)return;if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
     busy=true;controls();message('Ses bölümü çözümleniyor…');
-    try{const metadata=new TextEncoder().encode(JSON.stringify(context()));const header=new Uint8Array(4);new DataView(header.buffer).setUint32(0,metadata.length,false);const packet=new Blob([header,metadata,audio]);const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:packet,credentials:'same-origin',headers:{'Content-Type':'application/vnd.dentalai.voice-packet','X-Voice-Mime':audio.type,'X-Voice-Consent':'yes'}}));
-      transcript.value=failedLiveText||result.review.transcript;merge(result);audio=null;retry.hidden=true;
+    try{
+      if(!pendingAudioResult){
+        const metadata=new TextEncoder().encode('{}');const header=new Uint8Array(4);new DataView(header.buffer).setUint32(0,metadata.length,false);const packet=new Blob([header,metadata,audio]);
+        pendingAudioResult=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/audio',{method:'POST',body:packet,credentials:'same-origin',headers:{'Content-Type':'application/vnd.dentalai.voice-packet','X-Voice-Mime':audio.type,'X-Voice-Consent':'yes','X-Voice-Transcription-Only':'yes'}}));
+      }
+      if(revision&&revision!==pendingAudioResult.revision)throw Error('Hasta dosyası değişti; kaydetmeden önce yeniden kontrol edin.');
+      const combined=transcript.value+(transcript.value?'\n':'')+pendingAudioResult.transcript;
+      finishDraft.set(combined);transcript.value=combined;
+      if(!revision)revision=pendingAudioResult.revision;
+      unprocessed=true;unsaved=true;invalidateFinal();audio=null;pendingAudioResult=null;retry.hidden=true;
+      message('Ses metne çevrildi ve görüşmeye eklendi. Klinik değerlendirme için muayeneyi bitirin.');
     }catch(error){if(!disposed){finalRequested=false;message(error.message,true);retry.hidden=false}}finally{busy=false;controls()}
   }
   function audioDuration(file){
@@ -136,6 +145,7 @@
     const file=audioFile.files?.[0];audioFile.value='';if(!file)return;
     if(!consent.checked){message('Ses dosyasını işlemeden önce aktarım onayını işaretle.',true);return}
     if(busy||recording||liveActive||finalBusy||audio||!available)return;
+    if(transcript.value.length>=54000){message('Yeni ses bölümü için metin sınırına yaklaşıldı. Mevcut görüşmeyi bitirin.',true);return}
     if(file.size<100||file.size>8*1024*1024){message('En fazla 8 MB ses dosyası seç.',true);return}
     const supported=['audio/mpeg','audio/wav','audio/x-wav','audio/webm','audio/ogg','audio/mp4'];
     if(!supported.includes(file.type)){message('MP3, WAV, WebM, Ogg veya M4A ses dosyası seç.',true);return}
@@ -146,6 +156,7 @@
   });
   start.addEventListener('click',async()=>{
     if(!consent.checked){message('Ses aktarımı onayını işaretle.',true);return}
+    if(transcript.value.length>=54000){message('Metin sınırına yaklaşıldı. Mevcut görüşmeyi bitirin.',true);return}
     if(audio){message('Önce bekleyen ses bölümünü işle veya taslağı temizle.',true);return}
     if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){message('Bu tarayıcıda ses kaydı yok. Konuşma metnini elle ekleyebilirsin.',true);return}
     busy=true;controls();const startEpoch=epoch;
@@ -187,20 +198,34 @@
   async function finalizeReview(){
     if(disposed||finalBusy||busy||recording||liveActive||liveQueue.length||audio||unprocessed)return;
     if(!consent.checked){message('İşleme onayını kontrol et.',true);return}
-    if(finalReady&&finalSnapshot===snapshot()){message('Güncel son değerlendirme zaten hazır; alanları kontrol ederek onaylayabilirsiniz.');return}
+    if(finalReady&&!finalRetryable&&finalSnapshot===snapshot()){message('Güncel son değerlendirme zaten hazır; alanları kontrol ederek onaylayabilirsiniz.');return}
+    const sourceOnlyRetry=finalReady&&finalRetryable&&finalSnapshot===snapshot();
+    const previousSource=sourceOnlyRetry?lastSourceFingerprint:'';
     finalReady=false;$('[data-voice-confirm]').checked=false;finalBusy=true;controls();message('Tüm muayene bilgileri birlikte değerlendiriliyor…');
     let before;
-    try{before=snapshot();const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/finalize',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({context:context(),insights,uncertain:uncertainties.join(' · ').slice(0,3000),consent:true})}));
+    try{before=snapshot();const result=await jsonResponse(await voiceFetch('/patients/'+root.dataset.patientId+'/voice-exam/finalize',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({context:context(),insights,uncertain:uncertainties.join(' · ').slice(0,3000),consent:true,...(previousSource?{source_fingerprint:previousSource}:{})})}));
       if(before!==snapshot())throw Error('Bilgiler değişti. Son değerlendirmeyi güncel bilgilerle tekrarla.');
       if(revision&&revision!==result.revision)throw Error('Hasta dosyası görüşme sırasında değişmiş. Kaydetmeden önce dosyayı yeniden kontrol et.');
+      if(result.final.not_modified){
+        if(!sourceOnlyRetry||result.final.source_fingerprint!==previousSource)throw Error('Önceki değerlendirme doğrulanamadı.');
+        finalReady=true;finalRetryable=!!result.final.review_status?.source_retryable;finalSnapshot=before;
+        message(finalRetryable?'Kaynaklar değişmedi. Önceki değerlendirme korunuyor; erişilemeyen kaynaklar için daha sonra yeniden deneyin.':'Kaynak metni değişmedi. Önceki değerlendirme korunuyor.');
+        return;
+      }
+      lastSourceFingerprint=result.final.source_fingerprint||'';
       if(!revision)revision=result.revision;const host=$('[data-voice-final-results]');host.replaceChildren();
       finalList(host,'Muayene özeti',result.final.summary);finalList(host,'Hasta yaklaşımı ve iletişim',insights.map(item=>({quote:item.quote,text:[item.observation,item.question,item.explanation||item.suggestion].filter(Boolean).join(' · ')})));finalList(host,'Hastayla netleştirilecek sorular',result.final.questions);finalList(host,'Çelişkili bilgiler',result.final.contradictions);
       const section=document.createElement('section'),heading=document.createElement('h4');heading.textContent='Kaynaklı klinik kontrol';section.append(heading);const notice=document.createElement('p');notice.textContent='Kaynak kapsamı: '+result.final.notice;const coverage=document.createElement('details'),coverageTitle=document.createElement('summary');coverageTitle.textContent='Kaynak kapsamını ve sınırlamalarını göster';coverage.append(coverageTitle,notice);section.append(coverage);for(const source of result.final.references){const line=document.createElement('p'),link=document.createElement('a');link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=source.institution+' · '+source.title;line.append(link);const meta=document.createElement('small');const evidenceLabels={guideline:'Kılavuz',systematic_review:'Sistematik derleme',meta_analysis:'Meta-analiz',background_review:'Arka plan derlemesi',professional_information:'Meslek kuruluşu bilgisi'};meta.textContent=' · '+(evidenceLabels[source.evidence_level]||'Kaynak belgesi')+(source.publication_year?' · '+source.publication_year:'')+(source.clinical_use===false?' · Klinik öneriye dayanak yapılmadı':'')+(source.topic_labels?.length?' · '+source.topic_labels.join(', '):'');line.append(meta);coverage.append(line)}const sourceStatus=document.createElement('p');sourceStatus.textContent='Yapay zekâ değerlendirmesine sunulan kaynak: '+result.final.references.length;section.append(sourceStatus);if(result.final.review_status?.rejected_clinical_items){const p=document.createElement('p');p.textContent='Bazı önerilerin hasta veya kaynak dayanağı doğrulanamadı; gösterilmedi.';section.append(p)}
       for(const item of result.final.clinical_items){const article=document.createElement('article');for(const value of [item.consideration,'Eksik bilgi: '+item.missing_information,'Hasta bilgisi: '+item.patient_quote,'Belge dayanağı: '+item.source_quote,...(item.alternative?['Değerlendirilebilecek seçenek: '+item.alternative]:[])]){const text=document.createElement('p');text.textContent=value;article.append(text)}const source=result.final.references.find(x=>x.id===item.source_id);if(source){const link=document.createElement('a');link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=source.institution+' · '+source.title;article.append(link)}section.append(article)}
       if(!result.final.clinical_items.length){const p=document.createElement('p');p.textContent='Bu görüşme için kaynakla doğrulanmış kontrol noktası yok. Bu sonuç güvenlik onayı değildir.';section.append(p)}
       if(result.final.unavailable.length){const p=document.createElement('p');p.textContent='Bazı konularda uygun kaynak bulunamadı veya tarama/erişim sınırlı kaldı; değerlendirme eksik olabilir.';section.append(p)}host.append(section);
-      finalSnapshot=before;finalReady=true;review.hidden=false;host.scrollIntoView?.({behavior:'smooth',block:'start'});unsaved=true;message('Son değerlendirme hazır. Açık noktaları ve kaydedilecek alanları kontrol ederek onayla.');
-    }catch(error){if(!disposed){finalReady=false;$('[data-voice-final-results]').textContent=error.message;message(error.message,true)}}finally{finalBusy=false;controls()}
+      finalSnapshot=before;finalReady=true;finalRetryable=!!result.final.review_status?.source_retryable;review.hidden=false;host.scrollIntoView?.({behavior:'smooth',block:'start'});unsaved=true;message(finalRetryable?'Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz.':'Son değerlendirme hazır. Açık noktaları ve kaydedilecek alanları kontrol ederek onayla.');
+    }catch(error){if(!disposed){
+      if(sourceOnlyRetry&&before===snapshot()){
+        finalReady=true;finalRetryable=true;finalSnapshot=before;
+        message(error.message+' Önceki kısmi değerlendirme korunuyor.',true);
+      }else{finalReady=false;$('[data-voice-final-results]').textContent=error.message;message(error.message,true)}
+    }}finally{finalBusy=false;controls()}
   }
   finalizeButton.addEventListener('click',()=>{finalRequested=false;return unprocessed?finishTranscript():finalizeReview()});
   root.addEventListener('input',event=>{if(event.target?.type!=='checkbox'&&event.target?.closest?.('[data-voice-fields], [data-voice-appointment]')){currentFields();invalidateFinal();invalidateClinical();controls()}});

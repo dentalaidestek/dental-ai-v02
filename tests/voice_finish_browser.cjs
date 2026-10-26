@@ -11,13 +11,13 @@ const tick=()=>new Promise(setImmediate);
  const get=s=>{if(!elements.has(s))elements.set(s,new El());return elements.get(s)};
  root.addEventListener('voice-review-state',e=>blocked=e.detail.blocked);
  root.querySelector=get;root.querySelectorAll=s=>s==='[data-field-row]'?get('[data-voice-fields]').children:[];
- let resolveText,failFinal=true,finalCount=0;
+ let resolveText,failFinal=true,finalCount=0,modelCount=0;
  const final={summary:[],questions:[],contradictions:[],clinical_items:[],references:[],unavailable:[],notice:'Limited'};
  const fetch=async(url,options={})=>{
   calls.push({url,options});let body;
   if(url.includes('capabilities'))body={ok:true,enabled:true};
   else if(url.endsWith('/text')){if(!resolveText)await new Promise(r=>resolveText=r);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[{quote:'Korkuyorum.',observation:'Korku beyanı',suggestion:'Açıkla'}],follow_up_questions:[]}}}
-  else if(url.endsWith('/finalize')){finalCount++;body=failFinal?{ok:false,error:'Synthetic final failure'}:{ok:true,revision:'a'.repeat(64),final}}
+  else if(url.endsWith('/finalize')){finalCount++;if(JSON.parse(options.body).source_fingerprint){return {ok:true,json:async()=>({ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}})}}modelCount++;body=failFinal?{ok:false,error:'Synthetic final failure'}:{ok:true,revision:'a'.repeat(64),final}}
   else if(url.endsWith('/apply'))body={ok:true,patient_url:'/patients/1'};
   else throw Error('Unexpected endpoint');
   return {ok:body.ok,json:async()=>body};
@@ -44,6 +44,15 @@ const tick=()=>new Promise(setImmediate);
  assert.equal(get('[data-voice-save]').disabled,false);
  assert.equal(get('[data-voice-stage]').textContent,'Hekim onayı ve kayıt');
  const cachedCount=finalCount;await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,cachedCount,'Same final review must not be paid twice');
+ final.review_status={source_retryable:true};final.source_fingerprint='f'.repeat(64);
+ const fieldRetry=get('[data-voice-fields]').children[0].querySelector('textarea');fieldRetry.value='Yeni klinik bilgi';
+ root.dispatchEvent({type:'input',target:{closest:()=>true}});
+ await get('[data-voice-finalize]').handlers.click();const partialCount=finalCount,partialModels=modelCount;
+ await get('[data-voice-finalize]').handlers.click();
+ assert.equal(finalCount,partialCount+1,'Partial source outage must allow an explicit retry for the same clinical context');
+ assert.equal(modelCount,partialModels,'Unchanged source retry must not pay for another final model call');
+ assert.equal(get('[data-voice-save]').disabled,false,'Unchanged source retry retains the previous final result');
+ final.review_status={source_retryable:false};
  root.dispatchEvent({type:'input',target:{type:'checkbox',closest:()=>true}});
  assert.equal(get('[data-voice-save]').disabled,false,'Selecting fields does not invalidate unchanged clinical review');
  const field=get('[data-voice-fields]').children[0].querySelector('textarea');field.value='Hekimin düzeltmesi';
@@ -52,7 +61,7 @@ const tick=()=>new Promise(setImmediate);
  await get('[data-voice-finalize]').handlers.click();
  assert.equal(get('[data-voice-save]').disabled,false);
  get('[data-voice-transcript]').value='İşlenmemiş yeni bölüm';get('[data-voice-transcript]').handlers.input();
- await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,4,'Explicit finish processes new text before final');
+ await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,6,'Explicit finish processes new text before final');
  events.pagehide();assert.equal(get('[data-voice-transcript]').value,'');assert.equal(get('[data-voice-final-results]').children.length,0);
  assert.equal(get('[data-voice-communication]').children.length,0);
  console.log('Final lifecycle: extraction drain, failure/retry, edit invalidation, unprocessed text and private cleanup passed.');

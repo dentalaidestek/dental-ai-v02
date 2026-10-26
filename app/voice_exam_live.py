@@ -16,6 +16,7 @@ from app import voice_exam_core as core
 _lock = threading.Lock()
 _active = set()
 MAX_SECONDS = 570
+FINAL_DRAIN_SECONDS = 3
 PROVIDER_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
 
 
@@ -67,11 +68,10 @@ async def proxy(socket, provider):
                 if control.get('type') in {'pause', 'finish'}:
                     finalized.clear()
                     await provider.send(json.dumps({'realtimeInput': {'audioStreamEnd': True}}))
-                    try:
-                        await asyncio.wait_for(finalized.wait(), timeout=3)
-                        flushed = True
-                    except asyncio.TimeoutError:
-                        flushed = False
+                    # Keep consuming for the bounded drain window: the first
+                    # finalized segment need not be the last buffered segment.
+                    await asyncio.sleep(FINAL_DRAIN_SECONDS)
+                    flushed = finalized.is_set()
                     await socket.send_json({'type': 'ended', 'flushed': flushed})
                     return 'ended'
                 raise ValueError('Unknown control')
@@ -92,6 +92,8 @@ async def proxy(socket, provider):
                     await socket.send_json({'type': kind, 'text': text})
                     if kind == 'final':
                         finalized.set()
+                    else:
+                        finalized.clear()
 
     tasks = [asyncio.create_task(upstream()), asyncio.create_task(downstream())]
     try:
@@ -155,4 +157,5 @@ def register_live(router):
                 await socket.close()
             except Exception:
                 pass
+
 

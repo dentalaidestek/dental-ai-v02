@@ -2,10 +2,12 @@
 import json
 import time
 import logging
+import hashlib
+import os
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
-from app.voice_exam_sources import retrieve
+from app.voice_exam_sources import retrieve, retryable_unavailable
 from app.voice_exam_review_provider import review
 
 
@@ -58,7 +60,7 @@ def _contradictions(items, fields):
     return accepted
 
 
-def finalize(context, insights, uncertain=""):
+def finalize(context, insights, uncertain="", *, previous_source_fingerprint=''):
     started = time.monotonic()
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
@@ -83,6 +85,9 @@ def finalize(context, insights, uncertain=""):
     if context.get('literature_topics'): options['topics'] = context['literature_topics']
     evidence = retrieve(query, **options)
     retrieved = time.monotonic()
+    source_retryable = retryable_unavailable(evidence['unavailable'])
+    if source_retryable and not evidence['references']:
+        raise core.VoiceError('Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin.')
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
@@ -182,6 +187,15 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
             'drug_name_candidates': name_candidates}
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
         raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
+    # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
+    # retrieval timestamps so refreshing an unchanged public document is free.
+    stable_sources = [{k: v for k, v in ref.items() if k != 'retrieved_at'} for ref in evidence['references']]
+    signature = {**data, 'sources': stable_sources, 'prompt': prompt,
+                 'model': os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5'}
+    source_fingerprint = hashlib.sha256(json.dumps(signature, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    if previous_source_fingerprint == source_fingerprint:
+        return {'not_modified': True, 'source_fingerprint': source_fingerprint,
+                'review_status': {'source_retryable': source_retryable}, 'unavailable': evidence['unavailable']}
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
@@ -206,6 +220,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                     + names + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
                     + item['consideration'])
         review_status = {'source_count': len(evidence['references']),
+                         'source_retryable': source_retryable,
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
                          'rejection_reasons': rejected_reasons}
@@ -213,7 +228,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
             retrieved - started, modeled - retrieved, time.monotonic() - started)
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
             len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
-        return {**output, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
+        return {**output, 'source_fingerprint': source_fingerprint, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
                 'coverage': evidence['coverage'], 'notice': evidence['notice']}
     except Exception:
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None

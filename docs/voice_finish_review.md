@@ -1,6 +1,6 @@
 # Finish-only live examination
 
-The main live microphone path now retains completed transcription segments in the open browser page. It does not call clinical extraction during listening or pause. The Finish button waits for provider flush, then extracts clinical context and verified closed taxonomy topics in bounded chunks, retrieves sources and runs the existing final review. Alternative 90-second clip upload remains the existing explicit extraction tool.
+The main live microphone path now retains completed transcription segments in the open browser page. It does not call clinical extraction during listening or pause. The Finish button waits for provider flush, then extracts clinical context and verified closed taxonomy topics in bounded chunks, retrieves sources and runs the existing final review. Alternative 90-second clips now also request transcription only and append to the same draft; clinical extraction is deferred to the explicit evaluation/Finish action. Legacy API clients without the new header keep the old response contract.
 
 ## Draft lifecycle
 
@@ -8,7 +8,8 @@ The main live microphone path now retains completed transcription segments in th
 - Extraction chunks: at most 12,000 characters / 36,000 bytes, split losslessly at whitespace where possible. The existing 24 KB structured-context cap remains separate. Over-limit context reports an error and retains the transcript; it is never silently truncated.
 - Successful chunk cursor survives extraction failures in the open page. Final-review retry does not repeat extraction. Editing/replacing transcript invalidates extraction checkpoints. Editing extracted fields invalidates the final result and preserves clinician edits.
 - No browser or server transcript persistence. Discard, save or navigation clears transient data; unsaved navigation warns. Closed/reloaded pages cannot recover the transcript. Failure recovery is only within the open page.
-- A normal short examination uses one extraction plus one final review, excluding transcription. Longer examinations need additional extraction calls. Explicit retry of an ambiguous provider/network timeout may incur another provider charge; this change does not provide server-side idempotency.
+- A normal short examination uses one extraction plus one final review, excluding transcription. Longer examinations need additional extraction calls. Unchanged partial-source retries skip the final model using a fingerprint bound to clinical context, prompt, model and public evidence (excluding retrieval timestamps). Total source outages stop before the final model. Explicit retry of an ambiguous provider/network timeout may still incur another provider charge; this change does not provide server-side idempotency.
+- After pause or connection failure, an incomplete flush remains incomplete; pressing Finish cannot certify it. The server drains finalized segments for a bounded three-second window instead of closing after the first segment. An eight-second client watchdog exits a hung stopping state. This is a bounded heuristic, not proof of complete real-provider speech capture.
 - No speech-triggered Finish command. An unconfirmed final flush requires the clinician to inspect the text and explicitly run evaluation.
 
 ## Closed source topics
@@ -37,6 +38,6 @@ Build uses all 21 closed topics and at most 200 relevant PubMed records per topi
 
 ## Verification
 
-187 Python tests and 10 Node controller/worklet harnesses passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. Independent code review findings were repaired with regression tests.
+194 Python tests and 10 Node controller/worklet harnesses passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. Independent code review findings were repaired with regression tests.
 
-This workspace contains the voice-subsystem snapshot, not every repository test. A dedicated PR workflow runs all voice Python tests and browser harnesses against the complete checkout. Real microphone, actual model calls, real catalogue ingestion, clinical accuracy and production load are not verified here. No production merge or deployment is performed.
+This workspace contains the voice-subsystem snapshot, not every repository test. A dedicated PR workflow runs all voice Python tests and browser harnesses against the complete checkout. A direct synthetic fixed-topic PubMed ESearch attempt timed out in this runtime, and the hosted web fetch could not access the endpoint. Real microphone, actual model calls, real catalogue ingestion, clinical accuracy and production load are not verified here. No production merge or deployment is performed.

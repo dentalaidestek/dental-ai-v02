@@ -192,6 +192,7 @@ class ClinicalInput(BaseModel):
 class FinalInput(ClinicalInput):
     insights: list[dict] = Field(default_factory=list, max_length=24)
     uncertain: str = Field(default='', max_length=3000)
+    source_fingerprint: str = Field(default='', pattern=r'^(?:[a-f0-9]{64})?$')
 
 
 @router.post('/patients/{patient_id}/voice-exam/finalize')
@@ -203,8 +204,9 @@ def final_review(request: Request, patient_id: int, payload: FinalInput):
         return _reply({'ok': False, 'error': 'İşleme onayını kontrol et.'}, 400)
     try:
         from app.voice_exam_final import finalize
+        options = {'previous_source_fingerprint': payload.source_fingerprint} if payload.source_fingerprint else {}
         return _reply({'ok': True, 'revision': fingerprint,
-                       'final': finalize(payload.context, payload.insights, payload.uncertain)})
+                       'final': finalize(payload.context, payload.insights, payload.uncertain, **options)})
     except core.VoiceError as exc:
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
@@ -303,7 +305,11 @@ async def audio(request: Request, patient_id: int):
                 context = core.clinical_context(json.loads(base64.b64decode(encoded, validate=True))) if encoded else {}
             except (ValueError, UnicodeError):
                 raise core.VoiceError('Görüşme bağlamı doğrulanamadı.') from None
-        result = await run_in_threadpool(core.extract, data=data, mime=mime, **({'context': context} if context else {}))
+        transcription_only = request.headers.get('x-voice-transcription-only') == 'yes'
+        options = {'transcription_only': True} if transcription_only else ({'context': context} if context else {})
+        result = await run_in_threadpool(core.extract, data=data, mime=mime, **options)
+        if transcription_only:
+            return _reply({'ok': True, 'transcript': result['transcript'], 'revision': fingerprint})
         # Do not include any existing patient identity or clinical history in the provider request.
         return _reply({'ok': True, 'review': result, 'revision': fingerprint})
     except core.VoiceError as exc:
@@ -480,4 +486,5 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
 
 from app.voice_exam_live import register_live
 register_live(router)
+
 

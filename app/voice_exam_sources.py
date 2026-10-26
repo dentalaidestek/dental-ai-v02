@@ -188,6 +188,14 @@ def _apply_budget(references):
     return result
 
 
+def retryable_unavailable(unavailable):
+    """Transport/capacity failures differ from completed searches with no evidence."""
+    document_ids = {document[0] for document in DOCUMENTS}
+    return any(item in document_ids or item == 'local-drug-corpus' or item.startswith(('group:', 'drug:'))
+               or any(marker in item for marker in ('unavailable', 'time-budget', '-busy', 'index-version'))
+               for item in unavailable)
+
+
 def retrieve(query, requests=None, topics=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = (query + ' ' + ' '.join(item.get('topic', '') for item in (topics or []))).casefold()

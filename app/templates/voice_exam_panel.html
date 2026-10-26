@@ -27,14 +27,14 @@
     <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">Muayene bitişinde hazırlanan sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
     <details><summary>Alternatif: ses dosyası, bölüm kaydı veya metin</summary>
     <label class="voice-field">Ses dosyasıyla dene <input type="file" data-voice-audio-file accept="audio/mpeg,audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mp4,.mp3,.wav,.webm,.ogg,.m4a" disabled></label>
-    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile yazıya çevrilir, klinik metin Claude ile işlenir; uygulama ses dosyasını saklamaz.</p>
+    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile yazıya çevrilir, metin görüşmeye eklenir ve klinik çıkarım muayene bitişine bırakılır; uygulama ses dosyasını saklamaz.</p>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
-      <button type="button" data-voice-stop disabled>Duraklat ve işle</button>
+      <button type="button" data-voice-stop disabled>Kaydı durdur ve metne çevir</button>
       <button type="button" data-voice-retry hidden>Ses bölümünü tekrar işle</button>
       <span data-voice-timer>00:00</span>
     </div>
-    <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. İşledikten sonra devam edebilirsin. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
+    <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. Metne çevrildikten sonra yeni bölüm ekleyebilirsiniz; klinik değerlendirme bitişte yapılır. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
     <label class="voice-field">Muayeneyle ilgili geçici metin (en fazla 72.000 karakter / 216 KB) <textarea data-voice-transcript rows="4" maxlength="72000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
     <button type="button" data-voice-text disabled>Metni işle ve değerlendir</button>
     </details>
@@ -76,8 +76,8 @@
 </section>
 <link rel="stylesheet" href="/static/voice-exam.css?v=10">
 <script src="/static/voice-finish-draft.js?v=1" defer></script>
-<script src="/static/voice-exam.js?v=13" defer></script>
+<script src="/static/voice-exam.js?v=14" defer></script>
 
-<script src="/static/voice-exam-live.js?v=5" defer></script>
+<script src="/static/voice-exam-live.js?v=6" defer></script>
 
 

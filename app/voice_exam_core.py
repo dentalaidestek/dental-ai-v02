@@ -535,7 +535,7 @@ def _understand(text, context):
     return output
 
 
-def extract(*, data=None, mime=None, transcript=None, context=None):
+def extract(*, data=None, mime=None, transcript=None, context=None, transcription_only=False):
     started = time.monotonic()
     from app.http_transport import urlopen
     from app.clinical_privacy import redact_direct_identifiers
@@ -583,6 +583,8 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
                 text = _string(speech.get('transcript'), MAX_TRANSCRIPT)
             else:
                 text = redact_direct_identifiers(transcript)
+            if transcription_only:
+                return {'transcript': _string(redact_direct_identifiers(text), MAX_TRANSCRIPT)}
             result = _understand(text, context)
             # Missing output is not an explicit correction. Preserve previously
             # reviewed clinical anchors rather than silently erasing them.

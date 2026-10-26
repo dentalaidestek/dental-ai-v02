@@ -10,13 +10,13 @@ const tick=()=>new Promise(setImmediate);
  const root=new El(),elements=new Map(),events={},calls=[];root.dataset.patientId='1';
  const get=s=>{if(!elements.has(s))elements.set(s,new El());return elements.get(s)};
  root.querySelector=get;root.querySelectorAll=s=>s==='[data-field-row]'?get('[data-voice-fields]').children:[];
- let resolveText,failFinal=true,finalCount=0,duration=60,audioCalls=0;
+ let resolveText,failFinal=true,finalCount=0,duration=60,audioCalls=0,failAudio=false,audioTranscript='Soğuk içemiyorum.';
  const final={summary:[],questions:[],contradictions:[],clinical_items:[],references:[],unavailable:[],notice:'Limited'};
  const fetch=async(url,options={})=>{
   calls.push({url,options});let body;
   if(url.includes('capabilities'))body={ok:true,enabled:true};
   else if(url.endsWith('/text')){await new Promise(r=>resolveText=r);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[{quote:'Korkuyorum.',observation:'Korku beyanı',suggestion:'Açıkla'}],follow_up_questions:[]}}}
-  else if(url.endsWith('/audio')){audioCalls++;const bytes=new Uint8Array(await options.body.arrayBuffer());const size=new DataView(bytes.buffer).getUint32(0,false);assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.slice(4,4+size))).fields,{});assert.equal(bytes.length-4-size,500);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[]}}}
+  else if(url.endsWith('/audio')){audioCalls++;if(failAudio)return {ok:false,json:async()=>({ok:false,error:'Synthetic STT failure'})};const bytes=new Uint8Array(await options.body.arrayBuffer());const size=new DataView(bytes.buffer).getUint32(0,false);assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.slice(4,4+size))),{});assert.equal(bytes.length-4-size,500);body={ok:true,revision:'a'.repeat(64),transcript:audioTranscript}}
   else if(url.endsWith('/finalize')){finalCount++;body=failFinal?{ok:false,error:'Synthetic final failure'}:{ok:true,revision:'a'.repeat(64),final}}
   else if(url.endsWith('/apply'))body={ok:true,patient_url:'/patients/1'};
   else throw Error('Unexpected endpoint');
@@ -32,9 +32,30 @@ const tick=()=>new Promise(setImmediate);
  await input.handlers.change();assert.equal(audioCalls,0,'Oversized duration must not upload');
  duration=60;input.files=[file];await input.handlers.change();assert.equal(audioCalls,1);
  assert.equal(input.value,'','Clear selected file after processing');
- assert.equal(get('[data-voice-fields]').children.length,1);
+ assert.equal(get('[data-voice-fields]').children.length,0,'Audio must not extract clinical fields before Finish');
+ assert.equal(get('[data-voice-transcript]').value,'Soğuk içemiyorum.');
+ assert.equal(calls.some(c=>c.url.endsWith('/text')),false);
+ assert.equal(calls.some(c=>c.url.endsWith('/finalize')),false);
+ input.files=[file];await input.handlers.change();
+ assert.equal(get('[data-voice-transcript]').value,'Soğuk içemiyorum.\nSoğuk içemiyorum.','Second clip must append without replacing the first');
  assert.equal(calls.filter(x=>x.url.endsWith('/audio'))[0].options.headers['X-Voice-Mime'],'audio/mpeg');
  assert.equal(calls.filter(x=>x.url.endsWith('/audio'))[0].options.headers['X-Voice-Consent'],'yes');
- events.pagehide();console.log('Audio import: consent, duration, binary context packet, extraction and cleanup passed.');
+ assert.equal(calls.find(x=>x.url.endsWith('/audio')).options.headers['X-Voice-Transcription-Only'],'yes');
+ const preserved=get('[data-voice-transcript]').value;
+ failAudio=true;input.files=[file];await input.handlers.change();
+ assert.equal(get('[data-voice-transcript]').value,preserved);
+ assert.equal(get('[data-voice-retry]').hidden,false);
+ assert.equal(get('[data-voice-text]').disabled,true,'Pending audio blocks clinical processing');
+ failAudio=false;await get('[data-voice-retry]').handlers.click();
+ assert.equal(get('[data-voice-transcript]').value,preserved+'\nSoğuk içemiyorum.');
+ audioTranscript='😀'.repeat(18000);get('[data-voice-transcript]').value='x'.repeat(53000);
+ input.files=[file];await input.handlers.change();const paid=audioCalls;
+ assert.equal(get('[data-voice-transcript]').value,'x'.repeat(53000),'Over-limit append preserves prior transcript');
+ assert.equal(get('[data-voice-retry]').hidden,false);
+ get('[data-voice-transcript]').value='';get('[data-voice-transcript]').handlers.input();
+ await get('[data-voice-retry]').handlers.click();
+ assert.equal(audioCalls,paid,'Retry an already transcribed clip without another provider request');
+ assert.equal(get('[data-voice-transcript]').value,audioTranscript);
+ events.pagehide();console.log('Audio import: consent, duration, transcription-only append, error recovery, cached retry and cleanup passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
 
