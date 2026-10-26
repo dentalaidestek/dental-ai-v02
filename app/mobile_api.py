@@ -928,8 +928,8 @@ class MobileMessage(BaseModel):
     client_message_id:str=""
 
 @router.post("/consultations/{case_id}/messages")
-def mobile_send_consultation_message(case_id:int,payload:MobileMessage,token:str=Depends(_mobile_access_token)):
-    response=expert_support_message(_mobile_request(token),case_id,payload.content,
+async def mobile_send_consultation_message(case_id:int,payload:MobileMessage,token:str=Depends(_mobile_access_token)):
+    response=await expert_support_message(_mobile_request(token),case_id,payload.content,
         payload.reply_to_message_id,payload.client_message_id)
     data=_response_json(response)
     if hasattr(response,"status_code") and response.status_code>=400:
@@ -998,3 +998,4 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         from fastapi.responses import FileResponse
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
         return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
+
