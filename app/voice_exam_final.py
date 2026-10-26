@@ -1,5 +1,7 @@
 """One bounded final Claude review; transient output, no automatic clinical writes."""
 import json
+import time
+import logging
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
@@ -57,6 +59,7 @@ def _contradictions(items, fields):
 
 
 def finalize(context, insights, uncertain=""):
+    started = time.monotonic()
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
     insights = private_insights(insights)
@@ -79,6 +82,7 @@ def finalize(context, insights, uncertain=""):
     if requests: options['requests'] = requests
     if context.get('literature_topics'): options['topics'] = context['literature_topics']
     evidence = retrieve(query, **options)
+    retrieved = time.monotonic()
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
@@ -176,10 +180,13 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
             'drug_name_candidates': name_candidates}
+    if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
+        raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
         result = review(prompt, data, schema)
+        modeled = time.monotonic()
         output = {'questions': _anchored(result.get('questions'), fields),
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
@@ -202,7 +209,8 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
                          'rejection_reasons': rejected_reasons}
-        import logging
+        logging.getLogger(__name__).info('voice_final retrieve_s=%.2f model_s=%.2f total_s=%.2f',
+            retrieved - started, modeled - retrieved, time.monotonic() - started)
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
             len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
         return {**output, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
@@ -211,3 +219,4 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:
         core._capacity.release()
+

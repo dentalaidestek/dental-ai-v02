@@ -1,5 +1,9 @@
 """Fetch bounded clinical excerpts from fixed professional sources. No patient query leaves the app."""
 import re
+import logging
+from collections import OrderedDict
+from concurrent.futures import wait
+from app.voice_source_pool import BoundedPool
 import threading
 import time
 import urllib.request
@@ -46,8 +50,15 @@ DOCUMENTS = (
       'kemik erimesi', 'risedronat', 'ibandronat', 'antiresorptive medication osteonecrosis jaw'),
      ('dental', 'risk', 'extraction', 'antiresorptive')),
 )
-_lock = threading.Lock()
-_cache = {}
+_lock = threading.RLock()
+_cache = OrderedDict()
+_inflight = {}
+_doc_pool = BoundedPool(6, 12, 'voice-document')
+_group_pool = BoundedPool(4, 8, 'voice-source')
+DOCUMENT_TIMEOUT = 12
+GROUP_TIMEOUT = 16
+EXCERPT_BUDGET = 40000
+log = logging.getLogger(__name__)
 
 
 class _Text(HTMLParser):
@@ -77,8 +88,10 @@ def _fetch(document):
     ident, institution, title, url, triggers, terms = document
     with _lock:
         cached = _cache.get(ident)
-        if cached and time.monotonic() - cached[0] < 3600:
-            return cached[1]
+        if cached and time.monotonic() - cached[0] < (3600 if cached[1] is not None else 600):
+            if cached[1] is None:
+                raise ValueError('Source failure cached')
+            return dict(cached[1])
     # Dedicated opener: redirects refused, bounded input, no PHI in URL/headers.
     opener = urllib.request.build_opener(_NoRedirect())
     request = urllib.request.Request(url, headers={'User-Agent': 'DentalAI-ClinicalSource/1.0', 'Accept': 'text/html'})
@@ -104,25 +117,94 @@ def _fetch(document):
     return result
 
 
+def _fetch_many(documents):
+    futures = {}; found = {}; missing = []
+    def completed(ident, future):
+        with _lock:
+            try:
+                value = future.result()
+            except Exception:
+                value = None
+            _cache[ident] = (time.monotonic(), value)
+            _cache.move_to_end(ident)
+            while len(_cache) > 64:
+                _cache.popitem(last=False)
+            _inflight.pop(ident, None)
+    for doc in documents:
+        ident = doc[0]
+        with _lock:
+            cached = _cache.get(ident)
+            if cached and time.monotonic() - cached[0] < (3600 if cached[1] is not None else 600):
+                if cached[1] is None: missing.append(ident)
+                else: found[ident] = dict(cached[1])
+                continue
+            future = _inflight.get(ident)
+            if future is None:
+                future = _doc_pool.submit(_fetch, doc)
+                if future is not None:
+                    _inflight[ident] = future
+                    future.add_done_callback(lambda f, ident=ident: completed(ident, f))
+            if future is None:
+                missing.append(ident)
+            else:
+                futures[future] = ident
+    done, _ = wait(futures, timeout=DOCUMENT_TIMEOUT) if futures else (set(), set())
+    for future, ident in futures.items():
+        if future in done and not future.cancelled() and future.exception() is None:
+            found[ident] = future.result()
+        else:
+            missing.append(ident)
+    # Timed-out shared requests keep their slots until actual completion. Admission
+    # is bounded and later reviews share the same future, never an unbounded queue.
+    return [found[doc[0]] for doc in documents if doc[0] in found], missing
+
+
+def _run_groups(groups):
+    def run(name, fn):
+        started = time.monotonic()
+        try: return fn()
+        finally: log.info('voice_sources group=%s seconds=%.2f', name, time.monotonic() - started)
+    futures = {name: _group_pool.submit(run, name, fn) for name, fn in groups.items()}
+    admitted = [f for f in futures.values() if f is not None]
+    done, _ = wait(admitted, timeout=GROUP_TIMEOUT) if admitted else (set(), set())
+    results = {}
+    for name, future in futures.items():
+        if future is not None and future in done and not future.cancelled() and future.exception() is None:
+            results[name] = future.result()
+        else:
+            if future is not None: future.cancel()  # queued work only; running work keeps its slot
+            results[name] = ([], ['group:' + name])
+    return results
+
+
+def _apply_budget(references):
+    used = 0; result = []
+    for ref in references:
+        kept = []
+        for excerpt in ref.get('excerpts', []):
+            if used + len(excerpt) <= EXCERPT_BUDGET:
+                kept.append(excerpt); used += len(excerpt)
+        if kept: result.append(dict(ref, excerpts=kept))
+    return result
+
+
 def retrieve(query, requests=None, topics=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = (query + ' ' + ' '.join(item.get('topic', '') for item in (topics or []))).casefold()
     selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
-    references = []; unavailable = []
-    for doc in selected:
-        try:
-            references.append(_fetch(doc))
-        except Exception:
-            unavailable.append(doc[0])
+    started = time.monotonic()
     from app.voice_exam_literature import retrieve_literature
-    literature, missing_literature = retrieve_literature(query, topics=topics)
-    references.extend(literature); unavailable.extend(missing_literature)
     from app.voice_exam_dergipark import retrieve_dergipark
-    local_literature, missing_local = retrieve_dergipark(query, topics=topics)
-    references.extend(local_literature); unavailable.extend(missing_local)
+    groups = {
+        'documents': lambda: _fetch_many(selected),
+        'literature': lambda: retrieve_literature(query, topics=topics),
+        'dergipark': lambda: retrieve_dergipark(query, topics=topics),
+    }
     if requests:
         from app.voice_exam_live_sources import retrieve_requests
-        found, missing = retrieve_requests(requests)
+        groups['requests'] = lambda: retrieve_requests(requests)
+    references = []; unavailable = []
+    for found, missing in _run_groups(groups).values():
         references.extend(found); unavailable.extend(missing)
     try:
         from app.voice_exam_drugs import retrieve_drugs
@@ -138,11 +220,15 @@ def retrieve(query, requests=None, topics=None):
         key = 'doi:' + doi if doi else ref['id']
         if key not in seen:
             unique.append(ref); seen.add(key)
-    references = unique
+    references = _apply_budget(unique)
+    if sum(len(x) for r in references for x in r['excerpts']) < sum(len(x) for r in unique for x in r['excerpts']):
+        unavailable.append('source-text-budget')
+    log.info('voice_sources total_seconds=%.2f refs=%d unavailable=%d', time.monotonic() - started, len(references), len(unavailable))
     from app.voice_exam_literature import TOPIC_LABELS
     for ref in references:
         ref['topic_labels'] = [TOPIC_LABELS.get(topic, topic) for topic in ref.get('matched_topics', [])]
     return {'references': references, 'unavailable': unavailable,
             'coverage': 'limited',
             'notice': 'Konuya göre seçilmiş meslek kuruluşu belgeleri, PubMed ve seçilmiş DergiPark diş hekimliği dergilerinin yayın özetleri değerlendirilir; kapsamlı sistematik tarama değildir. DergiPark keşfi sınırlı bir güncellenmiş kayıt penceresidir; tüm arşivi kapsamaz. Dizin/barındırma bilgisi tek başına bilimsel doğruluk onayı değildir. Yayının PubMed’de indekslenmesi tek başına öneriyi doğrulamaz; tam metin ve hastaya uygunluk hekim tarafından kontrol edilmelidir. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
+
 

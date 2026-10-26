@@ -505,7 +505,7 @@ def clinical_context(value):
 def _understand(text, context):
     from app.voice_exam_review_provider import review
     from app.clinical_privacy import redact_direct_identifiers
-    instruction = PROMPT
+    instruction = PROMPT + '\nKaynak konusu için yalnız literature_topics şemasındaki kimliklerden seçim yap. Serbest sorgu üretme. Alet ayrılması/kırılması, perforasyon, bulunamayan kanal ve tedavi sonrası ağrıda uygun özel endodonti kimliğini seç. Konu seçimi tanı değildir; olumsuz, geçmiş veya şüpheli beyanı gerçekleşmiş komplikasyon diye sunma. Listede karşılığı olmayan durumları uncertain içinde kaynak kapsamı dışında olarak bildir. Her seçimi konuşmadaki birebir alıntıya bağla.'
     extraction_schema = schema()
     # One clinical representation avoids conflicting summaries and a wide grammar.
     extraction_schema['properties'].pop('transcript')
@@ -635,4 +635,5 @@ def extract(*, data=None, mime=None, transcript=None, context=None):
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
+
 

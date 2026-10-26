@@ -119,10 +119,11 @@ def test_specific_tooth_requires_an_explicit_fdi_number_in_its_quotation(quote, 
 def test_relevant_osteoporosis_source_is_selected_without_requiring_a_risk_diagnosis(monkeypatch, query, topics):
     from app import voice_exam_sources as sources
     from app import voice_exam_literature, voice_exam_dergipark, voice_exam_drugs
+    sources._cache.clear()
     fetched = []
     def fetch(doc):
         fetched.append(doc[0])
-        return {'id': doc[0]}
+        return {'id': doc[0], 'excerpts': ['Source text']}
     monkeypatch.setattr(sources, '_fetch', fetch)
     monkeypatch.setattr(voice_exam_literature, 'retrieve_literature', lambda *a, **k: ([], []))
     monkeypatch.setattr(voice_exam_dergipark, 'retrieve_dergipark', lambda *a, **k: ([], []))
@@ -209,3 +210,4 @@ def test_atomic_private_concern_is_shown_only_as_private_coaching():
     assert not output['fields']
     assert output['communication'] == [{'quote': text, 'observation': text, 'suggestion': value}]
     assert text not in str(core.clinical_context({'fields': output['fields']}))
+

@@ -23,6 +23,7 @@ const tick=()=>new Promise(setImmediate);
   return {ok:body.ok,json:async()=>body};
  };
  const box={document:{getElementById:()=>root,createElement:t=>new El(t),createTextNode:text=>({text})},window:{addEventListener:(n,fn)=>events[n]=fn},fetch,navigator:{},location:{hash:'',assign(){}},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,TextDecoder,DataView,URL:{createObjectURL:()=> 'blob:synthetic',revokeObjectURL(){}},Audio:class{get duration(){return duration}set src(value){queueMicrotask(()=>this.onloadedmetadata?.())}removeAttribute(){}load(){}},AbortController,Uint8Array,Blob,btoa,setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
+ vm.runInNewContext(fs.readFileSync('app/static/voice-finish-draft.js','utf8'),box);
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await tick();const input=get('[data-voice-audio-file]');
  const file=new Blob([new Uint8Array(500)],{type:'audio/mpeg'});input.files=[file];
@@ -36,3 +37,4 @@ const tick=()=>new Promise(setImmediate);
  assert.equal(calls.filter(x=>x.url.endsWith('/audio'))[0].options.headers['X-Voice-Consent'],'yes');
  events.pagehide();console.log('Audio import: consent, duration, binary context packet, extraction and cleanup passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+
