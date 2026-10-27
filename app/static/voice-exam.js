@@ -12,10 +12,14 @@
   let epoch=0,clinicalTimer=null,lastClinicalInput='',lastClinicalKey='',clinicalRequest=0;const pending=new Set();
   async function voiceFetch(url,options={}){
     const at=epoch,controller=new AbortController();pending.add(controller);
+    let timedOut=false;
+    const limit=url.endsWith('/finalize')?150000:/(?:\/text|\/audio|\/clinical)$/.test(url)?120000:30000;
+    const deadline=setTimeout(()=>{timedOut=true;controller.abort()},limit);
     try{const response=await fetch(url,{...options,signal:controller.signal});
       const body=await response.json();if(disposed||at!==epoch)throw Error('Görüşme kapatıldı.');
       return {ok:response.ok,json:async()=>body};
-    }finally{pending.delete(controller)}
+    }catch(error){if(timedOut)throw Error('İşlem zaman aşımına uğradı. Görüşme taslağı korunuyor; yeniden deneyebilirsiniz.');throw error}
+    finally{clearTimeout(deadline);pending.delete(controller)}
   }
   function clearPrivateDraft(){
     finishDraft.clear();extractionVersion=-1;pendingAudioResult=null;failedLiveText='';finalReady=false;finalRetryable=false;finalBusy=false;finalRequested=false;finalSnapshot='';lastSourceFingerprint='';insights=[];historyFields={};historyRevision='';uncertainties=[];followups=[];sourceRequests=[];literatureTopics=[];unprocessed=false;$('[data-voice-followups]').replaceChildren();
@@ -254,7 +258,7 @@
   transcript.addEventListener('input',()=>{unprocessed=!!transcript.value.trim();invalidateFinal();controls();unsaved=!!transcript.value.trim()||Object.keys(fieldState).length>0});
   window.addEventListener('pagehide',()=>{disposed=true;clearPrivateDraft()});
   window.addEventListener('pageshow',()=>{disposed=false});
-  fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(jsonResponse).then(data=>{available=data.enabled;message(available?'Muayeneyi başlatabilir veya metin ekleyebilirsin.':'Sesli muayene henüz etkinleştirilmedi.');controls()}).catch(()=>message('Sesli muayene durumuna erişilemedi. Sayfayı tekrar açabilirsin.',true));
+  voiceFetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(jsonResponse).then(data=>{available=data.enabled;message(available?'Muayeneyi başlatabilir veya metin ekleyebilirsin.':'Sesli muayene henüz etkinleştirilmedi.');controls()}).catch(()=>{if(!disposed)message('Sesli muayene durumuna erişilemedi. Sayfayı tekrar açabilirsin.',true)});
   if(location.hash==='#voice-exam')root.open=true;
 })();
 
