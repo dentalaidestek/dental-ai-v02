@@ -52,3 +52,11 @@ Limitations: no real microphone/provider/catalogue or production load validation
 - Independent review findings fixed with RED→GREEN tests: systemic-risk route regression, empty semantic selection lost at callers, generic DergiPark matching, topic-anchor loss. Legacy fixed systemic document safeguards remain separate from semantic branch coverage.
 - Latest verification: 219 Python tests / 11 Node26 harness files passed. Real prosthodontic source call returned ADA direct/indirect material and NIDCR TMD; PubMed timed out, DergiPark had no clinical evidence. Full medical/semantic accuracy and actual model/microphone remain untested.
 - See specs/2026-10-27-dental-source-coverage-design.md, plans/2026-10-27-dental-source-coverage.md and docs/voice_source_coverage_checks.md. Existing draft PR only; no main merge/deploy.
+
+
+## 2026-10-27 natural spoken language continuation
+- Same extraction call now receives contextual speech guidance: ordinary vocabulary, speaker/subject, region/procedure/time/trigger, negation/family/hypothetical attribution, ambiguous/ASR references and clarification. Examples are not a classifier and cannot become patient quotes.
+- Added five common scopes and four actually fetched AAE/ADA documents: registry 70 topics / 42 fixed documents. Queries/provider/call topology unchanged. Guidance adds ~6612 input characters; latency/cost not yet measured.
+- Separate synthetic corpus: 44 short dialogues, 15 branches, 45 expected IDs, 49 groups and three clarification cases. Offline default makes zero model calls. Explicit same-provider live evaluator is ready; actual --live --limit1 stopped on missing config, zero calls. No model semantic accuracy claim.
+- Reviewer caveat on generic uncertainty accidentally passing ambiguity checks was reproduced RED and fixed; now a grounded CLARIFY_NOW question is required. Topic selection of a hypothetical risk is not evidence of a current complication; fixture corrected accordingly.
+- Fresh validation: 232 Python passed, two dependency warnings; 11 Node26.12.1 harness files passed; diff check clean. No main merge/deployment; publish existing PR only.

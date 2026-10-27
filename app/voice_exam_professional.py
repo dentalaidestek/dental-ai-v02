@@ -83,7 +83,23 @@ DOCUMENTS = (
      ('çocuk enfeksiyon', 'pediatrik enfeksiyon'), ('infection', 'antibiotic', 'viral', 'oral')),
 )
 
+DOCUMENTS += (
+    ('aae-cracked-teeth', 'AAE', 'Cracked Teeth', 'https://www.aae.org/patients/dental-symptoms/cracked-teeth/',
+     ('çatlak diş', 'ısırmayı bırak'), ('crack', 'biting', 'pain', 'release')),
+    ('ada-whitening', 'ADA', 'Whitening', _ADA + 'whitening',
+     ('beyazlat', 'diş rengi'), ('whitening', 'bleaching', 'sensitivity', 'restorations')),
+    ('ada-sleep-apnea', 'ADA', 'Sleep Apnea (Obstructive)', _ADA + 'sleep-apnea-obstructive',
+     ('horlama', 'uykuda nefes'), ('sleep', 'snoring', 'apnea', 'diagnosis')),
+    ('ada-nutrition', 'ADA', 'Nutrition and Oral Health', _ADA + 'nutrition-and-oral-health',
+     ('beslenme', 'şekerli içecek'), ('sugar', 'diet', 'caries', 'erosive')),
+)
+
 TOPIC_DOCUMENTS = {
+    'endo.cracked_tooth': ('aae-cracked-teeth',),
+    'restorative.esthetics': ('ada-whitening',),
+    'orofacial_pain.sleep': ('ada-sleep-apnea',),
+    'pediatric.development': ('aapd-occlusion',),
+    'prevention.diet': ('ada-nutrition',),
     'prosth.general': ('ada-dentures', 'ada-indirect-materials'),
     'prosth.fixed': ('ada-indirect-materials',),
     'prosth.removable': ('ada-dentures',),

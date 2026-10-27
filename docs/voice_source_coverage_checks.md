@@ -34,3 +34,15 @@ Method: actual existing `_fetch`, fixed HTTPS URLs, redirects refused, HTML only
 AAPD HTML may be abstracts; BOS/NHS/AAP/EFP/NIDCR pages may be patient information; ADA anesthesia/emergency pages are background rather than complete response protocols. ACP was excluded because the production client received an error page. None of these checks replaces source applicability review.
 
 Real integrated prosthodontic check: three professional sources returned; PubMed group timed out, DergiPark lacked clinical evidence. All three selected topics reported related material with `specific_claim_verified=false`. Local drug fallback contains only eight US DailyMed labels and no TİTCK records.
+
+
+## Additional everyday-concern probes
+
+| Document | Fetch | Excerpts | Characters |
+| --- | --- | --- | --- |
+| [aae-cracked-teeth](https://www.aae.org/patients/dental-symptoms/cracked-teeth/) | Passed | 5 | 1605 |
+| [ada-whitening](https://www.ada.org/resources/ada-library/oral-health-topics/whitening) | Passed | 5 | 2981 |
+| [ada-sleep-apnea](https://www.ada.org/resources/ada-library/oral-health-topics/sleep-apnea-obstructive) | Passed | 5 | 2546 |
+| [ada-nutrition](https://www.ada.org/resources/ada-library/oral-health-topics/nutrition-and-oral-health) | Passed | 5 | 1393 |
+
+These four successful accesses bring the fixed professional library to 42 documents. They do not measure model selection, clinical applicability or comprehensive guideline coverage.

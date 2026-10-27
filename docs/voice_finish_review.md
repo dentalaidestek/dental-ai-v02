@@ -38,7 +38,7 @@ Build uses all 21 closed topics and at most 200 relevant PubMed records per topi
 
 ## Verification
 
-219 Python tests and 11 Node controller/worklet/DOM harness files passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. All 11 harnesses passed on both the bundled Node v24.22.1 and a separately downloaded, SHA-256-verified official Node v26.12.1 runtime with jsdom 30.1.3. CI requests Node 26. Independent code review findings were repaired with regression tests.
+232 Python tests and 11 Node controller/worklet/DOM harness files passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. All 11 harnesses passed on both the bundled Node v24.22.1 and a separately downloaded, SHA-256-verified official Node v26.12.1 runtime with jsdom 30.1.3. CI requests Node 26. Independent code review findings were repaired with regression tests.
 
 This workspace contains the voice-subsystem snapshot, not every repository test. A dedicated PR workflow runs all voice Python tests and browser harnesses against the complete checkout. A direct synthetic fixed-topic PubMed ESearch attempt timed out in this runtime, and the hosted web fetch could not access the endpoint. Real microphone, actual model calls, full catalogue ingestion, clinical accuracy and production load are not verified here. A two-record real PubMed catalogue pilot was subsequently verified below. No production merge or deployment is performed.
 
@@ -102,3 +102,28 @@ Each topic now has a source coverage record: related material, background only, 
 A real prosthodontic retrieval for fixed restorations/cementation/occlusion returned ADA indirect/direct restoration material and NIDCR TMD text in 16.01 seconds. PubMed exceeded its group wait and DergiPark produced no clinical evidence for these topics. The professional paths still returned three references; that is limited related material, not verification of a high restoration or all prosthodontic errors. No real model call ran.
 
 Independent review found unreachable existing systemic-risk sources, empty-topic forwarding, generic-ID DergiPark matching and topic retention gaps. Each was reproduced with a failing regression and fixed. New DergiPark discovery terms come from server-owned clinical vocabulary, not opaque ID fragments such as `general`; a general-anesthesia paper no longer masquerades as prosthodontic/periodontal coverage. Validation: 219 Python tests passed (two existing dependency warnings) and all 11 Node 26.12.1 harness files passed, including visible uncovered-topic output. Real semantic recall, clinical accuracy, full guideline ingestion, full source archives, Turkish KÜB coverage and real microphone/model tests remain unverified. Remote CI is not claimed green. No main merge or deployment.
+
+
+## 2026-10-27 everyday speech and broader common concerns
+
+The existing extraction call now receives a compact everyday-speech interpretation guide in addition to semantic topic scopes. It asks the model to reconstruct speaker/subject, prior procedure, region, chronology, triggers, denial, proposed-versus-completed work and ambiguous references from the full available dialogue. Lay terms such as “vida”, “takılan şey”, “siniri alındı” and “o parça” are not deterministic diagnosis/keyword rules. Unresolved meaning requires clarification; examples are explicitly forbidden as patient evidence. Family history, hypothetical explanation and explicit negative findings must not become current patient disease. Source topic selection is still not a diagnosis, so a discussed hypothetical risk can legitimately select that topic for evidence retrieval.
+
+Five missing everyday concern scopes were added: cracked-tooth assessment, whitening/esthetic concerns, sleep-related breathing, dental development and dietary risk. The registry now has 70 closed IDs and 42 fixed documents. Four new AAE/ADA pages passed actual bounded production fetch/parsing (cracked teeth, whitening, obstructive sleep apnea, nutrition); pediatric development reuses AAPD developing-dentition guidance. Queries remain fixed server concepts; no patient phrase is sent to external discovery as a query.
+
+`app/voice_exam_speech.py` contains illustrative guidance, while `tests/fixtures/voice_spoken_cases.json` holds 44 separate synthetic 2–6-turn dialogues across all 15 branches. Their 49 expectation groups cover 45 topic IDs and three clarification cases. These are provisional routing expectations, not adjudicated clinical gold labels. Required topic-group recall, specified forbidden routes, unknown returned IDs and literal quote anchors are scored; extra topics are reported as unscored, not automatically deemed false positives. Raw unknown IDs discarded by normalization and clinical entailment are not measured. Clarification cases require a grounded CLARIFY_NOW question; a generic uncertainty/normalizer warning cannot pass them. Question semantic relevance itself still needs review.
+
+Run offline inventory (zero model/network calls):
+
+```sh
+PYTHONPATH=.:../testdeps python scripts/evaluate_voice_spoken.py
+```
+
+An explicit configured same-provider evaluation uses:
+
+```sh
+PYTHONPATH=.:../testdeps python scripts/evaluate_voice_spoken.py --live --limit 5
+```
+
+Default live limit is five synthetic cases, with no automatic retry/provider fallback or arbitrary key lookup. Only case IDs, counts and fixed failure categories are printed. In this runtime `--live --limit 1` stopped with `missing_provider_configuration`, `model_calls=0`; no model semantic score is claimed. Production call count is unchanged, but guidance adds about 6,612 input characters, so actual provider latency/cost must be measured rather than assumed unchanged.
+
+Validation after these changes: 232 Python tests passed (two existing dependency warnings, 15.40 seconds), 11 Node 26.12.1 harness files passed, and diff checks passed. Independent review found no important production regression; its uncertainty-scoring caveat was reproduced with a failing test and corrected. This verifies contracts/guidance delivery/evaluator behavior, not that all 44 conversations are understood by the real model. Existing microphone/browser, source-completeness and remote-CI limitations remain. No merge/deployment.
