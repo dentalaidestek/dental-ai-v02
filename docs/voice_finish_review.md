@@ -38,7 +38,7 @@ Build uses all 21 closed topics and at most 200 relevant PubMed records per topi
 
 ## Verification
 
-197 Python tests and 11 Node controller/worklet/DOM harness files passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. All 11 harnesses passed on both the bundled Node v24.22.1 and a separately downloaded, SHA-256-verified official Node v26.12.1 runtime with jsdom 30.1.3. CI requests Node 26. Independent code review findings were repaired with regression tests.
+201 Python tests and 11 Node controller/worklet/DOM harness files passed locally, using pinned web dependency versions for the tested subsystem. Tests include closed topics, source grounding, ownership/consent/atomic apply, lossless splits, checkpoint recovery, no mid-speech extraction, source queue/cache bounds, normal PubMed XML headers and error-batch protection. Two upstream deprecation warnings remain. All 11 harnesses passed on both the bundled Node v24.22.1 and a separately downloaded, SHA-256-verified official Node v26.12.1 runtime with jsdom 30.1.3. CI requests Node 26. Independent code review findings were repaired with regression tests.
 
 This workspace contains the voice-subsystem snapshot, not every repository test. A dedicated PR workflow runs all voice Python tests and browser harnesses against the complete checkout. A direct synthetic fixed-topic PubMed ESearch attempt timed out in this runtime, and the hosted web fetch could not access the endpoint. Real microphone, actual model calls, full catalogue ingestion, clinical accuracy and production load are not verified here. A two-record real PubMed catalogue pilot was subsequently verified below. No production merge or deployment is performed.
 
@@ -62,3 +62,26 @@ This workspace contains the voice-subsystem snapshot, not every repository test.
 - For remote commit `9d4d5a9f69abe81b45f046c63e339f7d3bcddc3e`, voice run `40459475190` failed in two seconds before any steps: `steps=[]`, `runner_id=0`, empty runner name. Academic and vision workflows also failed before test steps. Voice job logs return 404/BlobNotFound. The connector does not expose the check annotation endpoint, so the specific pre-run cause remains unconfirmed. No billing, quota or workflow-code cause is inferred; remote CI is still not green.
 - A fresh Chromium download probe returned HTTP 200 with only 195 bytes of HTML, not a ZIP. No local browser binary was found. Real browser/microphone validation remains blocked. The existing review provider's API key and explicit model configuration are absent from this runtime; no actual model call was made and the provider connection was not changed.
 - No source behavior changes, merge, deployment or production catalogue activation in this follow-up.
+
+
+## 2026-10-27 complete source-group audit
+
+All probes used fixed public document URLs, closed topic IDs or generic drug names; no patient conversation and no paid model call was sent.
+
+| Source group | Actual probe | Result / limit |
+| --- | --- | --- |
+| ADA | All nine configured documents | All returned five nonempty excerpts each. Page retrieval is not full guideline coverage; the acute pain landing page primarily provides guideline descriptions/links. |
+| SDCEP | Configured prescribing interaction document | Five excerpts retrieved. |
+| NHS SPS | Configured macrolide/statin document | Five excerpts retrieved, including actual interaction paragraphs. |
+| GDC | Configured communication standard | Five excerpts retrieved. |
+| DergiPark Selcuk Dental Journal | OAI catalogue and candidate 1903361 | Catalogue and article metadata parsed. Narrative review retained as background, `clinical_use=False`; no clinical evidence claim. |
+| DergiPark ADO Klinik Bilimler | OAI catalogue and candidate 1903339 | Catalogue parsed; case-report candidate correctly excluded. A subsequent integrated cold request reported this journal unavailable; successful standalone access does not prove reliable latency. |
+| Live DailyMed | amoxicillin, warfarin, clarithromycin | All returned versioned identities and ten excerpts. Three simultaneous probes hit the configured two-lookup admission limit for clarithromycin; explicit serial retry succeeded. |
+| Local drug fallback | All eight exact-ID public SPL documents | Refetched from DailyMed and reparsed. Clinical section payloads and versions match prior records; inappropriate excipient aliases removed. |
+| TİTCK | Current corpus inventory | Zero records. Loader allows this host, but no Turkish KÜB connector or populated TİTCK corpus is established by this PR. |
+
+A real integrated `sources.retrieve` call exercised document, PubMed, DergiPark and requested-drug groups plus local fallback in 15.26 seconds. It returned 11 references: four professional documents, four PubMed abstracts, two live DailyMed labels and one distinct local label. DergiPark produced no clinical evidence for the selected endodontic/anticoagulant topics and one journal access failure; these remained explicit unavailable markers and enabled retry. Reference count is not evidence quality or completeness. No final model review ran.
+
+The audit exposed an importer defect: inactive SPL ingredients (water, magnesium stearate, titanium dioxide and others) became drug aliases, causing unrelated labels to match. Added RED→GREEN regressions and restricted ingredient names to explicit active classes ACTIB/ACTIM/ACTIR plus their active moieties, product names and verified spelling aliases. Regenerated all eight bundled records from their exact official identities, preserved the six existing Turkish spellings and confirmed all clinical sections unchanged. Water/magnesium-stearate/titanium-dioxide searches now return no labels; amoxicillin/warfarin/ibuprofen/lidocaine/clindamycin matching remains available. The workflow now also triggers on importer/corpus changes.
+
+Post-fix validation: 201 Python tests passed with two existing dependency warnings (4.84 seconds), 11 Node harness files passed on Node 26.12.1, and `git diff --check` passed. This remains bounded software/source-access validation, not comprehensive clinical recall, full DergiPark archive coverage, Turkish product approval validation or real microphone/model end-to-end validation. No merge/deployment.

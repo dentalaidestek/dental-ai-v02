@@ -34,3 +34,12 @@ Limitations: no real microphone/provider/catalogue or production load validation
 - Remote voice run 40459475190 on 9d4d5a9 failed before steps, runner_id=0 and empty runner name; logs 404/BlobNotFound. Other workflows also failed before steps. Exact cause remains unavailable through the connector (check annotation endpoint unsupported). Do not guess quota/billing/code cause or claim CI green.
 - Fresh Chromium download returned 195 bytes of HTML instead of ZIP; no browser binary is installed. No real microphone/browser test. Existing review-provider configuration has no API key/model in this runtime, so no paid real-model call was attempted. Provider wiring unchanged.
 - Follow-up only updates validation records and the existing draft PR. No merge/deployment.
+
+
+## 2026-10-27 all-source follow-through
+- Audited all 12 fixed documents (9 ADA, SDCEP, NHS SPS, GDC): all yielded excerpts via the production fetcher. Acute pain page excerpts are mainly descriptions/links, not proof of full guideline coverage.
+- Both selected DergiPark OAI catalogues parsed; Selcuk candidate 1903361 is background-only (`clinical_use=False`), ADO case-report candidate 1903339 excluded. Integrated retry later reported intermittent ADO unavailability; no false clinical-clearance claim.
+- Live DailyMed amoxicillin/warfarin succeeded; third simultaneous lookup correctly hit two-slot admission capacity, and serial clarithromycin retry succeeded. All eight exact-ID bundled SPL documents were refetched. TİTCK inventory is zero; do not describe the existing corpus as Turkish KÜB coverage.
+- Real grouped retrieval took 15.26 seconds, returned 11 references across professional documents/PubMed/live DailyMed/local fallback and preserved DergiPark access/no-clinical-evidence markers as retryable partial coverage. No final model call.
+- Found/fixed excipient-as-drug alias bug with failing regressions first. Import now includes only product/explicit active names and active ingredient classes ACTIB/ACTIM/ACTIR with active moieties. Regenerated eight records; all original clinical sections and versions unchanged, six verified Turkish spellings retained. No excipient blacklist or patient-data workaround.
+- Final suite: 201 Python tests passed, two dependency warnings; 11 Node files passed on Node 26.12.1; diff checks passed. Workflow watches drug importer/corpus paths. Publish on existing PR only; no main merge/deploy.

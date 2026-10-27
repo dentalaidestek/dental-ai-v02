@@ -8,6 +8,8 @@ on:
       - 'app/static/voice-*.css'
       - 'app/templates/voice_*.html'
       - 'scripts/build_voice_literature.py'
+      - 'scripts/import_voice_drug_labels.py'
+      - 'app/data/voice_drug_sources.jsonl'
       - 'tests/test_voice*.py'
       - 'tests/voice*.cjs'
       - '.github/workflows/voice-regression.yml'
