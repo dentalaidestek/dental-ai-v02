@@ -54,6 +54,11 @@ TOPIC_SEARCHES = {
     'endo.irreversible_pulpitis': '"irreversible pulpitis" AND (endodontic OR "root canal")',
 }
 
+from app.voice_exam_taxonomy import TOPIC_REGISTRY, MAX_TOPICS
+TOPICS += tuple((topic['id'], topic['triggers']) for topic in TOPIC_REGISTRY.values())
+TOPIC_LABELS.update({topic['id']: topic['label'] for topic in TOPIC_REGISTRY.values()})
+TOPIC_SEARCHES.update({topic['id']: topic['query'] for topic in TOPIC_REGISTRY.values()})
+
 _lock = threading.Lock()
 _request_lock = threading.Lock()
 _capacity = threading.BoundedSemaphore(1)
@@ -80,8 +85,11 @@ def _get(utility, params):
 
 def selected_topics(text, topics=None):
     allowed = {query for query, _ in TOPICS}
-    return list(dict.fromkeys([item['topic'] for item in (topics or []) if item.get('topic') in allowed] +
-        [query for query, triggers in TOPICS if any(t in text.casefold() for t in triggers)]))[:6]
+    if topics is not None:
+        # A model's validated semantic selection is authoritative, even if empty.
+        return list(dict.fromkeys(item['topic'] for item in topics if item.get('topic') in allowed))[:MAX_TOPICS]
+    return list(dict.fromkeys(query for query, triggers in TOPICS
+        if any(t in text.casefold() for t in triggers)))[:MAX_TOPICS]
 
 
 def retrieve_literature(text, topics=None):

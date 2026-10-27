@@ -61,6 +61,7 @@ def _contradictions(items, fields):
 
 
 def finalize(context, insights, uncertain="", *, previous_source_fingerprint=''):
+    explicit_topics = isinstance(context, dict) and 'literature_topics' in context
     started = time.monotonic()
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
@@ -82,7 +83,7 @@ def finalize(context, insights, uncertain="", *, previous_source_fingerprint='')
     name_candidates = [item for item in requests if is_spelling_candidate(item['term'], item['quote'])]
     options = {}
     if requests: options['requests'] = requests
-    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    if explicit_topics or context.get('literature_topics'): options['topics'] = context.get('literature_topics', [])
     evidence = retrieve(query, **options)
     retrieved = time.monotonic()
     source_retryable = retryable_unavailable(evidence['unavailable'])
@@ -149,6 +150,7 @@ Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
+    prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
     # Short transient communication anchors share this final call, never patient writes.
     communication_fields = {f'communication_{i}': {'value': item['quote']} for i, item in enumerate(insights)}
     fields.update(communication_fields)
@@ -184,7 +186,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
 '''
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
-            'drug_name_candidates': name_candidates}
+            'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
         raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
     # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
@@ -229,7 +231,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
             len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
         return {**output, 'source_fingerprint': source_fingerprint, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
-                'coverage': evidence['coverage'], 'notice': evidence['notice']}
+                'coverage': evidence['coverage'], 'source_coverage': evidence.get('source_coverage', []), 'notice': evidence['notice']}
     except Exception:
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:

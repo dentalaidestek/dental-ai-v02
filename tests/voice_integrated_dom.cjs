@@ -34,7 +34,7 @@ async function fixture(){
     else if(url.endsWith('/finalize')){
       if(sourceMode==='failure')body={ok:false,error:'Synthetic source outage'};
       else if(sourceMode==='unchanged')body={ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}};
-      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',review_status:{source_retryable:sourceMode==='partial'}}};
+      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
     return {ok:body.ok,json:async()=>body};
@@ -58,6 +58,7 @@ async function fixture(){
     assert.equal(f.calls.filter(c=>c.url.endsWith('/text')).length,1);
     assert.equal(f.calls.filter(c=>c.url.endsWith('/finalize')).length,1);
     assert.equal(f.w.getComputedStyle(f.get('.voice-review')).display,'block','Completed review must be visible');
+    assert.ok(f.get('.voice-topic-coverage')?.textContent.includes('Kuron ve köprü: İlgili kaynak bulunamadı'), 'Uncovered non-drug topics must stay visible');
     f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
     await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'save');await tick();
     const saved=f.calls.find(c=>c.url.endsWith('/apply')).body;

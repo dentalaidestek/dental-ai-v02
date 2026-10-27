@@ -115,7 +115,9 @@ def retrieve_dergipark(text, topics=None):
     if not _capacity.acquire(blocking=False): return [], ['dergipark-busy']
     try:
         refs = []; missing = []; candidates = []; deadline = time.monotonic() + 12
-        topic_terms = {topic: tuple(t for t in re.findall(r'[a-z]+', topic) if t not in
+        from app.voice_exam_taxonomy import TOPIC_REGISTRY, discovery_terms
+        topic_terms = {topic: discovery_terms(topic) if topic in TOPIC_REGISTRY else
+                       tuple(t for t in re.findall(r'[a-z]+', topic) if t not in
                        {'dental', 'oral', 'diagnosis', 'management', 'treatment', 'care', 'assessment', 'selection', 'medication'}) +
                        next(triggers for name, triggers in TOPICS if name == topic) for topic in selected}
         for journal in JOURNALS:
@@ -150,3 +152,4 @@ def retrieve_dergipark(text, topics=None):
         return refs, missing
     finally:
         _capacity.release()
+

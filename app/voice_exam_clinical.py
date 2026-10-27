@@ -8,6 +8,7 @@ from app.voice_exam_sources import retrieve
 
 
 def assess(context):
+    explicit_topics = isinstance(context, dict) and 'literature_topics' in context
     context = core.clinical_context(context)
     # Identity is not needed for literature appraisal.
     fields = {key: value for key, value in context.get('fields', {}).items()
@@ -16,7 +17,7 @@ def assess(context):
     requests = context.get('source_requests', [])
     options = {}
     if requests: options['requests'] = requests
-    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    if explicit_topics or context.get('literature_topics'): options['topics'] = context.get('literature_topics', [])
     evidence = retrieve(query, **options)
     evidence['items'] = []
     if not evidence['references']:
@@ -93,4 +94,5 @@ def grounded_items(result, fields, references, diagnostics=None):
             reject('source_quote_mismatch'); continue
         accepted.append(item)
     return accepted
+
 

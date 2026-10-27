@@ -43,3 +43,12 @@ Limitations: no real microphone/provider/catalogue or production load validation
 - Real grouped retrieval took 15.26 seconds, returned 11 references across professional documents/PubMed/live DailyMed/local fallback and preserved DergiPark access/no-clinical-evidence markers as retryable partial coverage. No final model call.
 - Found/fixed excipient-as-drug alias bug with failing regressions first. Import now includes only product/explicit active names and active ingredient classes ACTIB/ACTIM/ACTIR with active moieties. Regenerated eight records; all original clinical sections and versions unchanged, six verified Turkish spellings retained. No excipient blacklist or patient-data workaround.
 - Final suite: 201 Python tests passed, two dependency warnings; 11 Node files passed on Node 26.12.1; diff checks passed. Workflow watches drug importer/corpus paths. Publish on existing PR only; no main merge/deploy.
+
+
+## 2026-10-27 multidisciplinary expansion
+- User rejected narrow drug/PubMed/example-only coverage. Implemented branch-level semantic fallback plus specific scopes: 15 branches, 65 topics, 38 fixed professional documents; 26 new production fetch probes passed. Existing provider/call topology retained.
+- Added per-topic related/background/uncovered status to final model and clinician UI (JS v16); unrelated medication sources cannot cover other branches. No claim of every clinical situation being understood or every procedure evidenced.
+- Replaced six-topic truncation with 24-topic bounded retention and explicit overflow. Preserved transcript-only topic anchors; grounded removed_literature_topics supports corrections.
+- Independent review findings fixed with RED→GREEN tests: systemic-risk route regression, empty semantic selection lost at callers, generic DergiPark matching, topic-anchor loss. Legacy fixed systemic document safeguards remain separate from semantic branch coverage.
+- Latest verification: 219 Python tests / 11 Node26 harness files passed. Real prosthodontic source call returned ADA direct/indirect material and NIDCR TMD; PubMed timed out, DergiPark had no clinical evidence. Full medical/semantic accuracy and actual model/microphone remain untested.
+- See specs/2026-10-27-dental-source-coverage-design.md, plans/2026-10-27-dental-source-coverage.md and docs/voice_source_coverage_checks.md. Existing draft PR only; no main merge/deploy.

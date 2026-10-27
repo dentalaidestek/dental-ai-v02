@@ -50,6 +50,34 @@ DOCUMENTS = (
       'kemik erimesi', 'risedronat', 'ibandronat', 'antiresorptive medication osteonecrosis jaw'),
      ('dental', 'risk', 'extraction', 'antiresorptive')),
 )
+from app.voice_exam_professional import DOCUMENTS as PROFESSIONAL_DOCUMENTS, TOPIC_DOCUMENTS as PROFESSIONAL_TOPICS
+DOCUMENTS += PROFESSIONAL_DOCUMENTS
+TOPIC_DOCUMENTS = {
+    'endodontic diagnosis': ('ada-pain-guideline', 'aae-root-canal'),
+    'dental caries diagnosis management': ('ada-caries-guideline',),
+    'diabetes dental treatment': ('ada-diabetes',),
+    'drug allergy dental treatment': ('sdcep-drug-interactions',),
+    'dental anxiety management': ('gdc-communication', 'ada-anesthesia'),
+    'periodontitis diagnosis treatment': ('ada-periodontitis',),
+    'dental implant assessment': ('efp-implants',),
+    'tooth extraction complications': ('nhs-oral-surgery',),
+    'dental trauma management': ('aapd-trauma',),
+    'oral mucosal lesion diagnosis': ('ada-oral-cancer',),
+    'pregnancy dental care': ('ada-pregnancy',),
+    'anticoagulants dental procedures': ('ada-anticoagulants',),
+    'antiresorptive medication osteonecrosis jaw': ('ada-mronj',),
+    'odontogenic infection management': ('ada-antibiotics-guideline',),
+    'dental radiography selection': ('ada-radiographs',),
+    'temporomandibular disorders diagnosis': ('nidcr-tmd',),
+    **{topic: ('aae-root-canal',) for topic in ('endo.instrument_separation', 'endo.root_perforation',
+       'endo.missed_canal', 'endo.postoperative_pain', 'endo.irreversible_pulpitis')},
+    **PROFESSIONAL_TOPICS,
+    'orofacial_pain.general': ('nidcr-tmd',),
+    'special_care.hypertension': ('ada-hypertension',),
+    'special_care.cardiac': ('ada-prophylaxis',),
+    'special_care.drug_interactions': ('sdcep-drug-interactions', 'sps-macrolides-statins'),
+}
+
 _lock = threading.RLock()
 _cache = OrderedDict()
 _inflight = {}
@@ -196,10 +224,31 @@ def retryable_unavailable(unavailable):
                for item in unavailable)
 
 
+def topic_coverage(selected, references):
+    """Related material is not verification of a specific clinical claim."""
+    from app.voice_exam_literature import TOPIC_LABELS
+    coverage = []
+    for topic in selected:
+        matches = [ref for ref in references if topic in ref.get('matched_topics', [])]
+        usable = [ref for ref in matches if ref.get('clinical_use') is not False]
+        coverage.append({'topic': topic, 'label': TOPIC_LABELS.get(topic, topic),
+            'status': 'related_material' if usable else 'background_only' if matches else 'uncovered',
+            'source_ids': [ref['id'] for ref in matches], 'specific_claim_verified': False})
+    return coverage
+
+
 def retrieve(query, requests=None, topics=None):
     """Topic selection is limited and must never be represented as comprehensive clearance."""
     text = (query + ' ' + ' '.join(item.get('topic', '') for item in (topics or []))).casefold()
-    selected = [doc for doc in DOCUMENTS if any(term in text for term in doc[4])]
+    from app.voice_exam_literature import selected_topics
+    selected_ids = selected_topics(query, topics)
+    mapped_ids = {ident for topic in selected_ids for ident in TOPIC_DOCUMENTS.get(topic, ())}
+    selected = [doc for doc in DOCUMENTS if doc[0] in mapped_ids
+                or (topics is None and any(term in text for term in doc[4]))
+                or (doc[0] in {'ada-hypertension', 'ada-prophylaxis', 'sps-macrolides-statins',
+                    'ada-mronj', 'ada-anticoagulants', 'ada-diabetes', 'ada-pregnancy', 'sdcep-drug-interactions'}
+                    and any(term in query.casefold() for term in doc[4]))
+                or (doc[0] == 'gdc-communication' and 'communication needs' in text)]
     started = time.monotonic()
     from app.voice_exam_literature import retrieve_literature
     from app.voice_exam_dergipark import retrieve_dergipark
@@ -234,8 +283,12 @@ def retrieve(query, requests=None, topics=None):
     log.info('voice_sources total_seconds=%.2f refs=%d unavailable=%d', time.monotonic() - started, len(references), len(unavailable))
     from app.voice_exam_literature import TOPIC_LABELS
     for ref in references:
+        mapped_topics = [topic for topic in selected_ids if ref['id'] in TOPIC_DOCUMENTS.get(topic, ())]
+        ref['matched_topics'] = list(dict.fromkeys(ref.get('matched_topics', []) + mapped_topics))
         ref['topic_labels'] = [TOPIC_LABELS.get(topic, topic) for topic in ref.get('matched_topics', [])]
-    return {'references': references, 'unavailable': unavailable,
+    coverage = topic_coverage(selected_ids, references)
+    unavailable.extend('topic-uncovered:' + item['topic'] for item in coverage if item['status'] == 'uncovered')
+    return {'references': references, 'unavailable': unavailable, 'source_coverage': coverage,
             'coverage': 'limited',
             'notice': 'Konuya göre seçilmiş meslek kuruluşu belgeleri, PubMed ve seçilmiş DergiPark diş hekimliği dergilerinin yayın özetleri değerlendirilir; kapsamlı sistematik tarama değildir. DergiPark keşfi sınırlı bir güncellenmiş kayıt penceresidir; tüm arşivi kapsamaz. Dizin/barındırma bilgisi tek başına bilimsel doğruluk onayı değildir. Yayının PubMed’de indekslenmesi tek başına öneriyi doğrulamaz; tam metin ve hastaya uygunluk hekim tarafından kontrol edilmelidir. DailyMed kayıtları ABD ürün belgeleridir; Türkiye’deki ürünün etken maddesi, formu ve güncel KÜB’ü ayrıca doğrulanmalıdır. Kaynak bulunmaması klinik güvenlik onayı değildir. Bu sistem tüm ilaç etkileşimlerini kapsamaz. Belge alıntısını ve hastaya uygunluğunu hekim doğrulamalıdır.'}
 

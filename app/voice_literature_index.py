@@ -49,7 +49,8 @@ def retrieve(topics):
     allowed = {topic for topic, _ in TOPICS}
     selected = list(dict.fromkeys(i.get('topic') for i in topics or [] if isinstance(i, dict)))
     missing = ['literature-topic-unsupported'] if any(t not in allowed for t in selected) else []
-    selected = [t for t in selected if t in allowed][:6]
+    from app.voice_exam_taxonomy import MAX_TOPICS
+    selected = [t for t in selected if t in allowed][:MAX_TOPICS]
     path = os.getenv('VOICE_LITERATURE_DB', '')
     if not path or not Path(path).is_file():
         return [], ['literature-index-unavailable']
