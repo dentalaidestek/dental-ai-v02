@@ -356,3 +356,21 @@ def test_real_provider_failure_is_still_retryable(monkeypatch):
         raise TimeoutError('synthetic timeout')
     monkeypatch.setattr(provider, 'research_message', fail)
     assert retryable_unavailable(web.retrieve_web(TOPICS)['unavailable'])
+
+
+@pytest.mark.parametrize('topic', sorted(topic for topic, _ in web.TOPICS))
+def test_every_registered_topic_reaches_native_research_without_patient_words(monkeypatch, topic):
+    sent = []
+    def research(prompt, data, tools, **kwargs):
+        sent.append(copy.deepcopy(data))
+        return response(fetched())
+    monkeypatch.setattr(provider, 'research_message', research)
+    private = 'PRIVATE_PATIENT_WORDS_AND_IDENTITY'
+    output = web.retrieve_web([{'topic': topic, 'quote': private, 'query': private}])
+    assert len(sent) == 1
+    assert sent[0]['topics'][0]['id'] == topic
+    assert sent[0]['topics'][0]['scope']
+    assert private not in json.dumps(sent)
+    assert output['references'][0]['excerpts'][0] in TEXT
+    # A transport/provenance check never certifies a topic or clinical conclusion.
+    assert output['references'][0]['matched_topics'] == []

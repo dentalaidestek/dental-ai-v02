@@ -147,6 +147,14 @@ source_quote ilgili sources.excerpts içinden birebir alıntı, source_id verile
 source_quote KAYNAĞIN ORİJİNAL DİLİNDE kalsın; çevirme, üç nokta ekleme, kelime
 değiştirme. patient_quote yalnız clinical_fields.value içinden kopyalansın. Türkçe
 açıklamayı consideration alanına yaz. Göndermeden önce her iki alıntıyı birebir kontrol et.
+Her kontrol noktası için hasta beyanı, kaynağın kapsamı ve öneri arasında açık bir
+anlam ilişkisi kur: yalnız aynı kelimenin geçmesi yeterli dayanak değildir. Kaynak
+olasılık bildiriyorsa kesinlik, ilişki bildiriyorsa neden-sonuç, genel bilgi veriyorsa
+özgül işlemin hatalı olduğu sonucu çıkarma. Hastanın yaş grubu, işlem türü ve klinik
+koşulları kaynak kapsamıyla uyuşmuyorsa o iddiayı çıkar; eksik bilgiyi soru yap.
+Kaynağın yayın/güncelleme tarihi ile retrieved_at erişim tarihini karıştırma. Tarih
+ve kılavuzun halen geçerli olduğu doğrulanmamışsa güncel/en son kılavuz iddiası kurma.
+Alıntılar ve consideration yalnız boşluk olamaz; anlamlı, kısa ve özgül olsun.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.

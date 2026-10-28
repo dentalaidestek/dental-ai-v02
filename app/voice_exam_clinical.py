@@ -88,10 +88,12 @@ def grounded_items(result, fields, references, diagnostics=None):
             reject('unknown_anchor'); continue
         if source.get('clinical_use') is False:
             reject('ineligible_source'); continue
-        if not item['patient_quote'] or item['patient_quote'] not in field['value']:
+        if not item['patient_quote'].strip() or item['patient_quote'] not in field['value']:
             reject('patient_quote_mismatch'); continue
-        if not item['source_quote'] or not any(item['source_quote'] in excerpt for excerpt in source['excerpts']):
+        if not item['source_quote'].strip() or not any(item['source_quote'] in excerpt for excerpt in source['excerpts']):
             reject('source_quote_mismatch'); continue
+        if not item['consideration'].strip():
+            reject('empty_consideration'); continue
         accepted.append(item)
     return accepted
 
