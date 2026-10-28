@@ -1,0 +1,984 @@
+{
+  "synthetic": true,
+  "purpose": "Yalnızca kaynak konusu yönlendirmesi için sentetik gündelik Türkçe konuşmalar; tanı veya klinik doğruluk kanıtı değildir. Gerçek hasta bilgisi içermez. Beklentiler modele gönderilmez.",
+  "cases": [
+    {
+      "id": "new-tooth-high",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Yeni yapılan diş ağzımı kapatınca ilk o buluşuyor, diğerleri havada kalıyor gibi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Üstüne basarken de oluyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, yemek yerken o tarafa yük binince rahatsız ediyor."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.occlusion"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation"
+      ]
+    },
+    {
+      "id": "denture-rub",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Gece çıkarıp bardağa koyduğum dişler yanağımı yara yaptı, yemek yerken oynuyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Alt taraftaki mi?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, alt taraftaki takma dişim."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.removable"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "crown-debond",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Kaplamam ekmeği ısırınca çıktı. Dişim kırılmadı, diş şeklindeki parça elimde."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yapışan yerini ve altındaki dişi kontrol edelim."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.cementation"
+        ]
+      ],
+      "forbidden": [
+        "implant.prosthesis"
+      ]
+    },
+    {
+      "id": "ceramic-chip",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Üstteki beyaz dişin kenarı koptu, altından koyu bir şey görünüyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bu köprü on yıllık mıydı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, kendi dişim değil, köprünün dışındaki beyaz kısmı koptu."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.materials"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "crooked-teeth-plan",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Ön dişler üst üste biniyor, fırçayı aralarına sokamıyorum. Düzeltmek istiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişlerin yerini ve kapanışını değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "aligner-trouble",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Akşam taktığım saydam şey artık oturmuyor, arkası kalkıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişleri düzeltmek için verdiğimiz plak mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, geçen hafta yenisine geçtim."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.appliances"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "retainer-relapse",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Teller çıkalı iki yıl oldu. Gece taktığımı bırakınca ön dişler yine birbirine girdi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Pekiştirme plağınızı ve dişlerin hareketini değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.retention"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "child-tooth-nerve",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Kızımın sallanmayan süt azısı geceleri ağrıyor, içini temizleyip kurtarmak mümkün mü?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Süt dişinin iç kısmını ve altındaki yeni dişi inceleyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "pediatric.pulp"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "child-fall",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Oğlum parkta düştü, ön süt dişi yukarı doğru kaçtı, yerine bastırmadık."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ne zaman oldu?"
+        },
+        {
+          "speaker": "Ebeveyn",
+          "text": "Yarım saat önce, henüz yeni dişleri çıkmadı."
+        }
+      ],
+      "required_any": [
+        [
+          "pediatric.trauma"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation"
+      ]
+    },
+    {
+      "id": "child-fear",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Kızım koltuğa yaklaşınca ağlıyor, ağzını açmıyor. Bugün zorlamadan alışsın istiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Önce aletleri gösterip kısa bir tanışma yapabiliriz."
+        }
+      ],
+      "required_any": [
+        [
+          "pediatric.behavior"
+        ]
+      ],
+      "forbidden": [
+        "anesthesia.sedation"
+      ]
+    },
+    {
+      "id": "early-milk-loss",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Süt azısı erken çekildi. Yeni diş çıkana kadar yanındakiler boşluğa kayar mı?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Aradaki yeri korumak gerekip gerekmediğine bakalım."
+        }
+      ],
+      "required_any": [
+        [
+          "pediatric.occlusion"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "late-eruption",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Arkadaşlarının ön dişleri çıktı ama bizimkinin süt dişi düşeli aylar oldu, hâlâ boş."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kaç yaşında?"
+        },
+        {
+          "speaker": "Ebeveyn",
+          "text": "Sekiz oldu, yeni dişinin gelip gelmediğini merak ediyorum."
+        }
+      ],
+      "required_any": [
+        [
+          "pediatric.development"
+        ],
+        [
+          "pediatric.occlusion",
+          "imaging.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "brushing-bleed",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Elmayı ısırınca iz kalıyor, fırçayı tükürdüğümde de pembe oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Diş etlerinizden mi geliyor?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, dişlerimin dibinden."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.general"
+        ]
+      ],
+      "forbidden": [
+        "surgery.bleeding"
+      ]
+    },
+    {
+      "id": "gum-recession",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Diş etim yukarı kaçtı, dişim uzadı gibi. Açılan yere et eklenebilir mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çekilmenin boyutuna ve dokuya bakalım."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.surgery"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "implant-gum-bleed",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Vidayla yapılan dişin dibinden fırçalarken kan geliyor ve kötü tat oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çevresindeki eti ve kemiği değerlendirelim. Dişin kendisi oynuyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, oynamıyor."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.peri_implant"
+        ]
+      ],
+      "forbidden": [
+        "implant.prosthesis"
+      ]
+    },
+    {
+      "id": "wisdom-flap",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "En arkada yarısı çıkmış dişin üstüne et kapanıyor, araya yemek girince şişiyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yirmilik diş bölgesini inceleyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "surgery.third_molar"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "socket-bleed",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dün dişim çekildi. Gazlı bezi kaldırınca hâlâ ağzım kanla doluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kanama ne kadar süredir böyle devam ediyor?"
+        }
+      ],
+      "required_any": [
+        [
+          "surgery.bleeding"
+        ]
+      ],
+      "forbidden": [
+        "perio.general"
+      ]
+    },
+    {
+      "id": "lip-numb-after-surgery",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Alt yirmiliğim geçen hafta alındı. İğnenin etkisi geçeli çok oldu ama dudağımın yarısı hâlâ yabancı gibi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Duyudaki değişimin yerini ve süresini değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "surgery.nerve"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "water-to-nose",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Üst arka dişim çekildikten sonra su içerken burnumdan geliyor gibi oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bu çekimden önce de var mıydı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, ilk defa çekimden sonra başladı."
+        }
+      ],
+      "required_any": [
+        [
+          "surgery.sinus"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "persistent-mouth-patch",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dilin yanındaki yara üç haftadır geçmedi, sert bir kenarı var. Isırdım sandım ama düzelmedi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yakından inceleyip gerekirse ileri değerlendirme planlayalım."
+        }
+      ],
+      "required_any": [
+        [
+          "oral_medicine.cancer"
+        ]
+      ],
+      "forbidden": [
+        "oral_medicine.infection"
+      ]
+    },
+    {
+      "id": "dry-mouth",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Gece dilim damağıma yapışıyor, su olmadan kuru ekmek yutamıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Gün içinde de ağzınız kuru mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, yeni ilaca başladıktan sonra daha çok oldu ama adını getirmedim."
+        }
+      ],
+      "required_any": [
+        [
+          "oral_medicine.saliva"
+        ]
+      ],
+      "forbidden": [
+        "special_care.drug_interactions"
+      ],
+      "requires_uncertainty": true
+    },
+    {
+      "id": "recurrent-ulcers",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Ağzımın içinde küçük beyaz yaralar çıkıp bir haftada kayboluyor, sonra başka yerde çıkıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Aynı yara sürekli kalıyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, her biri geçiyor, ara ara tekrarlıyor."
+        }
+      ],
+      "required_any": [
+        [
+          "oral_medicine.infection"
+        ]
+      ],
+      "forbidden": [
+        "oral_medicine.cancer"
+      ]
+    },
+    {
+      "id": "food-trap-filling",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dolgu yapıldığından beri iki dişin arasına her yemekte et doluyor, ip de takılıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Aradaki temasın ve dolgunun kenarının kontrolü gerekiyor."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.adhesion"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "cold-after-filling",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Geçen hafta dolgu oldu, buz gibi su değince bir an sızlıyor sonra geçiyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kendiliğinden ya da gece oluyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, sadece soğukta kısa sürüyor."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.hypersensitivity"
+        ]
+      ],
+      "forbidden": [
+        "endo.irreversible_pulpitis"
+      ]
+    },
+    {
+      "id": "acid-wear",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dişlerin uçları incelip saydam oldu, içtiğim ekşi şeylerden sonra daha kötü hissediyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yüzeylerdeki aşınmayı ve günlük alışkanlıkları değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.wear"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "front-color-gap",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Ön dişimin rengi yanındakinden koyu, aradaki küçük boşluk da fotoğraflarda belli oluyor. Görünüşünü düzeltmek istiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Renk ve şekil için seçenekleri muayeneden sonra konuşalım."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.esthetics"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation"
+      ]
+    },
+    {
+      "id": "implant-plan",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Eksik dişimin iki yanındakiler sağlam. Onları kestirmeden boşluğa diş yaptırabilir miyim?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kemik ve genel durum uygunsa implant seçeneğini değerlendirebiliriz."
+        }
+      ],
+      "required_any": [
+        [
+          "implant.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "vida-clarify",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Vida gevşedi galiba, dişim tıkırdıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İmplantın üstündeki diş mi, hareketli apareyin vidası mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Adını bilmiyorum, hangi parça olduğunu siz bakınca anlarsınız."
+        }
+      ],
+      "required_any": [
+        [
+          "implant.general",
+          "implant.prosthesis",
+          "ortho.appliances"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation"
+      ],
+      "requires_uncertainty": true
+    },
+    {
+      "id": "sinir-alindi-history",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Bu dişin siniri yıllar önce alındı, şimdi üstündeki diş çıktı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çıkan parça kaplama mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, kaplama elimde. Ağrım veya uyuşukluğum yok."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.cementation"
+        ]
+      ],
+      "forbidden": [
+        "surgery.nerve",
+        "endo.postoperative_pain"
+      ]
+    },
+    {
+      "id": "canal-after-pain",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dün dişimin içi temizlenip kanalları dolduruldu. Şimdi üstüne basınca ağrıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Başlamadan önceki ağrıdan farklı mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, şu an özellikle bastığımda oluyor."
+        }
+      ],
+      "required_any": [
+        [
+          "endo.postoperative_pain"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "bite-release",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Sert bir şey çiğnerken özellikle ısırmayı bırakınca içime bıçak saplanıyor gibi oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çatlak açısından inceleyelim, henüz ne olduğunu kesin söyleyemeyiz."
+        }
+      ],
+      "required_any": [
+        [
+          "endo.cracked_tooth"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation"
+      ],
+      "requires_uncertainty": true
+    },
+    {
+      "id": "xray-concern",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Geçen ay film çekildi, bugün yeniden üç boyutlu çekim neden gerekiyor? Fazla ışın almak istemiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Önce eski görüntüyü inceleyip yenisinin neyi değiştireceğini açıklayalım."
+        }
+      ],
+      "required_any": [
+        [
+          "imaging.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "numbing-not-working",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "İğneden sonra yanağım uyuştu ama dişe dokununca hâlâ acıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Uyuşmanın yeterli olup olmadığını yeniden değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "anesthesia.general"
+        ]
+      ],
+      "forbidden": [
+        "surgery.nerve"
+      ]
+    },
+    {
+      "id": "sedation-adult",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Panikten işlemi yaptıramıyorum. Beni biraz uyutarak yapmak mümkün mü, sonra eve kendim dönebilir miyim?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sakinleştirerek işlem seçenekleri ve sonrasındaki refakat ihtiyacını değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "anesthesia.sedation"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "missing-small-part",
+      "dialogue": [
+        {
+          "speaker": "Hekim",
+          "text": "Küçük metal parça ağzınızda kayboldu; yuttunuz mu, öksürdünüz mü?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Birden öksürdüm, şimdi nefes alırken zorlanıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İşlemi durduruyoruz, acil yardım gerekiyor."
+        }
+      ],
+      "required_any": [
+        [
+          "emergencies.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "blood-pressure-family-denial",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Babamın tansiyonu yüksek ama bende yok. Ben böbrek yetmezliği için haftada üç gün diyalize giriyorum, dişim çekilecek."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çekim planını sizin tedavinize göre düzenlememiz gerekiyor."
+        }
+      ],
+      "required_any": [
+        [
+          "special_care.general"
+        ],
+        [
+          "surgery.general"
+        ]
+      ],
+      "forbidden": [
+        "special_care.hypertension"
+      ]
+    },
+    {
+      "id": "cardiac-current",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Kalbimde yapay kapak var. Diş taşı temizliği öncesi bir ilaç gerekir mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kapak ve kalp hekiminizin bilgilerini kontrol ederek önlem gereksinimini değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "special_care.cardiac"
+        ],
+        [
+          "perio.general",
+          "prevention.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "drug-combination",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Her akşam kolesterol için simvastatin alıyorum. Dişim için yazılan klaritromisinle birlikte içebilir miyim?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İlaçların birlikte kullanımını kontrol etmeden başlamayın, reçeteyi değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "special_care.drug_interactions"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "snacking-diet",
+      "dialogue": [
+        {
+          "speaker": "Ebeveyn",
+          "text": "Oğlum gün boyu azar azar meyve suyu içiyor, uyurken de biberonu bırakmıyor. Dişleri bozulmasın diye neyi değiştirelim?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İçme sıklığını ve gece beslenmesini birlikte gözden geçirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "prevention.diet"
+        ],
+        [
+          "pediatric.general",
+          "prevention.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "jaw-sleep",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Sabah kalkınca çenem yorulmuş oluyor. Eşim gece dişlerimi gıcırdattığımı söylüyor, uykuda nefesim de duruyormuş."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Gece olanları ve uyku yakınmalarını ayrıca değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "orofacial_pain.sleep"
+        ]
+      ],
+      "forbidden": [
+        "endo.postoperative_pain"
+      ]
+    },
+    {
+      "id": "jaw-click",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Esnerken kulağımın önünden tak diye ses geliyor, bazen ağzım açılacakken takılıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çene ekleminizin hareketlerini ve kasları inceleyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "orofacial_pain.general"
+        ]
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "hypothetical-file-explanation",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Yapılacak kanal işleminde ne gibi sorunlar olabilir?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Örneğin kullanılan ince alet kırılabilir; bu olası bir risktir, sizin dişinizde olmuş bir olaydan söz etmiyorum."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Anladım, işlem daha başlamadı zaten."
+        }
+      ],
+      "required_any": [
+        [
+          "endo.general",
+          "endo.instrument_separation"
+        ]
+      ],
+      "forbidden": [
+        "endo.root_perforation"
+      ]
+    },
+    {
+      "id": "correction-nerve-to-crown",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Sinirim kopmuş demiştim ama yanlış anlattım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Aslında ne oldu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hiç kanal yapılmadı. Kopan sadece takma dişin beyaz kenarıymış, doktor da onu gösterdi."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.materials"
+        ]
+      ],
+      "forbidden": [
+        "surgery.nerve",
+        "endo.instrument_separation"
+      ]
+    },
+    {
+      "id": "several-current-issues",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Telim yanağımı çiziyor. Bir de alt tarafta ayrı bir dişin eti fırçalarken kanıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Braketin batan kısmına ve kanayan diş etine ayrı ayrı bakalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İkisi de bu hafta başladı; kanayan yer telin değdiği yer değil."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.appliances"
+        ],
+        [
+          "perio.general"
+        ]
+      ],
+      "forbidden": []
+    }
+  ]
+}

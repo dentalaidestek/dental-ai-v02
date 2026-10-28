@@ -33,9 +33,13 @@ def parse_spl(data, aliases=()):
         raise ValueError('Missing SPL identity')
     setid = ident.get('root')
     names = set(aliases)
-    # Collect only ingredient/product names, not every narrative heading.
-    for selector in ('.//h:manufacturedProduct/h:name', './/h:ingredient/h:ingredientSubstance/h:name',
-                     './/h:activeIngredient/h:activeIngredientSubstance/h:name'):
+    # Inactive/unclassified SPL ingredients are excipients, not drug aliases.
+    selectors = ['.//h:manufacturedProduct/h:name',
+                 './/h:activeIngredient/h:activeIngredientSubstance/h:name']
+    for active_class in ('ACTIB', 'ACTIM', 'ACTIR'):
+        ingredient = './/h:ingredient[@classCode="' + active_class + '"]/h:ingredientSubstance'
+        selectors.extend((ingredient + '/h:name', ingredient + '/h:activeMoiety/h:activeMoiety/h:name'))
+    for selector in selectors:
         names.update(text(n).lower() for n in root.findall(selector, NS) if text(n))
     sections = []
     for section in root.findall('.//h:section', NS):
@@ -110,3 +114,4 @@ def main():
 
 
 if __name__ == '__main__': main()
+

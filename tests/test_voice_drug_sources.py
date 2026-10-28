@@ -58,3 +58,24 @@ def test_bundled_real_labels_have_source_version_and_actual_sections(monkeypatch
         assert item['version'] and item['effective_date'] and item['sections']
         assert all(section['paragraphs'] for section in item['sections'])
     assert drugs.retrieve_drugs('amoksisilin')[0]['jurisdiction'] == 'US'
+
+
+
+@pytest.mark.parametrize('active_class', ['ACTIB', 'ACTIM', 'ACTIR'])
+def test_import_aliases_exclude_inactive_and_unclassified_ingredients(active_class):
+    ingredients = b"""<ingredient classCode="ACTIB"><ingredientSubstance><name>ACTIVE GENERIC SALT</name><activeMoiety><activeMoiety><name>ACTIVE GENERIC</name></activeMoiety></activeMoiety></ingredientSubstance></ingredient>
+    <ingredient classCode="IACT"><ingredientSubstance><name>MAGNESIUM STEARATE</name></ingredientSubstance></ingredient>
+    <ingredient><ingredientSubstance><name>WATER</name></ingredientSubstance></ingredient>"""
+    record = importer().parse_spl(XML.replace(b'</manufacturedProduct>', ingredients.replace(b'ACTIB', active_class.encode()) + b'</manufacturedProduct>'))
+    assert 'active generic salt' in record['aliases']
+    assert 'active generic' in record['aliases']
+    assert 'magnesium stearate' not in record['aliases']
+    assert 'water' not in record['aliases']
+
+
+def test_bundled_labels_do_not_match_excipients_as_patient_drugs(monkeypatch):
+    monkeypatch.delenv('VOICE_EXAM_DRUG_CORPUS', raising=False)
+    for excipient in ('water', 'magnesium stearate', 'titanium dioxide'):
+        assert drugs.retrieve_drugs(excipient) == [], excipient
+    for ingredient in ('amoksisilin', 'warfarin', 'ibuprofen', 'lidocaine', 'clindamycin'):
+        assert drugs.retrieve_drugs(ingredient), ingredient

@@ -1,5 +1,6 @@
 """Bounded PubMed abstracts selected by clinical concepts, never patient text."""
 import json
+import os
 import re
 import threading
 import time
@@ -33,6 +34,31 @@ TOPIC_LABELS = dict(zip((topic for topic, _ in TOPICS), (
     'Diş çekimi', 'Dental travma', 'Ağız mukozası lezyonları', 'Gebelikte diş tedavisi',
     'Antikoagülanlar', 'Çene osteonekrozu', 'Odontojenik enfeksiyon', 'Radyografik değerlendirme',
     'Çene eklemi bozuklukları')))
+# Stable closed topic IDs for the endodontic pilot; existing areas stay supported.
+ENDO_TOPICS = (
+    ('endo.instrument_separation', ('alet kır', 'kırık alet', 'eğe kır', 'eğe kanalda', 'instrument separation', 'separated instrument', 'file fracture')),
+    ('endo.root_perforation', ('perforasyon', 'root perforation', 'furcation perforation')),
+    ('endo.missed_canal', ('kanal bulunam', 'kaçırılmış kanal', 'missed canal', 'untreated canal')),
+    ('endo.postoperative_pain', ('kanal tedavisi sonrası ağrı', 'postoperatif ağrı', 'post-endodontic pain', 'flare-up')),
+    ('endo.irreversible_pulpitis', ('geri dönüşümsüz pulpit', 'irreversible pulpitis')),
+)
+TOPICS += ENDO_TOPICS
+TOPIC_LABELS.update(dict(zip((t for t, _ in ENDO_TOPICS), (
+    'Kanalda alet kırılması', 'Kök perforasyonu', 'Kaçırılmış kanal',
+    'Kanal tedavisi sonrası ağrı', 'Geri dönüşümsüz pulpit'))))
+TOPIC_SEARCHES = {
+    'endo.instrument_separation': '("instrument separation" OR "separated instrument" OR "file fracture" OR "broken instrument") AND (endodontic OR "root canal")',
+    'endo.root_perforation': '("root perforation" OR "furcation perforation" OR "iatrogenic perforation") AND (endodontic OR tooth)',
+    'endo.missed_canal': '("missed canal" OR "untreated canal" OR "second mesiobuccal canal") AND (endodontic OR "root canal")',
+    'endo.postoperative_pain': '("postoperative pain" OR "post-endodontic pain" OR "flare-up") AND (endodontic OR "root canal")',
+    'endo.irreversible_pulpitis': '"irreversible pulpitis" AND (endodontic OR "root canal")',
+}
+
+from app.voice_exam_taxonomy import TOPIC_REGISTRY, MAX_TOPICS
+TOPICS += tuple((topic['id'], topic['triggers']) for topic in TOPIC_REGISTRY.values())
+TOPIC_LABELS.update({topic['id']: topic['label'] for topic in TOPIC_REGISTRY.values()})
+TOPIC_SEARCHES.update({topic['id']: topic['query'] for topic in TOPIC_REGISTRY.values()})
+
 _lock = threading.Lock()
 _request_lock = threading.Lock()
 _capacity = threading.BoundedSemaphore(1)
@@ -59,12 +85,19 @@ def _get(utility, params):
 
 def selected_topics(text, topics=None):
     allowed = {query for query, _ in TOPICS}
-    return list(dict.fromkeys([item['topic'] for item in (topics or []) if item.get('topic') in allowed] +
-        [query for query, triggers in TOPICS if any(t in text.casefold() for t in triggers)]))[:6]
+    if topics is not None:
+        # A model's validated semantic selection is authoritative, even if empty.
+        return list(dict.fromkeys(item['topic'] for item in topics if item.get('topic') in allowed))[:MAX_TOPICS]
+    return list(dict.fromkeys(query for query, triggers in TOPICS
+        if any(t in text.casefold() for t in triggers)))[:MAX_TOPICS]
 
 
 def retrieve_literature(text, topics=None):
     selected = selected_topics(text, topics)
+    if os.getenv('VOICE_LITERATURE_MODE', 'remote') == 'local':
+        from app.voice_literature_index import retrieve
+        invalid = [item for item in topics or [] if item.get('topic') not in {topic for topic, _ in TOPICS}]
+        return retrieve([{'topic': topic} for topic in selected] + invalid)
     if not selected:
         return [], []
     key = tuple(selected)
@@ -80,7 +113,7 @@ def retrieve_literature(text, topics=None):
         for topic in selected:
             if time.monotonic() > deadline:
                 missing.append('pubmed-search-time-budget'); break
-            query = '(' + topic + ') AND (dentistry OR dental OR oral) AND (guideline[pt] OR systematic review[pt] OR meta-analysis[pt]) NOT (retracted publication[pt] OR retraction of publication[pt])'
+            query = '(' + TOPIC_SEARCHES.get(topic, topic) + ') AND (dentistry OR dental OR oral) AND (guideline[pt] OR systematic review[pt] OR meta-analysis[pt]) NOT (retracted publication[pt] OR retraction of publication[pt])'
             try:
                 ids = json.loads(_get('esearch.fcgi', {'term': query, 'retmode': 'json', 'retmax': 2, 'sort': 'relevance', 'datetype': 'pdat', 'mindate': str(datetime.now(timezone.utc).year - 10)}))['esearchresult']['idlist']
                 if not isinstance(ids, list) or len(ids) > 2 or any(not isinstance(i, str) or not re.fullmatch(r'\d{1,12}', i) for i in ids):
@@ -137,3 +170,4 @@ def retrieve_literature(text, topics=None):
         return [], ['pubmed-unavailable']
     finally:
         _capacity.release()
+

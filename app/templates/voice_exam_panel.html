@@ -4,7 +4,7 @@
     <p class="voice-stage" data-voice-stage>Hazırlık</p>
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
     <label class="voice-check"><input type="checkbox" data-voice-consent> Görüşmedeki kişileri bilgilendirdim; sesin Gemini ile metne çevrilmesini; muayeneyle ilgili metnin, klinik bilgilerin ve kaynakların Claude ile işlenmesini onaylıyorum.</label>
-    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Muayeneyle ilgili geçici metinden klinik bilgileri Claude çıkarır; muayene sonunda bu bilgiler ve kaynaklar yine Claude ile değerlendirilir. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
+    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Görüşme boyunca yalnız ses metne çevrilir. Muayeneyi bitirdiğinizde geçici metinden klinik bilgiler ve izin verilen kaynak konuları çıkarılır; ardından kaynaklarla son değerlendirme yapılır. Uzun görüşmeler bölünür ve daha fazla işleme çağrısı gerektirebilir. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Taslağı temizlediğinde, kaydettiğinde veya sayfadan ayrıldığında geçici görüşme verileri temizlenir.</p>
     <details class="voice-history"><summary>Önceki hekim onaylı klinik bilgiler</summary>
       <p class="voice-help">Yalnız önceki sesli muayenelerde hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Bu alan tüm hasta arşivinin yerine geçmez. Bilgilerin hâlâ güncel olduğunu hastayla doğrulayın.</p>
       <button type="button" data-voice-history>Önceki kayıtları göster</button>
@@ -22,24 +22,24 @@
       <p class="voice-live-timer" data-live-timer aria-label="Dinleme süresi">00:00</p>
       <div class="voice-controls"><button type="button" data-live-start>Mikrofonu başlat</button><button type="button" data-live-pause disabled>Ⅱ &nbsp; Duraklat</button><button type="button" data-live-finish disabled>Muayeneyi bitir</button><button type="button" data-live-review hidden>Özeti kontrol et</button></div>
       <p data-live-preview class="voice-help" aria-live="off"></p>
-      <p class="voice-help">Canlı döküm geçicidir. Bağlantı kesilirse mikrofon kapanır; önceki klinik özet korunur. Klinik değerlendirme konuşma bölümleri işlendikçe güncellenir.</p>
+      <p class="voice-help">Canlı döküm geçicidir. Bağlantı kesilirse mikrofon kapanır; biriken metin açık sayfada korunur. Klinik değerlendirme yalnız “Muayeneyi bitir” düğmesinden sonra başlar. Hata olursa sayfayı kapatmadan yeniden deneyin; tamamlanan bölümler tekrarlanmaz.</p>
     </section>
-    <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">İşlenen konuşmaya göre önerilen sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
+    <section class="voice-followup-panel"><h3>Görüşmede netleştirilecek bilgiler</h3><p class="voice-help">Muayene bitişinde hazırlanan sorulardır; klinik acil durum veya ilaç etkileşimi alarmı değildir.</p><div data-voice-followups aria-live="polite"></div></section>
     <details><summary>Alternatif: ses dosyası, bölüm kaydı veya metin</summary>
     <label class="voice-field">Ses dosyasıyla dene <input type="file" data-voice-audio-file accept="audio/mpeg,audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mp4,.mp3,.wav,.webm,.ogg,.m4a" disabled></label>
-    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile yazıya çevrilir, klinik metin Claude ile işlenir; uygulama ses dosyasını saklamaz.</p>
+    <p class="voice-help">En fazla 90 saniye ve 8 MB. Onay verdikten sonra seçtiğiniz ses dosyası Gemini ile yazıya çevrilir, metin görüşmeye eklenir ve klinik çıkarım muayene bitişine bırakılır; uygulama ses dosyasını saklamaz.</p>
     <div class="voice-controls">
       <button type="button" data-voice-start disabled>Muayeneyi dinle</button>
-      <button type="button" data-voice-stop disabled>Duraklat ve işle</button>
+      <button type="button" data-voice-stop disabled>Kaydı durdur ve metne çevir</button>
       <button type="button" data-voice-retry hidden>Ses bölümünü tekrar işle</button>
       <span data-voice-timer>00:00</span>
     </div>
-    <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. İşledikten sonra devam edebilirsin. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
-    <label class="voice-field">Muayeneyle ilgili geçici metin <textarea data-voice-transcript rows="4" maxlength="18000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
-    <button type="button" data-voice-text disabled>Metinden alanları çıkar</button>
+    <p class="voice-help">Her ses bölümü en fazla 90 saniyedir. Metne çevrildikten sonra yeni bölüm ekleyebilirsiniz; klinik değerlendirme bitişte yapılır. Bu sürüm canlı ilaç etkileşimi veya acil durum takibi yapmaz.</p>
+    <label class="voice-field">Muayeneyle ilgili geçici metin (en fazla 72.000 karakter / 216 KB) <textarea data-voice-transcript rows="4" maxlength="72000" placeholder="Mikrofon kullanılamıyorsa muayene notunu buraya yaz."></textarea></label>
+    <button type="button" data-voice-text disabled>Metni işle ve değerlendir</button>
     </details>
     <section class="voice-review" hidden>
-      <header class="voice-review-heading"><span class="voice-eyebrow">KONTROL VE KAYIT</span><h3>Muayene özeti</h3><p>İşlenen konuşma bölümlerinden hazırlanan taslak. Dinleme sürüyorsa özet güncellenmeye devam eder.</p></header><div class="voice-review-note">Kaydetmek istediğiniz alanları işaretleyin ve gerekli düzeltmeleri yapın. İşaretlenmeyen alanlar hasta dosyasına aktarılmaz.</div>
+      <header class="voice-review-heading"><span class="voice-eyebrow">KONTROL VE KAYIT</span><h3>Muayene özeti</h3><p>Görüşme bittikten sonra hazırlanan taslak. Sonuçları kontrol edip kaydedilecek alanları seçin.</p></header><div class="voice-review-note">Kaydetmek istediğiniz alanları işaretleyin ve gerekli düzeltmeleri yapın. İşaretlenmeyen alanlar hasta dosyasına aktarılmaz.</div>
       <p>Yalnız işaretlediğin alanlar uygulanır. İletişim önerileri hasta dosyasına aktarılmaz. Sistemik hastalık, ilaç ve alerji bilgileri hasta beyanı olarak klinik notta tutulur.</p>
       <h4 class="voice-group-title">Hasta bilgileri ve muayene notları</h4><div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
@@ -75,7 +75,9 @@
   </div>
 </section>
 <link rel="stylesheet" href="/static/voice-exam.css?v=10">
-<script src="/static/voice-exam.js?v=12" defer></script>
+<script src="/static/voice-finish-draft.js?v=1" defer></script>
+<script src="/static/voice-exam.js?v=17" defer></script>
 
-<script src="/static/voice-exam-live.js?v=5" defer></script>
+<script src="/static/voice-exam-live.js?v=6" defer></script>
+
 

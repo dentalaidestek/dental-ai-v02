@@ -45,7 +45,9 @@ class Socket:
     async def send_json(self, body):self.sent.append(body)
 
 
-def test_pcm_stream_flushes_final_transcription_and_closes_tasks():
+def test_pcm_stream_flushes_final_transcription_and_closes_tasks(monkeypatch):
+    import app.voice_exam_live as live
+    monkeypatch.setattr(live, 'FINAL_DRAIN_SECONDS', .02)
     async def scenario():
         provider=Provider();socket=Socket(b'\x00\x00'*1600)
         await asyncio.wait_for(proxy(socket,provider),2)
@@ -58,9 +60,30 @@ def test_pcm_stream_flushes_final_transcription_and_closes_tasks():
     asyncio.run(scenario())
 
 
+def test_finish_drains_late_final_fragments_before_closing(monkeypatch):
+    import app.voice_exam_live as live
+    monkeypatch.setattr(live, 'FINAL_DRAIN_SECONDS', .05, raising=False)
+    class Fragmented(Provider):
+        async def send(self, text):
+            await super().send(text)
+            if json.loads(text).get('realtimeInput', {}).get('audioStreamEnd'):
+                async def tail():
+                    await asyncio.sleep(.01)
+                    await self.queue.put(json.dumps({'serverContent': {'inputTranscription': {'text': 'Son sözler de burada.'}}}))
+                self.tail = asyncio.create_task(tail())
+    async def scenario():
+        provider = Fragmented();socket = Socket(b'\x00\x00' * 1600)
+        await asyncio.wait_for(proxy(socket, provider), 1)
+        await provider.tail
+        assert {'type': 'final', 'text': 'Son sözler de burada.'} in socket.sent
+        assert socket.sent[-1] == {'type': 'ended', 'flushed': True}
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('frame',[b'x',b'x'*6402,b''])
 def test_live_rejects_malformed_or_oversized_audio(frame):
     async def scenario():
         with pytest.raises(ValueError,match='PCM'):
             await proxy(Socket(frame),Provider())
     asyncio.run(scenario())
+

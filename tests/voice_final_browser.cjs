@@ -15,13 +15,14 @@ const tick=()=>new Promise(setImmediate);
  const fetch=async(url,options={})=>{
   calls.push({url,options});let body;
   if(url.includes('capabilities'))body={ok:true,enabled:true};
-  else if(url.endsWith('/text')){await new Promise(r=>resolveText=r);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[{quote:'Korkuyorum.',observation:'Korku beyanı',suggestion:'Açıkla'}],follow_up_questions:[]}}}
+  else if(url.endsWith('/text')){if(!resolveText)await new Promise(r=>resolveText=r);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[{quote:'Korkuyorum.',observation:'Korku beyanı',suggestion:'Açıkla'}],follow_up_questions:[]}}}
   else if(url.endsWith('/finalize')){finalCount++;body=failFinal?{ok:false,error:'Synthetic final failure'}:{ok:true,revision:'a'.repeat(64),final}}
   else if(url.endsWith('/apply'))body={ok:true,patient_url:'/patients/1'};
   else throw Error('Unexpected endpoint');
   return {ok:body.ok,json:async()=>body};
  };
  const box={document:{getElementById:()=>root,createElement:t=>new El(t),createTextNode:text=>({text})},window:{addEventListener:(n,fn)=>events[n]=fn},fetch,navigator:{},location:{hash:'',assign(){}},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
+ vm.runInNewContext(fs.readFileSync('app/static/voice-finish-draft.js','utf8'),box);
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await tick();get('[data-voice-consent]').checked=true;
  root.dispatchEvent({type:'voice-live-segment',detail:{text:'Soğuk içemiyorum.'}});
@@ -43,8 +44,9 @@ const tick=()=>new Promise(setImmediate);
  await get('[data-voice-finalize]').handlers.click();
  assert.equal(get('[data-voice-save]').disabled,false);
  get('[data-voice-transcript]').value='İşlenmemiş yeni bölüm';get('[data-voice-transcript]').handlers.input();
- await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,3,'Unprocessed text blocks final');
+ await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,4,'Explicit evaluation processes changed transcript first');
  events.pagehide();assert.equal(get('[data-voice-transcript]').value,'');assert.equal(get('[data-voice-final-results]').children.length,0);
  assert.equal(get('[data-voice-communication]').children.length,0);
  console.log('Final lifecycle: extraction drain, failure/retry, edit invalidation, unprocessed text and private cleanup passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+

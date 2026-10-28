@@ -4,10 +4,11 @@ import os
 import re
 import urllib.request
 from app import voice_exam_core as core
-from app.voice_exam_sources import retrieve
+from app.voice_exam_research import retrieve
 
 
 def assess(context):
+    explicit_topics = isinstance(context, dict) and 'literature_topics' in context
     context = core.clinical_context(context)
     # Identity is not needed for literature appraisal.
     fields = {key: value for key, value in context.get('fields', {}).items()
@@ -16,7 +17,7 @@ def assess(context):
     requests = context.get('source_requests', [])
     options = {}
     if requests: options['requests'] = requests
-    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    if explicit_topics or context.get('literature_topics'): options['topics'] = context.get('literature_topics', [])
     evidence = retrieve(query, **options)
     evidence['items'] = []
     if not evidence['references']:
@@ -87,10 +88,13 @@ def grounded_items(result, fields, references, diagnostics=None):
             reject('unknown_anchor'); continue
         if source.get('clinical_use') is False:
             reject('ineligible_source'); continue
-        if not item['patient_quote'] or item['patient_quote'] not in field['value']:
+        if not item['patient_quote'].strip() or item['patient_quote'] not in field['value']:
             reject('patient_quote_mismatch'); continue
-        if not item['source_quote'] or not any(item['source_quote'] in excerpt for excerpt in source['excerpts']):
+        if not item['source_quote'].strip() or not any(item['source_quote'] in excerpt for excerpt in source['excerpts']):
             reject('source_quote_mismatch'); continue
+        if not item['consideration'].strip():
+            reject('empty_consideration'); continue
         accepted.append(item)
     return accepted
+
 

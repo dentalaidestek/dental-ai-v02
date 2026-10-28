@@ -1,14 +1,14 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;this.disabled=false;this.textContent=''}addEventListener(name,fn){this.handlers[name]=fn}}
 (async()=>{
- const elements=new Map(),events={},emitted=[];let lastSocket,lastNode,stopped=0,closedContexts=0;
+ const elements=new Map(),events={},emitted=[];let lastSocket,lastNode,stopped=0,closedContexts=0,serverFlush=true,suppressEnd=false;
  const get=s=>{if(!elements.has(s))elements.set(s,new El());return elements.get(s)};
  const root=new El();root.dataset={patientId:'17'};root.querySelector=get;root.dispatchEvent=e=>emitted.push(e);
  const panel=get('[data-live-panel]');panel.querySelector=get;
  class Socket{
   static OPEN=1;
   constructor(url){assert.ok(url.endsWith('/patients/17/voice-exam/live'));assert.ok(!url.includes('key='));this.readyState=1;this.bufferedAmount=0;this.sent=[];lastSocket=this;setImmediate(()=>this.onopen?.())}
-  send(body){this.sent.push(body);if(typeof body==='string'){const msg=JSON.parse(body);if(msg.type==='start')setImmediate(()=>this.message({type:'ready'}));if(msg.type==='finish'||msg.type==='pause')setImmediate(()=>this.message({type:'ended',flushed:true}))}}
+  send(body){this.sent.push(body);if(typeof body==='string'){const msg=JSON.parse(body);if(msg.type==='start')setImmediate(()=>this.message({type:'ready'}));if((msg.type==='finish'||msg.type==='pause')&&!suppressEnd)setImmediate(()=>this.message({type:'ended',flushed:serverFlush}))}}
   message(body){this.onmessage?.({data:JSON.stringify(body)})}
   close(){this.readyState=3;setImmediate(()=>this.onclose?.())}
  }
@@ -17,7 +17,7 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  const box={document:{getElementById:()=>root,addEventListener:()=>{}},window:{AudioContext:Context,AudioWorkletNode:Worklet,addEventListener:(n,fn)=>events[n]=fn},
   AudioContext:Context,AudioWorkletNode:Worklet,WebSocket:Socket,navigator:{mediaDevices:{getUserMedia:async()=>({getTracks:()=>[{stop:()=>stopped++}]})}},
   location:{protocol:'https:',host:'dentalai.tr'},CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail}},
-  fetch:async()=>({json:async()=>({live_enabled:true})}),setTimeout,clearTimeout,setInterval,clearInterval};
+  fetch:async()=>({json:async()=>({live_enabled:true})}),setTimeout:(fn,ms)=>setTimeout(fn,ms===8000?10:ms),clearTimeout,setInterval,clearInterval};
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam-live.js','utf8'),box);
  await get('[data-live-start]').handlers.click();assert.equal(lastSocket,undefined,'No consent means no microphone/socket');
  get('[data-voice-consent]').checked=true;
@@ -54,6 +54,25 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  assert.ok(emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text==='Soğuk içemiyorum.'));
  assert.ok(!emitted.some(e=>e.type==='voice-live-segment'&&e.detail.text.includes('sensitive')));
  events.pagehide();assert.equal(get('[data-live-preview]').textContent,'');
+ serverFlush=false;
+ await get('[data-live-start]').handlers.click();await new Promise(setImmediate);await new Promise(setImmediate);
+ lastSocket.message({type:'final',text:'Korunacak konuşma.'});
+ await get('[data-live-pause]').handlers.click();await new Promise(r=>setTimeout(r,20));
+ get('[data-live-finish]').handlers.click();await new Promise(setImmediate);
+ assert.equal(emitted.filter(e=>e.type==='voice-live-ended').at(-1).detail.flushed,false,'Paused Finish must preserve failed flush status');
+ events.pagehide();serverFlush=true;
+ await get('[data-live-start]').handlers.click();await new Promise(setImmediate);await new Promise(setImmediate);
+ lastSocket.message({type:'final',text:'Bağlantıdan önceki metin.'});
+ lastSocket.onclose();await new Promise(setImmediate);
+ get('[data-live-finish]').handlers.click();await new Promise(setImmediate);
+ assert.equal(emitted.filter(e=>e.type==='voice-live-ended').at(-1).detail.flushed,false,'Connection failure must not become verified by Finish');
+ events.pagehide();
+ suppressEnd=true;
+ await get('[data-live-start]').handlers.click();await new Promise(setImmediate);await new Promise(setImmediate);
+ await get('[data-live-finish]').handlers.click();await new Promise(r=>setTimeout(r,30));
+ assert.equal(root.dataset.liveState,'error','Missing end response must time out instead of hanging in stopping');
+ assert.ok(get('[data-live-status]').textContent.includes('korunuyor'));
+ events.pagehide();suppressEnd=false;
  const previousSocket=lastSocket;
  box.navigator.mediaDevices.getUserMedia=async()=>{const e=new Error('denied');e.name='NotAllowedError';throw e};
  await get('[data-live-start]').handlers.click();
@@ -65,4 +84,5 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  events.pagehide();
  console.log('Live controller: consent, continuous PCM, interim/final separation, finish flush and microphone cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
+
 

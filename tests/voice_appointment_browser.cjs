@@ -22,6 +22,7 @@ const tick=()=>new Promise(setImmediate);
   return {ok:body.ok,json:async()=>body};
  };
  const box={document:{getElementById:()=>root,createElement:t=>new El(t),createTextNode:text=>({text})},window:{addEventListener:(n,fn)=>events[n]=fn},fetch,navigator:{},location:{hash:'',assign(){}},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
+ vm.runInNewContext(fs.readFileSync('app/static/voice-finish-draft.js','utf8'),box);
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await tick();get('[data-voice-consent]').checked=true;get('[data-voice-appointment-title]').value='Kontrol randevusu';
  root.dispatchEvent({type:'voice-live-segment',detail:{text:'Soğuk içemiyorum.'}});
@@ -47,3 +48,4 @@ const tick=()=>new Promise(setImmediate);
  assert.equal(get('[data-voice-appointment-start]').value,'','Private draft cleared after save');
  console.log('Spoken appointment: datetime autopopulated, preselected for approval and included in confirmed save.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+

@@ -1,0 +1,27 @@
+const assert=require('node:assert/strict');
+(async()=>{
+  const {FinishDraft,splitTranscript}=require('../app/static/voice-finish-draft.js');
+  const text=('Hasta: ağrım var. Hekim: ne zamandır?\n').repeat(1500);
+  const chunks=splitTranscript(text);
+  assert.equal(chunks.join(''),text);
+  assert.ok(chunks.length>1);
+  assert.ok(chunks.every(t=>t.length<=12000&&Buffer.byteLength(t)<=36000));
+  assert.equal(splitTranscript('😀'.repeat(10000)).join(''),'😀'.repeat(10000));
+  assert.ok(splitTranscript('😀'.repeat(10000)).every(t=>!/[\uD800-\uDBFF]$/.test(t)));
+  const draft=new FinishDraft();draft.set(text);
+  assert.throws(()=>draft.set('a'.repeat(72001)),/sınır/);
+  assert.equal(draft.text,text,'Rejected input must not replace preserved draft');
+  let calls=0,failed=false;
+  await assert.rejects(draft.process(async()=>{if(++calls===2)throw Error('provider down')}),/provider down/);
+  assert.equal(draft.cursor,1);assert.equal(draft.text,text);
+  const successfulFirst=calls;
+  await draft.process(async()=>calls++);
+  assert.equal(calls-successfulFirst,chunks.length-1,'Retry skips successful extraction');
+  await draft.process(async()=>assert.fail('completed extraction must not replay'));
+  draft.set(text+'Yeni bilgi.');assert.equal(draft.cursor,0);
+  let unblock;const pending=draft.process(()=>new Promise(r=>unblock=r));
+  await assert.rejects(draft.process(()=>{}),/işleniyor/);
+  draft.clear();unblock();await assert.rejects(pending,/değişti/);
+  assert.equal(draft.text,'');assert.equal(draft.cursor,0);
+  console.log('Finish draft: lossless bounded chunks, checkpoints, retry, invalidation and clear passed');
+})().catch(e=>{console.error(e);process.exitCode=1});

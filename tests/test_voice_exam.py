@@ -339,7 +339,8 @@ def test_sources_fail_closed_without_claiming_safety(monkeypatch):
     from app import voice_exam_dergipark as dergipark
     monkeypatch.setattr(dergipark, 'retrieve_dergipark', lambda *args, **kw: ([], []))
     result = sources.retrieve('metformin')
-    assert not result['references'] and result['unavailable'] == ['ada-diabetes']
+    assert not result['references'] and result['unavailable'] == ['ada-diabetes', 'topic-uncovered:diabetes dental treatment']
+    assert result['source_coverage'][0]['status'] == 'uncovered'
     assert result['coverage'] == 'limited'
 
 
@@ -500,3 +501,4 @@ def test_spoken_appointment_saves_on_agreed_day_for_selected_patient_only_once(a
     with Session(engine) as session:
         event = session.exec(select(ScheduleEvent)).one()
         assert (event.patient_id, event.owner_user_id, event.start_at) == (1, 1, '2026-10-24T15:30')
+

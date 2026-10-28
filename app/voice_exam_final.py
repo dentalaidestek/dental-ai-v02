@@ -1,9 +1,14 @@
 """One bounded final Claude review; transient output, no automatic clinical writes."""
 import json
+import time
+import logging
+import hashlib
+import os
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
-from app.voice_exam_sources import retrieve
+from app.voice_exam_sources import retryable_unavailable
+from app.voice_exam_research import retrieve
 from app.voice_exam_review_provider import review
 
 
@@ -56,7 +61,9 @@ def _contradictions(items, fields):
     return accepted
 
 
-def finalize(context, insights, uncertain=""):
+def finalize(context, insights, uncertain="", *, previous_source_fingerprint=''):
+    explicit_topics = isinstance(context, dict) and 'literature_topics' in context
+    started = time.monotonic()
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
     insights = private_insights(insights)
@@ -77,8 +84,12 @@ def finalize(context, insights, uncertain=""):
     name_candidates = [item for item in requests if is_spelling_candidate(item['term'], item['quote'])]
     options = {}
     if requests: options['requests'] = requests
-    if context.get('literature_topics'): options['topics'] = context['literature_topics']
+    if explicit_topics or context.get('literature_topics'): options['topics'] = context.get('literature_topics', [])
     evidence = retrieve(query, **options)
+    retrieved = time.monotonic()
+    source_retryable = retryable_unavailable(evidence['unavailable'])
+    if source_retryable and not evidence['references']:
+        raise core.VoiceError('Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin.')
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
@@ -136,10 +147,19 @@ source_quote ilgili sources.excerpts içinden birebir alıntı, source_id verile
 source_quote KAYNAĞIN ORİJİNAL DİLİNDE kalsın; çevirme, üç nokta ekleme, kelime
 değiştirme. patient_quote yalnız clinical_fields.value içinden kopyalansın. Türkçe
 açıklamayı consideration alanına yaz. Göndermeden önce her iki alıntıyı birebir kontrol et.
+Her kontrol noktası için hasta beyanı, kaynağın kapsamı ve öneri arasında açık bir
+anlam ilişkisi kur: yalnız aynı kelimenin geçmesi yeterli dayanak değildir. Kaynak
+olasılık bildiriyorsa kesinlik, ilişki bildiriyorsa neden-sonuç, genel bilgi veriyorsa
+özgül işlemin hatalı olduğu sonucu çıkarma. Hastanın yaş grubu, işlem türü ve klinik
+koşulları kaynak kapsamıyla uyuşmuyorsa o iddiayı çıkar; eksik bilgiyi soru yap.
+Kaynağın yayın/güncelleme tarihi ile retrieved_at erişim tarihini karıştırma. Tarih
+ve kılavuzun halen geçerli olduğu doğrulanmamışsa güncel/en son kılavuz iddiası kurma.
+Alıntılar ve consideration yalnız boşluk olamaz; anlamlı, kısa ve özgül olsun.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
+    prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. research_material_unverified/research_background_unverified, Claude web araştırmasının metin getirdiği ancak bu konuyla ilişkisini henüz doğrulamadığı anlamına gelir; bunları doğrulanmış konu kapsamı sayma. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
     # Short transient communication anchors share this final call, never patient writes.
     communication_fields = {f'communication_{i}': {'value': item['quote']} for i, item in enumerate(insights)}
     fields.update(communication_fields)
@@ -175,11 +195,23 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
 '''
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
-            'drug_name_candidates': name_candidates}
+            'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
+    if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
+        raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
+    # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
+    # retrieval timestamps so refreshing an unchanged public document is free.
+    stable_sources = [{k: v for k, v in ref.items() if k != 'retrieved_at'} for ref in evidence['references']]
+    signature = {**data, 'sources': stable_sources, 'prompt': prompt,
+                 'model': os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5'}
+    source_fingerprint = hashlib.sha256(json.dumps(signature, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    if previous_source_fingerprint == source_fingerprint:
+        return {'not_modified': True, 'source_fingerprint': source_fingerprint,
+                'review_status': {'source_retryable': source_retryable}, 'unavailable': evidence['unavailable']}
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
     try:
         result = review(prompt, data, schema)
+        modeled = time.monotonic()
         output = {'questions': _anchored(result.get('questions'), fields),
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
@@ -199,15 +231,19 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                     + names + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
                     + item['consideration'])
         review_status = {'source_count': len(evidence['references']),
+                         'source_retryable': source_retryable,
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
                          'rejection_reasons': rejected_reasons}
-        import logging
+        logging.getLogger(__name__).info('voice_final retrieve_s=%.2f model_s=%.2f total_s=%.2f',
+            retrieved - started, modeled - retrieved, time.monotonic() - started)
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
             len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
-        return {**output, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
-                'coverage': evidence['coverage'], 'notice': evidence['notice']}
+        return {**output, 'source_fingerprint': source_fingerprint, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
+                'coverage': evidence['coverage'], 'source_coverage': evidence.get('source_coverage', []), 'notice': evidence['notice'],
+                'research_mode': evidence.get('research_mode', 'legacy'), 'research_usage': evidence.get('research_usage', {})}
     except Exception:
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:
         core._capacity.release()
+
