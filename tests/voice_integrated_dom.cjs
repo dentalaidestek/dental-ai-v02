@@ -34,7 +34,7 @@ async function fixture(){
     else if(url.endsWith('/finalize')){
       if(sourceMode==='failure')body={ok:false,error:'Synthetic source outage'};
       else if(sourceMode==='unchanged')body={ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}};
-      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
+      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
     return {ok:body.ok,json:async()=>body};
@@ -102,6 +102,11 @@ async function fixture(){
     assert.equal(f.deadlines[0],120000,'Clinical source/model work needs the extended request budget');
     await until(()=>!f.get('[data-voice-clinical]').disabled,'clinical review completed');
     assert.deepEqual(f.errors,[]);
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('native');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
+    assert.ok(f.get('.voice-topic-coverage').textContent.includes('Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı'), 'Native research must not imply verified topic evidence');
   }finally{f.close()}
   console.log('Integrated DOM: live→pause→finish→save, disconnected recovery and partial evidence retry passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});

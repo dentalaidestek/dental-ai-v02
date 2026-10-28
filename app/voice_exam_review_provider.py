@@ -23,11 +23,16 @@ def _schema(node):
     return result
 
 
-def review(prompt, data, schema, *, extraction=False):
+def _configuration():
     key = (os.getenv('ANTHROPIC_API_KEY') or '').strip()
     model = (os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5').strip()
     if not key or not re.fullmatch(r'claude-[A-Za-z0-9._-]{1,100}', model):
         raise core.VoiceError('Son değerlendirme için Claude yapılandırması hazır değil.')
+    return key, model
+
+
+def review(prompt, data, schema, *, extraction=False):
+    key, model = _configuration()
     payload = {'model': model, 'max_tokens': 16384 if extraction else 8192, 'stream': False,
         'system': prompt,
         'messages': [{'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]}
@@ -135,3 +140,33 @@ def review(prompt, data, schema, *, extraction=False):
     if not isinstance(result, dict) or set(result) != set(schema['required']):
         raise ValueError('Invalid clinical review')
     return result
+
+
+
+def research_message(prompt, data, tools, *, previous_messages=None, timeout=60):
+    """Native tools on isolated public scopes; never patient-specific final JSON.
+
+    Budget accounting uses the same configured provider/model and shared transport.
+    Caller owns bounded pause continuation, tool errors and evidence validation.
+    """
+    import math
+    key, model = _configuration()
+    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 90:
+        raise ValueError('Invalid research time budget')
+    messages = previous_messages if previous_messages is not None else [
+        {'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]
+    payload = {'model': model, 'max_tokens': 2048, 'stream': False,
+               'system': prompt, 'messages': messages, 'tools': tools}
+    from app.http_transport import urlopen
+    from app.provider_budget import reservation
+    request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
+        data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+        headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
+    with reservation('anthropic', model), urlopen(request, timeout=timeout) as response:
+        raw = response.read(core.MAX_RESPONSE + 1)
+    if len(raw) > core.MAX_RESPONSE:
+        raise ValueError('Research response too large')
+    message = json.loads(raw)
+    if not isinstance(message, dict) or not isinstance(message.get('content'), list):
+        raise ValueError('Invalid native research response')
+    return message

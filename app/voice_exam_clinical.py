@@ -4,7 +4,7 @@ import os
 import re
 import urllib.request
 from app import voice_exam_core as core
-from app.voice_exam_sources import retrieve
+from app.voice_exam_research import retrieve
 
 
 def assess(context):

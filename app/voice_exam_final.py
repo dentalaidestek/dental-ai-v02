@@ -7,7 +7,8 @@ import os
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
-from app.voice_exam_sources import retrieve, retryable_unavailable
+from app.voice_exam_sources import retryable_unavailable
+from app.voice_exam_research import retrieve
 from app.voice_exam_review_provider import review
 
 
@@ -150,7 +151,7 @@ Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
-    prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
+    prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. research_material_unverified/research_background_unverified, Claude web araştırmasının metin getirdiği ancak bu konuyla ilişkisini henüz doğrulamadığı anlamına gelir; bunları doğrulanmış konu kapsamı sayma. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
     # Short transient communication anchors share this final call, never patient writes.
     communication_fields = {f'communication_{i}': {'value': item['quote']} for i, item in enumerate(insights)}
     fields.update(communication_fields)
@@ -231,7 +232,8 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',
             len(evidence['references']), len(output['clinical_items']), json.dumps(rejected_reasons, sort_keys=True))
         return {**output, 'source_fingerprint': source_fingerprint, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
-                'coverage': evidence['coverage'], 'source_coverage': evidence.get('source_coverage', []), 'notice': evidence['notice']}
+                'coverage': evidence['coverage'], 'source_coverage': evidence.get('source_coverage', []), 'notice': evidence['notice'],
+                'research_mode': evidence.get('research_mode', 'legacy'), 'research_usage': evidence.get('research_usage', {})}
     except Exception:
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:
