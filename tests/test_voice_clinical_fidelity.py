@@ -166,7 +166,7 @@ def test_text_understanding_uses_claude_once_and_keeps_original_text(monkeypatch
         assert options == {'extraction': True}
         assert schema['properties']['fields']['required'] == list(core.FIELDS[:3])
         assert 'transcript' not in schema['properties']
-        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == [*core.FIELDS[3:], 'patient_concern', 'clinician_response']
+        assert schema['properties']['clinical_facts']['items']['properties']['field']['enum'] == [*core.FIELDS[3:], 'patient_concern', 'clinician_response', 'clinician_statement']
         return {'transcript': 'Modelin eksik yeniden yazımı', 'fields': {}, 'clinical_facts': []}
     monkeypatch.setattr(provider, 'review', review)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)

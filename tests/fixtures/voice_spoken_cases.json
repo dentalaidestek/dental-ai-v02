@@ -979,6 +979,130 @@
         ]
       ],
       "forbidden": []
+    },
+    {
+      "id": "clinician_safety_assertion",
+      "dialogue": [
+        {
+          "speaker": "Hekim",
+          "text": "Bu ilaçla diğer ilaç birlikte kesinlikle sorun çıkarmaz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İlaçlarımın adını şimdi hatırlamıyorum."
+        }
+      ],
+      "required_any": [
+        [
+          "special_care.general"
+        ]
+      ],
+      "forbidden": [],
+      "required_clinician_quotes": [
+        "Bu ilaçla diğer ilaç birlikte kesinlikle sorun çıkarmaz."
+      ]
+    },
+    {
+      "id": "clinician_prognosis_assertion",
+      "dialogue": [
+        {
+          "speaker": "Hekim",
+          "text": "Bu kaplamanın ömür boyu hiç sorun çıkarmayacağını söyleyebilirim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yeni yapılacak kaplamadan bahsediyorsunuz değil mi?"
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.fixed"
+        ]
+      ],
+      "forbidden": [],
+      "required_clinician_quotes": [
+        "Bu kaplamanın ömür boyu hiç sorun çıkarmayacağını söyleyebilirim."
+      ]
+    },
+    {
+      "id": "clinician_allergy_assertion",
+      "dialogue": [
+        {
+          "speaker": "Hekim",
+          "text": "Sadece çarpıntı yaşamanız bu iğneye kesin alerjiniz olduğunu gösterir."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Döküntü veya nefes darlığı olmadı."
+        }
+      ],
+      "required_any": [
+        [
+          "anesthesia.general"
+        ]
+      ],
+      "forbidden": [],
+      "required_clinician_quotes": [
+        "Sadece çarpıntı yaşamanız bu iğneye kesin alerjiniz olduğunu gösterir."
+      ]
+    },
+    {
+      "id": "clinician_dose_assertion",
+      "dialogue": [
+        {
+          "speaker": "Hekim",
+          "text": "Bu ilacı günde üç kez almanızı planlıyorum."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hangi kutu olduğunu tekrar gösterir misiniz?"
+        }
+      ],
+      "required_any": [
+        [
+          "special_care.general"
+        ]
+      ],
+      "forbidden": [],
+      "required_clinician_quotes": [
+        "Bu ilacı günde üç kez almanızı planlıyorum."
+      ]
+    },
+    {
+      "id": "patient_claim_not_clinician",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Komşum bu hapın tamamen zararsız olduğunu söyledi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kutuyu ve kullandığınız diğer ilaçları görelim."
+        }
+      ],
+      "required_any": [],
+      "forbidden": [],
+      "forbidden_clinician_quotes": [
+        "Komşum bu hapın tamamen zararsız olduğunu söyledi."
+      ]
+    },
+    {
+      "id": "historical_other_clinician",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Önceki doktorum buna kesin alerji dedi."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hangi belirtileri yaşadığınızı anlatır mısınız?"
+        }
+      ],
+      "required_any": [],
+      "forbidden": [],
+      "forbidden_clinician_quotes": [
+        "Önceki doktorum buna kesin alerji dedi."
+      ]
     }
   ]
 }

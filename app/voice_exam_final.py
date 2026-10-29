@@ -71,7 +71,7 @@ def finalize(context, insights, uncertain="", *, previous_source_fingerprint='')
     fields = {k: v for k, v in context.get('fields', {}).items() if k not in {'first_name', 'last_name'}}
     if context.get('appointment', {}).get('quote'):
         fields['appointment'] = {'value': context['appointment']['quote'], 'quote': context['appointment']['quote']}
-    if not fields and not context.get('teeth'):
+    if not fields and not context.get('teeth') and not any(item.get('category') == 'CLINICAL_STATEMENT' for item in insights):
         raise core.VoiceError('Son değerlendirme için önce muayene bilgisi ekle.')
     for tooth in context.get('teeth', []):
         value = 'Diş ' + tooth['tooth'] + ': ' + tooth['status']
@@ -161,11 +161,21 @@ dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
     prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. research_material_unverified/research_background_unverified, Claude web araştırmasının metin getirdiği ancak bu konuyla ilişkisini henüz doğrulamadığı anlamına gelir; bunları doğrulanmış konu kapsamı sayma. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
     # Short transient communication anchors share this final call, never patient writes.
-    communication_fields = {f'communication_{i}': {'value': item['quote']} for i, item in enumerate(insights)}
+    communication_fields = {(f'clinician_{i}' if item.get('category') == 'CLINICAL_STATEMENT' else f'communication_{i}'): {'value': item['quote']} for i, item in enumerate(insights)}
     fields.update(communication_fields)
     anchor_schema['properties']['field']['enum'] = list(fields)
     clinical_schema['patient_field']['enum'] = list(fields)
+    for key in ('field', 'other_field'):
+        contradiction_schema['properties'][key]['enum'] = list(fields)
     prompt += '''
+clinician_ alanları hekime atfedilen klinik iddialardır; konuşmacı atfı modelce
+çıkarılmıştır, bağımsız doğrulanmış değildir. İlaç güvenliği, söylenen doz/aralık,
+alerji, kontrendikasyon ve prognoz iddialarını hasta bağlamı ve kaynakla karşılaştır.
+Söylenen dozu yeni doz önerisi üretmeden değerlendirebilirsin. Kaynakla açık kapsam
+uyuşmazlığı varsa bunu koşullu kontrol noktası olarak birebir kaynak ve hekim
+alıntısına bağla; eksik doz/birim/endikasyon/konuşmacı bilgisi için soru sor.
+Kaynak desteği yoksa hekimi yanlış ilan etme veya güvenli/doğru diye onaylama.
+Genel bir hasta bilgilendirme metninden kesin hekim hatası sonucu çıkarma.
 İletişim alıntılarını communication_ alanlarında ayrıca değerlendir. Dinleme/empati,
 anlaşılabilir dil, anlayışı kontrol etme, kaygı/kontrol ihtiyacı, maliyet, zaman ve
 ortak karar boyutlarını yalnız ilgili beyan varsa ele al. Yapılmış açıklamayı yapılmamış
@@ -216,7 +226,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
         output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
-                             for name, field in fields.items() if not name.startswith('communication_')][:12]
+                             for name, field in fields.items() if not name.startswith(('communication_', 'clinician_'))][:12]
         appointment = context.get('appointment', {})
         if core.resolve_appointment(appointment.get('quote', ''), appointment.get('acceptance_quote', '')):
             output['contradictions'] = [item for item in output['contradictions'] if item['field'] != 'appointment']
@@ -230,6 +240,11 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                 item['consideration'] = ('İlaç adı eşleştirmesi henüz doğrulanmadı; olası kaynak adı: '
                     + names + '. Kutu/reçeteyle doğrulanırsa bu kontrol noktasını değerlendirin. '
                     + item['consideration'])
+        output['clinician_review'] = [
+            {'field': name, 'quote': field['value'],
+             'status': 'control_point_present' if any(item['patient_field'] == name for item in output['clinical_items']) else 'unverified',
+             'source_ids': sorted({item['source_id'] for item in output['clinical_items'] if item['patient_field'] == name})}
+            for name, field in fields.items() if name.startswith('clinician_')]
         review_status = {'source_count': len(evidence['references']),
                          'source_retryable': source_retryable,
                          'unavailable_count': len(evidence['unavailable']),
