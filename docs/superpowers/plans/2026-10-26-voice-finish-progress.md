@@ -112,3 +112,12 @@ RED/GREEN regressions cover normalization, final coverage, repeated failure acco
 Detailed remaining gold-set/clinical metrics/pilot requirements: docs/voice_clinical_validation_protocol.md. No actual native model/microphone/clinical accuracy measurement, feedback data lifecycle or Turkish guideline coverage verified in this continuation. Changes are proposed on a new draft PR, not merged/deployed; prior merged main revision remains 278d30c with known Render build-quota failure.
 
 Independent follow-up review found contradiction enums omitting transient clinician anchors and forbidden-attribution scoring missing short quoted spans. Both were reproduced RED and fixed before publishing. Required positive clinician quotations are still exact/provisional and can undercount valid shorter extractions; this is not a semantic or clinical gold score.
+
+
+## 2026-10-29 continued adversarial verification (PR #217)
+
+Reproduced model-output boundary defects: planned/negated/uncertain/unrelated chart states and another tooth's state were accepted as existing candidates. Added affirmative state/tooth quotation checks, including spoken FDI subjects and punctuation-free questions, with explicit uncertainty instead of silently adding a chart finding. Existing positive controls remain candidates for physician approval. Conservative shorthand limitations documented; no diagnosis or drug contraindication rules added. Normalized-plan-to-apply and no-confirmation endpoint tests verify no record writes.
+
+Added offline human-adjudicated clinical outcome scoring with explicit TP/FP/miss/critical-miss and negative-run denominators. Unapproved labels are rejected; provider failures count as end-to-end expected-alert misses; unreviewed/missing outcomes suppress whole-cohort sensitivity. This tool does not infer clinical correctness from model prose. Draft template intentionally produces no clinical score. Whitespace-only question/contradiction anchors also rejected.
+
+Final full local checks: 416 Python passed (two dependency warnings, 25.43s), 11 Node26/jsdom files passed (9.91s), diff check passed. Independent review findings on the new chart helper were reproduced and fixed. Real keys/model config and local browser/microphone unavailable; explicit live run still model_calls=0. No claimed gold-set score, live semantic/clinical accuracy or real-browser pilot. See docs/voice_clinical_validation_protocol.md for input format, metric interpretation and remaining work. Update existing draft PR #217 only; no merge/deployment or secret/billing changes.

@@ -342,7 +342,11 @@ def normalize(result, evidence=None):
             if not re.search(r'(?<!\d)' + number + r'(?!\d)|\b' + spoken_number + r'\b', quote, re.I):
                 # A region or symptom cannot establish a specific FDI tooth.
                 continue
-            if tooth['status'] == 'CARIES' and (not re.search(r'çürük|karies|caries', quote, re.I) or re.search(r'(?:çürük|karies|caries)\s+(?:yok|değil|şüph|olabilir|var\s+m[iı])', quote, re.I)):
+            from app.voice_chart_assertions import existing_chart_assertion
+            if not existing_chart_assertion(tooth['status'], quote, number, spoken_number):
+                notice = 'Bir diş etiketi kesin mevcut bulgu olarak doğrulanmadı; plan/şüphe/olumsuzluk veya diş eşleşmesini kontrol edin.'
+                if notice not in output['uncertain']:
+                    output['uncertain'] = (output['uncertain'] + '\n' + notice).strip()
                 continue
             output['teeth'].append({'tooth': number, 'status': tooth['status'], 'quote': quote})
     appointment = result.get('appointment')

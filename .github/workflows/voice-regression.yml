@@ -10,6 +10,8 @@ on:
       - 'scripts/build_voice_literature.py'
       - 'scripts/import_voice_drug_labels.py'
       - 'scripts/evaluate_voice_spoken.py'
+      - 'scripts/score_voice_clinical_review.py'
+      - 'tests/fixtures/voice_clinical_review_template.json'
       - 'tests/fixtures/voice_spoken_cases.json'
       - 'app/data/voice_drug_sources.jsonl'
       - 'tests/test_voice*.py'

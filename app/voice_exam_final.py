@@ -36,7 +36,7 @@ def _anchored(items, fields):
         if not all(isinstance(v, str) and len(v) <= 1800 for v in item.values()):
             continue
         field = fields.get(item['field'])
-        if field and item['quote'] and item['quote'] in field['value'] and item['text']:
+        if field and item['quote'].strip() and item['quote'] in field['value'] and item['text'].strip():
             accepted.append(item)
     return accepted
 
@@ -54,7 +54,7 @@ def _contradictions(items, fields):
             continue
         left, right = fields.get(item['field']), fields.get(item['other_field'])
         a, b = item['quote'], item['other_quote']
-        if (left and right and a and b and item['text'] and a in left['value'] and b in right['value']
+        if (left and right and a.strip() and b.strip() and item['text'].strip() and a in left['value'] and b in right['value']
                 and a not in b and b not in a):
             accepted.append({'field': item['field'], 'quote': a + ' / Karşı ifade: ' + b,
                              'text': item['text']})

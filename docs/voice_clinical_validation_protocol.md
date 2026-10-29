@@ -43,3 +43,32 @@ External faults need controlled cases too: unavailable sources, unsupported tool
 A clinician-supervised pilot with real browser/microphone and synthetic dialogue must verify Turkish recognition under noise/overlap, final flush, attribution uncertainty, same-provider extraction/native research/final response, real source passage relevance, failure UI, correction/retry and explicit save. Do not label the current automated checks as this pilot. Render's existing build quota blocker must be resolved separately; no new production rollout is included in this continuation.
 
 Validation after independent review fixes: 370 Python tests passed (two dependency deprecations), 11 Node harness files passed. Required clinician quotations currently match exact labelled spans and can conservatively fail a semantically valid shorter quotation. Forbidden utterances reject contained shorter spans as well as full matches. Human-approved acceptable-span alternatives/semantic adjudication are needed before interpreting these counts as clinical performance. Contradiction schema now accepts transient clinician anchors too, including clinician-only encounters.
+
+## Follow-up: chart assertion boundary and human-adjudicated metrics
+
+A new adversarial test reproduced a concrete normalization defect: if the model supplied EXTRACTED for “46 numaralı dişi yarın çekeceğiz”, the candidate was previously accepted. Proposed filling/crown/implant/root-canal statements, explicit negatives and unrelated state labels had the same gap. The core now calls app/voice_chart_assertions.py before retaining a chart candidate and explicitly flags withheld candidates in uncertain. No confirmed-save contract changed.
+
+The quotation check requires affirmative existing-state evidence for the selected state. It does not infer a chart state from absence of proposal words. It separates numeric and spoken FDI subjects in an analysis-only copy, checks interrogatives without question marks, and cannot borrow “var/mevcut” from a different procedure to turn a new plan into an existing finding. EXTRACTED requires explicit completed-extraction language. Original quotes/transcripts are not rewritten. This is conservative, bounded Turkish evidence checking, not a general semantic parser or a clinical diagnosis. Valid shorthand/group descriptions may need manual review; it is not proven complete under arbitrary ASR corruption, grammar or speaker confusion.
+
+Independent review reproduced question-particle, spoken-subject and unlisted-future-verb failures in the initial helper. RED/GREEN regressions drove the affirmative-state design above. Endpoint tests also verify that a withheld planned procedure cannot create a chart record and even a legitimate candidate cannot write records without confirmed physician approval. Three whitespace-only checklist/contradiction regressions were separately fixed; empty textual anchors are not meaningful evidence.
+
+### Offline clinical outcome scoring
+
+scripts/score_voice_clinical_review.py processes human-adjudicated alert IDs against exhaustive, declared clinician-approved case labels. It does NOT read clinical prose and decide whether a warning is true. A human reviewer must map real outputs to expected/extra alert identifiers. Approval/adjudication metadata are audit declarations, not authentication of reviewer credentials or proof of scientific validity.
+
+```sh
+PYTHONPATH=.:../testdeps python scripts/score_voice_clinical_review.py reviewed_results.json
+```
+
+The input format is illustrated by tests/fixtures/voice_clinical_review_template.json. That template deliberately remains draft/unapproved and the scorer rejects it. Do not mark it approved without actual review. Cases require approval_status=approved, labels_complete=true, nonempty approved_by/approved_at and required_alert_ids; critical_alert_ids must be a subset. Each run references a case and repeat index and is reviewed, failed or unreviewed. Reviewed runs need adjudicated_by/adjudicated_at and human-labelled observed_alert_ids. Duplicate runs/labels and unknown cases are rejected.
+
+Reported units/denominators:
+- True/false positive alerts compare reviewed observed IDs to exhaustive required IDs, counting each alert ID once per run.
+- Reviewed misses are expected IDs absent from reviewed outputs. Provider-failure misses count all expected IDs for a failed attempt; no provider failure is treated as a clean clinical negative.
+- End-to-end sensitivity = TP / (TP + reviewed misses + provider-failure misses). It is withheld (null) if any required outcome is unreviewed or unrecorded.
+- Reviewed alert recall and alert precision use only their stated scored alert denominators. They are not full-cohort clinical performance when coverage is incomplete.
+- Negative-run false-positive rate = reviewed negative-control runs containing any extra alert / reviewed negative-control runs. It does not mix alert counts with encounter counts; no reviewed negative denominator means null.
+- Critical misses are known critical IDs missed in reviewed/failed runs; unreviewed/missing records remain unknown.
+- coverage_complete requires every case/repeat to be recorded, reviewed and not provider-failed. CLI exit 0 means review-record coverage is complete, NOT that performance is good or the product is clinically safe. No release threshold is implemented.
+
+Actual verification in this environment: full suite 416 Python tests passed (two existing dependency warnings, 25.43s), 11 Node26/jsdom harness files passed (9.91s), diff check passed. The synthetic adjudication unit fixtures test arithmetic and validation; these numbers are not measured clinical alert performance. ANTHROPIC_API_KEY, explicit VOICE_EXAM_CLAUDE_MODEL and GEMINI_API_KEY are absent; no local Chromium/Chrome/Firefox or Python Playwright was available. Actual --live --limit5 --repeat5 --max-calls25 stopped with missing_provider_configuration/model_calls=0. The template scoring command rejected unapproved records with zero model calls. No real browser/microphone/provider or clinician-approved gold measurement completed. The 100+ adjudicated case set is still required and cannot be manufactured by relabelling synthetic developer tests.
