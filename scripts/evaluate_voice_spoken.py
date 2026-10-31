@@ -45,10 +45,10 @@ def validate_cases(cases):
             raise ValueError('invalid_case_id')
         seen.add(ident)
         turns = case.get('dialogue')
-        if not isinstance(turns, list) or not 2 <= len(turns) <= 6:
+        if not isinstance(turns, list) or not 2 <= len(turns) <= 12:
             raise ValueError('invalid_dialogue_length')
         for turn in turns:
-            if not isinstance(turn, dict) or turn.get('speaker') not in {'Hasta', 'Hekim', 'Ebeveyn'} or not isinstance(turn.get('text'), str) or not turn['text'].strip():
+            if not isinstance(turn, dict) or turn.get('speaker') not in {'Hasta', 'Hekim', 'Asistan', 'Ebeveyn'} or not isinstance(turn.get('text'), str) or not turn['text'].strip():
                 raise ValueError('invalid_dialogue_turn')
         groups = case.get('required_any')
         forbidden = case.get('forbidden')
@@ -60,7 +60,8 @@ def validate_cases(cases):
             if set(group) <= set(forbidden):
                 raise ValueError('contradictory_expectations')
             topics.update(group)
-            branches.update(topic.split('.')[0] for topic in group)
+            # Supported legacy IDs are public phrases, not branch prefixes.
+            branches.update(topic.split('.')[0] for topic in group if '.' in topic)
         if any(not isinstance(topic, str) or topic not in known for topic in forbidden):
             raise ValueError('invalid_forbidden_topic')
         for key in ('required_clinician_quotes', 'forbidden_clinician_quotes'):
@@ -74,6 +75,7 @@ def validate_cases(cases):
     if not branches <= set(BRANCH_LABELS):
         raise ValueError('unknown_branch')
     return {'cases': len(cases), 'branches': len(branches), 'expected_topics': len(topics),
+            'legacy_expected_topics': sum('.' not in topic for topic in topics),
             'required_groups': sum(len(case['required_any']) for case in cases),
             'uncertainty_cases': sum(bool(case.get('requires_uncertainty')) for case in cases)}
 
@@ -202,6 +204,7 @@ def evaluate_repeated(cases, extract, *, repeat=1):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--fixture', type=Path, default=FIXTURE_PATH, help='Synthetic case JSON; default is the original spoken fixture.')
     parser.add_argument('--live', action='store_true', help='Explicitly call the production extractor (provider cost applies).')
     parser.add_argument('--limit', type=int, default=5, help='Maximum live cases; default 5.')
     parser.add_argument('--case', action='append', default=[], help='Select a case ID; repeat to select several.')
@@ -211,7 +214,7 @@ def main(argv=None):
     def emit(data):
         print(json.dumps(data, ensure_ascii=False, sort_keys=True))
     try:
-        cases = load_cases()
+        cases = load_cases(args.fixture)
         inventory = validate_cases(cases)
     except (ValueError, TypeError, KeyError, OSError):
         emit({'failure_categories': ['invalid_fixture']})
