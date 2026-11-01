@@ -18,6 +18,7 @@ from app import voice_exam_review_provider as provider
 from app.voice_drug_names import supported_search_term
 from app.voice_exam_literature import TOPICS, TOPIC_LABELS, TOPIC_SEARCHES
 from app.voice_exam_taxonomy import MAX_TOPICS, TOPIC_REGISTRY
+from app.voice_exam_professional import DOCUMENTS, TOPIC_DOCUMENTS
 from app.voice_source_pool import BoundedPool
 
 ALLOWED_DOMAINS = (
@@ -36,12 +37,17 @@ lidocaine hydrochloride|lidokain|metronidazol|metronidazole|parasetamol|warfarin
 warfarin sodium|clarithromycin|erythromycin|azithromycin|simvastatin|atorvastatin|
 rosuvastatin|apixaban|rivaroxaban|dabigatran|clopidogrel|alendronate|denosumab|
 zoledronic acid|ibandronate|risedronate|aspirin|naproxen|metformin|insulin'''.replace('\n', '').split('|'))
-_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v4'
+_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v5'
 _PROMPT = """Research public dental concepts using native web search and web fetch.
 This is public literature research, not clinical patient analysis. Inputs contain
 only server-owned public topic concepts and validated generic drug spelling
 hypotheses. Choose useful search text and source URLs from those concepts.
 Prefer HTML documents; fetch and read sources, do not rely on search snippets.
+For mapped topics, professional_start_urls are server-owned starting pages.
+Try the relevant professional starting page before searching journal case reports.
+These URLs are discovery hints, not evidence until fetched; inspect their actual
+scope and seek more specific guidance if needed. Do not bypass access challenges.
+If a page is blocked, use another allowed professional source or report a gap.
 Use only the allowed public domains. Prioritize professional guidance; distinguish
 patient information and unassessed journal articles. Prefer the latest applicable
 version of official guidance when its status is available; do not equate a fetch
@@ -79,8 +85,12 @@ def _public_input(topics, requests):
     for ident in sorted(selected):
         row = TOPIC_REGISTRY.get(ident, {})
         query = TOPIC_SEARCHES.get(ident, ident)
+        document_urls = {document[0]: document[3] for document in DOCUMENTS}
+        starts = [document_urls[key] for key in TOPIC_DOCUMENTS.get(ident, ())
+                  if key in document_urls and _valid_url(document_urls[key])][:2]
         concepts.append({'id': ident, 'label': TOPIC_LABELS[ident],
-                         'scope': row.get('scope', query), 'query': query})
+                         'scope': row.get('scope', query), 'query': query,
+                         'professional_start_urls': starts})
     terms, unverified = set(), False
     for item in requests[:MAX_TOPICS] if isinstance(requests, list) else []:
         if not isinstance(item, dict):
@@ -144,6 +154,16 @@ def _literal_excerpts(text, citations, budget):
     return chunks
 
 
+def _access_blocked(title, text):
+    """Recognize known interstitial titles, not article mentions of CAPTCHAs."""
+    title = ' '.join(str(title or '').split()).casefold().strip(' .!…')
+    if title in {'checking your browser', 'checking your browser - recaptcha',
+                 'just a moment', 'access denied', '403 forbidden', '404 not found',
+                 'page not found', 'verify you are human'}:
+        return True
+    return text[:400].casefold().lstrip().startswith('checking your browser before accessing ')
+
+
 def _parse_documents(messages, calls, unavailable):
     references, seen, budget = [], set(), 40000
     # Native fetch citations address document order, not URLs. Gather citations
@@ -183,6 +203,9 @@ def _parse_documents(messages, calls, unavailable):
             text = source.get('data')
             if not isinstance(text, str) or not text.strip() or len(text) > 512000:
                 unavailable.append('web-fetch-gap:empty-or-oversized-document')
+                continue
+            if _access_blocked(document.get('title'), text):
+                unavailable.append('web-fetch-unavailable:access-blocked')
                 continue
             if url in seen or len(references) >= 6 or budget <= 0:
                 continue
