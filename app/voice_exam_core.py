@@ -670,7 +670,7 @@ def extract(*, data=None, mime=None, transcript=None, context=None, transcriptio
             logging.getLogger(__name__).warning('voice_extract outcome=provider_or_parse_failure http_status=%d error_type=%s duration_ms=%d',
                 status, type(exc).__name__, (time.monotonic()-started)*1000)
             if stage == 'clinical':
-                raise VoiceError('Klinik metin değerlendirmesi tamamlanamadı. Görüşme metni korunuyor; yeniden deneyebilirsin.') from None
+                raise VoiceError('Klinik metin değerlendirmesi tamamlanamadı. Görüşme taslağını kontrol edip yeniden deneyebilirsin.') from None
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
