@@ -115,6 +115,28 @@
 
 .voice-wave i{transform:scaleY(var(--voice-level,.15));transition:transform 100ms linear}
 
+/* Final review follows the selected compact summary reference. */
+.voice-exam .voice-summary-card{border:1px solid #dce4ed;border-radius:16px;background:#fff;margin:12px 0;padding:0;overflow:hidden}
+.voice-exam .voice-summary-card>summary{display:flex;align-items:center;gap:12px;padding:18px 16px;min-height:24px;cursor:pointer;font-size:16px;font-weight:700;color:#10263e;list-style:none}
+.voice-exam .voice-summary-card>summary::-webkit-details-marker{display:none}
+.voice-exam .voice-summary-card>summary:after{content:'⌄';font-size:24px;line-height:1;margin-left:auto;flex-shrink:0}
+.voice-exam .voice-summary-card[open]>summary:after{content:'⌃'}
+.voice-exam .voice-summary-card[open]>summary{border-bottom:1px solid #e3e8ef}
+.voice-exam .voice-summary-card>summary:focus-visible,.voice-exam .voice-source-evidence>summary:focus-visible{outline:3px solid #91b4dc;outline-offset:-3px}
+.voice-exam .voice-summary-count{margin-left:auto;background:#eef2f8;border-radius:13px;min-width:32px;padding:5px 7px;box-sizing:border-box;text-align:center;font-size:14px;color:#40536e}
+.voice-exam .voice-summary-card:has(.voice-summary-count)>summary:after{margin-left:0}
+.voice-exam .voice-summary-card>article{margin:0 16px;padding:18px 0}
+.voice-exam .voice-summary-card>p{padding:0 16px;font-size:13px;line-height:1.6}
+.voice-exam .voice-summary-card>p:last-child{padding-bottom:14px}
+.voice-exam .voice-control-tag{display:inline-block;background:#fff0d0;color:#8a5700;border-radius:9px;padding:4px 9px;font-size:12px;margin-bottom:12px}
+.voice-exam .voice-card-label{display:block;margin-top:14px;color:#64748b;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.voice-exam .voice-source-evidence{border-top:1px solid #e3e8ef;margin-top:18px;padding-top:14px}
+.voice-exam .voice-source-evidence>summary{min-height:30px;cursor:pointer;color:#1d4ed8;font-weight:600;font-size:14px}
+.voice-exam .voice-source-evidence>p{white-space:pre-wrap;overflow-wrap:anywhere}
+.voice-exam .voice-record-fields>div,.voice-exam .voice-record-fields>fieldset,.voice-exam .voice-record-fields>details,.voice-exam .voice-record-fields>h4{margin-left:16px;margin-right:16px}
+.voice-exam .voice-final-review{background:transparent;border:0;padding:0}
+.voice-exam .voice-review-heading p{font-size:14px}
+
 body:has(.voice-session-page){background:#f0f7fc}
 body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bottom-nav{display:none!important}
 .voice-session-page{background:#fff;border-radius:26px;padding:26px 12px 12px;box-sizing:border-box}

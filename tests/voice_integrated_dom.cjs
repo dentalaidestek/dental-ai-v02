@@ -34,7 +34,7 @@ async function fixture(){
     else if(url.endsWith('/finalize')){
       if(sourceMode==='failure')body={ok:false,error:'Synthetic source outage'};
       else if(sourceMode==='unchanged')body={ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}};
-      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
+      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode==='cards'?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode==='cards'?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
     return {ok:body.ok,json:async()=>body};
@@ -120,6 +120,30 @@ async function fixture(){
     const saved=f.calls.find(c=>c.url.endsWith('/apply')).body;
     assert.equal(Object.keys(saved.fields).some(k=>k.startsWith('clinician_')),false);
     assert.equal(JSON.stringify(saved).includes('Bu işlem kesin risksizdir.'),false);
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('cards');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
+    const results=f.get('[data-voice-final-results]');
+    const clinical=Array.from(results.children).find(el=>el.querySelector('summary')?.textContent.includes('Klinik bulgular'));
+    assert.ok(clinical?.tagName==='DETAILS','Clinical summary must be a native collapsible card');
+    assert.equal(clinical.open,false);clinical.querySelector('summary').click();assert.equal(clinical.open,true);
+    assert.equal(clinical.querySelector('small'),null,'Identical summary/dayanak must not be printed twice');
+    const evidence=results.querySelector('.voice-source-evidence');
+    assert.ok(evidence,'Every clinical control must expose its own source and literal passage');
+    assert.equal(evidence.open,false);evidence.querySelector('summary').click();assert.equal(evidence.open,true);
+    assert.ok(evidence.textContent.includes('Literal document passage.'));
+    assert.equal(evidence.querySelector('a').href,'https://www.ada.org/example');
+    const record=f.get('[data-voice-record-fields]');
+    assert.equal(record.tagName,'DETAILS');assert.equal(record.open,false);
+    assert.ok(record.contains(f.get('[data-voice-fields]')));
+    assert.ok(results.compareDocumentPosition(record)&f.w.Node.DOCUMENT_POSITION_FOLLOWING,'Record choices follow the review');
+    assert.ok(results.textContent.includes('Koşullu klinik kontrol.'));
+    assert.ok(results.textContent.includes('Malzeme bilinmiyor.'));
+    record.querySelector('summary').click();f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
+    await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'card layout preserves approved save');
+    assert.equal(f.calls.filter(c=>c.url.endsWith('/finalize')).length,1,'Opening cards must not call the model again');
+    assert.deepEqual(f.errors,[]);
   }finally{f.close()}
   f=await fixture();
   try{
