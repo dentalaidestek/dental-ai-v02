@@ -151,3 +151,10 @@ Canlı denemeler çıkarım isteğindeki strict uyumsuzluğunu, yanlış aşama 
 İki ek kimliksiz sentetik metin muayenesi gerçek Claude ve gerçek kaynaklarla tamamlandı: aktif hastane ilacı günlük hap yokluğuyla silinmedi; gelecekteki çekim/implant tamamlanmış işlem sayılmadı. AAE/NHS ve EFP kaynakları gösterildi; her iki sonuç kısmi kapsamlı. Canlıda hekimin belirsiz “adını koymayalım” ifadesinin ilaç adı diye paraphrase edilmesi yakalandı. RED/GREEN regresyonla clinician_response için doğrulanmamış yeniden anlatım kaldırılıp birebir yanıt korundu. 461 Python ve11 Node testi geçti; bağımsız74 odaklı testte engel yok. Yeni düzeltmenin canlı tekrarı ayrıca doğrulanmalı.
 
 Açık kalan önemli bulgular: 47 dişindeki dolgunun “yanında” diye yeniden anlatılması; implant sonrası iyileşme kaynağının çekim sonrası planla hatalı ilişkilendirilmesi. Literal alıntı doğrulaması klinik uygulanabilirlik doğrulaması değildir. 24 vaka/5 tekrar, gerçek mikrofon, hekim onaylı altın set ve pozitif kayıt akışı tamamlanmış sayılmaz. Ayrıntılı tablo ve UTC log özeti: docs/voice_live_validation_2026-11-01.md.
+
+
+### Seçilmiş özet görseli — düzen farkı ve dar arayüz iyileştirmesi
+
+Önceki örnek resim gerçek canlı sentetik sonuçla karşılaştırıldı: açılır kart düzeni yoktu, özet/dayanak tekrarları ve üstte uzun kayıt formu vardı. Native açılır kartlar/sayılar, ayrı dayanak/eksik bilgi/öneri, kontrol başına kaynak alıntısı ve değerlendirme sonrası açılır kayıt bölümü eklendi. Kaynak eksikliği uyarısı ve açık hekim kayıt onayı korundu. RED/GREEN entegre panel testi ve11 Node dosyası geçti; gerçek yeni ekran dağıtım sonrası ayrıca doğrulanmalı. Ayrıntı docs/voice_live_validation_2026-11-01.md.
+
+#224 iletişim düzeltmesi18:03:28 İstanbul'da live oldu. Aynı vaka tekrarında aktif ilaç korundu fakat yalnız arka plan yayını bulunabildi; final sources1/accepted0. Önceki AAE kaynaklı sonucun tutarlı biçimde tekrarlandığı söylenemez. Kaynak uygulanabilirliği ve klinik alan paraphrase kusurları hâlâ açık.
