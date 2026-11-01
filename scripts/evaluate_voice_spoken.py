@@ -45,7 +45,7 @@ def validate_cases(cases):
             raise ValueError('invalid_case_id')
         seen.add(ident)
         turns = case.get('dialogue')
-        if not isinstance(turns, list) or not 2 <= len(turns) <= 12:
+        if not isinstance(turns, list) or not 2 <= len(turns) <= 48:
             raise ValueError('invalid_dialogue_length')
         for turn in turns:
             if not isinstance(turn, dict) or turn.get('speaker') not in {'Hasta', 'Hekim', 'Asistan', 'Ebeveyn'} or not isinstance(turn.get('text'), str) or not turn['text'].strip():
