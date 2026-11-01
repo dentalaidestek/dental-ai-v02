@@ -111,7 +111,7 @@ async function fixture(){
   f=await fixture();
   try{
     f.setMode('clinician');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
-    assert.ok(f.get('[data-voice-final-results]').textContent.includes('Hekime atfedilen klinik ifadeler'));
+    assert.ok(f.get('[data-voice-final-results]').textContent.includes('Hekimin ifadeleri'));
     assert.ok(f.get('[data-voice-final-results]').textContent.includes('Kaynak doğrulaması tamamlanmadı'));
     assert.equal(f.get('[data-voice-communication]').textContent.includes('undefined'),false);
     assert.equal(f.calls.find(c=>c.url.endsWith('/finalize')).body.insights[0].category,'CLINICAL_STATEMENT');

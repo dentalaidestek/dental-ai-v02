@@ -1,0 +1,163 @@
+{
+  "synthetic": true,
+  "clinical_gold_standard": false,
+  "runtime_commit": "664cc917e0d488b341d7079ba86359317969395d",
+  "notes": "Live UI field/transcript snapshots, before subject/plan guard patch; no clinical record approved. eSpeak synthetic stress is not human audio accuracy. Final-source prose omitted; see report for observations.",
+  "runs": [
+    {
+      "case": "bone",
+      "mode": "synthetic_audio",
+      "asr_text": "Hocam merhaba. Geçen sefer çekilen yer var ya, bir türlü toparlamadı. Dilim oraya gidip duruyor, sivri bir şey geliyor elime değil mi. Biraz yavaş gidelim, hangi taraftan bahsediyorsunuz? Bir de ne zamandır böyle? Çekim ben hemen sonra mı başladı, yoksa sonradan mı fark ettiniz? Sol tarafta, tam gününü sayamam ama iki ay geçti, belki üç aya yaklaşıyor. Önce normal bir diye bekledim, sonra içime dert oldu. Hocam hastanın eski çekim tarihi burada görünmüyor, başka yerde yaptırmış. Hangi diş olduğunu da kendi dosyasından teyit etmemiz gerekecek. Yemek yerken bazen sızlıyor. Gün çok ağrımadı diye iyileşti saymayın, o açık hala duruyor. Bazen azıma kötü bir tat da geliyor. Tamam. Ağrı olmaması yaranın kapanmasını aynı şey saymayalım. Hastanede görürsünüz bir tedavi, arada apikal iney veya serum var mı?\nBen her gün hap içemiyorum hocam. Yalnız kanser için hastanede kemoterapi diye bir ilaç veriyorlar. Adını şimdi çıkaramadım. Telefonunuzdaki reçeteyle birlikte bakabilir miyiz? Hastanede verilen ilacın bölümünü açabilirsek hocam oradan görür. Telefonumun şarjı bitmek üzere. Kızım biliyor. Sonra fotoğrafını gönderir. E-miser um diyorum. Koldan veriliyor ama nasıl yazıldığını bilmiyorum. İlacın adını kaç araya yapıldığını ve en son ne zaman verildiğini hastane listesinden buluverelim. Şimdilik bir ilaç adı tahmini yapmayalım. Geçen ay bittim. Bir sonraki randevum da var. Tedavi bitti mi miyorum yani? Ne var mı diyor? Tarihini de söyleyeyim. Kızıma sorup netleştireyim. Benim de gece dişim sızlıyor hocam. Sabahçın yorulmuş kalkıyorum. Neyse siz inceleyin ilgili söyleyebiliriz, buyurun.\nSizi ama doğru. Hastamızı hekim yedi inceleyeceğiz. Hasta ne de yapılan bu tedavide kullanılan ağrı kesici, vitamin veya başka bir şey var mı? Başka günlük hap yok. Bazen ağrı kesiciden aldım ama kutuyu getirmedim. Adını da söyleyemeyim. Hastanedeki olay ki se devam ediyor. Arada ağrı kesicinin kutusunu da getirin. En iyisi olur. Hastanede yapılan tedavinin listesi için kurumuzdan haber verelim mi? Daha önce bir ilaçtan sonra nefes darlığı, şişme veya döküntü oldu mu? Alerji olarak bildiğiniz bir şey var mı? Bildiğim bir ilaç alerjim yok ama her ilacı kullandığım demek istemiyorum. Daha önce böyle bir şey başıma gelmedi diye söylüyorum. Anladım. Konserleri için kuruya hasta kaydından kuralım. Baş ve boyun bölgesi neşünte tavsiyesi aluruz mu? Bunu biliyor musunuz?\nDaha önce yapıldığını hatırlamıyorum ama kesin konuşmayayım. Tedavisini karıştırıyorum. Hastaneden liste isteyelim. Ben kızım birlikte kontrol edelim. Bir saniye hocam, telefon çalıyor, kapatıyorum. Siz devam edin. Hastaneye sorulacak bilgileri kağıda yazıyorum. Hasta eve götürsün. Bir de korkuyorum açıkçası, yine kesip biçecek misiniz hemen? Ücreti de baştan bilmek isterim. Bugün hazırlıklı gelmedim. Bugün önce bakın nedir büyümüzü konuşacağız. Yapılacak bir işlem düşünürsek nedenini seçenekleri ve ücretini anlatmadan başlamayacağız. İstediğiniz yerde durabiliriz. İyi oldu bunu söylemeniz. Ben ilacı kendim bırakayım diye düşünüyordum ama hastanede ki doktoruma sormadan bir şey değiştirmeyim o zaman. Hastanede verilen tedaviyi kendi kendinize değiştirmeyin. İlgili doktorla birlikte yer değiştirelim. Burada ki açıkta anı görmeden kesin bir hasta lük adı koymayalım.\nTamam hocam, ilaç listesini getireyim de göreyim. Hastamızın muayenesi olsun, sonra ne gerekiyorsa konuşuruz. Tamam, bugün önce bakıp konuşacağız. Kızım ilaç listesini ve hastane tarihlerini getirsin, sonra birlikte karar vereceğiz. Olası risk nedenini de öğrenmek istiyorum.",
+      "asr_sha256": "db5092d3e930a3412bb0c9466280a5b0f78faa6a4b049924b751a6fe0b28b365",
+      "fields": [
+        {
+          "field": "chief_complaint",
+          "quote": "Konuşmadaki dayanak: Geçen sefer çekilen yer var ya, bir türlü toparlamadı. | Sol tarafta, tam gününü sayamam ama iki ay geçti, belki üç aya yaklaşıyor. | Yemek yerken bazen sızlıyor. | Bazen azıma kötü bir tat da geliyor. | o açık hala duruyor | Benim de gece dişim sızlıyor hocam.",
+          "value": "Güncel: Geçen sefer çekilen yerde iyileşmeme; sol taraf, yaklaşık iki-üç ay süre, yemekte bazen sızlama, bazen kötü tat\nGüncel: Sol tarafta çekim sonrası bölge yaklaşık iki ay geçmiş, belki üç aya yaklaşıyor\nGüncel: Yemek yerken bazen sızlama\nGüncel: Azıda bazen kötü tat\nGüncel: Açıklık/yara alanının hâlâ durduğu bildirildi\nGüncel: Gece diş sızlaması"
+        },
+        {
+          "field": "medical_history",
+          "quote": "Konuşmadaki dayanak: Yalnız kanser için hastanede kemoterapi diye bir ilaç veriyorlar. | hastanın eski çekim tarihi burada görünmüyor, başka yerde yaptırmış",
+          "value": "Güncel: Kanser tedavisi için hastanede kemoterapi verilmesi\nGeçmiş: Önceki çekim hastanın başka bir yerde yaptırdığı işlem; eski çekim tarihi burada görünmüyor"
+        },
+        {
+          "field": "medications",
+          "quote": "Konuşmadaki dayanak: Koldan veriliyor ama nasıl yazıldığını bilmiyorum. | İlacın adını kaç araya yapıldığını ve en son ne zaman verildiğini hastane listesinden buluverelim. | Geçen ay bittim. | Ben her gün hap içemiyorum hocam. | Başka günlük hap yok. | Bazen ağrı kesiciden aldım ama kutuyu getirmedim.",
+          "value": "Güncel: Koldan veriliyor ama nasıl yazıldığını bilmiyorum.\nBelirsiz: İlacın adını kaç araya yapıldığını ve en son ne zaman verildiğini hastane listesinden buluverelim.\nGeçmiş: Geçen ay bittim.\nOlumsuz beyan: Ben her gün hap içemiyorum hocam.\nOlumsuz beyan: Başka günlük hap yok.\nGeçmiş: Bazen ağrı kesiciden aldım ama kutuyu getirmedim."
+        },
+        {
+          "field": "allergies",
+          "quote": "Konuşmadaki dayanak: Bildiğim bir ilaç alerjim yok | Daha önce böyle bir şey başıma gelmedi diye söylüyorum.",
+          "value": "Olumsuz beyan: Bilinen ilaç alerjisi yok; daha önce ilaçtan nefes darlığı, şişme veya döküntü olmadığını belirtiyor\nOlumsuz beyan: Daha önce ilaçtan nefes darlığı, şişme veya döküntü yaşamadığını söylüyor"
+        },
+        {
+          "field": "clinical_findings",
+          "quote": "Konuşmadaki dayanak: Hastamızın muayenesi olsun, sonra ne gerekiyorsa konuşuruz.",
+          "value": "Planlanan: Muayene henüz yapılmadı; bulgu kaydı yok"
+        },
+        {
+          "field": "plan",
+          "quote": "Konuşmadaki dayanak: Kızım ilaç listesini ve hastane tarihlerini getirsin, sonra birlikte karar vereceğiz. | Bugün önce bakın nedir büyümüzü konuşacağız. | Bir sonraki randevum da var.",
+          "value": "Planlanan: Hastane kayıtlarındaki kemoterapi ilacı ve tarih bilgilerinin hastane listesinden alınması\nPlanlanan: Muayene sonrası gerekirse işlem planı; bugün önce bakılıp konuşulacak\nPlanlanan: Bir sonraki randevu var; tarihi hasta sonra paylaşacak"
+        }
+      ],
+      "teeth": "",
+      "appointment": "",
+      "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+    },
+    {
+      "case": "crown",
+      "mode": "synthetic_audio",
+      "asr_text": "Hocam geçen akşam yemek yerken ağzıma sert bir şey geldi. İlkan da dişim kırıldı sandım. Meğer üstteki kaplama çıkmış, peçeteye koyup getirdim. Kaplama burada, kutuya koyuyorum. Hastanın getirdiği parça bu hocam, yeni bir parça düşmedi, masanın üstündekini gösteriyorum. Şu an nefes almada, yutkunmada sorun var mı? O sırada öksürük veya bir şey için niye kaçırmış gibi bir durum oldu mu? Yok hocam, yutmadım. Elimde zaten. Nefesimde bir değişiklik yok. Eşim de oradaydı, hemen peçeteye koyduk. Ben sadece alttaki dişi açıkta kaldı diye korktum. Tamam. Önce alttaki dişe ve bu kaplamaya bakacağız. Sağ alttaki kırk altı numaralı diş diye not alıyorum. Bir dakika yerinde tekrar kontrol edeyim. Hocam hasta arkadaki dişi gösteriyor. Kırk yedi olabilir mi? Kırk altının üstünde eski dolgu var diye önce ki lotta bir şey görmüştüm ama teyit edelim.\nGüzel diyorum. Çürük kaplama kırk yedi numaralı dişe ait. Kırk altı dememiştin. Kırk altı da eskiden mevcut. O diş de bugün yeni dolgu yapmadık. Ben numaralarını bilmiyorum hocam. Şu arkadaki boşluk işte. Soket ince hafif ürperiyor ama genellikle ondan bir ağrı olmadı. Kırk yedi diyen güzel tim hocam. Getirdiği is kaplama yukarıda kalmasın diye küçük kutuda tutuyorum. Siz çıkarken unutmayalım. Bu parçanın tekrar kullanılıp kullanılmayacağına bakmadan yapıştıracağım diyelimiz. Alttaki dişin durumu da kontrol edeceğiz. Konuşmadan kesintide davet çıkmıyor alayım. Yanibi bugün plaka çekileceksin. Arkadaşım kaplama çıktığı saati belirtti. Ben bu yüzden bütün gece kafa yattım. Arkadaşın uzun süre di ile çekim karar vereceğiz. Henüz kırk yedi için çekim karar vermedik.\nbenim bebek kaplamam çıkmıştı, çok panik olmuştum sonra başka işlem gerekmemişti ama sizinki doktorumuz bakınca belli olur tabii. Bir de ben çalışan biriyim, haftaya şehir dışına çıkacağım. Bugün ne yapılacağını ve kaç seans olacağını bilirsem ona göre ayarlayayım. Süreye ve ücrete muayeneden sonra konuğumuz seçeneğe göre açıklayacağım. Bugün sizin kabul etmediğiniz bir işlemli başlanmayacağız. İyi o zaman önce bakalım. İmplant için de sitem yapmıyoruz değil mi? Çevremde herkes bir şey söylüyor, kafam karıştır. Bugün implant yapılmadı. Böyle bir karar da verilmedi. Dişin koruma yapıldıktan sonra gerekirse seçeneğin derhal verebiliriz. Yüründen sonra bir boşluk var hocam. Kontrol randevusu ayarlamak ister misiniz? Yok, muayeneden sonra konuşalım.\nYarın kesin geleceğim. Önce bugün de geleceğinizi anlayayım, sonra başka bir gün için bakarız. Şimdiden randevu yazmayın lütfen. Tamam, yarın için anlaşmadık. Bugün inceleme var. Çekim veya implant gerekip gerekmediğini henüz bilmiyoruz. Düzenli kullandığım bir ilaç yok, bildiğim alerjim de yok. Ama geçen ay bir antibiyotik kullanmıştım, bitti. Adını kutudan bulmam lazım. Geçen ay kullandığınız ilacın kutusunu, buradaysa fotoğrafını da getirebilirsiniz. Şimdilik adını boş bırakalım, yanlış bir şey yazmayalım. Şimdi getirdiğiniz parçayı ve köprüyü inceleyelim. Ücret ve süre sorununuz duruyor. Seçeneği belirleyip ikisini de açıkça konuşacağız. Tamam hocam, benim anladığımı yine kontrol edeceğiz. Kaplama elimizde, yutma gibi bir şey olmadı. Yarın için de şimdilik randevum yok.",
+      "asr_sha256": "29b06dc9215fd148e7addda4631bc87d80e75e70fc7b842eddce81d84b6cb507",
+      "fields": [
+        {
+          "field": "chief_complaint",
+          "quote": "Konuşmadaki dayanak: Hocam geçen akşam yemek yerken ağzıma sert bir şey geldi. İlkan da dişim kırıldı sandım. Meğer üstteki kaplama çıkmış, peçeteye koyup getirdim. | Ben sadece alttaki dişi açıkta kaldı diye korktum. | Soket ince hafif ürperiyor ama genellikle ondan bir ağrı olmadı.",
+          "value": "Geçmiş: Geçen akşam yemek yerken ağızda sert bir şey geldi; üstteki kaplamanın çıktığı belirtildi. Kaplama peçeteye konularak getirildi.\nGüncel: Alttaki dişin açıkta kalması nedeniyle korku yaşandığı belirtildi.\nGüncel: Arka alt bölgede soket çevresinde hafif ürperme; genellikle ağrı olmadığı belirtildi."
+        },
+        {
+          "field": "clinical_findings",
+          "quote": "Konuşmadaki dayanak: Yok hocam, yutmadım. Elimde zaten. Nefesimde bir değişiklik yok. | Hastanın getirdiği parça bu hocam, yeni bir parça düşmedi, masanın üstündekini gösteriyorum. | Güzel diyorum. Çürük kaplama kırk yedi numaralı dişe ait. Kırk altı dememiştin. Kırk altı da eskiden mevcut. | O diş de bugün yeni dolgu yapmadık. | Kırk altının üstünde eski dolgu var diye önce ki lotta bir şey görmüştüm ama teyit edelim.",
+          "value": "Olumsuz beyan: Hasta, yutma veya aspirasyon yaşamadığını ve nefes almada değişiklik olmadığını belirtti; kaplama elde.\nGüncel: Getirilen parça üstteki kaplama olarak tanımlandı; yeni parça düşmediği belirtildi.\nGeçmiş: Çürük kaplamanın 47 numaralı dişe ait olduğu söylendi; 46 üstünde eski dolgu/eski mevcut durum belirtildi.\nOlumsuz beyan: 46 numaralı dişte bugün yeni dolgu yapılmadığı belirtildi.\nBelirsiz: 46 numaralı dişin üstünde eski dolgu olduğu hastanın ilk gözleminde geçti; hekim teyit edilmesini istedi."
+        },
+        {
+          "field": "plan",
+          "quote": "Konuşmadaki dayanak: Önce alttaki dişe ve bu kaplamaya bakacağız. | Alttaki dişin durumu da kontrol edeceğiz. | Henüz kırk yedi için çekim karar vermedik.",
+          "value": "Planlanan: Önce alttaki diş ve kaplama incelenecek; kaplamanın tekrar kullanılıp kullanılmayacağına bakılmadan yapıştırma düşünülebilir.\nPlanlanan: Alttaki diş durumu kontrol edilecek.\nOlumsuz beyan: 47 numaralı diş için çekim kararı henüz verilmedi."
+        },
+        {
+          "field": "medications",
+          "quote": "Konuşmadaki dayanak: Düzenli kullandığım bir ilaç yok, bildiğim alerjim de yok. | Ama geçen ay bir antibiyotik kullanmıştım, bitti. Adını kutudan bulmam lazım.",
+          "value": "Olumsuz beyan: Düzenli kullandığım bir ilaç yok, bildiğim alerjim de yok.\nGeçmiş: Ama geçen ay bir antibiyotik kullanmıştım, bitti. Adını kutudan bulmam lazım."
+        },
+        {
+          "field": "allergies",
+          "quote": "Konuşmadaki dayanak: Düzenli kullandığım bir ilaç yok, bildiğim alerjim de yok.",
+          "value": "Olumsuz beyan: Bildiği alerji olmadığı belirtildi."
+        }
+      ],
+      "teeth": "",
+      "appointment": "",
+      "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+    },
+    {
+      "case": "implant",
+      "mode": "synthetic_audio",
+      "asr_text": "Hocam, sağ üstteki dişin yanında fırçalarken kan görüyorum. Her seferinde çok değil ama tekrarlayınca bir şey oluyor diyeti de bıraktım. Ne zamandır fark ediyorsunuz? Yemek yerken veya durup dururken de oluyor mu? Yoksa yalnız temizlerken mi görüyorsunuz? Üç dört haftadır var. Kanama olmuyor diyecektim ama yanılıyormuşum. Kendi kendine olmuyor. Fırçaya değince oluyor. Tamamen yok demiyorum. Tamam. Fırçaya değdiğini not aldım. Siz anlatırken ben de son kontrolünüzün tarihine bakayım. Burada başka bir kayıt var mı? O bölgede ağrı, şişlik, akut veya kötü tat fark ettiniz mi? Dişin kendisi oynuyor mu? Üstteki parça hareketli gibi geliyor. Belirgin ağrı yok. Kötü bir tat bazen oluyor. Oynuyor mu emin değilim. Dilimle kontrol ettikçe bana öyle geliyor olabilir. Ben sorana kadar ki sen söylemeyeyim.\nBenim de bugün fırçalarken biraz kanadı hocam, fırçayı sert mi bastırıyorum acaba? Hastamızın implant çevresine bakalım. Ne zaman yapıldığını ve son kontrolünüzü hatırlıyor musunuz? Kendi dişinizle üstündeki parçayı da muayene de edelim. Bu implant yaklaşık 5 sene önce yapıldı. Tam tarihini dosyadan bulabilirim. Kontrole uzun süre bir gidemedi. Herhalde bir seneyi geçti ama günü belli değil. Şeker hastasıyız veya düzenli takib edildiyiniz başka bir hastalık var mı? Kullandığınız ilaçlar da örenelim. Varsa ismletiriniz doğrularız. Şeker var diyecetim. Babam da var hocam. Bende tanı yok. Benim ölçüm en son ne çıktı hatırlamıyorum. Ailede var diye kendimde var veyeyim. Babanızdaki hastalıktan bahsediyorsunuz. Anladım. Sizin varsa son tetkik kağıdınızı da sonraki gelişinizde getirebilirsiniz. Tarihini oradan görürüz.\nher gün içtiğim bir ilaç yok bazen vitamin alıyorum ama markasını söylemeyeyim yanlış olur bildiğim ilaç alerjim pe yok sigara kullanmıyor musunuz temizlerken yapıyor sunuz o bölgeye ulaşmak zor mu geliyor bunu suçlamak için değil alışkanlığı anlayabilmek için soruyorum içiyorum günde sekiz on tane oluyor akşam yorgunken fırçalamayı atladığım oluyor araya bir şey sokunca kanunca daha ellemeye başladım o bölge için kullanılan temizlik araçlarını hazırlayayım hocam gösterkene hastamızda tutup deneyebilir başka türlü evde nasıl yapadağını anlamak zor oluyor kanayınca çekinmeli ziyorum önce ne gördüğümüzü açıklayalım size uygun temizlik yöntemini gösterebiliriz sadece bunu anlatarak ne demek isteseydim ya da gitmiş midir hocam kompleks kek misiniz bir arkadaşım kanıyor say implant bitti dedi yenisini yaptıracak param şu an yok\n[anlaşılmadı] implant kaydetmeliyle ilgili muayene edici röntgen çekilmesi filmindeyiz [anlaşılmadı] çeksek ve üretini sonrasını konuşuruz film içinden bakmamızı bekliyorum hocam şimdi önce ki görüntü var mı diye dosyayı açtım yeni ölçüm kısmı henüz boş tamam önce bakın ama az önce ağrım yok dedim diye her şey normal gibi yazılmasın kanal tedavim devam ediyor sadece kendi kendine kanıyor [anlaşılmadı] sorunlu numara bir ney şey saymıyoruz şimdi inceleme planı var temizlik veya başka bir tedavi bugün yapılmış gibi kaydetmeyelim birazdan doktorumuz bakacak sonra kontrol için ne zaman gelebileceğini konuşuruz ücret sorunu da arkamda çıkmadan hatırlatırım bende anladığımı söyleyeyim hemen sütülmesine karar verilmeli önce bakacağız nasıl temizleyeceği mi görmek isterim ücreti de işlemden önce konuşalım",
+      "asr_sha256": "153be6a66267ba65781b88eb8e76fa0eecf043d2000251eba36bd0eec8c1b867",
+      "fields": [
+        {
+          "field": "chief_complaint",
+          "quote": "Konuşmadaki dayanak: Hocam, sağ üstteki dişin yanında fırçalarken kan görüyorum. | Üç dört haftadır var. | Kendi kendine olmuyor. Fırçaya değince oluyor. Tamamen yok demiyorum. | Belirgin ağrı yok. Kötü bir tat bazen oluyor. Oynuyor mu emin değilim. | Dilimle kontrol ettikçe bana öyle geliyor olabilir. | Benim de bugün fırçalarken biraz kanadı hocam, fırçayı sert mi bastırıyorum acaba?",
+          "value": "Güncel: Sağ üst dişin yanında fırçalarken kanama; tekrarlayan, üç dört haftadır; fırçaya değince oluyor, kendiliğinden olmuyor\nGüncel: Üç dört haftadır kanama var\nGüncel: Kanama kendiliğinden olmuyor, fırçaya değince oluyor; tamamen yok değil\nGüncel: Belirgin ağrı yok; bazen kötü tat var; üstteki parçanın hareketli olduğu hissi var, hasta emin değil\nBelirsiz: Hasta, dille kontrol ettikçe hareketli hissettiğini düşünüyor olabileceğini belirtiyor\nGüncel: Bugün fırçalarken biraz kanama oldu (hekim/hasta ifadesi, implant çevresi bölgesi)"
+        },
+        {
+          "field": "medical_history",
+          "quote": "Konuşmadaki dayanak: Şeker var diyecetim. Babam da var hocam. Bende tanı yok. | Benim ölçüm en son ne çıktı hatırlamıyorum. | kanal tedavim devam ediyor sadece kendi kendine kanıyor | içiyorum günde sekiz on tane oluyor | akşam yorgunken fırçalamayı atladığım oluyor | araya bir şey sokunca kanunca daha ellemeye başladım o bölge için | Bu implant yaklaşık 5 sene önce yapıldı. Tam tarihini dosyadan bulabilirim. | Kontrole uzun süre bir gidemedi. Herhalde bir seneyi geçti ama günü belli değil. | bir arkadaşım kanıyor say implant bitti dedi yenisini yaptıracak param şu an yok",
+          "value": "Olumsuz beyan: Diyabet (şeker hastalığı) tanısı yok; hasta babasında şeker hastalığı olduğunu belirtiyor\nBelirsiz: Son ölçüm sonucunu hatırlamıyor\nGüncel: Kanal tedavisi devam ediyor (hasta ifadesi)\nGüncel: Sigara kullanımı: günde sekiz on tane içiyor\nGüncel: Akşam yorgunken fırçalamayı atladığı oluyor; temizlik alışkanlığı düzensiz\nGüncel: Bölgeye fırçalama sırasında daha fazla dokunmaya başladığını belirtiyor\nGeçmiş: Implant yaklaşık 5 yıl önce yapıldı; tam tarihi dosyadan bakılacak\nGeçmiş: Kontrole uzun süre gidilmemiş; yaklaşık bir yıl veya daha fazla, tarih belirsiz\nBelirsiz: Bir arkadaşının implantının bittiği ve yenisinin yapılacağı bilgisi (hastanın kendisine ait değil)"
+        },
+        {
+          "field": "medications",
+          "quote": "Konuşmadaki dayanak: her gün içtiğim bir ilaç yok bazen vitamin alıyorum ama markasını söylemeyeyim yanlış olur",
+          "value": "Güncel: her gün içtiğim bir ilaç yok bazen vitamin alıyorum ama markasını söylemeyeyim yanlış olur"
+        },
+        {
+          "field": "allergies",
+          "quote": "Konuşmadaki dayanak: bildiğim ilaç alerjim pe yok",
+          "value": "Olumsuz beyan: Bildiği ilaç alerjisi yok"
+        },
+        {
+          "field": "clinical_findings",
+          "quote": "Konuşmadaki dayanak: Hastamızın implant çevresine bakalım.",
+          "value": "Planlanan: Hekim implant çevresini muayene etmek ve film çekmek istiyor; muayene ve radyografi sonucu henüz yok"
+        },
+        {
+          "field": "plan",
+          "quote": "Konuşmadaki dayanak: çeksek ve üretini sonrasını konuşuruz | Kendi dişinizle üstündeki parçayı da muayene de edelim. | önce ne gördüğümüzü açıklayalım size uygun temizlik yöntemini gösterebiliriz | şimdi inceleme planı var temizlik veya başka bir tedavi bugün yapılmış gibi kaydetmeyelim birazdan doktorumuz bakacak",
+          "value": "Planlanan: Muayene ve implant kaydı ile ilgili görüntüleme (röntgen) çekilmesi planlanıyor; sonrasında üretim/tedavi konuşulacak\nPlanlanan: Doğal diş ve üstteki parça muayene edilecek\nPlanlanan: Kanama bölgesi için uygun temizlik yönteminin gösterilmesi düşünülüyor; önce bulgu değerlendirilecek\nPlanlanan: İnceleme planı var; temizlik veya başka bir tedavi bugün yapılmış sayılmayacak; doktor bakacak, kontrol zamanı sonra konuşulacak"
+        }
+      ],
+      "teeth": "",
+      "appointment": "",
+      "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+    },
+    {
+      "case": "bone",
+      "mode": "original_role_labelled_text",
+      "fields": [
+        {
+          "field": "chief_complaint",
+          "quote": "Konuşmadaki dayanak: geçen sefer çekilen yer var ya, bir türlü toparlamadı. Dilim oraya gidip duruyor, sivri bir şey geliyor elime değil dilime | Sol alt tarafta. Tam gününü sayamam ama iki ayı geçti, belki üç aya yaklaşıyor. | Yemek değince bazen sızlıyor. Dün çok ağrımadı diye iyileşti sanmayın, o açıklık hâlâ duruyor. Bazen ağzıma kötü bir tat da geliyor.",
+          "value": "Güncel: Sol alt bölgede geçen seferki çekim yerinde toparlanmama, dilin o bölgeye gidip gelmesi, sivri bir his\nGüncel: Sol alt taraf; yaklaşık iki-üç aydır süren şikayet\nGüncel: Yemekle tetiklenen sızlama ve ağızda kötü tat"
+        },
+        {
+          "field": "clinical_findings",
+          "quote": "Konuşmadaki dayanak: o açıklık hâlâ duruyor | Buradaki açık alanı görmeden de buna kesin bir hastalık adı koymayalım.",
+          "value": "Güncel: Çekim yerinde açıklık devam ediyor (hasta beyanı)\nGüncel: Açık alan henüz görülmediği için hastalık tanısı konulmadı"
+        },
+        {
+          "field": "medical_history",
+          "quote": "Konuşmadaki dayanak: Yalnız kanser için hastanede kemikler güçlensin diye bir ilaç veriyorlar, adını şimdi çıkaramadım. | Bana ışın yapıldığını hatırlamıyorum ama kesin konuşmayayım, tedavi isimlerini karıştırıyorum. | Benim de geceleri diş sıktığım oluyor hocam, sabah çenem yorulmuş kalkıyorum.",
+          "value": "Güncel: Kanser tedavisi görüyor; hastanede kemik güçlendirici olduğu ifade edilen bir ilaç veriliyor\nBelirsiz: Baş-boyun bölgesine ışın tedavisi alıp almadığı bilinmiyor\nBelirsiz: Geceleri diş sıkma (asistan tarafından belirtildi; hasta öyküsü değil)"
+        },
+        {
+          "field": "medications",
+          "quote": "Konuşmadaki dayanak: Hastanede gördüğünüz bir tedavi, arada yapılan iğne veya serum var mı? | Geçen ay gittim, bir sonraki randevum da var. Tedavi bitti demiyorum yani, devam ediyor. | Bazen ağrırsa evdeki ağrı kesiciden aldım ama kutuyu getirmedim, adını yanlış söylemeyeyim. | Başka günlük hap yok.",
+          "value": "Güncel: Hastanede gördüğünüz bir tedavi, arada yapılan iğne veya serum var mı?\nGüncel: Geçen ay gittim, bir sonraki randevum da var. Tedavi bitti demiyorum yani, devam ediyor.\nGüncel: Bazen ağrırsa evdeki ağrı kesiciden aldım ama kutuyu getirmedim, adını yanlış söylemeyeyim.\nOlumsuz beyan: Başka günlük hap yok."
+        },
+        {
+          "field": "allergies",
+          "quote": "Konuşmadaki dayanak: Bildiğim bir ilaç alerjim yok. Ama her ilacı kullandım demek istemiyorum, daha önce böyle bir şey başıma gelmedi diye söylüyorum.",
+          "value": "Olumsuz beyan: Bildiği ilaç alerjisi yok; daha önce ilaca bağlı reaksiyon yaşamadığını söylüyor"
+        },
+        {
+          "field": "plan",
+          "quote": "Konuşmadaki dayanak: Kızım ilaç listesini ve hastane tarihlerini getirsin, sonra birlikte karar verelim.",
+          "value": "Planlanan: Muayene sonrası ihtiyaç halinde konuşma; ilaç listesi ve hastane tedavi tarihleri kızı aracılığıyla istenecek"
+        }
+      ],
+      "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+    }
+  ]
+}

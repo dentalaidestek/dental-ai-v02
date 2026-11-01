@@ -209,6 +209,28 @@ def normalize(result, evidence=None):
     anchor = transcript if evidence is None else evidence
     output = {'transcript': transcript, 'fields': {}, 'teeth': [], 'appointment': None,
               'communication': [], 'decision_barriers': [], 'follow_up_questions': [], 'removed_fields': [], 'removed_teeth': [], 'source_requests': [], 'literature_topics': [], 'removed_literature_topics': [], 'uncertain': _string(result.get('uncertain', ''), 3000)}
+    facts = result.get('clinical_facts', [])
+    if not isinstance(facts, list) or len(facts) > 40:
+        raise VoiceError('Klinik bilgi sınırı aşıldı.')
+    nonpatient_quotes = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        subject = fact.get('subject')
+        if subject is not None and subject not in {'PATIENT', 'OTHER', 'UNKNOWN'}:
+            raise VoiceError('Klinik bilginin kime ait olduğu doğrulanamadı; taslak korunuyor.')
+        if subject in {'OTHER', 'UNKNOWN'}:
+            quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
+            if quote:
+                nonpatient_quotes.append(quote)
+    def nonpatient(quote):
+        return bool(quote) and any(quote in excluded or excluded in quote for excluded in nonpatient_quotes)
+    if nonpatient_quotes:
+        output['uncertain'] = (output['uncertain'] + '\nBaşka kişiye ait veya kime ait olduğu belirsiz bilgi hasta alanlarına alınmadı; konuşmacıyı kontrol edin.').strip()
+    planned_finding_quotes = [appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
+                              for fact in facts if isinstance(fact, dict)
+                              and fact.get('field') == 'clinical_findings'
+                              and fact.get('temporality') == 'PLANNED']
     coaching = result.get('communication', [])
     if not isinstance(coaching, list) or len(coaching) > 8:
         raise VoiceError('İletişim değerlendirmesi doğrulanamadı.')
@@ -274,7 +296,7 @@ def normalize(result, evidence=None):
         for item in values:
             if not isinstance(item, dict): continue
             name = item.get('name'); quote = _string(item.get('quote', ''), 2000)
-            if name in allowed and quote and quote in anchor:
+            if name in allowed and quote and quote in anchor and not nonpatient(quote):
                 output[key].append(name)
     fields = result.get('fields', {})
     if not isinstance(fields, dict):
@@ -285,13 +307,15 @@ def normalize(result, evidence=None):
             continue
         value = _string(item.get('value', ''), 3000)
         quote = appointment_evidence_quote(_string(item.get('quote', ''), 2000), anchor)
-        if value and quote:
+        if value and quote and not nonpatient(quote):
+            if field == 'clinical_findings' and any(planned and (planned in quote or quote in planned) for planned in planned_finding_quotes):
+                output['uncertain'] = (output['uncertain'] + '\nBulgular özeti planla karıştığı için ayrı dayanaklı bilgiler kullanıldı; alanları kontrol edin.').strip()
+                continue
+            if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings'} and quote.rstrip().endswith('?'):
+                continue
             if field == 'age' and (not value.isdecimal() or not 0 <= int(value) <= 120):
                 continue
             output['fields'][field] = {'value': value, 'quote': quote}
-    facts = result.get('clinical_facts', [])
-    if not isinstance(facts, list) or len(facts) > 40:
-        raise VoiceError('Klinik bilgi sınırı aşıldı.')
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
@@ -299,6 +323,16 @@ def normalize(result, evidence=None):
             continue
         quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
         value = _string(fact.get('value', ''), 1000)
+        field = fact['field']
+        if field == 'clinical_findings' and fact['temporality'] == 'PLANNED':
+            # Remap before question filtering: "Film çekelim mi?" is a plan.
+            field = 'plan'
+        if fact.get('subject') == 'PATIENT' and nonpatient(quote):
+            raise VoiceError('Hasta ve başka kişi bilgileri aynı alıntıda çakışıyor. Konuşmacıyı netleştirip yeniden deneyin; taslak korunuyor.')
+        if fact.get('subject') in {'OTHER', 'UNKNOWN'} or nonpatient(quote):
+            continue
+        if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings'} and quote.rstrip().endswith('?'):
+            continue
         if fact['field'] in {'patient_concern', 'clinician_response', 'clinician_statement'}:
             # Transient attribution is never a selectable patient-record fact.
             if quote and value:
@@ -315,12 +349,12 @@ def normalize(result, evidence=None):
                     suggestion = '' if fact['field'] == 'clinician_response' else value
                     output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': suggestion})
             continue
-        if fact['field'] == 'medications':
+        if field == 'medications':
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
             value = quote
         if quote and value:
-            grouped.setdefault(fact['field'], []).append((labels[fact['temporality']] + ': ' + value, quote))
+            grouped.setdefault(field, []).append((labels[fact['temporality']] + ': ' + value, quote))
     for field, items in grouped.items():
         # Include the existing model summary, then every individually grounded fact.
         # Never truncate silently: a too-long field needs explicit clinician review.
@@ -361,7 +395,7 @@ def normalize(result, evidence=None):
         logging.getLogger(__name__).warning('voice_appointment_anchor proposal_present=%d proposal_anchored=%d acceptance_present=%d acceptance_anchored=%d',
             bool(raw_quote), bool(quote), bool(raw_acceptance), bool(acceptance))
         # Keep the utterance, not a model-invented calendar date.
-        if quote and quote in anchor:
+        if quote and quote in anchor and not nonpatient(quote) and not nonpatient(acceptance):
             output['appointment'] = {'quote': quote, 'resolution_status': 'acceptance_missing'}
             if acceptance: output['appointment']['resolution_status'] = 'acceptance_not_anchored'
             if acceptance and acceptance in anchor:
@@ -369,6 +403,8 @@ def normalize(result, evidence=None):
                 resolved = resolve_appointment(quote, acceptance)
                 if resolved:
                     output['appointment'].update(start_at=resolved, acceptance_quote=acceptance, agreed=True, resolution_status='agreed')
+    for key in ('communication', 'decision_barriers', 'source_requests', 'literature_topics', 'removed_literature_topics', 'teeth'):
+        output[key] = [item for item in output[key] if not nonpatient(item.get('quote', ''))]
     return output
 
 
@@ -385,8 +421,9 @@ def schema():
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'clinical_facts': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
             'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern', 'clinician_response', 'clinician_statement']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
+            'subject': {'type': 'STRING', 'enum': ['PATIENT', 'OTHER', 'UNKNOWN']},
             'temporality': {'type': 'STRING', 'enum': ['CURRENT', 'HISTORICAL', 'PLANNED', 'NEGATED', 'UNKNOWN']}},
-            'required': ['field', 'value', 'quote', 'temporality']}},
+            'required': ['field', 'value', 'quote', 'temporality', 'subject']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
         'fields': {'type': 'OBJECT', 'properties': {key: quoted for key in FIELDS}},
         'teeth': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
@@ -402,7 +439,14 @@ Tek bir clinical_extract yanıtı üret. Klinik bilgiyi yalnız clinical_facts i
 fields yalnız first_name, last_name ve age içindir. Yeni transcript veya klinik özet yazma.
 
 CLINICAL_FACTS: konuşmayı baştan sona tara; açıkça belirtilen her klinik bilgiyi koru.
-Her öğe bir bilgi içerir: field, value, quote, temporality. En çok 40 öğe.
+Her öğe bir bilgi içerir: field, value, quote, temporality, subject. En çok 40 öğe.
+subject bilginin KİMİN HAKKINDA olduğunu gösterir; konuşan kişinin rolü değildir.
+PATIENT yalnız bu hastaya ait bilgi, OTHER asistan/hekim/yakın/başka kişinin kendi
+öyküsü, UNKNOWN kime ait olduğu anlaşılamayan bilgidir. İlaç adının bilinmemesi
+subject UNKNOWN demek değildir; ilacı kullanan hasta belliyse PATIENT kalır.
+Başka kişinin öyküsünü "hasta öyküsü değil" açıklamasıyla bile hasta alanlarına koyma.
+Hekimin sorduğu soru cevap değildir; yalnız soru alıntısından hastalık/ilaç/alerji
+varlığı ya da yokluğu çıkartma. Yanıtı dayanaklandır; yanıt yoksa netleştirme sorusu üret.
 field anlamları:
 - chief_complaint: hastanın fiziksel başvuru yakınması, bölge, süre, tetikleyici ve belirtiler.
 - medical_history: hastalık, sistemik öykü, tetkik adı/sonuç/birim/tarih.
