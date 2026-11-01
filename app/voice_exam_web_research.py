@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from app import voice_exam_review_provider as provider
 from app.voice_drug_names import supported_search_term
 from app.voice_exam_literature import TOPICS, TOPIC_LABELS, TOPIC_SEARCHES
-from app.voice_exam_taxonomy import MAX_TOPICS, TOPIC_REGISTRY
+from app.voice_exam_taxonomy import MAX_TOPICS, TOPIC_REGISTRY, discovery_terms
 from app.voice_exam_professional import DOCUMENTS, TOPIC_DOCUMENTS
 from app.voice_source_pool import BoundedPool
 
@@ -37,7 +37,7 @@ lidocaine hydrochloride|lidokain|metronidazol|metronidazole|parasetamol|warfarin
 warfarin sodium|clarithromycin|erythromycin|azithromycin|simvastatin|atorvastatin|
 rosuvastatin|apixaban|rivaroxaban|dabigatran|clopidogrel|alendronate|denosumab|
 zoledronic acid|ibandronate|risedronate|aspirin|naproxen|metformin|insulin'''.replace('\n', '').split('|'))
-_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v5'
+_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v6'
 _PROMPT = """Research public dental concepts using native web search and web fetch.
 This is public literature research, not clinical patient analysis. Inputs contain
 only server-owned public topic concepts and validated generic drug spelling
@@ -91,6 +91,12 @@ def _public_input(topics, requests):
         concepts.append({'id': ident, 'label': TOPIC_LABELS[ident],
                          'scope': row.get('scope', query), 'query': query,
                          'professional_start_urls': starts})
+    for concept in concepts:
+        branch = concept['id'].split('.')[0]
+        if concept['id'].endswith('.general') and any(
+                other['id'].startswith(branch + '.') and not other['id'].endswith('.general')
+                and other['professional_start_urls'] for other in concepts):
+            concept['professional_start_urls'] = []
     terms, unverified = set(), False
     for item in requests[:MAX_TOPICS] if isinstance(requests, list) else []:
         if not isinstance(item, dict):
@@ -139,11 +145,24 @@ def _empty(marker):
             'web_fetch_requests': 0, 'input_tokens': 0, 'output_tokens': 0}}
 
 
-def _literal_excerpts(text, citations, budget):
+def _literal_excerpts(text, citations, budget, terms=()):
     """Every returned chunk remains an exact substring of fetched source text."""
     chunks = []
     candidates = [quote for quote in citations if isinstance(quote, str) and quote.strip() and quote in text]
-    candidates.extend(paragraph.strip() for paragraph in text.split('\n\n') if paragraph.strip())
+    paragraphs = [paragraph.strip() for paragraph in text.split('\n\n') if paragraph.strip()]
+    if terms:
+        # A fetch may contain a long navigation preamble or no blank lines.
+        # Rank only literal windows using server-owned topic vocabulary. This
+        # chooses discovery material, never establishes clinical applicability.
+        windows = [text[start:start + 1800].strip() for start in range(0, len(text), 1400)]
+        ranked = []
+        for chunk in paragraphs + windows:
+            lower = chunk[:1800].casefold()
+            score = sum(term in lower for term in terms)
+            if score:
+                ranked.append((score, chunk))
+        candidates.extend(chunk for score, chunk in sorted(ranked, key=lambda row: row[0], reverse=True))
+    candidates.extend(paragraphs)
     for paragraph in candidates:
         if len(chunks) >= 6 or budget <= 0:
             break
@@ -164,8 +183,13 @@ def _access_blocked(title, text):
     return text[:400].casefold().lstrip().startswith('checking your browser before accessing ')
 
 
-def _parse_documents(messages, calls, unavailable):
+def _parse_documents(messages, calls, unavailable, topic_ids=()):
     references, seen, budget = [], set(), 40000
+    common = {'oral', 'dental', 'dentistry', 'diagnosis', 'management', 'treatment', 'assessment', 'care'}
+    terms = tuple(sorted({term.casefold() for ident in topic_ids if ident in TOPIC_LABELS
+                          for term in (discovery_terms(ident) or
+                                       re.findall(r'[a-z]{4,}', TOPIC_SEARCHES.get(ident, ident).casefold()))
+                          if term.casefold() not in common}))
     # Native fetch citations address document order, not URLs. Gather citations
     # from the entire continuation so later prose can cite earlier fetched text.
     citations = []
@@ -214,7 +238,7 @@ def _parse_documents(messages, calls, unavailable):
                           and type(citation.get('document_index')) is int
                           and citation['document_index'] == document_index)
                       or (citation.get('type') != 'char_location' and citation.get('url') == url)]
-            excerpts = _literal_excerpts(text, quotes, budget)
+            excerpts = _literal_excerpts(text, quotes, budget, terms)
             if not excerpts:
                 unavailable.append('web-fetch-gap:no-literal-excerpt')
                 continue
@@ -303,7 +327,8 @@ def _research(data, deadline):
         history = history + [{'role': 'assistant', 'content': message['content']}]
     if not finished:
         result['unavailable'].append('web-research-unavailable:incomplete-research')
-    result['references'] = _parse_documents(messages, calls, result['unavailable'])
+    result['references'] = _parse_documents(messages, calls, result['unavailable'],
+                                           [topic['id'] for topic in data['topics']])
     if not result['references']:
         result['unavailable'].append('web-research-gap:no-fetched-evidence')
     result['unavailable'] = list(dict.fromkeys(result['unavailable']))
