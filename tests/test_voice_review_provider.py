@@ -32,6 +32,19 @@ def test_text_extraction_failure_is_not_reported_as_audio_transcription(monkeypa
         core.extract(transcript='Sentetik muayene konuşması.')
 
 
+def test_native_research_http_error_has_fixed_stage_diagnostics(monkeypatch, caplog):
+    import app.http_transport as http
+    calls, _ = transport(monkeypatch, {})
+    def reject(*args, **kwargs):
+        raise urllib.error.HTTPError('https://api.anthropic.com/v1/messages', 400, 'Bad Request', {},
+            io.BytesIO(b'{"error":{"message":"tools.1 type web_fetch_20250910 union_tag_invalid PRIVATE SECRET"}}'))
+    monkeypatch.setattr(http, 'urlopen', reject)
+    with pytest.raises(urllib.error.HTTPError):
+        provider.research_message('public policy', {'topics': []}, [])
+    assert 'stage=research' in caplog.text and 'web_fetch_20250910' in caplog.text
+    assert 'PRIVATE' not in caplog.text and 'SECRET' not in caplog.text
+
+
 SCHEMA = {'type': 'OBJECT', 'properties': {'items': {'type': 'ARRAY', 'items': {
     'type': 'OBJECT', 'properties': {'field': {'type': 'STRING', 'enum': ['plan']}},
     'required': ['field']}}}, 'required': ['items']}
