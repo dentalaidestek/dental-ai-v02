@@ -58,6 +58,99 @@ def test_clinician_response_does_not_publish_an_unverified_paraphrase():
     assert not result['fields']
 
 
+def test_planned_examination_is_a_plan_while_current_findings_and_planned_drugs_stay_separate():
+    text = 'Düşen dolguyu inceleyelim. Kırk altıda eski dolgu var. Jeli yarın kullanmayı düşünüyoruz.'
+    facts = [
+        ('clinical_findings', 'Düşen dolgunun incelenmesi', 'Düşen dolguyu inceleyelim.', 'PLANNED'),
+        ('clinical_findings', '46 eski dolgu', 'Kırk altıda eski dolgu var.', 'CURRENT'),
+        ('medications', 'Jel düşünüldü', 'Jeli yarın kullanmayı düşünüyoruz.', 'PLANNED')]
+    result = core.normalize({'transcript': text,
+        'fields': {'clinical_findings': {'value': 'Düşen dolgu incelenecek', 'quote': 'Düşen dolguyu inceleyelim.'}},
+        'clinical_facts': [
+        dict(zip(('field', 'value', 'quote', 'temporality'), row)) for row in facts]})
+    assert result['fields']['plan']['value'] == 'Planlanan: Düşen dolgunun incelenmesi'
+    assert result['fields']['plan']['quote'] == 'Düşen dolguyu inceleyelim.'
+    assert result['fields']['clinical_findings']['value'] == 'Güncel: 46 eski dolgu'
+    assert result['fields']['medications']['value'] == 'Planlanan: Jeli yarın kullanmayı düşünüyoruz.'
+
+
+@pytest.mark.parametrize('subject', ['OTHER', 'UNKNOWN'])
+def test_nonpatient_or_uncertain_subject_cannot_enter_patient_fields_or_source_routes(subject):
+    quote = 'Benim de geceleri diş sıktığım oluyor hocam.'
+    patient = 'Çekilen yer kapanmadı.'
+    result = core.normalize({'transcript': quote + ' ' + patient,
+        'fields': {'medical_history': {'value': 'Asistanın kendi şikâyeti, hasta öyküsü değil', 'quote': quote}},
+        'clinical_facts': [
+            {'field': 'medical_history', 'value': 'Asistanın diş sıkması', 'quote': quote,
+             'temporality': 'CURRENT', 'subject': subject},
+            {'field': 'chief_complaint', 'value': 'Çekim yeri kapanmıyor', 'quote': patient,
+             'temporality': 'CURRENT', 'subject': 'PATIENT'}],
+        'literature_topics': [{'topic': 'temporomandibular disorders diagnosis', 'quote': quote}]})
+    assert 'medical_history' not in result['fields']
+    assert result['fields']['chief_complaint']['value'] == 'Güncel: Çekim yeri kapanmıyor'
+    assert not result['literature_topics']
+    assert result['uncertain']
+
+
+def test_question_is_not_a_current_medication_but_answer_and_conditional_plan_survive():
+    question = 'Hastanede yapılan iğne veya serum var mı?'
+    answer = 'Evet, ayda bir yapılan ilaç devam ediyor.'
+    plan = 'Film çekelim mi?'
+    result = core.normalize({'transcript': ' '.join([question, answer, plan]),
+        'clinical_facts': [
+            {'field': 'medications', 'value': 'Hastane ilacı var', 'quote': question,
+             'temporality': 'CURRENT', 'subject': 'PATIENT'},
+            {'field': 'medications', 'value': 'Tedavi sürüyor', 'quote': answer,
+             'temporality': 'CURRENT', 'subject': 'PATIENT'},
+            {'field': 'plan', 'value': 'Film önerisi', 'quote': plan,
+             'temporality': 'PLANNED', 'subject': 'PATIENT'}]})
+    assert result['fields']['medications']['value'] == 'Güncel: ' + answer
+    assert result['fields']['plan']['value'] == 'Planlanan: Film önerisi'
+
+
+def test_conditional_examination_question_mislabelled_as_finding_is_kept_as_plan():
+    quote = 'Film çekelim mi?'
+    result = core.normalize({'transcript': quote, 'clinical_facts': [{
+        'field': 'clinical_findings', 'value': 'Film önerisi', 'quote': quote,
+        'temporality': 'PLANNED', 'subject': 'PATIENT'}]})
+    assert result['fields'] == {'plan': {'value': 'Planlanan: Film önerisi', 'quote': quote}}
+
+
+@pytest.mark.parametrize('patient_quote,other_quote', [
+    ('Çekim yeri ağrıyor.', 'Çekim yeri ağrıyor. Benim de dişim sızlıyor.'),
+    ('Çekim yeri ağrıyor. Benim de dişim sızlıyor.', 'Benim de dişim sızlıyor.'),
+    ('Çekim yeri ağrıyor.', 'Çekim yeri ağrıyor.')])
+def test_overlapping_patient_and_other_subject_quotes_require_explicit_review(patient_quote, other_quote):
+    text = 'Çekim yeri ağrıyor. Benim de dişim sızlıyor.'
+    with pytest.raises(core.VoiceError, match='çakış'):
+        core.normalize({'transcript': text, 'clinical_facts': [
+            {'field': 'chief_complaint', 'value': 'Hasta yakınması', 'quote': patient_quote,
+             'temporality': 'CURRENT', 'subject': 'PATIENT'},
+            {'field': 'medical_history', 'value': 'Asistanın şikâyeti', 'quote': other_quote,
+             'temporality': 'CURRENT', 'subject': 'OTHER'}]})
+
+
+def test_other_person_cannot_remove_patient_information_or_create_patient_appointment():
+    quote = 'Ben o ilacı bıraktım.'
+    proposal = 'Yarın saat onda geleyim.'
+    answer = 'Tamam, yarın saat onda gelirim.'
+    patient = 'İlacım devam ediyor.'
+    result = core.normalize({'transcript': ' '.join([quote, proposal, answer, patient]),
+        'fields': {'medications': {'value': 'Hasta ilacı sürüyor', 'quote': patient}},
+        'clinical_facts': [
+            {'field': 'medications', 'value': 'Asistan ilacı bırakmış', 'quote': quote,
+             'temporality': 'HISTORICAL', 'subject': 'OTHER'},
+            {'field': 'plan', 'value': 'Asistanın randevusu', 'quote': proposal,
+             'temporality': 'PLANNED', 'subject': 'OTHER'}],
+        'removed_fields': [{'name': 'medications', 'quote': quote}],
+        'removed_literature_topics': [{'topic': 'temporomandibular disorders diagnosis', 'quote': quote}],
+        'appointment': {'quote': proposal, 'acceptance_quote': answer}})
+    assert result['fields']['medications']['value'] == 'Hasta ilacı sürüyor'
+    assert not result['removed_fields']
+    assert not result['removed_literature_topics']
+    assert result['appointment'] is None
+
+
 def test_long_dialogue_does_not_drop_answered_needs_after_eighth_communication_fact():
     quotes = [f'İletişim yanıtı {i}.' for i in range(10)]
     quotes.append('Bugün temizleyeceksiniz, yeni ilaca başlamıyorum.')

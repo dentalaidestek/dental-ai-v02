@@ -166,3 +166,10 @@ Açık kalan önemli bulgular: 47 dişindeki dolgunun “yanında” diye yenide
 ### 1 Kasım — sade başlıklar ve uzatılmış gündelik konuşmalar
 
 Başlıklar “Görüşmeden çıkan bilgiler”, “Kaynaklara göre kontrol edilecekler”, “Hastayla iletişim”, “Netleştirilecek sorular”, “Kaydedilecek bilgiler” olarak sadeleştirildi. Önceki vaka esinli setten3yeni uzun senaryo:74replik, toplam14:52Türkçe yapay ses,13adet90saniye altı bölüm. Gerçek mikrofon/insan sesi değildir. Sesli rol adları okunmaz; beklenen sonuçlar ayrı metadata alanındadır. Fixture doğrulayıcı48repliği destekler,49u reddeder; RED/GREEN sonrası462Python/11Node geçti. Canlı ses testleri henüz bu notla geçmiş sayılmaz; ayrı koşular ve bulgular docs/voice_extended_validation_2026-11-01.md içinde kaydedilir.
+
+
+### Uzun seslerin gerçek üretim testi ve bulunan klinik veri hataları
+
+#22718:39:53 İstanbul'da live oldu. Üç yapay Türkçe ses(5:14/4:43/4:55),13bölüm halinde gerçek Gemini aktarımı ve Claude çıkarım/kaynak/final akışında denendi; bir ASR bölümü ve bir final açık yeniden denemeyle tamamlandı. Aynı26replik özgün rol etiketli metin de karşılaştırıldı. ASR kritik ilaç/olumsuzluk ifadelerini değiştirdi; rol etiketli metinde bile asistan öyküsü hasta alanına sızdı, hekim sorusu ilaç beyanı oldu. Bulgular/plan karışması ve fazla tekrarlar var. Kaynak sonuçları kısmi; kontrol sayıları başarı oranı değildir. Hekim onayı veya klinik kayıt yapılmadı.
+
+subject PATIENT/OTHER/UNKNOWN doğrulaması, hasta durumu sorusunu kayıt saymama ve planı bulgulardan ayırma için RED/GREEN korumalar eklendi; çapraz alan ve örtüşen alıntı sınırları bağımsız incelemeyle düzeltildi.471Python ve11Node geçti;83odaklı testte engel yok. Bu ses konuşmacısı doğrulaması/ASR düzeltmesi değildir; yanlış model etiketi hâlâ mümkün. Ayrıntılı tablo ve değişiklik öncesi sentetik gerçek çıktılar: docs/voice_extended_validation_2026-11-01.md ve docs/voice_extended_results_2026-11-01.json. Yeni korumanın canlı tekrarı ayrıca doğrulanmalı.
