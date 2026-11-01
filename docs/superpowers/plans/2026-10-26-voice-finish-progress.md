@@ -135,3 +135,12 @@ Final full local checks: 416 Python passed (two dependency warnings, 25.43s), 11
 - `--fixture tests/fixtures/voice_published_case_dialogues.json --live --limit 24 --repeat 5 --max-calls 120` → **missing_provider_configuration**, **model_calls=0**, çıkış 2. Gerçek Claude çıkarımı, kaynak getirme ve final değerlendirme bu set üzerinde çalıştırılmadı; klinik başarı oranı yok.
 - Tüm etiketler **draft**, `clinical_gold_standard=false`. Klinik kontrol listeleri otomatik final çıktı puanlaması değildir; hekim gerçek çıktıları ayrıca incelemeli. Canlı ses/ASR, gerçek üç konuşmacı ayrımı, insan onaylı altın set, klinik duyarlılık/yanlış alarm ve uzak CI yeşilliği doğrulanmadı. Bitişte çalışan mimari, acil senaryolarda gerçek zamanlı alarm sağlamış sayılmaz.
 - PR #217 taslak kalır; main birleştirme veya Render dağıtımı yapılmadı.
+
+
+## 1 Kasım 2026 — kullanıcı onaylı canlı yayın ve gerçek oturum testi
+
+#217 tamamı kullanıcı talimatıyla main'e birleştirildi ve Render'da live doğrulandı. Gerçek güvenli girişten sonra iki kimliksiz sentetik metin vakası, mevcut Claude bağlantısı ve gerçek kaynak araçlarıyla çalıştırıldı. Bu çalışma gerçek mikrofon testi değildir.
+
+Canlı denemeler çıkarım isteğindeki strict uyumsuzluğunu, yanlış aşama hata metnini ve reCAPTCHA sayfasının kaynak sayılması kusurunu yakaladı. #218–#222 ile düzeltmeler/tanılamalar yayımlandı. Uzun kaynakta geç gelen pasajın kaybı da RED/GREEN testiyle giderildi. Son canlı kod a06f4654, deploy dep-dbjhqtjm8hqs73fpnf6g, live14:09:20 İstanbul. İlk vakada gerçek ADA kaynağı ve3 alıntı dayanaklı kontrol noktası; ikinci vakada asistan/yakın öyküsünü hastaya atamayan sonuç ve ADA restorasyon kaynağı görüldü. Kayıt onayı olmadan kaydetme canlı ön yüzde engellendi; kaynak yeniden denemelerinde başarılı çıkarım tekrarlanmadı.
+
+460 Python testi geçti; bu oturumdaki11 Node kontrolü de geçti. Araştırmanın çıktı sınırında kesilmesi nedeniyle kaynak kapsamı hâlâ kısmi gösteriliyor. Bu sonuçlar24 vakanın tamamı, gerçek mikrofon, pozitif hekim onaylı kayıt veya klinik doğruluk ölçümü değildir. Plan/bulgu alan sınıflaması ve soru tekrarları için küçük açık bulgular var. Ayrıntı: docs/voice_live_validation_2026-11-01.md. Önceki tarihli taslak/yayımlanmadı notları tarihsel durumu anlatır; bu bölüm yayın durumunu günceller.

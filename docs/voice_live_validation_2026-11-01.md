@@ -36,6 +36,25 @@ Ayrıca kapalı konu kimliğine bağlı mevcut mesleki başlangıç URL'leri (DO
 
 Ayrı canlı kayıt kapısı kontrolü: yalnız başvuru alanı seçildi, hekim onay kutusu işaretlenmeden Kaydet düğmesine basıldı. Ekran 'Seçilen alanları kontrol edip onay kutusunu işaretle' dedi; otomatik klinik kayıt yapılmadı.
 
-Kaynak pasajı seçicisinde ek bir laboratuvar kusuru RED testleriyle gösterildi: paragraf ayracı olmayan, uzun menüden sonra klinik paragraf içeren bir belgenin ilk1800karakterini almak gerçek ilgili pasajı kaybediyordu. Bu bulgu canlıdaki sıfır kontrol noktasının tek nedeni olduğunu kanıtlamaz. Düzeltme, birebir alıntıları önce korur; yalnız sunucuya ait doğrulanmış konu terimleriyle1800karakterlik,1400adımlı gerçek metin pencerelerini sıralar. Kaynak/alıntı bütçesi ve6pasaj sınırı değişmez; yeni model çağrısı veya hasta metni aktarımı eklenmez. Eski konu kimlikleri de yalnız bilinen kimlik listesinden türetilir.
+Kaynak pasajı seçicisinde ek bir laboratuvar kusuru RED testleriyle gösterildi: paragraf ayracı olmayan, uzun menüden sonra klinik paragraf içeren bir belgenin ilk1800 karakterini almak gerçek ilgili pasajı kaybediyordu. Bu bulgu canlıdaki sıfır kontrol noktasının tek nedeni olduğunu kanıtlamaz. Düzeltme, birebir alıntıları önce korur; yalnız sunucuya ait doğrulanmış konu terimleriyle1800 karakterlik,1400 adımlı gerçek metin pencerelerini sıralar. Kaynak/alıntı bütçesi ve6 pasaj sınırı değişmez; yeni model çağrısı veya hasta metni aktarımı eklenmez. Eski konu kimlikleri de yalnız bilinen kimlik listesinden türetilir.
 
-Aynı dalda özel bir konu için eşlenmiş başlangıç sayfası varsa genel konunun ek başlangıç URL'leri bastırılır; seçilen konu kimlikleri silinmez. Örneğin kanser konusu varken genel ağız hastalıkları eşlemesindeki ilgisiz ağız kuruluğu başlangıcı araştırmayı dağıtmaz. Bu bir klinik öneri kuralı değildir. Ara testte eski kimlik senaryosu başarısız oldu; bilinen kimliğe güvenli fallback ile düzeltildi. Bağımsız inceleme119odaklı testin geçtiğini doğruladı. Sıralama klinik uygunluk kanıtı değildir.
+Aynı dalda özel bir konu için eşlenmiş başlangıç sayfası varsa genel konunun ek başlangıç URL'leri bastırılır; seçilen konu kimlikleri silinmez. Örneğin kanser konusu varken genel ağız hastalıkları eşlemesindeki ilgisiz ağız kuruluğu başlangıcı araştırmayı dağıtmaz. Bu bir klinik öneri kuralı değildir. Ara testte eski kimlik senaryosu başarısız oldu; bilinen kimliğe güvenli fallback ile düzeltildi. Bağımsız inceleme119 odaklı testin geçtiğini doğruladı. Sıralama klinik uygunluk kanıtı değildir.
+
+## Son canlı tekrar — #222
+
+#222 a06f4654 Render dep-dbjhqtjm8hqs73fpnf6g ile14:09:20 İstanbul'da live oldu. Korunmuş ilk vaka alanlarıyla yalnız kaynak/final yeniden denendi; yeni çıkarım yapılmadı.14:10:44'te /finalize200, sources1, accepted3, rejected_reasons{} gözlendi. UI'da gerçek ADA Cancer (Head and Neck) kaynağıyla üç kontrol noktası vardı: kalıcılık/süre ve görünümün netleştirilmesi, koşula bağlı ileri inceleme/biyopsi veya sevk değerlendirmesi, hekimin kesinlik iddiasının dayanağının kontrolü. Kesin kanser tanısı, otomatik tedavi veya hekimin yanlış yaptığı kararı verilmedi. 'Kaynak alıntılı kontrol noktası var' ibaresi doğruluk/güvenlik onayı sayılmaz.
+
+Araştırma yine max_tokens ile bitti; UI bu nedenle kısmi kapsam ve eksik kaynakları yeniden deneme durumunu korudu. Bu, klinik kapsamın eksiksiz olduğunu kanıtlamaz. Yerel sözlükle pasaj sıralama klinik uygunluğu doğrulamaz; kaynak alıntısı ve hastaya uygulanabilirlik hekimce ayrıca incelenmeli.
+
+## İkinci canlı karşılaştırma
+
+Ayrı sentetik muayenede hastanın düşen dolgusu, eşinin çene sesi ve asistanın kendi diş sıkma öyküsüyle üç konuşmacılı diyalog çalıştırıldı. /text200 ve son değerlendirme200 döndü. Eşin ve asistanın rahatsızlığı hastanın kaydına yazılmadı; hastanın çene ağrısı/açılma sorunu ve baş ağrısı olmadığını söylemesi korundu. ADA Materials for Direct Restorations kaynak bağlantısı ve malzeme/neden belirsizliğini koruyan bir kontrol noktası gösterildi. Hastaya bruksizm/TMD tanısı eklenmedi. Bu tek koşu bütün konuşmacı ayrımı başarısı değildir.
+
+Görülen küçük eksik: ikinci vakada hekim muayene planı 'Planlanan' etiketiyle korunmakla birlikte klinik bulgular alanına yerleştirilmişti; gerçekleşmiş bulgu diye yazılmadı fakat alan sınıflaması iyileştirilebilir. Bazı sorular/özet ifadeleri tekrar ediyor. Bunlar klinik olarak onaylanmış iyi/kötü etiketler veya ölçülmüş yanlış alarm oranı değildir.
+
+## Kapsam ve sonuç
+
+- Gerçek oturumda iki sentetik **metin** vakası çalıştırıldı;24 diyaloğun tamamı gerçek modelde çalıştırılmış sayılmaz.
+- Canlıda çıkarım400 uyumluluk hatası giderildi; hatalı ses-servisi mesajı düzeltildi. Gerçek erişim engeli sayfasının kaynak sayılması engellendi. Menü öncesi metin kırpma kusuru testle yeniden üretilip düzeltildi. Aynı çıkarımla kaynak/final yeniden denemesi gözlendi; onaysız kayıt ön yüzde engellendi.
+- Son üretim kodu: a06f4654. Son otomatik sesli snapshot: **460 Python passed**,2 bağımlılık uyarısı,13.71s. Node26/jsdom30.1.3: daha önce bu oturumda **11 passed**; son değişiklikler yalnız sunucu tarafında. Gerçek tarayıcı kullanımı ve gerçek Claude uç noktası bu raporda yer alır; gerçek mikrofon/Gemini ses çözümleme testi yer almaz.
+- Klinik alanlar hekim onayıyla kaydedilmedi; yalnız ayrı anonim test hasta satırları açıldı. Klinik doğruluk/duyarlılık/yanlış alarm oranı, hekimce onaylı altın set, gerçek mikrofon ve pozitif onaylı kayıt senaryosu bu çalışmayla doğrulanmadı. GitHubActions yeşilliği iddia edilmedi.
