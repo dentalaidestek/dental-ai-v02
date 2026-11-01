@@ -1,7 +1,6 @@
 {
   "synthetic": true,
   "clinical_gold_standard": false,
-  "runtime_commit": "664cc917e0d488b341d7079ba86359317969395d",
   "notes": "Live UI field/transcript snapshots, before subject/plan guard patch; no clinical record approved. eSpeak synthetic stress is not human audio accuracy. Final-source prose omitted; see report for observations.",
   "runs": [
     {
@@ -158,6 +157,53 @@
         }
       ],
       "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+    },
+    {
+      "cards": [
+        "Görüşmeden çıkan bilgiler4",
+        "Kaynaklara göre kontrol edilecekler2",
+        "Hastayla iletişim9",
+        "Netleştirilecek sorular8",
+        "Kaynaklar · 1"
+      ],
+      "confirmation": false,
+      "coverage": [
+        "Çene osteonekrozu: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.",
+        "Çekim sonrası kanama ve iyileşme: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.",
+        "Ağız hastalıkları değerlendirmesi: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.",
+        "Sistemik risk ve özel bakım: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.",
+        "Dental reçete ve ilaç etkileşimi: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.",
+        "Dental kaygı: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı."
+      ],
+      "fields": [
+        {
+          "field": "chief_complaint",
+          "quote": "Konuşmadaki dayanak: Sol alt tarafta. Tam gününü sayamam ama iki ayı geçti, belki üç aya yaklaşıyor. | Dilim oraya gidip duruyor, sivri bir şey geliyor elime değil dilime. | Yemek değince bazen sızlıyor. | o açıklık hâlâ duruyor. Bazen ağzıma kötü bir tat da geliyor",
+          "value": "Güncel: Sol alt bölgede eski çekim yerinde, dilin oraya gidip durması ve sivri bir his; yaklaşık iki-üç aydır devam ediyor\nGüncel: Dilin çekim yerine gidip durması, sivri bir şey hissi\nGüncel: Yemek yendiğinde çekim yerinde bazen sızlama\nGüncel: Çekim yerinde açıklık duruyor, bazen ağza kötü tat geliyor"
+        },
+        {
+          "field": "medical_history",
+          "quote": "Konuşmadaki dayanak: Yalnız kanser için hastanede kemikler güçlensin diye bir ilaç veriyorlar, adını şimdi çıkaramadım. | Yalnız kanser için hastanede kemikler güçlensin diye bir ilaç veriyorlar | Bana ışın yapıldığını hatırlamıyorum ama kesin konuşmayayım",
+          "value": "Güncel: Kanser nedeniyle hastanede kemikleri güçlendirmek için verilen ilaç/tedavi; hastanın kullandığını belirttiği ilaç\nGüncel: Kanser tanısı ve tedavisi hastanın beyanı; ayrıntılar doğrulanmamış\nBelirsiz: Baş-boyun bölgesine ışın tedavisi alıp almadığını hatırlamıyor; doğrulanmamış"
+        },
+        {
+          "field": "medications",
+          "quote": "Konuşmadaki dayanak: kolumdan veriliyor ama nasıl yazıldığını bilmiyorum. | Geçen ay gittim, bir sonraki randevum da var. Tedavi bitti demiyorum yani, devam ediyor. | Hastanedeki o ilaç ise devam ediyor. | Bazen ağrırsa evdeki ağrı kesiciden aldım ama kutuyu getirmedim, adını yanlış söylemeyeyim. | Başka günlük hap yok. | Ben her gün hap içen biri değilim hocam.",
+          "value": "Güncel: kolumdan veriliyor ama nasıl yazıldığını bilmiyorum.\nGüncel: Geçen ay gittim, bir sonraki randevum da var. Tedavi bitti demiyorum yani, devam ediyor.\nGüncel: Hastanedeki o ilaç ise devam ediyor.\nGüncel: Bazen ağrırsa evdeki ağrı kesiciden aldım ama kutuyu getirmedim, adını yanlış söylemeyeyim.\nOlumsuz beyan: Başka günlük hap yok.\nOlumsuz beyan: Ben her gün hap içen biri değilim hocam."
+        },
+        {
+          "field": "allergies",
+          "quote": "Konuşmadaki dayanak: Bildiğim bir ilaç alerjim yok.",
+          "value": "Olumsuz beyan: Bildiği bir ilaç alerjisi yok; tüm ilaçları kullanıp kullanmadığı konusunda kesin beyan yok"
+        }
+      ],
+      "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz.",
+      "uncertain": "Kontrol edilmesi gereken ifadeler: Çekilen diş numarası ve eski çekim tarihi belirsiz (başka yerde yapılmış, hastanın dosyasından teyit edilecek). Hastanede verilen ilacın adı, dozu, aralığı ve son uygulama tarihi doğrulanmadı. Kullanılan ağrı kesici adı bilinmiyor. Baş-boyun ışın tedavisi durumu belirsiz. Bu aşamada tanı konulmadı.\nBaşka kişiye ait veya kime ait olduğu belirsiz bilgi hasta alanlarına alınmadı; konuşmacıyı kontrol edin.",
+      "case": "bone",
+      "mode": "original_role_labelled_text_after_guard",
+      "runtime_commit": "43ddb4b1ebeca6476ffdad73195fb0dfb7daae5b",
+      "observed_missing_field": "plan"
     }
-  ]
+  ],
+  "initial_runtime_commit": "664cc917e0d488b341d7079ba86359317969395d"
 }
