@@ -568,6 +568,7 @@ def _understand(text, context):
 
 def extract(*, data=None, mime=None, transcript=None, context=None, transcription_only=False):
     started = time.monotonic()
+    stage = 'transcription' if data is not None else 'clinical'
     from app.http_transport import urlopen
     from app.clinical_privacy import redact_direct_identifiers
     context = clinical_context(context)
@@ -616,6 +617,7 @@ def extract(*, data=None, mime=None, transcript=None, context=None, transcriptio
                 text = redact_direct_identifiers(transcript)
             if transcription_only:
                 return {'transcript': _string(redact_direct_identifiers(text), MAX_TRANSCRIPT)}
+            stage = 'clinical'
             result = _understand(text, context)
             # Missing output is not an explicit correction. Preserve previously
             # reviewed clinical anchors rather than silently erasing them.
@@ -667,6 +669,8 @@ def extract(*, data=None, mime=None, transcript=None, context=None, transcriptio
             status = status if isinstance(status, int) and 100 <= status <= 599 else 0
             logging.getLogger(__name__).warning('voice_extract outcome=provider_or_parse_failure http_status=%d error_type=%s duration_ms=%d',
                 status, type(exc).__name__, (time.monotonic()-started)*1000)
+            if stage == 'clinical':
+                raise VoiceError('Klinik metin değerlendirmesi tamamlanamadı. Görüşme metni korunuyor; yeniden deneyebilirsin.') from None
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
