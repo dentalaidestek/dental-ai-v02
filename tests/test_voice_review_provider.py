@@ -1,4 +1,6 @@
 import json
+import io
+import urllib.error
 import sys
 from contextlib import nullcontext
 from types import ModuleType
@@ -7,6 +9,27 @@ import pytest
 
 from app import voice_exam_core as core
 from app import voice_exam_review_provider as provider
+
+
+def test_provider_schema_rejection_logs_only_fixed_diagnostic_tags(monkeypatch, caplog):
+    import app.http_transport as http
+    transport(monkeypatch, {})
+    def reject(*args, **kwargs):
+        raise urllib.error.HTTPError('https://api.anthropic.com/v1/messages', 400, 'Bad Request', {},
+            io.BytesIO(b'{"error":{"message":"input_schema: schema must not contain empty enum. PRIVATE PATIENT SECRET 12345678901"}}'))
+    monkeypatch.setattr(http, 'urlopen', reject)
+    with pytest.raises(urllib.error.HTTPError):
+        provider.review('policy', {}, SCHEMA, extraction=True)
+    assert 'diagnostics=input_schema,schema,enum,empty' in caplog.text
+    assert 'PRIVATE' not in caplog.text and '12345678901' not in caplog.text
+
+
+def test_text_extraction_failure_is_not_reported_as_audio_transcription(monkeypatch):
+    def reject(*args):
+        raise urllib.error.HTTPError('https://api.anthropic.com/v1/messages', 400, 'Bad Request', {}, io.BytesIO())
+    monkeypatch.setattr(core, '_understand', reject)
+    with pytest.raises(core.VoiceError, match='Klinik metin değerlendirmesi tamamlanamadı'):
+        core.extract(transcript='Sentetik muayene konuşması.')
 
 
 SCHEMA = {'type': 'OBJECT', 'properties': {'items': {'type': 'ARRAY', 'items': {

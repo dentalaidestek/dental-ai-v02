@@ -59,7 +59,15 @@ def review(prompt, data, schema, *, extraction=False):
         category = ('schema_complexity' if 'complex' in body and 'schema' in body else
                     'schema_optional_limit' if 'optional' in body else
                     'schema_argument' if 'schema' in body else 'provider_argument')
-        logging.getLogger(__name__).warning('voice_claude_error status=%d category=%s', exc.code, category)
+        # Fixed vocabulary only: never emit the provider's free-form message,
+        # schema values, transcript, credentials or a returned JSON path.
+        tags = ('input_schema', 'schema', 'strict', 'required', 'additionalproperties',
+                'enum', 'empty', 'invalid', 'unsupported', 'object', 'array',
+                'string', 'type', 'properties', 'format', 'optional', 'limit',
+                'complex', 'compilation', 'timeout', 'union', 'anyof', 'allof',
+                'model', 'beta', 'feature', 'supported', 'maximum', 'minimum')
+        diagnostics = ','.join(tag for tag in tags if re.search(r'\b' + tag + r'\b', body)) or 'other'
+        logging.getLogger(__name__).warning('voice_claude_error status=%d category=%s diagnostics=%s', exc.code, category, diagnostics)
         raise
     if len(raw) > core.MAX_RESPONSE:
         raise ValueError('Response too large')
