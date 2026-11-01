@@ -74,7 +74,7 @@ def test_unknown_ids_and_missing_uncertainty_are_rejected():
 def test_fixture_has_all_fifteen_branches_and_short_synthetic_dialogues():
     cases = load_cases()
     inventory = validate_cases(cases)
-    assert 30 <= len(cases) <= 45
+    assert 30 <= len(cases) <= 60
     assert inventory['branches'] == 15 == len(BRANCH_LABELS)
     assert all(2 <= len(case['dialogue']) <= 6 for case in cases)
     assert any(case.get('requires_uncertainty') for case in cases)
@@ -116,3 +116,81 @@ def test_generic_extraction_warning_cannot_satisfy_ambiguity_clarification():
     result = result_for(case)
     result['uncertain'] = 'Bu bölümden klinik alan çıkarılmadı. Konuşma metnini kontrol edin.'
     assert not score_case(case, result)['passed']
+
+
+def test_repeated_evaluation_exposes_inconsistent_routes_without_hiding_failed_runs():
+    from scripts.evaluate_voice_spoken import evaluate_repeated
+    case=sample_case();calls=[]
+    def extract(text,context):
+        calls.append(text)
+        output=result_for(case)
+        if len(calls)==2: output['literature_topics'].pop()
+        return output
+    report=evaluate_repeated([case],extract,repeat=5)
+    assert report['model_calls']==5
+    row=report['results'][0]
+    assert row['attempts']==5 and row['passed_attempts']==4
+    assert row['all_attempts_passed'] is False
+    assert row['distinct_grounded_routes']==2
+    assert row['route_consistency']==0.8
+    assert row['required_group_recall']==0.9
+    assert report['all_cases_passed'] is False
+
+
+def test_repeated_evaluation_stops_on_provider_error_and_does_not_count_missing_attempts_as_passes():
+    from scripts.evaluate_voice_spoken import evaluate_repeated
+    def fail(*a,**k):raise RuntimeError('private provider error')
+    report=evaluate_repeated([sample_case()],fail,repeat=5)
+    assert report['model_calls']==1
+    assert report['all_cases_passed'] is False
+    row=report['results'][0]
+    assert row['completed_all_repeats'] is False and row['passed_attempts']==0
+    assert 'private' not in json.dumps(report)
+
+
+def test_repeat_budget_blocks_unbounded_paid_run_before_provider_import(monkeypatch,capsys):
+    from scripts.evaluate_voice_spoken import main
+    monkeypatch.setenv('ANTHROPIC_API_KEY','synthetic-key')
+    monkeypatch.setenv('VOICE_EXAM_CLAUDE_MODEL','claude-synthetic')
+    assert main(['--live','--limit','44','--repeat','5'])==2
+    output=json.loads(capsys.readouterr().out)
+    assert output['model_calls']==0
+    assert output['failure_categories']==['call_budget_exceeded']
+
+
+def test_topic_success_cannot_hide_missing_clinician_statement():
+    case=sample_case();case['required_clinician_quotes']=[case['dialogue'][1]['text']]
+    assert 'missing_clinician_statement' in score_case(case,result_for(case))['failure_categories']
+
+
+def test_patient_statement_misattributed_to_clinician_fails_evaluation():
+    case=sample_case();case['forbidden_clinician_quotes']=[case['dialogue'][0]['text']]
+    result=result_for(case)
+    result['communication']=[{'category':'CLINICAL_STATEMENT','quote':case['dialogue'][0]['text']}]
+    assert 'forbidden_clinician_statement' in score_case(case,result)['failure_categories']
+
+
+def test_unanchored_clinician_statement_fails_evaluation_even_when_topics_pass():
+    case=sample_case();result=result_for(case)
+    result['communication']=[{'category':'CLINICAL_STATEMENT','quote':'Invented utterance'}]
+    assert 'invalid_clinician_quote' in score_case(case,result)['failure_categories']
+
+
+def test_consistently_wrong_routes_cannot_pass_repeated_evaluation():
+    from scripts.evaluate_voice_spoken import evaluate_repeated
+    report=evaluate_repeated([sample_case()],lambda *a:{'literature_topics':[]},repeat=5)
+    row=report['results'][0]
+    assert row['route_consistency']==1.0
+    assert row['required_group_recall']==0.0
+    assert row['passed_attempts']==0 and not report['all_cases_passed']
+
+
+def test_short_patient_quote_cannot_evade_forbidden_clinician_attribution():
+    case={'id':'short_negative','dialogue':[
+        {'speaker':'Hasta','text':'Komşum bu hapın tamamen zararsız olduğunu söyledi.'},
+        {'speaker':'Hekim','text':'Kutuyu ve kullandığınız diğer ilaçları görelim.'}],
+        'required_any':[],'forbidden':[],
+        'forbidden_clinician_quotes':['Komşum bu hapın tamamen zararsız olduğunu söyledi.']}
+    result={'literature_topics':[], 'communication':[
+        {'category':'CLINICAL_STATEMENT','quote':'bu hapın tamamen zararsız olduğunu'}]}
+    assert 'forbidden_clinician_statement' in score_case(case,result)['failure_categories']

@@ -295,16 +295,22 @@ def normalize(result, evidence=None):
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
-        if not isinstance(fact, dict) or fact.get('field') not in (*FIELDS[3:], 'patient_concern', 'clinician_response') or fact.get('temporality') not in labels:
+        if not isinstance(fact, dict) or fact.get('field') not in (*FIELDS[3:], 'patient_concern', 'clinician_response', 'clinician_statement') or fact.get('temporality') not in labels:
             continue
         quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
         value = _string(fact.get('value', ''), 1000)
-        if fact['field'] in {'patient_concern', 'clinician_response'}:
-            # Private concerns share the atomic evidence contract but never enter
-            # selectable patient-record fields or carried clinical context.
-            if quote and value and len(output['communication']) < 24:
-                observation = 'Görüşmede verilen yanıt: ' + quote if fact['field'] == 'clinician_response' else quote
-                output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': value})
+        if fact['field'] in {'patient_concern', 'clinician_response', 'clinician_statement'}:
+            # Transient attribution is never a selectable patient-record fact.
+            if quote and value:
+                if fact['field'] == 'clinician_statement':
+                    if len(output['communication']) >= 24:
+                        raise VoiceError('Hekim ifadeleri bağlam sınırını aştı; taslak korunuyor.')
+                    output['communication'].append({'category': 'CLINICAL_STATEMENT', 'quote': quote,
+                        'observation': 'Hekime atfedilen klinik ifade',
+                        'suggestion': 'Kaynak kapsamı ve hastaya uygulanabilirliği kontrol edilmeli.'})
+                elif len(output['communication']) < 24:
+                    observation = 'Görüşmede verilen yanıt: ' + quote if fact['field'] == 'clinician_response' else quote
+                    output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': value})
             continue
         if fact['field'] == 'medications':
             # Do not silently replace an uncertain spoken product with a different
@@ -336,7 +342,11 @@ def normalize(result, evidence=None):
             if not re.search(r'(?<!\d)' + number + r'(?!\d)|\b' + spoken_number + r'\b', quote, re.I):
                 # A region or symptom cannot establish a specific FDI tooth.
                 continue
-            if tooth['status'] == 'CARIES' and (not re.search(r'çürük|karies|caries', quote, re.I) or re.search(r'(?:çürük|karies|caries)\s+(?:yok|değil|şüph|olabilir|var\s+m[iı])', quote, re.I)):
+            from app.voice_chart_assertions import existing_chart_assertion
+            if not existing_chart_assertion(tooth['status'], quote, number, spoken_number):
+                notice = 'Bir diş etiketi kesin mevcut bulgu olarak doğrulanmadı; plan/şüphe/olumsuzluk veya diş eşleşmesini kontrol edin.'
+                if notice not in output['uncertain']:
+                    output['uncertain'] = (output['uncertain'] + '\n' + notice).strip()
                 continue
             output['teeth'].append({'tooth': number, 'status': tooth['status'], 'quote': quote})
     appointment = result.get('appointment')
@@ -371,7 +381,7 @@ def schema():
         'decision_barriers': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {**{key: {'type': 'STRING'} for key in ('quote', 'observation', 'question', 'explanation')}, 'category': {'type': 'STRING', 'enum': ['COST', 'FEAR', 'TIME', 'TRUST', 'UNDERSTANDING', 'UNCLEAR']}}, 'required': ['quote', 'observation', 'question', 'explanation', 'category']}},
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'clinical_facts': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
-            'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern', 'clinician_response']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
+            'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern', 'clinician_response', 'clinician_statement']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
             'temporality': {'type': 'STRING', 'enum': ['CURRENT', 'HISTORICAL', 'PLANNED', 'NEGATED', 'UNKNOWN']}},
             'required': ['field', 'value', 'quote', 'temporality']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
@@ -401,6 +411,13 @@ field anlamları:
   ettiği tereddüt/beklenti. Bu bilgiyi atlama veya chief_complaint içine yazma. value
   hekime yönelik kısa, empatik iletişim/soru önerisidir; quote yalnız gerekli kısa
   dayanak ifadesidir. Bu tür yalnız geçici hekim önerisine gider, hasta dosyasına gitmez.
+- clinician_statement: hekime açıkça atfedilen ilaç güvenliği, doz, alerji,
+  kontrendikasyon veya prognoz iddiası. Birebir kısa ifadeyi koru; doğruluk/yanlışlık
+  kararı verme. Hekime atıf belirsizse bu etiketi koyma; netleştirme sorusu üret.
+  Hasta, yakını veya alıntılanan başka hekimin sözünü mevcut hekime atama.
+  Bu tür geçici kaynak kontrolüne gider, hasta bulgusu/kayıt alanı değildir.
+  Tedavi planını ayrıca plan alanında koru; bu etiket planın yerine geçmez.
+  İlgili kaynak konusunu literature_topics içinde seç.
 - clinician_response: iletişim ihtiyacına verilen hekim yanıtı, durma işareti/ara verme
   anlaşması, anlaşılır açıklama ve hastanın kendi sözleriyle geri anlatımı. Bunları
   ayrı, birebir quote ile koru; value görüşmede neyin zaten açıklanıp yanıtlandığını

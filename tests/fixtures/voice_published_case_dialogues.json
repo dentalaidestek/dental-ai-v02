@@ -1,0 +1,1650 @@
+{
+  "synthetic": true,
+  "approval_status": "draft",
+  "clinical_gold_standard": false,
+  "purpose": "Yayımlanmış vakalardan esinlenen özgün gündelik Türkçe hekim-hasta-asistan diyalogları. Kaynak vakaların birebir çevirisi veya gerçek hasta kaydı değildir. Konu ve klinik kontrol beklentileri hekim onayı bekler; modele gönderilmez. Otomatik araç yalnızca konu/alıntı/atfetme beklentilerini puanlar, final değerlendirme kontrol listesi elle incelenir.",
+  "sources": [
+    {
+      "id": "denture-ulcer",
+      "title": "Oral squamous cell carcinoma misdiagnosed as a denture-related traumatic ulcer: A clinical report",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/26581660/",
+      "publication_year": "2016",
+      "evidence_scope": "Özet: protez sonrası başlayan ve protez çıkarılınca da geçmeyen yaranın tanısında gecikme.",
+      "access_basis": "Abstract reviewed; dialogue and contrast invented.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "irrigant-accident",
+      "title": "Bone necrosis as a complication of sodium hypochlorite extrusion. A case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9617265/",
+      "publication_year": "2022",
+      "evidence_scope": "Kanal yıkaması sırasında yanma; sonrasında doku hasarı. Vaka bir tedavi kılavuzu değildir.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "antiresorptive",
+      "title": "Multidisciplinary approach for medication-related osteonecrosis of the jaws: a case report and literature review",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12061783/",
+      "publication_year": "2025",
+      "evidence_scope": "Kanser için kemik ilacı kullanımı ve çekim sonrası uzun süren açık kemik.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "crown-aspiration",
+      "title": "Crowning achievement: a case of dental aspiration",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4661492/",
+      "publication_year": "2015",
+      "evidence_scope": "İşlem sırasında kaplamanın solunum yoluna kaçtığı bildirilmiş vaka.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "avulsed-tooth",
+      "title": "Replantation of an Avulsed Tooth: A Case Report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10276759/",
+      "publication_year": "2023",
+      "evidence_scope": "Düşmeyle yerinden çıkan kalıcı ön diş; süt içinde taşınma ve geçen sürenin kaydı.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "peri-implant",
+      "title": "The challenge of periimplantitis management: a case report",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/36571747/",
+      "publication_year": "2022",
+      "evidence_scope": "İmplant çevresinin klinik ve radyografik değerlendirilmesi; tek protokolün üstünlüğü çıkarılamaz.",
+      "access_basis": "PubMed abstract reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "periodontal-abscess",
+      "title": "Management of Acute Periodontal Abscess Mimicking Acute Apical Abscess in the Anterior Lingual Region: A Case Report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6822886/",
+      "publication_year": "2019",
+      "evidence_scope": "Diş eti kaynaklı apsenin kök kaynaklı sorunla karışabilmesi; muayene ve testlerle ayrım.",
+      "access_basis": "Full case text reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "jaw-pain",
+      "title": "An Unusual Case of Temporomandibular Joint Disorder Resembling Migraine",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9923078/",
+      "publication_year": "2023",
+      "evidence_scope": "Uzun süren baş ağrısına çene hareketiyle artan ağrının eşlik etmesi.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "ortho-root",
+      "title": "Effective endodontically treated incisors with external root resorption during orthodontic movement: A case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10041545/",
+      "publication_year": "2023",
+      "evidence_scope": "Ortodontik tedavi sırasında kök değişikliği ve endodonti-ortodonti değerlendirmesi.",
+      "access_basis": "Indexed abstract reviewed; no images reused.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "cracked-tooth",
+      "title": "Cracked Tooth: A Report of Two Cases and Role of Cone Beam Computed Tomography in Diagnosis",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3502789/",
+      "publication_year": "2012",
+      "evidence_scope": "Isırma ve ısıyla ağrı; ilk filmde belirgin bulgu olmaması çatlağı tek başına dışlamaz.",
+      "access_basis": "Indexed case text reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "pregnancy-mass",
+      "title": "Clinical management and surgical intervention for oral pyogenic granuloma during pregnancy: a case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13336780/",
+      "publication_year": "2026",
+      "evidence_scope": "Gebelikte büyüyen ve kanayabilen diş eti oluşumu; konuşmayla patolojik tanı konmaz.",
+      "access_basis": "Indexed case text reviewed; treatment not adopted as a recommendation.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "foreign-body-gum",
+      "title": "Recurrent periodontal abscess associated with “teeth as a tool”",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3357018/",
+      "publication_year": "2012",
+      "evidence_scope": "Dişi kablo soymak için kullanma alışkanlığıyla ilişkili tekrarlayan diş eti apsesi.",
+      "access_basis": "Indexed abstract reviewed; causal certainty not generalized.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "sdcep-red-flags",
+      "title": "Dental abscess — Drug Prescribing for Dentistry (SDCEP)",
+      "url": "https://sdcepdentalprescribing.nhs.scot/guidance/bacterial-infections/dental-abscess/",
+      "publication_year": "accessed 2026",
+      "evidence_scope": "Yutma/solunum güçlüğü ve ciddi şişlik gibi bulgularda acil değerlendirme; vaka sonrası bekleme testi değildir.",
+      "access_basis": "Official guidance reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "professional_guidance"
+    },
+    {
+      "id": "ada-lesions",
+      "title": "Oral Cancer Guideline (2026 Update) — ADA",
+      "url": "https://www.ada.org/resources/research/science/evidence-based-dental-research/oral-cancer-guideline",
+      "publication_year": "2026",
+      "evidence_scope": "Şüpheli ağız lezyonunun değerlendirilmesi; histopatolojik tanı konuşmadan çıkarılamaz.",
+      "access_basis": "Official guideline overview reviewed; not a clinical adjudication.",
+      "accessed_on": "2026-10-31",
+      "kind": "professional_guidance"
+    }
+  ],
+  "cases": [
+    {
+      "id": "persistent-denture-ulcer-index",
+      "title": "Takma dişin altındaki yara — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Alt damağımın altında bir yara var, haftalardır kapanmıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Takma dişi çıkardığınızda da devam ediyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bir süredir hiç takmıyorum ama yara aynı, bazen kanıyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, önceki kontrolde de aynı yeri söylemişti."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Takma diş vurmuştur, başka bir şey olamaz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ama çıkardım, yine düzelmedi. İçim rahat etmedi."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Ne zamandır sürdüğünü ve takmadığını not ediyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yarayı tekrar inceleyelim, gerekirse ileri değerlendirmeyi konuşalım."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.removable"
+        ],
+        [
+          "oral_medicine.cancer",
+          "oral mucosal lesion diagnosis",
+          "oral_medicine.general"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "denture-ulcer",
+        "ada-lesions"
+      ],
+      "contrast_case_id": "persistent-denture-ulcer-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Protez kullanılmadığı halde süren yara",
+        "Hasta kaygısı"
+      ],
+      "must_not_infer": [
+        "Kesin kanser tanısı",
+        "Hekimin kesinlik iddiasının doğrulandığı"
+      ],
+      "review_checklist": [
+        "Devam eden yaranın yalnızca protez vuruğu diye kapatılmaması",
+        "Hekimin kesinlik iddiasını ayrı incele"
+      ],
+      "required_clinician_quotes": [
+        "Takma diş vurmuştur, başka bir şey olamaz."
+      ]
+    },
+    {
+      "id": "persistent-denture-ulcer-contrast",
+      "title": "Takma dişin altındaki yara — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Yeni takma diş dün takıldı, altı sürtüyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çıkarınca nasıl oluyor?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Çıkarınca rahatlıyor. Daha önce orada yara yoktu."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, dün ilk teslimini yaptık."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Vuran yerini ve ağzın içini kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Kanama yok, ama takınca canımı acıtıyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kontrol için geliş gününü yazayım mı?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, düzelmezse yeniden değerlendirelim."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.removable"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "denture-ulcer",
+        "ada-lesions"
+      ],
+      "contrast_case_id": "persistent-denture-ulcer-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Dün başlayan, çıkarınca hafifleyen sürtünme"
+      ],
+      "must_not_infer": [
+        "İlk vakadaki haftalar süren yaranın bu hastaya taşınması",
+        "Kesin iyi huylu tanı"
+      ],
+      "review_checklist": [
+        "Muayene ve takip planını koru; vaka raporundaki tanıyı kopyalama"
+      ]
+    },
+    {
+      "id": "canal-burning-index",
+      "title": "Kanal temizliği sırasında yanma — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Geçen hafta dişin içi yıkanırken birden cayır cayır yandı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sonrasında neler oldu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Damağım şişti, sonra et açıldı, sert beyaz bir yer görünüyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hasta yanmanın tam yıkama sırasında başladığını söylüyor hocam."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yıkamada kullanılan sıvıyı ve yapılan işlemi kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Normal işlem ağrısıdır diye bekledim, geçmedi."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Eski işlem kaydını isteyeyim, şimdi de durumu not ediyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ağız içini değerlendirelim, hasarın boyutu konuşmadan anlaşılamaz."
+        }
+      ],
+      "required_any": [
+        [
+          "endo.general"
+        ],
+        [
+          "emergencies.general",
+          "oral mucosal lesion diagnosis"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "irrigant-accident"
+      ],
+      "contrast_case_id": "canal-burning-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Yanmanın işlem sırasında başlaması",
+        "Sonrasında şişlik ve açık doku bildirimi"
+      ],
+      "must_not_infer": [
+        "Kesin sıvı türü veya alerji",
+        "Konuşmada olmayan nekroz boyutu"
+      ],
+      "review_checklist": [
+        "İşlem komplikasyonu için kaynak ara",
+        "Vaka raporundaki ilaç/dozu bu hastaya kopyalama"
+      ]
+    },
+    {
+      "id": "canal-burning-contrast",
+      "title": "Kanal temizliği sırasında yanma — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dün dolgu yapıldı, soğuk su değince kısa bir sızı oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kendiliğinden yanma ya da şişlik var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yok, su gidince geçiyor. Etimde açılma da yok."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, yapılan işlem dolgu, kanal yıkaması yapılmamış."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dolgunun çevresini ve kapanışı kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yemek yerken yüksekmiş gibi de gelmiyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Şikâyetin ne zaman olduğunu kaydettim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Muayeneye göre konuşalım."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.hypersensitivity",
+          "restorative.general"
+        ]
+      ],
+      "forbidden": [
+        "endo.instrument_separation",
+        "endo.root_perforation"
+      ],
+      "source_ids": [
+        "irrigant-accident"
+      ],
+      "contrast_case_id": "canal-burning-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Kanal yıkaması yapılmadığı",
+        "Kısa süreli soğuk sızısı"
+      ],
+      "must_not_infer": [
+        "Kimyasal doku hasarı kesinliği"
+      ],
+      "review_checklist": [
+        "Dolgu sonrası belirtiyi önceki komplikasyonla birleştirme"
+      ]
+    },
+    {
+      "id": "bone-medicine-index",
+      "title": "Kemik ilacı ve kapanmayan çekim yeri — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Çekilen dişin yeri aylardır kapanmadı, sivri sert bir şey var."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Düzenli tedaviniz veya ilacınız var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Kanser için hastanede kemik güçlendirici ilaç veriliyor, adını bilmiyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hastane ilaç listesini isteyelim hocam, şu an elimizde yok."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İlacın adını, veriliş şeklini ve son uygulama tarihini doğrulayalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Başka günlük hap yok, ama hastanede verilen o ilaç devam ediyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Günlük hap yok derken hastane ilacını silmiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Açık alanı incelemeden adını kesin koymayalım."
+        }
+      ],
+      "required_any": [
+        [
+          "antiresorptive medication osteonecrosis jaw"
+        ],
+        [
+          "tooth extraction complications"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "antiresorptive"
+      ],
+      "contrast_case_id": "bone-medicine-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Hastanede uygulanan adı belirsiz aktif ilaç",
+        "Günlük hap yok ifadesi önceki tedaviyi iptal etmez"
+      ],
+      "must_not_infer": [
+        "Zoledronat ya da denosumab adını uydurma",
+        "Hastaya ilacı kendi kendine kestirme"
+      ],
+      "review_checklist": [
+        "İlaç ve çekim bağlamını ilişkilendir",
+        "Açık kemik ve süreyi hekim değerlendirmesine taşı"
+      ],
+      "requires_uncertainty": true
+    },
+    {
+      "id": "bone-medicine-contrast",
+      "title": "Kemik ilacı ve kapanmayan çekim yeri — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Geçen ay çekilen dişin yeriyle ilgili kontrol için geldim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Açık yer veya ağrı kaldı mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, kapandı. Bir de kanser için verilen kemik ilacım sürüyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "İlaç adını hastane listesinden teyit edelim hocam."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sonraki işlemleri planlarken o tedaviyi dikkate alalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bugün yeni çekim yapılmayacak, değil mi?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Bugünkü randevu sadece kontrol diye kayıtlı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, önce kontrol ve bilgi doğrulama."
+        }
+      ],
+      "required_any": [
+        [
+          "antiresorptive medication osteonecrosis jaw"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "antiresorptive"
+      ],
+      "contrast_case_id": "bone-medicine-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Çekim yerinin kapandığı",
+        "Yeni çekim yapılmadığı"
+      ],
+      "must_not_infer": [
+        "İyileşmiş yerde mevcut osteonekroz tanısı",
+        "İlaç tedavisini unutma"
+      ],
+      "review_checklist": [
+        "Risk araştırmasını mevcut komplikasyon tanısından ayır"
+      ]
+    },
+    {
+      "id": "missing-crown-index",
+      "title": "Kaplama parçası nereye gitti — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Dişi takarken bir şey boğazıma kaçtı, öksürüyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Nefesiniz nasıl?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Göğsümde takılmış gibi, rahat nefes alamıyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, küçük kaplamayı ağızda da tepside de bulamadım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İşlemi durduruyoruz, acil yardım gerekiyor."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Sanki yuttum ama emin değilim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Acil yardım çağrısını yapıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yutulduğunu varsaymayalım; değerlendirme kaynak aramasını beklemeyecek."
+        }
+      ],
+      "required_any": [
+        [
+          "emergencies.general"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "crown-aspiration"
+      ],
+      "contrast_case_id": "missing-crown-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Kayıp parça ve solunum yakınması",
+        "Yutma ile solunum yoluna kaçmanın belirsizliği"
+      ],
+      "must_not_infer": [
+        "Kesin mideye gitti",
+        "Muayene bitene kadar bekleyebilir"
+      ],
+      "review_checklist": [
+        "Acil bulguları görünür tut; bu sistem canlı acil alarmı değildir"
+      ]
+    },
+    {
+      "id": "missing-crown-contrast",
+      "title": "Kaplama parçası nereye gitti — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Kaplama yerinden çıktı, korktum ama burada elimde."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Boğaza kaçma veya öksürük oldu mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Olmadı, parça baştan beri avucumda. Nefesim normal."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, parçanın tamamı burada görünüyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Altındaki dişi ve parçayı kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Tekrar takılabilir mi?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Önce kontrol edeceğiz, randevuya işlemi yapılmış yazmıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Uygunluğuna bakmadan karar vermeyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.cementation",
+          "prosth.fixed"
+        ]
+      ],
+      "forbidden": [
+        "emergencies.general"
+      ],
+      "source_ids": [
+        "crown-aspiration"
+      ],
+      "contrast_case_id": "missing-crown-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Parçanın tamamen hastanın elinde olduğu",
+        "Öksürük/solunum sorunu olmadığı"
+      ],
+      "must_not_infer": [
+        "İlk vakadaki aspirasyonu bu hastaya taşıma",
+        "Kaplama yeniden takıldı"
+      ],
+      "review_checklist": [
+        "Varsayımsal acili gerçek hasta bulgusu sayma"
+      ]
+    },
+    {
+      "id": "lost-front-tooth-index",
+      "title": "Düşme sonrası yerinden çıkan ön diş — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Düştüm, ön dişim köküyle birlikte çıktı, annem süte koydu."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ne kadar oldu, bu daha önce değişen büyük dişin miydi?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yaklaşık iki saat oldu. Evet, küçükken süt dişim düşmüştü, bu onun yerine çıkmıştı."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kabı getirdiler hocam, süreyi yaklaşık diye not ettim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bekletmeden muayene edelim; ne yapılabileceği dişin durumuna bağlı."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yerine takılırsa kesin eskisi gibi olur mu?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Bunu garanti diye yazmayacağım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kesin sonuç sözü veremeyiz, takip de gerekecek."
+        }
+      ],
+      "required_any": [
+        [
+          "dental trauma management",
+          "pediatric.trauma"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "avulsed-tooth"
+      ],
+      "contrast_case_id": "lost-front-tooth-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Kalıcı diş bilgisi",
+        "Yaklaşık süre ve sütte taşıma"
+      ],
+      "must_not_infer": [
+        "Kesin kurtulur",
+        "Vakadaki tüm işlem basamaklarının bu hastada yapıldığı"
+      ],
+      "review_checklist": [
+        "Travma yönlendirmesi; zaman ve diş türünü koru"
+      ]
+    },
+    {
+      "id": "lost-front-tooth-contrast",
+      "title": "Düşme sonrası yerinden çıkan ön diş — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Düştüm, ön taraftan bir parça koptu ama dişim ağzımda."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişin tamamı dışarı çıktı mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, aynada kalan kısmı görüyorum, sadece köşesi yok."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Parçayı getirmişler hocam, olay yarım saat önce olmuş."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişi ve çevresini kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Kökü de çıktı sanmıştım ama diş duruyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Tam diş çıktı diye kaydetmiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Muayene etmeden kırığın derinliğini bilemeyiz."
+        }
+      ],
+      "required_any": [
+        [
+          "dental trauma management",
+          "pediatric.trauma"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "avulsed-tooth"
+      ],
+      "contrast_case_id": "lost-front-tooth-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Diş ağızda, yalnız parça kopmuş",
+        "İlk hastadaki iki saat/süt bilgisini taşıma"
+      ],
+      "must_not_infer": [
+        "Tam diş avülsiyonu",
+        "Kök kırığı kesinliği"
+      ],
+      "review_checklist": [
+        "Kırık parçasını tüm diş gibi değerlendirme"
+      ]
+    },
+    {
+      "id": "implant-bleeding-index",
+      "title": "Vidayla yapılan dişin çevresi — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Vidayla yapılan dişin dibinden kan ve bazen kötü tat geliyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Oynama var mı, ne zamandır oluyor?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Kendisi oynamıyor ama eti şiş, bir süredir var."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, dişin yanındaki et de dokununca kanıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Çevresini ölçüp filmiyle birlikte değerlendirelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yani vida kesin kaybedildi mi?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Film henüz çekilmedi hocam."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Öyle bir sonucu şu an söyleyemeyiz."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.peri_implant"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "peri-implant"
+      ],
+      "contrast_case_id": "implant-bleeding-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "İmplant çevresinde kanama/şişlik",
+        "Film olmadığı"
+      ],
+      "must_not_infer": [
+        "Kesin kemik kaybı miktarı",
+        "İmplant kaybedildi"
+      ],
+      "review_checklist": [
+        "Biyolojik komplikasyon kaynağı; muayene gerekliliği"
+      ]
+    },
+    {
+      "id": "implant-bleeding-contrast",
+      "title": "Vidayla yapılan dişin çevresi — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Vidayla yapılan dişin üst tarafı tık tık oynuyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Etrafında kanama veya şişlik var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yok, sadece üstteki diş sallanıyor gibi."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, hareket eden üst parça mı, kontrol edelim mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, bağlantıyı ve çevre dokuyu birlikte kontrol edeceğim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Altındaki vida sağlam mıdır bilmiyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Sadece hastanın üst parçayla ilgili söylediğini yazdım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Film ve muayene olmadan kemik kaybı diyemeyiz."
+        }
+      ],
+      "required_any": [
+        [
+          "implant.prosthesis"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "peri-implant"
+      ],
+      "contrast_case_id": "implant-bleeding-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Üst parçanın oynama şikâyeti",
+        "Kanama/şişlik reddi"
+      ],
+      "must_not_infer": [
+        "Vida gevşemesi kesin tanısı",
+        "Otomatik implant kaybı"
+      ],
+      "review_checklist": [
+        "Mekanik sorun olasılığını araştır, muayenesiz tanı koyma"
+      ]
+    },
+    {
+      "id": "gum-or-root-index",
+      "title": "Diş eti mi dişin içi mi — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Alt ön dişimin arkasındaki et şişti, dokununca çok acıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ne zamandır var, yiyip içebiliyor musunuz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İki gündür var, fırçalarken de kanıyor. Yutabiliyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, etin üzerinde şişlik ve birikmiş taş görülüyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişin içini de kontrol edelim, yalnız görüntüye bakıp kanal kararı vermeyelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yani hemen diş çekilmeyecek mi?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Bugün çekim yapılmış gibi kayıt açmıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Önce muayene, gerekli testler ve film."
+        }
+      ],
+      "required_any": [
+        [
+          "periodontitis diagnosis treatment",
+          "perio.general"
+        ],
+        [
+          "odontogenic infection management"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "periodontal-abscess",
+        "sdcep-red-flags"
+      ],
+      "contrast_case_id": "gum-or-root-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Diş eti şişliği ve kanama",
+        "Test/film henüz yapılmadığı"
+      ],
+      "must_not_infer": [
+        "Kesin ölü diş",
+        "Çekim ya da kanal yapılmış"
+      ],
+      "review_checklist": [
+        "Kök ve diş eti kaynağını ayırmak için eksik bilgiyi belirt"
+      ]
+    },
+    {
+      "id": "gum-or-root-contrast",
+      "title": "Diş eti mi dişin içi mi — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Alt dişim ağrıyordu, şimdi çenemin altı hızla şişti."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Yutmanız ve nefesiniz nasıl?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Tükürüğümü bile zor yutuyorum, nefes de zor geliyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam ağzını açması da çok kısıtlı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bu durum acil değerlendirme gerektiriyor, beklemeyelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Diş ağrısı geçer diye evde beklemiştim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Acil yardım için hazırlığı başlatıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Diş kaynaklı olabilir ama kesin tanı için bekleyerek zaman kaybetmeyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "odontogenic infection management"
+        ],
+        [
+          "emergencies.general"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "periodontal-abscess",
+        "sdcep-red-flags"
+      ],
+      "contrast_case_id": "gum-or-root-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Hızla artan şişlik",
+        "Yutma ve nefes güçlüğü"
+      ],
+      "must_not_infer": [
+        "Basit lokal apse diye beklet",
+        "Vakadaki ilaç reçetesini kopyala"
+      ],
+      "review_checklist": [
+        "Acil yönlendirme gecikmemeli; bitişte çalışan sistemin sınırını belirt"
+      ]
+    },
+    {
+      "id": "jaw-and-headache-index",
+      "title": "Baş ağrısı ve çene hareketi — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Yıllardır başım ağrıyor, son zamanlarda kulağımın önü de acıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ağzınızı açarken veya çiğnerken artıyor mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, çiğnerken artıyor, bazen ağzımı tam açamıyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, baş ağrısı için başka doktora da gitmiş."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bütün baş ağrınız kesin diş sıkmaktan, başka neden aramayalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ama bunun hepsi aynı şey mi, emin olamadım."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Eski baş ağrısı değerlendirmesini de isteyelim mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, çene muayenesiyle birlikte diğer değerlendirmeyi de görelim."
+        }
+      ],
+      "required_any": [
+        [
+          "orofacial_pain.general",
+          "temporomandibular disorders diagnosis"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "jaw-pain"
+      ],
+      "contrast_case_id": "jaw-and-headache-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Çene hareketiyle artan ağrı",
+        "Baş ağrısının önceki değerlendirmesi"
+      ],
+      "must_not_infer": [
+        "Tüm baş ağrılarının kesin diş kaynaklı olduğu"
+      ],
+      "review_checklist": [
+        "Hekimin kesinlik iddiasını ayrı kaynak kontrolüne taşı"
+      ],
+      "required_clinician_quotes": [
+        "Bütün baş ağrınız kesin diş sıkmaktan, başka neden aramayalım."
+      ]
+    },
+    {
+      "id": "jaw-and-headache-contrast",
+      "title": "Baş ağrısı ve çene hareketi — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Benim çenem değil, eşimin çenesi ses yapıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Siz hangi şikâyetle geldiniz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Dün düşen dolgum için geldim, çenemde ağrı ya da açılma sorunu yok."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Ben de geceleri diş sıkıyorum ama bu benim kendi derdim hocam."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sizin düşen dolgunuzu inceleyelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, baş ağrım da yok."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Eşinin ve benim anlattığımı hasta şikâyetine eklemiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hastanın kendi şikâyetinden ilerleyelim."
+        }
+      ],
+      "required_any": [
+        [
+          "restorative.general"
+        ]
+      ],
+      "forbidden": [
+        "temporomandibular disorders diagnosis",
+        "orofacial_pain.general"
+      ],
+      "source_ids": [
+        "jaw-pain"
+      ],
+      "contrast_case_id": "jaw-and-headache-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Hasta çene şikâyetini reddediyor",
+        "Eşin ve asistanın ayrı kişisel öyküleri"
+      ],
+      "must_not_infer": [
+        "Hastada bruksizm veya çene ağrısı"
+      ],
+      "review_checklist": [
+        "Üç konuşmacıda hasta-dışı öyküyü ayır"
+      ],
+      "forbidden_clinician_quotes": [
+        "Ben de geceleri diş sıkıyorum ama bu benim kendi derdim hocam."
+      ]
+    },
+    {
+      "id": "ortho-root-change-index",
+      "title": "Tel tedavisinde kök değişikliği — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Tel tedavimde son filmde ön dişimin kökü kısalmış olabilir dediler."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Önceki filminiz yanınızda mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Telefonda var, ama yeni filmle aynı mı bilmiyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, karşılaştırmak için eski filmi de açayım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Filmleri inceleyip tedavi planını buna göre değerlendirelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Dişim kesin düşecek mi?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Söylenenin bir olasılık olduğunu not ettim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kesin sonuç veya neden söylemeden değerlendirmeyi tamamlayalım."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.resorption"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "ortho-root"
+      ],
+      "contrast_case_id": "ortho-root-change-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Film hakkında aktarılan ihtimal",
+        "Karşılaştırmanın henüz yapılmadığı"
+      ],
+      "must_not_infer": [
+        "Kesin kök kaybı miktarı",
+        "Tel tedavisi kesin hatalı"
+      ],
+      "review_checklist": [
+        "Kök değişikliği araştır, nedensellik ve prognozu uydurma"
+      ]
+    },
+    {
+      "id": "ortho-root-change-contrast",
+      "title": "Tel tedavisinde kök değişikliği — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Telleri dün sıktılar, ön dişlerime basınca sızlıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Filmde kökle ilgili bir şey söylendi mi?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hayır, yeni film çekilmedi, öyle bir şey de söylenmedi."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, dün rutin tel kontrolü yapılmış."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ağrının yerini ve kapanışı kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Sızlama dün başladı, öncesinde yoktu."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Süreyi bir gün olarak kaydettim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Tek başına sızlamadan kökün kısaldığı sonucunu çıkaramayız."
+        }
+      ],
+      "required_any": [
+        [
+          "ortho.appliances",
+          "ortho.general"
+        ]
+      ],
+      "forbidden": [
+        "ortho.resorption"
+      ],
+      "source_ids": [
+        "ortho-root"
+      ],
+      "contrast_case_id": "ortho-root-change-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Tel ayarından sonra başlayan sızı",
+        "Kök değişikliği bilgisi olmadığı"
+      ],
+      "must_not_infer": [
+        "Ağrıdan tek başına kök rezorpsiyonu"
+      ],
+      "review_checklist": [
+        "Ayarlama sonrası şikâyeti kök hasarı diye etiketleme"
+      ]
+    },
+    {
+      "id": "bite-pain-index",
+      "title": "Isırınca sızlayan diş — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Sert bir şeyi ısırınca bir dişim fena sızlıyor, soğukta da oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ağrının yeri hep aynı mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bazen gösteremiyorum, üst tarafta. Daha önce filmde bir şey çıkmadı."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, eski film var ama bugünkü muayene henüz yapılmadı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişi ve ısırmayı ayrı ayrı kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Film temizse dişte hiçbir sorun yok mudur?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hastanın hangi diş olduğunu tam seçemediğini yazıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Film tek başına bütün olasılıkları dışlamaz."
+        }
+      ],
+      "required_any": [
+        [
+          "endo.cracked_tooth"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "cracked-tooth"
+      ],
+      "contrast_case_id": "bite-pain-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Isırma ve soğukla ağrı",
+        "Diş lokalizasyonunun belirsizliği"
+      ],
+      "must_not_infer": [
+        "Kesin çatlak veya diş numarası",
+        "Önceki filmin normal oluşundan sağlıklı tanısı"
+      ],
+      "review_checklist": [
+        "Çatlak konusu araştırılmalı; tanı hekimde kalmalı"
+      ]
+    },
+    {
+      "id": "bite-pain-contrast",
+      "title": "Isırınca sızlayan diş — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Geçen hafta yapılan dolgu ağzımı kapatınca ilk o değiyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sert bir şeyi ısırmasanız da o yüksekliği hissediyor musunuz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Evet, boş kapatırken bile o diş önce buluşuyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, şikâyet dolgu yapıldıktan sonra başlamış."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kapanışı ve dolguyu kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Daha önce o dişimde bu his yoktu."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hangi dolgudan bahsettiğini işaretleyelim mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, muayenede doğrulayalım."
+        }
+      ],
+      "required_any": [
+        [
+          "prosth.occlusion",
+          "restorative.general"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "cracked-tooth"
+      ],
+      "contrast_case_id": "bite-pain-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Dolgu sonrası erken temas"
+      ],
+      "must_not_infer": [
+        "Kesin çatlak tanısı",
+        "Dolgu ayarı yapılmış"
+      ],
+      "review_checklist": [
+        "Kapanış şikâyetini alternatifleri kapatmadan değerlendir"
+      ]
+    },
+    {
+      "id": "pregnancy-gum-mass-index",
+      "title": "Hamilelikte büyüyen diş eti — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Hamileyim, diş etimde bir et parçası büyüdü, yemek yerken kanıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ne zamandır büyüyor, kaç haftalık hamilesiniz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Birkaç haftadır büyüyor, üç ayı geçtim ama haftayı tam hatırlamıyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, takip kartından haftayı teyit edebiliriz."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "O bölgeyi inceleyip kanamayı ve büyümeyi değerlendirelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Hamileyim diye doğuma kadar hiç bakılmaz mı?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Bugün herhangi bir şey kesilmiş gibi kayıt tutmuyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Değerlendirmeyi ertelemeyelim, yapılacak işi muayeneye göre konuşalım."
+        }
+      ],
+      "required_any": [
+        [
+          "pregnancy dental care"
+        ],
+        [
+          "oral mucosal lesion diagnosis",
+          "oral_medicine.general",
+          "perio.general"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "pregnancy-mass"
+      ],
+      "contrast_case_id": "pregnancy-gum-mass-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Hastanın gebeliği ve hafta belirsizliği",
+        "Büyüme ve tekrarlayan kanama"
+      ],
+      "must_not_infer": [
+        "Kesin piyojenik granülom tanısı",
+        "Her girişim mutlaka ertelenmeli ya da yapılmalı"
+      ],
+      "review_checklist": [
+        "Gebelik bağlamı ve lezyon incelemesi",
+        "Vaka tedavisini genel reçete sayma"
+      ]
+    },
+    {
+      "id": "pregnancy-gum-mass-contrast",
+      "title": "Hamilelikte büyüyen diş eti — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Diş etim fırçalarken kanıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hamilelik veya düzenli ilaç var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ben hamile değilim. Ablam hamile, telefonda ondan söz etmiştim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, gebelik kartı hastanın ablasına aitmiş."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sizin diş etlerinizi kontrol edelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Büyüyen et parçası da yok, sadece fırçalayınca kanıyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Ablasının bilgisini hastaya yazmıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Muayene bulgularını ayrı kaydedelim."
+        }
+      ],
+      "required_any": [
+        [
+          "periodontitis diagnosis treatment",
+          "perio.general"
+        ]
+      ],
+      "forbidden": [
+        "pregnancy dental care"
+      ],
+      "source_ids": [
+        "pregnancy-mass"
+      ],
+      "contrast_case_id": "pregnancy-gum-mass-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Gebelik hastaya değil ablasına ait"
+      ],
+      "must_not_infer": [
+        "Hasta hamile",
+        "Hastada büyüyen kitle"
+      ],
+      "review_checklist": [
+        "Yakın öyküsünü hasta öyküsüne taşıma"
+      ]
+    },
+    {
+      "id": "wire-and-gums-index",
+      "title": "Aynı yerde tekrar eden diş eti şişliği — vaka esinli",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Aynı dişimin eti yine şişti, daha önce de olmuştu."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "O bölgeyi zorlayan bir alışkanlığınız var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İşte kablonun ucunu bazen dişimle soyuyorum, tam oraya geliyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam, hasta aynı noktayı gösteriyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Araya bir şey kaçmış mı ve diş eti nasıl, inceleyelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Demek bütün sorun kesin kablodan mı?"
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Alışkanlığı söylediği gibi kaydettim, neden diye kesinleştirmedim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Muayene etmeden tek neden diyemeyiz."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.general",
+          "periodontitis diagnosis treatment"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "foreign-body-gum"
+      ],
+      "contrast_case_id": "wire-and-gums-contrast",
+      "adaptation_notes": "Yayın yalnızca klinik başlangıç fikridir. Türkçe replikler, konuşmacılar, işlem planı ve ek ayrıntılar özgün kurgudur; gerçek hastanın sözü değildir.",
+      "must_preserve": [
+        "Tekrarlayan aynı bölge şişliği",
+        "Hastanın kablo soyma alışkanlığı"
+      ],
+      "must_not_infer": [
+        "Kesin yabancı cisim var",
+        "Tek sebep kesin alışkanlık"
+      ],
+      "review_checklist": [
+        "Lokal etkeni araştır, neden-sonuç kesinliği kurma"
+      ]
+    },
+    {
+      "id": "wire-and-gums-contrast",
+      "title": "Aynı yerde tekrar eden diş eti şişliği — karşılaştırma",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Diş etim kanıyor, kontrol ettirmek istedim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Dişinizle tel ya da kablo tutuyor musunuz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ben yapmıyorum, öyle bir işim de yok."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kabloyu dişimle ben açıyorum hocam, hasta değil. Ben elektrik işi de yapıyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hastanın şikâyetini ayrı değerlendirelim."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bende sadece fırçalarken kanama var."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kendi anlattığımı hasta dosyasına geçirmiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Diş eti muayenesinden sonra konuşalım."
+        }
+      ],
+      "required_any": [
+        [
+          "perio.general",
+          "periodontitis diagnosis treatment"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "foreign-body-gum"
+      ],
+      "contrast_case_id": "wire-and-gums-index",
+      "adaptation_notes": "Araştırmacı tarafından uydurulmuş karşılaştırma; kaynakta bildirilmiş ikinci vaka değildir. Değişen bilgiye göre yorumun değişmesi sınanır.",
+      "must_preserve": [
+        "Kablo alışkanlığı asistana ait",
+        "Hasta alışkanlığı reddediyor"
+      ],
+      "must_not_infer": [
+        "Hasta dişleriyle kablo soyuyor",
+        "Asistan hastanın diş hekimi gibi klinik iddia sahibi"
+      ],
+      "review_checklist": [
+        "Asistan kişisel öyküsünü hastaya/hekime atfetme"
+      ],
+      "forbidden_clinician_quotes": [
+        "Kabloyu dişimle ben açıyorum hocam, hasta değil. Ben elektrik işi de yapıyorum."
+      ]
+    }
+  ]
+}

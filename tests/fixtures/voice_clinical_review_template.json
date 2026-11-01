@@ -1,0 +1,17 @@
+{
+  "notice": "TEMPLATE ONLY. Requires actual clinician approval and adjudication of real outputs. Do not change draft to approved without review. This file deliberately cannot produce a clinical score.",
+  "repeats": 5,
+  "cases": [
+    {
+      "id": "replace_with_case_id",
+      "approval_status": "draft",
+      "approved_by": "",
+      "approved_at": "",
+      "labels_complete": false,
+      "required_alert_ids": [],
+      "critical_alert_ids": [],
+      "reference_sources": []
+    }
+  ],
+  "runs": []
+}

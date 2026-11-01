@@ -30,11 +30,11 @@ async function fixture(){
     calls.push({url,body:options.body?JSON.parse(options.body):null});
     if(url.endsWith('/text')&&hangText)return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>{const error=new Error('Aborted');error.name='AbortError';reject(error)},{once:true}));
     let body={ok:true,enabled:true,live_enabled:true};
-    if(url.endsWith('/text'))body={ok:true,revision:'a'.repeat(64),review:{transcript:JSON.parse(options.body).transcript,fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[],follow_up_questions:[]}};
+    if(url.endsWith('/text'))body={ok:true,revision:'a'.repeat(64),review:{transcript:JSON.parse(options.body).transcript,fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:sourceMode==='overflow'?Array.from({length:25},(_,i)=>({category:'CLINICAL_STATEMENT',quote:'Klinik ifade '+i,observation:'Hekime atfedilen ifade',suggestion:'Kontrol'})):sourceMode==='clinician'?[{category:'CLINICAL_STATEMENT',quote:'Bu işlem kesin risksizdir.',observation:'Hekime atfedilen klinik ifade',suggestion:'Kaynak kapsamı kontrol edilmeli.'}]:[],follow_up_questions:[]}};
     else if(url.endsWith('/finalize')){
       if(sourceMode==='failure')body={ok:false,error:'Synthetic source outage'};
       else if(sourceMode==='unchanged')body={ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}};
-      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
+      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
     return {ok:body.ok,json:async()=>body};
@@ -107,6 +107,27 @@ async function fixture(){
   try{
     f.setMode('native');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
     assert.ok(f.get('.voice-topic-coverage').textContent.includes('Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı'), 'Native research must not imply verified topic evidence');
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('clinician');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
+    assert.ok(f.get('[data-voice-final-results]').textContent.includes('Hekime atfedilen klinik ifadeler'));
+    assert.ok(f.get('[data-voice-final-results]').textContent.includes('Kaynak doğrulaması tamamlanmadı'));
+    assert.equal(f.get('[data-voice-communication]').textContent.includes('undefined'),false);
+    assert.equal(f.calls.find(c=>c.url.endsWith('/finalize')).body.insights[0].category,'CLINICAL_STATEMENT');
+    f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
+    await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'save excludes clinician attribution');
+    const saved=f.calls.find(c=>c.url.endsWith('/apply')).body;
+    assert.equal(Object.keys(saved.fields).some(k=>k.startsWith('clinician_')),false);
+    assert.equal(JSON.stringify(saved).includes('Bu işlem kesin risksizdir.'),false);
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('overflow');await f.begin();f.speech('Soğuk içemiyorum.');f.get('[data-live-finish]').click();
+    await until(()=>f.get('.voice-exam-status').textContent.includes('Hekim ifadeleri sınırı'),'explicit clinician overflow');
+    assert.equal(f.calls.some(c=>c.url.endsWith('/finalize')),false);
+    assert.equal(f.get('[data-voice-save]').disabled,true);
+    assert.ok(f.get('[data-voice-transcript]').value.includes('Soğuk içemiyorum.'));
   }finally{f.close()}
   console.log('Integrated DOM: live→pause→finish→save, disconnected recovery and partial evidence retry passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
