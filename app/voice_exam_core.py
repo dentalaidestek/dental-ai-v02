@@ -310,7 +310,10 @@ def normalize(result, evidence=None):
                         'suggestion': 'Kaynak kapsamı ve hastaya uygulanabilirliği kontrol edilmeli.'})
                 elif len(output['communication']) < 24:
                     observation = 'Görüşmede verilen yanıt: ' + quote if fact['field'] == 'clinician_response' else quote
-                    output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': value})
+                    # A literal quote validates the utterance, not the model's
+                    # paraphrase (e.g. an ambiguous "adını" can change referent).
+                    suggestion = '' if fact['field'] == 'clinician_response' else value
+                    output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': suggestion})
             continue
         if fact['field'] == 'medications':
             # Do not silently replace an uncertain spoken product with a different

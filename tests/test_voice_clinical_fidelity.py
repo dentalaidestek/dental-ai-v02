@@ -46,6 +46,18 @@ def test_doctor_response_and_patient_teachback_are_grounded_transient_context():
     assert all('Görüşmede verilen yanıt' in item['observation'] for item in result['communication'])
 
 
+def test_clinician_response_does_not_publish_an_unverified_paraphrase():
+    quote = 'Açık alanı incelemeden adını kesin koymayalım.'
+    incorrect = 'Açık alan muayenesi yapılmadan ilaç adının kesin konmayacağı belirtildi'
+    result = core.normalize({'transcript': quote, 'clinical_facts': [{
+        'field': 'clinician_response', 'value': incorrect,
+        'quote': quote, 'temporality': 'CURRENT'}]})
+    assert result['communication'] == [{
+        'quote': quote, 'observation': 'Görüşmede verilen yanıt: ' + quote,
+        'suggestion': ''}]
+    assert not result['fields']
+
+
 def test_long_dialogue_does_not_drop_answered_needs_after_eighth_communication_fact():
     quotes = [f'İletişim yanıtı {i}.' for i in range(10)]
     quotes.append('Bugün temizleyeceksiniz, yeni ilaca başlamıyorum.')
