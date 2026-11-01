@@ -31,6 +31,25 @@ def _configuration():
     return key, model
 
 
+def _log_http_error(exc, stage):
+    # Never log provider messages: they can include patient data or credentials.
+    body = exc.read(65536).decode('utf-8', errors='replace').casefold()
+    category = ('schema_complexity' if 'complex' in body and 'schema' in body else
+                'schema_optional_limit' if 'optional' in body else
+                'schema_argument' if 'schema' in body else 'provider_argument')
+    tags = ('input_schema', 'schema', 'strict', 'required', 'additionalproperties',
+            'enum', 'empty', 'invalid', 'unsupported', 'object', 'array',
+            'string', 'type', 'properties', 'format', 'optional', 'limit',
+            'complex', 'compilation', 'timeout', 'union', 'anyof', 'allof',
+            'model', 'beta', 'feature', 'supported', 'maximum', 'minimum',
+            'tools', 'union_tag_invalid', 'extra_forbidden', 'allowed_domains',
+            'max_uses', 'web_search', 'web_fetch', 'web_search_20250305',
+            'web_fetch_20250910', 'output_config', 'not_found', 'permission')
+    diagnostics = ','.join(tag for tag in tags if re.search(r'\b' + tag + r'\b', body)) or 'other'
+    logging.getLogger(__name__).warning('voice_claude_error status=%d category=%s diagnostics=%s stage=%s',
+                                       exc.code, category, diagnostics, stage)
+
+
 def review(prompt, data, schema, *, extraction=False):
     key, model = _configuration()
     payload = {'model': model, 'max_tokens': 16384 if extraction else 8192, 'stream': False,
@@ -56,20 +75,7 @@ def review(prompt, data, schema, *, extraction=False):
         with reservation('anthropic', model), urlopen(request, timeout=90) as response:
             raw = response.read(core.MAX_RESPONSE + 1)
     except urllib.error.HTTPError as exc:
-        # Never log provider messages: they can include user data. Fixed categories only.
-        body = exc.read(65536).decode('utf-8', errors='replace').casefold()
-        category = ('schema_complexity' if 'complex' in body and 'schema' in body else
-                    'schema_optional_limit' if 'optional' in body else
-                    'schema_argument' if 'schema' in body else 'provider_argument')
-        # Fixed vocabulary only: never emit the provider's free-form message,
-        # schema values, transcript, credentials or a returned JSON path.
-        tags = ('input_schema', 'schema', 'strict', 'required', 'additionalproperties',
-                'enum', 'empty', 'invalid', 'unsupported', 'object', 'array',
-                'string', 'type', 'properties', 'format', 'optional', 'limit',
-                'complex', 'compilation', 'timeout', 'union', 'anyof', 'allof',
-                'model', 'beta', 'feature', 'supported', 'maximum', 'minimum')
-        diagnostics = ','.join(tag for tag in tags if re.search(r'\b' + tag + r'\b', body)) or 'other'
-        logging.getLogger(__name__).warning('voice_claude_error status=%d category=%s diagnostics=%s', exc.code, category, diagnostics)
+        _log_http_error(exc, 'extraction' if extraction else 'final')
         raise
     if len(raw) > core.MAX_RESPONSE:
         raise ValueError('Response too large')
@@ -172,11 +178,18 @@ def research_message(prompt, data, tools, *, previous_messages=None, timeout=60)
     request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
         data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
         headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
-    with reservation('anthropic', model), urlopen(request, timeout=timeout) as response:
-        raw = response.read(core.MAX_RESPONSE + 1)
+    try:
+        with reservation('anthropic', model), urlopen(request, timeout=timeout) as response:
+            raw = response.read(core.MAX_RESPONSE + 1)
+    except urllib.error.HTTPError as exc:
+        _log_http_error(exc, 'research')
+        raise
     if len(raw) > core.MAX_RESPONSE:
         raise ValueError('Research response too large')
     message = json.loads(raw)
     if not isinstance(message, dict) or not isinstance(message.get('content'), list):
         raise ValueError('Invalid native research response')
+    stop = message.get('stop_reason')
+    logging.getLogger(__name__).warning('voice_public_research stop=%s blocks=%d',
+        stop if stop in {'end_turn', 'tool_use', 'max_tokens', 'refusal', 'pause_turn', 'stop_sequence'} else 'other', len(message['content']))
     return message
