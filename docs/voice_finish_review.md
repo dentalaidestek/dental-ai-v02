@@ -228,3 +228,8 @@ Açık kalan önemli bulgular: 47 dişindeki dolgunun “yanında” diye yenide
 
 
 #225 fb041879, dep-dbjlcj3m8hqs73ftika0 ile18:11:54 İstanbul'da live oldu. Gerçek sentetik dolgu vakasında yeni kartlar,2öğeli özet,ADA kaynak grubunun açılması ve onaysız kayıt engeli gerçek tarayıcıda doğrulandı. Son final15:13:10Z sources1/accepted0; kaynaklı kontrol üretilmediği açıkça gösterildi. Önceki aynı vakadaki1kontrol bu kez tekrarlanmadı; kaynak/model tutarlılığı çözülmüş sayılmaz. Kanıt ekranları ve4adımlı kısa görsel inceleme ana canlı test raporunda. Fiziksel mobil/mikrofon ve klinik altın set doğrulanmadı.
+
+
+### 1 Kasım — sade başlıklar ve uzatılmış gündelik konuşmalar
+
+Başlıklar “Görüşmeden çıkan bilgiler”, “Kaynaklara göre kontrol edilecekler”, “Hastayla iletişim”, “Netleştirilecek sorular”, “Kaydedilecek bilgiler” olarak sadeleştirildi. Önceki vaka esinli setten3yeni uzun senaryo:74replik, toplam14:52Türkçe yapay ses,13adet90saniye altı bölüm. Gerçek mikrofon/insan sesi değildir. Sesli rol adları okunmaz; beklenen sonuçlar ayrı metadata alanındadır. Fixture doğrulayıcı48repliği destekler,49u reddeder; RED/GREEN sonrası462Python/11Node geçti. Canlı ses testleri henüz bu notla geçmiş sayılmaz; ayrı koşular ve bulgular docs/voice_extended_validation_2026-11-01.md içinde kaydedilir.

@@ -1,0 +1,150 @@
+{
+  "synthetic": true,
+  "real_microphone": false,
+  "cases": [
+    {
+      "case": "bone-medicine-extended",
+      "engine": "espeakng-loader 0.2.4 / Turkish synthetic voices",
+      "sample_rate": 22050,
+      "role_labels_spoken": false,
+      "total_seconds": 313.88,
+      "segments": [
+        {
+          "seconds": 70.2,
+          "turns": [
+            1,
+            6
+          ],
+          "sha256": "d60881b9c9aad4b4aba398cd3b1773d164fa5e4dc4abe410208fc211df8f25b9",
+          "filename": "bone-medicine-extended-01.wav"
+        },
+        {
+          "seconds": 72.67,
+          "turns": [
+            7,
+            12
+          ],
+          "sha256": "5b3e486fe44de5c9b460ee0d8e5a2cc8fbfce36396e9f39488fe5c8c4c69e126",
+          "filename": "bone-medicine-extended-02.wav"
+        },
+        {
+          "seconds": 69.33,
+          "turns": [
+            13,
+            18
+          ],
+          "sha256": "93194c00a395a3a0b70660b09e420b0a697082ef3f4f9f3f89d0a4fc3f526dfe",
+          "filename": "bone-medicine-extended-03.wav"
+        },
+        {
+          "seconds": 75.75,
+          "turns": [
+            19,
+            24
+          ],
+          "sha256": "c30ca708094577f2bdef3ad501b46050a4992583891769faf61b49bb37969606",
+          "filename": "bone-medicine-extended-04.wav"
+        },
+        {
+          "seconds": 25.93,
+          "turns": [
+            25,
+            26
+          ],
+          "sha256": "99656d8492321877a9716c6639e4ab3022b0ffcab02d48aff792c689c00212a6",
+          "filename": "bone-medicine-extended-05.wav"
+        }
+      ]
+    },
+    {
+      "case": "crown-plan-extended",
+      "engine": "espeakng-loader 0.2.4 / Turkish synthetic voices",
+      "sample_rate": 22050,
+      "role_labels_spoken": false,
+      "total_seconds": 282.73,
+      "segments": [
+        {
+          "seconds": 73.3,
+          "turns": [
+            1,
+            6
+          ],
+          "sha256": "29fd3aeb073b830f1e04a875fb33142fd33e05c6c7bb840595a773944b1a043f",
+          "filename": "crown-plan-extended-01.wav"
+        },
+        {
+          "seconds": 71.97,
+          "turns": [
+            7,
+            12
+          ],
+          "sha256": "b155328c099762e765c0b7ad3410774a2048f05c9b280998ba3d13c23718f15a",
+          "filename": "crown-plan-extended-02.wav"
+        },
+        {
+          "seconds": 68.19,
+          "turns": [
+            13,
+            18
+          ],
+          "sha256": "9f493706e3386c829501f9e9470b39c3acf2eceeb04cf2b7f1e2a058083857a9",
+          "filename": "crown-plan-extended-03.wav"
+        },
+        {
+          "seconds": 69.27,
+          "turns": [
+            19,
+            24
+          ],
+          "sha256": "b00e8c649cfc04f94316f88c2a726ffbbda768cf669f677d99c186f0b4be6ec5",
+          "filename": "crown-plan-extended-04.wav"
+        }
+      ]
+    },
+    {
+      "case": "implant-gums-extended",
+      "engine": "espeakng-loader 0.2.4 / Turkish synthetic voices",
+      "sample_rate": 22050,
+      "role_labels_spoken": false,
+      "total_seconds": 295.28,
+      "segments": [
+        {
+          "seconds": 70.73,
+          "turns": [
+            1,
+            6
+          ],
+          "sha256": "5f5c4f5e5022bac75cfe6320b0b6ebbe31c86db54e342c4982f84781e4130fa3",
+          "filename": "implant-gums-extended-01.wav"
+        },
+        {
+          "seconds": 74.24,
+          "turns": [
+            7,
+            12
+          ],
+          "sha256": "6917e3dd3763214fca4093f55d264b9176abcdd8ef9bb319a9786e5570c45365",
+          "filename": "implant-gums-extended-02.wav"
+        },
+        {
+          "seconds": 74.19,
+          "turns": [
+            13,
+            18
+          ],
+          "sha256": "c5312761dc3114f4af8f5e938aa8eccfb976604a040c42cefea80d7dcd6608dd",
+          "filename": "implant-gums-extended-03.wav"
+        },
+        {
+          "seconds": 76.12,
+          "turns": [
+            19,
+            24
+          ],
+          "sha256": "8539ddec36d60e120895a02c537a445e64b97df112235ab76c3ae1270b31cab9",
+          "filename": "implant-gums-extended-04.wav"
+        }
+      ]
+    }
+  ]
+}

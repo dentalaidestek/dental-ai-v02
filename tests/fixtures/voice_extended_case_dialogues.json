@@ -1,0 +1,541 @@
+{
+  "synthetic": true,
+  "approval_status": "draft",
+  "clinical_gold_standard": false,
+  "purpose": "Uzun, gündelik üç konuşmacılı ses/metin akışında düzeltme, olumsuzluk, aidiyet ve plan ayrımı. Beklenenler modele gönderilmez.",
+  "sources": [
+    {
+      "id": "denture-ulcer",
+      "title": "Oral squamous cell carcinoma misdiagnosed as a denture-related traumatic ulcer: A clinical report",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/26581660/",
+      "publication_year": "2016",
+      "evidence_scope": "Özet: protez sonrası başlayan ve protez çıkarılınca da geçmeyen yaranın tanısında gecikme.",
+      "access_basis": "Abstract reviewed; dialogue and contrast invented.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "irrigant-accident",
+      "title": "Bone necrosis as a complication of sodium hypochlorite extrusion. A case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9617265/",
+      "publication_year": "2022",
+      "evidence_scope": "Kanal yıkaması sırasında yanma; sonrasında doku hasarı. Vaka bir tedavi kılavuzu değildir.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "antiresorptive",
+      "title": "Multidisciplinary approach for medication-related osteonecrosis of the jaws: a case report and literature review",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12061783/",
+      "publication_year": "2025",
+      "evidence_scope": "Kanser için kemik ilacı kullanımı ve çekim sonrası uzun süren açık kemik.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "crown-aspiration",
+      "title": "Crowning achievement: a case of dental aspiration",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4661492/",
+      "publication_year": "2015",
+      "evidence_scope": "İşlem sırasında kaplamanın solunum yoluna kaçtığı bildirilmiş vaka.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "avulsed-tooth",
+      "title": "Replantation of an Avulsed Tooth: A Case Report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10276759/",
+      "publication_year": "2023",
+      "evidence_scope": "Düşmeyle yerinden çıkan kalıcı ön diş; süt içinde taşınma ve geçen sürenin kaydı.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "peri-implant",
+      "title": "The challenge of periimplantitis management: a case report",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/36571747/",
+      "publication_year": "2022",
+      "evidence_scope": "İmplant çevresinin klinik ve radyografik değerlendirilmesi; tek protokolün üstünlüğü çıkarılamaz.",
+      "access_basis": "PubMed abstract reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "periodontal-abscess",
+      "title": "Management of Acute Periodontal Abscess Mimicking Acute Apical Abscess in the Anterior Lingual Region: A Case Report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6822886/",
+      "publication_year": "2019",
+      "evidence_scope": "Diş eti kaynaklı apsenin kök kaynaklı sorunla karışabilmesi; muayene ve testlerle ayrım.",
+      "access_basis": "Full case text reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "jaw-pain",
+      "title": "An Unusual Case of Temporomandibular Joint Disorder Resembling Migraine",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9923078/",
+      "publication_year": "2023",
+      "evidence_scope": "Uzun süren baş ağrısına çene hareketiyle artan ağrının eşlik etmesi.",
+      "access_basis": "Indexed case text reviewed; direct full-text open hit CAPTCHA.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "ortho-root",
+      "title": "Effective endodontically treated incisors with external root resorption during orthodontic movement: A case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10041545/",
+      "publication_year": "2023",
+      "evidence_scope": "Ortodontik tedavi sırasında kök değişikliği ve endodonti-ortodonti değerlendirmesi.",
+      "access_basis": "Indexed abstract reviewed; no images reused.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "cracked-tooth",
+      "title": "Cracked Tooth: A Report of Two Cases and Role of Cone Beam Computed Tomography in Diagnosis",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3502789/",
+      "publication_year": "2012",
+      "evidence_scope": "Isırma ve ısıyla ağrı; ilk filmde belirgin bulgu olmaması çatlağı tek başına dışlamaz.",
+      "access_basis": "Indexed case text reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "pregnancy-mass",
+      "title": "Clinical management and surgical intervention for oral pyogenic granuloma during pregnancy: a case report",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13336780/",
+      "publication_year": "2026",
+      "evidence_scope": "Gebelikte büyüyen ve kanayabilen diş eti oluşumu; konuşmayla patolojik tanı konmaz.",
+      "access_basis": "Indexed case text reviewed; treatment not adopted as a recommendation.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "foreign-body-gum",
+      "title": "Recurrent periodontal abscess associated with “teeth as a tool”",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3357018/",
+      "publication_year": "2012",
+      "evidence_scope": "Dişi kablo soymak için kullanma alışkanlığıyla ilişkili tekrarlayan diş eti apsesi.",
+      "access_basis": "Indexed abstract reviewed; causal certainty not generalized.",
+      "accessed_on": "2026-10-31",
+      "kind": "published_case_report"
+    },
+    {
+      "id": "sdcep-red-flags",
+      "title": "Dental abscess — Drug Prescribing for Dentistry (SDCEP)",
+      "url": "https://sdcepdentalprescribing.nhs.scot/guidance/bacterial-infections/dental-abscess/",
+      "publication_year": "accessed 2026",
+      "evidence_scope": "Yutma/solunum güçlüğü ve ciddi şişlik gibi bulgularda acil değerlendirme; vaka sonrası bekleme testi değildir.",
+      "access_basis": "Official guidance reviewed.",
+      "accessed_on": "2026-10-31",
+      "kind": "professional_guidance"
+    },
+    {
+      "id": "ada-lesions",
+      "title": "Oral Cancer Guideline (2026 Update) — ADA",
+      "url": "https://www.ada.org/resources/research/science/evidence-based-dental-research/oral-cancer-guideline",
+      "publication_year": "2026",
+      "evidence_scope": "Şüpheli ağız lezyonunun değerlendirilmesi; histopatolojik tanı konuşmadan çıkarılamaz.",
+      "access_basis": "Official guideline overview reviewed; not a clinical adjudication.",
+      "accessed_on": "2026-10-31",
+      "kind": "professional_guidance"
+    }
+  ],
+  "cases": [
+    {
+      "required_any": [
+        [
+          "antiresorptive medication osteonecrosis jaw"
+        ],
+        [
+          "tooth extraction complications"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "antiresorptive"
+      ],
+      "id": "bone-medicine-extended",
+      "title": "Hastane ilacı, kapanmayan yara ve araya giren günlük konuşma",
+      "based_on_case_id": "bone-medicine-index",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Hocam merhaba, geçen sefer çekilen yer var ya, bir türlü toparlamadı. Dilim oraya gidip duruyor, sivri bir şey geliyor elime değil dilime."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Biraz yavaş gidelim, hangi taraftan bahsediyorsunuz? Bir de ne zamandır böyle, çekimden hemen sonra mı başladı yoksa sonradan mı fark ettiniz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Sol alt tarafta. Tam gününü sayamam ama iki ayı geçti, belki üç aya yaklaşıyor. Önce normaldir diye bekledim, sonra içime dert oldu."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam hastanın eski çekim tarihi burada görünmüyor, başka yerde yaptırmış. Hangi diş olduğunu da kendi dosyasından teyit etmemiz gerekecek."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yemek değince bazen sızlıyor. Dün çok ağrımadı diye iyileşti sanmayın, o açıklık hâlâ duruyor. Bazen ağzıma kötü bir tat da geliyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Tamam, ağrının az olmasıyla yaranın kapanmasını aynı şey saymayalım. Hastanede gördüğünüz bir tedavi, arada yapılan iğne veya serum var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ben her gün hap içen biri değilim hocam. Yalnız kanser için hastanede kemikler güçlensin diye bir ilaç veriyorlar, adını şimdi çıkaramadım."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Telefonunuzdaki reçeteye birlikte bakalım mı? Hastanede verilen ilacın bölümünü de açabilirsek hocam oradan görür."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Telefonumun şarjı bitmek üzere. Kızım biliyor, sonra fotoğrafını gönderir. İğne mi serum mu diye sorarsanız, kolumdan veriliyor ama nasıl yazıldığını bilmiyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "İlacın adını, kaç arayla yapıldığını ve en son ne zaman verildiğini hastane listesinden doğrulayalım. Şimdilik bir ilaç adı tahmin edip yazmayalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Geçen ay gittim, bir sonraki randevum da var. Tedavi bitti demiyorum yani, devam ediyor. Tarihi yanlış söylemeyeyim, kızıma sorup netleştireyim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Benim de geceleri diş sıktığım oluyor hocam, sabah çenem yorulmuş kalkıyorum. Neyse, sizin çekim yeriyle ilgili söylediğinizi böldüm, buyurun."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sizin anlattığınız ayrı, hastamızın çekim yerini inceleyeceğiz. Hastanede yapılan bu tedavi dışında kullandığınız ağrı kesici, vitamin veya başka bir şey var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Başka günlük hap yok. Bazen ağrırsa evdeki ağrı kesiciden aldım ama kutuyu getirmedim, adını yanlış söylemeyeyim. Hastanedeki o ilaç ise devam ediyor."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Arada aldığınız ağrı kesicinin kutusunu da getirirseniz iyi olur. Hastanede yapılan tedavinin listesi için kızınıza haber verelim mi?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Daha önce bir ilaçtan sonra nefes darlığı, şişme veya döküntü oldu mu? Alerji olarak bildiğiniz bir şey var mı?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bildiğim bir ilaç alerjim yok. Ama her ilacı kullandım demek istemiyorum, daha önce böyle bir şey başıma gelmedi diye söylüyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Anladım. Kanser tedavisinin ayrıntılarını da hastane kaydından görelim. Baş ve boyun bölgesine ışın tedavisi aldınız mı, bunu biliyor musunuz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bana ışın yapıldığını hatırlamıyorum ama kesin konuşmayayım, tedavi isimlerini karıştırıyorum. Hastaneden liste isteyelim, ben de kızımla birlikte kontrol ederim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Bir saniye hocam, telefon çalıyor, kapatıyorum. Siz devam edin, hastaneye sorulacak bilgileri kağıda yazıyorum; hasta eve götürsün."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bir de korkuyorum açıkçası. Yine kesip biçecek misiniz hemen? Ücreti de baştan bilmek isterim, bugün hazırlıklı gelmedim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bugün önce bakıp ne gördüğümüzü konuşacağız. Yapılacak bir işlem düşünürsek nedenini, seçenekleri ve ücretini anlatmadan başlamayacağız; istemediğiniz yerde durabiliriz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İyi oldu bunu söylemeniz. Ben ilacı kendim bırakayım mı diye düşünüyordum ama hastanedeki doktoruma sormadan bir şey değiştirmeyeyim o zaman."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hastanede verilen tedaviyi kendi kendinize değiştirmeyin; ilgili doktorla birlikte değerlendirelim. Buradaki açık alanı görmeden de buna kesin bir hastalık adı koymayalım."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Tamam hocam, ilaç listesiyle çekim tarihini istemeyi not alıyorum. Hastamız önce muayene olsun, sonra ne gerekiyorsa konuşursunuz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Tamam, bugün önce bakıp konuşacağız. Kızım ilaç listesini ve hastane tarihlerini getirsin, sonra birlikte karar verelim. O sivri yerin nedenini de öğrenmek istiyorum."
+        }
+      ],
+      "must_preserve": [
+        "Adı bilinmeyen aktif hastane tedavisi, günlük hap yokluğuyla silinmez",
+        "Çekim yeri iki aydan uzun süredir kapanmıyor; diş numarası bilinmiyor",
+        "Alerji beyanı bilinen yok; ışın tedavisi belirsiz",
+        "Korku ve ücret sorusuna verilmiş yanıt korunur"
+      ],
+      "must_not_infer": [
+        "Asistanın diş sıkmasını hastaya yazma",
+        "Belirli kemik ilacı veya kesin çene tanısı uydurma",
+        "Yeni çekim veya hastane listesinin geldiğini söyleme"
+      ],
+      "requires_uncertainty": true,
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+    },
+    {
+      "required_any": [
+        [
+          "prosth.cementation",
+          "prosth.fixed"
+        ]
+      ],
+      "forbidden": [
+        "emergencies.general"
+      ],
+      "source_ids": [
+        "crown-aspiration"
+      ],
+      "id": "crown-plan-extended",
+      "title": "Kaplama elde, diş numarası düzeltmesi ve henüz yapılmamış işlem",
+      "based_on_case_id": "missing-crown-contrast",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Hocam geçen akşam yemek yerken ağzıma sert bir şey geldi. İlk anda dişim kırıldı sandım, meğer üstündeki kaplama çıkmış. Peçeteye koyup getirdim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kaplama burada, kutuya alıyorum. Hastanın getirdiği parça bu hocam; yeni bir parça düşmedi, masanın üstündekini gösteriyorum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Şu an nefes almada, yutkunmada sorun var mı? O sırada öksürük veya bir şeyi içinize kaçırmış gibi bir durum oldu mu?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yok hocam, yutmadım, elimde zaten. Nefesimde bir değişiklik yok. Eşim de oradaydı, hemen peçeteye koyduk. Ben sadece alttaki dişi açıkta kaldı diye korktum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Tamam, önce altındaki dişe ve bu kaplamaya bakacağız. Sağ alt taraftaki kırk altı numaralı diş diye not alıyorum, bir dakika yerini tekrar kontrol edeyim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Hocam hasta arkadakini gösteriyor, kırk yedi olabilir mi? Kırk altının üstünde eski dolgu var diye önceki notta bir şey görmüştüm ama teyit edelim."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Düzeltiyorum, çıkan kaplama kırk yedi numaralı dişe ait. Kırk altı demem yanlıştı. Kırk altıda eski dolgu mevcut; o dişte bugün yeni dolgu yapmadık."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ben numaralarını bilmiyorum hocam. Şu arkadaki boşluk işte. Soğuk değince hafif ürperiyor, ama geceleri uyandıran bir ağrı olmadı."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Kırk yedi diye düzelttim hocam. Getirdiğiniz kaplamayı da kaybolmasın diye bu küçük kutuda tutuyorum, siz çıkarken unutmayalım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bu parçanın tekrar kullanılıp kullanılamayacağına bakmadan yapıştıralım diyemeyiz. Altındaki dişin durumunu da kontrol edeceğiz; konuşmadan kesin bir tedavi çıkarmayalım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yani bugün mutlaka çekilecek mi? Arkadaşım kaplama çıktıysa altı bitmiştir dedi de, ben bu yüzden bütün gece kafaya taktım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Arkadaşınızın söylediğiyle çekim kararı veremeyiz. Önce muayene edip gerekirse görüntüsünü değerlendireceğiz. Henüz kırk yedi için çekim kararı vermedik."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Benim de bir kaplamam çıkmıştı, çok panik olmuştum. Sonra başka işlem gerekmemişti ama sizinkine doktorumuz bakınca belli olur tabii."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bir de ben çalışan biriyim, haftaya şehir dışına çıkacağım. Bugün ne yapılacağını ve kaça mal olacağını bilirsem ona göre ayarlayayım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Süreyi ve ücreti, muayeneden sonra konuştuğumuz seçeneğe göre açıklayacağım. Bugün sizin kabul etmediğiniz bir işleme başlamayacağız."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İyi, o zaman önce bakalım. İmplant işini de hemen yapmıyoruz değil mi? Çevremde herkes bir şey söylüyor, kafam karıştı."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bugün implant yapılmadı, böyle bir karar da verilmedi. Dişin korunup korunamayacağını konuştuktan sonra gerekirse seçeneklerden biri olarak değerlendirebiliriz."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Yarın öğleden sonra bir boşluk var hocam. Kontrol randevusu ayarlamak ister misiniz, yoksa muayeneden sonra mı konuşalım?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Yarın kesin gelemem, işe gideceğim. Önce bugün ne diyeceğinizi anlayayım, sonra başka bir gün için bakarız. Şimdiden randevu yazmayın lütfen."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Tamam, yarın için anlaşmadık. Bugün önce inceleme var; çekim veya implant gerekip gerekmediğini henüz bilmiyoruz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Düzenli kullandığım bir ilaç yok, bildiğim alerjim de yok. Ama geçen ay bir antibiyotik kullanmıştım, bitti; adını kutudan bulmam lazım."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Geçen ay kullandığınız ilacın kutusunu bulursanız fotoğrafını da getirebilirsiniz. Şimdilik adını boş bırakayım, yanlış bir şey yazmayalım."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Şimdi getirdiğiniz parçayı ve kırk yediyi inceleyelim. Ücret ve süre sorunuz duruyor, seçeneği belirleyince ikisini de açıkça konuşacağız."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Tamam hocam, benim anladığım önce kontrol edeceğiz. Kaplama elimizde, yutma gibi bir şey olmadı. Yarın için de şimdilik randevum yok."
+        }
+      ],
+      "must_preserve": [
+        "Kaplama elde; yutma ve nefes sorunu yok",
+        "Kaplama dişi 46 değil düzeltilmiş47;46 eski dolgu ayrı",
+        "Geçmiş antibiyotik bitmiş, adı belirsiz",
+        "Yarın randevu kabul edilmedi; çekim ve implant yapılmadı"
+      ],
+      "must_not_infer": [
+        "Aspirasyon olmuş gibi sunma",
+        "46yı kaplama dişi olarak kesinleştirme",
+        "Çekim/implant/yeni dolgu yapıldı deme",
+        "Yarına onaylanmış randevu oluşturma"
+      ],
+      "requires_uncertainty": true,
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+    },
+    {
+      "required_any": [
+        [
+          "perio.peri_implant"
+        ]
+      ],
+      "forbidden": [],
+      "source_ids": [
+        "peri-implant"
+      ],
+      "id": "implant-gums-extended",
+      "title": "Fırçada kanama, kendi kendine kanamama ve aile öyküsü ayrımı",
+      "based_on_case_id": "implant-bleeding-index",
+      "dialogue": [
+        {
+          "speaker": "Hasta",
+          "text": "Hocam sağ üstteki vidalı dişin yanında fırçalarken kan görüyorum. Her seferinde çok değil ama tekrarlayınca bir şey oluyor diye tedirgin oldum."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Ne zamandır fark ediyorsunuz? Yemek yerken veya durup dururken de oluyor mu, yoksa yalnız temizlerken mi görüyorsunuz?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Üç dört haftadır var. Kanama olmuyor diyecektim ama yanlış anlaşılmasın; kendi kendine olmuyor, fırçaya değince oluyor. Tamamen yok demiyorum."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Tamam, fırçaya değince olduğunu not aldım. Siz anlatırken ben de son kontrolünüzün tarihine bakayım, burada başka bir kayıt var mı?"
+        },
+        {
+          "speaker": "Hekim",
+          "text": "O bölgede ağrı, şişlik, akıntı veya kötü tat fark ettiniz mi? Dişin kendisi oynuyor mu, üstündeki parça mı hareketli gibi geliyor?"
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Belirgin ağrı yok, kötü bir tat bazen oluyor. Oynuyor mu emin değilim, dilimle kontrol ettikçe bana öyle geliyor olabilir. Ben sallanıyor diye kesin söylemeyeyim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Benim de dün fırçalarken biraz kanadı hocam, fırçayı sert mi bastırıyorum acaba? Pardon, hastamız anlatıyordu, böldüm."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Hastamızın implant çevresine bakalım. Ne zaman yapıldığını ve son kontrolünüzü hatırlıyor musunuz? Kendi dişinizle üstündeki parçayı da muayenede ayıralım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Bu implant yaklaşık beş sene önce yapıldı, tam tarihini dosyadan bulabilirim. Kontrole uzun süredir gidemedim, herhalde bir seneyi geçti ama günü belli değil."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Şeker hastalığınız veya düzenli takip edildiğiniz başka bir hastalık var mı? Kullandığınız ilaçları da öğrenelim, varsa isimlerini doğrularız."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Şeker var diyecektim, babamda var hocam; bende tanı yok. Benim ölçümüm en son ne çıktı hatırlamıyorum, ailede var diye kendime de var demeyeyim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Babanızdaki hastalıktan bahsediyorsunuz, anladım. Sizin varsa son tetkik kağıdınızı da sonraki gelişinizde getirebilirsiniz, tarihini oradan görürüz."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Her gün içtiğim bir ilaç yok. Bazen vitamin alırım ama markasını söylemeyeyim yanlış olur. Bildiğim ilaç alerjim de yok."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Sigara kullanıyor musunuz? Temizlerken ne yapıyorsunuz, o bölgeye ulaşmak zor mu geliyor? Bunu suçlamak için değil, alışkanlığı anlayabilmek için soruyorum."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "İçiyorum, günde sekiz on tane oluyor. Akşam yorgunken fırçalamayı atladığım oluyor. Araya bir şey sokunca kanayınca daha da ellememeye başladım."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "O bölge için kullanılan temizlik araçlarını hazırlayayım hocam. Gösterirken hastamız da tutup deneyebilir, başka türlü evde nasıl yapacağını anlamak zor oluyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Kanayınca çekinmenizi anlıyorum. Önce ne gördüğümüzü açıklayıp size uygun temizlik yöntemini gösterebiliriz; sadece bunu anlatarak nedeni kesinleşmiş saymayacağız."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Vida gitmiş midir hocam, komple sökecek misiniz? Bir arkadaşım kanıyorsa implant bitti dedi. Yenisini yaptıracak param şu an yok."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Bu konuşmadan implantın kaybedildiğini söyleyemeyiz. Muayene edip çevresini ve gerekirse filmini değerlendirelim; yapılacak işlem, seçenek ve ücretini sonra birlikte konuşuruz."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Film için önce bakmanızı bekliyorum hocam. Şimdilik önceki görüntü var mı diye dosyayı açtım, yeni ölçüm kısmı henüz boş."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Tamam, önce bakın. Ama az önce ağrım yok dedim diye her şey normal gibi yazılmasın, kanama derdim devam ediyor; sadece kendi kendine kanamıyor."
+        },
+        {
+          "speaker": "Hekim",
+          "text": "Evet, ağrı olmamasıyla sorunun olmadığını aynı şey saymıyoruz. Şimdi inceleme planı var; temizlik veya başka bir tedavi bugün yapılmış gibi kaydetmeyelim."
+        },
+        {
+          "speaker": "Asistan",
+          "text": "Birazdan doktorumuz bakacak, sonra kontrol için ne zaman gelebileceğinizi konuşuruz. Ücret sorunuz da aklımda, çıkmadan hatırlatırım."
+        },
+        {
+          "speaker": "Hasta",
+          "text": "Ben de anladığımı söyleyeyim: hemen sökülmesine karar verilmedi, önce bakacağız. Nasıl temizleyeceğimi görerek öğrenmek isterim, ücretini de işlemden önce konuşalım."
+        }
+      ],
+      "must_preserve": [
+        "Fırçalamada kanama var, kendiliğinden yok",
+        "Babanın diyabeti hastaya aktarılmaz",
+        "Hareketlilik belirsiz; eski implant mevcut",
+        "Temizlik korkusu ve ücret kaygısı yanıtları korunur"
+      ],
+      "must_not_infer": [
+        "Asistanın kendi kanamasını hastaya yazma",
+        "Hastaya kesin diyabet tanısı veya uydurma ölçüm ekleme",
+        "İmplant kaybı/kemik kaybı kesinleştirme",
+        "Film, temizlik, cep ölçümü veya implant sökülmesi yapılmış deme"
+      ],
+      "requires_uncertainty": true,
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+    }
+  ]
+}

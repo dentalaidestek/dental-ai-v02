@@ -125,7 +125,7 @@ async function fixture(){
   try{
     f.setMode('cards');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
     const results=f.get('[data-voice-final-results]');
-    const clinical=Array.from(results.children).find(el=>el.querySelector('summary')?.textContent.includes('Klinik bulgular'));
+    const clinical=Array.from(results.children).find(el=>el.querySelector('summary')?.textContent.includes('Görüşmeden çıkan bilgiler'));
     assert.ok(clinical?.tagName==='DETAILS','Clinical summary must be a native collapsible card');
     assert.equal(clinical.open,false);clinical.querySelector('summary').click();assert.equal(clinical.open,true);
     assert.equal(clinical.querySelector('small'),null,'Identical summary/dayanak must not be printed twice');

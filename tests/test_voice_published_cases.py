@@ -35,9 +35,17 @@ def test_unknown_speaker_and_unbounded_dialogue_are_rejected():
             'required_any': [], 'forbidden': []}
     with pytest.raises(ValueError, match='invalid_dialogue_turn'):
         validate_cases([case])
-    case['dialogue'] = [{'speaker': 'Hasta', 'text': 'x'}] * 13
+    case['dialogue'] = [{'speaker': 'Hasta', 'text': 'x'}] * 49
     with pytest.raises(ValueError, match='invalid_dialogue_length'):
         validate_cases([case])
+
+
+def test_extended_everyday_dialogue_can_reach_48_turns_without_lifting_the_bound():
+    case = {'id': 'extended', 'dialogue': [
+        {'speaker': speaker, 'text': 'Kontrol edelim, bugün işlem yapılmadı.'}
+        for speaker in ['Hasta', 'Hekim', 'Asistan'] * 16],
+        'required_any': [['prosth.removable']], 'forbidden': []}
+    assert validate_cases([case])['cases'] == 1
 
 
 def test_supported_legacy_topics_do_not_become_unknown_branches():
