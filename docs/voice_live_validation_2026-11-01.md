@@ -85,3 +85,16 @@ Entegre gerçek Jinja paneli/jsdom testi önce “Clinical summary must be a nat
 #224 iletişim düzeltmesi 2f26d4d5, dep-dbjl8ibncjis73dmthvg ile18:03:28 İstanbul'da live doğrulandı. Aynı kemik ilacı vakasının yeni gerçek koşusu: çıkarım15:04:02Z, araştırma15:04:25Z max_tokens/14blok, final15:04:40Z sources1 accepted0. Bu kez yalnız değerlendirilmemiş yayın metni getirildi, UI kaynaklı kontrol üretmediğini açıkça bildirdi. Önceki başarılı AAE koşusu bu nedenle tutarlılık kanıtı değildir. İlacın aktifliği korundu; yeni iletişim yanıtı birebir gösterildi ve yanlış ilaç-adı paraphrase görünmedi; aynı belirsiz hekim sözü bu sefer klinik plan/bulgu alanında yer aldı. Dar normalizer regresyonu bütün yeniden anlatımları veya alan sınıflamasını çözmüş sayılmaz.
 
 Arayüz değişikliği sonrası tam sesli snapshot Python koşusu:461 passed,2 bağımlılık uyarısı,16.61s. Bağımsız arayüz incelemesinde kayıt/gizlilik/çağrı engeli bulunmadı; klinik seçenek etiketi koşullu anlamını koruyacak şekilde bırakıldı.
+
+
+## #225 sonrası gerçek ekran doğrulaması
+
+#225 fb041879, Render dep-dbjlcj3m8hqs73ftika0 ile18:11:54 İstanbul'da live doğrulandı. Mevcut kimliksiz düşen dolgu/üç konuşmacı sentetik vakası yeni sayfada yeniden çalıştırıldı. Operasyon kayıtları:15:12:38Z çıkarım,4atomik aday/2alan;15:13:00Z araştırma max_tokens/24blok;15:13:10Z final sources1/accepted0. ADA Materials for Direct Restorations bağlantısı gerçekten açılır Kaynaklar grubunda gösterildi; bu koşuda kaynaklı klinik kontrol üretilmediği ve kapsamın kısmi olduğu açıkça yazıldı. Önceki aynı vakada1kontrol çıkması ile bu fark tutarlılık eksikliğini korur.
+
+Gerçek tarayıcı DOM ve ekranıyla doğrulanan adımlar:
+1. Klinik bulgular kartı açıldı;2öğe ve tekrarsız özet görüldü. Eş/asistan rahatsızlığı hastaya eklenmedi. Durum: çalıştı; planın bulgular alanına konması hâlâ açık.
+2. Kaynaklar kartı açıldı; gerçek ADA bağlantısı ve meslek kuruluşu etiketi görüldü. Durum: çalıştı; vaka-kaynak uygunluğu bu görsel testle doğrulanmadı.
+3. Kayıt alanları kartı açıldı, yalnız başvuru alanı seçildi; hekim onayı boşken Kaydet tıklandı. UI “Seçilen alanları kontrol edip onay kutusunu işaretle.” diyerek engelledi. Sonra seçim kaldırıldı; pozitif klinik kayıt yapılmadı. Durum: onaysız kayıt engeli çalıştı.
+4. Kartlar kapatıldı; eksik kaynak/kontrol yok uyarıları varsayılan açık klinik kartta görünür kaldı. Yerel gerçek ekran kanıtı: voice-summary-live-cards-final-20261101.jpg (görüntünün kapsamı sonuç ekranının alt bölümü); önceki ekran voice-summary-live-before-20261101.jpg. Tam sayfa ek görüntü isteği tarayıcı protokol zaman aşımıyla alınamadı; mevcut gerçek ekran görüntüsü kullanıldı. Durum: kart hiyerarşisi doğrulandı, piksel eşitliği iddiası yok.
+
+Erişilebilirlik sınırı: native summary kontrolleri aç/kapat anlamı ve odak stili taşıyor; klavye/ekran okuyucu ve fiziksel mobil cihazda eksiksiz erişilebilirlik testi yapılmadı. Gerçek mikrofon/ASR, pozitif hekim kaydı,24vaka×5tekrar ve hekim altın seti hâlâ tamamlanmadı. Arayüz klinik kaynak uygulanabilirliği kusurlarını çözmez.
