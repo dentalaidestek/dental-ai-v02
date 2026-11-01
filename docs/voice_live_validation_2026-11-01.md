@@ -21,3 +21,11 @@ Gerçek sağlayıcıyla başarılı çıkarım, doğru kaynak getirme, nihai kli
 13:46 İstanbul'da #219 7f1b9c40 live olduktan sonra aynı metinle deneme başarılı çıkarım verdi: /text200, tool_use1, eksik kök anahtar yok, 8 atomik adaydan4 dayanaklı alan. Süre, kanama, protez kullanılmaması, koşullu ileri inceleme ve netleştirme soruları ekranda görüldü. Bu tek vaka çıkarımının çalıştığını gösterir; klinik doğruluk oranı değildir.
 
 Ardından kaynak aşaması /finalize422 ile durdu. Ekran kaynaklara erişilemediğini söyledi, metni ve çıkarılan alanları korudu, kayıt düğmesini devre dışı bıraktı. Kaynak araştırması başarısızlığının ayrıntısı henüz mevcut değildi; aynı sabit-sözcüklü HTTP tanılaması research aşamasına da eklendi. Son model çağrısına başarı yazılmadı.
+
+## Kaynak ve final aşamasına gerçek geçiş
+
+13:52 İstanbul'da #220 c0dcf7a7 live üzerinden yalnız final yeniden denendi. Yeni /text çağrısı oluşmadı; başarılı çıkarım tekrar çalıştırılmadı. Araştırma max_tokens ile kısmi bitti (24 blok), bir kaynak gösterildi; final200 döndü, sıfır kaynaklı klinik kontrol noktası ve hekimin kesinlik iddiası için açık 'doğrulanmadı' görünümü vardı. Bu tek koşuda yanlış kanser tanısı veya otomatik tedavi kararı gösterilmedi.
+
+Kaynak kapsamı açılınca somut kusur görüldü: gösterilen PMC belgesinin başlığı 'Checking your browser - reCAPTCHA' idi. Klinik öneriye dayanak yapılmamasına rağmen kaynak sayısına katılmıştı. Bu bir erişilmiş klinik belge değildir. Known interstitial sayfalarının referans sayılmaması ve hepsi erişim engeliyse ücretli son model çağrısından önce durulması için RED/GREEN testleri eklendi. Tek bir kelime yasağı yerine belirli engel başlıkları/başlangıç işareti kullanılıyor; gerçek bir makaledeki CAPTCHA sözcüğü engel sayılmıyor.
+
+Ayrıca kapalı konu kimliğine bağlı mevcut mesleki başlangıç URL'leri (DOCUMENTS/TOPIC_DOCUMENTS) yalnız kamusal araştırma isteğine eklendi. En çok2/adet konu; kullanıcıdan gelen URL/alıntı/query aktarılmaz. Bunlar kaynak kanıtı değil, Claude'un önce ilgili meslek kuruluşu HTML sayfasını incelemesi için başlangıç noktasıdır. Yerel otomatik kaynak fallback'i ve model değişimi yok. Gerçek klinik kapsamı fetched pasaj belirler.

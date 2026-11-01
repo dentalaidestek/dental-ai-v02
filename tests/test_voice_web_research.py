@@ -29,6 +29,51 @@ def response(content=None, stop='end_turn'):
     return {'content': content or [], 'stop_reason': stop, 'usage': {'input_tokens': 100, 'output_tokens': 40}}
 
 
+@pytest.mark.parametrize('title,text', [
+    ('Checking your browser - reCAPTCHA', 'Checking your browser before accessing pmc.ncbi.nlm.nih.gov ...'),
+    ('Just a moment...', 'Enable JavaScript and cookies to continue.'),
+    ('Access Denied', 'You do not have permission to access this page.'),
+])
+def test_access_challenge_is_not_a_fetched_clinical_document(monkeypatch, title, text):
+    blocks = fetched(text=text)
+    blocks[1]['content']['content']['title'] = title
+    monkeypatch.setattr(provider, 'research_message', lambda *a, **k: response(blocks))
+    result = web.retrieve_web(TOPICS)
+    assert result['references'] == []
+    assert 'web-fetch-unavailable:access-blocked' in result['unavailable']
+
+
+def test_article_mentioning_access_challenges_remains_available(monkeypatch):
+    text = 'Clinical dental guideline. A bibliography mentions reCAPTCHA and access denied errors.'
+    monkeypatch.setattr(provider, 'research_message', lambda *a, **k: response(fetched(text=text)))
+    assert web.retrieve_web(TOPICS)['references'][0]['excerpts'][0] == text
+
+
+def test_all_access_challenges_block_paid_final_review(monkeypatch):
+    from app import voice_exam_final as final, voice_exam_core as core
+    monkeypatch.setenv('VOICE_EXAM_SOURCE_MODE', 'claude_web')
+    blocks = fetched(text='Checking your browser before accessing pmc.ncbi.nlm.nih.gov ...')
+    blocks[1]['content']['content']['title'] = 'Checking your browser - reCAPTCHA'
+    monkeypatch.setattr(provider, 'research_message', lambda *a, **k: response(blocks))
+    monkeypatch.setattr(final, 'review', lambda *a, **k: pytest.fail('Blocked page must not enable final paid call'))
+    with pytest.raises(core.VoiceError, match='Kaynaklara erişilemedi'):
+        final.finalize({'fields': {'chief_complaint': {'value': 'Ağrı', 'quote': 'Ağrı'}},
+                        'literature_topics': [{'topic': 'endo.general', 'quote': 'Ağrı'}]}, [])
+
+
+def test_official_start_pages_are_server_owned_not_patient_urls(monkeypatch):
+    calls = []
+    def research(prompt, data, tools, **kwargs):
+        calls.append(data)
+        return response(fetched())
+    monkeypatch.setattr(provider, 'research_message', research)
+    web.retrieve_web([{'topic': 'oral_medicine.cancer', 'quote': 'PRIVATE',
+                       'url': 'https://evil.example/PRIVATE'}])
+    starts = calls[0]['topics'][0]['professional_start_urls']
+    assert starts == ['https://www.ada.org/resources/ada-library/oral-health-topics/cancer-head-and-neck']
+    assert 'PRIVATE' not in json.dumps(calls) and 'evil.example' not in json.dumps(calls)
+
+
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'test-no-network-key')
