@@ -74,6 +74,32 @@ def test_official_start_pages_are_server_owned_not_patient_urls(monkeypatch):
     assert 'PRIVATE' not in json.dumps(calls) and 'evil.example' not in json.dumps(calls)
 
 
+@pytest.mark.parametrize('topic', ['oral_medicine.cancer', 'oral mucosal lesion diagnosis'])
+def test_relevant_late_passage_is_not_lost_behind_page_navigation(monkeypatch, topic):
+    # Native fetch can return one long text block rather than blank-line paragraphs.
+    clinical = 'Persistent oral mucosal lesion or ulcer requires assessment and possible biopsy referral under this guideline.'
+    text = ('Navigation home menu about contact ' * 700) + clinical + (' Footer links ' * 700)
+    blocks = fetched(text=text)
+    monkeypatch.setattr(provider, 'research_message', lambda *a, **k: response(blocks))
+    result = web.retrieve_web([{'topic': topic, 'quote': 'PRIVATE PATIENT'}])
+    excerpts = result['references'][0]['excerpts']
+    assert any(clinical in excerpt for excerpt in excerpts)
+    assert all(excerpt in text and len(excerpt) <= 1800 for excerpt in excerpts)
+
+
+def test_specific_mapped_topic_avoids_unrelated_general_start_pages(monkeypatch):
+    calls = []
+    def research(prompt, data, tools, **kwargs):
+        calls.append(data)
+        return response(fetched())
+    monkeypatch.setattr(provider, 'research_message', research)
+    web.retrieve_web([{'topic': 'oral_medicine.general', 'quote': 'PRIVATE'},
+                      {'topic': 'oral_medicine.cancer', 'quote': 'PRIVATE'}])
+    rows = {topic['id']: topic for topic in calls[0]['topics']}
+    assert rows['oral_medicine.general']['professional_start_urls'] == []
+    assert len(rows['oral_medicine.cancer']['professional_start_urls']) == 1
+
+
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'test-no-network-key')
