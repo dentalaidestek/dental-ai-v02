@@ -58,3 +58,19 @@ Görülen küçük eksik: ikinci vakada hekim muayene planı 'Planlanan' etiketi
 - Canlıda çıkarım400 uyumluluk hatası giderildi; hatalı ses-servisi mesajı düzeltildi. Gerçek erişim engeli sayfasının kaynak sayılması engellendi. Menü öncesi metin kırpma kusuru testle yeniden üretilip düzeltildi. Aynı çıkarımla kaynak/final yeniden denemesi gözlendi; onaysız kayıt ön yüzde engellendi.
 - Son üretim kodu: a06f4654. Son otomatik sesli snapshot: **460 Python passed**,2 bağımlılık uyarısı,13.71s. Node26/jsdom30.1.3: daha önce bu oturumda **11 passed**; son değişiklikler yalnız sunucu tarafında. Gerçek tarayıcı kullanımı ve gerçek Claude uç noktası bu raporda yer alır; gerçek mikrofon/Gemini ses çözümleme testi yer almaz.
 - Klinik alanlar hekim onayıyla kaydedilmedi; yalnız ayrı anonim test hasta satırları açıldı. Klinik doğruluk/duyarlılık/yanlış alarm oranı, hekimce onaylı altın set, gerçek mikrofon ve pozitif onaylı kayıt senaryosu bu çalışmayla doğrulanmadı. GitHubActions yeşilliği iddia edilmedi.
+
+
+## Ek canlı koşular — 1 Kasım 2026, 11:47–11:49 UTC
+
+Mevcut giriş oturumu korunmuştu; yeniden şifre istenmeden iki ayrı kimliksiz sentetik muayene açıldı. Gerçek hasta kaydı kullanılmadı; alan seçimi veya onaylı klinik kayıt yapılmadı. Bunlar gerçek üretim arayüzü ve gerçek Claude/kaynak çağrılarıdır; mikrofon/ASR testi değildir.
+
+| Vaka | Gözlenen sonuç | Açık bulgu / sınır |
+| --- | --- | --- |
+| bone-medicine-index | Aylardır kapanmayan çekim yeri ve adı bilinmeyen aktif hastane ilacı korundu. “Başka günlük hap yok” ilacı silmedi. İlaç adı, uygulama yolu ve son tarih soruldu; belirli etken madde uydurulmadı. AAE MRONJ sayfası ve NHS çekim sayfası getirildi. | İletişim bölümünde “Açık alanı incelemeden adını kesin koymayalım” sözü yanlış biçimde ilaç adını koymamak diye yeniden anlatıldı. Kaynak kapsamı kısmi; NHS erken iyileşme metninin aylar süren vakaya uygulanabilirliği açıkça doğrulanmamış olarak gösterildi. |
+| Planlanan 46 çekimi / ileride implant | Yarınki 46 çekimi ve gelecekte görüşülecek implant plan olarak kaldı. Bugün çekim/implant yapılmadığı korundu; yapılmış çekim diş işareti gösterilmedi. Asistanın 47 dolgusu hekim teyidi sorusuna taşındı. Randevu karşılıklı kabul eksik; otomatik onay yok. | 47 “üzerinde” dolgu yerine “yanında” dolgu paraphrase hatası var. EFP implant sonrası 2–6 aylık iyileşme alıntısı, çekim sonrası iyileşme planıyla uyumlu diye bağlandı; bunlar aynı iyileşme dönemi değildir. Bu hasta-kaynak uygulanabilirlik kusuru çözülmüş sayılmıyor. |
+
+Güvenli operasyon kayıtları: ilk çıkarım 11:47:40Z, `candidates=7 grounded_fields=4`; araştırma `stop=max_tokens blocks=17`; final 11:48:26Z `sources=2 accepted=2`. İkinci çıkarım 11:48:29Z `candidates=7 grounded_fields=3`, randevu `acceptance_missing`; araştırma `stop=max_tokens blocks=24`; final 11:49:08Z `sources=2 accepted=2`. Kabul sayısı yalnız alıntı/alan kontrolünün sonucudur, klinik doğruluk puanı değildir. Her iki UI sonucu kısmi kapsam uyarısını gösterdi.
+
+İlk somut iletişim kusuru için modelden gelen yanlış paraphrase ile gerçek normalizer üzerinde RED test yazıldı ve başarısızlığı izlendi. `clinician_response` artık yalnız dayanaklı birebir yanıtı gösterir; doğrulanmamış yeniden anlatım önerisi yayımlanmaz. Hasta kaygısı önerileri ve ayrı klinik hekim iddiası kontrolü değişmedi. Bu önlem klinik alanların tümündeki paraphrase sorununu veya final kaynak uygulanabilirliğini çözmez. Son değerlendirme zaten iletişim dayanağı olarak birebir alıntıyı alır; bu korunur.
+
+Doğrulama: 461 Python testi geçti (2 bağımlılık deprecation uyarısı, 15.04 s); Node26.12.1/jsdom30.1.3 ile 11 Node dosyası geçti (3.29 s). Bağımsız inceleme 74 odaklı testte engel bulmadı; yalnız boş öneriye ait kozmetik etiket kaldığını belirtti. Yeni düzeltmenin dağıtımı ve aynı canlı vakanın tekrarı aşağıda ayrıca kaydedilmelidir; bu bölüm kendi başına yeni düzeltmenin canlı olduğunu iddia etmez.
