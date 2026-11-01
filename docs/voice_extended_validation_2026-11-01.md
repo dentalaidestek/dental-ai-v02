@@ -43,3 +43,12 @@ Bu, modelin verdiği aidiyet etiketini denetler; bağımsız ses konuşmacısı 
 Önce başarısız testler görüldü: plan/bulgu, OTHER/UNKNOWN kayıt ve kaynak sızıntısı, sorudan ilaç üretme; bağımsız incelemede bulunan eski alan yolu, örtüşen alıntı ve koşullu soru sıralaması da ek RED/GREEN testleriyle giderildi. Son471Python testi geçti(2bağımlılık uyarısı,16.95s); son Node koşusu11dosya geçti. Bağımsız son inceleme83odaklı testte engel bulmadı. Düzeltme sonrası gerçek çıkarım tekrarı ayrıca kaydedilmelidir.
 
 Son aidiyet kontrolü ayrıca başka kişinin ilaç bırakma sözüyle hastanın eski bilgisinin silinmesini, konu/diş silme ve randevu oluşturma yolunu da engeller. Bu ek regresyon önce başarısız oldu;471Python/11Node ve83bağımsız odaklı test geçti.
+
+
+## #228 sonrası gerçek uzun metin tekrarı
+
+#22843ddb4b1, dep-dbjm7kdg1s2s7384bk1g ile19:09:31 İstanbul'da live doğrulandı. Aynı3905karakter/26replik rol etiketli özgün konuşma yeni sayfada gönderildi; yeni clinical_facts.subject şemasıyla gerçek çıkarım tamamlandı, son değerlendirme de kısmi sonuç verdi. Hasta alanlarında4grup görüldü: şikâyet, tıbbi öykü, ilaç, alerji. Önceki koşudaki asistan diş sıkma cümlesi hasta öyküsünde yoktu; hekim ilaç sorusu ilaç listesinde yoktu. Adsız aktif hastane ilacı ve günlük hap yokluğu ayrı korundu. Başka kişiye ait/belirsiz bilginin dışlandığı uyarısı görünür oldu.
+
+Önemli açık bulgu: bu son gerçek koşuda plan alanı UI'da hiç oluşmadı. Bunun modelin planı atlaması mı yoksa üretilen aidiyet etiketi/filtre yolu mu olduğu yalnız UI kaydından belirlenmedi; tam plan çıkarımı düzelmiş sayılmaz. Unit testler verilen PLANNED atomik bilginin doğru yere gitmesini doğrular; modelin eksiksiz atomik bilgi üretmesini kanıtlamaz. Bu eksik açık kalır.
+
+Son ekran:4özet öğesi,1kaynak/2kontrol,9iletişim öğesi,8soru; hekim onayı false. Ham sentetik alanlar ve bu sınırlama aynı sonuç JSON'una eklendi. Başlıkların yeni kısa metinlerle canlıda açılıp kapandığı ekranla doğrulandı: voice-plain-titles-live-20261101.jpg. Kartlar ekran kanıtı için elle kapatılmıştır; kısmi kaynak uyarısı sonucu geçersiz kılmaz ve ortadan kalkmış sayılmaz. Gerçek mikrofon, insan sesi, klinik altın test seti veya klinik güvenlik başarı oranı iddiası yok.
