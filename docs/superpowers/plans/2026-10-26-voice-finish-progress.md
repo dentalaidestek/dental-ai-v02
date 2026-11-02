@@ -194,3 +194,14 @@ PR231 Render2957bfcd (05:27:33Zlive): kemik-ilacı vakası plan alanını geri g
 PR232 sahte route modellerini özel SQLModel registry'sine ayırdı; üretim globalmetadata'sını değiştirmedi. Gerçek uzakCI artık voice toplama hatasını geçti; application-regressions1952geçti/43başarısız/48atlandı,594alttest geçti. Başarısız listede test_voice yok. Akademik hatalar ve PostgreSQL42geçti/2başarısız ayrı açık sorun; tümCI yeşil değil. Tam görünür koşular/nihai dağıtım kanıtı docs/voice_validation_2026-11-02.md ve docs/voice_live_results_2026-11-02.json içinde. Klinik altın set/gerçekmikrofon/ASR doğruluğu bu testlerle kanıtlanmadı.
 
 Sonuç: PR233/2abdbb4e Render05:38:03Zlive doğrulandı. Kaplama özgünmetin tekrarında şikâyet aynen korundu ve yanlış üst/alt çene çelişkisi yok;2kaynak0kontrol, eksik kapsam açık. İmplant üçüncüdenemede de aidiyet çakışmasında durdu; prompt bunu çözmedi, metin korundu. UzakPR233voicejob125114274998482Python+11Nodebaşarılı; genelsiteCI kırmızı. Altı yayınsonrasıdenemenin DOMkanıtları voice_live_results_2026-11-02.json; ayrıntılı açıklar voice_validation_2026-11-02.md. Akıştamamensorunsuz/klinikgüvenli denmiyor.
+
+
+## 2026-11-02 — 90 saniyelik klinik ses kampanyası ve HeyGen
+
+PR234/93c0e8ed çakışan hasta/başka kişi alıntısında tüm çıkarımı durdurmak yerine yalnız çakışan bilgiyi dışarıda tutar. Bağımsız bilgiler, plan ve mevcut kaynak/diş/randevu dışlamaları korunur. Sabit eksik kapsam bildirimi muayene sonundadır; yeni ücretli çağrı veya muayene sırasında hekim doğrulaması eklenmedi. İlk perio sesinin aynı metni yayın sonrası son değerlendirmeye ulaştı; ASR kaynaklı bozuk bilgi ve yanlış plan/çelişki sorunları klinik başarı sayılmadı.
+
+Sekiz farklı konu için12turluk185–206kelimelik diyaloglar ve tam90s temiz/uğultulu16sentetik ses üretildi. eSpeak robotik olduğundan doğal insan sesi testi değildir. Perio/cerrahi/implant/kron/endo/çocuk seslerinde tamamlanmış ve yarıda kalmış aşamalar ayrı kaydedilir; sekizli kampanya tamamlandı diye sayılmaz. Ortodonti ve protez için sesler hazır, canlı tam akış henüz tamamlanmadı.
+
+HeyGen bağlantısı doğrulandı. Katalog önerisiyle yapılan tek Starfish sentezi, çalışma alanının Orca zorunluluğu nedeniyle400 döndürdü; ses üretilmedi. narrator yönergesindeki hata sonrası onay kuralı nedeniyle otomatik yeni motor çağrısı yapılmadı. Orca/HeyGen Voice üretimi kullanıcı onayını bekliyor. Kesin istek/hata: docs/voice_clinic90_heygen_2026-11-02.json.
+
+PR235/b54cdcb7 JSON olmayan hizmet yanıtında ham DOCTYPE/parser hatası yerine Türkçe hata ve taslak/ses yeniden deneme yolunu korur; v22. Regresyon önce başarısız oldu, sonra494Python/11Node geçti; bağımsız incelemede engel yok. Ayrıntı: docs/voice_clinic90_validation_2026-11-02.md. Genel site CI ve gerçek mikrofon/klinik doğruluk hâlâ ayrıca doğrulanmalıdır.
