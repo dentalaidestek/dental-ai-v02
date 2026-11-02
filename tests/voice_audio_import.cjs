@@ -10,13 +10,13 @@ const tick=()=>new Promise(setImmediate);
  const root=new El(),elements=new Map(),events={},calls=[];root.dataset.patientId='1';
  const get=s=>{if(!elements.has(s))elements.set(s,new El());return elements.get(s)};
  root.querySelector=get;root.querySelectorAll=s=>s==='[data-field-row]'?get('[data-voice-fields]').children:[];
- let resolveText,failFinal=true,finalCount=0,duration=60,audioCalls=0,failAudio=false,audioTranscript='Soğuk içemiyorum.';
+ let resolveText,failFinal=true,finalCount=0,duration=60,audioCalls=0,failAudio=false,failHtml=false,audioTranscript='Soğuk içemiyorum.';
  const final={summary:[],questions:[],contradictions:[],clinical_items:[],references:[],unavailable:[],notice:'Limited'};
  const fetch=async(url,options={})=>{
   calls.push({url,options});let body;
   if(url.includes('capabilities'))body={ok:true,enabled:true};
   else if(url.endsWith('/text')){await new Promise(r=>resolveText=r);body={ok:true,revision:'a'.repeat(64),review:{transcript:'Soğuk içemiyorum.',fields:{chief_complaint:{value:'Soğukta ağrı',quote:'Soğuk içemiyorum.'}},teeth:[],communication:[{quote:'Korkuyorum.',observation:'Korku beyanı',suggestion:'Açıkla'}],follow_up_questions:[]}}}
-  else if(url.endsWith('/audio')){audioCalls++;if(failAudio)return {ok:false,json:async()=>({ok:false,error:'Synthetic STT failure'})};const bytes=new Uint8Array(await options.body.arrayBuffer());const size=new DataView(bytes.buffer).getUint32(0,false);assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.slice(4,4+size))),{});assert.equal(bytes.length-4-size,500);body={ok:true,revision:'a'.repeat(64),transcript:audioTranscript}}
+  else if(url.endsWith('/audio')){audioCalls++;if(failHtml)return {ok:false,json:async()=>{throw new SyntaxError("Unexpected token '<', <!DOCTYPE html>")}};if(failAudio)return {ok:false,json:async()=>({ok:false,error:'Synthetic STT failure'})};const bytes=new Uint8Array(await options.body.arrayBuffer());const size=new DataView(bytes.buffer).getUint32(0,false);assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.slice(4,4+size))),{});assert.equal(bytes.length-4-size,500);body={ok:true,revision:'a'.repeat(64),transcript:audioTranscript}}
   else if(url.endsWith('/finalize')){finalCount++;body=failFinal?{ok:false,error:'Synthetic final failure'}:{ok:true,revision:'a'.repeat(64),final}}
   else if(url.endsWith('/apply'))body={ok:true,patient_url:'/patients/1'};
   else throw Error('Unexpected endpoint');
@@ -46,7 +46,12 @@ const tick=()=>new Promise(setImmediate);
  assert.equal(get('[data-voice-transcript]').value,preserved);
  assert.equal(get('[data-voice-retry]').hidden,false);
  assert.equal(get('[data-voice-text]').disabled,true,'Pending audio blocks clinical processing');
- failAudio=false;await get('[data-voice-retry]').handlers.click();
+ failAudio=false;failHtml=true;await get('[data-voice-retry]').handlers.click();
+ assert.equal(get('[data-voice-transcript]').value,preserved,'Non-JSON service reply preserves draft');
+ assert.equal(get('[data-voice-retry]').hidden,false,'Retain uploaded audio for retry');
+ assert.match(get('.voice-exam-status').textContent,/geçerli yanıt alınamadı/);
+ assert.doesNotMatch(get('.voice-exam-status').textContent,/DOCTYPE|Unexpected token/);
+ failHtml=false;await get('[data-voice-retry]').handlers.click();
  assert.equal(get('[data-voice-transcript]').value,preserved+'\nSoğuk içemiyorum.');
  audioTranscript='😀'.repeat(18000);get('[data-voice-transcript]').value='x'.repeat(53000);
  input.files=[file];await input.handlers.change();const paid=audioCalls;
