@@ -1,0 +1,20 @@
+{
+  "synthetic": true,
+  "case_id": "perio-brushing-90",
+  "speaker": "Hekim",
+  "requested_voice_id": "7f6838b1b0f141deba891800621a4fe8",
+  "requested_engine": "starfish",
+  "requested_language": "tr",
+  "speed": 1,
+  "spoken_text": "Durup dururken oluyor mu, yoksa fırçalarken mi? Ağrı veya sallanma da fark ettiniz mi?\n\nTamam. Önce diş etlerine bakıp ölçümlerini yapalım; gerekirse filmi değerlendireceğiz. Sadece ağrı olmamasından sağlıklı diyemeyiz.\n\nSizde düzenli ilaç, bildiğiniz alerji veya sigara kullanımı var mı?\n\nÖnce bulguları ve seçenekleri açıklayacağım. Uygun temizliği muayeneye göre konuşacağız; kabul etmediğiniz bir işleme başlamayız.",
+  "result": {
+    "error": true,
+    "message": "This workspace requires Orca for public voices. Select Orca or choose another voice.",
+    "status_code": 400,
+    "retryable": false,
+    "error_code": "INVALID_ARGUMENT",
+    "doc_url": "https://developers.heygen.com/docs/error-codes#invalid-parameter"
+  },
+  "audio_generated": false,
+  "retried": false
+}

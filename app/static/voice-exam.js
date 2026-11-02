@@ -16,7 +16,8 @@
     const limit=url.endsWith('/finalize')?150000:/(?:\/text|\/audio|\/clinical)$/.test(url)?120000:30000;
     const deadline=setTimeout(()=>{timedOut=true;controller.abort()},limit);
     try{const response=await fetch(url,{...options,signal:controller.signal});
-      const body=await response.json();if(disposed||at!==epoch)throw Error('Görüşme kapatıldı.');
+      let body;try{body=await response.json()}catch{throw Error('Hizmetten geçerli yanıt alınamadı. Görüşme taslağı korunuyor; yeniden deneyebilirsiniz.')}
+      if(disposed||at!==epoch)throw Error('Görüşme kapatıldı.');
       return {ok:response.ok,json:async()=>body};
     }catch(error){if(timedOut)throw Error('İşlem zaman aşımına uğradı. Görüşme taslağı korunuyor; yeniden deneyebilirsiniz.');throw error}
     finally{clearTimeout(deadline);pending.delete(controller)}
