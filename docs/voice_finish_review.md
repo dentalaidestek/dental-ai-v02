@@ -243,3 +243,21 @@ subject PATIENT/OTHER/UNKNOWN doğrulaması, hasta durumu sorusunu kayıt saymam
 
 
 #22843ddb4b1,19:09:31 İstanbul'da live doğrulandı. Aynı26replik metnin gerçek tekrarında yeni aidiyet şeması çalıştı; asistanın şikâyeti ve hekimin ilaç sorusu hasta alanlarından çıktı, aktif ilaç korundu. Ancak plan alanı bu koşuda hiç oluşmadı; model eksiltmesi/etiket-filtre sebebi UI kaydından ayrıştırılamadı. Planın tam çıkarıldığı veya ASR hatalarının çözüldüğü iddia edilmiyor. Sonuç1kaynak/2kontrol, kısmi; hekim kaydı onaylanmadı. Güncel kanıtlar ve açık kusurlar uzun test raporu/JSON'unda.
+
+
+## 2026-11-02 yayın denetimi ve gerçek plan kaybı
+
+PR230 sayısal tanılama canlıda aynı26turluk3905karakterlik vaka için candidates=0/recorded=0 gösterdi: planı model üretmemiş, filtre silmemiş. PR231 günlük inceleme/kayıt doğrulama planlarını çıkarım talimatında açıklaştırır; üç uzun vaka artık plan alanı eksikse yalnız konu eşleşmesiyle geçmez. Sunucu klinik plan icat etmez.488Python ve11Node geçti; bağımsız82odaklı test ve incelemede engel bulunmadı. Dört skorlayıcı regresyonu önce başarısız oldu.
+
+PR215 hâlâ açık/çakışmalı: tüm eski dalın canlı olduğu iddia edilmez. İki bağımsız eksik (mobil async mesaj await ve gerçek /api/mobile/v1 dahil klinik no-store) PR231'e taşındı. Eski ses denetleyicisi yeni mimariyi gerileteceği için kopyalanmadı. İstek kuyruğu/sağlayıcı slotu eski haliyle güvenle taşınmış sayılmaz; tekrarlanan iptal temizliği ayrıca gereklidir. Ayrıntı ve gerçek yayın sonrası sonuçlar docs/voice_validation_2026-11-02.md.
+
+Kaynak kapsamı canlı koşuda kısmi; bazı final iletişim kontrolleri açıklanmış konuyu eksik saydı. Bunlar klinik başarı diye raporlanmaz. Gerçek mikrofon ve hekim onaylı altın test seti yok; uzak CI yeşil doğrulanmadı. Hasta dosyasına kayıt onaylanmadı.
+
+
+### 2 Kasım gerçek tekrarların sonucu ve PR232/233
+
+PR231 Render2957bfcd (05:27:33Zlive): kemik-ilacı vakası plan alanını geri getirdi (3kaynak5kontrol), kaplama vakası plan/randevu reddini korudu (2kaynak2kontrol), implant vakası iki kez aidiyet çakışmasında durdu ve metni korudu. Bunlar gerçek model/metin UI koşularıdır, mikrofon değildir. Kaplamada model “üstündeki”yi çene konumuna çevirerek yanlış çelişki üretti. PR233 başvuru şikâyetini kaynak alıntısının özgün metniyle korur; karışık aile/hasta cümlelerinde kişi başına kısa cümlecik alıntısı ister, çakışma korumasını kaldırmaz.492Python ve11Node geçti.
+
+PR232 sahte route modellerini özel SQLModel registry'sine ayırdı; üretim globalmetadata'sını değiştirmedi. Gerçek uzakCI artık voice toplama hatasını geçti; application-regressions1952geçti/43başarısız/48atlandı,594alttest geçti. Başarısız listede test_voice yok. Akademik hatalar ve PostgreSQL42geçti/2başarısız ayrı açık sorun; tümCI yeşil değil. Tam görünür koşular/nihai dağıtım kanıtı docs/voice_validation_2026-11-02.md ve docs/voice_live_results_2026-11-02.json içinde. Klinik altın set/gerçekmikrofon/ASR doğruluğu bu testlerle kanıtlanmadı.
+
+Sonuç: PR233/2abdbb4e Render05:38:03Zlive doğrulandı. Kaplama özgünmetin tekrarında şikâyet aynen korundu ve yanlış üst/alt çene çelişkisi yok;2kaynak0kontrol, eksik kapsam açık. İmplant üçüncüdenemede de aidiyet çakışmasında durdu; prompt bunu çözmedi, metin korundu. UzakPR233voicejob125114274998482Python+11Nodebaşarılı; genelsiteCI kırmızı. Altı yayınsonrasıdenemenin DOMkanıtları voice_live_results_2026-11-02.json; ayrıntılı açıklar voice_validation_2026-11-02.md. Akıştamamensorunsuz/klinikgüvenli denmiyor.
