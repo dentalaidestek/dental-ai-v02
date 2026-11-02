@@ -453,7 +453,12 @@ field anlamları:
 - medications: güncel VE geçmiş ilaç, enjeksiyon, form, doz, aralık ve son uygulama.
 - allergies: hastanın alerji beyanı; yok, bilmiyorum ve sorulmadı farklıdır.
 - clinical_findings: hekimin söylediği muayene/film bulgusu; tanı ekleme.
-- plan: hekimin söylediği bütün koşullu/kesin işlem ve ilaç planları; henüz yapılmış sayma.
+- plan: hekimin bu hasta için söylediği bütün koşullu/kesin inceleme, işlem, ilaç,
+  kontrol ve yönlendirme planları. Tedavi kararı verilmemiş olsa da "önce bakalım",
+  "filmle değerlendirelim", "ilaç listesini doğrulayalım", "hastane kaydını isteyelim"
+  gibi günlük ifadeler klinik inceleme planıdır; atlama. Bunları PLANNED ve PATIENT
+  olarak, her birini konuşmadaki birebir alıntıyla koru. Henüz yapılmış sayma;
+  söylenmeyen işlem/ilaç ekleme. Yalnız ücret veya iletişim açıklaması plan değildir.
 - patient_concern: hastanın korku, maliyet, süre, güven veya anlama konusunda ifade
   ettiği tereddüt/beklenti. Bu bilgiyi atlama veya chief_complaint içine yazma. value
   hekime yönelik kısa, empatik iletişim/soru önerisidir; quote yalnız gerekli kısa

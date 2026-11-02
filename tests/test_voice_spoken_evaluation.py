@@ -194,3 +194,23 @@ def test_short_patient_quote_cannot_evade_forbidden_clinician_attribution():
     result={'literature_topics':[], 'communication':[
         {'category':'CLINICAL_STATEMENT','quote':'bu hapın tamamen zararsız olduğunu'}]}
     assert 'forbidden_clinician_statement' in score_case(case,result)['failure_categories']
+
+
+def test_required_plan_cannot_be_replaced_by_correct_source_routes():
+    case = sample_case()
+    case['required_patient_fields'] = ['plan']
+    result = result_for(case)
+    score = score_case(case, result)
+    assert not score['passed']
+    assert score['missing_patient_fields'] == ['plan']
+    assert 'missing_patient_field' in score['failure_categories']
+    result['fields'] = {'plan': {'value': 'Kapanış kontrolü', 'quote': case['dialogue'][1]['text']}}
+    assert score_case(case, result)['passed']
+
+
+@pytest.mark.parametrize('fields', [['invented'], 'plan', ['plan', 'plan']])
+def test_invalid_required_patient_fields_rejected(fields):
+    case = sample_case()
+    case['required_patient_fields'] = fields
+    with pytest.raises(ValueError, match='invalid_patient_field_expectation'):
+        validate_cases([case])

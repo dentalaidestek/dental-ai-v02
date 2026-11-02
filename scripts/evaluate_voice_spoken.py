@@ -22,6 +22,8 @@ if str(ROOT) not in sys.path:
 from app.voice_exam_literature import TOPICS
 from app.voice_exam_taxonomy import BRANCH_LABELS
 
+PATIENT_FIELDS = {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings', 'plan'}
+
 FIXTURE_PATH = ROOT / 'tests' / 'fixtures' / 'voice_spoken_cases.json'
 
 
@@ -50,6 +52,10 @@ def validate_cases(cases):
         for turn in turns:
             if not isinstance(turn, dict) or turn.get('speaker') not in {'Hasta', 'Hekim', 'Asistan', 'Ebeveyn'} or not isinstance(turn.get('text'), str) or not turn['text'].strip():
                 raise ValueError('invalid_dialogue_turn')
+        required_fields = case.get('required_patient_fields', [])
+        if (not isinstance(required_fields, list) or any(not isinstance(field, str) or field not in PATIENT_FIELDS for field in required_fields)
+                or len(set(required_fields)) != len(required_fields)):
+            raise ValueError('invalid_patient_field_expectation')
         groups = case.get('required_any')
         forbidden = case.get('forbidden')
         if not isinstance(groups, list) or not isinstance(forbidden, list):
@@ -151,7 +157,17 @@ def score_case(case, result):
         failures.add('unknown_topic_id')
     if case.get('requires_uncertainty') and not uncertainty:
         failures.add('missing_uncertainty')
+    fields = result.get('fields', {})
+    fields = fields if isinstance(fields, dict) else {}
+    missing_fields = [field for field in case.get('required_patient_fields', [])
+                      if not isinstance(fields.get(field), dict)
+                      or not str(fields[field].get('value', '')).strip()
+                      or not str(fields[field].get('quote', '')).strip()]
+    if missing_fields:
+        failures.add('missing_patient_field')
+    # Presence checks do not establish the clinical correctness of field content.
     return {'case_id': case['id'], 'passed': not failures,
+            'missing_patient_fields': missing_fields,
             'topic_group_recall': matched / len(groups) if groups else 1.0,
             'matched_groups': matched, 'required_groups': len(groups),
             'forbidden_hits': forbidden,
