@@ -12170,9 +12170,15 @@ def _maintenance_response(request):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
-    # Never let a shared browser cache account HTML. No extra auth/DB lookup.
-    if request.cookies.get(SESSION_COOKIE) and "text/html" in response.headers.get("content-type", ""):
-        response.headers["Cache-Control"] = "private, no-store"
+    # Authenticated clinical files must not inherit long-lived cache policies.
+    private_request = bool(request.cookies.get(SESSION_COOKIE)) or request.headers.get("authorization", "").lower().startswith("bearer ")
+    if private_request:
+        clinical_roots = ("/uploads", "/patients", "/analysis", "/expert-support/cases", "/notes/courses", "/api/mobile/v1/patients", "/api/mobile/v1/consultations")
+        clinical_path = any(request.url.path == root or request.url.path.startswith(root + "/") for root in clinical_roots)
+        if clinical_path or "text/html" in response.headers.get("content-type", ""):
+            response.headers["Cache-Control"] = "private, no-store"
+        elif not request.url.path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "private, no-store")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

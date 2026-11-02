@@ -280,7 +280,10 @@
         "Yeni çekim veya hastane listesinin geldiğini söyleme"
       ],
       "requires_uncertainty": true,
-      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir.",
+      "required_patient_fields": [
+        "plan"
+      ]
     },
     {
       "required_any": [
@@ -409,7 +412,10 @@
         "Yarına onaylanmış randevu oluşturma"
       ],
       "requires_uncertainty": true,
-      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir.",
+      "required_patient_fields": [
+        "plan"
+      ]
     },
     {
       "required_any": [
@@ -535,7 +541,10 @@
         "Film, temizlik, cep ölçümü veya implant sökülmesi yapılmış deme"
       ],
       "requires_uncertainty": true,
-      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir."
+      "adaptation_notes": "Önceki yayımlanmış vaka esinli sentetik testin uzatılmış özgün günlük konuşmasıdır; yayın alıntısı, gerçek hasta veya hekim onaylı altın standart değildir.",
+      "required_patient_fields": [
+        "plan"
+      ]
     }
   ]
 }
