@@ -307,6 +307,21 @@ def test_long_input_without_grounded_clinical_fields_is_explicitly_incomplete(mo
     assert 'Çiğnerken' not in caplog.text
 
 
+@pytest.mark.parametrize('subject,quote,expected', [
+    ('PATIENT', 'Bugün önce muayene edelim.', 'candidates=1 anchored=1 patient=1 other=0 unknown=0 missing=0 recorded=1'),
+    ('UNKNOWN', 'Bugün önce muayene edelim.', 'candidates=1 anchored=1 patient=0 other=0 unknown=1 missing=0 recorded=0'),
+    ('PATIENT', 'PRIVATE UYDURMA PLAN', 'candidates=1 anchored=0 patient=1 other=0 unknown=0 missing=0 recorded=0')])
+def test_plan_loss_diagnostics_use_only_counts_not_conversation(monkeypatch, caplog, subject, quote, expected):
+    from app import voice_exam_review_provider as provider
+    text = 'Hekim: Bugün önce muayene edelim. Hasta: PRIVATE HASTA KONUŞMASI'
+    monkeypatch.setattr(provider, 'review', lambda *a, **k: {
+        'fields': {}, 'clinical_facts': [{'field': 'plan', 'value': 'PRIVATE KLİNİK PLAN',
+            'quote': quote, 'temporality': 'PLANNED', 'subject': subject}]})
+    core._understand(text, {})
+    assert 'voice_plan_fidelity ' + expected in caplog.text
+    assert 'PRIVATE' not in caplog.text and 'muayene edelim' not in caplog.text
+
+
 def test_atomic_private_concern_is_shown_only_as_private_coaching():
     text = 'Biraz da çekimden korkuyorum.'
     value = 'Endişenizi en çok hangi aşama artırıyor diye sorun; adımları sakin anlatın.'
