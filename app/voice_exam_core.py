@@ -315,7 +315,7 @@ def normalize(result, evidence=None):
                 continue
             if field == 'age' and (not value.isdecimal() or not 0 <= int(value) <= 120):
                 continue
-            output['fields'][field] = {'value': value, 'quote': quote}
+            output['fields'][field] = {'value': quote if field == 'chief_complaint' else value, 'quote': quote}
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
@@ -349,7 +349,8 @@ def normalize(result, evidence=None):
                     suggestion = '' if fact['field'] == 'clinician_response' else value
                     output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': suggestion})
             continue
-        if field == 'medications':
+        if field in {'medications', 'chief_complaint'}:
+            # Keep symptoms/anatomy literal too: 'üstündeki kaplama' is not upper jaw.
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
             value = quote
@@ -442,7 +443,12 @@ CLINICAL_FACTS: konuşmayı baştan sona tara; açıkça belirtilen her klinik b
 Her öğe bir bilgi içerir: field, value, quote, temporality, subject. En çok 40 öğe.
 subject bilginin KİMİN HAKKINDA olduğunu gösterir; konuşan kişinin rolü değildir.
 PATIENT yalnız bu hastaya ait bilgi, OTHER asistan/hekim/yakın/başka kişinin kendi
-öyküsü, UNKNOWN kime ait olduğu anlaşılamayan bilgidir. İlaç adının bilinmemesi
+öyküsü, UNKNOWN kime ait olduğu anlaşılamayan bilgidir.
+quote yalnız o kişiye ait bilgi taşıyan en küçük yeterli kesintisiz cümlecik olsun;
+aynı kişinin sözünde bile baba/hasta anlatımı birlikteyse tüm cümleyi iki etikette
+tekrarlama. Örnek: "Babamda şeker var; bende tanı yok." için OTHER alıntısı
+"Babamda şeker var", PATIENT alıntısı "bende tanı yok." olur. Ayrılamıyorsa
+kesin hasta bilgisi üretme, netleştirme sorusu sor. İlaç adının bilinmemesi
 subject UNKNOWN demek değildir; ilacı kullanan hasta belliyse PATIENT kalır.
 Başka kişinin öyküsünü "hasta öyküsü değil" açıklamasıyla bile hasta alanlarına koyma.
 Hekimin sorduğu soru cevap değildir; yalnız soru alıntısından hastalık/ilaç/alerji

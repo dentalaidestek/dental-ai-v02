@@ -87,7 +87,7 @@ def test_nonpatient_or_uncertain_subject_cannot_enter_patient_fields_or_source_r
              'temporality': 'CURRENT', 'subject': 'PATIENT'}],
         'literature_topics': [{'topic': 'temporomandibular disorders diagnosis', 'quote': quote}]})
     assert 'medical_history' not in result['fields']
-    assert result['fields']['chief_complaint']['value'] == 'Güncel: Çekim yeri kapanmıyor'
+    assert result['fields']['chief_complaint']['value'] == 'Güncel: ' + patient
     assert not result['literature_topics']
     assert result['uncertain']
 
@@ -331,3 +331,24 @@ def test_atomic_private_concern_is_shown_only_as_private_coaching():
     assert output['communication'] == [{'quote': text, 'observation': text, 'suggestion': value}]
     assert text not in str(core.clinical_context({'fields': output['fields']}))
 
+
+
+@pytest.mark.parametrize('atomic', [True, False])
+def test_chief_complaint_does_not_turn_overlying_crown_into_upper_jaw(atomic):
+    quote = 'Meğer üstündeki kaplama çıkmış.'
+    invented = 'Üst çenedeki kaplama çıktı'
+    item = {'value': invented, 'quote': quote}
+    data = {'clinical_facts': [{'field': 'chief_complaint', **item,
+            'temporality': 'CURRENT', 'subject': 'PATIENT'}]} if atomic else {'fields': {'chief_complaint': item}}
+    data['transcript'] = quote
+    field = core.normalize(data, evidence=quote)['fields']['chief_complaint']
+    assert invented not in field['value']
+    assert quote in field['value']
+
+
+def test_separate_clauses_preserve_patient_denial_without_fathers_disease():
+    text = 'Babamda şeker var; bende tanı yok.'
+    result = core.normalize({'transcript': text, 'clinical_facts': [
+        {'field': 'medical_history', 'value': 'Babanın diyabeti', 'quote': 'Babamda şeker var', 'temporality': 'CURRENT', 'subject': 'OTHER'},
+        {'field': 'medical_history', 'value': 'Hastada tanı yok', 'quote': 'bende tanı yok.', 'temporality': 'NEGATED', 'subject': 'PATIENT'}]}, evidence=text)
+    assert result['fields']['medical_history']['value'] == 'Olumsuz beyan: Hastada tanı yok'
