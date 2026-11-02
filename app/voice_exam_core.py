@@ -603,6 +603,18 @@ def _understand(text, context):
     clinical_count = sum(name in output['fields'] for name in FIELDS[3:])
     logging.getLogger(__name__).warning('voice_clinical_fidelity candidates=%d grounded_fields=%d',
         candidate_count, clinical_count)
+    plan_facts = [fact for fact in raw_facts if isinstance(fact, dict) and
+                  (fact.get('field') == 'plan' or
+                   fact.get('field') == 'clinical_findings' and fact.get('temporality') == 'PLANNED')]
+    # Fixed counts distinguish model omission, quote rejection and attribution
+    # withholding without logging conversation, values or arbitrary model tags.
+    logging.getLogger(__name__).warning(
+        'voice_plan_fidelity candidates=%d anchored=%d patient=%d other=%d unknown=%d missing=%d recorded=%d',
+        len(plan_facts), sum(bool(appointment_evidence_quote(_string(fact.get('quote', ''), 1000), evidence)) for fact in plan_facts),
+        sum(fact.get('subject') == 'PATIENT' for fact in plan_facts),
+        sum(fact.get('subject') == 'OTHER' for fact in plan_facts),
+        sum(fact.get('subject') == 'UNKNOWN' for fact in plan_facts),
+        sum(fact.get('subject') is None for fact in plan_facts), int('plan' in output['fields']))
     logging.getLogger(__name__).warning('voice_insight_fidelity communication=%d/%d barriers=%d/%d questions=%d/%d',
         len(output['communication']), len(result.get('communication', [])),
         len(output['decision_barriers']), len(result.get('decision_barriers', [])),
