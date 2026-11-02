@@ -328,7 +328,13 @@ def normalize(result, evidence=None):
             # Remap before question filtering: "Film çekelim mi?" is a plan.
             field = 'plan'
         if fact.get('subject') == 'PATIENT' and nonpatient(quote):
-            raise VoiceError('Hasta ve başka kişi bilgileri aynı alıntıda çakışıyor. Konuşmacıyı netleştirip yeniden deneyin; taslak korunuyor.')
+            # Withhold the ambiguous fact, not the independently grounded exam.
+            # Existing nonpatient filtering also excludes its record/source/chart
+            # contributions. No automatic paid re-extraction or live interruption.
+            notice = 'Kime ait olduğu çakışan ifadeler hasta alanlarına alınmadı; diğer bilgiler işlendi. Bu ifadelerin klinik değerlendirmesi eksik kalabilir.'
+            if notice not in output['uncertain']:
+                output['uncertain'] = (output['uncertain'] + '\n' + notice).strip()
+            continue
         if fact.get('subject') in {'OTHER', 'UNKNOWN'} or nonpatient(quote):
             continue
         if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings'} and quote.rstrip().endswith('?'):

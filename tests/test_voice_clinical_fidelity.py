@@ -120,14 +120,24 @@ def test_conditional_examination_question_mislabelled_as_finding_is_kept_as_plan
     ('Çekim yeri ağrıyor.', 'Çekim yeri ağrıyor. Benim de dişim sızlıyor.'),
     ('Çekim yeri ağrıyor. Benim de dişim sızlıyor.', 'Benim de dişim sızlıyor.'),
     ('Çekim yeri ağrıyor.', 'Çekim yeri ağrıyor.')])
-def test_overlapping_patient_and_other_subject_quotes_require_explicit_review(patient_quote, other_quote):
-    text = 'Çekim yeri ağrıyor. Benim de dişim sızlıyor.'
-    with pytest.raises(core.VoiceError, match='çakış'):
-        core.normalize({'transcript': text, 'clinical_facts': [
-            {'field': 'chief_complaint', 'value': 'Hasta yakınması', 'quote': patient_quote,
-             'temporality': 'CURRENT', 'subject': 'PATIENT'},
-            {'field': 'medical_history', 'value': 'Asistanın şikâyeti', 'quote': other_quote,
-             'temporality': 'CURRENT', 'subject': 'OTHER'}]})
+def test_conflicting_subject_quotes_are_withheld_without_losing_independent_patient_facts(patient_quote, other_quote):
+    text = 'Çekim yeri ağrıyor. Benim de dişim sızlıyor. İlacım varfarin. Önce filmine bakalım.'
+    result = core.normalize({'transcript': text, 'clinical_facts': [
+        {'field': 'chief_complaint', 'value': 'Hasta yakınması', 'quote': patient_quote,
+         'temporality': 'CURRENT', 'subject': 'PATIENT'},
+        {'field': 'medical_history', 'value': 'Asistanın şikâyeti', 'quote': other_quote,
+         'temporality': 'CURRENT', 'subject': 'OTHER'},
+        {'field': 'medications', 'value': 'Varfarin', 'quote': 'İlacım varfarin.',
+         'temporality': 'CURRENT', 'subject': 'PATIENT'},
+        {'field': 'plan', 'value': 'Film değerlendirmesi', 'quote': 'Önce filmine bakalım.',
+         'temporality': 'PLANNED', 'subject': 'PATIENT'}],
+        'fields': {'medical_history': {'value': 'Çakışan özet', 'quote': other_quote}},
+        'literature_topics': [{'topic': 'temporomandibular disorders diagnosis', 'quote': other_quote}]})
+    assert set(result['fields']) == {'medications', 'plan'}
+    assert result['fields']['medications']['value'] == 'Güncel: İlacım varfarin.'
+    assert result['fields']['plan']['value'] == 'Planlanan: Film değerlendirmesi'
+    assert result['literature_topics'] == []
+    assert 'çakışan' in result['uncertain'] and 'alınmadı' in result['uncertain']
 
 
 def test_other_person_cannot_remove_patient_information_or_create_patient_appointment():
