@@ -8,20 +8,38 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import registry
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 
 from app import voice_exam_core as core
 from app import voice_exam as voice
-from app.work_jobs import WorkJob
+from app.work_jobs import WorkJob as ProductionWorkJob
 
 
-class User(SQLModel, table=True):
+# Keep lightweight route fixtures out of the production model graph. Full-site
+# collection may already have registered tables with these names.
+voice_registry = registry()
+
+
+class VoiceTestModel(SQLModel, registry=voice_registry):
+    pass
+
+
+class WorkJob:
+    pass
+
+
+voice_registry.map_imperatively(WorkJob,
+    ProductionWorkJob.__table__.to_metadata(VoiceTestModel.metadata))
+
+
+class User(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     role: str = 'DOCTOR'
     is_active: bool = True
 
 
-class Patient(SQLModel, table=True):
+class Patient(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_user_id: int
     anonymous_id: str = 'ANON'
@@ -32,14 +50,14 @@ class Patient(SQLModel, table=True):
     chief_complaint: str | None = None
 
 
-class Analysis(SQLModel, table=True):
+class Analysis(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     patient_id: int
     status: str = 'DRAFT'
     clinical_notes: str = ''
 
 
-class ToothStatus(SQLModel, table=True):
+class ToothStatus(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     patient_id: int
     tooth_number: str
@@ -48,7 +66,7 @@ class ToothStatus(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
-class ScheduleEvent(SQLModel, table=True):
+class ScheduleEvent(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_user_id: int
     patient_id: int
@@ -56,7 +74,7 @@ class ScheduleEvent(SQLModel, table=True):
     start_at: str
 
 
-class StudyCourse(SQLModel, table=True):
+class StudyCourse(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_user_id: int
     title: str
@@ -66,7 +84,8 @@ class StudyCourse(SQLModel, table=True):
 def app_client(monkeypatch):
     monkeypatch.setenv('VOICE_EXAM_ENABLED', '1')
     engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
-    SQLModel.metadata.create_all(engine)
+    VoiceTestModel.metadata.create_all(engine)
+    monkeypatch.setattr("app.work_jobs.WorkJob", WorkJob)
     main = ModuleType('app.main');main.engine = engine
     main._user_schedule_occurrences = lambda *args: []
     for model in (User, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
