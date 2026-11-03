@@ -205,3 +205,14 @@ Sekiz farklı konu için12turluk185–206kelimelik diyaloglar ve tam90s temiz/u�
 HeyGen bağlantısı doğrulandı. Katalog önerisiyle yapılan tek Starfish sentezi, çalışma alanının Orca zorunluluğu nedeniyle400 döndürdü; ses üretilmedi. narrator yönergesindeki hata sonrası onay kuralı nedeniyle otomatik yeni motor çağrısı yapılmadı. Orca/HeyGen Voice üretimi kullanıcı onayını bekliyor. Kesin istek/hata: docs/voice_clinic90_heygen_2026-11-02.json.
 
 PR235/b54cdcb7 JSON olmayan hizmet yanıtında ham DOCTYPE/parser hatası yerine Türkçe hata ve taslak/ses yeniden deneme yolunu korur; v22. Regresyon önce başarısız oldu, sonra494Python/11Node geçti; bağımsız incelemede engel yok. Ayrıntı: docs/voice_clinic90_validation_2026-11-02.md. Genel site CI ve gerçek mikrofon/klinik doğruluk hâlâ ayrıca doğrulanmalıdır.
+
+
+## 2026-11-03 — Eksik canlı aktarım sonrası tepkisiz özet düğmesi
+
+Kullanıcının gerçek telefon denemesinde “Son konuşmanın tamamlandığı doğrulanamadı” uyarısı ve “Özeti kontrol et” düğmesi görüldü. Kök neden: `flushed=false` durumunda çıkarım başlamıyor ve `.voice-review` gizli kalıyor; canlı denetleyicinin düğmesi yalnız gizli özete kaydırıyordu. Sonuç üretilmediği halde özet varmış gibi davranıyordu.
+
+Düzeltme: özet henüz yoksa düğme “Metni kontrol et” olur; tıklama korunan konuşmanın bulunduğu bölümü açar ve metne odaklanır. İşleme yalnız kullanıcının mevcut “Metni işle ve değerlendir” eylemiyle başlar. Hazır özet varsa mevcut özet gezinmesi korunur. Yeni model çağrısı, otomatik onay veya hasta kaydı eklenmedi. Canlı betik önbellek sürümü v7.
+
+Regresyon, bağlantı kopması ve normal bitişte `flushed=false` durumlarını gerçek Jinja paneli ve iki denetleyiciyle jsdom içinde çalıştırır; düzeltmeden önce kapalı kalan metin bölümü nedeniyle başarısız oldu. Düzeltme sonrası açık bölüm/odak, kullanıcı eylemine kadar sıfır çıkarım/son değerlendirme çağrısı, sonraki tek işleme ve hazır özet gezinmesi doğrulandı. Bağımsız incelemede engel bulunmadı. Tam yerel koşu: **494 Python geçti** (iki mevcut bağımlılık uyarısı), **11 Node geçti**.
+
+Sınır: bu düzeltme eksik son ses aktarımının ağ/sağlayıcı nedenini çözmüş sayılmaz; kullanıcının gerçek sesi ve tarayıcı/mikrofonla aynı olay yeniden üretilemedi. Gerçek konuşmanın tam geldiği veya klinik sonucun doğru olduğu iddia edilmiyor. Açık sayfadaki geçici metin yenilemeyle kaybolabilir; yeni betik için sayfa yenilemeden önce metin kopyalanmalı. Dağıtım sonucu ayrıca doğrulanacak.

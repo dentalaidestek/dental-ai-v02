@@ -68,11 +68,19 @@
     if(node){await Promise.race([new Promise(resolve=>{flushDone=resolve;node.port.postMessage({type:'flush'})}),new Promise(resolve=>setTimeout(resolve,300))])}flushDone=null;if(state!=='stopping')return;microphoneOff();
     if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify({type:end?'finish':'pause'}));drainTimer=setTimeout(()=>{if(state==='stopping')fail('Son konuşma yanıtı zamanında gelmedi. Biriken metin korunuyor; metni kontrol edip değerlendirin.')},8000)}else fail('Bağlantı kesildi.');
   }
-  if(reviewButton)reviewButton.addEventListener('click',()=>{root.dataset.showReview='true';const summary=root.querySelector('.voice-review');summary?.scrollIntoView?.({behavior:'smooth',block:'start'})});
+  if(reviewButton)reviewButton.addEventListener('click',()=>{
+    root.dataset.showReview='true';
+    const summary=root.querySelector('.voice-review');
+    if(summary&&!summary.hidden){summary.scrollIntoView?.({behavior:'smooth',block:'start'});return}
+    // An incomplete flush or failed extraction has no summary to navigate to.
+    // Open the retained text without silently approving or processing it.
+    const transcript=root.querySelector('[data-voice-transcript]'),recovery=transcript?.closest('details');
+    if(recovery){recovery.open=true;recovery.scrollIntoView?.({behavior:'smooth',block:'start'});transcript.focus({preventScroll:true})}
+  });
   stateChanged('idle');
   start.addEventListener('click',begin);pause.addEventListener('click',()=>stop(false));finish.addEventListener('click',()=>stop(true));
   root.addEventListener('voice-review-state',event=>{reviewBlocked=event.detail.blocked;
-    if(reviewButton)reviewButton.disabled=!!event.detail.processing||!!event.detail.finalBusy;
+    if(reviewButton){reviewButton.disabled=!!event.detail.processing||!!event.detail.finalBusy;reviewButton.textContent=root.querySelector('.voice-review')?.hidden?'Metni kontrol et':'Özeti kontrol et'}
     if(finished&&state==='idle'){const title=panel.querySelector('[data-live-title]');if(title)title.textContent=event.detail.finalBusy?'Muayene değerlendiriliyor':event.detail.processing?'Konuşma işleniyor':event.detail.finalReady?'Muayene tamamlandı':'Dinleme tamamlandı'}
     start.disabled=reviewBlocked||!['idle','paused','error'].includes(state)});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='listening'){stream?.getTracks().forEach(track=>track.stop());stop(false)}});
