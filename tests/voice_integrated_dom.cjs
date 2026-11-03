@@ -72,8 +72,29 @@ async function fixture(){
     f.get('[data-live-finish]').click();await tick();
     assert.equal(f.calls.filter(c=>c.url.endsWith('/text')).length,0,'Broken connection must require explicit text review');
     assert.equal(f.w.getComputedStyle(f.get('[data-voice-transcript]').closest('details')).display,'block','Recovery controls must remain reachable');
-    f.get('[data-voice-transcript]').closest('details').open=true;f.get('[data-voice-text]').click();
+    f.get('[data-live-review]').click();
+    assert.equal(f.get('[data-voice-transcript]').closest('details').open,true,'Review action must open the retained transcript when no summary exists');
+    assert.equal(f.w.document.activeElement,f.get('[data-voice-transcript]'),'Recovery must focus the visible transcript');
+    assert.equal(f.calls.some(c=>c.url.endsWith('/text')),false,'Opening recovery must not process unconfirmed text');
+    f.get('[data-voice-text]').click();
     await until(()=>!f.get('[data-voice-save]').disabled,'manual recovery');assert.deepEqual(f.errors,[]);
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setFlush(false);await f.begin();f.speech('Soğuk içemiyorum.');f.get('[data-live-finish]').click();
+    await until(()=>f.get('.voice-exam-status').textContent.includes('tamamlandığı doğrulanamadı'),'unconfirmed finish');
+    assert.equal(f.get('.voice-review').hidden,true,'No clinical summary exists before extraction');
+    f.get('[data-live-review]').click();
+    assert.equal(f.get('[data-voice-transcript]').closest('details').open,true,'Unconfirmed finish must reveal recovery instead of scrolling to a hidden summary');
+    assert.equal(f.w.document.activeElement,f.get('[data-voice-transcript]'));
+    assert.equal(f.calls.some(c=>c.url.endsWith('/text')||c.url.endsWith('/finalize')),false);
+    f.get('[data-voice-text]').click();await until(()=>!f.get('[data-voice-save]').disabled,'reviewed unconfirmed text');
+    f.get('[data-voice-transcript]').closest('details').open=false;
+    f.get('[data-live-review]').click();
+    assert.equal(f.get('[data-voice-transcript]').closest('details').open,false,'Completed summary navigation must not reopen transcript recovery');
+    assert.equal(f.calls.filter(c=>c.url.endsWith('/text')).length,1);
+    assert.equal(f.calls.filter(c=>c.url.endsWith('/finalize')).length,1);
+    assert.deepEqual(f.errors,[]);
   }finally{f.close()}
   f=await fixture();
   try{
