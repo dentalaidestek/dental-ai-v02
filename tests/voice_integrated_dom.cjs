@@ -37,6 +37,7 @@ async function fixture(){
       else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode==='cards'?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode==='cards'?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
+    if(sourceMode==='cards'&&url.endsWith('/finalize'))body.final.material_review=[{topic:'endo.post_core',label:'Post, kor ve kalan diş dokusu',status:'unverified',source_ids:[]}];
     if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'}};
     if(sourceMode==='readable'&&url.endsWith('/finalize'))body.final.summary=Object.entries(JSON.parse(options.body).context.fields).map(([field,item])=>({field,text:item.value,quote:item.value}));
     return {ok:body.ok,json:async()=>body};
@@ -162,6 +163,7 @@ async function fixture(){
     assert.ok(record.contains(f.get('[data-voice-fields]')));
     assert.ok(results.compareDocumentPosition(record)&f.w.Node.DOCUMENT_POSITION_FOLLOWING,'Record choices follow the review');
     assert.ok(results.textContent.includes('Koşullu klinik kontrol.'));
+    assert.ok(results.querySelector('.voice-material-review')?.textContent.includes('Uygunluk kontrolü tamamlanamadı'),'A general source note must not hide an incomplete material check');
     assert.ok(results.textContent.includes('Malzeme bilinmiyor.'));
     record.querySelector('summary').click();f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
     await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'card layout preserves approved save');

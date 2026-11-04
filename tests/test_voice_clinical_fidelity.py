@@ -70,7 +70,7 @@ def test_planned_examination_is_a_plan_while_current_findings_and_planned_drugs_
         dict(zip(('field', 'value', 'quote', 'temporality'), row)) for row in facts]})
     assert result['fields']['plan']['value'] == 'Planlanan: Düşen dolgunun incelenmesi'
     assert result['fields']['plan']['quote'] == 'Düşen dolguyu inceleyelim.'
-    assert result['fields']['clinical_findings']['value'] == 'Güncel: 46 eski dolgu'
+    assert result['fields']['clinical_findings']['value'] == 'Güncel: Kırk altıda eski dolgu var.'
     assert result['fields']['medications']['value'] == 'Planlanan: Jeli yarın kullanmayı düşünüyoruz.'
 
 
@@ -362,3 +362,10 @@ def test_separate_clauses_preserve_patient_denial_without_fathers_disease():
         {'field': 'medical_history', 'value': 'Babanın diyabeti', 'quote': 'Babamda şeker var', 'temporality': 'CURRENT', 'subject': 'OTHER'},
         {'field': 'medical_history', 'value': 'Hastada tanı yok', 'quote': 'bende tanı yok.', 'temporality': 'NEGATED', 'subject': 'PATIENT'}]}, evidence=text)
     assert result['fields']['medical_history']['value'] == 'Olumsuz beyan: Hastada tanı yok'
+
+
+def test_open_film_is_not_a_newly_taken_radiograph():
+    quote='Film açık hocam. Kök duvarı henüz ölçülmedi.'
+    output=core.normalize({'transcript':quote,'fields':{'clinical_findings':{'value':'Film çekildi','quote':quote}},'clinical_facts':[{'field':'clinical_findings','value':'Film çekildi; kök duvarı ölçülmedi','quote':quote,'temporality':'CURRENT','subject':'PATIENT'}]},evidence=quote)
+    assert 'Film çekildi' not in output['fields']['clinical_findings']['value']
+    assert quote in output['fields']['clinical_findings']['value']

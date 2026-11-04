@@ -308,3 +308,16 @@ Birincil başvuru kaynakları (4 Kasım erişimi):
 - https://www.ada.org/resources/ada-library/oral-health-topics/materials-for-indirect-restorations
 - https://www.ada.org/resources/ada-library/oral-health-topics/materials-for-direct-restorations/
 - https://www.aae.org/specialty/fundamentals-of-restorability/
+
+
+### 4 Kasım gerçek model tekrarları ve ikinci düzeltme
+
+PR237/312af794, Render dep-dblf0697lnhs739l5ch0 **11:44:43 Türkiye** itibarıyla live. Oturumda JSv23/CSSv12 doğrulandı. Gerçek Claude/metin tekrarları: zirkonya köprü+diş sıkma2kaynak1kontrol; post-kor3kaynak1kontrol. İki sonuç da kısmi kapsam uyarısıyla çıktı. Başlangıç kanıtı docs/voice_material_before_2026-11-04.json, özgün sentetik diyaloglar tests/fixtures/voice_material_dialogues.json içinde. Gerçek mikrofon yok, kayıt onayı verilmedi.
+
+Bulunan açıklar: zirkonya sonucunda konuşmadaki sağ üst bölgesi eksik sayıldı; post sonucunda özgül post yerine genel kompozit sınırlaması verildi. Postta “film açık” beyanı bulgular özetinde “film çekildi” oldu. Düzenli ilaç kullanmadığını ifade eden birleşik olumsuz cümleye rağmen ilaç listesi sorusu üretildi. Bu koşular tam klinik başarı değildir.
+
+İkinci düzeltme: konuşulan özgül materyal/işlem hedefleri aynı son modele açıkça iletilir. Kontrol maddesi kapalı review_topic kimliğiyle ilişkilendirilir. Materyal kimliğiyle sunulan kaynak alıntısında ilgili özgül terimler yoksa madde çıkarılır. Genel kompozit cümlesi post-kor kontrolünü tamamlayamaz; post-operative/post-treatment gibi zaman önekleri ve platform/connection gibi genel sözcükler de kabul edilmez. Ekranda her materyal için kaynak alıntılı kontrol noktası var veya uygunluk kontrolü tamamlanamadı durumu gösterilir. Sözcük eşleşmesi klinik uygunluk kanıtı değildir; olumlu durum dahi uygunluk onayı sayılmaz. Araştırma bütçesi veya çağrı sayısı artırılmadı.
+
+Muayene bulguları alanında kaynak alıntısı hem atomik hem eski özet yolunda aynen korunur; “açık film”den yeni çekim yapıldığı bilgisi üretilemez. Önceden bilinen alanın son değerlendirmede eksik sayılmaması için çapraz alan kontrolü istendi; bunun ve birleşik ilaç olumsuzluğunun gerçek model doğruluğu ayrıca izlenmelidir, düzeldiği varsayılmadı.
+
+Yeni regresyonlar önce başarısız oldu: ilgisiz kompozit→post, post/core boşluğu görünürlüğü, geçerli ferrule alıntısı, yanlış film parafrazı, dört genel/temporal sözcük eşleşmesi. İnceleme, filtredeki temporal/generic yanlış eşleşmeleri yakaladı; bunlar RED→GREEN ile düzeltildi ve yeniden incelemede engel kalmadı. Son yerel koşu526Python/11Node; iki mevcut bağımlılık uyarısı. Uzak genel CI yeşil değil.

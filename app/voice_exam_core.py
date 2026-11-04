@@ -315,7 +315,7 @@ def normalize(result, evidence=None):
                 continue
             if field == 'age' and (not value.isdecimal() or not 0 <= int(value) <= 120):
                 continue
-            output['fields'][field] = {'value': quote if field == 'chief_complaint' else value, 'quote': quote}
+            output['fields'][field] = {'value': quote if field in {'chief_complaint', 'clinical_findings'} else value, 'quote': quote}
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
@@ -355,7 +355,7 @@ def normalize(result, evidence=None):
                     suggestion = '' if fact['field'] == 'clinician_response' else value
                     output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': suggestion})
             continue
-        if field in {'medications', 'chief_complaint'}:
+        if field in {'medications', 'chief_complaint', 'clinical_findings'}:
             # Keep symptoms/anatomy literal too: 'üstündeki kaplama' is not upper jaw.
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
