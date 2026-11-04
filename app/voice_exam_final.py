@@ -10,6 +10,7 @@ from app.voice_exam_clinical import grounded_items
 from app.voice_exam_sources import retryable_unavailable
 from app.voice_exam_research import retrieve
 from app.voice_exam_review_provider import review
+from app import voice_exam_materials as materials
 
 
 def private_insights(value):
@@ -92,7 +93,9 @@ def finalize(context, insights, uncertain="", *, previous_source_fingerprint='')
         raise core.VoiceError('Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin.')
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
-    clinical_keys = ('source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
+    material_targets = materials.targets(context.get('literature_topics', []))
+    review_topics = {row['topic'] for row in context.get('literature_topics', [])}
+    clinical_keys = ('review_topic', 'source_id', 'source_quote', 'patient_field', 'patient_quote', 'consideration', 'missing_information', 'alternative')
     contradiction_keys = ('field', 'quote', 'other_field', 'other_quote', 'text')
     contradiction_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in contradiction_keys},
                             'required': list(contradiction_keys)}
@@ -108,6 +111,7 @@ def finalize(context, insights, uncertain="", *, previous_source_fingerprint='')
         contradiction_schema['properties'][key]['enum'] = list(fields)
     clinical_schema = schema['properties']['clinical_items']['items']['properties']
     clinical_schema['patient_field']['enum'] = list(fields)
+    clinical_schema['review_topic']['enum'] = sorted(review_topics | {'other'})
     if evidence['references']:
         clinical_schema['source_id']['enum'] = [item['id'] for item in evidence['references']]
     prompt = '''Türkçe diş hekimi-hasta görüşmesinin sonunda BÜTÜN geçici klinik bağlamı değerlendir.
@@ -171,6 +175,13 @@ koşulları kaynak kapsamıyla uyuşmuyorsa o iddiayı çıkar; eksik bilgiyi so
 Kaynağın yayın/güncelleme tarihi ile retrieved_at erişim tarihini karıştırma. Tarih
 ve kılavuzun halen geçerli olduğu doğrulanmamışsa güncel/en son kılavuz iddiası kurma.
 Alıntılar ve consideration yalnız boşluk olamaz; anlamlı, kısa ve özgül olsun.
+material_review_targets konuşulan özgül materyal/işlem kontrolleridir. Her birini önce
+ilgili özgül kaynakla incele; ilgisiz dolgu bilgisiyle post kontrolünü tamamlanmış sayma.
+Her clinical_items öğesinin review_topic değeri ilgili kapalı topic kimliği olsun;
+materyal/işlem dışındaki ayrı bir kontrol için other kullan. Kaynak alıntısında özgül
+materyal/işleme ilişkin içerik yoksa o kimlikle madde üretme. Konuşmada ve alanların
+başka birinde bulunan bilgiyi 'kayıtta yok' diye yazma; tüm alanları çapraz kontrol et.
+Bölge bilgisinin bulunması diş numarası veya materyal ürününü bildiğimiz anlamına gelmez.
 Kaynak yoksa clinical_items boş olsun. Kesin tanı/tedavi, ilaç başlama/kesme veya doz üretme.
 Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim önerilerini hasta
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
@@ -181,6 +192,7 @@ Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece isten
     fields.update(communication_fields)
     anchor_schema['properties']['field']['enum'] = list(fields)
     clinical_schema['patient_field']['enum'] = list(fields)
+    clinical_schema['review_topic']['enum'] = sorted(review_topics | {'other'})
     for key in ('field', 'other_field'):
         contradiction_schema['properties'][key]['enum'] = list(fields)
     prompt += '''
@@ -221,7 +233,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
 '''
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
-            'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
+            'material_review_targets': material_targets, 'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
         raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
     # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
@@ -248,6 +260,18 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
             output['contradictions'] = [item for item in output['contradictions'] if item['field'] != 'appointment']
         rejected_reasons = {}
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'], diagnostics=rejected_reasons)
+        scoped = []
+        for item in output['clinical_items']:
+            topic = item.get('review_topic', 'other')
+            if topic != 'other' and topic not in review_topics:
+                rejected_reasons['unknown_review_topic'] = rejected_reasons.get('unknown_review_topic', 0) + 1
+                continue
+            if any(row['id'] == topic for row in material_targets) and not materials.relevant_passage(topic, item['source_quote']):
+                rejected_reasons['material_scope_mismatch'] = rejected_reasons.get('material_scope_mismatch', 0) + 1
+                continue
+            scoped.append(item)
+        output['clinical_items'] = scoped
+        output['material_review'] = materials.review_status(scoped, material_targets)
         candidates = {ref['id']: ref.get('searched_name', '') for ref in evidence['references']
                       if ref.get('name_resolution') == 'unconfirmed_spelling_candidate'}
         for item in output['clinical_items']:

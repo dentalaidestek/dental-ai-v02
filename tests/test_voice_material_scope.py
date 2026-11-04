@@ -37,3 +37,47 @@ def test_material_topic_requires_real_conversation_anchor():
 def test_unknown_material_cannot_create_an_arbitrary_query():
     data, _ = web._public_input([{'topic':'material.secret_patient_555','query':'PRIVATE','quote':'PRIVATE'}], [])
     assert data['topics'] == []
+
+
+def test_general_filling_note_does_not_count_as_a_post_appropriateness_check(monkeypatch):
+    from app import voice_exam_final as final
+    from test_voice_exam_final import provider
+    context={'fields':{'plan':{'value':'Fiber post seçeneğini konuşuyoruz.','quote':'Fiber post seçeneğini konuşuyoruz.'}},'literature_topics':[{'topic':'endo.post_core','quote':'Fiber post seçeneğini konuşuyoruz.'}]}
+    item={'review_topic':'endo.post_core','source_id':'ada','source_quote':'Composite restorations require isolation.','patient_field':'plan','patient_quote':'Fiber post','consideration':'Post için kompozit kuralını kullan.','missing_information':'','alternative':''}
+    calls=provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[item]})
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:{'references':[{'id':'ada','excerpts':['Composite restorations require isolation.'],'clinical_use':True}], 'unavailable':[],'coverage':'limited','notice':'limited'})
+    output=final.finalize(context,[])
+    assert output['clinical_items']==[]
+    assert output['material_review'][0]['status']=='unverified'
+    sent=json.loads(calls[0]['messages'][0]['content'])
+    assert sent['material_review_targets'][0]['id']=='endo.post_core'
+
+
+def test_specific_post_passage_can_support_a_control_without_safety_approval(monkeypatch):
+    from app import voice_exam_final as final
+    from test_voice_exam_final import provider
+    context={'fields':{'plan':{'value':'Fiber post konuşuyoruz.','quote':'Fiber post konuşuyoruz.'}},'literature_topics':[{'topic':'endo.post_core','quote':'Fiber post konuşuyoruz.'}]}
+    passage='Remaining tooth structure and ferrule affect restorability.'
+    item={'review_topic':'endo.post_core','source_id':'aae','source_quote':passage,'patient_field':'plan','patient_quote':'Fiber post','consideration':'Kalan doku değerlendirilmeli.','missing_information':'Doku miktarı bilinmiyor.','alternative':''}
+    provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[item]})
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:{'references':[{'id':'aae','excerpts':[passage],'clinical_use':True}], 'unavailable':[],'coverage':'limited','notice':'limited'})
+    output=final.finalize(context,[])
+    assert len(output['clinical_items'])==1
+    assert output['material_review']==[{'topic':'endo.post_core','label':'Post, kor ve kalan diş dokusu','status':'control_point_present','source_ids':['aae']}]
+
+
+@pytest.mark.parametrize('quote', ['Postoperative pain requires follow-up.', 'Compost material', 'Composite restorations require isolation.'])
+def test_post_relevance_does_not_match_postoperative_or_unrelated_words(quote):
+    from app import voice_exam_materials as materials
+    assert materials.relevant_passage('endo.post_core',quote) is False
+
+
+@pytest.mark.parametrize('topic,quote', [
+    ('endo.post_core','Post-operative pain requires follow-up.'),
+    ('endo.post_core','Post-treatment pain should be monitored.'),
+    ('implant.components','The platform provides patient information.'),
+    ('implant.components','The connection was closed by the server.'),
+])
+def test_generic_or_temporal_words_cannot_complete_a_material_check(topic,quote):
+    from app import voice_exam_materials as materials
+    assert materials.relevant_passage(topic,quote) is False

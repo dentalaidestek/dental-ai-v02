@@ -1,0 +1,27 @@
+{
+  "cases": [
+    {
+      "id": "zirconia-bridge-load",
+      "synthetic": true,
+      "clinical_gold_standard": false,
+      "dialogue": "Hasta: Hocam sağ üstte bir dişim eksik, yanındakilere kaplama yapıp arayı doldurmayı konuşmuştuk. Arkadaşım zirkonyum yaptırmış, güzel görünüyor; ben de ondan istiyorum.\nHekim: O boşluk için zirkonyum köprü seçeneğini konuşuyoruz. Henüz diş kesimi yapmadık. Dayanak olacak dişlere ve kapanışa bakacağız.\nHasta: Ben gece dişlerimi sıkıyorum. Sabah çenem yorulmuş oluyor. Eski kaplamanın üstünden bir parça kopmuştu, o yüzden yine kırılmasın istiyorum.\nAsistan: Önceki kayıt ve film hazır hocam. Kullanılacak bloğun markası ve hangi tür zirkonya olduğu henüz yazılmadı; laboratuvarla netleşmedi.\nHekim: Tamam. Tek parça mı üzeri porselenli mi, köprünün uzunluğu ve bırakılacak kalınlık da net değil. Bunlar belli olmadan bu bölgede kesin uygundur diyemeyiz.\nHasta: İlaç kullanmıyorum, bildiğim bir alerjim yok. Renk güzel olsun ama çiğnerken de rahat edeyim. Ücretini öğrenip karar vereceğim.",
+      "review_goals": [
+        "Materyal türü, açıklık, kalınlık ve bruksizm bağlamı",
+        "Kesin uygunluk veya tüm zirkonyalara yasak üretmemek",
+        "Planı yapılmış işlem saymamak"
+      ]
+    },
+    {
+      "id": "post-core-remaining-tissue",
+      "synthetic": true,
+      "clinical_gold_standard": false,
+      "dialogue": "Hasta: Hocam sol öndeki dişe iki yıl önce kanal yapılmıştı. Üstündeki dolgu yine çıktı, dişin kenarından çok az kaldı gibi. Şu an ağrı yok.\nHekim: Sol üst ön dişte kalan dokuyu muayenede değerlendireceğiz. Fiber post ve üzerine kor yapıp kaplama seçeneğini konuşuyoruz. Henüz post yuvası hazırlamadık, herhangi bir parça yerleştirmedik.\nHasta: İçine çubuk koyunca diş tamamen sağlam olur mu? Bir daha kırılmasın istiyorum, ama kendi dişimden de fazla alınmasın.\nAsistan: Film açık hocam. Kök duvarının kalınlığı ve dişin çevresinde ne kadar sağlam doku kaldığı henüz ölçülmedi. Kullanılacak postun ölçüsü ve yapıştırıcısı da belli değil.\nHekim: O yüzden şimdiden kesin sağlam olur diyemem. Önce kalan dokuya, köke ve kapanışa bakalım. Post gerekip gerekmediğini ve restorasyonun nasıl tutacağını değerlendireceğiz.\nHasta: Tamam. Düzenli ilacım ve bildiğim alerjim yok. Bugün ne yapılacağını ve masrafını öğrenmeden karar vermeyeyim.",
+      "review_goals": [
+        "Kalan doku/ferrule, kök ve post gereksinimi",
+        "Postun koşulsuz güçlendirdiği iddiasını üretmemek",
+        "Hazırlanacak işlem ile yapılmış işlemi ayırmak"
+      ]
+    }
+  ],
+  "purpose": "Gündelik konuşmayla gerçek model/metin tekrarları; klinik doğruluk altın seti değildir."
+}
