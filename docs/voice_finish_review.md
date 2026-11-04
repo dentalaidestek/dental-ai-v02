@@ -321,3 +321,12 @@ Bulunan açıklar: zirkonya sonucunda konuşmadaki sağ üst bölgesi eksik say�
 Muayene bulguları alanında kaynak alıntısı hem atomik hem eski özet yolunda aynen korunur; “açık film”den yeni çekim yapıldığı bilgisi üretilemez. Önceden bilinen alanın son değerlendirmede eksik sayılmaması için çapraz alan kontrolü istendi; bunun ve birleşik ilaç olumsuzluğunun gerçek model doğruluğu ayrıca izlenmelidir, düzeldiği varsayılmadı.
 
 Yeni regresyonlar önce başarısız oldu: ilgisiz kompozit→post, post/core boşluğu görünürlüğü, geçerli ferrule alıntısı, yanlış film parafrazı, dört genel/temporal sözcük eşleşmesi. İnceleme, filtredeki temporal/generic yanlış eşleşmeleri yakaladı; bunlar RED→GREEN ile düzeltildi ve yeniden incelemede engel kalmadı. Son yerel koşu526Python/11Node; iki mevcut bağımlılık uyarısı. Uzak genel CI yeşil değil.
+
+
+### Son özgül kaynak kapısı
+
+PR238/2a24b8f9, Render dep-dblf61dckfvc73ffk62g **11:57:19 Türkiye** itibarıyla live. JSv24 doğrulandı. İkinci post ve zirkonya gerçek model/metin tekrarlarının DOM kanıtı docs/voice_material_second_2026-11-04.json içinde. Postta “film açık” özgün olarak korundu. Materyal durumları iki vakada da tamamlanamadı diye açık gösterildi; klinik başarı sayılmadı. Zirkonya tekrarında tabakalı porselen tartışması lamine/veneer konusu olarak da seçildi; bu gereksiz konu eşlemesi hâlâ açıktır. Birleşik “ilacım ve alerjim yok” ifadesine karşı gereksiz ilaç sorusu da sürdü.
+
+İkinci post koşusunda model özgül post yerine seçilmemiş yüksek soy/baz metal alaşımlarına ait iki not oluşturdu. Son dar kapı, özgül materyal hedefi varken ADA genel direkt/dolaylı restorasyon karşılaştırma tablosundan gelen bir notun alıntısında seçili hedefle ilişki bulunmasını zorunlu tutar; broader/other konu kimliğiyle kaçınamaz. Başka ilaç kaynakları bu kapıyla süzülmez. Kapsam yalnız bu iki genel tablodur; tüm klinik uygunluğun anlamsal doğrulaması değildir. URL eşlemesi ADA hostname ve gerçek path üzerinden yapılır; query/fragment aynı belgeyi süzgeçten kaçırmaz. Eski eksik süzgeç çıktısı kaynak değişmedi diye korunmasın diye doğrulayıcı sürümü değerlendirme parmak izine katılır.
+
+Son regresyonlar: seçilmemiş alaşım notu, aynı ADA URL'sinin query/fragment biçimleri ve doğrulayıcı değişince eski sonucun yeniden kullanılmaması RED→GREEN doğrulandı. Son tam yerel koşu530Python/11Node; iki mevcut bağımlılık uyarısı. Gerçek son tekrar/yayın durumu ayrıca eklenecek. Kayıt onayı hiçbir sentetik canlı testte verilmedi.

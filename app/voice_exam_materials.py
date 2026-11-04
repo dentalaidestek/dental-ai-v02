@@ -1,6 +1,9 @@
 """Conservative source relevance and visible gaps, never material safety rules."""
 import re
+from urllib.parse import unquote, urlsplit
 from app.voice_exam_taxonomy import TOPIC_REGISTRY
+
+VALIDATION_VERSION = 'material-scope-v2'
 
 # Retrieval/relevance vocabulary only. A word match is NOT clinical applicability.
 _TERMS = {
@@ -28,6 +31,17 @@ def relevant_passage(topic, quote):
     normalized = re.sub(r'[-‐‑–—]', ' ', quote.casefold())
     return any(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', normalized)
                for term in _TERMS.get(topic, ()))
+
+
+def general_material_document(reference):
+    # A broad comparison table cannot establish an unmentioned material choice.
+    try:
+        url = urlsplit(reference.get('url', ''))
+        return url.hostname in {'ada.org', 'www.ada.org'} and unquote(url.path).rstrip('/') in {
+            '/resources/ada-library/oral-health-topics/materials-for-indirect-restorations',
+            '/resources/ada-library/oral-health-topics/materials-for-direct-restorations'}
+    except (ValueError, TypeError):
+        return False
 
 
 def review_status(items, selected):

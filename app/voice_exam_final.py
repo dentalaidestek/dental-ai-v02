@@ -240,6 +240,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
     # retrieval timestamps so refreshing an unchanged public document is free.
     stable_sources = [{k: v for k, v in ref.items() if k != 'retrieved_at'} for ref in evidence['references']]
     signature = {**data, 'sources': stable_sources, 'prompt': prompt,
+                 'validation_version': materials.VALIDATION_VERSION,
                  'model': os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5'}
     source_fingerprint = hashlib.sha256(json.dumps(signature, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     if previous_source_fingerprint == source_fingerprint:
@@ -261,6 +262,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         rejected_reasons = {}
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'], diagnostics=rejected_reasons)
         scoped = []
+        sources_by_id = {source['id']: source for source in evidence['references']}
         for item in output['clinical_items']:
             topic = item.get('review_topic', 'other')
             if topic != 'other' and topic not in review_topics:
@@ -268,6 +270,10 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                 continue
             if any(row['id'] == topic for row in material_targets) and not materials.relevant_passage(topic, item['source_quote']):
                 rejected_reasons['material_scope_mismatch'] = rejected_reasons.get('material_scope_mismatch', 0) + 1
+                continue
+            if (material_targets and materials.general_material_document(sources_by_id[item['source_id']])
+                    and not any(materials.relevant_passage(row['id'], item['source_quote']) for row in material_targets)):
+                rejected_reasons['general_material_scope_mismatch'] = rejected_reasons.get('general_material_scope_mismatch', 0) + 1
                 continue
             scoped.append(item)
         output['clinical_items'] = scoped

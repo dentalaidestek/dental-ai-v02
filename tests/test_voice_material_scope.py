@@ -81,3 +81,30 @@ def test_post_relevance_does_not_match_postoperative_or_unrelated_words(quote):
 def test_generic_or_temporal_words_cannot_complete_a_material_check(topic,quote):
     from app import voice_exam_materials as materials
     assert materials.relevant_passage(topic,quote) is False
+
+
+@pytest.mark.parametrize('suffix',['','?utm_source=test','#materials'])
+def test_general_material_table_cannot_warn_about_an_unselected_alloy_in_a_post_case(monkeypatch,suffix):
+    from app import voice_exam_final as final
+    from test_voice_exam_final import provider
+    context={'fields':{'plan':{'value':'Fiber post ve kaplama konuşuyoruz.','quote':'Fiber post ve kaplama konuşuyoruz.'}},'literature_topics':[{'topic':'endo.post_core','quote':'Fiber post ve kaplama konuşuyoruz.'},{'topic':'prosth.fixed','quote':'Fiber post ve kaplama konuşuyoruz.'}]}
+    quote='High noble alloys: anterior teeth. Base metal alloys: nickel hypersensitivity.'
+    item={'review_topic':'prosth.fixed','source_id':'ada','source_quote':quote,'patient_field':'plan','patient_quote':'kaplama','consideration':'Nikel içeren alaşım seçimini kontrol et.','missing_information':'Metal türü yok.','alternative':''}
+    provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[item]})
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:{'references':[{'id':'ada','url':'https://www.ada.org/resources/ada-library/oral-health-topics/materials-for-indirect-restorations'+suffix,'excerpts':[quote],'clinical_use':True}], 'unavailable':[],'coverage':'limited','notice':'limited'})
+    output=final.finalize(context,[])
+    assert output['clinical_items']==[]
+    assert output['material_review'][0]['status']=='unverified'
+
+
+def test_changed_material_validation_invalidates_prior_source_fingerprint(monkeypatch):
+    from app import voice_exam_final as final, voice_exam_materials as materials
+    from test_voice_exam_final import provider
+    context={'fields':{'plan':{'value':'Fiber post konuşuyoruz.','quote':'Fiber post konuşuyoruz.'}},'literature_topics':[{'topic':'endo.post_core','quote':'Fiber post konuşuyoruz.'}]}
+    calls=provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[]})
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:{'references':[{'id':'aae','excerpts':['Ferrule affects restorability.'],'clinical_use':True}], 'unavailable':[],'coverage':'limited','notice':'limited'})
+    previous=final.finalize(context,[])
+    monkeypatch.setattr(materials,'VALIDATION_VERSION','next-validator')
+    result=final.finalize(context,[],previous_source_fingerprint=previous['source_fingerprint'])
+    assert not result.get('not_modified')
+    assert len(calls)==2
