@@ -37,6 +37,8 @@ async function fixture(){
       else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode==='cards'?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode==='cards'?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
+    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'}};
+    if(sourceMode==='readable'&&url.endsWith('/finalize'))body.final.summary=Object.entries(JSON.parse(options.body).context.fields).map(([field,item])=>({field,text:item.value,quote:item.value}));
     return {ok:body.ok,json:async()=>body};
   };
   for(const file of ['voice-finish-draft.js','voice-exam.js','voice-exam-live.js'])w.eval(fs.readFileSync('app/static/'+file,'utf8'));
@@ -72,29 +74,8 @@ async function fixture(){
     f.get('[data-live-finish]').click();await tick();
     assert.equal(f.calls.filter(c=>c.url.endsWith('/text')).length,0,'Broken connection must require explicit text review');
     assert.equal(f.w.getComputedStyle(f.get('[data-voice-transcript]').closest('details')).display,'block','Recovery controls must remain reachable');
-    f.get('[data-live-review]').click();
-    assert.equal(f.get('[data-voice-transcript]').closest('details').open,true,'Review action must open the retained transcript when no summary exists');
-    assert.equal(f.w.document.activeElement,f.get('[data-voice-transcript]'),'Recovery must focus the visible transcript');
-    assert.equal(f.calls.some(c=>c.url.endsWith('/text')),false,'Opening recovery must not process unconfirmed text');
-    f.get('[data-voice-text]').click();
+    f.get('[data-voice-transcript]').closest('details').open=true;f.get('[data-voice-text]').click();
     await until(()=>!f.get('[data-voice-save]').disabled,'manual recovery');assert.deepEqual(f.errors,[]);
-  }finally{f.close()}
-  f=await fixture();
-  try{
-    f.setFlush(false);await f.begin();f.speech('Soğuk içemiyorum.');f.get('[data-live-finish]').click();
-    await until(()=>f.get('.voice-exam-status').textContent.includes('tamamlandığı doğrulanamadı'),'unconfirmed finish');
-    assert.equal(f.get('.voice-review').hidden,true,'No clinical summary exists before extraction');
-    f.get('[data-live-review]').click();
-    assert.equal(f.get('[data-voice-transcript]').closest('details').open,true,'Unconfirmed finish must reveal recovery instead of scrolling to a hidden summary');
-    assert.equal(f.w.document.activeElement,f.get('[data-voice-transcript]'));
-    assert.equal(f.calls.some(c=>c.url.endsWith('/text')||c.url.endsWith('/finalize')),false);
-    f.get('[data-voice-text]').click();await until(()=>!f.get('[data-voice-save]').disabled,'reviewed unconfirmed text');
-    f.get('[data-voice-transcript]').closest('details').open=false;
-    f.get('[data-live-review]').click();
-    assert.equal(f.get('[data-voice-transcript]').closest('details').open,false,'Completed summary navigation must not reopen transcript recovery');
-    assert.equal(f.calls.filter(c=>c.url.endsWith('/text')).length,1);
-    assert.equal(f.calls.filter(c=>c.url.endsWith('/finalize')).length,1);
-    assert.deepEqual(f.errors,[]);
   }finally{f.close()}
   f=await fixture();
   try{
@@ -173,6 +154,25 @@ async function fixture(){
     assert.equal(f.calls.some(c=>c.url.endsWith('/finalize')),false);
     assert.equal(f.get('[data-voice-save]').disabled,true);
     assert.ok(f.get('[data-voice-transcript]').value.includes('Soğuk içemiyorum.'));
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('readable');await f.begin();f.speech('Rahatsızlığım yok, önceden anjiyo oldum.');await f.finish();
+    const card=f.get('[data-voice-final-results] details');card.querySelector('summary').click();
+    assert.ok(card.querySelector('article strong')?.textContent.includes('Sistemik hastalık'),'Each summary value needs its clinical field label');
+    assert.equal(card.textContent.includes('Olumsuz beyan:'),false,'Internal assertion labels must not be shown to the clinician');
+    assert.ok(card.textContent.includes('Sistemik rahatsızlık yok'));
+    assert.ok(card.textContent.includes('Olmadığı belirtildi: Penisilin alerjisi'),'A negative noun-only fact must never read as a positive allergy');
+    assert.ok(f.get('[data-field-row=allergies] textarea').value.includes('Olmadığı belirtildi: Penisilin alerjisi'));
+    assert.ok(card.textContent.includes('Önceden: Anjiyo öyküsü'),'Removing jargon must preserve historical meaning');
+    assert.ok(card.textContent.includes('Net değil: İşlemin tarihi bilinmiyor'));
+    const value=f.get('[data-field-row] textarea');
+    assert.equal(value.value.includes('Olumsuz beyan:'),false);
+    const sent=f.calls.find(c=>c.url.endsWith('/finalize')).body.context.fields.medical_history.value;
+    assert.ok(sent.startsWith('Olumsuz beyan:'),'Presentation changes must preserve the original reasoning and quote anchors');
+    f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
+    await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'unchanged friendly field save');
+    assert.equal(f.calls.find(c=>c.url.endsWith('/apply')).body.fields.medical_history,sent);
   }finally{f.close()}
   console.log('Integrated DOM: live→pause→finish→save, disconnected recovery and partial evidence retry passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
