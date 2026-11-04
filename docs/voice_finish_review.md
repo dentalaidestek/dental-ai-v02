@@ -274,6 +274,24 @@ HeyGen bağlantısı doğrulandı. Katalog önerisiyle yapılan tek Starfish sen
 PR235/b54cdcb7 JSON olmayan hizmet yanıtında ham DOCTYPE/parser hatası yerine Türkçe hata ve taslak/ses yeniden deneme yolunu korur; v22. Regresyon önce başarısız oldu, sonra494Python/11Node geçti; bağımsız incelemede engel yok. Ayrıntı: docs/voice_clinic90_validation_2026-11-02.md. Genel site CI ve gerçek mikrofon/klinik doğruluk hâlâ ayrıca doğrulanmalıdır.
 
 
+## 2026-11-03 — Eksik canlı aktarım sonrası tepkisiz özet düğmesi
+
+Kullanıcının gerçek telefon denemesinde “Son konuşmanın tamamlandığı doğrulanamadı” uyarısı ve “Özeti kontrol et” düğmesi görüldü. Kök neden: `flushed=false` durumunda çıkarım başlamıyor ve `.voice-review` gizli kalıyor; canlı denetleyicinin düğmesi yalnız gizli özete kaydırıyordu. Sonuç üretilmediği halde özet varmış gibi davranıyordu.
+
+Düzeltme: özet henüz yoksa düğme “Metni kontrol et” olur; tıklama korunan konuşmanın bulunduğu bölümü açar ve metne odaklanır. İşleme yalnız kullanıcının mevcut “Metni işle ve değerlendir” eylemiyle başlar. Hazır özet varsa mevcut özet gezinmesi korunur. Yeni model çağrısı, otomatik onay veya hasta kaydı eklenmedi. Canlı betik önbellek sürümü v7.
+
+Regresyon, bağlantı kopması ve normal bitişte `flushed=false` durumlarını gerçek Jinja paneli ve iki denetleyiciyle jsdom içinde çalıştırır; düzeltmeden önce kapalı kalan metin bölümü nedeniyle başarısız oldu. Düzeltme sonrası açık bölüm/odak, kullanıcı eylemine kadar sıfır çıkarım/son değerlendirme çağrısı, sonraki tek işleme ve hazır özet gezinmesi doğrulandı. Bağımsız incelemede engel bulunmadı. Tam yerel koşu: **494 Python geçti** (iki mevcut bağımlılık uyarısı), **11 Node geçti**.
+
+Sınır: bu düzeltme eksik son ses aktarımının ağ/sağlayıcı nedenini çözmüş sayılmaz; kullanıcının gerçek sesi ve tarayıcı/mikrofonla aynı olay yeniden üretilemedi. Gerçek konuşmanın tam geldiği veya klinik sonucun doğru olduğu iddia edilmiyor. Açık sayfadaki geçici metin yenilemeyle kaybolabilir; yeni betik için sayfa yenilemeden önce metin kopyalanmalı. Dağıtım sonucu ayrıca doğrulanacak.
+
+
+Dağıtım doğrulaması (3 Kasım): PR236, kaynak başı `f87e525e`, main/runtime `f5b5ae2a6668b1828a20a7debb28eb2e6f3d087c`. Render `dep-dbks0kgae00c73ftmo50` **14:08:50 Türkiye saati** itibarıyla `live`. Oturum sayfasında `/static/voice-exam-live.js?v=7` doğrulandı. Uzak PR236 `voice` kontrolü başarıyla tamamlandı; genel site CI için başarı iddia edilmiyor.
+
+Canlı mikrofon başlatma adımı, bu tarayıcının bilinmeyen ortam sesini sağlayıcıya aktarabilmesi nedeniyle otomatik güvenlik denetimince engellendi; engel aşılmadı. Bunun yerine önceden yazılmış sentetik perio konuşmasıyla canlı metin/çıkarım/değerlendirme ve kart açma yolu kontrol ediliyor. Bu, kullanıcının arkadaşla yaptığı mikrofon denemesinin tekrarlandığı anlamına gelmez.
+
+Canlı metin denemesi tamamlandı: günlük altı turluk sentetik perio konuşması,1 kaynak/2 kontrol notu,5 bilgi,2 iletişim notu,6 soru. Kaynak kapsamı eksik uyarısı ve yeniden deneme yolu görünür kaldı. “Görüşmeden çıkan bilgiler”, “Kaynaklara göre kontrol edilecekler”, “Hastayla iletişim”, “Netleştirilecek sorular”, “Kaynaklar”, “Kaydedilecek bilgiler” başlıkları gerçek tarayıcıda açılıp kapatıldı; ilk kontrol notunun özgün ADA alıntısı da açıldı. Kayıt onayı verilmedi, hasta dosyasına yazılmadı. Plan alanı bu koşuda görünmedi ve aidiyet/alıntı çakışması uyarısı vardı; bunun nedensel ilişkisi ayrıca doğrulanmadı, tam klinik başarı sayılmadı. Açık sayfa sonucu sentetiktir; gerçek mikrofon akışı test edilmedi. PR236 voice kontrolü geçti; static-safety, postgres-integration ve application-regressions başarısız olduğundan tüm CI yeşil değildir.
+
+
 ## 2026-11-04 — Okunur özet ve materyal/işlem kaynak kapsamı
 
 Telefon ekranında iç içe kenar boşlukları metni daraltıyordu. Oturum genişliği büyük ekranda960px, telefonda ekran genişliğine yakın olacak biçimde düzenlendi; kart iç boşlukları azaltıldı. Özet artık her değerin alan adını gösterir ve satır sonlarını korur. “Güncel” iç etiketi görünmez; “Geçmiş” yerine “Önceden”, “Belirsiz” yerine “Net değil”, “Olumsuz beyan” yerine “Olmadığı belirtildi” yazılır. Negatif etiket sadece silinmez: “Olumsuz beyan: Penisilin alerjisi” gibi isim biçimli negatif bilgi pozitif alerjiye dönüşmemelidir. Bu durum incelemede yakalandı, regresyon RED→GREEN ile düzeltildi. Anlaşılır görünüm, değiştirilmemiş alanların özgün klinik değerini/alıntı dayanağını veya onaylı kayıt yükünü değiştirmez.
