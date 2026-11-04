@@ -267,3 +267,30 @@ Son regresyonlar: seçilmemiş alaşım notu, aynı ADA URL'sinin query/fragment
 Son dağıtım: PR239/9dff17f531377b41368b56339b2eb87dd6505017, Render dep-dblfaqp7lnhs739lh96g **12:07:23 Türkiye** itibarıyla live. Materyal tablosu/URL/parmak izi düzeltmesi bağımsız incelemede engel kalmadan yayımlandı. Önceden çıkarılmış aynı post bağlamında yalnız son değerlendirme/kaynak yeniden denemesi başlatıldı; konuşma yeniden çıkarılmadı. Sonuç ayrıca aşağıya kaydedilecek.
 
 Son canlı post tekrarı (9dff17f5):2kaynak/0kontrol, özgül post uygunluğu tamamlanamadı durumu görünür; önceki seçilmemiş alaşım/nikel notları gösterilmedi. Bu gerçek model/metin koşusudur, klinik doğruluk başarısı değildir. Kanıt docs/voice_material_final_2026-11-04.json içinde. Özgün “Film açık” bulgusu korundu ve ham iç etiketler yerine alan başlıklı sade görünüm çalıştı; gerçek masaüstü tarayıcıda oturum genişliği960px ölçüldü. Mobil medya kuralları güncellendi fakat fiziksel Android'de yeniden ölçüm yapılmadı. Gereksiz ilaç sorusu, diş tedavisi öyküsünün sistemik öykü alanına sınıflanması ve zirkonya tabakası/lamine ayrımındaki konu seçimi hâlâ açık kalite sorunlarıdır. Genel CI static-safety, postgres-integration ve application-regressions başarısız; voice kontrolü başarılı. Tüm materyal/işlem/hasta koşulları doğrulandı denmiyor.
+
+
+### 4 Kasım: soru kapsamı ve materyal kaynağını kullanma denetimi
+
+Önce canlı main ee048021 / runtime 9dff17f5 ile yerel çalışma eşleştirildi. Yeni regresyonlar önce başarısız oldu: açık düzenli ilaç yokluğundan düzenli ilaç adı sorusu üretilebiliyor; son modele materyal başına ilgili birebir kaynak parçaları ayrı verilmiyordu.
+
+- Çıkarım ve son değerlendirmede dar bir soru denetimi eklendi. Hem hastanın açık olumsuz cümlesi hem soru düzenli kullanımı hedefliyorsa isim/doz sorusu çıkarılır. Başka ilaç yok ifadesi aktif ilacı silmez. Haftalık iğne, gerektiğinde kullanım, yeni/planlanan reçete, kısa süreli güncel ilaç ve kapsamı belirsiz genel sorular korunur. Bu bir ilaç uzlaştırması veya genel Türkçe olumsuzluk çözücüsü değildir. Canlıda görülen kapsamı belirsiz genel ilaç sorusu tamamen çözülmüş sayılmaz.
+- Mevcut kaynakların uygun klinik kullanım işaretli, hedefe ilişkin birebir parçaları aynı son çağrıya materyal başına en çok bir aday olarak aktarılır (en çok 1800 karakter/hedef). Yeni dış kaynak veya model çağrısı açılmaz. Uzun parçada ilgili bölüm ilk 1800 karakterin dışındaysa hedef çevresinden birebir pencere alınır. Sözcük eşleşmesi klinik uygunluk onayı değildir.
+- Her materyal için eşleşen kullanılabilir kaynak sayısı ve kabul edilen kontrol sayısı ayrı dönülür. Böylece kaynak getirilememesi ile kaynak olmasına rağmen kontrol üretilememesi ayrılabilir. Aday bulunması, ekrandaki tamamlanamadı durumunu tek başına değiştirmez.
+- Materyal diyalog fixture değişiklikleri CI tetikleyicisine eklendi. Bağımsız inceleme iki aşırı geniş soru bastırma durumunu yakaladı; kapsam düzenli kullanım ile daraltıldı, yeni karşı örnekler önce RED sonra GREEN doğrulandı.
+
+Hedeflerin durumu:
+
+| Hedef | Doğrulanan durum / açık sınır |
+|---|---|
+| Dinleme boyunca yalnız metin; bitişte çıkarım/kaynak/son kontrol | Yerel yaşam döngüsü ve bütünleşik DOM testleri var; gerçek insan mikrofonuyla bu oturumda tamamlanmadı. |
+| Taslak ve başarılı aşamaları yeniden denemede koruma | Aynı açık sayfada kontrol noktaları ve değişmeyen kaynakta son çağrıyı tekrarlamama testli; sayfadan ayrılmada taslak temizlenir. Yenileme sonrası kalıcı kurtarma yok. |
+| Yalnız hekim onayıyla hasta kaydı | Seçim/onay kapısı testli; canlı sentetik kontrollerde hasta kaydı yapılmadı. |
+| Geniş diş hekimliği ve materyal/işlem kapsamı | 80 kapalı konu, 10 özgül materyal hedefi var; bunlar tüm klinik koşulların doğru değerlendirildiğinin kanıtı değildir. |
+| Materyale özel gerçek kontrol | Önceki post koşusu 2 kaynak/0 kontrol; yeni aday aktarımı canlıda ayrıca sınanmalı. Kaynak eksikse uygunluk onayı verilmez. |
+| Doğal konuşma ve alan sınıflaması | Genel ilaç sorusu, diş tedavisi geçmişinin sistemik öykü alanına girmesi, tabakalı zirkonya/lamine ayrımı açık. |
+| Tarayıcı ve mobil görünüm | Masaüstü 960px önceki sürümde ölçüldü; fiziksel Android tekrar ölçümü tamamlanmadı. |
+| Klinik doğruluk | Hekim onaylı altın set, gerçek insan sesiyle kapsamlı ASR ve yanlış alarm/kaçırma ölçümü tamamlanmadı. Sentetik testler bunun yerine geçmez. |
+
+Son tam test sonucu ve yayın kanıtı aşağıya eklenecek. Genel uzak CI yeşil kabul edilmiyor.
+
+Bu değişiklik için son tam yerel doğrulama: **546 Python geçti** (iki mevcut bağımlılık kullanımdan kaldırma uyarısı), **11 Node geçti**. Bağımsız dar kapsam incelemesi71test ile engel kalmadığını bildirdi. Canlı sonuç aşağıda ayrıca kaydedilecek.

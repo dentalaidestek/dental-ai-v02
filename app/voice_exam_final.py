@@ -11,6 +11,7 @@ from app.voice_exam_sources import retryable_unavailable
 from app.voice_exam_research import retrieve
 from app.voice_exam_review_provider import review
 from app import voice_exam_materials as materials
+from app.voice_exam_questions import denied_regular_medication_question
 
 
 def private_insights(value):
@@ -38,7 +39,9 @@ def _anchored(items, fields):
             continue
         field = fields.get(item['field'])
         if field and item['quote'].strip() and item['quote'] in field['value'] and item['text'].strip():
-            accepted.append(item)
+            if not (item['field'] == 'medications' and denied_regular_medication_question(
+                    field['value'], item['quote'], item['text'])):
+                accepted.append(item)
     return accepted
 
 
@@ -177,6 +180,10 @@ ve kılavuzun halen geçerli olduğu doğrulanmamışsa güncel/en son kılavuz 
 Alıntılar ve consideration yalnız boşluk olamaz; anlamlı, kısa ve özgül olsun.
 material_review_targets konuşulan özgül materyal/işlem kontrolleridir. Her birini önce
 ilgili özgül kaynakla incele; ilgisiz dolgu bilgisiyle post kontrolünü tamamlanmış sayma.
+material_source_candidates, mevcut kaynakların bu hedefle sözcük düzeyinde eşleşen
+birebir parçalarını öne çıkarır; yeni kaynak veya klinik uygunluk onayı değildir.
+Hedefe ait aday varsa önce bu parçanın hastanın durumu ve planına uygulanabilirliğini
+incele. Adayın varlığından risk uydurma; yokluğu da materyalin uygun olduğunu göstermez.
 Her clinical_items öğesinin review_topic değeri ilgili kapalı topic kimliği olsun;
 materyal/işlem dışındaki ayrı bir kontrol için other kullan. Kaynak alıntısında özgül
 materyal/işleme ilişkin içerik yoksa o kimlikle madde üretme. Konuşmada ve alanların
@@ -231,9 +238,11 @@ o cümleden belirli ilaç için kontrendikasyon veya kaçınma sonucu çıkarma.
 Kaynakta destek varsa alternatif antibiyotik veya ilgili hekimle geçici ara verme
 planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakmasını söyleme.
 '''
+    material_candidates = materials.source_candidates(material_targets, evidence['references'])
     data = {'clinical_fields': {name: {'value': item['value']} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
-            'material_review_targets': material_targets, 'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
+            'material_review_targets': material_targets, 'material_source_candidates': material_candidates,
+            'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
         raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
     # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
@@ -295,7 +304,11 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                          'source_retryable': source_retryable,
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
-                         'rejection_reasons': rejected_reasons}
+                         'rejection_reasons': rejected_reasons,
+                         'material_evidence': [{'topic': row['topic'],
+                             'candidate_source_count': row['candidate_source_count'],
+                             'accepted_control_count': sum(item.get('review_topic') == row['topic'] for item in output['clinical_items'])}
+                             for row in material_candidates]}
         logging.getLogger(__name__).info('voice_final retrieve_s=%.2f model_s=%.2f total_s=%.2f',
             retrieved - started, modeled - retrieved, time.monotonic() - started)
         logging.getLogger(__name__).warning('voice_final sources=%d accepted=%d rejected_reasons=%s',

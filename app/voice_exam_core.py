@@ -287,7 +287,9 @@ def normalize(result, evidence=None):
             continue
         clean = {key: _string(item.get(key, ''), 1000) for key in ('quote', 'question', 'reason')}
         clean['quote'] = appointment_evidence_quote(clean['quote'], anchor)
-        if clean['quote'] and clean['quote'] in anchor and clean['question']:
+        from app.voice_exam_questions import denied_regular_medication_question
+        if (clean['quote'] and clean['quote'] in anchor and clean['question']
+                and not denied_regular_medication_question(anchor, clean['quote'], clean['question'])):
             output['follow_up_questions'].append({**clean, 'priority': item['priority']})
     for key, allowed in (('removed_fields', set(FIELDS)), ('removed_teeth', {f'{q}{n}' for q in range(1, 9) for n in range(1, 9 if q < 5 else 6)})):
         values = result.get(key, [])
