@@ -37,7 +37,7 @@ lidocaine hydrochloride|lidokain|metronidazol|metronidazole|parasetamol|warfarin
 warfarin sodium|clarithromycin|erythromycin|azithromycin|simvastatin|atorvastatin|
 rosuvastatin|apixaban|rivaroxaban|dabigatran|clopidogrel|alendronate|denosumab|
 zoledronic acid|ibandronate|risedronate|aspirin|naproxen|metformin|insulin'''.replace('\n', '').split('|'))
-_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v6'
+_TOOL_VERSION = 'web_search_20250305:web_fetch_20250910:public-literal-v7-material-scope'
 _PROMPT = """Research public dental concepts using native web search and web fetch.
 This is public literature research, not clinical patient analysis. Inputs contain
 only server-owned public topic concepts and validated generic drug spelling
@@ -45,6 +45,14 @@ hypotheses. Choose useful search text and source URLs from those concepts.
 Prefer HTML documents; fetch and read sources, do not rely on search snippets.
 For mapped topics, professional_start_urls are server-owned starting pages.
 Try the relevant professional starting page before searching journal case reports.
+Material/procedure topics require passages about indications, limitations,
+contraindications, compatibility and application conditions for that actual
+material or procedure. Use the supplied specific topic scope and fixed query,
+not only its broad parent specialty. Generic patient pages explaining what a
+root canal or crown is do not establish post/core, irrigant, sealer or ceramic
+selection guidance. Seek specific professional guidance; if the exact product,
+variant or manufacturer instructions cannot be checked within the allowed
+sources and budget, report a gap. Do not invent universal material bans.
 These URLs are discovery hints, not evidence until fetched; inspect their actual
 scope and seek more specific guidance if needed. Do not bypass access challenges.
 If a page is blocked, use another allowed professional source or report a gap.
@@ -55,6 +63,7 @@ retrieval timestamp with a publication/update date or invent dates. For each
 concept, seek passages addressing the actual procedure/complication and population,
 not merely mentioning similar vocabulary. Preserve qualifications and uncertainty;
 a general information page does not establish that a procedure was erroneous.
+Prioritize specific material/procedure concepts over redundant general concepts.
 When concepts exceed the tool budget, leave gaps rather than claiming all were
 checked. Generic names are search
 hypotheses, not confirmed patient medicines. Do not infer patient facts, give a

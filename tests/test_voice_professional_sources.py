@@ -21,16 +21,16 @@ def test_fixed_documents_have_safe_unique_urls_and_clinical_terms():
 def test_every_new_specialty_topic_has_only_known_documents():
     from app.voice_exam_professional import DOCUMENTS, TOPIC_DOCUMENTS
     expected = {
-        'prosth': 'general fixed removable occlusion cementation materials',
+        'prosth': 'general fixed removable occlusion cementation materials zirconia glass_ceramic metal_ceramic veneers',
         'ortho': 'general appliances retention resorption',
-        'perio': 'general surgery peri_implant',
+        'perio': 'general surgery peri_implant regeneration',
         'pediatric': 'general pulp trauma behavior occlusion development',
         'surgery': 'general third_molar bleeding nerve sinus',
         'oral_medicine': 'general cancer saliva infection',
-        'restorative': 'general adhesion wear hypersensitivity esthetics',
+        'restorative': 'general adhesion wear hypersensitivity esthetics materials',
         'prevention': 'general diet', 'imaging': 'general',
         'anesthesia': 'general sedation', 'emergencies': 'general',
-        'special_care': 'general', 'implant': 'general prosthesis', 'endo': 'general cracked_tooth', 'orofacial_pain': 'sleep',
+        'special_care': 'general', 'implant': 'general prosthesis components', 'endo': 'general cracked_tooth post_core irrigation obturation', 'orofacial_pain': 'sleep',
     }
     assert set(TOPIC_DOCUMENTS) == {f'{branch}.{topic}' for branch, topics in expected.items() for topic in topics.split()}
     ids = {d[0] for d in DOCUMENTS}

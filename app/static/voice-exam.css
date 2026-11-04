@@ -157,3 +157,23 @@ body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bott
 .voice-exam[data-has-listened="false"] [data-live-title]{font-size:19px}
 .voice-exam[data-has-listened="false"] [data-live-panel]{background:transparent;border:0;box-shadow:none}
 .voice-exam[data-live-state="error"] [data-live-status]{color:#a13e35;text-align:left}
+
+/* Use the available screen width for the examination and its readable results. */
+.voice-session-page{width:100%;max-width:960px;padding:16px 8px;margin:12px auto}
+.voice-session-page .voice-exam-body{padding:0 12px 16px}
+.voice-exam .voice-review{min-width:0}
+.voice-exam .voice-summary-card>article{margin:0 14px;padding:12px 0;overflow-wrap:anywhere}
+.voice-exam .voice-summary-card>article>strong{font-size:14px;color:#14243b}
+.voice-exam .voice-summary-card>article p{font-size:15px;line-height:1.6}
+.voice-exam .voice-summary-card>summary>span:first-child{min-width:0;overflow-wrap:anywhere}
+.voice-exam .voice-card-label{margin-top:10px;letter-spacing:0;text-transform:none;font-size:13px}
+@media(max-width:600px){
+  .voice-session-page{width:calc(100% - 12px);max-width:none;margin:6px auto;padding:0}
+  .voice-session-page .voice-exam-body{padding:0 8px 14px}
+  .voice-session-page .voice-review{padding-top:10px}
+  .voice-exam .voice-summary-card>summary{padding:14px 12px;gap:8px;font-size:15px}
+  .voice-exam .voice-summary-card>article{margin:0 12px}
+  .voice-exam .voice-summary-card>p{padding:0 12px}
+}
+
+.voice-exam .voice-clinical-value{white-space:pre-line}

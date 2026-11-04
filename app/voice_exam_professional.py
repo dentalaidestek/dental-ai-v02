@@ -13,6 +13,10 @@ _AAPD = 'https://www.aapd.org/research/oral-health-policies--recommendations/'
 
 # (stable ID, publisher, document title, fixed URL, query triggers, excerpt terms)
 DOCUMENTS = (
+    ('aae-restorability', 'AAE', 'Fundamentals of Restorability',
+     'https://www.aae.org/specialty/fundamentals-of-restorability/',
+     ('fiber post', 'post kor', 'ferrule', 'kalan diş dokusu'),
+     ('ferrule', 'restoration', 'structure', 'post')),
     ('ada-dentures', 'ADA', 'Denture Care and Maintenance', _ADA + 'dentures',
      ('protez', 'denture', 'hareketli'), ('denture', 'reline', 'replacement', 'clean')),
     ('ada-indirect-materials', 'ADA', 'Materials for Indirect Restorations', _ADA + 'materials-for-indirect-restorations',
@@ -95,6 +99,16 @@ DOCUMENTS += (
 )
 
 TOPIC_DOCUMENTS = {
+    'prosth.zirconia': ('ada-indirect-materials',),
+    'prosth.glass_ceramic': ('ada-indirect-materials',),
+    'prosth.metal_ceramic': ('ada-indirect-materials',),
+    'prosth.veneers': ('ada-indirect-materials',),
+    'endo.post_core': ('aae-restorability',),
+    'endo.irrigation': ('aae-root-canal',),
+    'endo.obturation': ('aae-root-canal',),
+    'restorative.materials': ('ada-direct-materials',),
+    'perio.regeneration': ('aap-surgery',),
+    'implant.components': ('efp-implants',),
     'endo.cracked_tooth': ('aae-cracked-teeth',),
     'restorative.esthetics': ('ada-whitening',),
     'orofacial_pain.sleep': ('ada-sleep-apnea',),
