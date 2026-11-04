@@ -34,6 +34,17 @@ def test_material_topic_requires_real_conversation_anchor():
     assert output['literature_topics'] == []
 
 
+def test_material_candidate_keeps_the_relevant_literal_passage_beyond_first_1800_characters():
+    from app import voice_exam_materials as materials
+    text='General information. ' * 120 + 'Ferrule and remaining tissue must be assessed.'
+    rows=materials.source_candidates([{'id':'endo.post_core'}],
+        [{'id':'aae','clinical_use':True,'excerpts':[text]}])
+    quote=rows[0]['candidates'][0]['source_quote']
+    assert 'Ferrule' in quote
+    assert quote in text
+    assert len(quote)<=1800
+
+
 def test_unknown_material_cannot_create_an_arbitrary_query():
     data, _ = web._public_input([{'topic':'material.secret_patient_555','query':'PRIVATE','quote':'PRIVATE'}], [])
     assert data['topics'] == []
@@ -64,6 +75,30 @@ def test_specific_post_passage_can_support_a_control_without_safety_approval(mon
     output=final.finalize(context,[])
     assert len(output['clinical_items'])==1
     assert output['material_review']==[{'topic':'endo.post_core','label':'Post, kor ve kalan diş dokusu','status':'control_point_present','source_ids':['aae']}]
+
+
+def test_each_material_target_gets_literal_source_candidates_and_gap_diagnostics(monkeypatch):
+    from app import voice_exam_final as final
+    from test_voice_exam_final import provider
+    context={'fields':{'plan':{'value':'Fiber post ve zirkonya konuşuyoruz.','quote':'Fiber post ve zirkonya konuşuyoruz.'}},
+             'literature_topics':[{'topic':t,'quote':'Fiber post ve zirkonya konuşuyoruz.'} for t in ('endo.post_core','prosth.zirconia')]}
+    calls=provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[]})
+    passage='Remaining tooth structure and ferrule affect restorability.'
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:{'references':[
+        {'id':'generic','excerpts':['Composite restorations require isolation.'],'clinical_use':True},
+        {'id':'background','excerpts':['Zirconia research background.'],'clinical_use':False},
+        {'id':'aae','excerpts':[passage],'clinical_use':True}], 'unavailable':[],'coverage':'limited','notice':'limited'})
+    output=final.finalize(context,[])
+    sent=json.loads(calls[0]['messages'][0]['content'])
+    candidates={row['topic']:row['candidates'] for row in sent['material_source_candidates']}
+    assert candidates['endo.post_core']==[{'source_id':'aae','source_quote':passage}]
+    assert candidates['prosth.zirconia']==[]
+    diagnostics={row['topic']:row for row in output['review_status']['material_evidence']}
+    assert diagnostics['endo.post_core']['candidate_source_count']==1
+    assert diagnostics['endo.post_core']['accepted_control_count']==0
+    assert diagnostics['prosth.zirconia']['candidate_source_count']==0
+    assert all(row['status']=='unverified' for row in output['material_review'])
+    assert len(calls)==1
 
 
 @pytest.mark.parametrize('quote', ['Postoperative pain requires follow-up.', 'Compost material', 'Composite restorations require isolation.'])

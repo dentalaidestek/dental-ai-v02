@@ -27,10 +27,14 @@ def targets(topics):
             for ident in _TERMS if ident in ids]
 
 
+def _relevant_match(topic, quote):
+    normalized = re.sub(r'[-‐‑–—]', ' ', quote)
+    return next((match for term in _TERMS.get(topic, ())
+                 if (match := re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', normalized, re.IGNORECASE))), None)
+
+
 def relevant_passage(topic, quote):
-    normalized = re.sub(r'[-‐‑–—]', ' ', quote.casefold())
-    return any(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', normalized)
-               for term in _TERMS.get(topic, ()))
+    return _relevant_match(topic, quote) is not None
 
 
 def general_material_document(reference):
@@ -49,3 +53,21 @@ def review_status(items, selected):
              'status': 'control_point_present' if any(item.get('review_topic') == row['id'] for item in items) else 'unverified',
              'source_ids': sorted({item['source_id'] for item in items if item.get('review_topic') == row['id']})}
             for row in selected]
+
+
+def source_candidates(selected, references):
+    """A bounded literal passage per target; relevance is not clinical approval."""
+    rows = []
+    for target in selected:
+        candidates = []
+        for reference in references:
+            if reference.get('clinical_use') is not True:
+                continue
+            for passage in reference.get('excerpts', []):
+                if isinstance(passage, str) and relevant_passage(target['id'], passage):
+                    start = max(0, _relevant_match(target['id'], passage).start() - 500)
+                    candidates.append({'source_id': reference['id'], 'source_quote': passage[start:start + 1800]})
+                    break
+        rows.append({'topic': target['id'], 'candidate_source_count': len(candidates),
+                     'candidates': candidates[:1]})
+    return rows

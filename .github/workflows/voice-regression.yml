@@ -16,6 +16,7 @@ on:
       - 'tests/fixtures/voice_spoken_cases.json'
       - 'tests/fixtures/voice_published_case_dialogues.json'
       - 'tests/fixtures/voice_clinic90*.json'
+      - 'tests/fixtures/voice_material_dialogues.json'
       - 'app/data/voice_drug_sources.jsonl'
       - 'tests/test_voice*.py'
       - 'tests/voice*.cjs'
