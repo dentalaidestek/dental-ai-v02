@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-05",
+  "runtime_commit": "e3a888e0d4c23a0cc3f8494d915f255c1c0d0054",
+  "deploy_id": "dep-dbme73o473hc73e1h9fg",
+  "live_at_turkey": "2026-11-05T23:16:05+03:00",
+  "test_type": "real_configured_model_with_synthetic_text_in_live_browser",
+  "human_microphone_test": false,
+  "clinical_gold_standard": false,
+  "physician_save_clicked": false,
+  "cases": [
+    {
+      "id": "post-core-remaining-tissue",
+      "fixture": "tests/fixtures/voice_material_dialogues.json",
+      "source_count": 2,
+      "accepted_clinical_controls": 0,
+      "material_status": "unverified",
+      "result": "partial",
+      "observed_fields": [
+        "dental_history",
+        "chief_complaint",
+        "plan",
+        "clinical_findings",
+        "medications",
+        "allergies"
+      ],
+      "improvements": [
+        "Old root canal was placed in dental_history rather than systemic history.",
+        "Literal film-open statement retained; not paraphrased as a new radiograph.",
+        "New plain-language field and review headings rendered."
+      ],
+      "sources": [
+        "https://www.aae.org/specialty/fundamentals-of-restorability/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC12776209/"
+      ],
+      "observed_quality_concerns": [
+        "AAE restorability document was retrieved but no specific post control was produced; no rejection reasons logged.",
+        "Final review still called the explicit regular-medication denial ambiguous and requested names/doses.",
+        "Final communication questions claimed the response to the strengthening question was absent despite a conditional response in the dialogue.",
+        "Current filling dislodgement also appeared under a historical dental-history prefix."
+      ]
+    },
+    {
+      "id": "implant-mobility-90",
+      "fixture": "tests/fixtures/voice_clinic90_dialogues.json",
+      "source_count": 2,
+      "accepted_clinical_controls": 4,
+      "result": "partial",
+      "observed_fields": [
+        "chief_complaint",
+        "dental_history",
+        "clinical_findings",
+        "plan",
+        "medications",
+        "allergies",
+        "oral_habits"
+      ],
+      "improvements": [
+        "Old implant placed in dental_history.",
+        "Smoking statement placed in oral_habits.",
+        "Assistant complaint and maternal diabetes were not added as positive patient disease facts.",
+        "Mobility/bleeding complaints and no-new-film statement retained."
+      ],
+      "sources": [
+        "https://www.perio.org/for-patients/periodontal-treatments-and-procedures/dental-implant-procedures/peri-implant-diseases/",
+        "https://www.efp.org/for-patients/dental-implants/dental-implants-explained/"
+      ],
+      "observed_quality_concerns": [
+        "Approximate implant timing was available but final notes/questions described application date as missing without clearly distinguishing exact date.",
+        "The patient denial of a personal diabetes diagnosis was not preserved in medical_history; final review asked about it again.",
+        "Final communication questions described the answer about removal as absent despite an explicit no-removal-decision statement in the dialogue.",
+        "One-piece implant background was used for a control note; patient-specific usefulness needs clinician review."
+      ]
+    }
+  ],
+  "blocked_case": {
+    "id": "zirconia-bridge-load",
+    "status": "not_run_in_this_replay",
+    "reason": "Browser automatic security review rejected the processing-consent checkbox and then blocked origin access. No browser/API workaround used.",
+    "screenshot": "not_captured_because_read_access_was_also_rejected",
+    "required_next_step": "Explicit user approval for sending this synthetic test dialogue to Gemini/Claude via dentalai.tr."
+  },
+  "limits": [
+    "These are observed UI/model behaviors, not validated clinical accuracy scores.",
+    "No all-topic or all-patient-condition success claim.",
+    "Human audio, physical Android and clinician-approved gold-set validation remain incomplete."
+  ]
+}

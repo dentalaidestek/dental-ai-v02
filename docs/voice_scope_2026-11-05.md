@@ -51,3 +51,7 @@ Hastaya/dişe/bölgeye uygunluk, materyal alt türü, kalan doku, periodontal de
 Yeni regresyonlar:12 doğal kısa ifade ile kapalı konu yönlendirmesi, ayrı geçmiş/alışkanlık alanları, olumsuz onayda yazmama, tüm11 alanı birlikte kaydetme, yeni alanları onaylı geçmişten geri okuma, soruyu hasta beyanı saymama ve birebir alıntıyı koruma. Bunlar altın klinik test seti veya1,5 dakikalık gerçek ses testleri değildir. Mevcut8 uzun sentetik klinik diyalog ayrıca korunmuştur.
 
 Gerçek insan mikrofonu, fiziksel Android tekrar ölçümü ve hekim onaylı altın test seti tamamlanmadı. Genel uzak CI başarısızlıkları sesli testlerin geçmesiyle kapanmış sayılmaz.
+
+## Son yayın ve canlı kanıt
+
+PR241/e3a888e0,5 Kasım23:16:05 Türkiye itibarıyla live. Son yerel test577Python/11Node geçti. Gerçek model/metin tekrarında yeni alanlar görüldü: post2kaynak/0kontrol, implant2kaynak/4kontrol; ikisi de kısmi sonuç. Cevaplanmış bilgiyi yeniden sorma ve hekim yanıtını yok sayma sorunları sürüyor. Ayrıntılar voice_scope_live_2026-11-05.json içinde. Ek zirkonya testi ve ekran görüntüsü otomatik tarayıcı güvenlik incelemesince engellendi; tamamlanmış sayılmıyor.
