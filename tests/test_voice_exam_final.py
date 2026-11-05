@@ -114,7 +114,7 @@ def test_in_session_questions_require_original_evidence():
 
 def test_longer_but_bounded_clinical_context():
     context = {'fields': {k: {'value': 'a' * 2000, 'quote': 'b' * 100} for k in core.FIELDS}}
-    assert len(core.clinical_context(context)['fields']) == 9
+    assert set(core.clinical_context(context)['fields']) == set(context['fields'])
     context['teeth'] = [{'tooth': '11', 'status': 'CARIES', 'quote': 'c' * 1500}] * 10
     with pytest.raises(core.VoiceError): core.clinical_context(context)
 

@@ -294,3 +294,22 @@ Hedeflerin durumu:
 Son tam test sonucu ve yayın kanıtı aşağıya eklenecek. Genel uzak CI yeşil kabul edilmiyor.
 
 Bu değişiklik için son tam yerel doğrulama: **546 Python geçti** (iki mevcut bağımlılık kullanımdan kaldırma uyarısı), **11 Node geçti**. Bağımsız dar kapsam incelemesi71test ile engel kalmadığını bildirdi. Canlı sonuç aşağıda ayrıca kaydedilecek.
+
+
+### 5 Kasım: alan ve konu kapsamının genişletilmesi
+
+Önceki PR240/830730de306ad37be5b1db03519751f6838ac9bc dağıtımı Render dep-dblh2vtckfvc73fhpr60 ile **4 Kasım14:07:32 Türkiye** itibarıyla live olmuş;5 Kasım tekrar doğrulandı. Önceki materyal aday aktarımının canlı gerçek model tekrarı henüz tamamlanmadı.
+
+Yeni çalışma: diş hekimliğinin15 ana dalında kapalı konu sayısı80'den92'ye çıktı. Daimi dişte canlı pulpayı koruma, yeniden kanal, derin çürük, restorasyon tamiri, dijital ölçü, implant destekli hareketli protez, implant planlama/yükleme ve bakım, periodontal destekle ortodonti, kemik artırımı, çekim sonrası soket ağrısı ve nöropatik/diş dışı ağrı ayrı sabit kapsam/sorgularla desteklenir. Bu, tüm kaynakların veya klinik doğruluğun doğrulandığı anlamına gelmez; yeni konulara ilgisiz genel belge atanmadı. Araştırmanın24 konu/2 arama/3 getirme sınırı değişmedi.
+
+Önceki diş tedavileri (dental_history) ve ağız bakımı/alışkanlıklar (oral_habits) ayrı alan oldu. Çıkarım şeması, atomik ve eski biçim alıntı doğrulaması, zaman/olumsuzluk, düzenleme, son model bağlamı, seçmeli hekim onaylı kayıt ve onaylı geçmişten geri okuma güncellendi. Yeni diş tedavisi geçmişinin sistemik alana gitmemesi model talimatında ayrıldı; eski kayıtlar otomatik taşınmadı. Modelin her vakada doğru sınıfladığı henüz kanıtlanmış değil.
+
+Ekranda Sağlık geçmişi, Önceki diş tedavileri, Ağız bakımı ve alışkanlıklar, İlaç bilgileri, Alerji bilgileri, Konuşulan tedavi planı başlıkları var; kontrol bölümü Tedavi planı ve dikkat edilecekler oldu. Panel JSv25. Zirkonya üzerine porselen tabakası ile lamine veneer ayrımı konu tanımında netleştirildi; gerçek model tekrarına ihtiyaç sürüyor.
+
+Yeni testler önce12 konu ve2 alan/kayıt yolu için RED oldu, sonra GREEN. Bağımsız inceleme tüm11 alan seçilince eski9 alanlık kayıt sınırının422 verdiğini yakaladı; bu da RED→GREEN düzeltildi. Bilinmeyen alan reddi korunuyor. Yeni alanlarda soru cümlesinin hasta beyanı sayılmaması ve eski biçim model özetinin birebir alıntıyı değiştirememesi de testli. Bütünleşik DOM yeni alanları, başlıkları, kanonik değerleri ve onaylı kaydı doğruluyor.
+
+Son tam yerel doğrulama: **577 Python geçti**, **11 Node geçti**; iki mevcut bağımlılık uyarısı. Bağımsız son kayıt sınırı incelemesi58 odaklı testte engel kalmadığını bildirdi. Ayrıntılı15 dal/alan tablosu docs/voice_scope_2026-11-05.md içinde. Bu sayılar klinik doğruluk veya gerçek mikrofon başarısı değildir.
+
+Genel uzak CI hakkında gözlenen kanıt: PR240 static-safety işi40 başarısız/966 başarılı/34 atlanan test raporladı; hata adları academic_v2 altında batch_generation, quiz_contract, study_dialogue vb. PostgreSQL işi test_semantic_postgres.py::test_every_allowed_planner_search_reaches_real_postgres[8] ve[16] için DID NOT RAISE ValueError,42 başarılı/2 başarısız raporladı. Sesli/contract/ready-model kontrolleri geçti. Bunlar genel CI'nin yeşil olduğu şeklinde sunulmuyor; akademik sistem bu sesli kapsam değişikliğinde değiştirilmedi.
+
+Yayın ve canlı ekran/model doğrulaması aşağıya ayrıca kaydedilecek. İnsan mikrofonu, fiziksel Android ölçümü, hekim onaylı altın test seti ve sayfa yenilemede kalıcı taslak kurtarma açık sınırlar olarak duruyor.

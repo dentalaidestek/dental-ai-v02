@@ -19,7 +19,7 @@ MAX_RESPONSE = 180000
 MAX_CONTEXT = 24000
 MIMES = {'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'}
 FIELDS = ('first_name', 'last_name', 'age', 'chief_complaint', 'medical_history',
-          'medications', 'allergies', 'clinical_findings', 'plan')
+          'medications', 'allergies', 'clinical_findings', 'plan', 'dental_history', 'oral_habits')
 TOOTH_STATES = {'CARIES', 'FILLING', 'CROWN', 'ROOT_CANAL', 'EXTRACTED', 'IMPLANT', 'OTHER'}
 _capacity = threading.BoundedSemaphore(2)
 
@@ -313,11 +313,11 @@ def normalize(result, evidence=None):
             if field == 'clinical_findings' and any(planned and (planned in quote or quote in planned) for planned in planned_finding_quotes):
                 output['uncertain'] = (output['uncertain'] + '\nBulgular özeti planla karıştığı için ayrı dayanaklı bilgiler kullanıldı; alanları kontrol edin.').strip()
                 continue
-            if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings'} and quote.rstrip().endswith('?'):
+            if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings', 'dental_history', 'oral_habits'} and quote.rstrip().endswith('?'):
                 continue
             if field == 'age' and (not value.isdecimal() or not 0 <= int(value) <= 120):
                 continue
-            output['fields'][field] = {'value': quote if field in {'chief_complaint', 'clinical_findings'} else value, 'quote': quote}
+            output['fields'][field] = {'value': quote if field in {'chief_complaint', 'clinical_findings', 'dental_history', 'oral_habits'} else value, 'quote': quote}
     grouped = {}
     labels = {'CURRENT': 'Güncel', 'HISTORICAL': 'Geçmiş', 'PLANNED': 'Planlanan', 'NEGATED': 'Olumsuz beyan', 'UNKNOWN': 'Belirsiz'}
     for fact in facts:
@@ -339,7 +339,7 @@ def normalize(result, evidence=None):
             continue
         if fact.get('subject') in {'OTHER', 'UNKNOWN'} or nonpatient(quote):
             continue
-        if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings'} and quote.rstrip().endswith('?'):
+        if field in {'chief_complaint', 'medical_history', 'medications', 'allergies', 'clinical_findings', 'dental_history', 'oral_habits'} and quote.rstrip().endswith('?'):
             continue
         if fact['field'] in {'patient_concern', 'clinician_response', 'clinician_statement'}:
             # Transient attribution is never a selectable patient-record fact.
@@ -357,7 +357,7 @@ def normalize(result, evidence=None):
                     suggestion = '' if fact['field'] == 'clinician_response' else value
                     output['communication'].append({'quote': quote, 'observation': observation, 'suggestion': suggestion})
             continue
-        if field in {'medications', 'chief_complaint', 'clinical_findings'}:
+        if field in {'medications', 'chief_complaint', 'clinical_findings', 'dental_history', 'oral_habits'}:
             # Keep symptoms/anatomy literal too: 'üstündeki kaplama' is not upper jaw.
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
@@ -463,7 +463,13 @@ Hekimin sorduğu soru cevap değildir; yalnız soru alıntısından hastalık/il
 varlığı ya da yokluğu çıkartma. Yanıtı dayanaklandır; yanıt yoksa netleştirme sorusu üret.
 field anlamları:
 - chief_complaint: hastanın fiziksel başvuru yakınması, bölge, süre, tetikleyici ve belirtiler.
-- medical_history: hastalık, sistemik öykü, tetkik adı/sonuç/birim/tarih.
+- medical_history: hastalık, sistemik öykü, tetkik adı/sonuç/birim/tarih; eski dolgu,
+  kanal, kaplama ve implant gibi diş tedavilerini bu alana koyma.
+- dental_history: hastanın önceki diş tedavileri, işlem zamanı ve bildirilen önceki
+  komplikasyonlar. Hastanın geçmiş anlatımı bugünkü muayene bulgusu değildir;
+  eski kanal/çekim/implant bugünkü yapılmış işlem sayılmaz. Birebir alıntıyı koru.
+- oral_habits: sigara/tütün, diş sıkma, ağız bakımı, beslenme/asit alışkanlıklarının
+  muayeneyle ilgili açık beyanları. Söylenmeyen sıklık veya nedensellik ekleme.
 - medications: güncel VE geçmiş ilaç, enjeksiyon, form, doz, aralık ve son uygulama.
 - allergies: hastanın alerji beyanı; yok, bilmiyorum ve sorulmadı farklıdır.
 - clinical_findings: hekimin söylediği muayene/film bulgusu; tanı ekleme.

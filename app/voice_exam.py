@@ -219,7 +219,7 @@ def reviewed_history(request: Request, patient_id: int):
     user, fingerprint, error = _access(request, patient_id)
     if error is not None:
         return error
-    labels = {'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
+    labels = {'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
               'allergies': 'Alerji / hasta beyanı'}
     fields = {}
     with Session(main.engine) as session:
@@ -356,7 +356,7 @@ class ApplyInput(BaseModel):
     request_key: str = Field(pattern=r'^[a-f0-9]{32}$')
     revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     confirmed: bool = False
-    fields: dict[str, str] = Field(default_factory=dict, max_length=9)
+    fields: dict[str, str] = Field(default_factory=dict, max_length=len(core.FIELDS))
     teeth: list[ToothChoice] = Field(default_factory=list, max_length=52)
     appointment: AppointmentChoice | None = None
 
@@ -446,7 +446,7 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
             session.add(schedule); session.flush()
             main._sync_program_reminder(session, schedule)
             events.append(main._record_program_realtime_event(session, user.id, 'PROGRAM_CREATED', schedule.id))
-        labels = {'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
+        labels = {'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
                   'allergies': 'Alerji / hasta beyanı', 'clinical_findings': 'Klinik bulgular', 'plan': 'Hekim planı',
                   'chief_complaint': 'Başvuru şikâyeti'}
         notes = '\n\n'.join(labels[key] + ': ' + value for key, value in fields.items() if key in labels)
