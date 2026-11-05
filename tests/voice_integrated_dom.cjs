@@ -38,7 +38,7 @@ async function fixture(){
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
     if(sourceMode==='cards'&&url.endsWith('/finalize'))body.final.material_review=[{topic:'endo.post_core',label:'Post, kor ve kalan diş dokusu',status:'unverified',source_ids:[]}];
-    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'}};
+    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'},dental_history:{value:'Geçmiş: Sol öndeki dişe iki yıl önce kanal yapılmıştı.',quote:'Sol öndeki dişe iki yıl önce kanal yapılmıştı.'},oral_habits:{value:'Güncel: Sigara günde beş tane.',quote:'Sigara günde beş tane.'}};
     if(sourceMode==='readable'&&url.endsWith('/finalize'))body.final.summary=Object.entries(JSON.parse(options.body).context.fields).map(([field,item])=>({field,text:item.value,quote:item.value}));
     return {ok:body.ok,json:async()=>body};
   };
@@ -182,13 +182,18 @@ async function fixture(){
   try{
     f.setMode('readable');await f.begin();f.speech('Rahatsızlığım yok, önceden anjiyo oldum.');await f.finish();
     const card=f.get('[data-voice-final-results] details');card.querySelector('summary').click();
-    assert.ok(card.querySelector('article strong')?.textContent.includes('Sistemik hastalık'),'Each summary value needs its clinical field label');
+    assert.ok(card.querySelector('article strong')?.textContent.includes('Sağlık geçmişi'),'Each summary value needs its clinical field label');
     assert.equal(card.textContent.includes('Olumsuz beyan:'),false,'Internal assertion labels must not be shown to the clinician');
     assert.ok(card.textContent.includes('Sistemik rahatsızlık yok'));
     assert.ok(card.textContent.includes('Olmadığı belirtildi: Penisilin alerjisi'),'A negative noun-only fact must never read as a positive allergy');
     assert.ok(f.get('[data-field-row=allergies] textarea').value.includes('Olmadığı belirtildi: Penisilin alerjisi'));
     assert.ok(card.textContent.includes('Önceden: Anjiyo öyküsü'),'Removing jargon must preserve historical meaning');
     assert.ok(card.textContent.includes('Net değil: İşlemin tarihi bilinmiyor'));
+    assert.ok(card.textContent.includes('Önceki diş tedavileri'));
+    assert.ok(card.textContent.includes('Ağız bakımı ve alışkanlıklar'));
+    assert.ok(f.get('[data-field-row=dental_history] textarea').value.includes('iki yıl önce kanal'));
+    assert.ok(f.get('[data-field-row=oral_habits] textarea').value.includes('Sigara günde beş tane'));
+    assert.ok(f.get('[data-voice-final-results]').textContent.includes('Tedavi planı ve dikkat edilecekler'));
     const value=f.get('[data-field-row] textarea');
     assert.equal(value.value.includes('Olumsuz beyan:'),false);
     const sent=f.calls.find(c=>c.url.endsWith('/finalize')).body.context.fields.medical_history.value;
