@@ -1,0 +1,35 @@
+{
+  "approval": false,
+  "cards": [],
+  "fields": [
+    {
+      "field": "age",
+      "value": "8"
+    },
+    {
+      "field": "chief_complaint",
+      "value": "Önceden: oğlum bahçede düştü, ön dişi eline geldi\nÖnceden: Yaklaşık yarım saat oldu, tam saate bakmadım.\nÖnceden: Dudağı da çizildi.\nKan görünce ağladım ama şu an nefesim normal.\nÖnceden: Önce peçetedeydi, sonra komşu süt dedi; şu kapta süt içinde getirdik."
+    },
+    {
+      "field": "clinical_findings",
+      "value": "Net değil: Diş burada, ama hangi diş olduğunu ve kalıcı olup olmadığını siz bakmadan yazmıyorum.\nOlmadığı belirtildi: Bayılmadı, kusmadı."
+    },
+    {
+      "field": "plan",
+      "value": "Planlanan: Hastanın ağız ve genel durumunun kontrolü\nPlanlanan: Dişin türünün ve yaralanmanın doğrulanması; gerekirse görüntüleme\nKapta saklanan dişin korunması"
+    },
+    {
+      "field": "dental_history",
+      "value": "Olmadığı belirtildi: Biz evde yerine koymaya çalışmadık.\nOlmadığı belirtildi: Yeni film yok, dişe işlem yapmadık;"
+    },
+    {
+      "field": "medications",
+      "value": "Olmadığı belirtildi: Bir ilaç da vermedim;"
+    },
+    {
+      "field": "allergies",
+      "value": "Olmadığı belirtildi: Bildikleri bir alerji yok"
+    }
+  ],
+  "status": "Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin."
+}

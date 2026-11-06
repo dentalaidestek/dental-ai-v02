@@ -71,3 +71,16 @@ Son uyumluluk düzeltmesi: eski açık istemciler yeni yanıt türünü category
 | Otomatik hasta kaydı | Seçim ve hekim onayı gerekir; bu oturumda hasta kaydı yapılmadı |
 | Gerçek mikrofon/ASR ve klinik doğruluk | Yeni test yapılmadı; insan sesi ve hekim onaylı altın set gerekli |
 | Tüm üretici/ürün IFU uygunluğu | Tamamlanmadı; ürün ailesi bilgisi belirli ürün onayı sayılmaz |
+
+
+## 6 Kasım canlı vaka kampanyası (devam ediyor)
+
+PR24366942150d6c284b924d947de591dd9913365deea,6Kasım09:35:34 Türkiye live doğrulandı. Yeni kullanıcı isteğiyle arayüz erişimi/işleme onayı çalıştı; eski tarayıcı engeli bu kampanya için geçerli değil. Sentetik üç konuşmacılı metinlerle cerrahi/varfarin, perio, implant, kron ve endodonti denendi. Gerçek mikrofon/ASR veya hekim onaylı klinik altın set değil; hasta kaydı yapılmadı.
+
+Perio3kaynak/3kontrol, implant2kaynak/2kontrol; aile öyküsü ayrımı çalıştı. Cerrahi final iki kez422, üçüncüde2kaynak/4kontrolle kısmi hazır; önceki hataların nedeni kanıtlanmadı. Kron çıkarımında tools=2 hatası bulundu. Endodonti2kaynak/0kontrol; özgül pulpa belgesi yerine genel anestezi/AAPD Overview geldi. Plan/yanıt kaybı, bazı yanıtlara rağmen tekrar soru ve kişisel diyabet reddinin genel sistemik yokluğuna genişlemesi açık.
+
+PR244ed0cf827620a030bca5933594e2106bce6e559af6Kasım09:52:20 Türkiye live: gizlilik koruyan stage/type/sabit neden/sayı tanılaması.613Python/11Node,32bağımsızodaklı test başarılı. PR245tek çıkarım aracına disable_parallel_tool_use=True ekledi; payload testiRED→GREEN,614Python,18provider testi. Klinik atıfları otomatik düzeltmez, ek ücretli otomatik çağrı veya başka sağlayıcı yok. Genel CI yeşil değil; sesli/contract/ready-model yeşil, akademik/PostgreSQL hataları mevcut.
+
+Ayrıntı ve sentetik DOM kanıtları: [canlı kampanya](voice_live_campaign_2026-11-06.md). Devamındaki yayın ve yeniden deneme sonuçları o dosyaya eklenecek.
+
+Kampanya tamamlandı:8farklı sentetik vaka,6kısmi final/2kaynak erişimi nedeniyle finalden önce durma. İlk hata denemeleri bu sayıya başarı diye gizlenmez. PR2455196f44440c5451fd5aa30d707cbe7c49c6a0405,6Kasım09:56:19Türkiye live ve eski hatalı kron metni yeniden işlendi; araç sayısı1 oldu.614Python/11Node son kodda geçti. Plan/yanıt kaybı, yanlış veneer konusu, özgül endodonti kaynağı yokluğu, süren yara değerlendirme kapsamı ve fazla/genişletilmiş negatif bilgiler hâlâ açık. Ayrıntı kampanya raporunda. Hasta kaydı/mikrofon testi yapılmadı.

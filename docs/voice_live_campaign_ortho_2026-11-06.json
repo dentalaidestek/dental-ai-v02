@@ -1,0 +1,35 @@
+{
+  "approval": false,
+  "cards": [],
+  "fields": [
+    {
+      "field": "chief_complaint",
+      "value": "telin arkadaki ucu yanağıma batıyor. Dün akşam başladı, konuşurken daha çok hissediyorum\nKüçük bir yara da oldu galiba.\nSol üst arkada. Elime bir parça gelmedi, yutmuş gibi de olmadım. Nefesim normal; sadece yanağıma değdikçe canım acıyor."
+    },
+    {
+      "field": "clinical_findings",
+      "value": "Elime bir parça gelmedi, yutmuş gibi de olmadım. Nefesim normal"
+    },
+    {
+      "field": "plan",
+      "value": "Planlanan: Hekim muayene öncesi tel ucu ve yanağın inceleneceğini belirtti; kırılma veya yutulma henüz görülmedi\nPlanlanan: Tel ucu ve yanağın muayenesi"
+    },
+    {
+      "field": "dental_history",
+      "value": "Önceden: Önceki tel kontrolü geçen ay görünmüş hocam."
+    },
+    {
+      "field": "oral_habits",
+      "value": "Önceden: Evde tırnak makasıyla keseyim dedim ama yapmadım."
+    },
+    {
+      "field": "medications",
+      "value": "Olmadığı belirtildi: Düzenli ilaç kullanmıyorum"
+    },
+    {
+      "field": "allergies",
+      "value": "Olmadığı belirtildi: Bilinen alerji yok"
+    }
+  ],
+  "status": "Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin."
+}

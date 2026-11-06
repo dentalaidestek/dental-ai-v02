@@ -1,0 +1,85 @@
+{
+  "surgery": {
+    "approval": false,
+    "cards": [],
+    "fields": [
+      {
+        "field": "chief_complaint",
+        "value": "sağ alttaki kırık diş yine yemek topluyor\nDiş yüzünden geceleri uyandığım da olmuyor, daha çok yemek kaçınca sızlıyor"
+      },
+      {
+        "field": "medications",
+        "value": "Varfarin yazıyor listede. Kalpteki kapak için verildi. Her gün alıyorum, dozunu değiştiriyorlar bazen\ndün akşam da normal saatinde aldım\nNet değil: Diğer kutular evde, eşim getirsin."
+      },
+      {
+        "field": "medical_history",
+        "value": "Kalpte kapak nedeniyle ilaç kullanımı (kapak hastalığı/protez kapak tanısı hekim tarafından doğrulanmadı)\nÖnceden: Bir kez burun kanaması olmuş; bugün aktif kanama yok\nOlmadığı belirtildi: Bugün aktif kanama yok\nÖnceden: Son kan tahlili telefonda; tarihi geçen aya ait görünüyor, yeni sonuç yok"
+      },
+      {
+        "field": "allergies",
+        "value": "Olmadığı belirtildi: Bildiği ilaç alerjisi yok"
+      },
+      {
+        "field": "dental_history",
+        "value": "Planlanan: Çektireyim kurtulayım diyorum"
+      }
+    ],
+    "status": "Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir."
+  },
+  "perio": {
+    "approval": false,
+    "cards": [
+      {
+        "heading": "Görüşmeden çıkan bilgiler6",
+        "text": "Görüşmeden çıkan bilgiler6Başvuru şikâyetiHocam fırçayı görünce diş etim hemen kanıyor. Üç haftadır böyle\nKendi kendine kanamıyor. Elma ısırınca bazen görüyorum.\nNet değil: Sallanma yok gibi, ama kesin diye söylemeyeyim\nağrım da pek yokAile sağlık öyküsüÖnceden: Annemin dişleri sallanırdı\nAnnemde şeker varSağlık geçmişiOlmadığı belirtildi: Kendisinde diyabet tanısı olmadığını belirtiyorİlaç bilgileriOlmadığı belirtildi: Düzenli ilaç yokAlerji bilgileriOlmadığı belirtildi: Bildiği alerji yokAğız bakımı ve alışkanlıklarSigara günde beş altı tane.\nAkşam bazen fırçalamayı unutuyorum açıkçası."
+      },
+      {
+        "heading": "Anamnezde konuşulanlar6/7",
+        "text": "Anamnezde konuşulanlar6/7Bu tablo dökümdeki bilgiyi gösterir; anamnezin eksiksiz alındığı veya hastanın sağlıklı olduğu anlamına gelmez.Başvuru ve yakınmanın öyküsü: Görüşmede bilgi var.Hastanın sağlık öyküsü: Görüşmede bilgi var.İlaçların kullanım öyküsü: Görüşmede bilgi var.Alerji ve önceki reaksiyonlar: Görüşmede bilgi var.Önceki diş tedavileri ve deneyimler: Dökümde bilgi yok; sorulmadığı anlamına gelmez.Aile sağlık öyküsü: Görüşmede bilgi var.Ağız bakımı ve alışkanlıklar: Görüşmede bilgi var."
+      },
+      {
+        "heading": "Tedavi planı ve dikkat edilecekler3",
+        "text": "Tedavi planı ve dikkat edilecekler3İncelenen kaynak sayısı: 3Periodontal değerlendirme: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.Koruyucu bakım: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.Ağız hastalıkları değerlendirmesi: Araştırma metni getirildi; bu konu için dayanak ayrıca doğrulanmalı.Kontrol notuDikkat edilecek konuKaynak, kanama ve diş mobilitesini periodontal bulgular arasında sayıyor. Hastanın fırçalamayla kanaması ve sallanma beyanı kesin olmadığı için sondajla kanama, cep derinliği ve mobilite muayenesi gerekir.DayanakHocam fırçayı görünce diş etim hemen kanıyor. Üç haftadır böyleEksik bilgiKlinik muayene, sondaj kanaması, cep derinliği ve diş mobilite bulguları kayıtta yok.Değerlendirilebilecek seçenekMuayene ve periodontal ölçüm sonuçları kaydedildikten sonra kanama ve mobilite bulguları değerlendirilebilir.Kaynak ve alıntıyı gösterThe host response to the bacterial challenge leads to clinical signs such as deep pockets, bleeding on probing, gingival recession, and tooth mobility, which can ultimately cause tooth loss.www.ada.org · periodontitisKontrol notuDikkat edilecek konuKaynak, periyodontal takipte tütün gibi risk faktörü maruziyetinin ve ev bakım alışkanlıklarının gözden geçirilebileceğini belirtiyor. Hastanın sigara beyanı bu kontrolle ilişkilidir.DayanakSigara günde beş altı tane.Eksik bilgiSigara kullanımının süresi ve diğer tütün ürünleri kayıtta yok.Değerlendirilebilecek seçenekSigara kullanımı ve ev bakımı, periyodontal değerlendirme sırasında ayrıntılı olarak gözden geçirilebilir.Kaynak ve alıntıyı gösterThese appointments could include a review of home oral hygiene behaviors, ascertainment of exposure to risk factors such as tobacco use, professional plaque removal, and subgingival debridement, as needed.www.ada.org · periodontitisKontrol notuDikkat edilecek konuKaynak, günde iki kez fırçalamanın düşük sıklığa göre çürük riskini azaltmada daha uygun olduğunu bildiriyor. Hastanın akşam fırçalamayı bazen atladığını söylemesi bu bakım sıklığıyla ilişkilidir.DayanakAkşam bazen fırçalamayı unutuyorum açıkçası.Eksik bilgiGünlük fırçalama sıklığı, fluoridli diş macunu kullanımı ve ara yüz temizliği kayıtta yok.Değerlendirilebilecek seçenekFırçalama sıklığı ve ara yüz temizliği netleştirilip bakım önerisi bu bilgilere göre verilebilir.Kaynak ve alıntıyı göstertwice-daily brushing, when compared with lower frequencies, was optimal for reducing risk of carieswww.ada.org · Home Oral CareBazı konularda uygun kaynak bulunamadı veya tarama/erişim sınırlı kaldı; değerlendirme eksik olabilir."
+      },
+      {
+        "heading": "Hastayla iletişim7",
+        "text": "Hastayla iletişim7Hasta kanamanın tekrarlayan olduğunu ve geçici olmadığını vurguluyor. · Kanamanın sıklığı ve fırçalama alışkanlığıyla ilişkisini muayenede birlikte açıklayın.Dayanak: Dün az oldu diye geçti sanmayın.Diş taşlarını alınca dişlerim daha çok sallanır mı? · Hasta diş taşı temizliğinden sonra dişlerinin daha çok sallanıp sallanmayacağını soruyorDayanak: Diş taşlarını alınca dişlerim daha çok sallanır mı?acaba sert mi bastırıyorum? · Hastanın kanamanın sert fırçalamadan kaynaklanıp kaynaklanmadığı konusunda endişesi var; bu tereddüdü anlamaya yönelik açıklama yapılabilirDayanak: acaba sert mi bastırıyorum?bende de mi öyle olacak diye korktum · Hasta kendi dişlerinin de annesininki gibi sallanacağından korkuyorDayanak: bende de mi öyle olacak diye korktumBir de ücreti öğrenmeden işleme başlamayalım · Hasta ücreti öğrenmeden işleme başlanmamasını istiyor; maliyet konusunda açık bilgi verilebilirDayanak: Bir de ücreti öğrenmeden işleme başlamayalımHasta maliyet bilgisi almadan işleme başlanmamasını istiyor. · Ücret ve seçenekler muayeneden sonra açıklanabilir mi? · Maliyet belirsizliği karar vermeyi erteleyebilir.Dayanak: Bir de ücreti öğrenmeden işleme başlamayalımHasta ailesindeki diş sallanmasının kendisinde de olacağından endişe ediyor. · Endişesi muayene bulgularıyla birlikte ele alınabilir mi? · Aile öyküsüne dayalı korku karar sürecini etkileyebilir.Dayanak: bende de mi öyle olacak diye korktum"
+      },
+      {
+        "heading": "Netleştirilecek sorular10",
+        "text": "Netleştirilecek sorular10Sallanma beyanı kesin değil. Diş mobilitesinin muayenede kontrol edilip edilmediğini ve bulgularını netleştirin.Dayanak: Sallanma yok gibi, ama kesin diye söylemeyeyimAğrının varsa niteliği, süresi ve tetikleyicisi kayıtta yok. Yakınma için bu gün veya daha önce ağrı kesici ya da başka bir ilaç kullanılıp kullanılmadığını sorun.Dayanak: ağrım da pek yokDüzenli ilaç yokluğu kısa süreli, reçetesiz veya aralıklı kullanımı dışlamaz. Bu yakınma için kullanılan ilaçları ad ve doz bilgisiyle netleştirin.Dayanak: Düzenli ilaç yokKayıtta yalnız diyabet olumsuz beyanı var. Kalp, kanama bozukluğu, kan sulandırıcı kullanımı ve diğer sistemik durumlar için öykü alınmamış görünüyor.Dayanak: Kendisinde diyabet tanısı olmadığını belirtiyorBildiği alerji yok beyanı var. Önceki anestezi veya ilaç reaksiyonu gibi tahammülsüzlüklerin ayrıca sorulup sorulmadığını netleştirin.Dayanak: Bildiği alerji yokFırçalama sıklığı ve ara yüz temizliği kaydedilmemiş. Günlük fırçalama sıklığını ve ara yüz temizliği alışkanlığını netleştirin.Dayanak: Akşam bazen fırçalamayı unutuyorum açıkçası.Sigara kullanımının süresi ve diğer tütün ürünü kullanımı kayıtta yok. Bunları netleştirin.Dayanak: Sigara günde beş altı tane.Hasta, diş taşı temizliğinden sonra sallanmanın artıp artmayacağını soruyor. Bu soruya hekim yanıtının verilip verilmediği kayıtta net değil.Dayanak: Diş taşlarını alınca dişlerim daha çok sallanır mı?Hasta ücret bilgisini öğrenmeden işleme başlanmamasını istiyor. Ücret bilgisinin görüşmede verilip verilmediği kayıtta yok.Dayanak: Bir de ücreti öğrenmeden işleme başlamayalımHastanın korkusunun hangi durum veya kişiye ilişkin olduğu kayıtta açık değil. Bu kaygıyı netleştirin.Dayanak: bende de mi öyle olacak diye korktum"
+      },
+      {
+        "heading": "Kaynaklar · 3",
+        "text": "Kaynaklar · 3Kaynak kapsamı: Sınırlı kamusal kaynak araştırmasıdır; alınan metinler eksiksiz bir rehber veya hastaya özgü doğrulanmış öneri değildir. Konu ve klinik iddia kapsamı doğrulanmamıştır.www.ada.org · periodontitis · Meslek kuruluşu bilgisiwww.ada.org · Xerostomia (Dry Mouth) · Meslek kuruluşu bilgisiwww.ada.org · Home Oral Care · Meslek kuruluşu bilgisi"
+      }
+    ],
+    "fields": [
+      {
+        "field": "chief_complaint",
+        "value": "Hocam fırçayı görünce diş etim hemen kanıyor. Üç haftadır böyle\nKendi kendine kanamıyor. Elma ısırınca bazen görüyorum.\nNet değil: Sallanma yok gibi, ama kesin diye söylemeyeyim\nağrım da pek yok"
+      },
+      {
+        "field": "family_history",
+        "value": "Önceden: Annemin dişleri sallanırdı\nAnnemde şeker var"
+      },
+      {
+        "field": "medical_history",
+        "value": "Olmadığı belirtildi: Kendisinde diyabet tanısı olmadığını belirtiyor"
+      },
+      {
+        "field": "medications",
+        "value": "Olmadığı belirtildi: Düzenli ilaç yok"
+      },
+      {
+        "field": "allergies",
+        "value": "Olmadığı belirtildi: Bildiği alerji yok"
+      },
+      {
+        "field": "oral_habits",
+        "value": "Sigara günde beş altı tane.\nAkşam bazen fırçalamayı unutuyorum açıkçası."
+      }
+    ],
+    "status": "Değerlendirme kısmen hazır; bazı kaynaklara erişilemedi. Eksik kaynakları yeniden deneyebilir veya gösterilen kapsamı kontrol edebilirsiniz."
+  }
+}
