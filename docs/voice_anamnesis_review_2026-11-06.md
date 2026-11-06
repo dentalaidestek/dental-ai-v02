@@ -48,3 +48,26 @@ Son tam test, yayın ve inceleme sonuçları ilerleme belgelerine ayrıca yazıl
 Son tam yerel doğrulama:603Python/11Node geçti; iki mevcut bağımlılık uyarısı. Bağımsız son odaklı inceleme143testte engel kalmadığını bildirdi. Yayın ve uzak CI sonucu ilerleme belgelerinde ayrıca kaydedilir.
 
 Yayın öncesi ek gizlilik kontrolü: yaş alıntısı içinde isim geçerse final modele gereksiz kimlik taşınabiliyordu. RED regresyonla yakalandı; yaşın yalnız değeri aktarılır, yaş evidence_quote eklenmez. Bağımsız52 odaklı testte engel kalmadı. Son tam yerel koşu **604 Python/11 Node geçti** (iki mevcut bağımlılık uyarısı).
+
+
+PR242/5738245f96cc5275fb39e44746beda9c8e23790d, Render dep-dbmn3hnf3r2c73aj82cg **6 Kasım09:22:32 Türkiye** itibarıyla live. Dağıtım SHA üzerinden doğrulandı; yeni tarayıcı ekranı veya gerçek model tekrarı yapılmadı. Sesli/contract/ready-model kontrolleri başarılı. Son uzak application-regressions43başarısız/2067başarılı/48atlanan/594alt-test başarılı, static-safety40başarısız/966başarılı/34atlanan, PostgreSQL2başarısız/42başarılı. Genel CI yeşil değil; ek hata adları test_production_optimization.py::test_study_generation_releases_db_connection_and_rechecks_course[False/True] ve test_study_index_v2_isolation.py::test_v2_streaming_is_feature_gated_end_to_end dahil akademik çalışma akışında.
+
+Son uyumluluk düzeltmesi: eski açık istemciler yeni yanıt türünü category alanında görünce tanımsız iletişim başlığı gösterebiliyordu. Yanıt atfı ayrı response_type özelliğine taşındı; mevcut klinik iddia/engel kategorileri değiştirilmedi. Final eski category biçimini de okuyabilir. Bozuk liste/sözlük türleri önceden TypeError veriyordu;6 tür için route testi RED→GREEN, hepsi araştırmaya ulaşmadan422 döner. Son tam yerel doğrulama **611 Python/11 Node geçti**; iki mevcut bağımlılık uyarısı. Bağımsız113odaklı testte engel kalmadı. Uyumluluk yayını aşağıya eklenecek.
+
+
+## Tespitlerin son durumu
+
+| Sorun | Durum |
+|---|---|
+| Eski diş tedavisinin sistemik alana düşmesi | Ayrı alan önceki gerçek model tekrarında çalıştı; yeni anamnez kapsamı sözleşme testli |
+| Aile hastalığı ile kişinin olumsuz yanıtının karışması | Ayrı FAMILY atfı ve çakışma/soru korumaları kod/test tamam; yeni model tekrarı gerekli |
+| Materyal adının/kararsız seçimin kaybolması | Birebir materials alanı ve onaylı kayıt kod/test tamam; gerçek model tekrarı gerekli |
+| Verilmiş hekim yanıtının yok sayılması | Kısa kaynak alıntısı ve yanıt türü kaybı düzeltildi; modelin yorum doğruluğu yeniden ölçülmeli |
+| Cevaplanmış düzenli ilaç sorusunun tekrarı | Canlıdaki tam olumsuz örnek ve kapsam/zaman karşı örnekleri testli; genel anlamsal sorun tamamen kapanmış sayılmaz |
+| Genel kaynakla özgül materyali onaylama | Mevcut materyal kapsam filtresi/eksik durumları korunuyor; uygunluk onayı üretilmez |
+| AAE getirildiği halde post kontrolü0 | Açık; neden ayrımı ve tanılayıcı sayılar eklendi, gerçek model yeniden denenmeli |
+| Tıklanmayan özet/taşan mobil/iç etiketler | Önceki düzeltmeler korunuyor; DOM testli, fiziksel Android yeniden doğrulanmadı |
+| Hata ve yeniden denemede metin kaybı/çift çağrı | Aynı açık sayfada kontrol noktaları/fingerprint testli; sayfa yenilemede kalıcı kurtarma açık |
+| Otomatik hasta kaydı | Seçim ve hekim onayı gerekir; bu oturumda hasta kaydı yapılmadı |
+| Gerçek mikrofon/ASR ve klinik doğruluk | Yeni test yapılmadı; insan sesi ve hekim onaylı altın set gerekli |
+| Tüm üretici/ürün IFU uygunluğu | Tamamlanmadı; ürün ailesi bilgisi belirli ürün onayı sayılmaz |

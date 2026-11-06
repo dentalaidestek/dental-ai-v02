@@ -48,24 +48,40 @@ def test_unproven_family_attribution_is_not_a_family_fact(subject):
 def test_explicit_clinician_reply_keeps_speaker_provenance():
     quote='Şu an sökme kararı vermedik.'
     result=core.normalize({'transcript':'Hekim: '+quote,'clinical_facts':[{'field':'clinician_response','value':'Hekim açıklaması','quote':quote,'subject':'PATIENT','temporality':'CURRENT'}]})
-    assert result['communication'][0]['category']=='CLINICIAN_RESPONSE'
+    assert result['communication'][0]['response_type']=='CLINICIAN_RESPONSE'
+
+def test_reply_provenance_does_not_invent_a_coaching_category_for_older_clients():
+    quote='Önce muayene edelim.'
+    result=core.normalize({'transcript':'Hekim: '+quote,'clinical_facts':[
+        {'field':'clinician_response','value':'Yanıt','quote':quote,'subject':'PATIENT','temporality':'CURRENT'}]})
+    assert 'category' not in result['communication'][0]
+    assert result['communication'][0]['response_type']=='CLINICIAN_RESPONSE'
+
+@pytest.mark.parametrize('kind',[[],{},True,42,None,'UNKNOWN_TYPE'])
+def test_invalid_reply_type_returns_validation_error_before_research(app_client,monkeypatch,kind):
+    client,_=app_client
+    monkeypatch.setattr(final,'retrieve',lambda *a,**k:pytest.fail('Invalid metadata must not reach paid research'))
+    response=client.post('/patients/1/voice-exam/finalize',json={'consent':True,
+        'context':{'fields':{'plan':{'value':'Muayene planı','quote':'Önce bakalım.'}}},
+        'insights':[{'quote':'Önce bakalım.','observation':'Yanıt','response_type':kind}]})
+    assert response.status_code==422
 
 def test_explicit_patient_reply_is_not_tagged_as_clinician_response():
     text='Hasta: Ağrım yok diye normal yazılmasın.'
     output=core.normalize({'transcript':text,'clinical_facts':[{'field':'clinician_response','value':'Hekim yanıtı','quote':'Ağrım yok diye normal yazılmasın.','subject':'PATIENT','temporality':'CURRENT'}]},evidence=text)
-    assert output['communication'][0]['category']=='PATIENT_RESPONSE'
+    assert output['communication'][0]['response_type']=='PATIENT_RESPONSE'
 
 def test_inline_speaker_transition_uses_nearest_explicit_speaker():
     quote='Anladım, önce inceleyeceğiz.'
     result=core.normalize({'transcript':'Hekim: Önce bakalım. Hasta: '+quote,'clinical_facts':[
         {'field':'clinician_response','value':'Yanıt','quote':quote,'temporality':'CURRENT','subject':'PATIENT'}]})
-    assert result['communication'][0]['category']=='PATIENT_RESPONSE'
+    assert result['communication'][0]['response_type']=='PATIENT_RESPONSE'
 
 def test_repeated_reply_with_an_unlabelled_occurrence_has_no_verified_speaker():
     quote='Önce inceleyeceğiz.'
     result=core.normalize({'transcript':'Hekim: '+quote+'\n'+quote,'clinical_facts':[
         {'field':'clinician_response','value':'Yanıt','quote':quote,'temporality':'CURRENT','subject':'PATIENT'}]})
-    assert result['communication'][0]['category']=='UNATTRIBUTED_RESPONSE'
+    assert result['communication'][0]['response_type']=='UNATTRIBUTED_RESPONSE'
 
 def test_unanswered_family_question_is_not_a_recorded_family_history():
     quote='Annenizde diyabet var mı?'
@@ -84,7 +100,7 @@ def test_final_receives_literal_plan_and_typed_response_without_new_call(monkeyp
     response='Şu an sökme kararı vermedik. Önce nedeni anlayalım.'
     context={'fields':{'plan':{'value':'Önce inceleme planı','quote':response,'edited':False},
                        'family_history':{'value':'Annem şeker hastası','quote':'Annem şeker hastası','edited':False}}}
-    output=final.finalize(context,[{'category':'CLINICIAN_RESPONSE','quote':response,'observation':'Görüşmede verilen yanıt: '+response,'suggestion':''}])
+    output=final.finalize(context,[{'response_type':'CLINICIAN_RESPONSE','quote':response,'observation':'Görüşmede verilen yanıt: '+response,'suggestion':''}])
     sent=json.loads(calls[0]['messages'][0]['content'])
     assert sent['clinical_fields']['plan']['evidence_quote']==response
     assert sent['communication_context'][0]['category']=='CLINICIAN_RESPONSE'

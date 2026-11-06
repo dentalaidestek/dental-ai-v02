@@ -399,7 +399,7 @@ def normalize(result, evidence=None):
                         # Preserve explicit speaker provenance; patient teach-back
                         # must never become proof that the clinician explained it.
                         roles = _quote_roles(quote, anchor)
-                        item['category'] = ('CLINICIAN_RESPONSE' if roles and roles <= {'hekim', 'doktor'} else
+                        item['response_type'] = ('CLINICIAN_RESPONSE' if roles and roles <= {'hekim', 'doktor'} else
                                             'PATIENT_RESPONSE' if roles == {'hasta'} else 'UNATTRIBUTED_RESPONSE')
                     output['communication'].append(item)
             continue
