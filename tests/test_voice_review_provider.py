@@ -116,7 +116,7 @@ def test_extraction_uses_one_forced_data_tool_without_compiled_output_grammar(mo
         {'type': 'tool_use', 'name': 'clinical_extract', 'input': result}]})
     assert provider.review('policy', {}, extract_schema, extraction=True) == result
     payload = json.loads(calls[0][0].data)
-    assert payload['tool_choice'] == {'type': 'tool', 'name': 'clinical_extract'}
+    assert payload['tool_choice'] == {'type': 'tool', 'name': 'clinical_extract', 'disable_parallel_tool_use': True}
     assert 'output_config' not in payload and 'strict' not in payload['tools'][0]
     assert payload['tools'][0]['input_schema']['additionalProperties'] is False
     assert len(calls) == 1
@@ -163,3 +163,12 @@ def test_wrapper_conflicting_nonempty_clinical_fields_are_rejected(monkeypatch):
         {'type': 'tool_use', 'name': 'clinical_extract', 'input': wrapped}]})
     with pytest.raises(ValueError, match='Conflicting'):
         provider.review('policy', {}, schema, extraction=True)
+
+
+def test_duplicate_extraction_tools_are_rejected_without_automatic_paid_retry(monkeypatch):
+    calls, _ = transport(monkeypatch, {'stop_reason': 'tool_use', 'content': [
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': {'items': []}},
+        {'type': 'tool_use', 'name': 'clinical_extract', 'input': {'items': []}}]})
+    with pytest.raises(ValueError, match='Incomplete clinical extraction'):
+        provider.review('policy', {}, SCHEMA, extraction=True)
+    assert len(calls) == 1

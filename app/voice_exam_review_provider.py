@@ -63,7 +63,8 @@ def review(prompt, data, schema, *, extraction=False):
         # normalize(); the model response is never trusted by itself.
         payload['tools'] = [{'name': 'clinical_extract', 'description': 'Return the clinical extraction as structured data only.',
                              'input_schema': _schema(schema)}]
-        payload['tool_choice'] = {'type': 'tool', 'name': 'clinical_extract'}
+        # Extraction is one data object; parallel calls violate its atomic contract.
+        payload['tool_choice'] = {'type': 'tool', 'name': 'clinical_extract', 'disable_parallel_tool_use': True}
     else:
         payload['output_config'] = {'format': {'type': 'json_schema', 'schema': _schema(schema)}}
     from app.http_transport import urlopen
