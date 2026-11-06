@@ -279,9 +279,13 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                 'review_status': {'source_retryable': source_retryable}, 'unavailable': evidence['unavailable']}
     if not core._capacity.acquire(blocking=False):
         raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
+    stage = 'provider'
+    counts = {'questions': -1, 'contradictions': -1, 'clinical_items': -1}
     try:
         result = review(prompt, data, schema)
         modeled = time.monotonic()
+        stage = 'checklist'
+        counts = {key: len(result[key]) if isinstance(result.get(key), list) else -1 for key in counts}
         output = {'questions': _anchored(result.get('questions'), fields), 'anamnesis_review': anamnesis.review(fields),
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
@@ -291,7 +295,9 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         if core.resolve_appointment(appointment.get('quote', ''), appointment.get('acceptance_quote', '')):
             output['contradictions'] = [item for item in output['contradictions'] if item['field'] != 'appointment']
         rejected_reasons = {}
+        stage = 'clinical_grounding'
         output['clinical_items'] = grounded_items({'items': result.get('clinical_items')}, fields, evidence['references'], diagnostics=rejected_reasons)
+        stage = 'source_scoping'
         scoped = []
         sources_by_id = {source['id']: source for source in evidence['references']}
         for item in output['clinical_items']:
@@ -339,7 +345,15 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
         return {**output, 'source_fingerprint': source_fingerprint, 'review_status': review_status, 'references': evidence['references'], 'unavailable': evidence['unavailable'],
                 'coverage': evidence['coverage'], 'source_coverage': evidence.get('source_coverage', []), 'notice': evidence['notice'],
                 'research_mode': evidence.get('research_mode', 'legacy'), 'research_usage': evidence.get('research_usage', {})}
-    except Exception:
+    except Exception as exc:
+        kind = type(exc).__name__
+        if kind not in {'ValueError', 'TypeError', 'KeyError', 'JSONDecodeError', 'HTTPError', 'TimeoutError', 'VoiceError'}:
+            kind = 'other'
+        safe_reasons = {'Incomplete clinical review', 'Invalid clinical review', 'Response too large',
+                        'Invalid final checklist', 'Invalid contradiction checklist'}
+        reason = str(exc) if type(exc) is ValueError and str(exc) in safe_reasons else 'other'
+        logging.getLogger(__name__).warning('voice_final_failed stage=%s kind=%s reason=%s questions=%d contradictions=%d clinical_items=%d',
+            stage, kind, reason, counts['questions'], counts['contradictions'], counts['clinical_items'])
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:
         core._capacity.release()
