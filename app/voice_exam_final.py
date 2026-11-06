@@ -21,8 +21,10 @@ def private_insights(value):
         raise core.VoiceError('İletişim özeti sınırı aşıldı.')
     result = []
     for item in value:
-        if not isinstance(item, dict) or set(item) - {'quote', 'observation', 'suggestion', 'category', 'question', 'explanation'}:
+        if not isinstance(item, dict) or set(item) - {'quote', 'observation', 'suggestion', 'category', 'question', 'explanation', 'response_type'}:
             raise core.VoiceError('İletişim özeti doğrulanamadı.')
+        if 'response_type' in item and (not isinstance(item['response_type'], str) or item['response_type'] not in {'CLINICIAN_RESPONSE', 'PATIENT_RESPONSE', 'UNATTRIBUTED_RESPONSE'}):
+            raise core.VoiceError('Yanıt türü doğrulanamadı.')
         clean = {key: core._string(text, 1000) for key, text in item.items()}
         if clean.get('quote') and clean.get('observation'):
             result.append(clean)
@@ -260,7 +262,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
             'anamnesis_scope': anamnesis.scope(),
             'communication_context': [{'field': f'clinician_{i}' if item.get('category') == 'CLINICAL_STATEMENT' else f'communication_{i}',
-                'category': item.get('category', 'UNATTRIBUTED'), 'quote': item['quote']} for i, item in enumerate(insights)],
+                'category': item.get('response_type', item.get('category', 'UNATTRIBUTED')), 'quote': item['quote']} for i, item in enumerate(insights)],
             'material_review_targets': material_targets, 'material_source_candidates': material_candidates,
             'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
