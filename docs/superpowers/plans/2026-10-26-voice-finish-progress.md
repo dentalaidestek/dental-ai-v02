@@ -322,3 +322,24 @@ PR241/e3a888e0d4c23a0cc3f8494d915f255c1c0d0054, Render dep-dbme73o473hc73e1h9fg 
 Açık kalite bulguları: postta AAE restorabilite sayfası gelmesine rağmen özgül kontrol üretilmedi (günlükte accepted=0, rejected_reasons={}). Açık düzenli ilaç yokluğu hâlâ belirsiz denilip ilaç adı/dozu soruldu; önceki dar denetim bütün üretim biçimlerini kapsamıyor. İki vakada da verilmiş koşullu hekim yanıtı final iletişim sorularında yok sayılabildi. İmplantta yaklaşık işlem zamanı varken tarih eksik ifadesi tam tarih/ yaklaşık tarih ayrımı yapmadı; hastanın diyabet tanısı yok beyanı öyküde korunmayınca soru yeniden üretildi. Postta mevcut dolgu çıkması ayrıca geçmiş etiketiyle yazıldı. Bunlar çözülmüş sayılmıyor. Kanıt docs/voice_scope_live_2026-11-05.json içinde.
 
 Ek zirkonya tekrarı, işleme onay kutusunda tarayıcının otomatik güvenlik incelemesi tarafından Gemini/Claude'a sağlık verisi aktarımı gerekçesiyle reddedildi. Test fixture'ının sentetik niteliği kontrol edildi, fakat yeniden değerlendirmede erişim yine reddedildi. Sonrasında tamamlanan post ekranının salt okunur görüntüsü de engellendi; ekran görüntüsü oluşturulamadı. Ham tarayıcı/API, başka oturum veya başka yüzeyle engel aşılmadı. Zirkonya tekrarını veya yeni ekran görüntüsünü tamamlanmış göstermeyin; bu sentetik aktarım için açık kullanıcı onayı gerekir.
+
+
+### 6 Kasım: kaynak temelli anamnez, materyal adı ve yanıt atfı
+
+TDB'nin İZDO üzerinden yayımlanan anamnez kartı, ADA sağlık öyküsü, SDCEP genel/akut/periodontal öykü kaynakları incelendi. Tasarım ve kaynak bağlantıları docs/voice_anamnesis_review_2026-11-06.md içinde. Tarihli COVID talimatları, formdaki kimlik/iletişim ve ilgisiz özel hayat alanları yeni sesli kapsama taşınmadı. Kaynaklardan klinik ilaç yasağı veya otomatik tedavi kuralı üretilmedi.
+
+Yedi anamnez grubunun kamusal inceleme kapsamı mevcut çıkarım ve son değerlendirme çağrılarına eklendi; ayrı bir model aşaması yok. Bitişteki Anamnezde konuşulanlar kartı yalnız dökümde bilgi var/yok durumunu gösterir; yokluk veya tamlık/güvenlik onayı değildir.13 alan arasında ayrı family_history ve materials var: aile öyküsü FAMILY atfıyla, konuşulan materyal ise birebir ad/ürün/tür ve planlanan/güncel/belirsiz durumuyla tutulur. Bilinmeyen marka, siman veya ürün varyantı uydurulmaz. Tüm13 alanın birlikte hekim onaylı kaydı ve yeni kayıtların geçmişten okunması testli; önceki hekim onayı kapısı korunur.
+
+Cevapsız aile sorusu pozitif kayıt yapılamaz; FAMILY/OTHER/UNKNOWN çakışması ve açık klinik ekip birinci kişi yakını hasta ailesine yazılmaz. Hekim yanıtı, hasta geri anlatımı ve atfı belirsiz yanıt ayrı geçici kategorilerle aynı final çağrısına gider. Aynı satırdaki en yakın rol etiketi ve tekrarlanan/etiketsiz alıntı belirsizliği testlidir; gerçek ses konuşmacı ayrımı doğrulanmış sayılmaz.
+
+Özgün klinik kısa alıntı, yalnız yeni istemcide edited:false açıkça geldiyse son modele eklenir; edited:true veya eski istemcide bayrak yoksa eski alıntı gönderilmez. Hekim düzeltmesinin eski konuşmayla geri alınması regresyonla engellenir. Ek alanlar için istemci/sunucu bağlam sınırı32KB, final toplam80.000karakter sınırı korunur. Yeni panel JSv26.
+
+Canlıda yakalanan tam noktalı düzenli ilaç yokluğu + kutu/reçete sorusu RED→GREEN düzeltildi. Bu yalnız açık düzenli kullanım denetimidir; kısa süreli/PRN/aralıklı/planlanan kullanımların soruları korunur. Geçmiş, belirsiz veya planlanan yokluk güncel kullanım cevabı sayılmaz. Genel Türkçe olumsuzluk veya bütün soruların doğruluğu çözüldü denmiyor.
+
+Materyal kontrolünün tamamlanamama nedeni ikiye ayrılır: kullanılabilir kaynak parçası seçilememesi veya aday metin varken hasta özelinde kontrol üretilememesi. Kamusal kimlik/sayı tanılayıcısı günlüklenir; hasta metni/alıntısı yeni günlüğe girmez. Eski post vakasındaki0 kontrol bununla başarılı sayılmaz; gerçek model tekrarı gereklidir.
+
+Son tam yerel doğrulama: **603 Python geçti**, **11 Node geçti**; iki mevcut bağımlılık uyarısı. Bağımsız inceleme aile atfı, soru ve rol geçişi/tekrarlanan alıntı hatalarını yakaladı; RED→GREEN kapatıldı, son odaklı143test geçti. Son kaynak/tamlık testi gerçek model testi değildir.
+
+Bu oturumda yeni canlı model veya mikrofon aktarımı yapılmadı: önceki tarayıcı otomatik güvenlik incelemesinin işleme onayı/origin engeli aşılmadı. Yeni gerçek model, insan mikrofonu, fiziksel Android ve hekim onaylı altın test seti hâlâ doğrulama gerektirir. Sayfa yenilemesinde kalıcı taslak kurtarma, üretici IFU/ürün varyantlarının eksiksiz doğrulanması ve genel akademik CI sorunları çözülmüş sayılmaz. Yayın durumu aşağıya ayrıca eklenecek.
+
+Yayın öncesi ek gizlilik kontrolü: yaş alıntısı içinde isim geçerse final modele gereksiz kimlik taşınabiliyordu. RED regresyonla yakalandı; yaşın yalnız değeri aktarılır, yaş evidence_quote eklenmez. Bağımsız52 odaklı testte engel kalmadı. Son tam yerel koşu **604 Python/11 Node geçti** (iki mevcut bağımlılık uyarısı).

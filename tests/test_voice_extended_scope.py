@@ -74,13 +74,14 @@ def test_new_clinical_fields_require_confirmation_and_save_as_distinct_notes(app
     assert history['dental_history']['value']==fields['dental_history']
 
 
-def test_all_eleven_reviewed_fields_can_be_saved_together(app_client):
+def test_all_thirteen_reviewed_fields_can_be_saved_together(app_client):
     client,engine=app_client
     fields={'first_name':'Sentetik','last_name':'Test','age':'40',
             'chief_complaint':'Soğukta sızı beyanı.', 'medical_history':'Hastalık öyküsü yok beyanı.',
             'medications':'Düzenli ilaç yok beyanı.', 'allergies':'Bilinen alerji yok beyanı.',
             'clinical_findings':'Muayene bulguları konuşuldu.', 'plan':'Muayene sonrası değerlendirme planı.',
-            'dental_history':'Eski kanal tedavisi beyanı.', 'oral_habits':'Günde beş sigara beyanı.'}
+            'dental_history':'Eski kanal tedavisi beyanı.', 'oral_habits':'Günde beş sigara beyanı.',
+            'family_history':'Annesinde diyabet beyanı.', 'materials':'Planlanan: Fiber post seçeneği.'}
     response=client.post('/patients/1/voice-exam/apply',json=payload(engine,fields=fields))
     assert response.status_code==200,response.text
     with Session(engine) as session:

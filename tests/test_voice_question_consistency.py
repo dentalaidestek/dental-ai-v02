@@ -16,6 +16,19 @@ def test_final_cannot_truncate_negative_anchor_into_a_positive_regular_medicatio
         'text': 'Düzenli kullandığınız ilacın adı ve dozu nedir?'}], 'contradictions': [], 'clinical_items': []})
     assert final.finalize({'fields': {'medications': {'value': NEGATIVE, 'quote': NEGATIVE}}}, [])['questions'] == []
 
+def test_live_full_negative_clause_with_punctuation_and_box_check_is_not_ambiguous(monkeypatch):
+    provider(monkeypatch, {'questions': [{'field':'medications','quote':NEGATIVE,
+        'text':'Düzenli ilaç kullanımı olup olmadığı tek cümlede belirsiz; kullanılan ilaç varsa adı ve dozu kayıtta yok. Kutu veya reçete ile netleştirin.'}],
+        'contradictions':[],'clinical_items':[]})
+    assert final.finalize({'fields':{'medications':{'value':NEGATIVE,'quote':NEGATIVE}}},[])['questions']==[]
+
+@pytest.mark.parametrize('prefix',['Geçmiş: ','Önceden: ','Belirsiz: ','Planlanan: '])
+def test_noncurrent_denial_does_not_answer_a_current_regular_use_question(monkeypatch,prefix):
+    value=prefix+'Düzenli ilacım yok.'
+    item={'field':'medications','quote':'Düzenli ilacım yok.', 'text':'Düzenli kullandığınız ilaçların adı nedir?'}
+    provider(monkeypatch,{'questions':[item],'contradictions':[],'clinical_items':[]})
+    assert final.finalize({'fields':{'medications':{'value':value,'quote':'Düzenli ilacım yok.'}}},[])['questions']==[item]
+
 @pytest.mark.parametrize('statement,anchor,question', [
     (NEGATIVE, 'Düzenli ilacım', 'Ara sıra ağrı kesici veya haftalık iğne kullanıyor musunuz?'),
     ('Warfarin kullanıyorum, başka ilacım yok.', 'Warfarin kullanıyorum', 'Warfarinin dozu nedir?'),

@@ -54,7 +54,7 @@ def test_clinician_response_does_not_publish_an_unverified_paraphrase():
         'quote': quote, 'temporality': 'CURRENT'}]})
     assert result['communication'] == [{
         'quote': quote, 'observation': 'Görüşmede verilen yanıt: ' + quote,
-        'suggestion': ''}]
+        'suggestion': '', 'category': 'UNATTRIBUTED_RESPONSE'}]
     assert not result['fields']
 
 
