@@ -34,11 +34,14 @@ async function fixture(){
     else if(url.endsWith('/finalize')){
       if(sourceMode==='failure')body={ok:false,error:'Synthetic source outage'};
       else if(sourceMode==='unchanged')body={ok:true,revision:'a'.repeat(64),final:{not_modified:true,source_fingerprint:'f'.repeat(64),review_status:{source_retryable:true}}};
-      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode==='cards'?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode==='cards'?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
+      else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode.startsWith('cards')?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode.startsWith('cards')?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
-    if(sourceMode==='cards'&&url.endsWith('/finalize'))body.final.material_review=[{topic:'endo.post_core',label:'Post, kor ve kalan diş dokusu',status:'unverified',source_ids:[]}];
-    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'},dental_history:{value:'Geçmiş: Sol öndeki dişe iki yıl önce kanal yapılmıştı.',quote:'Sol öndeki dişe iki yıl önce kanal yapılmıştı.'},oral_habits:{value:'Güncel: Sigara günde beş tane.',quote:'Sigara günde beş tane.'}};
+    if(sourceMode.startsWith('cards')&&url.endsWith('/finalize'))body.final.review_status.material_evidence=[{topic:'endo.post_core',candidate_source_count:sourceMode==='cards-gap'?0:1,accepted_control_count:0}];
+    if(sourceMode.startsWith('cards')&&url.endsWith('/finalize'))body.final.material_review=[{topic:'endo.post_core',label:'Post, kor ve kalan diş dokusu',status:'unverified',source_ids:[]}];
+    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.fields={medical_history:{value:'Olumsuz beyan: Sistemik rahatsızlık yok\nGeçmiş: Anjiyo öyküsü\nBelirsiz: İşlemin tarihi bilinmiyor',quote:'Rahatsızlığım yok, önceden anjiyo oldum.'},allergies:{value:'Olumsuz beyan: Penisilin alerjisi',quote:'Penisiline alerjim yok.'},dental_history:{value:'Geçmiş: Sol öndeki dişe iki yıl önce kanal yapılmıştı.',quote:'Sol öndeki dişe iki yıl önce kanal yapılmıştı.'},oral_habits:{value:'Güncel: Sigara günde beş tane.',quote:'Sigara günde beş tane.'},family_history:{value:'Güncel: Annem şeker hastası.',quote:'Annem şeker hastası.'},materials:{value:'Belirsiz: Yapıştırıcının markası henüz belli değil.',quote:'Yapıştırıcının markası henüz belli değil.'}};
+    if(sourceMode==='readable'&&url.endsWith('/text'))body.review.communication=[{category:'CLINICIAN_RESPONSE',quote:'Şu an sökme kararı vermedik.',observation:'Görüşmede verilen yanıt: Şu an sökme kararı vermedik.',suggestion:''}];
+    if(sourceMode==='readable'&&url.endsWith('/finalize'))body.final.anamnesis_review=[{field:'family_history',label:'Aile sağlık öyküsü',state:'recorded'},{field:'medications',label:'İlaçların kullanım öyküsü',state:'not_recorded'}];
     if(sourceMode==='readable'&&url.endsWith('/finalize'))body.final.summary=Object.entries(JSON.parse(options.body).context.fields).map(([field,item])=>({field,text:item.value,quote:item.value}));
     return {ok:body.ok,json:async()=>body};
   };
@@ -165,10 +168,16 @@ async function fixture(){
     assert.ok(results.textContent.includes('Koşullu klinik kontrol.'));
     assert.ok(results.querySelector('.voice-material-review')?.textContent.includes('Uygunluk kontrolü tamamlanamadı'),'A general source note must not hide an incomplete material check');
     assert.ok(results.textContent.includes('Malzeme bilinmiyor.'));
+    assert.ok(results.textContent.includes('İlgili olabilecek kaynak bölümü var'));
     record.querySelector('summary').click();f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();f.get('[data-voice-save]').click();
     await until(()=>f.calls.some(c=>c.url.endsWith('/apply')),'card layout preserves approved save');
     assert.equal(f.calls.filter(c=>c.url.endsWith('/finalize')).length,1,'Opening cards must not call the model again');
     assert.deepEqual(f.errors,[]);
+  }finally{f.close()}
+  f=await fixture();
+  try{
+    f.setMode('cards-gap');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
+    assert.ok(f.get('.voice-material-evidence').textContent.includes('bu işlem için kaynak parçası seçilemedi'));
   }finally{f.close()}
   f=await fixture();
   try{
@@ -191,6 +200,14 @@ async function fixture(){
     assert.ok(card.textContent.includes('Net değil: İşlemin tarihi bilinmiyor'));
     assert.ok(card.textContent.includes('Önceki diş tedavileri'));
     assert.ok(card.textContent.includes('Ağız bakımı ve alışkanlıklar'));
+    assert.ok(card.textContent.includes('Aile sağlık öyküsü'));
+    assert.ok(card.textContent.includes('Konuşulan materyaller'));
+    assert.ok(f.get('[data-field-row=materials] textarea').value.includes('markası henüz belli değil'));
+    const anamnesis=f.get('.voice-anamnesis-review');
+    assert.ok(anamnesis.textContent.includes('Görüşmede bilgi var'));
+    assert.ok(anamnesis.textContent.includes('Dökümde bilgi yok'));
+    assert.equal(f.get('[data-voice-communication]').textContent.includes('undefined'),false);
+    assert.ok(f.get('[data-voice-communication]').textContent.includes('Şu an sökme kararı vermedik'));
     assert.ok(f.get('[data-field-row=dental_history] textarea').value.includes('iki yıl önce kanal'));
     assert.ok(f.get('[data-field-row=oral_habits] textarea').value.includes('Sigara günde beş tane'));
     assert.ok(f.get('[data-voice-final-results]').textContent.includes('Tedavi planı ve dikkat edilecekler'));
