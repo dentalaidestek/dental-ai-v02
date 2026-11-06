@@ -256,7 +256,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
 '''
     material_candidates = materials.source_candidates(material_targets, evidence['references'])
     data = {'clinical_fields': {name: {'value': item['value'], **({'evidence_quote': item['quote']}
-                if item.get('edited') is False and item.get('quote') else {})} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
+                if name != 'age' and item.get('edited') is False and item.get('quote') else {})} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
             'anamnesis_scope': anamnesis.scope(),
             'communication_context': [{'field': f'clinician_{i}' if item.get('category') == 'CLINICAL_STATEMENT' else f'communication_{i}',

@@ -46,3 +46,5 @@ Son tam test, yayın ve inceleme sonuçları ilerleme belgelerine ayrıca yazıl
 Önceki otomatik tarayıcı güvenlik incelemesi dentalai.tr işleme onayını ve sonrasında salt okunur erişimi engelledi. Bu çalışmada API, farklı oturum veya başka yüzey kullanılarak bu engel aşılmadı; yeni canlı model/mikrofon denemesi yapılmış gibi sunulmaz.
 
 Son tam yerel doğrulama:603Python/11Node geçti; iki mevcut bağımlılık uyarısı. Bağımsız son odaklı inceleme143testte engel kalmadığını bildirdi. Yayın ve uzak CI sonucu ilerleme belgelerinde ayrıca kaydedilir.
+
+Yayın öncesi ek gizlilik kontrolü: yaş alıntısı içinde isim geçerse final modele gereksiz kimlik taşınabiliyordu. RED regresyonla yakalandı; yaşın yalnız değeri aktarılır, yaş evidence_quote eklenmez. Bağımsız52 odaklı testte engel kalmadı. Son tam yerel koşu **604 Python/11 Node geçti** (iki mevcut bağımlılık uyarısı).

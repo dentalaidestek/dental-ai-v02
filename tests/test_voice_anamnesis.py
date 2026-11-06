@@ -103,6 +103,13 @@ def test_clinician_edit_does_not_reintroduce_stale_spoken_quote(monkeypatch):
     assert sent['clinical_fields']['medications']=={'value':'Hekimin düzelttiği ilaç bilgisi'}
     assert 'ESKI_YANLIS_ILAC_BILGISI' not in json.dumps(sent)
 
+def test_age_quote_cannot_reintroduce_identity_into_final_review(monkeypatch):
+    calls=provider(monkeypatch,{'questions':[],'contradictions':[],'clinical_items':[]})
+    final.finalize({'fields':{'age':{'value':'35','quote':'Adım PRIVATE_NAME, 35 yaşındayım.','edited':False}}},[])
+    sent=json.loads(calls[0]['messages'][0]['content'])
+    assert sent['clinical_fields']['age']=={'value':'35'}
+    assert 'PRIVATE_NAME' not in json.dumps(sent)
+
 @pytest.mark.parametrize('edited', ['false',0,None])
 def test_edited_flag_requires_an_actual_boolean(edited):
     with pytest.raises(core.VoiceError):

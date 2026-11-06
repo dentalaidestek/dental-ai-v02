@@ -408,3 +408,5 @@ Materyal kontrolünün tamamlanamama nedeni ikiye ayrılır: kullanılabilir kay
 Son tam yerel doğrulama: **603 Python geçti**, **11 Node geçti**; iki mevcut bağımlılık uyarısı. Bağımsız inceleme aile atfı, soru ve rol geçişi/tekrarlanan alıntı hatalarını yakaladı; RED→GREEN kapatıldı, son odaklı143test geçti. Son kaynak/tamlık testi gerçek model testi değildir.
 
 Bu oturumda yeni canlı model veya mikrofon aktarımı yapılmadı: önceki tarayıcı otomatik güvenlik incelemesinin işleme onayı/origin engeli aşılmadı. Yeni gerçek model, insan mikrofonu, fiziksel Android ve hekim onaylı altın test seti hâlâ doğrulama gerektirir. Sayfa yenilemesinde kalıcı taslak kurtarma, üretici IFU/ürün varyantlarının eksiksiz doğrulanması ve genel akademik CI sorunları çözülmüş sayılmaz. Yayın durumu aşağıya ayrıca eklenecek.
+
+Yayın öncesi ek gizlilik kontrolü: yaş alıntısı içinde isim geçerse final modele gereksiz kimlik taşınabiliyordu. RED regresyonla yakalandı; yaşın yalnız değeri aktarılır, yaş evidence_quote eklenmez. Bağımsız52 odaklı testte engel kalmadı. Son tam yerel koşu **604 Python/11 Node geçti** (iki mevcut bağımlılık uyarısı).
