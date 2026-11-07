@@ -4,6 +4,8 @@ import time
 import logging
 import hashlib
 import os
+import re
+import threading
 
 from app import voice_exam_core as core
 from app.voice_exam_clinical import grounded_items
@@ -13,6 +15,38 @@ from app.voice_exam_review_provider import review
 from app import voice_exam_materials as materials
 from app import voice_exam_anamnesis as anamnesis
 from app.voice_exam_questions import denied_regular_medication_question
+from app.clinical_privacy import redact_direct_identifiers
+
+
+_inflight_lock = threading.Lock()
+_inflight = set()
+
+
+def _private_conversation(text, context):
+    """Minimize recognizable identifiers locally; this is not anonymization."""
+    text = redact_direct_identifiers(core._string(text, core.MAX_CONVERSATION))
+    for name in ('first_name', 'last_name'):
+        identity = context.get('fields', {}).get(name, {}).get('value', '')
+        if identity:
+            text = re.sub(r'(?<!\w)' + re.escape(identity) + r'(?!\w)', '[REDACTED]', text, flags=re.I)
+    # Only explicit administrative spans are removed. Cost, fear, social support
+    # and financial barriers can affect dental care and stay in the conversation.
+    text = re.sub(r'(?i)(\b(?:adresim|ev adresim|ikamet adresim)\s*:?[ \t]*)[^,.!?;\n]*',
+                  r'\1[REDACTED]', text)
+    text = re.sub(r'(?i)(\b(?:maaşım|aylık gelirim)\s*:?[ \t]*)'
+                  r'\d[\d., ]*(?:(?:bin|milyon)\s*)?(?:TL|lira|dolar|euro)?',
+                  r'\1[REDACTED]', text)
+    return text
+
+
+def _private_data(value, context):
+    if isinstance(value, str):
+        return _private_conversation(value, context)
+    if isinstance(value, list):
+        return [_private_data(item, context) for item in value]
+    if isinstance(value, dict):
+        return {key: _private_data(item, context) for key, item in value.items()}
+    return value
 
 
 def private_insights(value):
@@ -68,17 +102,18 @@ def _contradictions(items, fields):
     return accepted
 
 
-def finalize(context, insights, uncertain="", *, previous_source_fingerprint=''):
+def finalize(context, insights, uncertain="", *, previous_source_fingerprint='', conversation_text='', request_scope=None):
     explicit_topics = isinstance(context, dict) and 'literature_topics' in context
     started = time.monotonic()
     uncertain = core._string(uncertain, 3000)
     context = core.clinical_context(context)
     insights = private_insights(insights)
+    conversation_text = _private_conversation(conversation_text, context)
     # Patient identity has no role in literature appraisal or final reasoning.
     fields = {k: v for k, v in context.get('fields', {}).items() if k not in {'first_name', 'last_name'}}
     if context.get('appointment', {}).get('quote'):
         fields['appointment'] = {'value': context['appointment']['quote'], 'quote': context['appointment']['quote']}
-    if not fields and not context.get('teeth') and not any(item.get('category') == 'CLINICAL_STATEMENT' for item in insights):
+    if not fields and not context.get('teeth') and not conversation_text and not any(item.get('category') == 'CLINICAL_STATEMENT' for item in insights):
         raise core.VoiceError('Son değerlendirme için önce muayene bilgisi ekle.')
     for tooth in context.get('teeth', []):
         value = 'Diş ' + tooth['tooth'] + ': ' + tooth['status']
@@ -97,6 +132,10 @@ def finalize(context, insights, uncertain="", *, previous_source_fingerprint='')
     source_retryable = retryable_unavailable(evidence['unavailable'])
     if source_retryable and not evidence['references']:
         raise core.VoiceError('Kaynaklara erişilemedi. Çıkarılan bilgiler ve görüşme metni korunuyor; kaynak değerlendirmesini yeniden deneyin.')
+    # A transient anchor lets Claude review details missed during extraction.
+    # It never enters literature search, the clinical summary or saved fields.
+    if conversation_text:
+        fields['conversation'] = {'value': conversation_text}
     anchor_schema = {'type': 'OBJECT', 'properties': {k: {'type': 'STRING'} for k in ('field', 'quote', 'text')},
                      'required': ['field', 'quote', 'text']}
     material_targets = materials.targets(context.get('literature_topics', []))
@@ -212,6 +251,20 @@ Doğrulanmış bir risk bulunmaması güvenlik onayı değildir. İletişim öne
 dosyasına yazma, özel hayat anlatısını veya kimlik bilgisini tekrar etme.
 Kaydedilecek alanları değiştirme; yalnız kontrol listesi üret. Sadece istenen JSON.'''
     prompt += '\nsource_coverage her konunun kaynak kapsamını gösterir. research_material_unverified/research_background_unverified, Claude web araştırmasının metin getirdiği ancak bu konuyla ilişkisini henüz doğrulamadığı anlamına gelir; bunları doğrulanmış konu kapsamı sayma. related_material yalnız konu ile ilişkili metindir, özgül işlem/komplikasyon doğrulaması değildir. background_only ve uncovered konularını açık kaynak eksikliği olarak sorulara yansıt; ilgili olmayan ilaç/başka dal belgesiyle doldurma. Dal düzeyindeki genel dokümandan konuşulan özgül işlemin yanlış/doğru olduğu sonucunu çıkarma. Olumsuzluk, geçmiş zaman, başkasına ait öykü ve şüpheyi koru.'
+    if conversation_text:
+        prompt += '''
+conversation_text, bu görüşmenin desteklenen sınırlar içindeki tam geçici metnidir;
+özet alanlarda atlanan klinik ayrıntıları, önceki/sonraki beyanları ve konuşmacı
+bağlamını birlikte değerlendir. Redakte edilen bölümlerde klinik içerik varsayma.
+clinical_fields için hekimin güncel düzeltmesi clinician_edited_fields listesinde
+ise bu düzeltmeye öncelik ver; eski konuşma ifadesiyle düzeltilmiş bilgiyi yeniden
+eski haline getirme. Yeni bir hasta alanı üretme. Yalnız metinde kalan klinik bir
+ayrıntıyı netleştirmek veya kaynağa bağlamak için field/patient_field=conversation
+kullanabilirsin; quote/patient_quote, conversation_text içinden birebir kısa alıntı
+olsun. conversation hasta dosyası alanı değildir. Tam metni, kimliği veya ilgisiz
+özel hayatı çıktıda tekrar etme. Kaynak bulunamayan iddia doğrulanmamıştır;
+bu nedenle hekim hatası veya güvenlik onayı sonucu çıkarma.
+'''
     # Short transient communication anchors share this final call, never patient writes.
     communication_fields = {(f'clinician_{i}' if item.get('category') == 'CLINICAL_STATEMENT' else f'communication_{i}'): {'value': item['quote']} for i, item in enumerate(insights)}
     fields.update(communication_fields)
@@ -258,14 +311,22 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
 '''
     material_candidates = materials.source_candidates(material_targets, evidence['references'])
     data = {'clinical_fields': {name: {'value': item['value'], **({'evidence_quote': item['quote']}
-                if name != 'age' and item.get('edited') is False and item.get('quote') else {})} for name, item in fields.items()}, 'teeth': context.get('teeth', []),
+                if name != 'age' and item.get('edited') is False and item.get('quote') else {})} for name, item in fields.items() if name != 'conversation'}, 'teeth': context.get('teeth', []),
             'appointment': context.get('appointment'), 'uncertain': uncertain, 'sources': evidence['references'],
             'anamnesis_scope': anamnesis.scope(),
             'communication_context': [{'field': f'clinician_{i}' if item.get('category') == 'CLINICAL_STATEMENT' else f'communication_{i}',
                 'category': item.get('response_type', item.get('category', 'UNATTRIBUTED')), 'quote': item['quote']} for i, item in enumerate(insights)],
             'material_review_targets': material_targets, 'material_source_candidates': material_candidates,
             'drug_name_candidates': name_candidates, 'source_coverage': evidence.get('source_coverage', [])}
+    for key in ('clinical_fields', 'teeth', 'appointment', 'uncertain', 'communication_context', 'drug_name_candidates'):
+        data[key] = _private_data(data[key], context)
     if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000:
+        raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
+    if conversation_text:
+        data['conversation_text'] = conversation_text
+        data['clinician_edited_fields'] = [name for name, field in context.get('fields', {}).items()
+                                           if field.get('edited') is True and name not in {'first_name', 'last_name'}]
+    if len(prompt) + len(json.dumps(data, ensure_ascii=False)) > 80000 + core.MAX_CONVERSATION:
         raise core.VoiceError('Muayene değerlendirme girdisi çok uzun. Taslak korunuyor; alanları kısaltıp yeniden deneyin.')
     # Bind reuse to clinical inputs, prompt and model as well as evidence. Ignore
     # retrieval timestamps so refreshing an unchanged public document is free.
@@ -277,8 +338,15 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
     if previous_source_fingerprint == source_fingerprint:
         return {'not_modified': True, 'source_fingerprint': source_fingerprint,
                 'review_status': {'source_retryable': source_retryable}, 'unavailable': evidence['unavailable']}
-    if not core._capacity.acquire(blocking=False):
-        raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
+    # Scope is supplied by the authenticated route, never accepted from JSON or
+    # sent to the provider. Keep only this key while its request is running.
+    inflight_key = (request_scope, source_fingerprint)
+    with _inflight_lock:
+        if inflight_key in _inflight:
+            raise core.VoiceError('Bu muayenenin son değerlendirmesi sürüyor. Taslak korunuyor; sonucu bekleyin.')
+        if not core._capacity.acquire(blocking=False):
+            raise core.VoiceError('Son değerlendirme meşgul. Özet korunuyor; tekrar deneyebilirsin.')
+        _inflight.add(inflight_key)
     stage = 'provider'
     counts = {'questions': -1, 'contradictions': -1, 'clinical_items': -1}
     try:
@@ -290,7 +358,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
                   'contradictions': _contradictions(result.get('contradictions'), fields)}
         # Exact reviewed values cannot reverse a negation during paraphrasing.
         output['summary'] = [{'field': name, 'quote': field['value'], 'text': field['value']}
-                             for name, field in fields.items() if not name.startswith(('communication_', 'clinician_'))][:12]
+                             for name, field in fields.items() if name != 'conversation' and not name.startswith(('communication_', 'clinician_'))][:12]
         appointment = context.get('appointment', {})
         if core.resolve_appointment(appointment.get('quote', ''), appointment.get('acceptance_quote', '')):
             output['contradictions'] = [item for item in output['contradictions'] if item['field'] != 'appointment']
@@ -329,6 +397,7 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
              'source_ids': sorted({item['source_id'] for item in output['clinical_items'] if item['patient_field'] == name})}
             for name, field in fields.items() if name.startswith('clinician_')]
         review_status = {'source_count': len(evidence['references']),
+                         'conversation_included': bool(conversation_text),
                          'source_retryable': source_retryable,
                          'unavailable_count': len(evidence['unavailable']),
                          'rejected_clinical_items': len(result.get('clinical_items', [])) - len(output['clinical_items']),
@@ -356,5 +425,8 @@ planının değerlendirilmesini söyleyebilirsin; hastaya kendi başına bırakm
             stage, kind, reason, counts['questions'], counts['contradictions'], counts['clinical_items'])
         raise core.VoiceError('Son değerlendirme tamamlanamadı. Taslak korunuyor; tekrar dene. Bu durum klinik güvenlik onayı değildir.') from None
     finally:
+        with _inflight_lock:
+            _inflight.discard(inflight_key)
         core._capacity.release()
+
 

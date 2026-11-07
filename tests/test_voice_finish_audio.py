@@ -51,4 +51,4 @@ def test_source_retry_fingerprint_is_validated_and_forwarded_after_access(app_cl
     assert client.post('/patients/2/voice-exam/finalize', json=body).status_code == 404
     assert not calls
     assert client.post('/patients/1/voice-exam/finalize', json=body).status_code == 200
-    assert calls == [{'previous_source_fingerprint': 'f' * 64}]
+    assert calls == [{'request_scope': (1, 1), 'previous_source_fingerprint': 'f' * 64}]

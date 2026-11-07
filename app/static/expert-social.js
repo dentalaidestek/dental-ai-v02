@@ -217,8 +217,16 @@
     const dialog = $("[data-composer]"),
       text = $("[data-post-text]");
     if(management && dialog)$('[data-panel="posts"]').prepend(dialog);
+    let sessionEnding=false;
+    window.addEventListener('dai:session-ending',()=>{
+      sessionEnding=true;clearTimeout(previewTimer);previewSequence++;
+      for(const media of draft.media)if(media.local)URL.revokeObjectURL(media.url);
+      draft={text:'',media:[],linkUrl:null,preview:null,key:uuid()};
+      if(text)text.value='';
+      try{sessionStorage.removeItem(draftKey)}catch{}
+    });
     function saveDraft() {
-      if (editing) return;
+      if (editing||sessionEnding) return;
       try {
         sessionStorage.setItem(
           draftKey,
@@ -1273,7 +1281,7 @@
         if(!social.hidden)setTab(name);
       });
       const publicationsPanel=$('[data-panel=publications]'),orcid=publicationsPanel.querySelector('.ds-orcid');if(orcid)publicationsPanel.prepend(orcid);
-      text.rows=3;text.value=draft.text;renderAttachments();renderPreview();fitText();setTab('posts');
+      text.rows=2;text.value=draft.text;renderAttachments();renderPreview();fitText();setTab('posts');
     }
     async function refreshStats(){
       const shell=root.closest('.expert-reference-profile');if(!shell)return;

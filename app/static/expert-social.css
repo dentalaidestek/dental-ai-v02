@@ -1085,3 +1085,44 @@ body.dai-app-shell .expert-manage-reference #expertManageTabs button[aria-select
 .expert-reference-profile .ds-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
 .ds-inline-composer .ds-edit-indicator{font-size:12px;color:#53677f;line-height:1.4;flex:1}
 body .expert-manage-reference #expertSocial [data-edit-cancel]{font-size:12px;padding:8px;min-height:40px;background:#eef4fb!important;white-space:nowrap}
+
+/* Match the supplied profile rhythm without inheriting the legacy page inset. */
+body:has(.expert-reference-profile)>main,body:has(.expert-manage-reference)>main{padding-top:0!important}
+.expert-reference-profile .expert-reference-back,.expert-manage-reference .expert-reference-back{margin-bottom:0}
+.expert-reference-profile .expert-public-avatar{box-sizing:border-box}
+.expert-reference-profile .expert-public-hero{gap:0}
+@media(max-width:600px){
+ .expert-reference-profile .expert-reference-back,.expert-manage-reference .expert-reference-back{font-size:18px;padding-bottom:12px}
+ .expert-reference-profile h1{font-size:19px;margin-top:10px}
+ .expert-reference-profile .expert-reference-topline{min-height:72px}
+ .expert-reference-profile .expert-reference-bio{font-size:14px;line-height:1.6;margin:10px 0}
+ .expert-reference-profile .expert-profile-badges{margin:12px 0}
+ .expert-reference-profile .expert-reference-stats{margin-top:14px}
+ .expert-reference-profile .ds-tabs{min-height:52px}
+ body .expert-reference-profile #expertSocial .ds-tabs button{padding-top:15px;padding-bottom:15px}
+}
+
+/* In management, publications follow the composer as in the supplied reference. */
+.expert-manage-reference #expertSocial{display:flex;flex-direction:column}
+.expert-manage-reference #expertSocial>[data-panel="posts"]{display:contents}
+.expert-manage-reference .ds-inline-composer{order:10}
+.expert-manage-reference [data-panel="publications"]{order:20;background:#fff;border:1px solid #e3e8ef;border-radius:22px;padding:18px;margin-bottom:18px}
+.expert-manage-reference [data-feed]{order:40}
+.expert-manage-reference [data-more-posts]{order:50}
+.expert-manage-reference .ds-notice{order:0}
+.expert-manage-reference .ds-orcid{border:0;box-shadow:none;margin:0;padding:0;border-radius:0}
+.expert-manage-reference .ds-section-head{border-top:1px solid #edf0f5;margin:16px 0 0;padding:16px 0 10px}
+.expert-manage-reference .ds-publications{border:0;border-radius:0;padding:0}
+.expert-manage-reference .ds-content-rules{order:30;border:1px solid #d7eaf6;background:#eff8fe;border-radius:18px;padding:16px;margin-bottom:18px;font-size:13px;color:#38566e}
+.ds-content-rules>summary{display:flex;align-items:center;gap:12px;cursor:pointer;font-weight:700}
+.ds-content-rules img{width:26px;height:26px}
+.ds-content-rules p{margin-bottom:0;font-size:12px;line-height:1.6}
+@media(max-width:600px){
+ .expert-manage-reference #expertSocial .ds-inline-composer textarea[data-post-text]{min-height:80px;line-height:1.5}
+ .expert-manage-reference .ds-inline-composer .ds-dialog-body{padding-top:14px}
+}
+/* Empty attachment containers must not reserve a blank media row. */
+.ds-attachments:empty{display:none;margin:0}
+body .expert-manage-reference #expertSocial .ds-inline-composer .ds-tool{padding:8px 12px!important;gap:4px;min-height:52px}
+.expert-manage-reference .ds-inline-composer .ds-tool img{width:22px;height:22px}
+.expert-manage-reference .ds-inline-composer .ds-dialog-head{padding-bottom:14px}

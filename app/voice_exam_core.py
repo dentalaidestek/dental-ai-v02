@@ -15,6 +15,8 @@ from app.voice_exam_taxonomy import MAX_TOPICS, semantic_catalogue
 
 MAX_AUDIO = 8 * 1024 * 1024
 MAX_TRANSCRIPT = 18000
+# The editor accumulates several bounded transcription chunks for final review.
+MAX_CONVERSATION = 72000
 MAX_RESPONSE = 180000
 MAX_CONTEXT = 32000
 MIMES = {'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'}
@@ -875,5 +877,6 @@ def extract(*, data=None, mime=None, transcript=None, context=None, transcriptio
             raise VoiceError('Ses çözümleme servisine ulaşılamadı. Kaydını tekrar deneyebilir veya metin girebilirsin.') from None
     finally:
         _capacity.release()
+
 
 

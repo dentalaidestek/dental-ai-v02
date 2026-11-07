@@ -134,12 +134,14 @@ def cleanup_slice(engine):
         ).all()
         remove_media(s, rows)
         # Temporary bibliographic suggestions carry no long-term user value.
-        s.exec(
-            delete(SocialPreview).where(
-                SocialPreview.created_at < now() - timedelta(days=2)
+        for model in (SocialPreview, DoiMatch):
+            expired = (
+                select(model.id)
+                .where(model.created_at < now() - timedelta(days=2))
+                .order_by(model.created_at, model.id)
+                .limit(500)
             )
-        )
-        s.exec(delete(DoiMatch).where(DoiMatch.created_at < now() - timedelta(days=2)))
+            s.exec(delete(model).where(model.id.in_(expired)))
         s.commit()
     for _ in range(2):
         with Session(engine, expire_on_commit=False) as s:

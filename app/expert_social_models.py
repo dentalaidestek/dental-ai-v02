@@ -15,6 +15,7 @@ class SocialPost(SQLModel, table=True):
         UniqueConstraint("author_id", "idempotency_key"),
         CheckConstraint("status IN ('PUBLISHED','PENDING','REJECTED','DELETED')"),
         Index("ix_socialpost_feed", "author_id", "status", "id"),
+        Index("ix_socialpost_moderation", "status", "id"),
         Index(
             "uq_socialpost_pin",
             "author_id",
@@ -67,6 +68,7 @@ class SocialComment(SQLModel, table=True):
         UniqueConstraint("author_id", "idempotency_key"),
         CheckConstraint("status IN ('PUBLISHED','PENDING','REJECTED','DELETED')"),
         Index("ix_socialcomment_thread", "post_id", "id"),
+        Index("ix_socialcomment_moderation", "status", "id"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
     post_id: int = Field(foreign_key="socialpost.id", ondelete="CASCADE")
@@ -126,6 +128,7 @@ class Publication(SQLModel, table=True):
         UniqueConstraint("expert_id", "title_key"),
         UniqueConstraint("expert_id", "source_orcid", "source_key"),
         Index("ix_publication_profile", "expert_id", "deleted", "year", "id"),
+        Index("ix_publication_moderation", "status", "id"),
         CheckConstraint("source IN ('MANUAL','ORCID','DOI_MATCH')"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -164,7 +167,7 @@ class DoiMatch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
     metadata_json: str
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = Field(default_factory=now, index=True)
 
 
 SOCIAL_MODELS = (

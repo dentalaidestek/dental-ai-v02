@@ -207,3 +207,13 @@ body.dai-app-shell #voice-exam .voice-edit-text,body.dai-app-shell #voice-exam [
 body.dai-app-shell #voice-exam .voice-edit-text{min-height:32px;display:inline-block;text-align:left}
 #voice-exam[data-review-mode="true"]>.voice-exam-body>.voice-exam-status{font-size:13px;margin:10px 0 16px;padding:0;font-weight:400;color:#64748b}
 #voice-exam[data-review-mode="true"] .voice-review-heading p{font-size:12px}
+
+/* One preparation heading and one status; private-data details stay available. */
+#voice-exam .voice-stage,#voice-exam .voice-eyebrow{display:none!important}
+#voice-exam .voice-exam-status:empty{display:none!important}
+#voice-exam[data-has-listened="false"] .voice-live-heading,#voice-exam[data-has-listened="false"] [data-live-title]{display:none!important}
+#voice-exam[data-has-listened="false"] [data-live-status]:not(.voice-error){font-size:12px}
+#voice-exam .voice-session-heading{background:transparent;border:0;padding-bottom:8px;margin-bottom:8px}
+#voice-exam .voice-history{padding:0;border:0;background:transparent;box-shadow:none}
+#voice-exam .voice-history>summary{font-size:13px;font-weight:500;min-height:40px;display:flex;align-items:center}
+#voice-exam[data-review-mode="true"] .voice-review{margin-top:8px;padding-top:0;border-top:0}

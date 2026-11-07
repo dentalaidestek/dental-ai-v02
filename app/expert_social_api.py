@@ -47,6 +47,7 @@ HEADERS = {
 }
 NETWORK_SLOTS = asyncio.Semaphore(3)
 IMAGE_SLOT = threading.BoundedSemaphore(1)
+BODY_READ_TIMEOUT = 30
 
 
 class Body(BaseModel):
@@ -178,25 +179,41 @@ class SocialBodyLimitMiddleware:
                 status_code=413,
                 headers=HEADERS,
             )(scope, receive, send)
-        messages = []
-        size = 0
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect":
-                return
-            size += len(message.get("body", b""))
-            if size > limit:
-                return await JSONResponse(
-                    {"detail": "İstek boyut sınırını aşıyor."},
-                    status_code=413,
-                    headers=HEADERS,
-                )(scope, receive, send)
-            messages.append(message)
-            if not message.get("more_body"):
-                break
+        # Bound allocation by payload bytes, rather than the number of ASGI
+        # chunks. Slow/empty chunks must not retain an upload admission forever.
+        data = bytearray()
+        try:
+            async with asyncio.timeout(BODY_READ_TIMEOUT):
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        return
+                    chunk = message.get("body", b"")
+                    if len(data) + len(chunk) > limit:
+                        return await JSONResponse(
+                            {"detail": "İstek boyut sınırını aşıyor."},
+                            status_code=413,
+                            headers=HEADERS,
+                        )(scope, receive, send)
+                    data.extend(chunk)
+                    if not message.get("more_body"):
+                        break
+        except TimeoutError:
+            return await JSONResponse(
+                {"detail": "İstek gövdesi zamanında alınamadı. Yeniden deneyin."},
+                status_code=408,
+                headers=HEADERS,
+            )(scope, receive, send)
+        payload = bytes(data)
+        del data
+        replayed = False
 
         async def replay():
-            return messages.pop(0) if messages else await receive()
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+            return await receive()
 
         return await self.app(scope, replay, send)
 
@@ -220,11 +237,16 @@ def register(app, main):
                 )
             ):
                 raise HTTPException(403, "İstek doğrulanamadı. Sayfayı yeniden açın.")
+        # Resolve MFA authorization before opening a content transaction. Reuse
+        # it only within this request, so admin reads also need one connection.
+        request.state.social_admin = (
+            main._admin_only(request) if u.role == "ADMIN" else None
+        )
         return u
 
     def admin(request):
         actor(request)
-        user = main._admin_only(request)
+        user = request.state.social_admin
         if not user:
             raise HTTPException(403, "Yönetici doğrulaması gerekiyor.")
         return user
@@ -236,6 +258,7 @@ def register(app, main):
         if (
             not u
             or not u.is_active
+            or u.role not in ("DOCTOR", "ADMIN")
             or not p
             or p.application_status != "APPROVED"
             or p.verification_status != "VERIFIED"
@@ -277,7 +300,7 @@ def register(app, main):
         p = s.exec(stmt.with_for_update() if lock else stmt).first()
         if not p or p.status == "DELETED":
             raise HTTPException(404, "Gönderi bulunamadı.")
-        is_admin = bool(user.role == "ADMIN" and main._admin_only(request))
+        is_admin = bool(request.state.social_admin)
         if user.id != p.author_id and not is_admin:
             if p.status != "PUBLISHED":
                 raise HTTPException(404, "Gönderi bulunamadı.")
@@ -314,6 +337,20 @@ def register(app, main):
             raise HTTPException(
                 409, "İçerik değişti. Güncel kaydı açıp yeniden deneyin."
             )
+
+    def previous_post(s, user, body, request_hash):
+        previous = s.exec(
+            select(SocialPost).where(
+                SocialPost.author_id == user.id,
+                SocialPost.idempotency_key == str(body.idempotency_key),
+            )
+        ).first()
+        if previous:
+            if previous.request_hash != request_hash:
+                raise HTTPException(409, "Bu paylaşım isteği farklı içerikle kullanıldı.")
+            if previous.status == "DELETED":
+                raise HTTPException(409, "Gönderi silinmiş. Yeni bir paylaşım oluşturun.")
+        return previous
 
     def post_rows(s, rows, user):
         if not rows:
@@ -444,16 +481,25 @@ def register(app, main):
             object_storage.write_bytes(reference, clean, content_type="image/jpeg")
         except object_storage.ObjectStorageError as exc:
             raise HTTPException(503, "Görsel yüklenemedi. Yeniden deneyin.") from exc
-        with Session(main.engine, expire_on_commit=False) as s:
-            try:
+        try:
+            with Session(main.engine, expire_on_commit=False) as s:
                 expert(s, user.id, write=True)
                 m = SocialMedia(owner_id=user.id, reference=reference)
                 s.add(m)
                 s.commit()
-            except Exception:
-                # On transaction failures, never retain an untracked object.
+        except Exception:
+            # Account revocation/transaction failure can happen during upload.
+            # Release the database before remote deletion, and retain a durable
+            # retry if storage is temporarily unavailable.
+            try:
                 object_storage.delete(reference)
-                raise
+            except (OSError, object_storage.ObjectStorageError):
+                from app.expert_social_maintenance import enqueue
+
+                with Session(main.engine) as cleanup:
+                    enqueue(cleanup, reference)
+                    cleanup.commit()
+            raise
         return m
 
     @r.post("/media")
@@ -476,7 +522,7 @@ def register(app, main):
             if not m:
                 raise HTTPException(404, "Görsel bulunamadı.")
             if u.id != m.owner_id:
-                is_admin = bool(u.role == "ADMIN" and main._admin_only(request))
+                is_admin = bool(request.state.social_admin)
                 if m.post_id:
                     load_post(s, m.post_id, u, request)
                 elif not is_admin:
@@ -569,25 +615,20 @@ def register(app, main):
     def create_post(request: Request, body: PostBody):
         u = actor(request)
         request_hash = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+        # A retry keeps its original result, including when the write allowance
+        # is exhausted. Release this read before shared rate admission opens its
+        # own transaction; never require a second connection while holding locks.
+        with Session(main.engine) as s:
+            previous = previous_post(s, u, body, request_hash)
+            if previous:
+                expert(s, u.id, write=True)
+                return post_rows(s, [previous], u)[0]
+        throttle(u, "post", 10, 600)
         with Session(main.engine, expire_on_commit=False) as s:
             expert(s, u.id, write=True, lock=True)
-            previous = s.exec(
-                select(SocialPost).where(
-                    SocialPost.author_id == u.id,
-                    SocialPost.idempotency_key == str(body.idempotency_key),
-                )
-            ).first()
+            previous = previous_post(s, u, body, request_hash)
             if previous:
-                if previous.request_hash != request_hash:
-                    raise HTTPException(
-                        409, "Bu paylaşım isteği farklı içerikle kullanıldı."
-                    )
-                if previous.status == "DELETED":
-                    raise HTTPException(
-                        409, "Gönderi silinmiş. Yeni bir paylaşım oluşturun."
-                    )
                 return post_rows(s, [previous], u)[0]
-            throttle(u, "post", 10, 600)
             text_value = body.text.strip()
             link = None
             try:
@@ -812,7 +853,7 @@ def register(app, main):
         u = actor(request)
         with Session(main.engine) as s:
             p = load_post(s, ident, u, request, lock=True)
-            if p.author_id != u.id and not main._admin_only(request):
+            if p.author_id != u.id and not request.state.social_admin:
                 raise HTTPException(403, "Bu gönderiyi silemezsiniz.")
             p.status = "DELETED"
             p.pinned = False
@@ -876,7 +917,7 @@ def register(app, main):
                 SocialComment.status != "DELETED",
             )
             # Pending comments are visible only to their writer and MFA administrators.
-            if not (u.role == "ADMIN" and main._admin_only(request)):
+            if not request.state.social_admin:
                 stmt = stmt.where(
                     or_(
                         SocialComment.status == "PUBLISHED",
@@ -897,29 +938,41 @@ def register(app, main):
     @r.post("/posts/{ident}/comments")
     def create_comment(request: Request, ident: int, body: CommentBody):
         u = actor(request)
-        with Session(main.engine, expire_on_commit=False) as s:
-            p = load_post(s, ident, u, request, lock=True)
-            if p.status != "PUBLISHED" or p.comments_closed:
-                raise HTTPException(409, "Bu gönderide yorumlar kapalı.")
+        value = body.text.strip()
+        if not value:
+            raise HTTPException(400, "Yorum boş olamaz.")
+
+        def previous_comment(s):
             old = s.exec(
                 select(SocialComment).where(
                     SocialComment.author_id == u.id,
                     SocialComment.idempotency_key == str(body.idempotency_key),
                 )
             ).first()
-            value = body.text.strip()
-            if not value:
-                raise HTTPException(400, "Yorum boş olamaz.")
+            if old and (
+                old.post_id != ident
+                or old.text != value
+                or old.parent_id != body.parent_id
+                or old.status == "DELETED"
+            ):
+                raise HTTPException(409, "Yorum isteği değişmiş.")
+            return old
+
+        with Session(main.engine) as s:
+            old = previous_comment(s)
             if old:
-                if (
-                    old.post_id != ident
-                    or old.text != value
-                    or old.parent_id != body.parent_id
-                    or old.status == "DELETED"
-                ):
-                    raise HTTPException(409, "Yorum isteği değişmiş.")
+                p = load_post(s, ident, u, request)
+                if p.status != "PUBLISHED" or p.comments_closed:
+                    raise HTTPException(409, "Bu gönderide yorumlar kapalı.")
                 return comment_rows(s, [old], u)[0]
-            throttle(u, "comment", 12)
+        throttle(u, "comment", 12)
+        with Session(main.engine, expire_on_commit=False) as s:
+            p = load_post(s, ident, u, request, lock=True)
+            if p.status != "PUBLISHED" or p.comments_closed:
+                raise HTTPException(409, "Bu gönderide yorumlar kapalı.")
+            old = previous_comment(s)
+            if old:
+                return comment_rows(s, [old], u)[0]
             if body.parent_id:
                 parent = s.get(SocialComment, body.parent_id)
                 if (
@@ -997,7 +1050,7 @@ def register(app, main):
             if not c or c.status == "DELETED":
                 raise HTTPException(404, "Yorum bulunamadı.")
             p = load_post(s, c.post_id, u, request)
-            if u.id not in (c.author_id, p.author_id) and not main._admin_only(request):
+            if u.id not in (c.author_id, p.author_id) and not request.state.social_admin:
                 raise HTTPException(403, "Bu yorumu yönetemezsiniz.")
             c.status = "DELETED"
             c.text = ""
@@ -1277,13 +1330,22 @@ def register(app, main):
         try:
             async with NETWORK_SLOTS:
                 rows = await bibliography.orcid_works(orcid)
-        except Exception:
+                if len(rows) > bibliography.MAX_ORCID_WORKS:
+                    raise bibliography.OrcidWorkLimitError()
+        except Exception as exc:
+            limited = isinstance(exc, bibliography.OrcidWorkLimitError)
+            error_code = "ORCID_WORK_LIMIT" if limited else "ORCID_UNAVAILABLE"
+            message = (
+                str(exc)
+                if limited
+                else "ORCID yayınları alınamadı. Manuel yayın ekleyebilirsiniz."
+            )
 
             def fail():
                 with Session(main.engine) as s:
                     sync = s.get(OrcidSync, u.id)
                     sync.status = "FAILED"
-                    sync.error_code = "ORCID_UNAVAILABLE"
+                    sync.error_code = error_code
                     s.add(sync)
                     s.commit()
 
@@ -1291,7 +1353,8 @@ def register(app, main):
             return JSONResponse(
                 {
                     "ok": False,
-                    "message": "ORCID yayınları alınamadı. Manuel yayın ekleyebilirsiniz.",
+                    "error_code": error_code,
+                    "message": message,
                 },
                 status_code=200,
                 headers=HEADERS,
@@ -1300,14 +1363,40 @@ def register(app, main):
         def finish():
             with Session(main.engine) as s:
                 profile = expert(s, u.id, lock=True, write=True)
+                keys = {
+                    bibliography.fingerprint(v["title"], v["year"], v["doi"])
+                    for v in rows
+                }
+                title_keys = {
+                    bibliography.fingerprint(v["title"], v["year"], None)
+                    for v in rows
+                }
+                dois = {v["doi"] for v in rows if v["doi"]}
+                imported_sources = {v["source_key"] for v in rows}
                 existing = s.exec(
-                    select(Publication).where(Publication.expert_id == u.id)
+                    select(
+                        Publication.fingerprint,
+                        Publication.doi,
+                        Publication.title_key,
+                        Publication.source_orcid,
+                        Publication.source_key,
+                    ).where(
+                        Publication.expert_id == u.id,
+                        or_(
+                            Publication.fingerprint.in_(keys),
+                            Publication.title_key.in_(title_keys),
+                            Publication.doi.in_(dois),
+                            (Publication.source_orcid == orcid)
+                            & Publication.source_key.in_(imported_sources),
+                        ),
+                    )
                 ).all()
                 fingerprints = {x.fingerprint for x in existing}
                 doi_set = {x.doi for x in existing if x.doi}
                 titles = {x.title_key for x in existing}
                 source_keys = {(x.source_orcid, x.source_key) for x in existing}
                 count = 0
+                imported = []
                 for values in rows:
                     key = bibliography.fingerprint(
                         values["title"], values["year"], values["doi"]
@@ -1335,14 +1424,18 @@ def register(app, main):
                         **values,
                     )
                     s.add(publication)
-                    s.flush()
-                    decision(s, "PUBLICATION", publication)
+                    imported.append(publication)
                     fingerprints.add(key)
                     titles.add(title_key)
                     source_keys.add((orcid, values["source_key"]))
                     if values["doi"]:
                         doi_set.add(values["doi"])
                     count += 1
+                # Obtain generated IDs in one bounded flush, then insert audit
+                # rows together. Avoid two round trips for every ORCID work.
+                s.flush()
+                for publication in imported:
+                    decision(s, "PUBLICATION", publication)
                 profile.orcid_url = "https://orcid.org/" + orcid
                 s.add(profile)
                 sync = s.get(OrcidSync, u.id)
