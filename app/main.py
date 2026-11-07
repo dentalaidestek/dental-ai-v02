@@ -181,6 +181,11 @@ class EmailVerificationChallenge(SQLModel, table=True):
     verified_at: Optional[datetime] = None
 
 
+class AdminVerifiedSession(SQLModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int = Field(index=True)
+
+
 class AdminLoginChallenge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
@@ -1915,6 +1920,12 @@ def init_db():
     with engine.begin() as conn:
         # Additive migration for existing installations; create_all handles fresh databases.
         if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminverifiedsession_user_id ON adminverifiedsession (user_id)')
+        elif engine.dialect.name == "sqlite":
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminverifiedsession_user_id ON adminverifiedsession (user_id)')
+        if engine.dialect.name == "postgresql":
             conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminloginchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, token_hash VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TIMESTAMP)')
             conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminloginchallenge_user_id ON adminloginchallenge (user_id)')
         elif engine.dialect.name == "sqlite":
@@ -2352,7 +2363,7 @@ def get_current_user(request: Request) -> Optional[User]:
     return user
 
 
-def create_user_session(response: RedirectResponse, user_id: int) -> None:
+def create_user_session(response: RedirectResponse, user_id: int, *, admin_otp_verified: bool = False) -> None:
     token = create_session_token()
 
     expires_at = _utcnow_naive().replace(
@@ -2370,6 +2381,8 @@ def create_user_session(response: RedirectResponse, user_id: int) -> None:
 
     with Session(engine, expire_on_commit=False) as s:
         s.add(session_token)
+        if admin_otp_verified:
+            s.add(AdminVerifiedSession(token_hash=hash_session_token(token), user_id=user_id))
         s.commit()
 
     response.set_cookie(
@@ -3766,6 +3779,10 @@ def login_user(
                 status_code=401,
             )
 
+        # All administrator logins must go through the dedicated two-factor gate.
+        if user.role == "ADMIN":
+            _clear_web_login_failures(login_key)
+            return RedirectResponse(ADMIN_CENTER_PATH, status_code=303)
         _clear_web_login_failures(login_key)
         if needs_password_rehash(user.password_hash):
             user.password_hash = hash_password(password)
@@ -12155,7 +12172,14 @@ ADMIN_FIXED_EMAIL = "dentalaidestek@gmail.com"
 
 def _admin_only(request: Request) -> Optional[User]:
     user = get_current_user(request)
-    return user if user and user.role == "ADMIN" and user.is_active and (user.email or "").strip().lower() == ADMIN_FIXED_EMAIL and user.email_verified_at else None
+    if not user or user.role != "ADMIN" or not user.is_active or (user.email or "").strip().lower() != ADMIN_FIXED_EMAIL or not user.email_verified_at:
+        return None
+    cookie = request.cookies.get(SESSION_COOKIE, "")
+    if not cookie:
+        return None
+    with Session(engine) as s:
+        verified = s.get(AdminVerifiedSession, hash_session_token(cookie))
+        return user if verified and verified.user_id == user.id else None
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -12423,7 +12447,8 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         if user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL:
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
         # First verification and subsequent logins both require a fresh Gmail code.
-        initial_email_verification_required = not bool(user.email_verified_at)
+        if not user.email_verified_at:
+            pass  # The first successful OTP establishes email verification.
         _clear_web_login_failures(login_rate_key)
         now = _utcnow_naive()
         # Do not allow an existing authenticated admin session to bypass the new
@@ -12487,7 +12512,7 @@ def admin_login_verify(request: Request, code: str = Form(...)):
         s.commit()
         response = RedirectResponse(ADMIN_CENTER_PATH, status_code=303)
         response.delete_cookie("admin_login_pending", path=ADMIN_CENTER_PATH)
-        create_user_session(response, user.id)
+        create_user_session(response, user.id, admin_otp_verified=True)
         return response
 
 
