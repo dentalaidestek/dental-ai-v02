@@ -150,7 +150,13 @@ def review(prompt, data, schema, *, extraction=False):
                  'literature_topics', 'removed_fields', 'removed_teeth')}}
             result = {key: result.get(key, defaults.get(key)) for key in schema['required']}
     else:
-        if message.get('stop_reason') != 'end_turn':
+        stop = message.get('stop_reason')
+        usage = message.get('usage')
+        count = usage.get('output_tokens') if isinstance(usage, dict) else None
+        logging.getLogger(__name__).warning('voice_final_provider stop=%s output_tokens=%d',
+            stop if isinstance(stop, str) and stop in {'end_turn', 'max_tokens', 'refusal', 'tool_use', 'pause_turn', 'stop_sequence'} else 'other',
+            count if type(count) is int and 0 <= count <= 10000000 else -1)
+        if stop != 'end_turn':
             raise ValueError('Incomplete clinical review')
         result = json.loads(''.join(block.get('text', '') for block in message.get('content', [])
                                   if block.get('type') == 'text'))

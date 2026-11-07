@@ -235,6 +235,34 @@ def _specific_topic_supported(topic, quote):
         r'\b(?:lamine|laminat(?:e|es|lar|ları)?|veneers?|yaprak\s+porselen)\b', quote, re.IGNORECASE))
 
 
+def _split_explicit_denials(fact, anchor):
+    """Route only wholly unambiguous, current patient denials; no diagnosis rules."""
+    if (not isinstance(fact, dict) or fact.get('subject') != 'PATIENT'
+            or fact.get('temporality') != 'NEGATED'
+            or fact.get('field') not in {'medical_history', 'medications', 'allergies'}):
+        return [fact]
+    quote = fact.get('quote')
+    if not isinstance(quote, str):
+        return [fact]
+    # Never assemble separately grounded words across people/utterances.
+    quote = appointment_evidence_quote(quote, anchor)
+    if not quote:
+        return [fact]
+    clauses = [part.strip() for part in re.split(r'[;,.]', quote) if part.strip()]
+    if not 1 <= len(clauses) <= 2:
+        return [fact]
+    routed = []
+    for part in clauses:
+        if re.fullmatch(r'(?:düzenli\s+)?(?:bir\s+)?(?:ilaç|ilacım|ilaçlarım)\s+yok|(?:düzenli\s+)?ilaç\s+kullanmıyorum', part, re.IGNORECASE):
+            field = 'medications'
+        elif re.fullmatch(r'(?:bildiğim\s+)?(?:bir\s+)?alerji(?:m)?(?:\s+bildiğim)?(?:\s+de)?\s+yok', part, re.IGNORECASE):
+            field = 'allergies'
+        else:
+            return [fact]
+        routed.append({**fact, 'field': field, 'quote': part, 'value': part})
+    return routed
+
+
 def normalize(result, evidence=None):
     """Only retain suggestions with an exact quotation in the transcript."""
     if not isinstance(result, dict):
@@ -251,6 +279,7 @@ def normalize(result, evidence=None):
     if not isinstance(facts, list) or len(facts) > 40:
         raise VoiceError('Klinik bilgi sınırı aşıldı.')
     facts = [{**fact, 'subject': _fact_subject(fact.get('subject'))} if isinstance(fact, dict) and 'subject' in fact else fact for fact in facts]
+    facts = [part for fact in facts for part in _split_explicit_denials(fact, anchor)]
     nonpatient_quotes, family_quotes = [], []
     for fact in facts:
         if not isinstance(fact, dict):
@@ -385,6 +414,9 @@ def normalize(result, evidence=None):
         if field == 'clinical_findings' and fact['temporality'] == 'PLANNED':
             # Remap before question filtering: "Film çekelim mi?" is a plan.
             field = 'plan'
+        if field == 'clinical_findings' and _quote_roles(quote, anchor) == {'hasta'}:
+            # An explicitly patient-spoken symptom is not an observed exam finding.
+            field = 'chief_complaint'
         if fact.get('subject') == 'PATIENT' and nonpatient(quote):
             # Withhold the ambiguous fact, not the independently grounded exam.
             # Existing nonpatient filtering also excludes its record/source/chart
@@ -420,7 +452,7 @@ def normalize(result, evidence=None):
                                             'PATIENT_RESPONSE' if roles == {'hasta'} else 'UNATTRIBUTED_RESPONSE')
                     output['communication'].append(item)
             continue
-        if field in {'medications', 'chief_complaint', 'medical_history', 'plan', 'clinical_findings', 'dental_history', 'oral_habits', 'family_history', 'materials'}:
+        if field in {'medications', 'allergies', 'chief_complaint', 'medical_history', 'plan', 'clinical_findings', 'dental_history', 'oral_habits', 'family_history', 'materials'}:
             # Keep symptoms/anatomy literal too: 'üstündeki kaplama' is not upper jaw.
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
