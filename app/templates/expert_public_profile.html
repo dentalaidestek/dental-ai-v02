@@ -8,8 +8,7 @@
     <span class="expert-public-availability {% if profile.availability!='AVAILABLE' %}off{% endif %}">{% if profile.availability=='AVAILABLE' %}Müsait{% else %}Meşgul{% endif %}</span>
   </section>
   <section class="expert-public-metrics"><div><small>Değerlendirme</small><b>{% if rating_avg %}★ {{ rating_avg }}/5{% else %}Yeni uzman{% endif %}</b><span>{{ review_count }} doğrulanmış görüş</span></div><div><small>Ortalama yanıt</small><b>{% if performance.avg_response_minutes is not none %}{{ performance.avg_response_minutes }} dk{% else %}—{% endif %}</b><span>Son görüşmelere göre</span></div><div><small>Danışmanlık</small><b>{{ profile.consultation_price }} TL</b><span>Vaka başına</span></div></section>
-  {% if profile.bio %}<section class="expert-public-section"><h2>Uzman hakkında</h2><p>{{ profile.bio }}</p></section>{% endif %}
-  {% if profile.publications_text or profile.orcid_url %}<section class="expert-public-section expert-publications"><h2>Akademik yayınlar</h2><p class="expert-publications-note">Aşağıdaki yayınlar uzman tarafından eklenmiştir. ORCID bağlantısı harici akademik profili açar; burada otomatik yayın doğrulaması yapılmamaktadır.</p>{% if profile.publications_text %}<div class="expert-publication-list">{% for publication in profile.publications_text.splitlines() if publication.strip() %}<div class="expert-publication-item"><span aria-hidden="true">▤</span><p>{{ publication }}</p></div>{% endfor %}</div>{% endif %}{% if profile.orcid_url %}<a class="expert-publication-orcid" href="{{ profile.orcid_url }}" rel="noopener noreferrer" target="_blank">ORCID akademik profilini aç ↗</a>{% endif %}</section>{% endif %}
+  {% with social_expert_id=expert.id, social_owner=(user.id==expert.id) %}{% include "_expert_social.html" %}{% endwith %}
   <section class="expert-public-trust"><b>Güvenli danışmanlık</b><span>Dosyalar yalnızca görüşmedeki iki kullanıcı tarafından görüntülenir. Ödeme özelliği etkinleştirildiğinde iyzico üzerinden alınacaktır.</span></section>
   {% if user.id==expert.id %}<div class="expert-disabled expert-profile-sticky">Bu sizin uzman profiliniz</div>{% elif profile.availability=="AVAILABLE" and active_count < 5 %}<div class="expert-profile-sticky"><span><small>Danışmanlık ücreti</small><b>{{ profile.consultation_price }} TL</b></span><a class="expert-primary" href="/expert-support/request/{{ expert.id }}{% if patient_id %}?patient_id={{ patient_id }}{% endif %}">Danışmanlık başlat</a></div>{% else %}<div class="expert-disabled expert-profile-sticky">Şu an yeni vaka kabul etmiyor</div>{% endif %}
 </div>
@@ -21,7 +20,7 @@
     if(refreshPromise)return refreshPromise;
     refreshPromise=fetch(location.href,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"XMLHttpRequest"}})
       .then(r=>{if(!r.ok)throw new Error("profile refresh failed");return r.text();})
-      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-public-page"),current=document.querySelector(".expert-public-page");if(next&&current)current.replaceWith(next);})
+      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-public-page"),current=document.querySelector(".expert-public-page");if(next&&current){for(const selector of ['.expert-public-hero','.expert-public-metrics']){const a=current.querySelector(selector),b=next.querySelector(selector);if(a&&b)a.replaceWith(b);}}})
       .catch(()=>{})
       .finally(()=>{refreshPromise=null;});
     return refreshPromise;
@@ -30,3 +29,4 @@
 })();
 </script>
 {% endblock %}
+

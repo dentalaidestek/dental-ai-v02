@@ -52,6 +52,8 @@ def begin_account_erasure(
 
     from app.membership_verification import MembershipVerification
     extra_storage: list[str] = []
+    from app.expert_social_maintenance import erase_user_content
+    erase_user_content(session, user_id)
     for verification in session.exec(select(MembershipVerification).where(MembershipVerification.user_id == user_id)).all():
         extra_storage.append(verification.document_path)
         session.delete(verification)
@@ -166,4 +168,5 @@ def begin_account_erasure(
         detail=f"actor={actor}; registration_block={int(block_registration)}",
     ))
     return extra_storage
+
 
