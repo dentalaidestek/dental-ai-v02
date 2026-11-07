@@ -181,6 +181,16 @@ class EmailVerificationChallenge(SQLModel, table=True):
     verified_at: Optional[datetime] = None
 
 
+class AdminLoginChallenge(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    token_hash: str = Field(index=True, unique=True)
+    code_hash: str
+    expires_at: datetime
+    attempts: int = 0
+    used_at: Optional[datetime] = None
+
+
 class EmailChangeChallenge(SQLModel, table=True):
     user_id: int = Field(primary_key=True)
     new_email: str
@@ -3501,6 +3511,8 @@ def begin_email_change(request: Request, new_email: str = Form(...), password: s
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    if user.role == "ADMIN":
+        return HTMLResponse("Yönetici e-posta adresi değiştirilemez.", status_code=403)
     _check_web_login_rate(request, "email-change:" + str(user.id))
     email = new_email.strip().lower()
     if len(email) > 254 or not re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", email):
@@ -3549,6 +3561,8 @@ def confirm_email_change(request: Request, code: str = Form(...)):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    if user.role == "ADMIN":
+        return HTMLResponse("Yönetici e-posta adresi değiştirilemez.", status_code=403)
     _check_web_login_rate(request, "email-change-confirm:" + str(user.id))
     with Session(engine, expire_on_commit=False) as session:
         db_user = session.exec(select(User).where(User.id == user.id).with_for_update()).one()
@@ -12126,11 +12140,12 @@ def create_analysis(
 
 
 ADMIN_CENTER_PATH = "/dayedunyaxayine4721"
+ADMIN_FIXED_EMAIL = "dentalaidestek@gmail.com"
 
 
 def _admin_only(request: Request) -> Optional[User]:
     user = get_current_user(request)
-    return user if user and user.role == "ADMIN" and user.is_active else None
+    return user if user and user.role == "ADMIN" and user.is_active and (user.email or "").strip().lower() == ADMIN_FIXED_EMAIL and user.email_verified_at else None
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -12387,16 +12402,72 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
     username = username.strip()
     login_rate_key = _check_web_login_rate(request, username)
     with Session(engine, expire_on_commit=False) as s:
-        user=s.exec(select(User).where(User.username == username.strip())).first()
+        user = s.exec(select(User).where(User.username == username)).first()
         if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
             _record_web_login_failure(login_rate_key)
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
-        if not user.email or not user.email_verified_at:
-            _clear_web_login_failures(login_rate_key)
-            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici hesabının doğrulanmış e-posta adresi bulunmuyor."}, status_code=403)
+        # An administrator cannot redirect the second factor to another mailbox.
+        if user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL:
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
         _clear_web_login_failures(login_rate_key)
-        response=RedirectResponse(ADMIN_CENTER_PATH,status_code=303)
-        create_user_session(response,user.id)
+        now = _utcnow_naive()
+        # Only one active challenge per admin; a new login invalidates older codes.
+        for old in s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.user_id == user.id)).all():
+            s.delete(old)
+        token = secrets.token_urlsafe(32)
+        code = f"{secrets.randbelow(1000000):06d}"
+        challenge = AdminLoginChallenge(user_id=user.id, token_hash=hash_session_token(token), code_hash=hash_session_token(code), expires_at=now + timedelta(minutes=10))
+        s.add(challenge)
+        s.commit()
+        try:
+            send_email_verification_code(ADMIN_FIXED_EMAIL, code)
+        except Exception:
+            s.delete(challenge)
+            s.commit()
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Doğrulama kodu gönderilemedi. Lütfen tekrar deneyin."}, status_code=503)
+        response = RedirectResponse(ADMIN_CENTER_PATH + "/verify", status_code=303)
+        response.set_cookie("admin_login_pending", token, httponly=True, secure=True, samesite="strict", max_age=600, path=ADMIN_CENTER_PATH)
+        return response
+
+
+@app.get(ADMIN_CENTER_PATH + "/verify", response_class=HTMLResponse)
+def admin_login_verify_page(request: Request):
+    if not request.cookies.get("admin_login_pending"):
+        return RedirectResponse(ADMIN_CENTER_PATH, status_code=303)
+    return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":None})
+
+
+@app.post(ADMIN_CENTER_PATH + "/verify", response_class=HTMLResponse)
+def admin_login_verify(request: Request, code: str = Form(...)):
+    if request.headers.get("sec-fetch-site") == "cross-site" or not _push_request_same_origin(request):
+        return HTMLResponse("İstek kaynağı doğrulanamadı.", status_code=403)
+    token = request.cookies.get("admin_login_pending", "")
+    if not token or not re.fullmatch(r"[0-9]{6}", code.strip()):
+        return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kod geçersiz."}, status_code=400)
+    with Session(engine, expire_on_commit=False) as s:
+        challenge = s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.token_hash == hash_session_token(token)).with_for_update()).first()
+        now = _utcnow_naive()
+        if not challenge or challenge.used_at or challenge.expires_at <= now or challenge.attempts >= 5:
+            return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kodun süresi dolmuş. Yeniden giriş yapın."}, status_code=403)
+        user = s.exec(select(User).where(User.id == challenge.user_id).with_for_update()).first()
+        if not user or not user.is_active or user.role != "ADMIN" or (user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL):
+            return HTMLResponse("Yönetici doğrulaması başarısız.", status_code=403)
+        if not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
+            challenge.attempts += 1
+            s.add(challenge)
+            s.commit()
+            return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kod yanlış veya geçersiz."}, status_code=401)
+        challenge.used_at = now
+        challenge.code_hash = secrets.token_urlsafe(32)
+        user.email = ADMIN_FIXED_EMAIL
+        if not user.email_verified_at:
+            user.email_verified_at = now
+        s.add(challenge)
+        s.add(user)
+        s.commit()
+        response = RedirectResponse(ADMIN_CENTER_PATH, status_code=303)
+        response.delete_cookie("admin_login_pending", path=ADMIN_CENTER_PATH)
+        create_user_session(response, user.id)
         return response
 
 
