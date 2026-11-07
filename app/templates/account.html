@@ -239,18 +239,16 @@ body.dai-app-shell .account-container .account-photo-entry{display:inline-block;
     </div></details>
 
     {% if expert_nav and expert_nav.eligible %}
-    <section class="account-card account-expert-entry" id="expert-info">
-      <h2>Uzman profilim</h2>
+    <details class="account-section" id="expert-info"><summary><span>Uzman profilim<small>Başvuru, doğrulama ve danışmanlık yönetimi</small></span></summary><div class="account-section-content account-expert-entry">
       <p>{% if expert_verified %}Uzman profiliniz doğrulandı. Danışmanlık bilgilerinizi ve müsaitliğinizi yönetin.{% elif account_expert and account_expert.application_status=='SUBMITTED' %}Başvurunuz incelemede. Bilgilerinizi ve başvuru durumunu buradan takip edin.{% elif account_expert and account_expert.application_status=='REJECTED' %}Başvurunuz onaylanmadı. Bilgilerinizi kontrol edip belgenizi yeniden gönderebilirsiniz.{% else %}Uzman olarak danışmanlık vermek için profilinizi oluşturun.{% endif %}</p>
       <div class="account-action-row"><a class="account-action-button account-logout-button" href="/expert-support/profile">{{ 'Uzman profilimi yönet' if account_expert else 'Uzman olarak başvur' }}</a>{% if expert_verified %}<a class="account-action-button member-secondary" href="/expert-support/expert/{{ user.id }}">Yayınlanan profilimi gör</a>{% endif %}</div>
-    </section>
+    </div></details>
     {% else %}
-    <section class="account-card account-expert-entry" id="expert-info">
-      <h2>Uzman olarak danışmanlık ver</h2>
+    <details class="account-section" id="expert-info"><summary><span>Uzman olarak danışmanlık ver<small>Uzmanlık koşulları ve başvuru bilgileri</small></span></summary><div class="account-section-content account-expert-entry">
       <p>Uzman Diş Hekimi, Dr. Öğr. Üyesi, Doç. Dr. veya Prof. Dr. unvanınız varsa mesleki durumunuzu güncelleyip uzman başvurusu yapabilirsiniz. Öğrenci, diş hekimi ve asistan hesapları bu başvuruya uygun değildir.</p>
       <p>Üyelik belgesi onayı uzman yetkisi vermez. Uzman başvurusu, branş ve uzmanlık belgesi yönetici tarafından ayrıca incelenir.</p>
       <a class="account-action-button member-secondary" href="#professional-info">Mesleki durumumu gör</a>
-    </section>
+    </div></details>
     {% endif %}
 
 
