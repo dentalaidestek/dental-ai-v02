@@ -12301,8 +12301,7 @@ def admin_first_setup(request: Request, token: str = Form(...), password: str = 
             if existing:return page("Bu kullanıcı adı başka bir hesapta kullanılıyor.",409)
             admin=User(username=ADMIN_BOOTSTRAP_USERNAME,role="ADMIN",display_name="Dental AI Yöneticisi",is_active=True)
             s.add(admin);s.flush()
-        if admin.email and admin.email.strip().lower() != ADMIN_FIXED_EMAIL:
-            return page("Yönetici e-postası sabit doğrulama adresiyle eşleşmiyor. Güvenli kurtarma gerekli.",403)
+        # Bind the bootstrap admin to the fixed mailbox; login still requires its OTP.
         admin.email = ADMIN_FIXED_EMAIL
         admin.password_hash=hash_password(password);admin.is_active=True;s.add(admin)
         s.add(AdminAuditLog(admin_user_id=admin.id,action="ADMIN_INITIAL_PASSWORD_SET",target_user_id=admin.id,detail="Tek kullanımlık güvenli kurulum"));s.commit()
@@ -12446,9 +12445,7 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         if not user or user.role != "ADMIN" or not user.is_active or not user.password_hash or not verify_password(password, user.password_hash):
             _record_web_login_failure(login_rate_key)
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Kullanıcı adı veya şifre hatalı."}, status_code=401)
-        # An administrator cannot redirect the second factor to another mailbox.
-        if user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL:
-            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
+        # Always send to the fixed mailbox, regardless of the legacy stored email.
         # First verification and subsequent logins both require a fresh Gmail code.
         _clear_web_login_failures(login_rate_key)
         now = _utcnow_naive()
@@ -12505,7 +12502,7 @@ def admin_login_verify(request: Request, code: str = Form(...)):
         now = _utcnow_naive()
         if not challenge or challenge.used_at or challenge.expires_at <= now or challenge.attempts >= 5:
             return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kodun süresi dolmuş. Yeniden giriş yapın."}, status_code=403)
-        if not user or not user.is_active or user.role != "ADMIN" or (user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL):
+        if not user or not user.is_active or user.role != "ADMIN":
             return HTMLResponse("Yönetici doğrulaması başarısız.", status_code=403)
         if not re.fullmatch(r"[0-9]{6}", code.strip()) or not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
             challenge.attempts += 1
