@@ -7,7 +7,7 @@ const css=fs.readFileSync('app/static/voice-exam.css','utf8');
 const tick=()=>new Promise(r=>setTimeout(r,2));
 async function until(test,label){for(let i=0;i<200;i++){if(test())return;await tick()}assert.fail('Timed out: '+label)}
 
-async function fixture(seed=null){
+async function fixture(seed=null,nativeRestore=false){
   const errors=[],calls=[],deadlines=[];
   const console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
   const dom=new JSDOM('<!doctype html><style>'+css+'</style><section class="voice-session-page">'+rendered.stdout+'</section>',{url:'https://voice.example/voice-exams/1/session',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:console});
@@ -60,7 +60,10 @@ async function fixture(seed=null){
     return {ok:body.ok,json:async()=>body};
   };
   for(const file of ['voice-finish-draft.js','voice-exam.js','voice-exam-live.js'])w.eval(fs.readFileSync('app/static/'+file,'utf8'));
+  if(nativeRestore){get('[data-voice-transcript]').value=nativeRestore==='stale'?'OLD_EXPIRED_TRANSCRIPT':'';get('[data-voice-consent]').checked=true;get('[data-voice-confirm]').checked=true;const input=get('[data-field-row] textarea');if(input)input.value='Tarayıcının eski form değeri'}
+  w.dispatchEvent(new w.PageTransitionEvent('pageshow',{persisted:false}));
   await until(()=>!get('[data-live-panel]').hidden,'capabilities');
+  await until(()=>!get('[data-voice-transcript]').disabled,'recovered form ready');
   async function begin(){get('[data-voice-consent]').checked=true;get('[data-live-start]').click();await until(()=>root.dataset.liveState==='listening','listen')}
   async function finish(){get('[data-live-finish]').click();get('[data-live-finish]').click();await until(()=>!get('[data-voice-save]').disabled,'finish result')}
   return {w,get,root,calls,errors,deadlines,begin,finish,sessionData:()=>w.sessionStorage.getItem('dai:voice-draft:v1:7:1'),speech:text=>socket.message({type:'final',text}),setMode:mode=>sourceMode=mode,setFlush:value=>flush=value,
@@ -68,7 +71,13 @@ async function fixture(seed=null){
 }
 
 (async()=>{
-  let f=await fixture();let restoredSeed;
+  let f=await fixture(null,true);let restoredSeed;
+  try{await tick();assert.equal(f.get('[data-voice-consent]').checked,false,'Native consent must be reset even without a cached draft');assert.equal(f.get('[data-voice-confirm]').checked,false)}finally{f.close()}
+  for(const badSeed of [null,'{"broken":true}',JSON.stringify({version:1,savedAt:Date.now()-31*60*1000,text:'Expired source'})]){
+    f=await fixture(badSeed,'stale');
+    try{await tick();assert.equal(f.get('[data-voice-transcript]').value,'','Native history cannot revive discarded or expired transcript');assert.equal(f.sessionData(),null,'Stale native values must not create a fresh cache')}finally{f.close()}
+  }
+  f=await fixture();
   try{
     await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
     f.get('[data-field-row] input').click();f.get('[data-voice-confirm]').click();
@@ -89,6 +98,14 @@ async function fixture(seed=null){
     assert.equal(f.calls.some(c=>c.url.endsWith('/text')||c.url.endsWith('/finalize')),false,'Completed stages survive reload without another model call');
     f.get('[data-voice-discard]').click();assert.equal(f.sessionData(),null,'Discard clears session recovery');
   }finally{f.close()}
+  f=await fixture(restoredSeed,true);
+  try{
+    await tick();
+    assert.equal(f.get('[data-voice-transcript]').value,'Soğuk içemiyorum.','Browser native history form restoration cannot wipe the recovered transcript');
+    assert.equal(f.get('[data-field-row] textarea').value,'Soğukta ağrı','Recovered fields are reapplied after native form restoration');
+    assert.equal(f.get('[data-voice-consent]').checked,false);
+    assert.equal(f.get('[data-voice-confirm]').checked,false);
+  }finally{f.close()}
   const manyTopics=JSON.parse(restoredSeed);manyTopics.literatureTopics=Array.from({length:24},(_,i)=>({topic:'endo.general',quote:'Dayanak '+i}));
   f=await fixture(JSON.stringify(manyTopics));
   try{assert.equal(f.get('[data-voice-transcript]').value,'Soğuk içemiyorum.','All24 server-supported topic entries retain the draft')}finally{f.close()}
@@ -98,6 +115,10 @@ async function fixture(seed=null){
   f=await fixture(restoredSeed);
   try{const now=f.w.Date.now;f.w.Date.now=()=>now()+31*60*1000;f.w.dispatchEvent(new f.w.Event('pagehide'));assert.equal(f.sessionData(),null,'Idle pagehide must not renew an expired unchanged clinical draft')}finally{f.close()}
   const expired=JSON.parse(restoredSeed);expired.savedAt=Date.now()-31*60*1000;
+  for(const badSeed of [JSON.stringify(expired),'{"broken":true}']){
+    f=await fixture(badSeed,true);
+    try{await tick();assert.equal(f.get('[data-voice-consent]').checked,false,'Expired/corrupt drafts must not retain native consent');assert.equal(f.get('[data-voice-confirm]').checked,false)}finally{f.close()}
+  }
   f=await fixture(JSON.stringify(expired));
   try{assert.equal(f.get('[data-voice-transcript]').value,'','Expired clinical text is not restored');assert.equal(f.sessionData(),null)}finally{f.close()}
   f=await fixture();

@@ -172,3 +172,13 @@ def test_duplicate_extraction_tools_are_rejected_without_automatic_paid_retry(mo
     with pytest.raises(ValueError, match='Incomplete clinical extraction'):
         provider.review('policy', {}, SCHEMA, extraction=True)
     assert len(calls) == 1
+
+@pytest.mark.parametrize('reason,count,label', [('max_tokens',8192,'max_tokens'),('PRIVATE_PROVIDER_MESSAGE','PRIVATE','other')])
+def test_final_incomplete_stop_reports_only_fixed_reason_and_integer_usage(monkeypatch,caplog,reason,count,label):
+    calls,_=transport(monkeypatch,{'stop_reason':reason,'usage':{'output_tokens':count},'content':[{'type':'text','text':'PRIVATE_PATIENT_CONTENT'}]})
+    with pytest.raises(ValueError,match='Incomplete clinical review'):
+        provider.review('policy',{},SCHEMA)
+    assert 'voice_final_provider stop='+label in caplog.text
+    assert 'PRIVATE' not in caplog.text
+    if type(count) is int: assert 'output_tokens=8192' in caplog.text
+    assert len(calls)==1

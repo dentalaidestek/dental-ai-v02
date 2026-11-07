@@ -49,3 +49,23 @@ Render teşhisi: ana site srv-daeb9d740ujc73ei7gmg 5196f44 sürümü live. Gör�
 ## Canlı doğrulama
 
 Yayın sonrasında eklenecek. Genel uygulama geliştirmesine paralel ilerlemek mümkün olsa da klinik kullanıma hazır veya bütün diş hekimliği durumları eksiksiz doğrulanmış denmez.
+
+## Yayın kaydı
+
+PR247 birleştirildi: d9e303616e379fbe25ffd19c75a1cee26be6547f. Ana site dağıtımı dep-dbne44p42hec73cbick0, görüntü servisi dağıtımı dep-dbne44p42hec73cbicgg ayrı izleniyor. Bu satırın yazıldığı anda ana site update_in_progress; canlı sonucu ayrıca eklenecek.
+
+PR247 uzak kontroller: voice, contract-tests, ready-model-contract ve CodeRabbit başarılı. İş logları incelendi: static-safety40başarısız/966başarılı/34atlanan/566alt-test; application-regressions43başarısız/2092başarılı/48atlanan/594alt-test; PostgreSQL2başarısız/42başarılı. Akademik dışındaki3başarısızlık da çalışma alanı akışına ait: test_production_optimization.py::test_study_generation_releases_db_connection_and_rechecks_course[False/True] ve test_study_index_v2_isolation.py::test_v2_streaming_is_feature_gated_end_to_end. Genel CI yeşil değildir.
+
+## PR247 canlı sonucu ve takip düzeltmesi
+
+Ana site d9e303616e379fbe25ffd19c75a1cee26be6547f **7 Kasım11:33:54 Türkiye** live; görüntü servisi aynı SHA ile **11:37:51** live. Güncel iki dağıtım da başarılıdır; eski port zaman aşımı kaydı yeni dağıtım hatası diye sunulmaz.
+
+Gerçek tarayıcıda işlenmemiş1482karakterlik sentetik kron metni normal yenilemede1482olarak döndü; rıza/onay sıfır. Gerçek modelde kron ve protez planları artık korundu (4/4 ve3/3dayanaklı hasta planı). Kron genel prosth.fixed seçti, yanlış veneer görünmedi.3kaynak/0kabul edilmiş kontrolle kısmi sonuç verdi; özgül klinik kontrol başarılı sayılmaz. Aynı tamamlanmış sonucu normal yenilemede yeni text/finalize olmadan geri getirdi, seçimler0 ve onay/rıza false kaldı.
+
+Daha ileri gerçek tarayıcı geçmiş denemesinde /voice-exams→Back sonrası kartlar korunurken metin0oldu. Native tarayıcı form restorasyonunun başlangıçtaki değerleri ezmesiyle uyumlu bir bulgu; aynı durum DOM yaşam döngüsünde tekrarlandı. v28takip düzeltmesi kurtarma verisini load/pageshow sonrasındaki görevde yeniden uygular, o zamana kadar önbellek yazısını ve kontrolleri bekletir. Geçerli taslak olmasa da yerel tarayıcıdan geri gelen rıza/onay/seçimler sıfırlanır. Normal/eksik/süresi dolmuş/bozuk önbellek ve native form simülasyonları RED→GREEN; gerçek tarayıcıda v28tekrarı henüz yapılmış sayılmaz.
+
+Protez finali provider aşamasında Incomplete clinical review ile durdu; ham model içeriği loglanmadığından gerçek stop nedeni henüz bilinmiyor. Takip değişikliği yalnız izinli stop etiketi ve tamsayı çıktı token sayısını loglar; hasta/provider metni loglanmaz. Yanıt sınırı veya sağlayıcı henüz değiştirilmedi, otomatik ücretli tekrar eklenmedi.
+
+Canlıda birleşik ilaç/alerji yokluğu medical_history içine düşmüştü. Yeni dar yönlendirme yalnız THIS_PATIENT/PATIENT, NEGATED, bütün alıntısı kesintisiz dayanaklı ve tamamı tanınan1–2ilaç/alerji yokluğu cümlesinden oluşan ifadeyi kendi alanlarına ayırır. Belirsiz/geçmiş/başkasına ait veya karışık tıbbi ifade değiştirilmez. İki konuşmacıdan alıntı birleştiren karşı örnek RED→GREEN. Alerji atomik değeri de literal tutulur; bilinmeyen ilaçtan spesifik penisilin alerjisi üretilmez. Açık Hasta etiketli şikâyet muayene bulgusu yerine başvuru yakınmasında tutulur; etiket yoksa konuşmacı uydurulmaz.
+
+Takip kodu: **640 Python/11 Node geçti**, iki mevcut bağımlılık uyarısı. İkinci takip yayın ve canlı tekrar henüz yapılmış sayılmaz. Mevcut iki vaka sentetik METİN üzerinden gerçek provider denemesidir; mikrofon/gürültü/klinik altın set değildir. Hasta kaydı yapılmadı.
