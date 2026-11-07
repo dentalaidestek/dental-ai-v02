@@ -12489,7 +12489,7 @@ def admin_login_verify(request: Request, code: str = Form(...)):
     if request.headers.get("sec-fetch-site") == "cross-site" or not _push_request_same_origin(request):
         return HTMLResponse("İstek kaynağı doğrulanamadı.", status_code=403)
     token = request.cookies.get("admin_login_pending", "")
-    if not token:
+    if not token or len(token) > 256:
         return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kod geçersiz."}, status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         # Lock user before challenge (same order as code issuance), preventing
