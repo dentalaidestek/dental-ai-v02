@@ -12422,6 +12422,8 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         # An administrator cannot redirect the second factor to another mailbox.
         if user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL:
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
+        # First verification and subsequent logins both require a fresh Gmail code.
+        initial_email_verification_required = not bool(user.email_verified_at)
         _clear_web_login_failures(login_rate_key)
         now = _utcnow_naive()
         # Do not allow an existing authenticated admin session to bypass the new
