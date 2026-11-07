@@ -1913,6 +1913,14 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 def init_db():
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
+        # Additive migration for existing installations; create_all handles fresh databases.
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminloginchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, token_hash VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TIMESTAMP)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminloginchallenge_user_id ON adminloginchallenge (user_id)')
+        elif engine.dialect.name == "sqlite":
+            conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminloginchallenge (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, token_hash VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at DATETIME NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at DATETIME)')
+            conn.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_adminloginchallenge_user_id ON adminloginchallenge (user_id)')
+    with engine.begin() as conn:
         if engine.dialect.name == "postgresql":
             conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP')
             conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS emailverificationchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE, public_token VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMP NOT NULL, verified_at TIMESTAMP)')
@@ -2334,6 +2342,8 @@ def get_current_user(request: Request) -> Optional[User]:
                 s.commit()
                 user = None
             elif not user or not user.is_active or not user.email_verified_at:
+                user = None
+            elif user.role == "ADMIN" and (user.email or "").strip().lower() != "dentalaidestek@gmail.com":
                 user = None
 
     if state is not None:
@@ -12264,6 +12274,9 @@ def admin_first_setup(request: Request, token: str = Form(...), password: str = 
             if existing:return page("Bu kullanıcı adı başka bir hesapta kullanılıyor.",409)
             admin=User(username=ADMIN_BOOTSTRAP_USERNAME,role="ADMIN",display_name="Dental AI Yöneticisi",is_active=True)
             s.add(admin);s.flush()
+        if admin.email and admin.email.strip().lower() != ADMIN_FIXED_EMAIL:
+            return page("Yönetici e-postası sabit doğrulama adresiyle eşleşmiyor. Güvenli kurtarma gerekli.",403)
+        admin.email = ADMIN_FIXED_EMAIL
         admin.password_hash=hash_password(password);admin.is_active=True;s.add(admin)
         s.add(AdminAuditLog(admin_user_id=admin.id,action="ADMIN_INITIAL_PASSWORD_SET",target_user_id=admin.id,detail="Tek kullanımlık güvenli kurulum"));s.commit()
     return RedirectResponse(ADMIN_CENTER_PATH+"?setup=success",status_code=303)
@@ -12411,6 +12424,8 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
         _clear_web_login_failures(login_rate_key)
         now = _utcnow_naive()
+        # Do not allow an existing authenticated admin session to bypass the new
+        # second factor on its next request after rollout.
         # Only one active challenge per admin; a new login invalidates older codes.
         for old in s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.user_id == user.id)).all():
             s.delete(old)
@@ -12460,6 +12475,9 @@ def admin_login_verify(request: Request, code: str = Form(...)):
         challenge.used_at = now
         challenge.code_hash = secrets.token_urlsafe(32)
         user.email = ADMIN_FIXED_EMAIL
+        # Revoke any sessions issued before the two-factor login was completed.
+        for old_session in s.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all():
+            s.delete(old_session)
         if not user.email_verified_at:
             user.email_verified_at = now
         s.add(challenge)
