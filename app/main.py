@@ -12645,7 +12645,7 @@ def admin_center_user_detail(request: Request, user_id: int):
     return templates.TemplateResponse(request=request,name="admin_user_detail.html",context={
         "user":admin,"target":target,"meta":meta,"profile":profile,"requested":requested,"received":received,
         "events":events,"notices":notices,"audits":audits,"performance":performance,"policy":policy,"storage":storage,"admin_path":ADMIN_CENTER_PATH,
-        "expert_specialties":EXPERT_SPECIALTIES,"expert_min_price":EXPERT_MIN_PRICE,
+        "expert_specialties":EXPERT_SPECIALTIES,"expert_min_price":_expert_minimum_price(meta.professional_title if meta else None),
     })
 
 
@@ -12665,13 +12665,15 @@ def admin_center_expert_profile_update(
     if not admin:return HTMLResponse("Yetkisiz işlem.",status_code=403)
     specialty=specialty.strip()
     if specialty not in EXPERT_SPECIALTIES:return HTMLResponse("Geçersiz branş.",status_code=400)
-    if consultation_price < EXPERT_MIN_PRICE:return HTMLResponse(f"Danışmanlık ücreti en az {EXPERT_MIN_PRICE} TL olmalıdır.",status_code=400)
     normalized_orcid=_normalize_orcid_url(orcid_url)
     if orcid_url.strip() and not normalized_orcid:return HTMLResponse("ORCID iD geçersiz.",status_code=400)
     profile_events=[]
     with Session(engine,expire_on_commit=False) as s:
         profile=s.exec(select(ExpertProfile).where(ExpertProfile.user_id==user_id)).first()
         if not profile:return HTMLResponse("Uzman profili bulunamadı.",status_code=404)
+        account_meta=s.exec(select(UserAccountMeta).where(UserAccountMeta.user_id==user_id)).first()
+        minimum=_expert_minimum_price(account_meta.professional_title if account_meta else None)
+        if consultation_price < minimum:return HTMLResponse(f"Danışmanlık ücreti en az {minimum} TL olmalıdır.",status_code=400)
         old_specialty=profile.specialty
         profile.specialty=specialty
         profile.institution=institution.strip()[:180] or None
