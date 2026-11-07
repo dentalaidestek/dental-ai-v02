@@ -25,7 +25,7 @@ def test_admin_otp_is_single_use_and_rate_limited():
     assert "challenge.attempts >= 5" in block
     assert "challenge.expires_at <= now" in block
     assert "secrets.compare_digest" in block
-    assert "create_user_session(response, user.id)" in block
+    assert "create_user_session(response, user.id, admin_otp_verified=True)" in block
     assert "for old_session in" in block
 
 
