@@ -262,7 +262,8 @@ def test_admin_login_requires_verified_email_before_session_creation():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     block = source.split("def admin_center_login(", 1)[1].split("def _admin_user_storage_summaries", 1)[0]
     assert "user.email_verified_at" in block
-    assert "create_user_session(response,user.id)" in block
+    assert "create_user_session(response, user.id, admin_otp_verified=True)" in block
+    assert "user.email_verified_at" in block
 
 
 def test_password_reset_expires_browser_session_cookie_after_server_revocation():
