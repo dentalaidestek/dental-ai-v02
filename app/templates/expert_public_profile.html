@@ -1,14 +1,21 @@
 {% extends "base.html" %}{% block content %}
-<div class="expert-shell expert-public-page">
-  <a class="expert-back-link" href="{{ '/account#expert-info' if user.id==expert.id else '/expert-support' }}">{{ '‹ Profilim' if user.id==expert.id else '‹ Uzmanlara dön' }}</a>
-  <section class="expert-public-hero">
-    <div class="expert-public-avatar">{% if expert.profile_photo_path %}<img src="{{ profile_photo_url(expert) }}" data-profile-user-id="{{ expert.id }}" alt="{{ expert.display_name }} profil fotoğrafı">{% else %}{{ (expert.display_name or '?')[:1] }}{% endif %}</div>
-    <div class="expert-public-copy"><span class="expert-kicker">Belgesi doğrulanmış uzman</span><h1>{{ professional_name(profile.academic_title or 'Uzman Diş Hekimi', expert.display_name) }}</h1><p>{{ profile.specialty }}{% if profile.institution %} · {{ profile.institution }}{% endif %}</p><div class="expert-profile-badges"><span>✓ e-Devlet mesleki belgesi doğrulandı</span>{% if profile.academic_title_verified and profile.academic_title %}<span>✓ Akademik unvan</span>{% endif %}</div></div>
-    <span class="expert-public-availability {% if profile.availability!='AVAILABLE' %}off{% endif %}">{% if profile.availability=='AVAILABLE' %}Müsait{% else %}Meşgul{% endif %}</span>
+<style>.expert-publications-note{font-size:13px;line-height:1.55;color:#64748b}.expert-publication-list{display:grid;gap:10px;margin:14px 0}.expert-publication-item{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:13px;overflow-wrap:anywhere}.expert-publication-item span{color:#2563eb}.expert-publication-item p{margin:0;white-space:pre-wrap}.expert-publication-orcid{display:inline-flex;margin-top:12px;font-weight:650}</style>
+<link rel="stylesheet" href="/static/expert-social.css?v=20261107-3">
+<div class="expert-shell expert-public-page expert-reference-profile" data-expert-id="{{ expert.id }}">
+  <a class="expert-back-link expert-reference-back" href="{{ '/account#expert-info' if user.id==expert.id else '/expert-support' }}"><img src="/static/expert-icons/arrow-left.svg" alt="">Uzman Profili</a>
+  <section class="expert-reference-hero expert-public-hero">
+    <div class="expert-reference-cover" role="img" aria-label="Dental AI uzman profili kapak görseli"></div>
+    <div class="expert-reference-main">
+      <div class="expert-reference-topline"><div class="expert-public-avatar {% if not expert.profile_photo_path %}expert-reference-avatar{% endif %}">{% if expert.profile_photo_path %}<img src="{{ profile_photo_url(expert) }}" data-profile-user-id="{{ expert.id }}" alt="{{ expert.display_name }} profil fotoğrafı">{% endif %}<span class="expert-avatar-verified" title="Mesleki belgesi doğrulanmış">✓</span></div><div class="expert-reference-actions">{% if user.id!=expert.id %}<a class="expert-contact-icon" href="/expert-support/request/{{ expert.id }}{% if patient_id %}?patient_id={{ patient_id }}{% endif %}" aria-label="Uzmandan danışmanlık al"><img src="/static/expert-icons/chat-circle-text.svg" alt=""></a><button type="button" id="expertFollow" class="expert-follow-button" data-follow-expert>Takip et</button>{% else %}<a class="expert-profile-edit-link" href="/expert-support/profile">Profili yönet</a>{% endif %}</div></div>
+      <h1>{{ professional_name(profile.academic_title if profile.academic_title_verified and profile.academic_title else 'Uzman Diş Hekimi', expert.display_name) }} <img class="expert-title-seal" src="/static/expert-icons/seal-check.svg" alt="Mesleki belgesi doğrulanmış"></h1>
+      <p class="expert-reference-specialty">{{ profile.specialty }}{% if profile.institution %} · {{ profile.institution }}{% endif %}</p>
+      <div class="expert-profile-badges"><span class="expert-badge-verified">✓ e-Devlet Doğrulandı</span>{% if profile.orcid_url %}<a class="expert-badge-orcid" href="{{ profile.orcid_url }}" target="_blank" rel="noopener noreferrer" title="ORCID numarası kayıtlı; hesap sahipliği doğrulanmadı">iD ORCID kaydı</a>{% endif %}{% if profile.academic_title_verified and profile.academic_title %}<span class="expert-badge-academic"><img src="/static/expert-icons/graduation-cap.svg" alt="">Akademik Unvan</span>{% endif %}</div>
+      {% if profile.bio %}<p class="expert-reference-bio">{{ profile.bio }}</p>{% endif %}
+      <div class="expert-reference-consultation"><span class="expert-reference-availability {{ 'off' if profile.availability!='AVAILABLE' else '' }}">● {{ 'Müsait' if profile.availability=='AVAILABLE' else 'Meşgul' }}</span><span>{% if rating_avg %}★ {{ rating_avg }}/5{% else %}Yeni uzman{% endif %}</span><span>{{ profile.consultation_price }} TL / vaka</span>{% if performance.avg_response_minutes is not none %}<span>{{ performance.avg_response_minutes }} dk yanıt</span>{% endif %}</div>
+      <div class="expert-reference-stats" aria-label="Profil istatistikleri"><div><b data-stat="followers">—</b><span>Takipçi</span></div><div><b data-stat="following">—</b><span>Takip</span></div><div><b data-stat="posts">—</b><span>Gönderi</span></div><div><b data-stat="publications">—</b><span>Yayın</span></div></div>
+    </div>
   </section>
-  <section class="expert-public-metrics"><div><small>Değerlendirme</small><b>{% if rating_avg %}★ {{ rating_avg }}/5{% else %}Yeni uzman{% endif %}</b><span>{{ review_count }} doğrulanmış görüş</span></div><div><small>Ortalama yanıt</small><b>{% if performance.avg_response_minutes is not none %}{{ performance.avg_response_minutes }} dk{% else %}—{% endif %}</b><span>Son görüşmelere göre</span></div><div><small>Danışmanlık</small><b>{{ profile.consultation_price }} TL</b><span>Vaka başına</span></div></section>
-  {% if profile.bio %}<section class="expert-public-section"><h2>Uzman hakkında</h2><p>{{ profile.bio }}</p></section>{% endif %}
-  {% if profile.publications_text or profile.orcid_url %}<section class="expert-public-section"><h2>Akademik bilgiler</h2>{% if profile.publications_text %}<p>{{ profile.publications_text }}</p>{% endif %}{% if profile.orcid_url %}<a href="{{ profile.orcid_url }}" rel="noopener noreferrer" target="_blank">ORCID profilini görüntüle</a>{% endif %}</section>{% endif %}
+  {% with social_expert_id=expert.id, social_owner=(user.id==expert.id), social_management=false %}{% include "_expert_social.html" %}{% endwith %}
   <section class="expert-public-trust"><b>Güvenli danışmanlık</b><span>Dosyalar yalnızca görüşmedeki iki kullanıcı tarafından görüntülenir. Ödeme özelliği etkinleştirildiğinde iyzico üzerinden alınacaktır.</span></section>
   {% if user.id==expert.id %}<div class="expert-disabled expert-profile-sticky">Bu sizin uzman profiliniz</div>{% elif profile.availability=="AVAILABLE" and active_count < 5 %}<div class="expert-profile-sticky"><span><small>Danışmanlık ücreti</small><b>{{ profile.consultation_price }} TL</b></span><a class="expert-primary" href="/expert-support/request/{{ expert.id }}{% if patient_id %}?patient_id={{ patient_id }}{% endif %}">Danışmanlık başlat</a></div>{% else %}<div class="expert-disabled expert-profile-sticky">Şu an yeni vaka kabul etmiyor</div>{% endif %}
 </div>
@@ -20,7 +27,7 @@
     if(refreshPromise)return refreshPromise;
     refreshPromise=fetch(location.href,{credentials:"same-origin",cache:"no-store",headers:{"X-Requested-With":"XMLHttpRequest"}})
       .then(r=>{if(!r.ok)throw new Error("profile refresh failed");return r.text();})
-      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-public-page"),current=document.querySelector(".expert-public-page");if(next&&current)current.replaceWith(next);})
+      .then(html=>{const doc=new DOMParser().parseFromString(html,"text/html"),next=doc.querySelector(".expert-public-page"),current=document.querySelector(".expert-public-page");if(next&&current){for(const selector of ['.expert-public-hero','.expert-public-metrics']){const a=current.querySelector(selector),b=next.querySelector(selector);if(a&&b)a.replaceWith(b);}window.dispatchEvent(new CustomEvent("dai:expert-profile-refreshed"));}})
       .catch(()=>{})
       .finally(()=>{refreshPromise=null;});
     return refreshPromise;
@@ -29,3 +36,4 @@
 })();
 </script>
 {% endblock %}
+

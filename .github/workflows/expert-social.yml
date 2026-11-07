@@ -1,0 +1,64 @@
+name: Expert social profile regression
+on:
+  pull_request:
+    paths:
+      - 'app/expert_social*.py'
+      - 'app/expert_publications.py'
+      - 'app/account_erasure.py'
+      - 'app/main.py'
+      - 'app/migrate.py'
+      - 'app/static/expert-social*'
+      - 'app/static/expert-icons/**'
+      - 'app/static/expert-profile-reference.png'
+      - 'app/voice_exam.py'
+      - 'app/static/voice-exam*'
+      - 'app/templates/voice_exam_panel.html'
+      - 'tests/test_voice_exam*.py'
+      - 'tests/test_voice_anamnesis.py'
+      - 'app/templates/*expert*'
+      - 'app/templates/admin_social.html'
+      - 'tests/expert_social/**'
+      - '.github/workflows/expert-social.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql libtesseract-dev libleptonica-dev
+          python -m pip install -r requirements.txt pytest httpx playwright opencv-python-headless
+          python -m playwright install --with-deps chromium
+      - name: Select isolated test runtimes
+        run: |
+          echo "TEST_POSTGRES_BIN=$(dirname "$(find /usr/lib/postgresql -name initdb -type f | sort -V | tail -1)")" >> "$GITHUB_ENV"
+          python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print("TEST_CHROMIUM="+p.chromium.executable_path); p.stop()' >> "$GITHUB_ENV"
+          echo "TEST_ARTIFACT_DIR=${RUNNER_TEMP}/expert-social-screenshots" >> "$GITHUB_ENV"
+      - name: Validate JavaScript and Python
+        run: |
+          node --check app/static/expert-social.js
+          node --check app/static/expert-social-admin.js
+          node --check app/static/voice-exam.js
+          python -m compileall -q app/expert_social_api.py app/expert_social_models.py app/expert_social_safety.py app/expert_social_schema.py app/expert_social_maintenance.py app/expert_publications.py
+      - name: Run feature, database, browser and existing flow tests
+        run: >-
+          python -m pytest -q tests/expert_social
+          tests/test_expert_support_contract.py tests/test_expert_identity_routing.py
+          tests/test_consultation_completion_flow.py tests/test_consultation_deadline_queue.py
+          tests/test_program_consultation_retention.py tests/test_object_storage.py
+          tests/test_admin_fixed_email_otp.py tests/test_security_hardening.py tests/test_security_recovery.py
+          tests/test_voice_exam.py tests/test_voice_exam_final.py tests/test_voice_anamnesis.py tests/test_voice_exam_panel.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: expert-social-screenshots
+          path: ${{ runner.temp }}/expert-social-screenshots
+          if-no-files-found: ignore

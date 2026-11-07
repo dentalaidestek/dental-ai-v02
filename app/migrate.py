@@ -103,7 +103,7 @@ def _upgrade_recent_schema(main):
     return True
 
 
-def apply():
+def _apply_baseline():
     from app import main
     if _upgrade_learning_schema(main):
         return
@@ -179,6 +179,14 @@ def apply():
                 lock.close()
 
 
+def apply():
+    _apply_baseline()
+    from app import main
+    from app.expert_social_schema import apply as apply_social_schema
+    apply_social_schema(main.engine)
+
+
 if __name__ == '__main__':
     apply()
+
 

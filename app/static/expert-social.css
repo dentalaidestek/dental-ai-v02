@@ -1,0 +1,1087 @@
+.ds-root {
+  --ds-navy: #092747;
+  --ds-blue: #1260ce;
+  --ds-border: #e0e7f0;
+  --ds-muted: #607187;
+  color: #172d46;
+  margin: 24px 0;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.ds-root * {
+  box-sizing: border-box;
+}
+.ds-root [hidden] {
+  display: none !important;
+}
+.ds-root button,
+.ds-root input,
+.ds-root textarea {
+  font: inherit;
+}
+.ds-root button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ds-root button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.ds-root button:focus-visible,
+.ds-root a:focus-visible {
+  outline: 3px solid #64a7ee;
+  outline-offset: 3px;
+}
+.ds-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 1fr;
+  border-bottom: 1px solid var(--ds-border);
+  margin-bottom: 18px;
+  background: #fff;
+  border-radius: 17px 17px 0 0;
+}
+.ds-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 16px 5px;
+  color: var(--ds-muted);
+  font-size: 14px;
+  line-height: 1.25;
+  min-height: 54px;
+  position: relative;
+  font-weight: 650;
+}
+.ds-tabs [aria-selected="true"] {
+  color: var(--ds-navy);
+}
+.ds-tabs [aria-selected="true"]:after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  height: 3px;
+  left: 10%;
+  right: 10%;
+  background: var(--ds-blue);
+  border-radius: 3px;
+}
+.ds-launch {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--ds-border);
+  border-radius: 19px;
+  padding: 21px 18px;
+  color: var(--ds-muted);
+  font-size: 18px !important;
+  box-shadow: 0 5px 18px #09274706;
+  margin-bottom: 16px;
+}
+.ds-launch small {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--ds-muted);
+}
+.ds-compose-avatar {
+  display: grid;
+  place-items: center;
+  background: #eaf2fc;
+  color: var(--ds-blue);
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  font-size: 25px;
+  flex-shrink: 0;
+}
+.ds-launch-plus {
+  margin-left: auto;
+  color: var(--ds-blue);
+  font-size: 27px;
+}
+.ds-feed,
+.ds-publications {
+  display: grid;
+  gap: 16px;
+}
+.ds-card {
+  padding: 22px;
+  background: #fff;
+  border: 1px solid var(--ds-border);
+  border-radius: 20px;
+  box-shadow: 0 4px 15px #09274704;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ds-card h2,
+.ds-section-head h2 {
+  font-size: 20px;
+  margin: 0 0 5px;
+}
+.ds-card h3 {
+  font-size: 17px;
+  line-height: 1.45;
+  margin: 0 0 8px;
+}
+.ds-author {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+}
+.ds-avatar {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 50%;
+  background: #e7eff7;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--ds-navy);
+  font-weight: 700;
+}
+.ds-author-copy {
+  min-width: 0;
+  flex: 1;
+}
+.ds-author-copy b {
+  font-size: 15px;
+}
+.ds-author-copy time {
+  display: block;
+  font-size: 12px;
+  color: var(--ds-muted);
+}
+.ds-verified {
+  color: #0e71cd;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ds-post-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 16px 0;
+  color: #253c55;
+  line-height: 1.75;
+}
+.ds-post-text a {
+  color: #1260ce;
+}
+.ds-pin,
+.ds-status {
+  font-size: 12px;
+  color: var(--ds-muted);
+  margin-bottom: 11px;
+}
+.ds-status {
+  display: inline-block;
+  padding: 4px 9px;
+  background: #fff4dc;
+  color: #755422;
+  border-radius: 7px;
+  margin-top: 9px;
+}
+.ds-status.is-rejected {
+  background: #fff0f0;
+  color: #963c3c;
+}
+.ds-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.ds-gallery[data-count="1"] {
+  grid-template-columns: 1fr;
+}
+.ds-gallery a {
+  display: block;
+  background: #f3f6f9;
+  min-width: 0;
+}
+.ds-gallery img {
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+  display: block;
+}
+.ds-gallery[data-count="1"] img {
+  height: auto;
+  max-height: 430px;
+}
+.ds-link-card {
+  display: block;
+  border: 1px solid var(--ds-border);
+  border-radius: 14px;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none !important;
+  margin: 12px 0;
+  min-width: 0;
+  background: #f9fbfd;
+}
+.ds-link-card img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  background: #edf3f8;
+  display: block;
+}
+.ds-link-card > div {
+  padding: 13px 15px;
+  overflow-wrap: anywhere;
+}
+.ds-link-card small {
+  display: block;
+  color: var(--ds-muted);
+  font-size: 12px;
+}
+.ds-link-card strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 5px 0;
+}
+.ds-link-card p {
+  margin: 4px 0;
+  color: var(--ds-muted);
+  font-size: 13px;
+}
+.ds-actions {
+  display: flex;
+  border-top: 1px solid #eef2f7;
+  margin-top: 16px;
+  padding-top: 8px;
+  gap: 4px;
+}
+.ds-actions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ds-muted);
+  border-radius: 10px;
+  flex: 1;
+  font-size: 13px;
+}
+.ds-actions button:hover,
+.ds-icon:hover {
+  background: #f0f5fb;
+}
+.ds-actions button[aria-pressed="true"] {
+  color: #d42c65;
+}
+.ds-actions svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.ds-menu {
+  position: relative;
+  align-self: flex-start;
+}
+.ds-menu summary {
+  cursor: pointer;
+  list-style: none;
+  width: 40px;
+  height: 40px;
+  text-align: center;
+  line-height: 32px;
+  font-size: 24px;
+  color: var(--ds-muted);
+}
+.ds-menu[open] > div {
+  position: absolute;
+  right: 0;
+  top: 37px;
+  background: white;
+  box-shadow: 0 8px 30px #0a264929;
+  border: 1px solid var(--ds-border);
+  padding: 6px;
+  border-radius: 12px;
+  width: 208px;
+  z-index: 4;
+}
+.ds-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 10px;
+  border-radius: 8px;
+  color: #29415a;
+  font-size: 13px;
+}
+.ds-menu button:hover {
+  background: #eef4fc;
+}
+.ds-primary,
+.ds-secondary {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 17px;
+  min-height: 44px;
+  line-height: 1.25;
+  font-weight: 650;
+  white-space: normal;
+}
+.ds-primary {
+  background: var(--ds-navy);
+  color: white;
+}
+.ds-secondary {
+  background: #eef4fb;
+  color: #163b64;
+  border: 1px solid #dfe8f3;
+}
+.ds-more {
+  display: block;
+  margin: 18px auto;
+}
+.ds-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin: 20px 0;
+}
+.ds-section-head p,
+.ds-muted {
+  color: var(--ds-muted);
+  font-size: 13px;
+  margin: 5px 0;
+}
+.ds-publication-source {
+  display: inline-block;
+  background: #edf4fb;
+  color: #315678;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  margin: 10px 0;
+}
+.ds-publication-meta {
+  font-size: 13px;
+  color: var(--ds-muted);
+}
+.ds-publication-links {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.ds-publication-links a {
+  color: #1258ab;
+  font-size: 13px;
+}
+.ds-publication-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.ds-publication-tools button,
+.ds-text-button {
+  border: 0;
+  background: transparent;
+  color: #225b96;
+  padding: 7px 0;
+  min-height: 38px;
+  font-size: 13px;
+}
+.ds-publication-tools button {
+  margin-right: 12px;
+}
+.ds-orcid,
+.ds-legacy {
+  border: 1px solid var(--ds-border);
+  border-radius: 15px;
+  background: white;
+  padding: 15px;
+  margin: 12px 0 18px;
+}
+.ds-orcid summary,
+.ds-legacy summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.ds-orcid p,
+.ds-legacy p {
+  font-size: 13px;
+  color: var(--ds-muted);
+}
+.ds-orcid label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.ds-orcid-link {
+  display: block;
+  margin: 12px 0;
+}
+.ds-preserve {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ds-root input,
+.ds-root textarea {
+  width: 100%;
+  border: 1px solid #dce4ed;
+  border-radius: 11px;
+  padding: 12px;
+  color: #203a55;
+  background: white;
+  font-size: 16px;
+  min-width: 0;
+}
+.ds-root input:focus,
+.ds-root textarea:focus {
+  outline: 2px solid #afd0f6;
+  outline-offset: 1px;
+}
+.ds-root label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #455b73;
+}
+.ds-root label input,
+.ds-root label textarea {
+  display: block;
+  margin-top: 5px;
+}
+.ds-dialog {
+  position: fixed;
+  border: 0;
+  border-radius: 24px;
+  box-shadow: 0 24px 80px #051d3b44;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 90dvh;
+  padding: 0;
+  color: #1d354f;
+  overflow: hidden;
+  margin: auto;
+}
+.ds-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.ds-dialog::backdrop {
+  background: #071c37a6;
+  backdrop-filter: blur(3px);
+}
+.ds-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 18px;
+  border-bottom: 1px solid #e9eef5;
+  background: #fff;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.ds-dialog-head h2 {
+  font-size: 17px;
+  margin: 0;
+  flex: 1;
+  line-height: 1.3;
+}
+.ds-icon {
+  border: 0;
+  background: transparent;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 26px;
+  line-height: 1;
+  color: #425b76;
+  flex-shrink: 0;
+}
+.ds-dialog-body {
+  padding: 18px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1;
+}
+.ds-audience {
+  font-size: 12px;
+  color: #55718d;
+  margin: 0 0 14px;
+}
+.ds-dialog textarea[data-post-text] {
+  border: 0;
+  resize: none;
+  min-height: 160px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1.75;
+  max-height: 40dvh;
+  border-radius: 0;
+  outline: 0 !important;
+}
+.ds-composer-footer {
+  padding: 12px 22px max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e9eef5;
+  flex-shrink: 0;
+  background: #fff;
+}
+.ds-tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.ds-tool {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: #1a5d9f;
+  border-radius: 9px;
+  font-size: 14px;
+}
+.ds-tool:hover {
+  background: #eef5fe;
+}
+.ds-counter {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ds-muted);
+  white-space: nowrap;
+}
+.ds-composer-footer > small {
+  font-size: 11px;
+  color: var(--ds-muted);
+  display: block;
+  line-height: 1.5;
+}
+.ds-composer-footer .ds-text-button {
+  min-height: 28px;
+  font-size: 11px;
+}
+.ds-attachments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+.ds-attachment {
+  min-width: 0;
+  border: 1px solid var(--ds-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f4f7fa;
+}
+.ds-attachment img {
+  width: 100%;
+  height: 125px;
+  object-fit: contain;
+}
+.ds-attachment footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  gap: 3px;
+}
+.ds-attachment button {
+  border: 0;
+  background: white;
+  border-radius: 6px;
+  min-width: 32px;
+  min-height: 34px;
+  color: #31577d;
+}
+.ds-attachment small {
+  font-size: 11px;
+}
+.ds-attachment progress {
+  width: 100%;
+  height: 4px;
+}
+.ds-preview-wrap {
+  position: relative;
+}
+.ds-preview-wrap > .ds-icon {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  background: #fff;
+  box-shadow: 0 2px 10px #0b264422;
+}
+.ds-error {
+  color: #a43131;
+  background: #fff2f2;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 13px;
+}
+.ds-notice {
+  background: #edf5ff;
+  color: #1a527a;
+  padding: 12px 15px;
+  border: 1px solid #d6e7fc;
+  border-radius: 12px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.ds-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+.ds-wide {
+  grid-column: 1/-1;
+}
+.ds-input-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ds-input-action input {
+  flex: 1;
+  width: 0;
+}
+.ds-publication-dialog form {
+  display: flex;
+  flex-direction: column;
+  max-height: 90dvh;
+  overflow: hidden;
+}
+.ds-comments {
+  border-top: 1px solid #eef2f6;
+  padding-top: 14px;
+  margin-top: 8px;
+}
+.ds-comment {
+  font-size: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid #f0f3f7;
+  overflow-wrap: anywhere;
+}
+.ds-comment[data-reply="true"] {
+  margin-left: 20px;
+  padding-left: 12px;
+  border-left: 2px solid #e5edf8;
+}
+.ds-comment p {
+  white-space: pre-wrap;
+  margin: 5px 0;
+}
+.ds-comment small {
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+.ds-comment-tools {
+  display: flex;
+  gap: 14px;
+}
+.ds-comment-tools button {
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  color: #456685;
+  padding: 7px 0;
+  min-height: 32px;
+}
+.ds-comment-form textarea {
+  font-size: 16px;
+  margin: 10px 0 5px;
+  min-height: 80px;
+  resize: vertical;
+}
+.ds-comment-submit-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.ds-comment-submit-row small {
+  font-size: 12px;
+  color: var(--ds-muted);
+}
+.ds-empty {
+  text-align: center;
+  color: var(--ds-muted);
+  padding: 26px 15px;
+  font-size: 14px;
+  border: 1px dashed #dce5f0;
+  border-radius: 18px;
+  background: #fafdff;
+}
+.ds-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ds-moderation {
+  max-width: 900px;
+  margin: 25px auto;
+}
+.ds-moderation-nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 15px 0;
+}
+.ds-moderation .ds-card {
+  margin-bottom: 14px;
+}
+.ds-moderation pre {
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.ds-review-tools {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.ds-review-tools input {
+  flex: 1;
+  min-width: 180px;
+}
+@media (max-width: 600px) {
+  .ds-root {
+    margin: 18px 0;
+  }
+  .ds-card {
+    padding: 17px;
+    border-radius: 17px;
+  }
+  .ds-tabs button {
+    font-size: 12px;
+    padding: 15px 3px;
+  }
+  .ds-launch {
+    padding: 17px 14px;
+    font-size: 17px !important;
+    gap: 10px;
+  }
+  .ds-launch small {
+    font-size: 11px;
+  }
+  .ds-section-head {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .ds-section-head h2 {
+    font-size: 18px;
+  }
+  .ds-section-head .ds-primary {
+    padding: 10px 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .ds-author-copy b {
+    font-size: 14px;
+  }
+  .ds-gallery img {
+    height: 160px;
+  }
+  .ds-actions button {
+    font-size: 12px;
+    padding: 7px 4px;
+    gap: 5px;
+  }
+  .ds-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 94dvh;
+    border-radius: 22px 22px 0 0;
+    margin: auto 0 0;
+    bottom: 0;
+    top: auto;
+    left: 0;
+    right: 0;
+  }
+  .ds-dialog-head {
+    padding: 12px 15px;
+  }
+  .ds-dialog-body {
+    padding: 18px;
+  }
+  .ds-composer-footer {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+  .ds-dialog textarea[data-post-text] {
+    min-height: 135px;
+    font-size: 17px;
+    max-height: 32dvh;
+  }
+  .ds-tool {
+    font-size: 13px;
+    padding: 5px 7px;
+    gap: 4px;
+  }
+  .ds-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ds-publication-dialog form {
+    max-height: 94dvh;
+  }
+  .ds-input-action .ds-secondary {
+    font-size: 12px;
+    padding: 8px;
+  }
+  .ds-comment[data-reply="true"] {
+    margin-left: 12px;
+  }
+  .ds-author .ds-menu summary {
+    width: 32px;
+  }
+  .ds-avatar {
+    width: 38px;
+    height: 38px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ds-dialog[open] {
+    animation: ds-in 0.16s ease-out;
+  }
+  @keyframes ds-in {
+    from {
+      transform: translateY(18px);
+      opacity: 0.4;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+}
+/* Existing app-wide button themes intentionally use an ID specificity anchor.
+   Scope the social controls with a real root ID so tabs/actions keep their
+   interaction roles without changing a single existing application button. */
+body.dai-app-shell #expertSocial button {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  color: #315779 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+  letter-spacing: normal;
+}
+body.dai-app-shell #expertSocial button:hover {
+  background: #f0f5fb !important;
+  border-color: transparent !important;
+  color: #163e69 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+body.dai-app-shell #expertSocial .ds-tabs button {
+  color: #63748a !important;
+  border-radius: 0 !important;
+  padding: 16px 5px;
+  font-size: 14px;
+  font-weight: 650 !important;
+}
+body.dai-app-shell #expertSocial .ds-tabs button[aria-selected="true"] {
+  color: #0b294a !important;
+}
+body.dai-app-shell #expertSocial .ds-tabs button:hover {
+  background: transparent !important;
+}
+body.dai-app-shell #expertSocial .ds-launch {
+  background: white !important;
+  border: 1px solid #e0e7f0 !important;
+  border-radius: 19px !important;
+  color: #607187 !important;
+  box-shadow: 0 5px 18px #09274706 !important;
+  font-weight: 400 !important;
+}
+body.dai-app-shell #expertSocial .ds-primary {
+  background: #0b294a !important;
+  color: white !important;
+  padding: 10px 17px;
+  border-radius: 12px !important;
+}
+body.dai-app-shell #expertSocial .ds-primary:hover {
+  background: #10395f !important;
+  color: white !important;
+}
+body.dai-app-shell #expertSocial .ds-secondary {
+  background: #eef4fb !important;
+  color: #163b64 !important;
+  border: 1px solid #dfe8f3 !important;
+  padding: 10px 17px;
+  border-radius: 12px !important;
+}
+body.dai-app-shell #expertSocial .ds-actions button {
+  font-size: 13px;
+  padding: 7px 9px;
+  min-height: 44px;
+  color: #607187 !important;
+}
+body.dai-app-shell #expertSocial .ds-actions button[aria-pressed="true"] {
+  color: #d42c65 !important;
+}
+body.dai-app-shell #expertSocial .ds-icon {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  font-weight: 400 !important;
+  font-size: 26px;
+  line-height: 1;
+}
+body.dai-app-shell #expertSocial .ds-comment-tools button,
+body.dai-app-shell #expertSocial .ds-publication-tools button,
+body.dai-app-shell #expertSocial .ds-text-button {
+  min-height: 36px;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 500 !important;
+}
+body.dai-app-shell #expertSocial .ds-tools button {
+  font-size: 13px;
+  min-height: 44px;
+  padding: 6px 9px;
+  font-weight: 500 !important;
+}
+body.dai-app-shell #expertSocial .ds-preview-wrap > .ds-icon {
+  background: white !important;
+  box-shadow: 0 2px 10px #0b264422 !important;
+}
+body.dai-app-shell #expertSocial .ds-attachment button {
+  min-height: 34px;
+  min-width: 32px;
+  padding: 0;
+  background: white !important;
+}
+body.dai-app-shell #expertSocial .ds-link-card {
+  color: #17324f !important;
+}
+.ds-link-card strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  color: #17324f !important;
+}
+.ds-link-card p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  body.dai-app-shell #expertSocial .ds-tabs button {
+    font-size: 12px;
+    padding: 15px 3px;
+  }
+  body.dai-app-shell #expertSocial .ds-actions button {
+    font-size: 12px;
+    padding: 7px 4px;
+  }
+  body.dai-app-shell #expertSocial .ds-section-head > .ds-primary {
+    padding: 10px 12px;
+  }
+  .ds-menu summary {
+    width: 40px !important;
+  }
+}
+/* Reference composition: cover, overlapping portrait, quiet white cards. */
+.container:has(.expert-reference-profile),.container:has(.expert-manage-reference){max-width:740px;padding-left:12px;padding-right:12px}
+.expert-reference-profile,.expert-manage-reference{width:100%;max-width:688px;margin:14px auto 90px;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+.expert-reference-back{display:flex;align-items:center;gap:12px;padding:8px 2px 20px;font-size:22px;font-weight:700;color:#172b45!important;text-decoration:none}
+.expert-reference-back img{width:25px;height:25px}
+.expert-reference-profile .expert-reference-hero{display:block;padding:0;border:1px solid #e5eaf1;border-radius:22px 22px 0 0;border-bottom:0;overflow:hidden;background:#fff;box-shadow:0 5px 14px #15304b05}
+.expert-reference-cover{width:100%;aspect-ratio:654/198;background-image:url('/static/expert-profile-reference.png');background-size:214.679% auto;background-position:2.667% 13.94%;background-repeat:no-repeat}
+.expert-reference-main{padding:0 20px 12px}
+.expert-reference-topline{display:flex;justify-content:space-between;align-items:flex-end;margin-top:-40px;min-height:92px;position:relative}
+.expert-reference-profile .expert-public-avatar{position:relative;width:88px;height:88px;flex-shrink:0;border:4px solid white;border-radius:50%;overflow:visible;box-shadow:none;background-color:#164d61}
+.expert-reference-avatar{background-image:url('/static/expert-profile-reference.png');background-size:1080% auto;background-position:3.53% 22.97%;background-repeat:no-repeat;border-radius:50%}
+.expert-reference-profile .expert-public-avatar>img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.expert-avatar-verified{position:absolute;right:-1px;bottom:0;display:grid;place-items:center;width:26px;height:26px;border:3px solid white;border-radius:50%;background:#09a981;color:#fff;font-weight:700;font-size:15px}
+.expert-reference-actions{display:flex;align-items:center;gap:8px;padding-bottom:7px}
+.expert-reference-profile .expert-contact-icon{width:42px;height:34px;border:1px solid #e2e6ed;border-radius:20px;display:grid;place-items:center;background:#fff}
+.expert-contact-icon img{width:22px;height:22px}
+body .expert-reference-profile .expert-follow-button,body .expert-reference-profile .expert-profile-edit-link{display:block;background:#092747!important;color:#fff!important;border:0!important;border-radius:24px!important;padding:10px 22px;min-height:36px;font-size:14px;font-weight:650;text-decoration:none;box-shadow:none}
+.expert-reference-profile h1{margin:12px 0 7px;font-size:23px;line-height:1.25;color:#101d2f;font-weight:750;letter-spacing:-.04em}
+.expert-title-seal{width:21px;height:21px;vertical-align:middle;filter:invert(35%) sepia(90%) saturate(2900%) hue-rotate(190deg)}
+.expert-reference-specialty{margin:0;color:#5b6473;font-size:16px;line-height:1.5}
+.expert-reference-profile .expert-profile-badges{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;font-size:11px}
+.expert-reference-profile .expert-profile-badges>span,.expert-reference-profile .expert-profile-badges>a{display:inline-flex;align-items:center;gap:5px;padding:7px 10px;border:0;border-radius:20px;white-space:nowrap;font-size:11px;font-weight:650;text-decoration:none}
+.expert-reference-profile .expert-badge-verified,.expert-reference-profile .expert-badge-orcid{background:#e5f8ef!important;color:#18765e!important}
+.expert-reference-profile .expert-badge-academic{background:#eef0ff!important;color:#334e83!important}.expert-badge-academic img{width:18px;height:18px}
+.expert-reference-bio{font-size:15px;line-height:1.7;color:#536072;margin:12px 0}
+.expert-reference-consultation{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#66758a;margin:10px 0 4px}
+.expert-reference-availability{color:#07876b;font-weight:600}.expert-reference-availability.off{color:#8b6b35}
+.expert-reference-stats{display:grid;grid-template-columns:repeat(4,1fr);margin:19px 0 8px;text-align:center}
+.expert-reference-stats>div{display:flex;flex-direction:column;gap:4px;border-right:1px solid #e6eaf1}.expert-reference-stats>div:last-child{border-right:0}
+.expert-reference-stats b{font-size:19px;color:#142033}.expert-reference-stats span{font-size:13px;color:#5a687a}
+.expert-reference-profile .ds-root{margin:0 0 20px;font-family:inherit}
+.expert-reference-profile .ds-tabs{margin:0 0 16px;border:1px solid #e5eaf1;border-top:0;border-radius:0 0 20px 20px;padding:0 12px;min-height:64px;box-shadow:0 5px 10px #10244104}
+body .expert-reference-profile #expertSocial .ds-tabs button{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:650!important;padding:18px 2px;color:#64748b!important}
+.expert-reference-profile .ds-tabs img{width:20px;height:20px}.expert-reference-profile .ds-tabs button[aria-selected=true] img{filter:invert(12%) sepia(35%) saturate(1750%) hue-rotate(179deg)}
+.expert-reference-profile .ds-card{padding:20px;border-radius:20px;box-shadow:0 4px 12px #0c203d05}.expert-reference-profile .ds-author-copy b{font-size:16px}.expert-reference-profile .ds-avatar{width:44px;height:44px}.expert-reference-profile .ds-post-text{font-size:15px;line-height:1.7}
+.expert-reference-profile .ds-link-card{display:flex;background:white;align-items:stretch;min-height:104px}.expert-reference-profile .ds-link-card img{width:41%;object-fit:cover;max-height:190px}.expert-reference-profile .ds-link-card>div{flex:1;padding:12px;min-width:0}.expert-reference-profile .ds-link-card strong{font-size:15px;line-height:1.45}.expert-reference-profile .ds-actions{border:0;justify-content:space-between;padding-top:10px;margin-top:10px}
+body .expert-reference-profile #expertSocial .ds-actions button{flex:0 1 auto;padding:5px 8px}.expert-reference-profile .ds-actions svg{width:21px;height:21px}
+.expert-reference-profile .expert-public-trust{margin-top:16px}.expert-reference-profile .expert-disabled.expert-profile-sticky{display:none}
+.ds-tool img{width:22px;height:22px}.ds-tabs img{width:19px;height:19px}
+/* Management shares the same page, without repeating the public profile hero. */
+.ds-manage-tabs{display:grid;grid-template-columns:.85fr 1.5fr 1.15fr .85fr;gap:10px;margin:0 0 18px}
+body .expert-manage-reference #expertManageTabs button{background:white!important;border:1px solid #edf0f5!important;color:#172c47!important;box-shadow:0 2px 5px #17335708!important;border-radius:28px!important;font-size:13px;padding:11px 6px;min-height:44px}
+body .expert-manage-reference #expertManageTabs button[aria-selected=true]{background:#092747!important;color:white!important;border-color:#092747!important}
+.expert-manage-reference .ds-root{margin:0}.expert-manage-reference .ds-tabs{display:none}
+.expert-manage-reference .ds-inline-composer{position:static;display:flex;width:100%;max-width:none;max-height:none;overflow:visible;margin:0 0 18px;border:1px solid #e3e8ef;border-radius:22px;box-shadow:0 4px 12px #15355706;background:#fff}
+.expert-manage-reference .ds-inline-composer .ds-dialog-head{order:3;border:0;justify-content:flex-end;padding:4px 18px 18px;border-radius:0 0 22px 22px}
+.expert-manage-reference .ds-inline-composer .ds-dialog-head>h2,.expert-manage-reference .ds-inline-composer [data-close],.expert-manage-reference .ds-inline-composer .ds-audience{display:none}
+.expert-manage-reference .ds-inline-composer .ds-dialog-body{order:1;padding:18px 20px 8px;overflow:visible;width:100%}
+.expert-manage-reference .ds-inline-composer textarea[data-post-text]{min-height:100px;padding:12px;border:1px solid #e1e6ef;border-radius:16px;font-size:17px;line-height:1.7;background:white;max-height:50vh}
+.expert-manage-reference .ds-inline-composer .ds-composer-footer{order:2;border:0;padding:0 20px 0;width:100%}
+.expert-manage-reference .ds-inline-composer .ds-tools{border-bottom:1px solid #edf1f6;margin-bottom:8px;padding-bottom:10px;gap:8px;flex-wrap:wrap}
+body .expert-manage-reference #expertSocial .ds-inline-composer .ds-tool{background:#f7f8fb!important;padding:11px 16px;display:flex;flex-direction:column;font-size:12px;gap:7px;border-radius:12px!important}
+.expert-manage-reference .ds-inline-composer .ds-tool img{width:27px;height:27px}.expert-manage-reference .ds-counter{font-size:11px}.expert-manage-reference .ds-inline-composer .ds-composer-footer>small{max-width:75%;font-size:11px;line-height:1.5}
+.expert-manage-reference .ds-orcid{background:white;border:1px solid #e3e8ef;box-shadow:0 4px 12px #15355706;border-radius:22px;padding:20px}.expert-manage-reference .ds-orcid>summary{font-size:18px;color:#162640}.expert-manage-reference .ds-orcid>p{font-size:12px}.expert-manage-reference .ds-orcid input{background:#f1f5fc;border:0;padding:12px;font-size:14px}.expert-manage-reference .ds-orcid label{font-size:12px}
+.expert-manage-reference .ds-section-head h2{font-size:18px}.expert-manage-reference .ds-section-head p{font-size:11px}.expert-manage-reference .ds-publications .ds-card{box-shadow:none;border-radius:0;border:0;border-bottom:1px solid #edf0f5;padding:15px 3px}.expert-manage-reference .ds-publications{gap:0;background:#fff;border-radius:18px;padding:6px 18px;border:1px solid #e7ebf0}.expert-manage-reference .ds-publication-meta{font-size:12px}.expert-manage-reference .ds-publications h3{font-size:15px}.expert-manage-reference .ds-publication-tools{gap:5px;margin-top:0}
+@media(max-width:600px){.expert-reference-back{font-size:20px;padding-bottom:18px}.expert-reference-main{padding:0 16px 12px}.expert-reference-profile h1{font-size:20px}.expert-reference-specialty{font-size:14px}.expert-reference-profile .expert-profile-badges{gap:5px}.expert-reference-profile .expert-profile-badges>span,.expert-reference-profile .expert-profile-badges>a{padding:6px 8px;font-size:10px}.expert-reference-profile .expert-public-avatar{width:78px;height:78px}.expert-reference-topline{min-height:82px;margin-top:-35px}.expert-reference-profile .expert-follow-button{padding:9px 20px}.expert-reference-stats b{font-size:18px}.expert-reference-stats span{font-size:12px}.expert-reference-profile .ds-tabs{min-height:58px;padding:0 7px}body .expert-reference-profile #expertSocial .ds-tabs button{gap:5px;font-size:12px}.expert-reference-profile .ds-tabs img{width:17px;height:17px}.expert-reference-profile .ds-card{padding:17px}.expert-reference-profile .ds-author-copy b{font-size:14px}.ds-manage-tabs{gap:6px}body .expert-manage-reference #expertManageTabs button{font-size:11px;padding:10px 4px}.expert-manage-reference .ds-inline-composer .ds-dialog-body{padding:16px 16px 6px}.expert-manage-reference .ds-inline-composer .ds-composer-footer{padding-left:16px;padding-right:16px}.expert-manage-reference .ds-inline-composer .ds-tools{gap:5px}body .expert-manage-reference #expertSocial .ds-inline-composer .ds-tool{padding:10px 13px;font-size:11px}.expert-manage-reference .ds-inline-composer textarea[data-post-text]{font-size:16px;min-height:110px}.expert-manage-reference .ds-orcid{padding:18px}.expert-manage-reference .ds-root .ds-inline-composer{border-radius:20px}}
+body .expert-reference-profile #expertFollow{background:#092747!important;color:#fff!important;border:0!important;border-radius:24px!important;box-shadow:none!important;min-height:36px;padding:9px 20px;font-size:13px}
+[data-manage-pane][hidden]{display:none!important}
+.expert-manage-reference .ds-inline-composer{position:relative;flex-direction:column}
+.expert-manage-reference .ds-inline-composer:before{content:'';position:absolute;left:18px;top:20px;width:38px;height:38px;border-radius:50%;background-image:url('/static/expert-profile-reference.png');background-size:1080% auto;background-position:3.53% 22.97%}
+.expert-manage-reference .ds-inline-composer .ds-dialog-body{margin-left:48px;width:calc(100% - 48px);padding-left:14px}
+.expert-manage-reference .ds-inline-composer .ds-dialog-head{justify-content:space-between}
+.expert-manage-reference .ds-inline-composer .ds-inline-audience{font-size:12px;color:#53677f;border:1px solid #e2e7ee;border-radius:12px;padding:10px 12px;min-height:40px}
+.expert-manage-reference .ds-inline-composer .ds-composer-footer>small,.expert-manage-reference .ds-inline-composer [data-discard]{display:none}
+.expert-manage-reference .ds-inline-composer textarea[data-post-text]{min-height:80px}
+.ds-action-icon{width:21px;height:21px;display:block;opacity:.8}.ds-menu summary img{width:24px;height:24px;vertical-align:middle}
+body:has(.expert-reference-profile) main.container,body:has(.expert-manage-reference) main.container{padding-top:0!important;margin-top:0!important}
+.expert-reference-profile,.expert-manage-reference{margin-top:6px}
+.expert-reference-profile .expert-reference-back,.expert-manage-reference .expert-reference-back{padding-top:4px;padding-bottom:14px}
+@media(max-width:600px){.expert-reference-profile .expert-reference-main{padding-left:13px;padding-right:13px}.expert-reference-profile .expert-reference-topline{min-height:79px}}
+.expert-manage-reference #expertManageTabs{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;opacity:1!important}
+body.dai-app-shell .expert-manage-reference #expertManageTabs button{opacity:1!important}
+body.dai-app-shell .expert-manage-reference #expertManageTabs button[aria-selected=true]{background:#092747!important;color:#fff!important}
+.expert-manage-reference .ds-section-head p{display:none}
+.expert-manage-reference .ds-orcid>summary{list-style:none;display:flex;align-items:center;gap:10px;font-size:18px}
+.expert-manage-reference .ds-orcid>summary::-webkit-details-marker{display:none}
+.expert-manage-reference .ds-orcid>summary:before{content:'';display:block;flex-shrink:0;width:38px;height:38px;border-radius:50%;background-image:url('/static/expert-profile-reference.png');background-size:2808% auto;background-position:55.61% 46.64%}
+.expert-manage-reference .ds-orcid [data-sync]{width:100%;margin-top:4px;min-height:44px}
+.expert-reference-profile .ds-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+.ds-inline-composer .ds-edit-indicator{font-size:12px;color:#53677f;line-height:1.4;flex:1}
+body .expert-manage-reference #expertSocial [data-edit-cancel]{font-size:12px;padding:8px;min-height:40px;background:#eef4fb!important;white-space:nowrap}

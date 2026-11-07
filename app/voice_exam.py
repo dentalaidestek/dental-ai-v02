@@ -6,7 +6,7 @@ import re
 import secrets
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
@@ -390,7 +390,7 @@ def appointment_conflict(occurrences, start, end=None):
 
 
 @router.post('/patients/{patient_id}/voice-exam/apply')
-def apply_review(request: Request, patient_id: int, payload: ApplyInput):
+def apply_review(request: Request, patient_id: int, payload: ApplyInput, background_tasks: BackgroundTasks):
     from app import main
     from app.work_jobs import WorkJob
     if not core.enabled():
@@ -478,13 +478,16 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput):
         except IntegrityError:
             session.rollback()
             return _reply({'ok': False, 'error': 'Kayıt zaten işleniyor. Aynı kaydı tekrar deneyebilirsin.'}, 409)
+    # The transaction and durable realtime rows are committed. A slow socket
+    # recipient must not delay the clinician's acknowledgement of that save.
     for event in events:
-        main.on_loop(main._publish_realtime_event, event)
+        background_tasks.add_task(main._publish_realtime_event, event)
     if schedule:
-        main._wake_program_reminder_worker()
+        background_tasks.add_task(main._wake_program_reminder_worker)
     return _reply({'ok': True, 'analysis_id': analysis.id, 'patient_url': '/patients/' + str(patient_id)})
 
 from app.voice_exam_live import register_live
 register_live(router)
+
 
 

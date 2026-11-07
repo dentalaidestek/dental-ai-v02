@@ -4303,6 +4303,8 @@ def _startup_database():
             from app.migrate import require_schema
             logger.warning("startup.step begin=require_schema")
             require_schema(engine,require_study=True)
+            from app.expert_social_schema import require_schema as require_social_schema
+            require_social_schema(engine)
             logger.warning("startup.step end=require_schema")
     else:
         init_db()
@@ -14373,3 +14375,9 @@ app.add_middleware(VoiceBodyLimitMiddleware)
 # Render the voice entry with its final visibility; no asynchronous layout jump.
 from app.voice_exam_core import enabled as voice_exam_enabled
 templates.env.globals['voice_exam_enabled'] = voice_exam_enabled
+
+
+
+# Member-only expert posts and structured publications.
+from app.expert_social_api import register as register_expert_social
+register_expert_social(app, _study_trace_sys.modules[__name__])

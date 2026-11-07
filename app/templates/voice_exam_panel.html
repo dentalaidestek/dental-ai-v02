@@ -42,14 +42,14 @@
     <button type="button" data-voice-text disabled>Metni işle ve değerlendir</button>
     </details>
     <section class="voice-review" hidden>
-      <header class="voice-review-heading"><h3>Muayene sonucu</h3><p>Sonuçları inceleyin; yalnız seçip onayladığınız bilgiler kaydedilir.</p></header>
+      <header class="voice-review-heading"><h3>Muayene sonucu</h3><button type="button" class="voice-edit-text" data-voice-edit-text>Konuşma metnini düzenle</button><p>Sonuçları inceleyin; yalnız seçip onayladığınız bilgiler kaydedilir.</p></header>
       <section class="voice-final-review">
         <button type="button" data-voice-finalize>Muayenenin tamamını değerlendir</button>
         <div data-voice-final-results aria-live="polite"></div>
       </section>
       <details class="voice-summary-card voice-record-fields" data-voice-record-fields>
-        <summary>Kaydedilecek bilgiler</summary>
-      <h4 class="voice-group-title">Hasta bilgileri ve muayene notları</h4><div data-voice-fields></div>
+        <summary>Hasta bilgileri ve muayene notları</summary>
+      <div data-voice-fields></div>
       <p data-voice-uncertain class="voice-help"></p>
       <div data-voice-communication hidden></div>
       <details class="voice-advanced"><summary>Ek kaynak araçları (isteğe bağlı)</summary>
@@ -71,16 +71,17 @@
         <label class="voice-field">Bitiş (isteğe bağlı) <input type="datetime-local" data-voice-appointment-end></label>
       </fieldset>
       </details>
-      <label class="voice-check"><input type="checkbox" data-voice-confirm> Seçtiğim alanları ve varsa diş bulgularını / randevuyu kontrol ettim.</label>
-      <div class="voice-review-actions"><button type="button" data-voice-save disabled>Onayladığım alanları kaydet →</button>
+      <input type="checkbox" data-voice-confirm hidden aria-hidden="true">
+      <div class="voice-review-actions"><button type="button" data-voice-save disabled>Onayla ve kaydet</button>
       <button type="button" data-voice-discard>Taslağı temizle</button></div><p class="voice-help">Kayıt tamamlandığında hasta dosyasına dönersiniz.</p>
     </section>
   </div>
 </section>
-<link rel="stylesheet" href="/static/voice-exam.css?v=12">
+<link rel="stylesheet" href="/static/voice-exam.css?v=13">
 <script src="/static/voice-finish-draft.js?v=1" defer></script>
-<script src="/static/voice-exam.js?v=28" defer></script>
+<script src="/static/voice-exam.js?v=30" defer></script>
 
 <script src="/static/voice-exam-live.js?v=7" defer></script>
+
 
 
