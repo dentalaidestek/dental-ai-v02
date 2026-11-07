@@ -20,6 +20,17 @@ def require_schema(engine,*,require_study=False):
         raise RuntimeError('Run python -m app.migrate before starting this service') from exc
     if revision != REVISION:
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
+    # Additive admin MFA tables: the production startup only checks schema revision,
+    # so the original init_db() DDL never runs on Render. Serialize this small
+    # compatibility migration across concurrent web instances.
+    if engine.dialect.name == 'postgresql':
+        with engine.begin() as connection:
+            connection.execute(text("SET LOCAL lock_timeout = '10s'"))
+            connection.execute(text('SELECT pg_advisory_xact_lock(71048234)'))
+            connection.execute(text('CREATE TABLE IF NOT EXISTS adminloginchallenge (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, token_hash VARCHAR NOT NULL UNIQUE, code_hash VARCHAR NOT NULL, expires_at TIMESTAMP NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TIMESTAMP)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_adminloginchallenge_user_id ON adminloginchallenge (user_id)'))
+            connection.execute(text('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_adminverifiedsession_user_id ON adminverifiedsession (user_id)'))
     if require_study:
         inspector=inspect(engine)
         if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun')):
