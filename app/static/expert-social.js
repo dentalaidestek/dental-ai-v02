@@ -146,15 +146,7 @@
       "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 2 1.5-6A8.5 8.5 0 1 1 21 11.5Z",
     share: "M9 12h12m-4-4 4 4-4 4M13 5H4v14h9",
   };
-  function actionIcon(b, name) {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(svg.namespaceURI, "path");
-    path.setAttribute("d", iconPaths[name]);
-    svg.append(path);
-    b.prepend(svg);
-  }
+  function actionIcon(b,name){const icons={heart:'heart',comment:'chat-circle-text',share:'share-network'};const img=el('img','ds-action-icon');img.src='/static/expert-icons/'+icons[name]+'.svg';img.alt='';b.prepend(img);}
   async function copyLink(value) {
     if (navigator.clipboard?.writeText)
       return navigator.clipboard.writeText(value);
@@ -189,6 +181,7 @@
       owner = root.dataset.owner === "1",
       expertId = Number(root.dataset.expertId),
       userId = Number(root.dataset.userId);
+    const management=root.dataset.management==="1";
     const notice = $("[data-notice]");
     function say(message) {
       notice.hidden = false;
@@ -223,6 +216,7 @@
       removedUrl = null;
     const dialog = $("[data-composer]"),
       text = $("[data-post-text]");
+    if(management && dialog)$('[data-panel="posts"]').prepend(dialog);
     function saveDraft() {
       if (editing) return;
       try {
@@ -253,12 +247,14 @@
     }
     function openDialog(d) {
       if (!d) return;
+      if (management && d===dialog) {d.scrollIntoView({block:'nearest'});return;}
       if (d.open) return;
       d.showModal();
       history.pushState({ ...history.state, dsDialog: true }, "");
       adjustViewport();
     }
     function closeDialog(d, fromHistory = false) {
+      if (management && d===dialog) {resetInlineComposer();return;}
       if (!d?.open) return;
       d.close();
       document.body.style.overflow = "";
@@ -302,6 +298,7 @@
         .querySelectorAll("[data-panel]")
         .forEach((n) => (n.hidden = n.dataset.panel !== name));
       if (name === "publications" && !pubsLoaded) loadPublications();
+      if(management && name==='posts'){ $('[data-panel="publications"]').hidden=false;if(!pubsLoaded)loadPublications();}
     }
     root.querySelectorAll("[data-tab]").forEach((b) => {
       b.addEventListener("click", () => setTab(b.dataset.tab));
@@ -358,7 +355,7 @@
         img.src = p.author_photo;
         img.alt = "";
         author.append(img);
-      } else author.append(el("span", "ds-avatar", p.author_name.slice(0, 1)));
+      } else author.append(el("span", "ds-avatar expert-reference-avatar"));
       const copy = el("div", "ds-author-copy"),
         name = el("b", "", p.author_name);
       copy.append(name, el("span", "ds-verified", " ✓"));
@@ -808,9 +805,21 @@
         Math.min(text.scrollHeight, Math.max(130, innerHeight * 0.4)) + "px";
       $("[data-counter]").textContent = text.value.length + " / 5000";
     }
+    function resetInlineComposer(){
+      if(!management)return;
+      editing=null;text.value=draft.text;
+      $('[data-publish]').textContent='Paylaş';dialog.querySelector('h2').textContent='Yeni gönderi';
+      $('[data-photo]').hidden=false;$('[data-link]').hidden=false;$('[data-cover]').hidden=!draft.linkUrl;
+      $('[data-edit-mode]').hidden=true;$('[data-edit-cancel]').hidden=true;
+      const audience=dialog.querySelector('.ds-inline-audience');if(audience)audience.hidden=false;
+      renderAttachments();renderPreview();fitText();
+    }
     function openComposer(p = null, initial = "") {
       if (!dialog) return;
+      if(management)root.closest('.expert-manage-reference').querySelector('[data-manage-tab="posts"]').click();
       editing = p;
+      $('[data-edit-mode]').hidden=!(management&&p);$('[data-edit-cancel]').hidden=!(management&&p);
+      const audience=dialog.querySelector('.ds-inline-audience');if(audience)audience.hidden=!!p;
       if (p) {
         text.value = p.text;
         $("[data-attachments]").replaceChildren();
@@ -841,7 +850,8 @@
       text.focus({ preventScroll: true });
     }
     if (owner) {
-      $("[data-compose]").addEventListener("click", () => openComposer());
+      $('[data-edit-cancel]').addEventListener('click',resetInlineComposer);
+      $("[data-compose]")?.addEventListener("click", () => openComposer());
       text.addEventListener("input", () => {
         fitText();
         if (editing) return;
@@ -1034,7 +1044,7 @@
           editing = null;
           feed.querySelector(".ds-empty")?.remove();
           replacePost(row);
-          setTab("posts");
+          setTab("posts");refreshStats().catch(()=>{});
           say(
             row.status === "PUBLISHED"
               ? "Gönderiniz yayınlandı."
@@ -1184,10 +1194,12 @@
             const url = p.url || (p.doi ? "https://doi.org/" + p.doi : "");
             openComposer(null, p.title + (url ? "\n" + url : ""));
             if (url) {
-              draft.linkUrl = url;
-              draft.preview = null;
-              renderPreview();
-              saveDraft();
+              draft.linkUrl = url;draft.preview = null;renderPreview();saveDraft();
+              const seq=++previewSequence;
+              api('/publications/'+p.id+'/share-preview','POST').then(data=>{
+                if(seq!==previewSequence||draft.linkUrl!==url)return;
+                draft.preview=data;renderPreview();saveDraft();
+              }).catch(()=>{});
             }
           }),
           button("Düzenle", "", () => root._editPublication(p)),
@@ -1223,6 +1235,7 @@
             (pubCursor ? "?before=" + pubCursor : ""),
         );
         pubsLoaded = true;
+        if(management)$('[data-panel="publications"] .ds-section-head h2').textContent='Yayınlarım ('+data.total+')';
         if (!pubList.children.length && !data.items.length)
           pubList.append(el("div", "ds-empty", "Henüz bir yayın eklenmemiş."));
         for (const p of data.items) pubList.append(renderPublication(p));
@@ -1246,6 +1259,31 @@
     $("[data-more-publications]").addEventListener("click", () =>
       loadPublications(),
     );
+    if (management) {
+      const host=root.closest('.expert-manage-reference');
+      const general=host.querySelector('[data-manage-pane="general"]');
+      const social=host.querySelector('[data-manage-pane="social"]');
+      const settings=host.querySelector('[data-manage-pane="settings"]');
+      const availability=host.querySelector('.expert-availability-switch');
+      if(availability)host.querySelector('[data-manage-availability]').append(availability);
+      for(const b of host.querySelectorAll('[data-manage-tab]'))b.addEventListener('click',()=>{
+        const name=b.dataset.manageTab;if(name!=='posts'&&editing)resetInlineComposer();
+        host.querySelectorAll('[data-manage-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===b)));
+        general.hidden=name!=='general';social.hidden=!['posts','publications'].includes(name);settings.hidden=name!=='settings';
+        if(!social.hidden)setTab(name);
+      });
+      const publicationsPanel=$('[data-panel=publications]'),orcid=publicationsPanel.querySelector('.ds-orcid');if(orcid)publicationsPanel.prepend(orcid);
+      text.rows=3;text.value=draft.text;renderAttachments();renderPreview();fitText();setTab('posts');
+    }
+    async function refreshStats(){
+      const shell=root.closest('.expert-reference-profile');if(!shell)return;
+      const data=await api('/experts/'+expertId+'/stats');
+      shell.querySelectorAll('[data-stat]').forEach(n=>n.textContent=data[n.dataset.stat]??'0');
+      const follow=shell.querySelector('[data-follow-expert]');if(follow){follow.dataset.followed=String(data.following_by_viewer);follow.textContent=data.following_by_viewer?'Takip ediliyor':'Takip et';follow.setAttribute('aria-pressed',String(data.following_by_viewer));}
+    }
+    root.closest('.expert-reference-profile')?.addEventListener('click',async event=>{const follow=event.target.closest('[data-follow-expert]');if(!follow||follow.disabled)return;follow.disabled=true;try{await api('/experts/'+expertId+'/follow','PUT',{followed:follow.dataset.followed!=='true'});await refreshStats();}catch(e){say(e.message);}finally{follow.disabled=false;}});
+    window.addEventListener('dai:expert-profile-refreshed',()=>refreshStats().catch(()=>{}));
+    refreshStats().catch(()=>{});
     loadPosts(true).then(async () => {
       const target = new URLSearchParams(location.search).get("post");
       if (target && /^\d+$/.test(target)) {

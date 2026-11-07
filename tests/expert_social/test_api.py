@@ -558,3 +558,50 @@ def test_publication_stale_edit_cannot_undo_newer_review(env):
         json={"title": "Yeni içerik", "version": p["version"]},
     )
     assert r.status_code == 409, r.text
+
+
+def test_follow_and_profile_statistics_are_real_and_idempotent(env):
+    c, e = env
+    post(c)
+    c.cookies.set(main.SESSION_COOKIE, "t2")
+    for _ in range(2):
+        r = c.put("/api/expert-social/experts/1/follow", json={"followed": True})
+        assert r.status_code == 200, r.text
+    stats = c.get("/api/expert-social/experts/1/stats").json()
+    assert (
+        stats["followers"] == 1 and stats["posts"] == 1 and stats["publications"] == 0
+    )
+    assert stats["following_by_viewer"] is True
+    c.put("/api/expert-social/experts/1/follow", json={"followed": False})
+    assert c.get("/api/expert-social/experts/1/stats").json()["followers"] == 0
+
+
+def test_publication_share_preview_uses_saved_metadata_and_owner_gate(env):
+    c, e = env
+    paper = c.post(
+        "/api/expert-social/publications",
+        json={
+            "title": "Bilimsel makale başlığı",
+            "journal": "Bilim Dergisi",
+            "year": 2026,
+            "doi": "10.1000/share",
+        },
+    ).json()
+    result = c.post(
+        "/api/expert-social/publications/" + str(paper["id"]) + "/share-preview"
+    ).json()
+    assert result["title"] == "Bilimsel makale başlığı"
+    p = post(
+        c,
+        text="Çalışma üzerine görüşüm",
+        link_url=result["url"],
+        preview_id=result["id"],
+    ).json()
+    assert p["preview"]["title"] == "Bilimsel makale başlığı"
+    c.cookies.set(main.SESSION_COOKIE, "t3")
+    assert (
+        c.post(
+            "/api/expert-social/publications/" + str(paper["id"]) + "/share-preview"
+        ).status_code
+        == 403
+    )

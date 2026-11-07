@@ -8,6 +8,13 @@ on:
       - 'app/main.py'
       - 'app/migrate.py'
       - 'app/static/expert-social*'
+      - 'app/static/expert-icons/**'
+      - 'app/static/expert-profile-reference.png'
+      - 'app/voice_exam.py'
+      - 'app/static/voice-exam*'
+      - 'app/templates/voice_exam_panel.html'
+      - 'tests/test_voice_exam*.py'
+      - 'tests/test_voice_anamnesis.py'
       - 'app/templates/*expert*'
       - 'app/templates/admin_social.html'
       - 'tests/expert_social/**'
@@ -39,6 +46,7 @@ jobs:
         run: |
           node --check app/static/expert-social.js
           node --check app/static/expert-social-admin.js
+          node --check app/static/voice-exam.js
           python -m compileall -q app/expert_social_api.py app/expert_social_models.py app/expert_social_safety.py app/expert_social_schema.py app/expert_social_maintenance.py app/expert_publications.py
       - name: Run feature, database, browser and existing flow tests
         run: >-
@@ -47,6 +55,7 @@ jobs:
           tests/test_consultation_completion_flow.py tests/test_consultation_deadline_queue.py
           tests/test_program_consultation_retention.py tests/test_object_storage.py
           tests/test_admin_fixed_email_otp.py tests/test_security_hardening.py tests/test_security_recovery.py
+          tests/test_voice_exam.py tests/test_voice_exam_final.py tests/test_voice_anamnesis.py tests/test_voice_exam_panel.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

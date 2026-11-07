@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from app import object_storage
 from app.expert_social_models import (
     SocialPost,
+    SocialFollow,
     SocialMedia,
     SocialPreview,
     SocialComment,
@@ -103,6 +104,11 @@ def erase_user_content(session, user_id):
         update(SocialDecision)
         .where(SocialDecision.actor_id == user_id)
         .values(actor_id=None)
+    )
+    session.exec(
+        delete(SocialFollow).where(
+            or_(SocialFollow.follower_id == user_id, SocialFollow.expert_id == user_id)
+        )
     )
     for model, column in (
         (SocialLike, SocialLike.user_id),

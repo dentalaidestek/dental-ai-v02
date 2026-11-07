@@ -172,7 +172,24 @@ def parse_preview(url, html):
 
 
 async def preview(url):
-    raw, content_type, final = await fetch_bytes(url)
+    parsed = urlsplit(safe_url(url))
+    if parsed.hostname == "pubmed.ncbi.nlm.nih.gov" and re.fullmatch(
+        r"/\d{1,10}/?", parsed.path
+    ):
+        from app.expert_publications import pubmed_preview
+
+        return await pubmed_preview(parsed.path.strip("/"))
+    if parsed.hostname in {"pubmed.ncbi.nlm.nih.gov", "dergipark.org.tr"}:
+        # Fixed official publisher origins can use the configured TLS proxy.
+        # No redirect is followed; arbitrary pasted domains still use the
+        # DNS-pinned transport below, and all images use that transport too.
+        from app.expert_publications import registry_bytes
+
+        raw = await registry_bytes(url, limit=512 * 1024, accept="text/html", timeout=4)
+        content_type = "text/html"
+        final = url
+    else:
+        raw, content_type, final = await fetch_bytes(url)
     if "html" not in content_type:
         raise ValueError("Önizleme bulunamadı.")
     return parse_preview(final, raw.decode("utf-8", errors="replace"))

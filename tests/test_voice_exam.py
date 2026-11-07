@@ -521,3 +521,15 @@ def test_spoken_appointment_saves_on_agreed_day_for_selected_patient_only_once(a
         event = session.exec(select(ScheduleEvent)).one()
         assert (event.patient_id, event.owner_user_id, event.start_at) == (1, 1, '2026-10-24T15:30')
 
+
+
+
+def test_confirmation_response_does_not_wait_for_realtime_delivery(app_client,monkeypatch):
+    client,engine=app_client
+    main=sys.modules['app.main']
+    main._record_patient_realtime_events=lambda *args:['committed-event']
+    def blocking_delivery(*args):raise AssertionError('Synchronous notification delivery must not block the saved response')
+    main.on_loop=blocking_delivery
+    response=client.post('/patients/1/voice-exam/apply',json=payload(engine))
+    assert response.status_code==200
+    with Session(engine) as s:assert s.get(Analysis,response.json()['analysis_id']) is not None

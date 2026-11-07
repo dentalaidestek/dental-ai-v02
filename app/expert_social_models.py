@@ -189,3 +189,16 @@ class SocialMediaDeletion(SQLModel, table=True):
 
 
 SOCIAL_MODELS = (*SOCIAL_MODELS, SocialMediaDeletion)
+
+
+class SocialFollow(SQLModel, table=True):
+    follower_id: int = Field(
+        primary_key=True, foreign_key="user.id", ondelete="CASCADE"
+    )
+    expert_id: int = Field(
+        primary_key=True, foreign_key="user.id", ondelete="CASCADE", index=True
+    )
+    created_at: datetime = Field(default_factory=now)
+
+
+SOCIAL_MODELS = (*SOCIAL_MODELS, SocialFollow)

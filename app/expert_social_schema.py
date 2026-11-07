@@ -19,7 +19,7 @@ def apply(engine):
         )
         conn.execute(
             text(
-                "INSERT INTO dental_social_revision(id,version) VALUES(1,1) ON CONFLICT(id) DO UPDATE SET version=excluded.version"
+                "INSERT INTO dental_social_revision(id,version) VALUES(1,2) ON CONFLICT(id) DO UPDATE SET version=excluded.version"
             )
         )
 
@@ -32,7 +32,7 @@ def require_schema(engine):
             ).scalar()
             inspector = inspect(conn)
             complete = all(inspector.has_table(m.__tablename__) for m in SOCIAL_MODELS)
-        if revision != 1 or not complete:
+        if revision != 2 or not complete:
             raise RuntimeError()
     except Exception as exc:
         raise RuntimeError(

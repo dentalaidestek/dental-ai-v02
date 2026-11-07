@@ -177,3 +177,33 @@ body:has(.voice-session-page)>.topbar,body:has(.voice-session-page)>.mobile-bott
 }
 
 .voice-exam .voice-clinical-value{white-space:pre-line}
+
+/* One review surface: editable values are not nested inside repeated cards. */
+body:has(.voice-session-page) main.container{padding-left:8px;padding-right:8px}
+.voice-session-page,.voice-session-page .voice-exam,.voice-session-page .voice-exam-body{border:0!important;box-shadow:none!important;border-radius:0;background:#fff}
+.voice-exam .voice-review>.voice-record-fields{border:0;border-radius:0;background:transparent;margin:16px 0;padding:0;overflow:visible}
+.voice-exam .voice-record-fields>summary{padding:12px 0;border-bottom:1px solid #e8edf3!important;font-size:18px}
+.voice-exam .voice-record-fields>[data-voice-fields]{margin:0}
+.voice-exam [data-field-row]{border:0!important;border-bottom:1px solid #edf1f6!important;background:transparent!important;border-radius:0!important;padding:14px 0!important;margin:0!important}
+.voice-exam [data-field-row]>.voice-check{margin:0 0 7px;font-size:14px;gap:9px;font-weight:650;line-height:1.4}
+.voice-exam [data-field-row]>.voice-field{margin:0}
+.voice-exam [data-field-row] textarea{box-sizing:border-box;min-height:44px;height:44px;padding:10px 12px;line-height:1.5;resize:vertical;border:1px solid #dce4ed;border-radius:10px;font-size:16px;background:#fff;max-height:180px}
+.voice-exam .voice-field-evidence{margin:8px 0 0;border:0;background:none;font-size:12px;color:#64748b}
+.voice-exam .voice-field-evidence>summary{cursor:pointer;min-height:30px;line-height:30px;font-weight:400}
+.voice-exam .voice-field-evidence .voice-field-quote{display:block;margin:0;padding:0 0 6px;background:transparent;border:0;line-height:1.5}
+.voice-exam .voice-review-actions{position:sticky;bottom:0;z-index:5;background:#fff;padding:12px 0 max(12px,env(safe-area-inset-bottom));margin:12px 0 0;border-top:1px solid #edf1f6}
+.voice-exam .voice-review-actions [data-voice-discard]{background:transparent!important;color:#64748b!important;border:0!important;box-shadow:none!important;min-height:36px;font-size:12px}
+.voice-exam .voice-review-actions [data-voice-save]{min-height:48px;width:100%}
+.voice-exam .voice-followup-panel:has([data-voice-followups]:empty){display:none}
+.voice-exam .voice-record-fields:has([data-voice-fields]:not(:empty)){display:block}
+@media(max-width:600px){.voice-session-page{width:100%;margin:0;max-width:none}.voice-session-page .voice-exam-body{padding:0 8px 12px}.voice-exam .voice-summary-card{border-color:#e8edf3;box-shadow:none}.voice-exam [data-field-row]>.voice-check{font-size:14px}.voice-exam .voice-record-fields>summary{font-size:17px}}
+/* The final screen replaces preparation; it does not repeat it above the review. */
+body.dai-app-shell #voice-exam{border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important}
+#voice-exam[data-review-mode="true"]>.voice-exam-body>*:not(.voice-review):not(.voice-exam-status):not([data-voice-recovery-notice]){display:none!important}
+#voice-exam[data-review-mode="true"][data-consent-ready="false"]>.voice-exam-body>.voice-check{display:flex!important}
+#voice-exam[data-review-mode="true"][data-edit-transcript="true"]>.voice-exam-body>details:not(.voice-history):not(.voice-privacy){display:block!important}
+#voice-exam [data-voice-uncertain]:empty{display:none}
+body.dai-app-shell #voice-exam .voice-edit-text,body.dai-app-shell #voice-exam [data-voice-discard]{background:transparent!important;color:#526d89!important;border:0!important;box-shadow:none!important;padding:6px 0!important;font-size:12px;font-weight:500!important}
+body.dai-app-shell #voice-exam .voice-edit-text{min-height:32px;display:inline-block;text-align:left}
+#voice-exam[data-review-mode="true"]>.voice-exam-body>.voice-exam-status{font-size:13px;margin:10px 0 16px;padding:0;font-weight:400;color:#64748b}
+#voice-exam[data-review-mode="true"] .voice-review-heading p{font-size:12px}

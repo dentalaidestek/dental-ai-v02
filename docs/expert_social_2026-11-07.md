@@ -25,7 +25,7 @@ Mevcut main.py yalnızca kayıt/startup kontrolüyle, migrate.py sosyal migratio
 
 ## Test kanıtı
 
-Hedeflenen özellik ve mevcut akış testleri: **199 geçti**. Testler SQLite, gerçek PostgreSQL 16, gerçek başsız Chromium ve mevcut FastAPI oturum/MFA koduyla çalıştırıldı. PostgreSQL testleri migration tekrarını, eksik şemada başlangıç reddini, temel sürüm 12'den release migration'ını, eşzamanlı çift paylaşımı, tek sabitleme kuralını ve yayın düzenleme/yönetici kararı yarışını kapsar.
+İlk teslimde hedeflenen özellik ve mevcut akış testleri: **199 geçti**. Profil/sesli muayene takip çalışmasının güncel sonuçları ve ekranları [takip raporundadır](expert_profile_voice_followup_2026-11-07.md). Testler SQLite, gerçek PostgreSQL 16, gerçek başsız Chromium ve mevcut FastAPI oturum/MFA koduyla çalıştırıldı. PostgreSQL testleri migration tekrarını, eksik şemada başlangıç reddini, temel sürüm 12'den release migration'ını, eşzamanlı çift paylaşımı, tek sabitleme kuralını ve yayın düzenleme/yönetici kararı yarışını kapsar.
 
 360/390/430 px ve 1280 px tarayıcı akışları: taslak/yeni yükleme, bağlantı kartı, çift tıklama, uzun başlık/URL, yayın ekleme, yayını gönderiye taşıma, normal üye görünümü, danışmanlık bağlantısı, yorum/yanıt/düzenleme, beğeni, dört görsel/sıralama, çevrimdışı hata ve tekrar gönderim. Yatay taşma kontrol edildi. Mevcut zil, menü ve alt gezinme korundu.
 
@@ -35,11 +35,11 @@ Genel depo testi yeşil değildir: değişiklik dalında 2.145 geçti, 80 başar
 
 ## Kalan doğrulamalar ve sınırlar
 
-- ORCID/Crossref yanıt işleme, başarı/tekrar/hata senaryoları kayıt biçimine uygun kontrollü yanıtlarla test edildi. Bu ortamdan doğrudan canlı API denemeleri DNS erişimi nedeniyle başarısız oldu; üretimden gerçek aktarım ayrıca denenmelidir.
+- ORCID/Crossref kontrollü testlerine ek olarak gerçek servis testleri tamamlandı: Aziz Sancar’ın 0000-0001-6469-4900 kaydından 61 yayın yönetim ekranıyla aktarıldı; tekrar aktarım ve aynı DOI engeli geçti. PubMed önizlemesi ve Crossref eşleşmesi gerçek servislerden doğrulandı.
 - Mevcut R2 servisi ve hata davranışı test edildi; gerçek üretim kovasına test içeriği yüklenmedi.
 - Fiziksel iPhone/Safari ve Android ekran klavyeleri test edilmedi. Chromium mobil görünümü ve VisualViewport uyarlaması test kapsamındadır.
 - Kural tabanlı metin denetimi tüm kişisel bilgileri, kötüye kullanımı veya yanlış sağlık iddialarını yakalama garantisi vermez. Görsellerin insan incelemesi ihtiyatlı ilk sürüm politikasıdır; içerik onayının hukuki/mesleki değerlendirmesi ayrıca yapılır.
-- ORCID sahiplik OAuth bağlantısı, takip sistemi, video/dosya/anket, yeniden paylaşım ve otomatik periyodik ORCID eşitlemesi eklenmedi. Gönderi düzenleme metni kapsar; mevcut gönderinin medya/bağlantı bileşimini değiştiren editör bu sürümde yoktur.
+- ORCID sahiplik OAuth bağlantısı, video/dosya/anket, yeniden paylaşım ve otomatik periyodik ORCID eşitlemesi eklenmedi. Gönderi düzenleme metni kapsar; mevcut gönderinin medya/bağlantı bileşimini değiştiren editör bu sürümde yoktur.
 
 ## Test ekran görüntüleri
 

@@ -59,6 +59,7 @@ def browser_app(tmp_path, monkeypatch):
             )
         )
         s.add(main.DoctorProfile(user_id=1, is_specialist=True, specialty="Ortodonti"))
+        s.add(main.UserAccountMeta(user_id=1, professional_title="Uzman Diş Hekimi"))
         s.commit()
 
     async def preview(url):
@@ -285,4 +286,65 @@ def test_four_images_upload_reorder_offline_retry_and_pending_visibility(browser
         )
         page.reload()
         expect(page.locator("[data-feed] .ds-card")).to_have_count(0)
+        browser.close()
+
+
+def test_management_inline_editor_tabs_and_settings(browser_app):
+    base, tmp = browser_app
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            executable_path=os.getenv("TEST_CHROMIUM", "/usr/bin/chromium"),
+            args=["--no-sandbox", "--single-process", "--no-zygote"],
+        )
+        ctx = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            is_mobile=True,
+            has_touch=True,
+            permissions=["notifications"],
+        )
+        ctx.add_cookies(
+            [{"name": main.SESSION_COOKIE, "value": "browser1", "url": base}]
+        )
+        page = ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(base + "/expert-support/profile")
+        expect(page.locator(".ds-inline-composer")).to_be_visible()
+        page.locator("[data-post-text]").fill("Yönetim ekranından bilimsel paylaşım")
+        page.locator("[data-publish]").click()
+        expect(page.locator("[data-feed] .ds-card")).to_have_count(1)
+        expect(page.locator("[data-post-text]")).to_have_value("")
+        page.locator("[data-post-text]").fill("Korunacak yeni gönderi taslağı")
+        page.locator('[data-post-id="1"] .ds-menu summary').click()
+        page.locator('[data-post-id="1"]').get_by_role(
+            "button", name="Gönderiyi düzenle", exact=True
+        ).click()
+        expect(page.locator("[data-edit-cancel]")).to_be_visible()
+        page.locator("[data-edit-cancel]").click()
+        expect(page.locator("[data-post-text]")).to_have_value(
+            "Korunacak yeni gönderi taslağı"
+        )
+        expect(page.locator("[data-publish]")).to_have_text("Paylaş")
+        page.locator("[data-post-text]").fill("Yeni ikinci gönderi")
+        page.locator("[data-publish]").click()
+        expect(page.locator("[data-feed] .ds-card")).to_have_count(2)
+
+        page.locator("[data-manage-tab=general]").click()
+        expect(page.locator("[data-manage-pane=general]")).to_be_visible()
+        expect(page.locator(".ds-inline-composer")).not_to_be_visible()
+        page.locator("[data-manage-tab=settings]").click()
+        expect(page.locator(".expert-availability-switch")).to_be_visible()
+        page.locator(".expert-availability-switch").click()
+        expect(page.locator("#availabilityText")).to_have_text("Meşgul")
+        page.locator("[data-manage-tab=publications]").click()
+        expect(page.locator("[data-orcid]")).to_be_visible()
+        expect(page.locator(".ds-inline-composer")).not_to_be_visible()
+        page.locator("[data-manage-tab=posts]").click()
+        expect(page.locator(".ds-inline-composer")).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
+        dest = Path(os.getenv("TEST_ARTIFACT_DIR", str(tmp / "screenshots")))
+        dest.mkdir(exist_ok=True, parents=True)
+        expect(page.locator("[data-manage-tab=posts]")).to_have_css("background-color", "rgb(9, 39, 71)")
+        page.screenshot(path=str(dest / "expert-management-390.png"), full_page=True)
+        assert not errors, errors
         browser.close()

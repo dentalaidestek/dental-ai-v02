@@ -26,6 +26,7 @@ from app import (
 )
 from app.expert_social_models import (
     SocialPost,
+    SocialFollow,
     SocialMedia,
     SocialPreview,
     SocialComment,
@@ -81,6 +82,10 @@ class CommentPatch(Body):
 
 class LinkBody(Body):
     url: str = Input(max_length=2048)
+
+
+class FollowBody(Body):
+    followed: bool
 
 
 class LikeBody(Body):
@@ -666,6 +671,50 @@ def register(app, main):
                 ) from exc
             return post_rows(s, [p], u)[0]
 
+    @r.get("/experts/{expert_id}/stats")
+    def profile_stats(request: Request, expert_id: int):
+        u = actor(request)
+        with Session(main.engine) as s:
+            expert(s, expert_id)
+            count = lambda model, *conditions: s.exec(
+                select(func.count()).select_from(model).where(*conditions)
+            ).one()
+            return {
+                "followers": count(SocialFollow, SocialFollow.expert_id == expert_id),
+                "following": count(SocialFollow, SocialFollow.follower_id == expert_id),
+                "posts": count(
+                    SocialPost,
+                    SocialPost.author_id == expert_id,
+                    SocialPost.status == "PUBLISHED",
+                ),
+                "publications": count(
+                    Publication,
+                    Publication.expert_id == expert_id,
+                    Publication.deleted == False,
+                    Publication.status == "PUBLISHED",
+                ),
+                "following_by_viewer": bool(s.get(SocialFollow, (u.id, expert_id))),
+            }
+
+    @r.put("/experts/{expert_id}/follow")
+    def follow_expert(request: Request, expert_id: int, body: FollowBody):
+        u = actor(request)
+        throttle(u, "follow", 30)
+        if u.id == expert_id:
+            raise HTTPException(400, "Kendi profilinizi takip edemezsiniz.")
+        with Session(main.engine) as s:
+            expert(s, expert_id, lock=True)
+            row = s.get(SocialFollow, (u.id, expert_id))
+            if body.followed and not row:
+                s.add(SocialFollow(follower_id=u.id, expert_id=expert_id))
+            if not body.followed and row:
+                s.delete(row)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+        return {"following_by_viewer": body.followed}
+
     @r.get("/experts/{expert_id}/posts")
     def feed(
         request: Request,
@@ -1037,6 +1086,7 @@ def register(app, main):
             )
             if u.id != expert_id:
                 stmt = stmt.where(Publication.status == "PUBLISHED")
+            total = s.exec(select(func.count()).select_from(stmt.subquery())).one()
             if before:
                 stmt = stmt.where(Publication.id < before)
             rows = list(
@@ -1063,6 +1113,7 @@ def register(app, main):
                     ],
                     "next_cursor": rows[-1].id if more else None,
                     "sync": json.loads(sync.model_dump_json()) if sync else None,
+                    "total": total,
                 },
                 headers=HEADERS,
             )
@@ -1113,6 +1164,38 @@ def register(app, main):
                 s.rollback()
                 raise HTTPException(409, "Bu DOI veya yayın zaten kayıtlı.") from exc
             return publication_row(row)
+
+    @r.post("/publications/{ident}/share-preview")
+    def publication_share_preview(request: Request, ident: int):
+        u = actor(request)
+        throttle(u, "publication-preview", 20)
+        with Session(main.engine, expire_on_commit=False) as s:
+            expert(s, u.id, write=True)
+            paper = s.get(Publication, ident)
+            if not paper or paper.deleted:
+                raise HTTPException(404, "Yayın bulunamadı.")
+            if paper.expert_id != u.id:
+                raise HTTPException(403, "Bu yayın sizin profilinizde değil.")
+            url = paper.url or ("https://doi.org/" + paper.doi if paper.doi else None)
+            if not url:
+                raise HTTPException(400, "Yayına bir kaynak bağlantısı ekleyin.")
+            data = {
+                "url": url,
+                "domain": urlsplit(url).hostname,
+                "site_name": paper.journal or "Akademik yayın",
+                "title": paper.title,
+                "description": " · ".join(
+                    str(v) for v in (paper.journal, paper.year) if v
+                ),
+            }
+            preview = SocialPreview(
+                owner_id=u.id,
+                url=url,
+                metadata_json=json.dumps(data, ensure_ascii=False),
+            )
+            s.add(preview)
+            s.commit()
+            return {"available": True, "id": preview.id, "cover": None, **data}
 
     @r.delete("/publications/{ident}")
     def delete_publication(request: Request, ident: int):

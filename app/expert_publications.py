@@ -1,10 +1,15 @@
 """Public bibliographic metadata. An ORCID number does not prove account ownership."""
 
 import json
+import asyncio
+import aiohttp
+import os
+import ssl
+from urllib.parse import urlsplit
 import re
 import hashlib
 from urllib.parse import quote
-from app.expert_social_safety import fetch_bytes, safe_url
+from app.expert_social_safety import safe_url
 
 
 def normalize_orcid(raw):
@@ -95,9 +100,65 @@ def parse_orcid(data):
     return rows
 
 
+def _registry_url(url):
+    """Only fixed official registries may use the configured outbound proxy."""
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname
+        not in {
+            "pub.orcid.org",
+            "api.crossref.org",
+            "pubmed.ncbi.nlm.nih.gov",
+            "dergipark.org.tr",
+            "eutils.ncbi.nlm.nih.gov",
+        }
+        or parsed.port not in (None, 443)
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Bibliyografik kaynak adresi geçersiz.")
+    return url
+
+
+async def registry_bytes(url, *, limit, accept, timeout):
+    # Pasted web URLs use the other, DNS-pinned SSRF client. Here the only
+    # destinations are official registries and redirects are always rejected.
+    url = _registry_url(url)
+    cafile = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    connector = aiohttp.TCPConnector(ssl=ssl.create_default_context(cafile=cafile))
+    async with aiohttp.ClientSession(
+        trust_env=True,
+        connector=connector,
+        timeout=aiohttp.ClientTimeout(total=timeout + 8),
+        auto_decompress=False,
+    ) as client:
+        async with client.get(
+            url,
+            headers={
+                "Accept": accept,
+                "User-Agent": "DentalAI-Profile/1.0",
+                "Accept-Encoding": "identity",
+            },
+            allow_redirects=False,
+        ) as response:
+            if response.status != 200 or response.headers.get(
+                "Content-Encoding", "identity"
+            ).lower() not in ("", "identity"):
+                raise ValueError("Bibliyografik kaynağa erişilemedi.")
+            if response.content_length and response.content_length > limit:
+                raise ValueError("Kaynak boyut sınırını aşıyor.")
+            data = bytearray()
+            async for chunk in response.content.iter_chunked(16384):
+                data.extend(chunk)
+                if len(data) > limit:
+                    raise ValueError("Kaynak boyut sınırını aşıyor.")
+            return bytes(data)
+
+
 async def orcid_works(orcid):
     orcid = normalize_orcid(orcid)
-    raw, _, _ = await fetch_bytes(
+    raw = await registry_bytes(
         "https://pub.orcid.org/v3.0/" + orcid + "/works",
         limit=2 * 1024 * 1024,
         accept="application/vnd.orcid+json",
@@ -110,7 +171,7 @@ async def crossref(doi):
     doi = normalize_doi(doi)
     if not doi:
         raise ValueError("DOI girin.")
-    raw, _, _ = await fetch_bytes(
+    raw = await registry_bytes(
         "https://api.crossref.org/works/" + quote(doi, safe=""),
         limit=512 * 1024,
         accept="application/json",
@@ -131,3 +192,37 @@ async def crossref(doi):
         doi=doi,
         url="https://doi.org/" + doi,
     )
+
+
+async def pubmed_preview(pmid):
+    if not re.fullmatch(r"\d{1,10}", pmid):
+        raise ValueError("PubMed kaydı geçersiz.")
+    raw = await registry_bytes(
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id="
+        + pmid
+        + "&retmode=json",
+        limit=256 * 1024,
+        accept="application/json",
+        timeout=4,
+    )
+    record = (json.loads(raw).get("result") or {}).get(pmid) or {}
+    if not record.get("title"):
+        raise ValueError("PubMed kaydı bulunamadı.")
+    import html
+
+    return {
+        "url": "https://pubmed.ncbi.nlm.nih.gov/" + pmid + "/",
+        "domain": "pubmed.ncbi.nlm.nih.gov",
+        "site_name": "PubMed",
+        "title": html.unescape(re.sub(r"<[^>]+>", "", record["title"]))[:300],
+        "description": " · ".join(
+            filter(
+                None,
+                [
+                    record.get("fulljournalname") or record.get("source"),
+                    record.get("pubdate"),
+                ],
+            )
+        )[:500],
+        "image_url": None,
+    }
