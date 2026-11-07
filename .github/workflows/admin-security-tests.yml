@@ -1,0 +1,26 @@
+name: Admin security regression
+on:
+  push:
+    branches: [feature/admin-fixed-email-otp-20261107]
+  pull_request:
+    paths:
+      - 'app/main.py'
+      - 'app/templates/admin_verify.html'
+      - 'tests/test_admin_fixed_email_otp.py'
+      - 'tests/test_security_hardening.py'
+      - '.github/workflows/admin-security-tests.yml'
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install pytest
+      - name: Run static regression tests
+        run: python -m pytest -q tests/test_admin_fixed_email_otp.py tests/test_security_hardening.py
+      - name: Compile application source
+        run: python -m py_compile app/main.py
