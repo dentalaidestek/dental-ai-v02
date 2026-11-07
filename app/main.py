@@ -2354,8 +2354,11 @@ def get_current_user(request: Request) -> Optional[User]:
                 user = None
             elif not user or not user.is_active or not user.email_verified_at:
                 user = None
-            elif user.role == "ADMIN" and (user.email or "").strip().lower() != "dentalaidestek@gmail.com":
-                user = None
+            elif user.role == "ADMIN":
+                if (user.email or "").strip().lower() != "dentalaidestek@gmail.com":
+                    user = None
+                elif not s.get(AdminVerifiedSession, token_hash):
+                    user = None
 
     if state is not None:
         state._dai_current_user_checked = True
