@@ -361,3 +361,8 @@ PR244ed0cf827620a030bca5933594e2106bce6e559af6Kasım09:52:20 Türkiye live: gizl
 Ayrıntı ve sentetik DOM kanıtları: [canlı kampanya](../../voice_live_campaign_2026-11-06.md). Devamındaki yayın ve yeniden deneme sonuçları o dosyaya eklenecek.
 
 Kampanya tamamlandı:8farklı sentetik vaka,6kısmi final/2kaynak erişimi nedeniyle finalden önce durma. İlk hata denemeleri bu sayıya başarı diye gizlenmez. PR2455196f44440c5451fd5aa30d707cbe7c49c6a0405,6Kasım09:56:19Türkiye live ve eski hatalı kron metni yeniden işlendi; araç sayısı1 oldu.614Python/11Node son kodda geçti. Plan/yanıt kaybı, yanlış veneer konusu, özgül endodonti kaynağı yokluğu, süren yara değerlendirme kapsamı ve fazla/genişletilmiş negatif bilgiler hâlâ açık. Ayrıntı kampanya raporunda. Hasta kaydı/mikrofon testi yapılmadı.
+
+
+## 7 Kasım 2026 — sade sonuç ve yenileme kurtarma
+
+Ana ekran tekrarları birleştirildi; materyal eksikleri klinik kontrollerin içinde, alıntılar/kapsam açılır ayrıntıda. Anamnezde yalnız dökümde netleşmeyen başlıklar var; aynı soru ve iletişim konusu tekilleştiriliyor, farklı hekim iddia dayanakları korunuyor. Kişi kapsamı açık subject etiketleri, literal sağlık öyküsü/plan ve genel kaplamayı lamine saymayan sınır eklendi. NICE başlangıç kaynağı ve kısa araştırma yanıtı yönlendirmesi var; yeni klinik doğruluk iddiası yok. Aynı sekmede 30 dakikalık yenileme kurtarma kontrol noktalarını saklar; rıza/seçim/onay/mikrofon otomatik geri gelmez. 24 konu, kısaltılmış metin, BFCache ikinci pagehide ve eski taslak süresinin yenilenmemesi regresyonları kapatıldı.629 Python/11 Node; iki mevcut uyarı. Bağımsız 232 odaklı inceleme onayladı. Yayın ve gerçek model tekrarları henüz yapılmış sayılmaz. Ayrıntı kabul belgesinde.

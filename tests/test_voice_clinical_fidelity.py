@@ -21,8 +21,8 @@ def test_atomic_facts_survive_invalid_combined_summary_and_daily_denial():
     assert 'Geçmiş: Eskiden risedronat' in fields['medications']['value']
     assert 'Güncel: Prolia' in fields['medications']['value']
     assert 'Altı ayda bir' in fields['medications']['value']
-    assert 'Planlanan:' in fields['plan']['value'] and 'henüz başlanmadı' in fields['plan']['value']
-    assert 'INR 2–3' in fields['medical_history']['value']
+    assert 'Planlanan:' in fields['plan']['value'] and 'Henüz başlamadım.' in fields['plan']['value']
+    assert 'INR ikiyle üç arasında.' in fields['medical_history']['value']
 
 
 def test_fabricated_fact_and_private_categories_are_not_accepted():
@@ -68,7 +68,7 @@ def test_planned_examination_is_a_plan_while_current_findings_and_planned_drugs_
         'fields': {'clinical_findings': {'value': 'Düşen dolgu incelenecek', 'quote': 'Düşen dolguyu inceleyelim.'}},
         'clinical_facts': [
         dict(zip(('field', 'value', 'quote', 'temporality'), row)) for row in facts]})
-    assert result['fields']['plan']['value'] == 'Planlanan: Düşen dolgunun incelenmesi'
+    assert result['fields']['plan']['value'] == 'Planlanan: Düşen dolguyu inceleyelim.'
     assert result['fields']['plan']['quote'] == 'Düşen dolguyu inceleyelim.'
     assert result['fields']['clinical_findings']['value'] == 'Güncel: Kırk altıda eski dolgu var.'
     assert result['fields']['medications']['value'] == 'Planlanan: Jeli yarın kullanmayı düşünüyoruz.'
@@ -105,7 +105,7 @@ def test_question_is_not_a_current_medication_but_answer_and_conditional_plan_su
             {'field': 'plan', 'value': 'Film önerisi', 'quote': plan,
              'temporality': 'PLANNED', 'subject': 'PATIENT'}]})
     assert result['fields']['medications']['value'] == 'Güncel: ' + answer
-    assert result['fields']['plan']['value'] == 'Planlanan: Film önerisi'
+    assert result['fields']['plan']['value'] == 'Planlanan: Film çekelim mi?'
 
 
 def test_conditional_examination_question_mislabelled_as_finding_is_kept_as_plan():
@@ -113,7 +113,7 @@ def test_conditional_examination_question_mislabelled_as_finding_is_kept_as_plan
     result = core.normalize({'transcript': quote, 'clinical_facts': [{
         'field': 'clinical_findings', 'value': 'Film önerisi', 'quote': quote,
         'temporality': 'PLANNED', 'subject': 'PATIENT'}]})
-    assert result['fields'] == {'plan': {'value': 'Planlanan: Film önerisi', 'quote': quote}}
+    assert result['fields'] == {'plan': {'value': 'Planlanan: Film çekelim mi?', 'quote': quote}}
 
 
 @pytest.mark.parametrize('patient_quote,other_quote', [
@@ -135,7 +135,7 @@ def test_conflicting_subject_quotes_are_withheld_without_losing_independent_pati
         'literature_topics': [{'topic': 'temporomandibular disorders diagnosis', 'quote': other_quote}]})
     assert set(result['fields']) == {'medications', 'plan'}
     assert result['fields']['medications']['value'] == 'Güncel: İlacım varfarin.'
-    assert result['fields']['plan']['value'] == 'Planlanan: Film değerlendirmesi'
+    assert result['fields']['plan']['value'] == 'Planlanan: Önce filmine bakalım.'
     assert result['literature_topics'] == []
     assert 'çakışan' in result['uncertain'] and 'alınmadı' in result['uncertain']
 
@@ -361,7 +361,7 @@ def test_separate_clauses_preserve_patient_denial_without_fathers_disease():
     result = core.normalize({'transcript': text, 'clinical_facts': [
         {'field': 'medical_history', 'value': 'Babanın diyabeti', 'quote': 'Babamda şeker var', 'temporality': 'CURRENT', 'subject': 'OTHER'},
         {'field': 'medical_history', 'value': 'Hastada tanı yok', 'quote': 'bende tanı yok.', 'temporality': 'NEGATED', 'subject': 'PATIENT'}]}, evidence=text)
-    assert result['fields']['medical_history']['value'] == 'Olumsuz beyan: Hastada tanı yok'
+    assert result['fields']['medical_history']['value'] == 'Olumsuz beyan: bende tanı yok.'
 
 
 def test_open_film_is_not_a_newly_taken_radiograph():

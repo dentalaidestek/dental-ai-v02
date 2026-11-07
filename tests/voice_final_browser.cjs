@@ -10,7 +10,7 @@ const tick=()=>new Promise(setImmediate);
  const root=new El(),elements=new Map(),events={},calls=[];root.dataset.patientId='1';
  const get=s=>{if(!elements.has(s))elements.set(s,new El());return elements.get(s)};
  root.querySelector=get;root.querySelectorAll=s=>s==='[data-field-row]'?get('[data-voice-fields]').children:[];
- let resolveText,failFinal=true,finalCount=0;
+ let resolveText,failFinal=true,finalCount=0,reloads=0;
  const final={summary:[],questions:[],contradictions:[],clinical_items:[],references:[],unavailable:[],notice:'Limited'};
  const fetch=async(url,options={})=>{
   calls.push({url,options});let body;
@@ -21,7 +21,7 @@ const tick=()=>new Promise(setImmediate);
   else throw Error('Unexpected endpoint');
   return {ok:body.ok,json:async()=>body};
  };
- const box={document:{getElementById:()=>root,createElement:t=>new El(t),createTextNode:text=>({text})},window:{addEventListener:(n,fn)=>events[n]=fn},fetch,navigator:{},location:{hash:'',assign(){}},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
+ const box={document:{getElementById:()=>root,createElement:t=>new El(t),createTextNode:text=>({text})},window:{addEventListener:(n,fn)=>events[n]=fn},fetch,navigator:{},location:{hash:'',assign(){},reload(){reloads++}},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},crypto:require('node:crypto').webcrypto,TextEncoder,AbortController,Uint8Array,Blob,btoa,setInterval,clearInterval,setTimeout,clearTimeout,confirm:()=>true};
  vm.runInNewContext(fs.readFileSync('app/static/voice-finish-draft.js','utf8'),box);
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await tick();get('[data-voice-consent]').checked=true;
@@ -47,6 +47,7 @@ const tick=()=>new Promise(setImmediate);
  await get('[data-voice-finalize]').handlers.click();assert.equal(finalCount,4,'Explicit evaluation processes changed transcript first');
  events.pagehide();assert.equal(get('[data-voice-transcript]').value,'');assert.equal(get('[data-voice-final-results]').children.length,0);
  assert.equal(get('[data-voice-communication]').children.length,0);
+ events.pageshow({persisted:true});assert.equal(reloads,1,'BFCache must refresh server ownership before restoring patient data');
  console.log('Final lifecycle: extraction drain, failure/retry, edit invalidation, unprocessed text and private cleanup passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
 
