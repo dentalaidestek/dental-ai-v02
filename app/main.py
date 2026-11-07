@@ -12450,12 +12450,17 @@ def admin_center_login(request: Request, username: str = Form(...), password: st
         if user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL:
             return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yönetici e-posta adresi yetkili adresle eşleşmiyor. Güvenli hesap kurtarma gerekli."}, status_code=403)
         # First verification and subsequent logins both require a fresh Gmail code.
-        if not user.email_verified_at:
-            pass  # The first successful OTP establishes email verification.
         _clear_web_login_failures(login_rate_key)
         now = _utcnow_naive()
-        # Do not allow an existing authenticated admin session to bypass the new
-        # second factor on its next request after rollout.
+        # Serialize code issuance with verification and throttle repeated sends.
+        user = s.exec(select(User).where(User.id == user.id).with_for_update()).one()
+        recent = s.exec(select(AdminLoginChallenge).where(
+            AdminLoginChallenge.user_id == user.id,
+            AdminLoginChallenge.used_at == None,
+            AdminLoginChallenge.expires_at > now,
+        ).order_by(AdminLoginChallenge.id.desc())).first()
+        if recent and recent.expires_at > now + timedelta(minutes=9):
+            return templates.TemplateResponse(request=request, name="admin_gate.html", context={"error":"Yeni kod istemeden önce 60 saniye bekleyin."}, status_code=429)
         # Only one active challenge per admin; a new login invalidates older codes.
         for old in s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.user_id == user.id)).all():
             s.delete(old)
@@ -12487,17 +12492,22 @@ def admin_login_verify(request: Request, code: str = Form(...)):
     if request.headers.get("sec-fetch-site") == "cross-site" or not _push_request_same_origin(request):
         return HTMLResponse("İstek kaynağı doğrulanamadı.", status_code=403)
     token = request.cookies.get("admin_login_pending", "")
-    if not token or not re.fullmatch(r"[0-9]{6}", code.strip()):
+    if not token:
         return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kod geçersiz."}, status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        challenge = s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.token_hash == hash_session_token(token)).with_for_update()).first()
+        # Lock user before challenge (same order as code issuance), preventing
+        # deadlocks and concurrent replay on PostgreSQL.
+        candidate = s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.token_hash == hash_session_token(token))).first()
+        if not candidate:
+            return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kod geçersiz."}, status_code=403)
+        user = s.exec(select(User).where(User.id == candidate.user_id).with_for_update()).first()
+        challenge = s.exec(select(AdminLoginChallenge).where(AdminLoginChallenge.id == candidate.id).with_for_update().execution_options(populate_existing=True)).first()
         now = _utcnow_naive()
         if not challenge or challenge.used_at or challenge.expires_at <= now or challenge.attempts >= 5:
             return templates.TemplateResponse(request=request, name="admin_verify.html", context={"error":"Kodun süresi dolmuş. Yeniden giriş yapın."}, status_code=403)
-        user = s.exec(select(User).where(User.id == challenge.user_id).with_for_update()).first()
         if not user or not user.is_active or user.role != "ADMIN" or (user.email and user.email.strip().lower() != ADMIN_FIXED_EMAIL):
             return HTMLResponse("Yönetici doğrulaması başarısız.", status_code=403)
-        if not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
+        if not re.fullmatch(r"[0-9]{6}", code.strip()) or not secrets.compare_digest(challenge.code_hash, hash_session_token(code.strip())):
             challenge.attempts += 1
             s.add(challenge)
             s.commit()
@@ -12508,6 +12518,8 @@ def admin_login_verify(request: Request, code: str = Form(...)):
         # Revoke any sessions issued before the two-factor login was completed.
         for old_session in s.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all():
             s.delete(old_session)
+        for old_verified in s.exec(select(AdminVerifiedSession).where(AdminVerifiedSession.user_id == user.id)).all():
+            s.delete(old_verified)
         if not user.email_verified_at:
             user.email_verified_at = now
         s.add(challenge)
