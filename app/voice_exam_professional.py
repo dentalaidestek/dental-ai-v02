@@ -13,6 +13,10 @@ _AAPD = 'https://www.aapd.org/research/oral-health-policies--recommendations/'
 
 # (stable ID, publisher, document title, fixed URL, query triggers, excerpt terms)
 DOCUMENTS = (
+    ('nice-oral-lesions', 'NICE', 'NG12: Oral Cancer Recognition and Referral',
+     'https://www.nice.org.uk/guidance/ng12/chapter/recommendations-organised-by-site-of-cancer',
+     ('ağız yarası', 'ülser', 'geçmeyen yara', 'oral lesion'),
+     ('oral cancer', 'ulceration', '3 weeks', 'referral', 'unexplained')),
     ('aae-restorability', 'AAE', 'Fundamentals of Restorability',
      'https://www.aae.org/specialty/fundamentals-of-restorability/',
      ('fiber post', 'post kor', 'ferrule', 'kalan diş dokusu'),
@@ -137,8 +141,9 @@ TOPIC_DOCUMENTS = {
     'surgery.bleeding': ('nhs-oral-surgery', 'nhs-wisdom-teeth'),
     'surgery.nerve': ('nhs-oral-surgery', 'nhs-wisdom-teeth'),
     'surgery.sinus': ('nhs-oral-surgery',),
-    'oral_medicine.general': ('ada-oral-cancer', 'ada-xerostomia', 'aapd-antibiotics'),
-    'oral_medicine.cancer': ('ada-oral-cancer',),
+    'oral_medicine.general': ('nice-oral-lesions', 'ada-oral-cancer'),
+    'oral mucosal lesion diagnosis': ('nice-oral-lesions', 'ada-oral-cancer'),
+    'oral_medicine.cancer': ('nice-oral-lesions', 'ada-oral-cancer'),
     'oral_medicine.saliva': ('ada-xerostomia',),
     'oral_medicine.infection': ('aapd-antibiotics',),
     'restorative.general': ('ada-direct-materials',),

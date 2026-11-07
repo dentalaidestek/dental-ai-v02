@@ -32,7 +32,7 @@ def test_every_new_specialty_topic_has_only_known_documents():
         'anesthesia': 'general sedation', 'emergencies': 'general',
         'special_care': 'general', 'implant': 'general prosthesis components', 'endo': 'general cracked_tooth post_core irrigation obturation', 'orofacial_pain': 'sleep',
     }
-    assert set(TOPIC_DOCUMENTS) == {f'{branch}.{topic}' for branch, topics in expected.items() for topic in topics.split()}
+    assert set(TOPIC_DOCUMENTS) == {f'{branch}.{topic}' for branch, topics in expected.items() for topic in topics.split()} | {'oral mucosal lesion diagnosis'}
     ids = {d[0] for d in DOCUMENTS}
     for topic, documents in TOPIC_DOCUMENTS.items():
         assert isinstance(documents, tuple) and documents, topic

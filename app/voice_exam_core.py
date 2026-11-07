@@ -219,6 +219,22 @@ def _quote_roles(quote, evidence):
     return roles
 
 
+# Provider labels name the person described, never the role of the speaker.
+_SUBJECT_ALIASES = {'THIS_PATIENT': 'PATIENT', 'PATIENT_RELATIVE': 'FAMILY',
+                    'OTHER_PERSON': 'OTHER', 'UNCLEAR_PERSON': 'UNKNOWN'}
+
+
+def _fact_subject(value):
+    return _SUBJECT_ALIASES.get(value, value) if isinstance(value, str) else value
+
+
+def _specific_topic_supported(topic, quote):
+    # A generic crown or ceramic layering cannot identify a laminate veneer.
+    # Other topics retain semantic selection, including ordinary patient speech.
+    return topic != 'prosth.veneers' or bool(re.search(
+        r'\b(?:lamine|laminat(?:e|es|lar|ları)?|veneers?|yaprak\s+porselen)\b', quote, re.IGNORECASE))
+
+
 def normalize(result, evidence=None):
     """Only retain suggestions with an exact quotation in the transcript."""
     if not isinstance(result, dict):
@@ -234,12 +250,13 @@ def normalize(result, evidence=None):
     facts = result.get('clinical_facts', [])
     if not isinstance(facts, list) or len(facts) > 40:
         raise VoiceError('Klinik bilgi sınırı aşıldı.')
+    facts = [{**fact, 'subject': _fact_subject(fact.get('subject'))} if isinstance(fact, dict) and 'subject' in fact else fact for fact in facts]
     nonpatient_quotes, family_quotes = [], []
     for fact in facts:
         if not isinstance(fact, dict):
             continue
         subject = fact.get('subject')
-        if subject is not None and subject not in {'PATIENT', 'FAMILY', 'OTHER', 'UNKNOWN'}:
+        if subject is not None and (not isinstance(subject, str) or subject not in {'PATIENT', 'FAMILY', 'OTHER', 'UNKNOWN'}):
             raise VoiceError('Klinik bilginin kime ait olduğu doğrulanamadı; taslak korunuyor.')
         if subject in {'OTHER', 'UNKNOWN'}:
             quote = appointment_evidence_quote(_string(fact.get('quote', ''), 1000), anchor)
@@ -295,7 +312,7 @@ def normalize(result, evidence=None):
     for item in topics:
         if isinstance(item, dict) and item.get('topic') in allowed_topics:
             quote = appointment_evidence_quote(_string(item.get('quote', ''), 1000), anchor)
-            if quote and quote in anchor:
+            if quote and quote in anchor and _specific_topic_supported(item['topic'], quote):
                 output['literature_topics'].append({'topic': item['topic'], 'quote': quote})
     removed_topics = result.get('removed_literature_topics', [])
     if not isinstance(removed_topics, list) or len(removed_topics) > MAX_TOPICS:
@@ -403,7 +420,7 @@ def normalize(result, evidence=None):
                                             'PATIENT_RESPONSE' if roles == {'hasta'} else 'UNATTRIBUTED_RESPONSE')
                     output['communication'].append(item)
             continue
-        if field in {'medications', 'chief_complaint', 'clinical_findings', 'dental_history', 'oral_habits', 'family_history', 'materials'}:
+        if field in {'medications', 'chief_complaint', 'medical_history', 'plan', 'clinical_findings', 'dental_history', 'oral_habits', 'family_history', 'materials'}:
             # Keep symptoms/anatomy literal too: 'üstündeki kaplama' is not upper jaw.
             # Do not silently replace an uncertain spoken product with a different
             # active ingredient or dose supplied by the extraction model.
@@ -476,7 +493,7 @@ def schema():
         'communication': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {key: {'type': 'STRING'} for key in ('quote', 'observation', 'suggestion')}, 'required': ['quote', 'observation', 'suggestion']}},
         'clinical_facts': {'type': 'ARRAY', 'items': {'type': 'OBJECT', 'properties': {
             'field': {'type': 'STRING', 'enum': [*FIELDS[3:], 'patient_concern', 'clinician_response', 'clinician_statement']}, 'value': {'type': 'STRING'}, 'quote': {'type': 'STRING'},
-            'subject': {'type': 'STRING', 'enum': ['PATIENT', 'FAMILY', 'OTHER', 'UNKNOWN']},
+            'subject': {'type': 'STRING', 'description': 'Person ABOUT whom the fact is stated. A clinician planning care for this patient is THIS_PATIENT. Speaker role is not subject.', 'enum': list(_SUBJECT_ALIASES)},
             'temporality': {'type': 'STRING', 'enum': ['CURRENT', 'HISTORICAL', 'PLANNED', 'NEGATED', 'UNKNOWN']}},
             'required': ['field', 'value', 'quote', 'temporality', 'subject']}},
         'transcript': {'type': 'STRING'}, 'uncertain': {'type': 'STRING'},
@@ -496,15 +513,15 @@ fields yalnız first_name, last_name ve age içindir. Yeni transcript veya klini
 CLINICAL_FACTS: konuşmayı baştan sona tara; açıkça belirtilen her klinik bilgiyi koru.
 Her öğe bir bilgi içerir: field, value, quote, temporality, subject. En çok 40 öğe.
 subject bilginin KİMİN HAKKINDA olduğunu gösterir; konuşan kişinin rolü değildir.
-PATIENT yalnız bu hastaya ait bilgi, FAMILY bu hastanın yakınının ilgili aile sağlık
-öyküsü, OTHER asistan/hekim/başka kişinin kendi öyküsü, UNKNOWN kime ait olduğu
-anlaşılamayan bilgidir. FAMILY yalnız family_history alanına gider.
+THIS_PATIENT yalnız bu hastaya ait bilgi, PATIENT_RELATIVE bu hastanın yakınının ilgili aile sağlık
+öyküsü, OTHER_PERSON asistan/hekim/başka kişinin kendi öyküsü, UNCLEAR_PERSON kime ait olduğu
+anlaşılamayan bilgidir. PATIENT_RELATIVE yalnız family_history alanına gider.
 quote yalnız o kişiye ait bilgi taşıyan en küçük yeterli kesintisiz cümlecik olsun;
 aynı kişinin sözünde bile baba/hasta anlatımı birlikteyse tüm cümleyi iki etikette
-tekrarlama. Örnek: "Babamda şeker var; bende tanı yok." için FAMILY alıntısı
-"Babamda şeker var", PATIENT alıntısı "bende tanı yok." olur. Ayrılamıyorsa
+tekrarlama. Örnek: "Babamda şeker var; bende tanı yok." için PATIENT_RELATIVE alıntısı
+"Babamda şeker var", THIS_PATIENT alıntısı "bende tanı yok." olur. Ayrılamıyorsa
 kesin hasta bilgisi üretme, netleştirme sorusu sor. İlaç adının bilinmemesi
-subject UNKNOWN demek değildir; ilacı kullanan hasta belliyse PATIENT kalır.
+subject UNCLEAR_PERSON demek değildir; ilacı kullanan hasta belliyse THIS_PATIENT kalır.
 Başka kişinin öyküsünü "hasta öyküsü değil" açıklamasıyla bile hasta alanlarına koyma.
 Hekimin sorduğu soru cevap değildir; yalnız soru alıntısından hastalık/ilaç/alerji
 varlığı ya da yokluğu çıkartma. Yanıtı dayanaklandır; yanıt yoksa netleştirme sorusu üret.
@@ -517,10 +534,10 @@ field anlamları:
   eski kanal/çekim/implant bugünkü yapılmış işlem sayılmaz. Birebir alıntıyı koru.
 - oral_habits: sigara/tütün, diş sıkma, ağız bakımı, beslenme/asit alışkanlıklarının
   muayeneyle ilgili açık beyanları. Söylenmeyen sıklık veya nedensellik ekleme.
-- family_history: yalnız hastanın aile/yakın sağlık öyküsü. subject FAMILY olsun;
+- family_history: yalnız hastanın aile/yakın sağlık öyküsü. subject PATIENT_RELATIVE olsun;
   hastanın kendi hastalığı olarak medical_history içine koyma. Annem şeker hastası;
-  bende tanı yok gibi cümleyi iki kısa alıntıya ayır: aile bilgisi FAMILY, kişinin
-  kendi olumsuz beyanı PATIENT. Asistanın kendi ailesi hastanın aile öyküsü değildir.
+  bende tanı yok gibi cümleyi iki kısa alıntıya ayır: aile bilgisi PATIENT_RELATIVE, kişinin
+  kendi olumsuz beyanı THIS_PATIENT. Asistanın kendi ailesi hastanın aile öyküsü değildir.
 - materials: konuşulan işlemle ilişkili açık materyal/ürün adı, alt tür, ölçü, bağlantı
   ve kullanım bilgisi; birebir alıntıyı koru. İstenmiş, planlanmış ve uygulanmış
   materyali zamanıyla ayır. Marka/tür söylenmediyse uydurma; açık belli değil
@@ -531,7 +548,7 @@ field anlamları:
 - plan: hekimin bu hasta için söylediği bütün koşullu/kesin inceleme, işlem, ilaç,
   kontrol ve yönlendirme planları. Tedavi kararı verilmemiş olsa da "önce bakalım",
   "filmle değerlendirelim", "ilaç listesini doğrulayalım", "hastane kaydını isteyelim"
-  gibi günlük ifadeler klinik inceleme planıdır; atlama. Bunları PLANNED ve PATIENT
+  gibi günlük ifadeler klinik inceleme planıdır; atlama. Bunları PLANNED ve THIS_PATIENT
   olarak, her birini konuşmadaki birebir alıntıyla koru. Henüz yapılmış sayma;
   söylenmeyen işlem/ilaç ekleme. Yalnız ücret veya iletişim açıklaması plan değildir.
 - patient_concern: hastanın korku, maliyet, süre, güven veya anlama konusunda ifade
@@ -633,7 +650,9 @@ def clinical_context(value):
     for item in topics:
         if not isinstance(item, dict) or set(item) != {'topic', 'quote'} or item.get('topic') not in {topic for topic, _ in TOPICS}:
             raise VoiceError('Literatür konusu doğrulanamadı.')
-        clean['literature_topics'].append({'topic': item['topic'], 'quote': _string(item['quote'], 1000)})
+        quote = _string(item['quote'], 1000)
+        if _specific_topic_supported(item['topic'], quote):
+            clean['literature_topics'].append({'topic': item['topic'], 'quote': quote})
     appointment = value.get('appointment')
     if appointment:
         if not isinstance(appointment, dict) or set(appointment) - {'quote', 'acceptance_quote'}:
@@ -665,7 +684,7 @@ def _understand(text, context):
     from app.voice_exam_review_provider import review
     from app.voice_exam_anamnesis import scope as anamnesis_scope
     from app.clinical_privacy import redact_direct_identifiers
-    instruction = PROMPT + '\nKaynak konusu için yalnız literature_topics şemasındaki kimliklerden seçim yap. Serbest sorgu üretme. Alet ayrılması/kırılması, perforasyon, bulunamayan kanal ve tedavi sonrası ağrıda uygun özel endodonti kimliğini seç. Konu seçimi tanı değildir; olumsuz, geçmiş veya şüpheli beyanı gerçekleşmiş komplikasyon diye sunma. Listede karşılığı olmayan durumları uncertain içinde kaynak kapsamı dışında olarak bildir. Her seçimi konuşmadaki birebir alıntıya bağla.'
+    instruction = PROMPT + '\nKaynak konusu için yalnız literature_topics şemasındaki kimliklerden seçim yap. Serbest sorgu üretme. Alet ayrılması/kırılması, perforasyon, bulunamayan kanal ve tedavi sonrası ağrıda uygun özel endodonti kimliğini seç. Genel kaplama/kuron için prosth.fixed seç; açık lamine/laminat/yaprak porselen/veneer ifadesi olmadan prosth.veneers seçme. Konu seçimi tanı değildir; olumsuz, geçmiş veya şüpheli beyanı gerçekleşmiş komplikasyon diye sunma. Listede karşılığı olmayan durumları uncertain içinde kaynak kapsamı dışında olarak bildir. Her seçimi konuşmadaki birebir alıntıya bağla.'
     instruction += '\nDiş hekimliğinin tüm dallarını anlamsal olarak değerlendir; yalnız anahtar sözcüklere dayanma. Aşağıdaki kapalı konu rehberini kullan. Özel durum için alt konu uygunsa seç; yeni/alışılmadık bir durum için ilgili dalın .general kimliğini seç ve özgül kaynak eksikliğini uncertain içinde koru. İlgisiz genel başlıkları doldurma. Birden fazla dalı ilgilendiren gerçek konuları koru; gereksiz parent/child tekrarları yapma. İşlem sırası, endikasyon, preparasyon, materyal, oklüzyon, komplikasyon, takip ve hasta bağlamını birlikte değerlendir. Eksik konuşmadan hekim hatası sonucu çıkarma. Acil yardım gereksinimini kaynak araması bitene kadar erteleme.\n' + json.dumps(semantic_catalogue(), ensure_ascii=False)
     instruction += '\nÖnceki bir kaynak konusu konuşmada açıkça geri alındı/düzeltildiyse yalnız o kimliği ve düzeltme alıntısını removed_literature_topics içinde ver. Yeni bölümde tekrar geçmemesi geri alma değildir. Diğer konuları koru.'
     from app.voice_exam_speech import interpretation_guide
@@ -679,6 +698,10 @@ def _understand(text, context):
     identity['required'] = list(FIELDS[:3])
     result = review(instruction, {'clinical_text': redact_direct_identifiers(text), 'previous_context': context,
                                  'anamnesis_scope': anamnesis_scope()}, extraction_schema, extraction=True)
+    # The extraction tool permits identity fields only. Unexpected legacy clinical
+    # summaries cannot reintroduce an unsupported paraphrase beside atomic facts.
+    if isinstance(result.get('fields'), dict):
+        result['fields'] = {key: item for key, item in result['fields'].items() if key in FIELDS[:3]}
     evidence = text + '\n' + '\n'.join(item.get('quote', '') for item in context.get('fields', {}).values())
     evidence += '\n' + '\n'.join(item.get('quote', '') for item in context.get('teeth', []))
     evidence += '\n' + '\n'.join(context.get('appointment', {}).values())
@@ -698,9 +721,9 @@ def _understand(text, context):
     logging.getLogger(__name__).warning(
         'voice_plan_fidelity candidates=%d anchored=%d patient=%d other=%d unknown=%d missing=%d recorded=%d',
         len(plan_facts), sum(bool(appointment_evidence_quote(_string(fact.get('quote', ''), 1000), evidence)) for fact in plan_facts),
-        sum(fact.get('subject') == 'PATIENT' for fact in plan_facts),
-        sum(fact.get('subject') == 'OTHER' for fact in plan_facts),
-        sum(fact.get('subject') == 'UNKNOWN' for fact in plan_facts),
+        sum(_fact_subject(fact.get('subject')) == 'PATIENT' for fact in plan_facts),
+        sum(_fact_subject(fact.get('subject')) == 'OTHER' for fact in plan_facts),
+        sum(_fact_subject(fact.get('subject')) == 'UNKNOWN' for fact in plan_facts),
         sum(fact.get('subject') is None for fact in plan_facts), int('plan' in output['fields']))
     logging.getLogger(__name__).warning('voice_insight_fidelity communication=%d/%d barriers=%d/%d questions=%d/%d',
         len(output['communication']), len(result.get('communication', [])),

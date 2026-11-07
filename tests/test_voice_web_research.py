@@ -70,7 +70,7 @@ def test_official_start_pages_are_server_owned_not_patient_urls(monkeypatch):
     web.retrieve_web([{'topic': 'oral_medicine.cancer', 'quote': 'PRIVATE',
                        'url': 'https://evil.example/PRIVATE'}])
     starts = calls[0]['topics'][0]['professional_start_urls']
-    assert starts == ['https://www.ada.org/resources/ada-library/oral-health-topics/cancer-head-and-neck']
+    assert starts == ['https://www.nice.org.uk/guidance/ng12/chapter/recommendations-organised-by-site-of-cancer', 'https://www.ada.org/resources/ada-library/oral-health-topics/cancer-head-and-neck']
     assert 'PRIVATE' not in json.dumps(calls) and 'evil.example' not in json.dumps(calls)
 
 
@@ -97,7 +97,7 @@ def test_specific_mapped_topic_avoids_unrelated_general_start_pages(monkeypatch)
                       {'topic': 'oral_medicine.cancer', 'quote': 'PRIVATE'}])
     rows = {topic['id']: topic for topic in calls[0]['topics']}
     assert rows['oral_medicine.general']['professional_start_urls'] == []
-    assert len(rows['oral_medicine.cancer']['professional_start_urls']) == 1
+    assert len(rows['oral_medicine.cancer']['professional_start_urls']) == 2
 
 
 @pytest.fixture(autouse=True)
@@ -445,3 +445,10 @@ def test_every_registered_topic_reaches_native_research_without_patient_words(mo
     assert output['references'][0]['excerpts'][0] in TEXT
     # A transport/provenance check never certifies a topic or clinical conclusion.
     assert output['references'][0]['matched_topics'] == []
+
+
+def test_oral_lesion_research_can_discover_specific_nice_guidance_without_private_speech():
+    data, unverified = web._public_input([{'topic':'oral mucosal lesion diagnosis','quote':'PRIVATE PATIENT'}], [])
+    assert web._valid_url('https://www.nice.org.uk/guidance/ng12/chapter/recommendations-organised-by-site-of-cancer')
+    assert any('nice.org.uk/guidance/ng12' in url for url in data['topics'][0]['professional_start_urls'])
+    assert 'PRIVATE PATIENT' not in str(data)

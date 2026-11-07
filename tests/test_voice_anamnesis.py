@@ -12,7 +12,7 @@ def test_family_history_and_personal_denial_are_separate_literal_facts():
            {'field':'medical_history','value':'Diyabet tanısı yok','quote':'bende böyle bir tanı yok','subject':'PATIENT','temporality':'NEGATED'}]
     result=core.normalize({'transcript':text,'clinical_facts':facts},evidence=text)
     assert result['fields']['family_history']['value']=='Güncel: Annem şeker hastası'
-    assert result['fields']['medical_history']['value']=='Olumsuz beyan: Diyabet tanısı yok'
+    assert result['fields']['medical_history']['value']=='Olumsuz beyan: bende böyle bir tanı yok'
 
 def test_relative_disease_cannot_become_personal_medical_history():
     text='Annem şeker hastası.'
