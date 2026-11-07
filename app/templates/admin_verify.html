@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block content %}
+<div class="admin-gate"><section>
+<span class="admin-kicker">DENTAL AI · YÖNETİM</span>
+<h1>Güvenli Giriş Doğrulaması</h1>
+<p>dentalaidestek@gmail.com adresine gönderilen 6 haneli kodu girin. Kod 10 dakika geçerlidir.</p>
+{% if error %}<div class="admin-error" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="/dayedunyaxayine4721/verify">
+<label>Doğrulama kodu<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+<button type="submit">Doğrula ve Giriş Yap</button>
+</form>
+<a href="/dayedunyaxayine4721">Yeni kod almak için tekrar giriş yap</a>
+</section></div>
+{% endblock %}
