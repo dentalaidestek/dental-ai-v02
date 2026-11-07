@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install test dependencies
-        run: python -m pip install pytest
+        run: python -m pip install pytest fastapi
       - name: Run static regression tests
         run: python -m pytest -q tests/test_admin_fixed_email_otp.py tests/test_security_hardening.py
       - name: Compile application source
