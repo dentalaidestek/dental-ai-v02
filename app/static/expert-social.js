@@ -48,11 +48,13 @@
         let message = result.detail;
         if (Array.isArray(message))
           message = "Alanları ve karakter sınırlarını kontrol edin.";
-        throw new Error(
+        const error = new Error(
           typeof message === "string"
             ? message
             : "İşlem tamamlanamadı. Yeniden deneyin.",
         );
+        error.status = response.status;
+        throw error;
       }
       return result;
     } catch (error) {
@@ -97,8 +99,8 @@
   function statusBadge(status, moderation) {
     return el(
       "span",
-      "ds-status" + (status === "REJECTED" ? " is-rejected" : ""),
-      moderation?.wait_type === 'OWNER_CHANGES' ? 'Düzenleme gerekli' : labels[status] || status,
+      "ds-status" + (status === "REJECTED" ? " is-rejected" : status === "PUBLISHED" ? " is-published" : ""),
+      status === "PUBLISHED" ? "Yayında" : moderation?.wait_type === 'OWNER_CHANGES' ? 'Düzenleme gerekli' : labels[status] || status,
     );
   }
   function linkCard(url, preview, cover) {
@@ -138,6 +140,23 @@
           hour: "2-digit",
           minute: "2-digit",
         });
+  }
+  function mediaCarousel(track, count, label) {
+    const wrap = el("div", "ds-media-carousel");
+    wrap.append(track);
+    if (count > 1) {
+      track.tabIndex = 0;
+      track.setAttribute("aria-label", label);
+      const position = el("output", "ds-carousel-position", "1 / " + count);
+      position.setAttribute("aria-label", "Görsel konumu");
+      track.addEventListener("scroll", () => {
+        const stride = track.children[1].offsetLeft - track.children[0].offsetLeft;
+        const index = stride ? Math.round(track.scrollLeft / stride) : 0;
+        position.textContent = Math.max(1, Math.min(count, index + 1)) + " / " + count;
+      }, { passive: true });
+      wrap.append(position);
+    }
+    return wrap;
   }
   const iconPaths = {
     heart:
@@ -354,13 +373,13 @@
     }
     function renderPost(p) {
       posts.set(p.id, p);
+      if (p.comments_closed) {
+        const sheet = root.querySelector(`[data-comments-sheet][data-comment-post-id="${p.id}"]`);
+        if (sheet) { closeDialog(sheet); sheet.remove(); }
+      }
       const card = el("article", "ds-card");
       card.dataset.postId = p.id;
       card.id = "post-" + p.id;
-      if (p.pinned) {
-        const pin=el('div','ds-pin');pin.setAttribute('aria-label','Sabitlenmiş gönderi');
-        const icon=el('img');icon.src='/static/expert-icons/push-pin.svg';icon.alt='';pin.append(icon,document.createTextNode('Sabitlenmiş gönderi'));card.append(pin);
-      }
       const author = el("header", "ds-author");
       if (p.author_photo) {
         const img = el("img", "ds-avatar");
@@ -376,7 +395,16 @@
         "Mesleki belgesi doğrulanmış uzman";
       const time = el("time", "", date(p.created_at));
       time.dateTime = p.created_at;
-      copy.append(time);
+      const metadata = el("div", "ds-post-meta");
+      metadata.append(time);
+      if (p.status === "PUBLISHED") metadata.append(statusBadge(p.status));
+      if (p.pinned) {
+        const pin = el("span", "ds-pin");
+        pin.setAttribute("aria-label", "Sabitlenmiş gönderi");
+        const icon = el("img"); icon.src = "/static/expert-icons/push-pin.svg"; icon.alt = "";
+        pin.append(icon, document.createTextNode("Sabit")); metadata.append(pin);
+      }
+      copy.append(metadata);
       author.append(copy);
       const options = p.owned
         ? [
@@ -416,21 +444,17 @@
       author.append(menu(options));
       card.append(author);
       if (p.status !== "PUBLISHED") {
-        card.append(statusBadge(p.status,p.moderation));
-        card.append(
-          el(
-            "p",
-            "ds-muted",
-            p.moderation?.reason || (p.status === "PENDING"
-              ? "İçerik yayınlanmadan önce inceleniyor. Şu anda yalnızca siz görebilirsiniz."
-              : "İçerik yayınlanmadı. Düzenleyip yeniden incelemeye gönderebilirsiniz."),
-          ),
-        );
+        const status = el("div", "ds-post-status");
+        status.append(statusBadge(p.status,p.moderation));
         const refresh=button('Durumu yenile','ds-text-button',async()=>{
           if(refresh.disabled)return;refresh.disabled=true;
           try{replacePost(await api('/posts/'+p.id));}catch(e){say(e.message);}finally{refresh.disabled=false;}
         });
-        card.append(refresh);
+        status.append(refresh);
+        card.append(status, el("p", "ds-muted ds-moderation-reason",
+          p.moderation?.reason || (p.status === "PENDING"
+            ? "İçerik yayınlanmadan önce inceleniyor. Şu anda yalnızca siz görebilirsiniz."
+            : "İçerik yayınlanmadı. Düzenleyip yeniden incelemeye gönderebilirsiniz.")));
       }
       card.append(linkedText(p.text));
       const gallery = p.media.filter(
@@ -450,7 +474,7 @@
           a.append(img);
           grid.append(a);
         });
-        card.append(grid);
+        card.append(mediaCarousel(grid, gallery.length, "Gönderi görselleri"));
       }
       if (p.link_url)
         card.append(
@@ -505,7 +529,9 @@
       });
       actionIcon(share, "share");
       if(p.status!=='PUBLISHED')like.disabled=comment.disabled=share.disabled=true;
-      actions.append(like, comment, share);
+      actions.append(like);
+      if (!p.comments_closed) actions.append(comment);
+      actions.append(share);
       card.append(actions);
       if(p.comments_closed){const closed=el('p','ds-comments-state','Yorumlar kapalı');closed.dataset.commentsState='';card.append(closed);}
       return card;
@@ -566,12 +592,13 @@
     const commentDrafts=new Map();
     window.addEventListener('dai:session-ending',()=>{commentDrafts.clear();root.querySelector('[data-comments-sheet]')?.close();});
     async function toggleComments(card, p) {
+      if (p.comments_closed || posts.get(p.id)?.comments_closed) return;
       const previous=root.querySelector('[data-comments-sheet]');
       if(previous?.open){closeDialog(previous);return;}
       previous?.remove();
       const toggle = card.querySelector("[data-comments-toggle]");
       const wrap = el("dialog", "ds-dialog ds-comments-sheet");
-      wrap.dataset.commentsSheet='';wrap.setAttribute('aria-label','Yorumlar');
+      wrap.dataset.commentsSheet='';wrap.dataset.commentPostId=p.id;wrap.setAttribute('aria-label','Yorumlar');
       toggle.setAttribute("aria-expanded", "true");
       const heading=el('header','ds-dialog-head ds-comments-head'),title=el('h2','','Yorumlar'),total=el('span','ds-comment-total',String(p.comment_count));
       const close=button('×','ds-icon',()=>closeDialog(wrap));close.setAttribute('aria-label','Yorumları kapat');
@@ -772,6 +799,8 @@
       if (!dialog) return;
       const box = $("[data-attachments]");
       box.replaceChildren();
+      if (!draft.media.length) return;
+      const track = el("div", "ds-attachments-track");
       draft.media.forEach((m, index) => {
         const item = el("div", "ds-attachment"),
           img = el("img");
@@ -829,8 +858,9 @@
           progress.value = m.progress || 0;
           item.append(progress);
         }
-        box.append(item);
+        track.append(item);
       });
+      box.append(mediaCarousel(track, draft.media.length, "Yükleme önizlemeleri"));
     }
     function renderPreview() {
       const box = $("[data-preview]");
@@ -927,6 +957,8 @@
       async function fetchPreview(url) {
         if (editing) return;
         const seq = ++previewSequence;
+        notice.hidden = true;
+        notice.textContent = "";
         draft.linkUrl = url;
         draft.preview = null;
         renderPreview();
@@ -939,8 +971,17 @@
           saveDraft();
         } catch (e) {
           if (seq === previewSequence) {
+            const rejected = [400, 401, 403, 422].includes(e.status);
+            if (rejected) {
+              draft.linkUrl = null;
+              draft.preview = null;
+              saveDraft();
+            }
             renderPreview();
-            say(e.message + " Bağlantıyı önizlemesiz paylaşabilirsiniz.");
+            say(
+              e.message +
+                (rejected ? "" : " Bağlantıyı önizlemesiz paylaşabilirsiniz."),
+            );
           }
         }
       }

@@ -217,3 +217,23 @@ body.dai-app-shell #voice-exam .voice-edit-text{min-height:32px;display:inline-b
 #voice-exam .voice-history{padding:0;border:0;background:transparent;box-shadow:none}
 #voice-exam .voice-history>summary{font-size:13px;font-weight:500;min-height:40px;display:flex;align-items:center}
 #voice-exam[data-review-mode="true"] .voice-review{margin-top:8px;padding-top:0;border-top:0}
+
+/* Compact review: one visible result message, beside the save action. */
+body:has(.voice-session-page) main.container{padding-top:8px!important;margin-top:0!important}
+.voice-session-page .voice-session-top{padding:8px 24px 12px}
+body.dai-app-shell .voice-session-page #voice-exam{padding:0!important;margin:0!important;overflow:visible}
+#voice-exam .voice-exam-status[hidden],#voice-exam .voice-save-status[hidden]{display:none!important}
+#voice-exam .voice-review-heading h3{font-size:23px;line-height:1.25;margin:6px 0}
+#voice-exam .voice-review-heading p{margin:4px 0 10px}
+#voice-exam .voice-summary-card{border-radius:12px;margin:8px 0}
+#voice-exam .voice-summary-card>summary{padding:11px 12px;min-height:44px;font-size:14px;line-height:1.4}
+#voice-exam .voice-summary-count{min-width:26px;padding:3px 6px;font-size:12px;border-radius:8px}
+#voice-exam .voice-record-fields>summary{padding:12px 0}
+#voice-exam .voice-review-actions{gap:6px;padding-top:8px}
+#voice-exam .voice-save-status{width:100%;margin:0 0 4px;padding:8px 10px;border-radius:8px;background:#eef5fb;color:#334c65;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+#voice-exam .voice-save-status[data-kind="error"]{background:#fff0ee;color:#9c3026;border:1px solid #f3c8c1}
+#voice-exam[data-save-state="saved"] .voice-save-status{background:#e7f6ee;color:#166345}
+#voice-exam .voice-review-actions [data-voice-discard]{min-height:30px;padding:3px 0!important}
+#voice-exam fieldset[data-voice-appointment]{margin:12px 0;padding:12px;border-radius:12px;background:#f8fbfe}
+#voice-exam [data-voice-appointment-quote]{font-size:13px;line-height:1.55;margin:4px 0 10px;overflow-wrap:anywhere}
+@media(max-width:600px){.voice-session-page .voice-exam-body{padding:0 6px 12px}#voice-exam .voice-review-heading h3{font-size:22px}}

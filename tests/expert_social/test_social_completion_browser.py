@@ -74,8 +74,8 @@ def test_pin_comments_and_visitor_support_follow_persist(browser_app):
         page.reload();expect(first.get_by_label('Sabitlenmiş gönderi')).to_be_visible()
         first.locator('.ds-menu summary').click();first.get_by_role('button',name='Yorumları kapat',exact=True).click()
         expect(first.locator('[data-comments-state]')).to_have_text('Yorumlar kapalı')
-        first.locator('[data-comments-toggle]').click();expect(page.locator('[data-comments-sheet] .ds-comment-form textarea')).to_be_disabled()
-        page.get_by_role('button',name='Yorumları kapat',exact=True).click()
+        expect(first.locator('[data-comments-toggle]')).to_be_hidden()
+        expect(page.locator('[data-comments-sheet][open]')).to_have_count(0)
         first.locator('.ds-menu summary').click();first.get_by_role('button',name='Yorumları aç',exact=True).click()
         first.locator('[data-comments-toggle]').click();expect(page.locator('[data-comments-sheet] .ds-comment-form textarea')).to_be_enabled()
         page.get_by_role('button',name='Yorumları kapat',exact=True).click()
@@ -167,12 +167,12 @@ def test_pending_image_admin_approval_refresh_and_member_visibility(browser_app)
         moderation.get_by_role('button',name='Yayınla',exact=True).click()
         expect(admin.locator('[data-admin-notice]')).to_have_text('Gönderi yayında.')
         owner.get_by_role('button',name='Durumu yenile',exact=True).click()
-        expect(card.locator('.ds-status')).to_have_count(0)
+        expect(card.locator('.ds-status.is-published')).to_have_text('Yayında')
         with Session(main.engine) as s:
             assert s.get(SocialPost,1).status=='PUBLISHED'
             assert s.exec(select(SocialModerationTask)).one().state=='HUMAN_DONE'
             assert len(s.exec(select(SocialDecision)).all())==2
-        owner.reload();expect(card).to_be_visible();expect(card.locator('.ds-status')).to_have_count(0)
+        owner.reload();expect(card).to_be_visible();expect(card.locator('.ds-status.is-published')).to_have_text('Yayında')
         owner.get_by_role('tab',name='Akademik Yayınlar').click();owner.locator('[data-add-publication]').click()
         publication=owner.locator('[data-publication-form]');publication.locator('[name=title]').fill('Sentetik bilimsel yayın')
         publication.get_by_role('button',name='Kaydet',exact=True).click()

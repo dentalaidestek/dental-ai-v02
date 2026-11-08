@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% if request.query_params.get('voice_saved') == '1' %}<div class="card" role="status">Onayladığınız sesli muayene bilgileri kaydedildi. Hasta dosyasından kontrol edebilirsiniz.</div>{% endif %}
+{% if request.query_params.get('voice_saved') == '1' %}
+<style>
+.patient-voice-saved{display:grid;gap:6px;background:#ecfdf3;border:1px solid #86efac;color:#166534}
+.patient-voice-saved strong{font-size:1.15rem;font-weight:800}
+</style>
+<div class="card patient-voice-saved" role="status"><strong>Kaydedildi</strong><span>Seçip onayladığınız sesli muayene bilgileri hasta dosyasına kaydedildi.</span></div>
+{% endif %}
 <div class="patient-detail-page" data-patient-detail-id="{{ patient.id }}" data-patient-id="{{ patient.id }}">
     <section class="card patient-hero-card">
         <div class="patient-consult-top"><a class="patient-consult-button" href="/expert-support?patient_id={{ patient.id }}">Uzmana Danış</a></div>
@@ -226,13 +232,16 @@
         {% if analyses %}
         <div class="patient-history-list">
             {% for analysis in analyses %}
+            {% set is_voice_review = analysis.id in (voice_review_ids | default([])) %}
             <div class="patient-history-row analysis-history-item">
                 <div class="patient-history-main">
-                    <div class="patient-history-title">Analiz #{{ analysis.id }}</div>
+                    <div class="patient-history-title">{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</div>
                     <div class="patient-history-meta">
-                        <span>Diş {{ analysis.tooth_number or "-" }}</span>
+                        {% if not is_voice_review %}<span>Diş {{ analysis.tooth_number or "-" }}</span>{% endif %}
                         <span>{{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
-                        {% if analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
+                        {% if is_voice_review %}
+                            <span class="analysis-status success">Kaydedildi</span>
+                        {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
                             <span class="analysis-status success">Başarılı</span>
                         {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
                             <span class="analysis-status failed">Başarısız</span>
@@ -247,13 +256,15 @@
             <div id="analysisModal-{{ analysis.id }}" class="analysis-modal" onclick="if(event.target === this) closeAnalysisModal({{ analysis.id }})">
                 <div class="analysis-modal-content">
                     <button type="button" class="analysis-modal-close" onclick="closeAnalysisModal({{ analysis.id }})" aria-label="Kapat">×</button>
-                    <h2>Analiz #{{ analysis.id }}</h2>
+                    <h2>{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</h2>
 
                     <div class="analysis-modal-meta">
-                        <div><strong>Diş:</strong> {{ analysis.tooth_number or "-" }}</div>
+                        {% if not is_voice_review %}<div><strong>Diş:</strong> {{ analysis.tooth_number or "-" }}</div>{% endif %}
                         <div>
                             <strong>Durum:</strong>
-                            {% if analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
+                            {% if is_voice_review %}
+                                Kaydedildi
+                            {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
                                 Başarılı
                             {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
                                 Başarısız
@@ -613,4 +624,5 @@ document.addEventListener("keydown", function (event) {
 }
 </style>
 {% endblock %}
+
 

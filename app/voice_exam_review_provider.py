@@ -173,30 +173,59 @@ def research_message(prompt, data, tools, *, previous_messages=None, timeout=60)
     Caller owns bounded pause continuation, tool errors and evidence validation.
     """
     import math
-    key, model = _configuration()
-    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 90:
-        raise ValueError('Invalid research time budget')
-    messages = previous_messages if previous_messages is not None else [
-        {'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]
-    payload = {'model': model, 'max_tokens': 2048, 'stream': False,
-               'system': prompt, 'messages': messages, 'tools': tools}
-    from app.http_transport import urlopen
-    from app.provider_budget import reservation
-    request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
-        data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-        headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
+    stage, response_bytes = 'configuration', -1
     try:
-        with reservation('anthropic', model), urlopen(request, timeout=timeout) as response:
-            raw = response.read(core.MAX_RESPONSE + 1)
-    except urllib.error.HTTPError as exc:
-        _log_http_error(exc, 'research')
+        key, model = _configuration()
+        stage = 'time-budget'
+        if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 90:
+            raise ValueError('Invalid research time budget')
+        stage = 'request-encoding'
+        messages = previous_messages if previous_messages is not None else [
+            {'role': 'user', 'content': redact_direct_identifiers(json.dumps(data, ensure_ascii=False))}]
+        payload = {'model': model, 'max_tokens': 2048, 'stream': False,
+                   'system': prompt, 'messages': messages, 'tools': tools}
+        from app.http_transport import urlopen
+        from app.provider_budget import reservation
+        request = urllib.request.Request('https://api.anthropic.com/v1/messages', method='POST',
+            data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+            headers={'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
+        stage = 'reservation'
+        with reservation('anthropic', model):
+            stage = 'transport'
+            with urlopen(request, timeout=timeout) as response:
+                stage = 'response-read'
+                raw = response.read(core.MAX_RESPONSE + 1)
+                response_bytes = len(raw)
+            stage = 'reservation'
+        stage = 'response-size'
+        if response_bytes > core.MAX_RESPONSE:
+            raise ValueError('Research response too large')
+        stage = 'response-json'
+        message = json.loads(raw)
+        stage = 'response-shape'
+        if not isinstance(message, dict) or not isinstance(message.get('content'), list):
+            raise ValueError('Invalid native research response')
+        stage = 'response-metadata'
+        stop = message.get('stop_reason')
+        logging.getLogger(__name__).warning('voice_public_research stop=%s blocks=%d',
+            stop if stop in {'end_turn', 'tool_use', 'max_tokens', 'refusal', 'pause_turn', 'stop_sequence'} else 'other', len(message['content']))
+        return message
+    except Exception as exc:
+        # Stages and categories are server-owned constants. Never stringify an
+        # exception: transport reasons and provider bodies can contain secrets.
+        category = ('http' if isinstance(exc, urllib.error.HTTPError) else
+                    'timeout' if isinstance(exc, TimeoutError) or
+                    isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, TimeoutError) else
+                    'transport' if isinstance(exc, urllib.error.URLError) else
+                    {'configuration': 'configuration', 'time-budget': 'time-budget',
+                     'reservation': 'budget', 'response-size': 'oversize',
+                     'response-json': 'invalid-json', 'response-shape': 'invalid-message',
+                     'response-metadata': 'invalid-metadata'}.get(stage, 'unexpected'))
+        status = exc.code if isinstance(exc, urllib.error.HTTPError) and type(exc.code) is int and 100 <= exc.code <= 599 else -1
+        logging.getLogger(__name__).warning(
+            'voice_public_research_failure stage=%s category=%s http_status=%d response_bytes=%d response_limit=%d',
+            stage, category, status, response_bytes, core.MAX_RESPONSE)
+        if isinstance(exc, urllib.error.HTTPError):
+            _log_http_error(exc, 'research')
         raise
-    if len(raw) > core.MAX_RESPONSE:
-        raise ValueError('Research response too large')
-    message = json.loads(raw)
-    if not isinstance(message, dict) or not isinstance(message.get('content'), list):
-        raise ValueError('Invalid native research response')
-    stop = message.get('stop_reason')
-    logging.getLogger(__name__).warning('voice_public_research stop=%s blocks=%d',
-        stop if stop in {'end_turn', 'tool_use', 'max_tokens', 'refusal', 'pause_turn', 'stop_sequence'} else 'other', len(message['content']))
-    return message
+

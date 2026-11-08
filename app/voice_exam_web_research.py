@@ -6,6 +6,7 @@ Patient quotations are consumed locally for validation and never leave this modu
 import copy
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -74,6 +75,19 @@ fetch at most three times over this entire research session. Stop within budget.
 """
 _NOTICE = ('Sınırlı kamusal kaynak araştırmasıdır; alınan metinler eksiksiz bir rehber veya '
            'hastaya özgü doğrulanmış öneri değildir. Konu ve klinik iddia kapsamı doğrulanmamıştır.')
+_DIAGNOSTIC_MARKERS = frozenset((
+    'web-research-gap:no-public-concepts', 'web-research-gap:unverified-drug-name',
+    'web-research-gap:no-fetched-evidence', 'web-research-unavailable:provider-configuration',
+    'web-research-unavailable:time-or-tool-budget', 'web-research-unavailable:provider-error',
+    'web-research-unavailable:invalid-message', 'web-research-unavailable:tool-budget-exceeded',
+    'web-research-unavailable:tool-error', 'web-research-unavailable:incomplete-message',
+    'web-research-unavailable:incomplete-research', 'web-research-unavailable:worker-error',
+    'web-research-unavailable:capacity', 'web-research-unavailable:time-budget',
+    'web-fetch-unavailable:tool-error', 'web-fetch-unavailable:access-blocked',
+    'web-fetch-gap:unverified-url', 'web-fetch-gap:url-mismatch',
+    'web-fetch-gap:unsupported-document-format', 'web-fetch-gap:empty-or-oversized-document',
+    'web-fetch-gap:no-literal-excerpt',
+))
 _lock = threading.RLock()
 _cache = OrderedDict()
 _inflight = {}
@@ -351,6 +365,20 @@ def retrieve_web(topics, requests=None):
         value = copy.deepcopy(value)
         if unverified:
             value['unavailable'].append('web-research-gap:unverified-drug-name')
+        if value['unavailable']:
+            # Only fixed reason codes and bounded counts may reach logs. This
+            # includes failures before a provider response exists or is parsed.
+            reasons = list(dict.fromkeys(marker if isinstance(marker, str) and marker in _DIAGNOSTIC_MARKERS
+                                         else 'other' for marker in value['unavailable']))
+            usage = value.get('usage')
+            usage = usage if isinstance(usage, dict) else {}
+            counts = [usage.get(key) for key in ('http_requests', 'web_search_requests',
+                                                'web_fetch_requests', 'input_tokens', 'output_tokens')]
+            counts = [count if type(count) is int and 0 <= count <= 10000000 else -1 for count in counts]
+            logging.getLogger(__name__).warning(
+                'voice_public_research_unavailable reasons=%s references=%d http_requests=%d '
+                'web_search_requests=%d web_fetch_requests=%d input_tokens=%d output_tokens=%d',
+                ','.join(reasons), len(value['references']), *counts)
         return value
     if not data['topics'] and not data['generic_drug_terms']:
         return deliver(_empty('web-research-gap:no-public-concepts'))
@@ -390,3 +418,4 @@ def retrieve_web(topics, requests=None):
         return deliver(_empty('web-research-unavailable:time-budget'))
     except Exception:
         return deliver(_empty('web-research-unavailable:worker-error'))
+

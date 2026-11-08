@@ -67,13 +67,59 @@ SPOKEN_HOURS = {'birde': 1, 'ikide': 2, 'üçte': 3, 'dörtte': 4, 'beşte': 5, 
                   'on ikide': 12, 'on üçte': 13, 'on dörtte': 14, 'on beşte': 15,
                   'on altida': 16, 'on yedide': 17, 'on sekizde': 18, 'on dokuzda': 19,
                   'yirmide': 20, 'yirmi birde': 21, 'yirmi ikide': 22, 'yirmi üçte': 23}
+_APPOINTMENT_WEEKDAYS = ('pazartesi', 'sali', 'çarşamba', 'perşembe', 'cuma', 'cumartesi', 'pazar')
+_APPOINTMENT_NEXT_WEEK = r'\b(?:haftaya|gelecek\s+hafta)\b'
+_APPOINTMENT_APPROXIMATE = re.compile(r'\b(?:gibi|yaklaşik|civarinda|sularinda)\b')
 
 
-def resolve_appointment(quote, acceptance, now=None):
+def _appointment_day(text, now):
+    """Resolve only explicit date/day anchors; all supplied anchors must agree."""
+    dates = re.findall(r'(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4})(?!\d)', text)
+    weekdays = [i for i, day in enumerate(_APPOINTMENT_WEEKDAYS) if re.search(r'\b' + day + r'\b', text)]
+    next_week = bool(re.search(_APPOINTMENT_NEXT_WEEK, text))
+    if len(dates) > 1 or len(weekdays) > 1 or 'öbür' in text:
+        return None
+    if re.search(r'\bhafta\w*\b', re.sub(_APPOINTMENT_NEXT_WEEK, '', text)) or next_week and not weekdays:
+        return None
+    candidates = []
+    try:
+        if dates:
+            day, month, year = map(int, dates[0])
+            candidates.append(now.replace(year=year, month=month, day=day))
+        if re.search(r'\byarin\b', text):
+            candidates.append(now + timedelta(days=1))
+        if re.search(r'\bbugün\b', text):
+            candidates.append(now)
+        if weekdays:
+            weekday = weekdays[0]
+            if next_week:
+                candidates.append(now + timedelta(days=7 - now.weekday() + weekday))
+            elif not candidates:
+                offset = (weekday - now.weekday()) % 7
+                if not offset:  # An unqualified same weekday is ambiguous.
+                    return None
+                candidates.append(now + timedelta(days=offset))
+            if any(date.weekday() != weekday for date in candidates):
+                return None
+        if not candidates or len({date.date() for date in candidates}) != 1:
+            return None
+        return candidates[0]
+    except ValueError:
+        return None
+
+
+def resolve_appointment(quote, acceptance, now=None, *, allow_approximate=False):
     """Conservative calendar resolution, independent of model-invented dates."""
-    now = now or datetime.now(ZoneInfo('Europe/Istanbul'))
+    zone = ZoneInfo('Europe/Istanbul')
+    now = now or datetime.now(zone)
+    now = now.astimezone(zone) if now.tzinfo is not None else now.replace(tzinfo=zone)
     text = quote.casefold().replace('ı', 'i')
     accepted = acceptance.casefold().replace('ı', 'i')
+    if not allow_approximate and (_APPOINTMENT_APPROXIMATE.search(text) or _APPOINTMENT_APPROXIMATE.search(accepted)):
+        return None
+    date = _appointment_day(text, now)
+    if date is None:
+        return None
     # STT may spell the same spoken hour as 17'de instead of on yedide.
     hour_words = {hour: word for word, hour in SPOKEN_HOURS.items()}
     def digit_hour(match):
@@ -95,10 +141,13 @@ def resolve_appointment(quote, acceptance, now=None):
     # Natural acceptance may repeat the agreed day/time and address the doctor.
     acceptance_times = re.findall(r'(?<![\d:])(\d{1,2})[:.](\d{2})(?!\d)', accepted)
     acceptance_core = re.sub(r'(?<![\d:])\d{1,2}[:.]\d{2}(?:[’\']?(?:da|de|ta|te))?', ' ', accepted)
-    for day_word in ('yarin', 'bugün'):
-        if day_word in acceptance_core:
-            if day_word not in text: return None
-            acceptance_core = acceptance_core.replace(day_word, ' ')
+    day_pattern = r'\b(?:yarin|bugün|haftaya|hafta|' + '|'.join(_APPOINTMENT_WEEKDAYS) + r')\b'
+    if re.search(day_pattern, acceptance_core):
+        accepted_date = _appointment_day(acceptance_core, now)
+        if accepted_date is None or accepted_date.date() != date.date():
+            return None
+        acceptance_core = re.sub(_APPOINTMENT_NEXT_WEEK, ' ', acceptance_core)
+        acceptance_core = re.sub(day_pattern, ' ', acceptance_core)
     spoken_pattern = r'\b(?:saat\s+)?(' + '|'.join(re.escape(k) for k in sorted(SPOKEN_HOURS, key=len, reverse=True)) + r')\b'
     spoken_acceptance = re.findall(spoken_pattern, acceptance_core)
     if len(spoken_acceptance) > 1: return None
@@ -151,26 +200,7 @@ def resolve_appointment(quote, acceptance, now=None):
         if accepted_afternoon and hour < 12: return None
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         return None
-    dates = re.findall(r'(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4})(?!\d)', text)
     try:
-        if len(dates) == 1:
-            day, month, year = map(int, dates[0]); date = now.replace(year=year, month=month, day=day)
-        elif dates:
-            return None
-        elif 'yarin' in text and 'öbür' not in text:
-            date = now + timedelta(days=1)
-        elif 'bugün' in text:
-            date = now
-        else:
-            weekdays = ('pazartesi', 'sali', 'çarşamba', 'perşembe', 'cuma', 'cumartesi', 'pazar')
-            matches = [i for i, day in enumerate(weekdays) if re.search(r'\b'+day+r'\b', text)]
-            if len(matches) != 1 or 'hafta' in text:
-                return None
-            offset = (matches[0] - now.weekday()) % 7
-            # Same weekday without explicit today is ambiguous.
-            if offset == 0:
-                return None
-            date = now + timedelta(days=offset)
         date = date.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if date <= now or date > now + timedelta(days=366):
             return None
@@ -509,6 +539,10 @@ def normalize(result, evidence=None):
                 resolved = resolve_appointment(quote, acceptance)
                 if resolved:
                     output['appointment'].update(start_at=resolved, acceptance_quote=acceptance, agreed=True, resolution_status='agreed')
+                elif _APPOINTMENT_APPROXIMATE.search(quote.casefold().replace('ı', 'i')):
+                    candidate = resolve_appointment(quote, acceptance, allow_approximate=True)
+                    if candidate:
+                        output['appointment'].update(start_at=candidate, agreed=False, resolution_status='time_confirmation_required')
     for key in ('communication', 'decision_barriers', 'source_requests', 'literature_topics', 'removed_literature_topics', 'teeth'):
         output[key] = [item for item in output[key] if not nonpatient(item.get('quote', ''))]
     return output
