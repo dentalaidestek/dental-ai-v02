@@ -3,14 +3,17 @@
 from sqlalchemy import inspect, text
 from app.expert_social_models import SOCIAL_MODELS
 
-# Index-only additions keep the deployed table contract at revision 2. Older
-# builds can restart/roll back safely; this build checks its indexes separately.
+# Additive tables/indexes preserve the deployed revision-two table contract.
+# Older builds can restart/roll back safely; this build checks its additions.
 SCHEMA_VERSION = 2
 REQUIRED_INDEXES = {
     "socialpost": "ix_socialpost_moderation",
     "socialcomment": "ix_socialcomment_moderation",
     "publication": "ix_publication_moderation",
     "doimatch": "ix_doimatch_created_at",
+    "socialmoderationtask": "ix_socialmoderationtask_retry",
+    "socialmoderationevent": "ix_socialmoderationevent_target",
+    "consultationrequestreceipt": "uq_consultationrequestreceipt_key",
 }
 
 
@@ -37,6 +40,11 @@ def apply(engine):
             ),
             {"version": SCHEMA_VERSION},
         )
+    # One bounded rollout slice; the existing housekeeping worker continues it.
+    # No feed/detail page scans or enqueues historical content.
+    from app.expert_social_moderation import backfill_pending
+
+    backfill_pending(engine, limit=60)
 
 
 def require_schema(engine):

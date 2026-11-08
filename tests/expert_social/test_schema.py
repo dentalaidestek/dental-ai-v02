@@ -84,3 +84,15 @@ def test_additive_indexes_preserve_the_deployed_revision_two_contract(tmp_path):
             ).scalar_one()
             == 2
         )
+
+
+def test_startup_rejects_missing_consultation_receipt_uniqueness(tmp_path):
+    engine=create_engine('sqlite:///'+str(tmp_path/'receipt-index.db'))
+    main.User.__table__.create(engine)
+    apply(engine)
+    with engine.begin() as c:
+        c.execute(text('DROP INDEX uq_consultationrequestreceipt_key'))
+    with pytest.raises(RuntimeError):
+        require_schema(engine)
+    apply(engine)
+    require_schema(engine)

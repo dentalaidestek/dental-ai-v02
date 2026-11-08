@@ -174,7 +174,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
         page.reload()
         expect(page.locator("[data-compose]")).to_have_count(0)
         expect(
-            page.get_by_role("link", name="Danışmanlık başlat", exact=True)
+            page.get_by_role("link", name="Uzmandan Destek Al", exact=True)
         ).to_have_attribute(
             "href", __import__("re").compile("/expert-support/request/1")
         )
@@ -201,6 +201,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
             "Düzenlenmiş bilimsel yorum."
         )
         expect(page.locator("[data-comments-toggle]")).to_contain_text("2 yorum")
+        page.get_by_role('button',name='Yorumları kapat',exact=True).click()
         page.get_by_role("button", name="Beğen", exact=True).click()
         expect(page.get_by_role("button", name="Beğen", exact=True)).to_have_attribute(
             "aria-pressed", "true"

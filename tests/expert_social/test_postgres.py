@@ -93,6 +93,9 @@ def test_postgres_migration_idempotency_and_single_pin(pg_engine, monkeypatch):
         main.ExpertPolicyState,
         main.SessionToken,
         main.AdminVerifiedSession,
+        main.AdminNotice,
+        main.RealtimeEvent,
+        main.UserBlock,
         main.AuthRateBucket,
     ):
         model.__table__.create(pg_engine, checkfirst=True)
@@ -178,6 +181,9 @@ def test_publication_owner_edit_and_admin_review_serialize(pg_engine, monkeypatc
         main.ExpertPolicyState,
         main.SessionToken,
         main.AdminVerifiedSession,
+        main.AdminNotice,
+        main.RealtimeEvent,
+        main.UserBlock,
         main.AuthRateBucket,
     ):
         model.__table__.create(pg_engine, checkfirst=True)

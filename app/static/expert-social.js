@@ -94,11 +94,11 @@
     out.append(document.createTextNode(raw.slice(last)));
     return out;
   }
-  function statusBadge(status) {
+  function statusBadge(status, moderation) {
     return el(
       "span",
       "ds-status" + (status === "REJECTED" ? " is-rejected" : ""),
-      labels[status] || status,
+      moderation?.wait_type === 'OWNER_CHANGES' ? 'Düzenleme gerekli' : labels[status] || status,
     );
   }
   function linkCard(url, preview, cover) {
@@ -182,6 +182,7 @@
       expertId = Number(root.dataset.expertId),
       userId = Number(root.dataset.userId);
     const management=root.dataset.management==="1";
+    const followingFeed=root.dataset.feedMode==='following';
     const notice = $("[data-notice]");
     function say(message) {
       notice.hidden = false;
@@ -341,7 +342,7 @@
       d.append(s, panel);
       return d;
     }
-    async function report(kind, id) {
+    async function report(kind, id, feedback = say) {
       if (!confirm("Bu içeriği inceleme için bildirmek istiyor musunuz?"))
         return;
       await api("/reports", "POST", {
@@ -349,14 +350,17 @@
         target_id: id,
         reason: "OTHER",
       });
-      say("Bildiriminiz inceleme için alındı.");
+      feedback("Bildiriminiz inceleme için alındı.");
     }
     function renderPost(p) {
       posts.set(p.id, p);
       const card = el("article", "ds-card");
       card.dataset.postId = p.id;
       card.id = "post-" + p.id;
-      if (p.pinned) card.append(el("div", "ds-pin", "⌖ Sabitlenmiş gönderi"));
+      if (p.pinned) {
+        const pin=el('div','ds-pin');pin.setAttribute('aria-label','Sabitlenmiş gönderi');
+        const icon=el('img');icon.src='/static/expert-icons/push-pin.svg';icon.alt='';pin.append(icon,document.createTextNode('Sabitlenmiş gönderi'));card.append(pin);
+      }
       const author = el("header", "ds-author");
       if (p.author_photo) {
         const img = el("img", "ds-avatar");
@@ -365,7 +369,8 @@
         author.append(img);
       } else author.append(el("span", "ds-avatar expert-reference-avatar"));
       const copy = el("div", "ds-author-copy"),
-        name = el("b", "", p.author_name);
+        name = el(followingFeed ? "a" : "b", "", p.author_name);
+      if(followingFeed)name.href='/expert-support/expert/'+p.author_id;
       copy.append(name, el("span", "ds-verified", " ✓"));
       copy.querySelector(".ds-verified").title =
         "Mesleki belgesi doğrulanmış uzman";
@@ -407,19 +412,25 @@
             ],
           ]
         : [["Şikâyet et", () => report("POST", p.id)]];
+      if(p.owned&&p.status!=='PUBLISHED')options.splice(2,1);
       author.append(menu(options));
       card.append(author);
       if (p.status !== "PUBLISHED") {
-        card.append(statusBadge(p.status));
+        card.append(statusBadge(p.status,p.moderation));
         card.append(
           el(
             "p",
             "ds-muted",
-            p.status === "PENDING"
+            p.moderation?.reason || (p.status === "PENDING"
               ? "İçerik yayınlanmadan önce inceleniyor. Şu anda yalnızca siz görebilirsiniz."
-              : "İçerik yayınlanmadı. Düzenleyip yeniden incelemeye gönderebilirsiniz.",
+              : "İçerik yayınlanmadı. Düzenleyip yeniden incelemeye gönderebilirsiniz."),
           ),
         );
+        const refresh=button('Durumu yenile','ds-text-button',async()=>{
+          if(refresh.disabled)return;refresh.disabled=true;
+          try{replacePost(await api('/posts/'+p.id));}catch(e){say(e.message);}finally{refresh.disabled=false;}
+        });
+        card.append(refresh);
       }
       card.append(linkedText(p.text));
       const gallery = p.media.filter(
@@ -428,11 +439,10 @@
       if (gallery.length) {
         const grid = el("div", "ds-gallery");
         grid.dataset.count = gallery.length;
-        gallery.forEach((m) => {
-          const a = el("a");
-          a.href = m.url;
-          a.target = "_blank";
-          a.rel = "noopener";
+        gallery.forEach((m,index) => {
+          const a = el("button",'ds-gallery-open');a.type='button';
+          a.setAttribute('aria-label',`Gönderi görselini aç: ${index+1} / ${gallery.length}`);
+          a.addEventListener('click',()=>window.DentalMediaViewer.open(gallery,index,a));
           const img = el("img");
           img.src = m.url;
           img.alt = "Gönderi görseli";
@@ -481,7 +491,7 @@
       const share = button("Bağlantı", "", async () => {
         try {
           const url = new URL(
-            "/expert-support/expert/" + expertId,
+            "/expert-support/expert/" + p.author_id,
             location.origin,
           );
           url.searchParams.set("post", p.id);
@@ -494,8 +504,10 @@
         }
       });
       actionIcon(share, "share");
+      if(p.status!=='PUBLISHED')like.disabled=comment.disabled=share.disabled=true;
       actions.append(like, comment, share);
       card.append(actions);
+      if(p.comments_closed){const closed=el('p','ds-comments-state','Yorumlar kapalı');closed.dataset.commentsState='';card.append(closed);}
       return card;
     }
     function replacePost(p) {
@@ -514,9 +526,9 @@
           posts.clear();
         }
         const data = await api(
-          "/experts/" +
+          (followingFeed ? "/feed/following" : "/experts/" +
             expertId +
-            "/posts" +
+            "/posts") +
             (postCursor ? "?before=" + postCursor : ""),
         );
         if (reset) feed.replaceChildren();
@@ -525,7 +537,7 @@
             el(
               "div",
               "ds-empty",
-              owner
+              followingFeed ? "Takip ettiğiniz uzmanların gönderileri burada görünecek." : owner
                 ? "İlk bilimsel paylaşımınızı yapın."
                 : "Uzman henüz bir gönderi paylaşmamış.",
             ),
@@ -551,17 +563,20 @@
       }
     }
     $("[data-more-posts]")?.addEventListener("click", () => loadPosts());
+    const commentDrafts=new Map();
+    window.addEventListener('dai:session-ending',()=>{commentDrafts.clear();root.querySelector('[data-comments-sheet]')?.close();});
     async function toggleComments(card, p) {
-      let wrap = card.querySelector(".ds-comments");
+      const previous=root.querySelector('[data-comments-sheet]');
+      if(previous?.open){closeDialog(previous);return;}
+      previous?.remove();
       const toggle = card.querySelector("[data-comments-toggle]");
-      if (wrap) {
-        wrap.hidden = !wrap.hidden;
-        toggle.setAttribute("aria-expanded", String(!wrap.hidden));
-        return;
-      }
-      wrap = el("section", "ds-comments");
+      const wrap = el("dialog", "ds-dialog ds-comments-sheet");
+      wrap.dataset.commentsSheet='';wrap.setAttribute('aria-label','Yorumlar');
       toggle.setAttribute("aria-expanded", "true");
-      const list = el("div"),
+      const heading=el('header','ds-dialog-head ds-comments-head'),title=el('h2','','Yorumlar'),total=el('span','ds-comment-total',String(p.comment_count));
+      const close=button('×','ds-icon',()=>closeDialog(wrap));close.setAttribute('aria-label','Yorumları kapat');
+      heading.append(title,total,close);
+      const list = el("div",'ds-comments-list'),
         more = button("Diğer yorumlar", "ds-text-button", () => load()),
         form = el("form", "ds-comment-form"),
         input = el("textarea"),
@@ -579,7 +594,7 @@
           cancel.hidden = true;
         });
       input.maxLength = 1500;
-      input.placeholder = "Bir yorum yazın…";
+      input.rows=1;input.placeholder = "Yorum ekle…";
       input.setAttribute("aria-label", "Yorum metni");
       submit.type = "submit";
       const error = el("p", "ds-error");
@@ -589,30 +604,53 @@
       form.append(input, bottom, error);
       cancel.hidden = true;
       more.hidden = true;
-      wrap.append(list, more, form);
-      card.append(wrap);
+      const scrollArea=el('div','ds-comments-scroll');scrollArea.append(list,more);
+      wrap.append(heading,scrollArea,form);
+      root.append(wrap);
       if (p.comments_closed) {
         input.disabled = true;
         submit.disabled = true;
       }
+      const savedComment=commentDrafts.get(p.id);
       let cursor = 0,
-        parent = null,
-        edit = null,
-        key = uuid();
+        parent = savedComment?.parent || null,
+        edit = savedComment?.edit || null,
+        key = savedComment?.key || uuid(),signature=savedComment?.signature||null,loading=false;
+      input.value=savedComment?.text||'';
+      if(parent||edit){cancel.hidden=false;context.textContent=edit?'Yorumu düzenliyorsunuz':'Yoruma yanıt';}
+      const scroll=window.scrollY,overflow=document.body.style.overflow;
+      wrap.addEventListener('cancel',event=>{event.preventDefault();closeDialog(wrap);});
+      wrap.addEventListener('click',event=>{if(event.target===wrap)closeDialog(wrap);});
+      wrap.addEventListener('close',()=>{
+        if(!sessionEnding)commentDrafts.set(p.id,{text:input.value,parent,edit,key,signature});
+        else {input.value='';commentDrafts.clear();}
+        if(commentDrafts.size>20)commentDrafts.delete(commentDrafts.keys().next().value);
+        toggle.setAttribute('aria-expanded','false');document.body.style.overflow=overflow;
+        if(!sessionEnding){window.scrollTo(0,scroll);toggle.focus({preventScroll:true});}
+      },{once:true});
+      let dragStart=null;
+      heading.addEventListener('pointerdown',event=>{if(!event.target.closest('button'))dragStart=event.clientY;});
+      heading.addEventListener('pointerup',event=>{if(dragStart!==null&&event.clientY-dragStart>75)closeDialog(wrap);dragStart=null;});
+      input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(110,input.scrollHeight)+'px';commentDrafts.set(p.id,{text:input.value,parent,edit,key,signature});});
+      function count(value){p.comment_count=value;toggle.lastChild.textContent=value+' yorum';total.textContent=String(value);}
+      function inform(message){error.textContent=message;error.hidden=false;}
       function renderComment(c) {
         const row = el("article", "ds-comment");
         row.dataset.commentId = c.id;
+        row.dataset.parentId=c.parent_id||'';
         row.dataset.reply = String(!!c.parent_id);
-        row.append(
-          el("b", "", c.author_name),
+        const author=el('div','ds-comment-author'),identity=el(c.author_profile_url?'a':'span','ds-comment-identity');
+        if(c.author_profile_url){identity.href=c.author_profile_url;identity.setAttribute('aria-label',c.author_name);}
+        if(c.author_photo){const photo=el('img','ds-comment-avatar');photo.src=c.author_photo;photo.alt='';photo.loading='lazy';identity.append(photo);}
+        identity.append(el('b','',c.author_name));
+        if(c.author_verified){const badge=el('span','ds-verified','✓');badge.setAttribute('aria-label','Mesleki belgesi doğrulanmış uzman');identity.append(badge);}
+        author.append(identity,
           el(
             "small",
             "",
             ` · ${date(c.created_at)}${c.parent_id ? " · Yanıt" : ""}`,
-          ),
-          el("p", "", c.text),
-        );
-        if (c.status !== "PUBLISHED") row.append(statusBadge(c.status));
+          ));row.append(author,el("p", "", c.text));
+        if (c.status !== "PUBLISHED") {row.append(statusBadge(c.status,c.moderation));if(c.moderation?.reason)row.append(el('small','ds-muted',c.moderation.reason));}
         const tools = el("div", "ds-comment-tools");
         if (!c.parent_id && c.status === "PUBLISHED" && !p.comments_closed)
           tools.append(
@@ -637,31 +675,39 @@
           );
         if (c.owned || p.owned)
           tools.append(
-            button("Sil", "", async () => {
+            button("Sil", "", async (event) => {
+              const remove=event.currentTarget;if(remove.disabled)return;
               if (!confirm("Yorum silinsin mi?")) return;
+              remove.disabled=true;
               try {
-                await api("/comments/" + c.id, "DELETE");
+                const result=await api("/comments/" + c.id, "DELETE");
+                list.querySelectorAll(`[data-parent-id="${c.id}"]`).forEach(reply=>reply.remove());
                 row.remove();
+                count(result.comment_count);
+                if(parent===c.id||edit?.id===c.id){parent=null;edit=null;cancel.hidden=true;context.textContent='Görüşünüzü paylaşın';}
               } catch (e) {
-                say(e.message);
-              }
+                inform(e.message);
+              }finally{remove.disabled=false;}
             }),
           );
         tools.append(
           button("Bildir", "", () =>
-            report("COMMENT", c.id).catch((e) => say(e.message)),
+            report("COMMENT", c.id,inform).catch((e) => inform(e.message)),
           ),
         );
         row.append(tools);
         return row;
       }
       async function load() {
+        if(loading)return;loading=true;
         more.disabled = true;
         try {
           const data = await api(
             "/posts/" + p.id + "/comments?after=" + cursor,
           );
           for (const c of data.items) list.append(renderComment(c));
+          if(data.comment_count!==undefined)count(data.comment_count);
+          if(!list.children.length)list.append(el('p','ds-comments-empty','İlk yorumu siz yazın.'));
           cursor = data.next_cursor || cursor;
           more.hidden = !data.next_cursor;
         } catch (e) {
@@ -670,6 +716,7 @@
           more.hidden = false;
           more.textContent = "Yorumları yeniden yükle";
         } finally {
+          loading=false;
           more.disabled = false;
         }
       }
@@ -679,6 +726,10 @@
         submit.disabled = true;
         error.hidden = true;
         const previouslyPublished = edit?.status === "PUBLISHED";
+        const submitted=input.value;
+        const submittedParent=parent,submittedEdit=edit?.id;
+        const nextSignature=JSON.stringify([submitted,parent]);
+        if(signature&&signature!==nextSignature)key=uuid();signature=nextSignature;
         try {
           const data = await api(
             edit ? "/comments/" + edit.id : "/posts/" + p.id + "/comments",
@@ -691,17 +742,19 @@
             list
               .querySelector(`[data-comment-id="${edit.id}"]`)
               ?.replaceWith(renderComment(data));
-          else list.append(renderComment(data));
+          else {list.querySelector('.ds-comments-empty')?.remove();list.append(renderComment(data));}
           key = uuid();
           parent = null;
           edit = null;
-          input.value = "";
+          if(input.value===submitted)input.value = "";
           cancel.hidden = true;
           context.textContent = "Görüşünüzü paylaşın";
-          p.comment_count = Math.max(0, p.comment_count + (data.status === "PUBLISHED" ? 1 : 0) - (previouslyPublished ? 1 : 0));
-          toggle.lastChild.textContent = p.comment_count + " yorum";
+          count(Math.max(0, p.comment_count + (data.status === "PUBLISHED" ? 1 : 0) - (previouslyPublished ? 1 : 0)));
+          const stored=commentDrafts.get(p.id);
+          if(stored?.text===submitted&&stored.parent===submittedParent&&stored.edit?.id===submittedEdit)
+            commentDrafts.delete(p.id);
           if (data.status !== "PUBLISHED")
-            say(
+            inform(
               labels[data.status] + ": yorumunuz diğer üyelere gösterilmiyor.",
             );
         } catch (e) {
@@ -711,8 +764,8 @@
           submit.disabled = false;
         }
       });
+      openDialog(wrap);document.body.style.overflow='hidden';
       await load();
-      input.focus({ preventScroll: true });
     }
 
     function renderAttachments() {
@@ -1187,8 +1240,10 @@
           sourceLabels[p.source] || "Manuel ekleme",
         ),
       );
-      if (p.status && p.status !== "PUBLISHED")
-        card.append(statusBadge(p.status));
+      if (p.status && p.status !== "PUBLISHED") {
+        card.append(statusBadge(p.status,p.moderation));
+        if(p.moderation?.reason)card.append(el('p','ds-muted',p.moderation.reason));
+      }
       if (p.description) card.append(el("p", "ds-preserve", p.description));
       const links = el("div", "ds-publication-links");
       if (p.doi)
@@ -1264,7 +1319,7 @@
         more.disabled = false;
       }
     }
-    $("[data-more-publications]").addEventListener("click", () =>
+    $("[data-more-publications]")?.addEventListener("click", () =>
       loadPublications(),
     );
     if (management) {
@@ -1289,15 +1344,51 @@
       shell.querySelectorAll('[data-stat]').forEach(n=>n.textContent=data[n.dataset.stat]??'0');
       const follow=shell.querySelector('[data-follow-expert]');if(follow){follow.dataset.followed=String(data.following_by_viewer);follow.textContent=data.following_by_viewer?'Takip ediliyor':'Takip et';follow.setAttribute('aria-pressed',String(data.following_by_viewer));}
     }
+    const relationshipsDialog=$('[data-relationships-dialog]');
+    let relationshipKind=null,relationshipCursor=null,relationshipsLoading=false;
+    async function loadRelationships(reset=false){
+      if(relationshipsLoading)return;relationshipsLoading=true;
+      const list=$('[data-relationships-list]'),more=$('[data-relationships-more]'),error=$('[data-relationships-error]');
+      more.disabled=true;error.hidden=true;
+      try{
+        if(reset){relationshipCursor=null;list.replaceChildren();}
+        const data=await api('/experts/'+expertId+'/'+relationshipKind+(relationshipCursor?'?before='+relationshipCursor:''));
+        for(const member of data.items){
+          const row=el('div','ds-relationship-row'),copy=el(member.profile_url?'a':'span','ds-relationship-copy');
+          if(member.profile_url)copy.href=member.profile_url;
+          copy.append(el('b','',member.name));if(member.specialty)copy.append(el('small','ds-muted',member.specialty));
+          row.append(copy);
+          if(member.is_expert&&member.user_id!==userId){
+            const follow=button(member.following_by_viewer?'Takip ediliyor':'Takip et','ds-secondary',async()=>{
+              if(follow.disabled)return;follow.disabled=true;
+              try{const updated=await api('/experts/'+member.user_id+'/follow','PUT',{followed:!member.following_by_viewer});member.following_by_viewer=updated.following_by_viewer;follow.textContent=updated.following_by_viewer?'Takip ediliyor':'Takip et';follow.setAttribute('aria-pressed',String(updated.following_by_viewer));await refreshStats();}
+              catch(e){error.hidden=false;error.textContent=e.message;}finally{follow.disabled=false;}
+            });follow.setAttribute('aria-pressed',String(member.following_by_viewer));row.append(follow);
+          }
+          list.append(row);
+        }
+        if(!list.children.length)list.append(el('p','ds-empty',relationshipKind==='followers'?'Henüz takipçiniz yok.':'Henüz bir uzmanı takip etmiyorsunuz.'));
+        relationshipCursor=data.next_cursor;more.hidden=!relationshipCursor;
+      }catch(e){error.hidden=false;error.textContent=e.message;more.hidden=false;more.textContent='Yeniden dene';}
+      finally{relationshipsLoading=false;more.disabled=false;}
+    }
+    root.closest('.expert-reference-profile')?.addEventListener('click',event=>{
+      const control=event.target.closest('[data-relationships]');if(!control||!relationshipsDialog||relationshipsLoading)return;
+      relationshipKind=control.dataset.relationships;
+      $('#ds-relationships-title').textContent=relationshipKind==='followers'?'Takipçiler':'Takip edilenler';
+      $('[data-relationships-more]').textContent='Daha fazla';openDialog(relationshipsDialog);loadRelationships(true);
+    });
+    $('[data-relationships-more]')?.addEventListener('click',()=>loadRelationships());
     root.closest('.expert-reference-profile')?.addEventListener('click',async event=>{const follow=event.target.closest('[data-follow-expert]');if(!follow||follow.disabled)return;follow.disabled=true;try{await api('/experts/'+expertId+'/follow','PUT',{followed:follow.dataset.followed!=='true'});await refreshStats();}catch(e){say(e.message);}finally{follow.disabled=false;}});
     window.addEventListener('dai:expert-profile-refreshed',()=>refreshStats().catch(()=>{}));
     refreshStats().catch(()=>{});
+    if(new URLSearchParams(location.search).get("tab")==="publications")setTab("publications");
     loadPosts(true).then(async () => {
       const target = new URLSearchParams(location.search).get("post");
       if (target && /^\d+$/.test(target)) {
         try {
           const p = await api("/posts/" + target);
-          if (p.author_id !== expertId) return;
+          if (followingFeed || p.author_id !== expertId) return;
           replacePost(p);
           setTimeout(
             () =>

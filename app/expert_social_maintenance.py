@@ -20,6 +20,8 @@ from app.expert_social_models import (
     OrcidSync,
     DoiMatch,
     SocialMediaDeletion,
+    SocialModerationEvent,
+    ConsultationRequestReceipt,
     now,
 )
 
@@ -55,6 +57,8 @@ def remove_media(session, rows):
 
 
 def remove_post_media(session, post_id):
+    from app.expert_social_moderation import cancel_tasks
+
     remove_media(
         session,
         session.exec(
@@ -62,7 +66,7 @@ def remove_post_media(session, post_id):
         ).all(),
     )
     # Deleted threads are no longer eligible for publication or admin approval.
-    session.exec(
+    removed = session.exec(
         update(SocialComment)
         .where(SocialComment.post_id == post_id, SocialComment.status != "DELETED")
         .values(
@@ -71,10 +75,14 @@ def remove_post_media(session, post_id):
             version=SocialComment.version + 1,
             updated_at=now(),
         )
-    )
+        .returning(SocialComment.id, SocialComment.version)
+    ).all()
+    cancel_tasks(session, kind="COMMENT", versions=dict(removed))
 
 
 def erase_user_content(session, user_id):
+    from app.expert_social_moderation import cancel_tasks
+
     for post in session.exec(
         select(SocialPost).where(SocialPost.author_id == user_id).with_for_update()
     ).all():
@@ -90,26 +98,35 @@ def erase_user_content(session, user_id):
         session,
         session.exec(select(SocialMedia).where(SocialMedia.owner_id == user_id)).all(),
     )
-    session.exec(
+    removed = session.exec(
         update(SocialComment)
-        .where(SocialComment.author_id == user_id)
+        .where(SocialComment.author_id == user_id, SocialComment.status != "DELETED")
         .values(
             text="",
             status="DELETED",
             version=SocialComment.version + 1,
             updated_at=now(),
         )
-    )
+        .returning(SocialComment.id, SocialComment.version)
+    ).all()
+    cancel_tasks(session, kind="COMMENT", versions=dict(removed))
     session.exec(
         update(SocialDecision)
         .where(SocialDecision.actor_id == user_id)
         .values(actor_id=None)
     )
+    session.exec(update(SocialModerationEvent)
+        .where(SocialModerationEvent.actor_id == user_id).values(actor_id=None))
+    cancel_tasks(session, owner=user_id)
     session.exec(
         delete(SocialFollow).where(
             or_(SocialFollow.follower_id == user_id, SocialFollow.expert_id == user_id)
         )
     )
+    session.exec(delete(ConsultationRequestReceipt).where(or_(
+        ConsultationRequestReceipt.requester_user_id == user_id,
+        ConsultationRequestReceipt.expert_user_id == user_id,
+    )))
     for model, column in (
         (SocialLike, SocialLike.user_id),
         (SocialReport, SocialReport.reporter_id),
@@ -123,6 +140,10 @@ def erase_user_content(session, user_id):
 
 def cleanup_slice(engine):
     """Lease one deletion at a time; external I/O never holds a DB transaction."""
+    from app.expert_social_moderation import backfill_pending, retry_failed
+
+    backfill_pending(engine, limit=60)
+    retry_failed(engine, limit=2)
     with Session(engine) as s:
         cutoff = now() - timedelta(days=1)
         rows = s.exec(

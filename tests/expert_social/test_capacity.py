@@ -38,6 +38,7 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
         main.SessionToken,
         main.AuthRateBucket,
         main.AdminVerifiedSession,
+        main.UserBlock,
     ):
         model.__table__.create(engine, checkfirst=True)
     apply(engine)

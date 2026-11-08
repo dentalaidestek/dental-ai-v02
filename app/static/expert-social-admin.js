@@ -6,7 +6,9 @@
     $ = (q) => root.querySelector(q),
     list = $("[data-admin-list]");
   let cursor = null,
-    mode = "queue";
+    mode = "queue",loading=false;
+  const waitLabels={HUMAN_REVIEW:'Yönetici incelemesi',OWNER_CHANGES:'Uzmandan düzenleme bekleniyor',RETRY:'Otomatik kontrol yeniden denenecek',RETRY_EXHAUSTED:'Otomatik kontrol için müdahale gerekiyor'};
+  function elapsed(seconds){return seconds>=86400?Math.floor(seconds/86400)+' gün':seconds>=3600?Math.floor(seconds/3600)+' saat':Math.floor(seconds/60)+' dk';}
   const explain = (m) => {
     $("[data-admin-notice]").hidden = false;
     $("[data-admin-notice]").textContent = m;
@@ -26,8 +28,8 @@
         p.text ||
           [p.title, p.authors, p.description].filter(Boolean).join("\n"),
       ),
-      el("p", "ds-muted", "İşaretler: " + (p.reasons || []).join(", ")),
     );
+    if(p.moderation){const m=p.moderation;card.append(el('p','ds-admin-wait',(waitLabels[m.wait_type]||'Kontrol tamamlandı')+(p.status==='PENDING'?' · '+elapsed(m.age_seconds)+' bekliyor':'')),el('p','ds-muted',m.reason));}
     if (p.link_url) {
       const a = el("a", "", p.link_url);
       a.href = p.link_url;
@@ -35,11 +37,9 @@
       a.rel = "noopener noreferrer";
       card.append(a);
     }
-    for (const media of p.media || []) {
-      const a = el("a");
-      a.href = media.url;
-      a.target = "_blank";
-      a.rel = "noopener";
+    for (const [index,media] of (p.media || []).entries()) {
+      const a = button('', 'ds-media-review',()=>window.DentalMediaViewer.open(p.media,index,a));
+      a.setAttribute('aria-label','İncelenecek görseli aç: '+(index+1));
       const img = el("img");
       img.src = media.url;
       img.alt = "İncelenecek görsel";
@@ -56,6 +56,7 @@
     tools.append(reason);
     for (const [status, label] of [
       ["PUBLISHED", "Yayınla"],
+      ["PENDING", "Düzenleme iste"],
       ["REJECTED", "Reddet"],
     ])
       tools.append(
@@ -73,7 +74,7 @@
               reason: reason.value.trim(),
             });
             card.remove();
-            explain("Karar denetim kaydına işlendi.");
+            explain(status==='PUBLISHED'?'Gönderi yayında.':status==='PENDING'?'Düzenleme isteği iletildi.':'İçerik reddedildi.');
           } catch (e) {
             explain(e.message);
           } finally {
@@ -90,6 +91,8 @@
       if (!history.open || body.childElementCount) return;
       try {
         const data = await api("/moderation/" + kind + "/" + p.id);
+        const task=data.item.moderation;
+        if(task)body.append(el('p','ds-muted','İş kimliği: '+(task.job_id||'Eski kayıt')+' · İçerik sürümü: '+task.content_version));
         for (const h of data.history)
           body.append(
             el(
@@ -98,6 +101,7 @@
               `${h.created_at} · ${h.actor_id ? "Yönetici/üye #" + h.actor_id : "Otomatik denetim"} · v${h.version} · ${labels[h.status] || h.status} · ${h.reason}`,
             ),
           );
+        for(const h of data.moderation_history||[])body.append(el('p','ds-muted',`${h.created_at} · ${h.source} · ${h.state} · ${h.reason}`));
       } catch (e) {
         explain(e.message);
       }
@@ -106,6 +110,7 @@
     return card;
   }
   async function load(reset = true) {
+    if(loading)return;loading=true;
     if (reset) {
       cursor = null;
       list.replaceChildren();
@@ -152,6 +157,8 @@
           );
         for (const p of data.items) list.append(render(p, kind));
         cursor = data.next_cursor;
+        const aging=$('[data-queue-aging]');
+        if(aging&&data.aging){aging.hidden=false;aging.textContent=`Yönetici bekleyen: ${data.aging.waiting_human} · Düzenleme bekleyen: ${data.aging.waiting_owner} · İşlem hatası: ${data.aging.failed} · 1 saati aşan: ${data.aging.over_1h} · 24 saati aşan: ${data.aging.over_24h}`;}
       }
       more.hidden = !cursor;
       if (!list.children.length)
@@ -159,6 +166,7 @@
     } catch (e) {
       explain(e.message);
     } finally {
+      loading=false;
       more.disabled = false;
     }
   }

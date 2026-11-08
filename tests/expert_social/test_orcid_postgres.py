@@ -24,6 +24,9 @@ def setup_social(engine, monkeypatch):
         main.ExpertPolicyState,
         main.SessionToken,
         main.AdminVerifiedSession,
+        main.AdminNotice,
+        main.RealtimeEvent,
+        main.UserBlock,
         main.AuthRateBucket,
     ):
         model.__table__.create(engine, checkfirst=True)
