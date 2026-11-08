@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
@@ -16,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ACCOUNT_TEMPLATE = (ROOT / "app/templates/account.html").read_text(encoding="utf-8")
 
 
-def _engine():
+def _engine(tmp_path):
     engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        "sqlite:///" + str(tmp_path / "account.db"), connect_args={"check_same_thread": False}
     )
     SQLModel.metadata.create_all(engine)
     return engine
@@ -34,8 +33,8 @@ def test_profile_exposes_logout_and_guarded_account_deletion():
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_self_delete_requires_password_then_revokes_account_and_session(monkeypatch):
-    engine = _engine()
+def test_self_delete_requires_password_then_revokes_account_and_session(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     token = "delete-account-token"
     with Session(engine, expire_on_commit=False) as session:
         user = main.User(
@@ -111,8 +110,8 @@ def test_deleted_account_login_page_confirms_completion():
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
-    engine = _engine()
+def test_display_name_edit_route_normalizes_and_publishes(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     token = "display-name-token"
     with Session(engine, expire_on_commit=False) as session:
         user = main.User(username="displayuser", role="DOCTOR", display_name="Old Name", email_verified_at=main._utcnow_naive())
@@ -152,7 +151,8 @@ def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
                 self.form_depth -= 1
     parser = ProfileSections()
     parser.feed(confirmation.text)
-    assert parser.sections == 5
+    # Personal, professional, expert entry, notifications, password, account.
+    assert parser.sections == 6
     assert parser.form_depth == 0
     assert {'/account/display-name', '/account/username', '/account/password', '/account/professional-title', '/account/profile-photo', '/logout', '/account/delete'} <= set(parser.actions)
     with Session(engine) as session:
@@ -160,8 +160,8 @@ def test_display_name_edit_route_normalizes_and_publishes(monkeypatch):
 
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient is unavailable")
-def test_verified_expert_can_edit_display_name_without_reverification(monkeypatch):
-    engine = _engine()
+def test_verified_expert_can_edit_display_name_without_reverification(monkeypatch, tmp_path):
+    engine = _engine(tmp_path)
     token = "verified-display-name-token"
     with Session(engine, expire_on_commit=False) as session:
         user = main.User(username="verifieduser", role="DOCTOR", display_name="Verified Name", email_verified_at=main._utcnow_naive())
@@ -195,3 +195,4 @@ def test_profile_mobile_edit_controls_are_present():
     assert 'action="/account/display-name"' in ACCOUNT_TEMPLATE
     assert 'name="display_name"' in ACCOUNT_TEMPLATE
     assert '.account-container{max-width:820px;' in ACCOUNT_TEMPLATE
+

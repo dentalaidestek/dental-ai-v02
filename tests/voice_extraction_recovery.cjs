@@ -1,6 +1,6 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 class El{
- constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.value='';this.checked=false;this.hidden=false;this.disabled=false;this.handlers={};this.classList={toggle(){}};this.textContent=''}
+ constructor(tag='div'){this.tag=tag;this.style={};this.scrollHeight=44;this.children=[];this.dataset={};this.value='';this.checked=false;this.hidden=false;this.disabled=false;this.handlers={};this.classList={toggle(){}};this.textContent=''}
  append(...items){this.children.push(...items)}replaceChildren(...items){this.children=items;this.textContent=''}
  dispatchEvent(e){this.handlers[e.type]?.(e)}addEventListener(n,fn){this.handlers[n]=fn}setAttribute(){}
  querySelector(tag){for(const child of this.children){if(child?.tag===tag)return child;const next=child?.querySelector?.(tag);if(next)return next}return null}

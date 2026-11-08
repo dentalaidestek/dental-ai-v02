@@ -24,6 +24,11 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check -r requirements-web.lock
           python -m pip install --disable-pip-version-check pytest==9.1.1 httpx==0.28.1 numpy==2.5.3 opencv-python-headless==5.0.0.93
+          python -m pip install --disable-pip-version-check playwright
+      - name: Install browser used by application regressions
+        run: |
+          python -m playwright install --with-deps chromium
+          python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print("TEST_CHROMIUM="+p.chromium.executable_path); p.stop()' >> "$GITHUB_ENV"
       - name: Run application regressions
         # Retired language-engine benchmarks are preserved in the manual
         # Academic job. All other application and security tests still run.
@@ -131,3 +136,4 @@ jobs:
         run: PYTHONPATH=. python tests/probe_hyunchan_hf_models.py
       - name: Inspect current bone-loss and periapical ONNX checkpoints
         run: PYTHONPATH=. python tests/check_hyunchan_ready_models.py
+

@@ -1,7 +1,7 @@
 // Execute the actual browser controller with a small DOM harness. No real PHI/provider.
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 class El{
- constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.value='';this.checked=false;this.hidden=false;this.handlers={};this.classList={toggle(){}};this.textContent=''}
+ constructor(tag='div'){this.tag=tag;this.style={};this.scrollHeight=44;this.children=[];this.dataset={};this.value='';this.checked=false;this.hidden=false;this.handlers={};this.classList={toggle(){}};this.textContent=''}
  append(...items){this.children.push(...items)} replaceChildren(...items){this.children=items;this.textContent=''}
  dispatchEvent(event){this.handlers[event.type]?.(event)}
  setAttribute(){} addEventListener(name,fn){this.handlers[name]=fn}
@@ -43,15 +43,17 @@ class El{
  assert.equal('communication' in second.context,false);
  assert.equal(get('[data-voice-communication]').children.length,1); // Keep distinct earlier observations through the whole examination.
  get('[data-voice-fields]').children[0].querySelector('input').checked=true;
- get('[data-voice-confirm]').checked=false;
+ assert.equal(calls.some(c=>c.url.endsWith('/apply')),false,'Review must wait for the explicit approve-and-save action');
+ get('[data-voice-consent]').checked=false;
  await get('[data-voice-save]').handlers.click();
- assert.equal(calls.some(c=>c.url.endsWith('/apply')),false,'Cannot save without confirmation');
+ assert.equal(calls.some(c=>c.url.endsWith('/apply')),false,'Cannot save after processing consent is withdrawn');
+ get('[data-voice-consent]').checked=true;
  await get('[data-voice-finalize]').handlers.click();
  assert.equal(calls.some(c=>c.url.endsWith('/clinical')),false,'No automatic parallel clinical call');
  assert.equal(get('[data-voice-save]').disabled,false);
- get('[data-voice-confirm]').checked=true;
  await get('[data-voice-save]').handlers.click();
  const saved=JSON.parse(calls.find(c=>c.url.endsWith('/apply')).options.body);
+ assert.equal(saved.confirmed,true,'The explicit approve-and-save action supplies physician confirmation');
  assert.deepEqual(Object.keys(saved.fields),['chief_complaint']);
  assert.equal('transcript' in saved,false);assert.equal('communication' in saved,false);
  assert.equal(get('[data-voice-transcript]').value,'');assert.equal(get('[data-voice-communication]').children.length,0);
@@ -60,5 +62,3 @@ class El{
  assert.equal(get('[data-voice-transcript]').value,'');
  console.log('Browser controller: final review gate, cumulative context, explicit selection, minimal save and cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
-
-
