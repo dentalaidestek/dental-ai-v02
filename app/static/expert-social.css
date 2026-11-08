@@ -288,6 +288,10 @@
   stroke: currentColor;
   stroke-width: 1.7;
 }
+.ds-actions button[aria-pressed="true"] .ds-heart { fill: currentColor; opacity: 1; }
+.ds-action-error { margin: 8px 0 0; color: #a43131; font-size: 13px; line-height: 1.5; }
+.ds-action-error[hidden] { display: none; }
+.ds-feed > .ds-card { scroll-margin-top: 100px; }
 .ds-menu {
   position: relative;
   align-self: flex-start;
@@ -625,6 +629,15 @@
   background: #fff;
   box-shadow: 0 2px 10px #0b264422;
 }
+#expertSocial .ds-composer .ds-link-card { display: block; min-height: 0; }
+#expertSocial .ds-composer .ds-link-card > img { display: block; width: 100%; height: 160px; max-height: 180px; object-fit: contain; background: #f3f6f9; }
+#expertSocial .ds-composer .ds-link-card > div { padding: 12px; }
+#expertSocial .ds-composer .ds-link-card strong { font-size: 14px; line-height: 1.45; }
+#expertSocial .ds-composer .ds-link-card small { font-size: 11px; line-height: 1.4; }
+#expertSocial .ds-composer .ds-link-card p { margin-bottom: 0; font-size: 12px; }
+.ds-cover-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; }
+.ds-cover-tools small { font-size: 12px; color: var(--ds-muted); }
+.ds-cover-progress { display: block; width: 100%; height: 4px; }
 .ds-error {
   color: #a43131;
   background: #fff2f2;
@@ -633,6 +646,17 @@
   font-size: 13px;
 }
 .ds-notice {
+  position: fixed;
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, calc(100vw - 24px));
+  box-sizing: border-box;
+  margin: 0;
   background: #edf5ff;
   color: #1a527a;
   padding: 12px 15px;
@@ -640,7 +664,13 @@
   border-radius: 12px;
   font-size: 14px;
   overflow-wrap: anywhere;
+  box-shadow: 0 5px 24px #10244122;
 }
+.ds-notice[hidden] { display: none; }
+.ds-notice > span { flex: 1; min-width: 0; }
+body.dai-app-shell #expertSocial .ds-notice button { background: transparent !important; border: 0 !important; box-shadow: none !important; color: #174e7b !important; padding: 4px; min-height: 40px; flex-shrink: 0; }
+.ds-notice-action { font-size: 12px; text-decoration: underline; }
+.ds-notice-dismiss { font-size: 22px; width: 32px; }
 .ds-form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

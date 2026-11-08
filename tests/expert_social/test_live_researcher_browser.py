@@ -66,21 +66,22 @@ def test_aziz_sancar_orcid_manager_import_and_duplicate(browser_app):
             "zaten kayıtlı"
         )
         page.locator("[data-publication-dialog] [data-close]").click()
+        shared_title = page.locator("[data-publications] .ds-card h3").first.inner_text()
         page.locator("[data-publications] .ds-card").first.get_by_role(
             "button", name="Gönderi olarak paylaş"
         ).click()
         expect(page.locator("[data-manage-tab=posts]")).to_have_attribute(
             "aria-selected", "true"
         )
-        expect(page.locator("[data-preview]")).to_contain_text(
-            page.locator("[data-post-text]").input_value().split("\n")[0], timeout=10000
-        )
+        expect(page.locator("[data-post-text]")).to_have_value("")
+        expect(page.locator("[data-preview] .ds-link-card strong")).to_have_text(shared_title, timeout=10000)
         page.locator("[data-post-text]").fill(
             "Bilimsel çalışma hakkında değerlendirmem.\n"
             + page.locator("[data-post-text]").input_value()
         )
         page.locator("[data-publish]").click()
         expect(page.locator("[data-feed] article")).to_have_count(1)
+        expect(page.locator("[data-notice]")).to_contain_text("Yayımlandı")
         page.locator("[data-manage-tab=publications]").click()
         dest = Path(os.getenv("TEST_ARTIFACT_DIR", str(tmp / "screenshots")))
         dest.mkdir(exist_ok=True, parents=True)

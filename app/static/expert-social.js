@@ -125,7 +125,10 @@
       ),
       el("strong", "", preview?.title || domain),
     );
-    if (preview?.description) body.append(el("p", "", preview.description));
+    const description = preview?.site_name && preview?.description?.startsWith(preview.site_name + " · ")
+      ? preview.description.slice(preview.site_name.length + 3)
+      : preview?.description;
+    if (description) body.append(el("p", "", description));
     a.append(body);
     return a;
   }
@@ -165,7 +168,24 @@
       "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 2 1.5-6A8.5 8.5 0 1 1 21 11.5Z",
     share: "M9 12h12m-4-4 4 4-4 4M13 5H4v14h9",
   };
-  function actionIcon(b,name){const icons={heart:'heart',comment:'chat-circle-text',share:'share-network'};const img=el('img','ds-action-icon');img.src='/static/expert-icons/'+icons[name]+'.svg';img.alt='';b.prepend(img);}
+  function actionIcon(b, name) {
+    if (name === "heart") {
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("class", "ds-action-icon ds-heart");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS(icon.namespaceURI, "path");
+      path.setAttribute("d", iconPaths.heart);
+      icon.append(path);
+      b.prepend(icon);
+      return;
+    }
+    const icons = {comment: "chat-circle-text", share: "share-network"};
+    const img = el("img", "ds-action-icon");
+    img.src = "/static/expert-icons/" + icons[name] + ".svg";
+    img.alt = "";
+    b.prepend(img);
+  }
   async function copyLink(value) {
     if (navigator.clipboard?.writeText)
       return navigator.clipboard.writeText(value);
@@ -203,9 +223,20 @@
     const management=root.dataset.management==="1";
     const followingFeed=root.dataset.feedMode==='following';
     const notice = $("[data-notice]");
-    function say(message) {
+    function say(message, post = null) {
+      if (dialog?.open && !post) {
+        const error = $("[data-compose-error]");
+        error.textContent = message;
+        error.hidden = false;
+        error.scrollIntoView({block: "nearest"});
+        return;
+      }
       notice.hidden = false;
-      notice.textContent = message;
+      notice.replaceChildren(el("span", "", message));
+      if (post) notice.append(button("Gönderiye git", "ds-notice-action", () => showPost(post.id)));
+      const dismiss = button("×", "ds-notice-dismiss", () => { notice.hidden = true; });
+      dismiss.setAttribute("aria-label", "Bildirimi kapat");
+      notice.append(dismiss);
     }
     const feed = $("[data-feed]"),
       pubList = $("[data-publications]");
@@ -231,6 +262,7 @@
       editing = null,
       uploading = 0,
       sending = false,
+      preparingPublication = false,
       previewSequence = 0,
       previewTimer = null,
       removedUrl = null;
@@ -259,6 +291,15 @@
       }
     }
     function resetDraft() {
+      clearTimeout(previewTimer);
+      previewSequence++;
+      removedUrl = null;
+      preparingPublication = false;
+      const submit = $("[data-publish]");
+      if (submit && !sending) {
+        submit.disabled = false;
+        submit.textContent = "Paylaş";
+      }
       draft = {
         text: "",
         media: [],
@@ -456,7 +497,11 @@
             ? "İçerik yayınlanmadan önce inceleniyor. Şu anda yalnızca siz görebilirsiniz."
             : "İçerik yayınlanmadı. Düzenleyip yeniden incelemeye gönderebilirsiniz.")));
       }
-      card.append(linkedText(p.text));
+      // Older publication shares copied the same title and URL into the text.
+      // Keep the saved text editable, but display that exact duplicate only once.
+      const duplicatePublication = p.link_url && p.preview?.title &&
+        p.text.trim() === p.preview.title.trim() + "\n" + p.link_url;
+      if (p.text && !duplicatePublication) card.append(linkedText(p.text));
       const gallery = p.media.filter(
         (m) => !(p.link_url && m.id === p.cover_media_id),
       );
@@ -484,10 +529,15 @@
             p.media.find((m) => m.id === p.cover_media_id)?.url,
           ),
         );
+      const actionError = el("p", "ds-action-error");
+      actionError.hidden = true;
+      actionError.setAttribute("role", "status");
       const actions = el("div", "ds-actions"),
         like = button(String(p.like_count), "", async () => {
           if (like.disabled) return;
+          actionError.hidden = true;
           like.disabled = true;
+          like.setAttribute("aria-busy", "true");
           try {
             const data = await api("/posts/" + p.id + "/like", "PUT", {
               liked: !p.liked,
@@ -496,14 +546,18 @@
             p.like_count = data.like_count;
             like.lastChild.textContent = String(data.like_count);
             like.setAttribute("aria-pressed", String(p.liked));
+            like.setAttribute("aria-label", p.liked ? "Beğenmekten vazgeç" : "Beğen");
           } catch (e) {
-            say(e.message);
+            actionError.textContent = e.message;
+            actionError.hidden = false;
+            actionError.scrollIntoView({block: "nearest"});
           } finally {
             like.disabled = false;
+            like.removeAttribute("aria-busy");
           }
         });
       like.prepend(document.createTextNode(""));
-      like.setAttribute("aria-label", "Beğen");
+      like.setAttribute("aria-label", p.liked ? "Beğenmekten vazgeç" : "Beğen");
       like.setAttribute("aria-pressed", String(p.liked));
       actionIcon(like, "heart");
       const comment = button(p.comment_count + " yorum", "", () =>
@@ -532,7 +586,7 @@
       actions.append(like);
       if (!p.comments_closed) actions.append(comment);
       actions.append(share);
-      card.append(actions);
+      card.append(actionError, actions);
       if(p.comments_closed){const closed=el('p','ds-comments-state','Yorumlar kapalı');closed.dataset.commentsState='';card.append(closed);}
       return card;
     }
@@ -540,6 +594,14 @@
       const previous = feed.querySelector(`[data-post-id="${p.id}"]`);
       if (previous) previous.replaceWith(renderPost(p));
       else feed.prepend(renderPost(p));
+    }
+    function showPost(id) {
+      setTab("posts");
+      const card = feed.querySelector(`[data-post-id="${id}"]`);
+      if (!card) return;
+      card.tabIndex = -1;
+      card.scrollIntoView({block: "start"});
+      card.focus({preventScroll: true});
     }
     async function loadPosts(reset = false) {
       if (postsLoading) return;
@@ -795,13 +857,24 @@
       await load();
     }
 
+    function removeMedia(media) {
+      if (media.uploading) return;
+      const index = draft.media.indexOf(media);
+      if (index < 0) return;
+      draft.media.splice(index, 1);
+      if (media.local) URL.revokeObjectURL(media.url);
+      renderAttachments();
+      renderPreview();
+      saveDraft();
+    }
     function renderAttachments() {
       if (!dialog) return;
       const box = $("[data-attachments]");
       box.replaceChildren();
-      if (!draft.media.length) return;
+      const photos = draft.media.filter((m) => !(draft.linkUrl && m.cover));
+      if (!photos.length) return;
       const track = el("div", "ds-attachments-track");
-      draft.media.forEach((m, index) => {
+      photos.forEach((m, index) => {
         const item = el("div", "ds-attachment"),
           img = el("img");
         img.src = m.url;
@@ -811,10 +884,8 @@
         footer.append(
           button("‹", "", () => {
             if (index > 0) {
-              [draft.media[index - 1], draft.media[index]] = [
-                draft.media[index],
-                draft.media[index - 1],
-              ];
+              const current = draft.media.indexOf(m), previous = draft.media.indexOf(photos[index - 1]);
+              [draft.media[previous], draft.media[current]] = [m, photos[index - 1]];
               renderAttachments();
               saveDraft();
             }
@@ -831,22 +902,14 @@
                 : "Yükleniyor…",
           ),
           button("›", "", () => {
-            if (index < draft.media.length - 1) {
-              [draft.media[index + 1], draft.media[index]] = [
-                draft.media[index],
-                draft.media[index + 1],
-              ];
+            if (index < photos.length - 1) {
+              const current = draft.media.indexOf(m), next = draft.media.indexOf(photos[index + 1]);
+              [draft.media[next], draft.media[current]] = [m, photos[index + 1]];
               renderAttachments();
               saveDraft();
             }
           }),
-          button("×", "", () => {
-            if (m.uploading) return;
-            draft.media.splice(index, 1);
-            if (m.local) URL.revokeObjectURL(m.url);
-            renderAttachments();
-            saveDraft();
-          }),
+          button("×", "", () => removeMedia(m)),
         );
         footer.children[0].setAttribute("aria-label", "Fotoğrafı önceye taşı");
         footer.children[2].setAttribute("aria-label", "Fotoğrafı sonraya taşı");
@@ -860,32 +923,58 @@
         }
         track.append(item);
       });
-      box.append(mediaCarousel(track, draft.media.length, "Yükleme önizlemeleri"));
+      box.append(mediaCarousel(track, photos.length, "Yükleme önizlemeleri"));
     }
     function renderPreview() {
       const box = $("[data-preview]");
       if (!box) return;
       box.replaceChildren();
       $("[data-cover]").hidden = !draft.linkUrl;
+      const cover = draft.media.find((m) => m.cover);
+      $("[data-cover]").disabled = !!cover?.uploading;
+      $("[data-cover] span").textContent = cover ? "Kapağı değiştir" : "Kapak ekle";
       if (draft.linkUrl) {
         const wrap = el("div", "ds-preview-wrap");
         wrap.append(
           linkCard(
             draft.linkUrl,
             draft.preview,
-            draft.media.find((m) => m.cover)?.url || draft.preview?.cover?.url,
+            cover?.url || draft.preview?.cover?.url,
           ),
         );
         const remove = button("×", "ds-icon", () => {
           removedUrl = draft.linkUrl;
           draft.linkUrl = null;
           draft.preview = null;
+          draft.media.forEach((media) => { media.cover = false; });
           previewSequence++;
+          preparingPublication = false;
+          if (!sending) {
+            $("[data-publish]").disabled = false;
+            $("[data-publish]").textContent = "Paylaş";
+          }
+          renderAttachments();
           renderPreview();
           saveDraft();
         });
         remove.setAttribute("aria-label", "Bağlantı önizlemesini kaldır");
         wrap.append(remove);
+        if (cover) {
+          const controls = el("div", "ds-cover-tools");
+          const state = el("small", "", cover.error ? "Kapak yüklenemedi" : cover.uploading ? "Kapak yükleniyor…" : "Kapak eklendi");
+          state.setAttribute("role", "status");
+          const removeCover = button("Kapağı kaldır", "ds-text-button", () => removeMedia(cover));
+          removeCover.disabled = !!cover.uploading;
+          controls.append(state, removeCover);
+          wrap.append(controls);
+          if (cover.uploading) {
+            const progress = el("progress", "ds-cover-progress");
+            progress.setAttribute("aria-label", "Kapak yükleme ilerlemesi");
+            progress.max = 100;
+            progress.value = cover.progress || 0;
+            wrap.append(progress);
+          }
+        }
         box.append(wrap);
       }
     }
@@ -956,9 +1045,13 @@
       });
       async function fetchPreview(url) {
         if (editing) return;
+        preparingPublication = false;
+        $("[data-publish]").disabled = sending;
+        if (!sending) $("[data-publish]").textContent = "Paylaş";
         const seq = ++previewSequence;
         notice.hidden = true;
         notice.textContent = "";
+        $("[data-compose-error]").hidden = true;
         draft.linkUrl = url;
         draft.preview = null;
         renderPreview();
@@ -1023,6 +1116,7 @@
             if (e.lengthComputable) {
               item.progress = (e.loaded / e.total) * 100;
               renderAttachments();
+              if (item.cover) renderPreview();
             }
           };
           xhr.onload = () => {
@@ -1045,9 +1139,10 @@
       }
       fileInput.addEventListener("change", async () => {
         const selected = [...fileInput.files];
+        const selectedAsCover = coverMode;
         fileInput.value = "";
         for (const file of selected) {
-          if (draft.media.length >= 4) {
+          if (draft.media.length - (selectedAsCover && draft.media.some(m => m.cover) ? 1 : 0) >= 4) {
             say("Bir gönderide en fazla dört görsel olabilir.");
             break;
           }
@@ -1060,16 +1155,17 @@
             );
             continue;
           }
-          if (coverMode) draft.media = draft.media.filter((m) => !m.cover);
+          if (selectedAsCover) draft.media = draft.media.filter((m) => !m.cover);
           const item = {
             url: URL.createObjectURL(file),
             local: true,
-            cover: coverMode,
+            cover: selectedAsCover,
             uploading: true,
           };
           draft.media.push(item);
           uploading++;
           renderAttachments();
+          renderPreview();
           try {
             const data = await uploadFile(file, item);
             URL.revokeObjectURL(item.url);
@@ -1078,7 +1174,9 @@
             item.local = false;
           } catch (e) {
             item.error = true;
-            say(e.message);
+            const error = $("[data-compose-error]");
+            error.textContent = e.message;
+            error.hidden = false;
           } finally {
             item.uploading = false;
             uploading--;
@@ -1105,7 +1203,7 @@
         fitText();
       });
       $("[data-publish]").addEventListener("click", async () => {
-        if (sending) return;
+        if (sending || preparingPublication) return;
         const error = $("[data-compose-error]");
         error.hidden = true;
         if (uploading) {
@@ -1116,6 +1214,8 @@
         sending = true;
         const submit = $("[data-publish]");
         submit.disabled = true;
+        const wasEditing = !!editing;
+        submit.textContent = wasEditing ? "Kaydediliyor…" : "Paylaşılıyor…";
         try {
           let row;
           if (editing) {
@@ -1149,17 +1249,21 @@
           setTab("posts");refreshStats().catch(()=>{});
           say(
             row.status === "PUBLISHED"
-              ? "Gönderiniz yayınlandı."
+              ? "Yayımlandı. Gönderiniz profilinizde."
               : row.status === "PENDING"
-                ? "Gönderiniz incelemeye alındı. Onaylandığında üyeler görebilecek."
-                : "Gönderiniz yayınlanmadı. İçeriği düzenleyebilirsiniz.",
+                ? "İncelemeye alındı. Onaylanana kadar yalnızca siz görebilirsiniz."
+                : "Yayımlanmadı. Gönderideki gerekçeye göre düzenleyebilirsiniz.",
+            row,
           );
+          showPost(row.id);
         } catch (e) {
           error.textContent = e.message;
           error.hidden = false;
+          error.scrollIntoView({block: "nearest"});
         } finally {
           sending = false;
           submit.disabled = false;
+          submit.textContent = editing ? "Kaydet" : "Paylaş";
         }
       });
       $("[data-sync]").addEventListener("click", async () => {
@@ -1294,16 +1398,37 @@
       if (owner) {
         const tools = el("div", "ds-publication-tools");
         tools.append(
-          button("Gönderi olarak paylaş", "", () => {
+          button("Gönderi olarak paylaş", "", async () => {
             const url = p.url || (p.doi ? "https://doi.org/" + p.doi : "");
-            openComposer(null, p.title + (url ? "\n" + url : ""));
+            if (url && draft.linkUrl === url) { openComposer(); return; }
+            if ((draft.text.trim() || draft.media.length || draft.linkUrl) &&
+                !confirm("Mevcut taslağın yerine bu yayını paylaşmak ister misiniz?")) return;
+            resetDraft();
+            draft.text = url ? "" : p.title;
+            draft.linkUrl = url || null;
+            draft.preview = url ? {title: p.title, site_name: p.journal || "Akademik yayın", description: p.year ? String(p.year) : ""} : null;
+            saveDraft();
+            openComposer();
             if (url) {
-              draft.linkUrl = url;draft.preview = null;renderPreview();saveDraft();
               const seq=++previewSequence;
-              api('/publications/'+p.id+'/share-preview','POST').then(data=>{
+              const submit = $("[data-publish]");
+              preparingPublication = true;
+              submit.disabled = true;
+              submit.textContent = "Hazırlanıyor…";
+              try {
+                const data = await api('/publications/'+p.id+'/share-preview','POST');
                 if(seq!==previewSequence||draft.linkUrl!==url)return;
                 draft.preview=data;renderPreview();saveDraft();
-              }).catch(()=>{});
+              } catch {
+                // A safe source URL remains shareable when metadata is unavailable.
+                if (seq === previewSequence) { draft.preview = null; renderPreview(); saveDraft(); }
+              } finally {
+                if (seq === previewSequence) {
+                  preparingPublication = false;
+                  submit.disabled = false;
+                  submit.textContent = "Paylaş";
+                }
+              }
             }
           }),
           button("Düzenle", "", () => root._editPublication(p)),
