@@ -122,3 +122,21 @@ def test_temporary_offline_preview_preserves_link_and_draft(preview_page):
     page.reload()
     expect(page.locator("[data-preview] .ds-link-card")).to_have_attribute("href", url)
     expect(page.locator("[data-post-text]")).to_have_value("Bilimsel kaynak paylaşımı")
+
+
+def test_discarded_draft_is_not_restored_by_a_late_preview(preview_page):
+    page, _, base = preview_page
+    page.goto(base + "/expert-support/expert/1")
+    page.locator("[data-compose]").click()
+    page.clock.install()
+    page.route("**/api/expert-social/preview", lambda route: route.fulfill(status=200, json={"id": 12345, "available": True, "title": "Eski taslak kaynağı"}))
+    page.locator("[data-post-text]").fill("https://example.org/previous-draft")
+    page.once("dialog", lambda prompt: prompt.accept())
+    page.locator("[data-discard]").click()
+    expect(page.locator("[data-post-text]")).to_have_value("")
+    # Advance through the automatic preview debounce after the user clears it.
+    page.clock.run_for(1200)
+    expect(page.locator("[data-preview] .ds-link-card")).to_have_count(0)
+    page.reload()
+    expect(page.locator("[data-preview] .ds-link-card")).to_have_count(0)
+    expect(page.locator("[data-post-text]")).to_have_value("")

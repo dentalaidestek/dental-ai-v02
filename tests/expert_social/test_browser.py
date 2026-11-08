@@ -159,7 +159,8 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
         page.locator("[data-publications]").get_by_role(
             "button", name="Gönderi olarak paylaş"
         ).click()
-        expect(area).to_have_value(__import__("re").compile("Test bilimsel makalesi"))
+        expect(area).to_have_value("")
+        expect(page.locator("[data-preview] .ds-link-card strong")).to_contain_text("Test bilimsel makalesi")
         page.locator("[data-composer] [data-close]").click()
         page.get_by_role("tab", name="Gönderiler", exact=True).click()
         # Existing profile shell elements remain present.
@@ -203,7 +204,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
         expect(page.locator("[data-comments-toggle]")).to_contain_text("2 yorum")
         page.get_by_role('button',name='Yorumları kapat',exact=True).click()
         page.get_by_role("button", name="Beğen", exact=True).click()
-        expect(page.get_by_role("button", name="Beğen", exact=True)).to_have_attribute(
+        expect(page.get_by_role("button", name="Beğenmekten vazgeç", exact=True)).to_have_attribute(
             "aria-pressed", "true"
         )
         assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
