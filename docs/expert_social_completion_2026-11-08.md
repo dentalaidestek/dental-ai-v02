@@ -1,6 +1,6 @@
 # Uzman sosyal akışı — 8 Kasım 2026
 
-Çalışma: `feature/postlaunch-social-voice-20261107`, PR [251](https://github.com/dentalaidestek/dental-ai-v02/pull/251). Bu yeni değişiklikler main'e birleştirilmedi veya canlıya dağıtılmadı. Test hesapları ve kimliksiz veriler kullanıldı; gerçek hasta veya canlı gönderi değiştirilmedi.
+Çalışma: `feature/postlaunch-social-voice-20261107`, PR [251](https://github.com/dentalaidestek/dental-ai-v02/pull/251). Kullanıcı 8 Kasım'da tüm PR için canlıya alma onayı verdi; PR251, 34309a86629814ca05bcf9f6b514f67c05d92e4a commit'iyle main'e birleştirildi. Render dağıtımı 8 Kasım 2026 09:21:34 Türkiye saatinde başarıyla canlıya geçti. Test hesapları ve kimliksiz veriler kullanıldı; gerçek hasta veya canlı gönderi değiştirilmedi.
 
 ## Hatalar ve kök nedenleri
 
@@ -68,3 +68,24 @@ Yerel kapasite sayıları tüm internet/medya/AI/Render yükünü kapsamaz; 60 b
 ![Üye profili](social-completion/approved-image-post-360.png)
 
 ![İnsan incelemesi](social-completion/moderation-human-queue-1280.png)
+
+
+## Canlıya alma öncesi ek kontrol
+
+GitHub Node testleri eski DOM fixture ve onay/kart beklentileri nedeniyle başarısızdı; üretim güvenlik kontrolleri değiştirilmeden altı fixture güncellendi. 11 Node sesli muayene dosyası geçti. Hesap testinde mevcut altı bölüm beklentisi düzeltildi; tek SQLite bağlantısını paylaşan fixture ayrı dosya/bağlantılara alındı. Güvenlik/hesap grubu 119 geçti. Genel uygulama CI işine eksik Playwright/Chromium kurulumu eklendi; test kapsamı daraltılmadı. Akademik CI: mevcut main ile PR başarısız test kimlikleri karşılaştırıldı (30 ana kimlik, 40 toplam başarısızlık); yeni kimlik yok. Semantik PostgreSQL iki başarısızlığı da main ile aynı. Bunlar giderilmiş kabul edilmez.
+
+
+## Canlı sonuç — doğrulandı
+
+- Üretim commit: `34309a86629814ca05bcf9f6b514f67c05d92e4a` (PR251 squash).
+- Render: `dep-dbo18uavcj2c738t02qg`, `live`, 8 Kasım 2026 06:21:34 UTC / 09:21:34 Türkiye. Otomatik dağıtım kullanıldı; ikinci dağıtım tetiklenmedi.
+- Uygulama başlangıcı 06:21:27 UTC'de tamamlandı; migration/startup sonrası yeni instance açıldı. Oturum açık profilde eski inceleme kaydı yeni moderation API ile `registered=true`, `WAITING_HUMAN`, `HUMAN_REVIEW`, `LEGACY_BACKFILL` verdi. Yeni tablolar ve eski kayıt aktarımı gerçek uygulamada okundu.
+- `/healthz` ve `/readyz`: HTTP200. Oturumsuz `/api/expert-social/feed/following`: HTTP401; içerik açılmadı.
+- Canlı oturumda profil editörü, yayın alanı, bekleme gerekçesi/yenileme, fotoğrafın aynı sayfada açılması, 150% yakınlaştırma, geri tuşuyla profile dönüş ve ana sayfa→takip akışı doğrulandı.
+- Yorum yazma/silme ve ORCID aktarımı test hesaplarında doğrulandı; canlı hesaba test gönderisi/yayın/vaka eklenmedi, mevcut içerik onaylanmadı veya silinmedi.
+- “Klinikteyiz” kaydı insan görsel incelemesi bekler. Kırık bir AI işçisi değildir. İçerik, yalnız beklediği için yayımlanmadı; yönetici karar ekranı ve bildirimleri çalışır.
+- Dağıtım başlangıcından sonraki hata düzeyindeki Render uygulama logu sorgusunda hata bulunmadı (kontrol penceresi kısadır; sürekli hata yok garantisi değildir).
+- GitHub sesli muayene ve Android kontrolleri başarılı. Güvenlik workflow'unda Python119 ve PostgreSQL14 geçti; son Node aşamasında eski logout DOM mock'u eksik kaldı. Bu test-only eksik de düzeltildi; logout/private draft kapsamı eklenerek 12 Node güvenlik/form testi yerelde geçti. Bu son test/rapor düzeltmesi `[skip render]` ile kaydedilir; canlı kod değişmez.
+- Harici PostgreSQL yedek/snapshot bilgisi Render connector'ünde görünmedi; migration eklemelidir ve veri silmez. Ücretli kaynak/plan veya ek servis oluşturulmadı.
+
+Önceki 28 dakikalık çalışma kaybolmadı: 093c97'deki performans/Claude tam geçici metin/arayüz düzenlemeleri, 07e6d9'daki sosyal tamamlama ve yorum paneli, 4da858'deki test uyarlamaları aynı PR251 üzerinden yayımlandı. Akademik AI'nın eski test hataları ve gerçek mikrofon/Claude sağlayıcı çıktısının uçtan uca canlı doğrulaması tamamlandı sayılmaz.
