@@ -33,7 +33,7 @@
 - Mobil sosyal görünüm ve bağlantı hataları: 26 test geçti; 360/390/430/1280 px.
 - Sesli muayene kayıt akışı, takvim düzeltmesi, hata/başarı ve hasta geçmişi: ilgili tarayıcı/HTML testleri geçti. Yaklaşık randevunun onaysız olarak doldurulması ayrıca test edildi.
 - Randevu çözümleme, klinik alanlar ve son değerlendirme: 153 test geçti (717 testin alt kümesi).
-- İlk geniş sosyal taramada iki eski beklenti yeni “Yayında” etiketi ve önbellek sürümüyle uyuşmadı; beklentiler güncellendi. Masaüstü yorum testi bir kez başarısız oldu, ayrı tekrarda geçti; kalıcı kök neden üretilemedi. Son sürüm taraması ayrıca raporlanır.
+- İlk geniş sosyal taramada iki eski beklenti yeni “Yayında” etiketi ve önbellek sürümüyle uyuşmadı; beklentiler güncellendi. Masaüstü yorum testi bir kez başarısız oldu, ayrı tekrarda geçti; kalıcı kök neden üretilemedi. Son sürüm taraması aşağıda yer alır.
 - Son sosyal tarama, izole PostgreSQL ve Chromium ile: **241 geçti, 5 isteğe bağlı test atlandı**, 184,84 saniye. Son sesli kayıt mobil taraması: **4 geçti**; takvim düzeltmesinde tekrar AI çağrısı yok, hata/başarı ve yaklaşık saatin onaysız öneri olması doğrulandı.
 - Kod incelemesinde doğrulanmış P0/P1/P2 hata bulunmadı.
 
@@ -50,4 +50,16 @@ Sentetik ekran örnekleri:
 
 Bu çalışma 60.000 eşzamanlı kullanıcı kapasitesi veya hukuki uygunluk garantisi değildir. Gerçek telefon mikrofonu ve klavyesiyle test, iki ayrı canlı test hesabıyla takip/yorum/destek işlemleri ve yönetici kararı bu rapordaki masaüstü/mobil emülasyon testlerinden ayrıdır. Yönetici giriş isteği zaman aşımına uğradı; doğrulanmış yönetici oturumu elde edilmedi. Mevcut hastalar, yayınlar ve gönderiler değiştirilmedi. Yalnız sentetik yeni muayene kaydı oluşturuldu.
 
-Dağıtım durumu: test ve inceleme sonrası yetkilendirilmiş sürüm hazırlanıyor; canlı doğrulama sonucu PR/teslim mesajında ayrıca belirtilir.
+## Canlı dağıtım sonucu
+
+- PR: https://github.com/dentalaidestek/dental-ai-v02/pull/252 — birleştirildi.
+- Çalışan kod: `a874e9cf20fe7fe1c5815ae61e66c28c3dd4b4bb`.
+- Render dağıtımı: `dep-dbo5r8ss728c739qrj40`, **8 Kasım 2026 14:33:53 Türkiye saati** itibarıyla `live`.
+- `/healthz` ve `/readyz`: 200. Girişsiz takip akışı, gönderi, özel görsel ve sesli muayene yetenek uçları: 401.
+- Canlı sosyal JS/CSS ile sesli muayene JS/CSS dosyalarının dördü de test edilen yerel dosyalarla SHA256 düzeyinde eşleşti.
+- Yeni örneğin uygulama başlangıcı tamamlandı; bu dağıtım için sorgulanan kısa gözlem aralığında hata seviyesinde log bulunmadı.
+- Yeni tarayıcı oturumu giriş ekranında. Yeni sürümün oturum gerektiren canlı senaryoları için kimlik doğrulama gerekiyor; bunlar yerel/CI testleriyle karıştırılmadı.
+
+GitHub sosyal iş akışı **485 geçti / 5 atlandı**. Sesli muayene, yönetici güvenliği, güvenlik kurtarma ve Android kontrolleri başarılı. Akademik kontrolün 30 başarısız test kimliği ve PostgreSQL kontrolünün 2 başarısız kimliği önceki sürümle aynı. Genel uygulama taraması 44 başarısız / 2382 başarılı / 66 atlandı; başarısız test kimliklerinin tamamı önceki sürümde de var (önceki tarama 45 başarısız). Bu eski hatalar bu mobil düzeltmeyle giderilmiş sayılmaz.
+
+Bu raporun sonradan güncellenmesi yalnız dokümantasyondur; `[skip render]` ile çalışan kodun gereksiz yeniden dağıtımı önlenir.
