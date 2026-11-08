@@ -24,7 +24,21 @@
 - Yayın paylaşımı ilk mobil kontrolü: **12 geçti**, 360 ve 430 px, hem profil hem yönetim ekranı.
 - Taslak düzeltmesinden sonraki birleşik önizleme/paylaşım/beğenme testleri: **26 geçti**.
 - Aziz Sancar’ın herkese açık ORCID kaydı yerel test hesabına aktarıldı: **61 yayın**, ikinci aktarım kopya oluşturmadı; gerçek kaynak verisinden gönderi paylaşımı geçti. Bu test ORCID sahipliğini veya akademik unvanı doğrulamaz.
-- Nihai regresyon ve dağıtım sonucu teslim kaydında ayrıca belirtilir.
+- Son sınır kontrolleri: **9 geçti**; yayın hazırlığını kaldırma, eski yanıtı yok sayma, eski otomatik metni sade gösterme ve takip akışında beğenme.
+- Tam sosyal regresyon: **265 geçti, 5 isteğe bağlı dış servis testi atlandı**. Gerçek yerel PostgreSQL yarış/benzersizlik kontrolleri ve 360/390/430/1280 px tarayıcı senaryoları dahil. JavaScript sözdizimi ve git diff kontrolleri geçti.
+- Bağımsız kod incelemesinde açık P0/P1/P2 bulgusu kalmadı.
+- GitHub Expert Social CI: **509 geçti, 5 atlandı**. Mevcut sesli muayene, danışmanlık, dosya depolama ve güvenlik regresyonları da bu pakete dahildir. Security Recovery CI geçti.
+- Genel CI tamamen yeşil değildir: Academic V2'de 40 başarısız sonuç (listelenen 30 test kimliği), genel uygulama paketinde 44 başarısız sonuç (listelenen 34 test kimliği), semantik PostgreSQL'de 2 başarısız test vardır. Üçünün de başarısız test kimlikleri önceki PR #252 sürümüyle birebir aynıdır; yeni başarısız test kimliği bulunmadı. Bu değişiklikte akademik AI altyapısı değiştirilmedi.
+
+## Sürüm kaydı
+
+- PR: https://github.com/dentalaidestek/dental-ai-v02/pull/253
+- İncelenen dal: `fix/publication-share-feedback-20261108`, GitHub başı `58fddfd0fb5273382ef7bb78b9a96bbb9ea1bea0`.
+- Birleştirilen uygulama commit'i: `efbdf703e096aad45ef68898e24ab77986a0280d`.
+- Render dağıtımı: `dep-dboaov8473hc73adehd0`.
+- Dağıtım **LIVE**: 8 Kasım 2026 17:10:21 UTC / 20:10:21 Türkiye saati.
+- Canlı `/healthz` yanıtı `{"ok":true}`; oturumsuz gönderi API'si “Üye girişi gerekiyor” yanıtı verdi, uzman sayfası giriş ekranına yönlendi.
+- Yeni JS/CSS sürümü: `20261108-3`.
 
 ## Görsel kanıt
 
@@ -33,4 +47,4 @@ Testlerdeki hasta içermeyen sentetik veriler kullanılmıştır:
 - `docs/social-completion/publication-composer-profile-360.png`
 - `docs/social-completion/publication-composer-manager-430.png`
 
-Canlı tarayıcıda açık bir hesap oturumu bulunmadığı için bu değişiklikte gerçek kullanıcı hesabıyla canlı paylaşım/beğenme testi yapılamadı. Canlı sunucunun dağıtım ve dosya sürümü ayrıca kontrol edilir. Kapak içeren içerik güvenlik kuralı gereği incelemede kalabilir; bu durum yayın hatası olarak gösterilmez.
+Canlı tarayıcıda açık bir hesap oturumu bulunmadığı için bu değişiklikte gerçek kullanıcı hesabıyla canlı paylaşım/beğenme testi yapılamadı. Render uygulama commit'i ve canlı sağlık/erişim kontrolü doğrulandı. Tarayıcı doğrudan JavaScript dosyasına gitmeyi `ERR_BLOCKED_BY_CLIENT` ile engellediği için canlı dosyaların bayt karşılaştırması tamamlanamadı. Kapak içeren içerik güvenlik kuralı gereği incelemede kalabilir; bu durum yayın hatası olarak gösterilmez.
