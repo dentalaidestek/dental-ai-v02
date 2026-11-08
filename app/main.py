@@ -10688,13 +10688,23 @@ def patient_detail(request: Request, patient_id: int):
 
         analysis_assets = {analysis.id: [] for analysis in analyses}
         analysis_ids = [analysis.id for analysis in analyses if analysis.id is not None]
+        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+        voice_review_ids = set()
         if analysis_ids:
+            voice_review_ids = set(s.exec(
+                select(work_jobs.WorkJob.resource_id).distinct().where(
+                    work_jobs.WorkJob.resource_id.in_(analysis_ids),
+                    work_jobs.WorkJob.owner_user_id == media_owner_id,
+                    work_jobs.WorkJob.resource_type == "ANALYSIS",
+                    work_jobs.WorkJob.kind == "VOICE_REVIEW",
+                    work_jobs.WorkJob.status == "DONE",
+                )
+            ).all())
             for asset in s.exec(
                 select(ImageAsset).where(ImageAsset.analysis_id.in_(analysis_ids))
             ).all():
                 analysis_assets.setdefault(asset.analysis_id, []).append(asset)
 
-        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
         patient_media = s.exec(
             select(PatientMedia).where(
                 PatientMedia.patient_id == patient_id,
@@ -10709,6 +10719,7 @@ def patient_detail(request: Request, patient_id: int):
                 "patient": patient,
                 "patient_profile": patient_profile,
                 "analyses": analyses,
+                "voice_review_ids": voice_review_ids,
                 "treatments": treatments,
                 "analysis_assets": analysis_assets,
                 "patient_media": patient_media,

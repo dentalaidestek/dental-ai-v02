@@ -1169,3 +1169,67 @@ body.dai-app-shell #dentalMediaViewer button{width:auto;min-width:44px;min-heigh
 .ds-comments-sheet .ds-comment-submit-row{gap:8px;min-height:42px}.ds-comments-sheet .ds-comment-submit-row small{font-size:11px}
 .ds-comments-empty{color:#7b899b;text-align:center;padding:24px 12px;font-size:14px}
 @media(max-width:600px){.ds-dialog.ds-comments-sheet{width:100%;height:min(680px,82dvh);max-width:100%;border-radius:22px 22px 0 0}.ds-comments-scroll{padding:0 16px 10px}.ds-comments-sheet .ds-comment-form{padding-left:14px;padding-right:14px}.ds-comments-sheet .ds-comment-tools button{min-height:36px}.ds-comments-sheet .ds-icon{min-height:44px;min-width:44px}}
+
+/* Profile statistics sit outside the social root, above its tabs. */
+body.dai-app-shell #expertProfileStats .ds-stat-open,
+body.dai-app-shell #expertProfileStats .ds-stat-open:hover {
+  appearance: none;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: #142033 !important;
+  padding: 0 !important;
+  min-height: 44px;
+  gap: 2px;
+  justify-content: center;
+}
+#expertProfileStats b { color: #142033 !important; line-height: 1.25; }
+#expertProfileStats span { color: #5a687a !important; line-height: 1.25; }
+.expert-reference-profile .expert-reference-main { padding-bottom: 8px; }
+.expert-reference-profile .expert-profile-badges { margin: 8px 0; }
+.expert-reference-profile .expert-reference-bio { margin: 8px 0; line-height: 1.5; }
+.expert-reference-profile .expert-reference-stats { margin: 12px 0 4px; }
+.expert-reference-profile .ds-tabs { margin-bottom: 10px; min-height: 48px; }
+body.dai-app-shell .expert-reference-profile #expertSocial .ds-tabs button { padding: 12px 2px; min-height: 44px; }
+body.dai-app-shell #expertSocial .ds-launch { padding: 10px 14px; min-height: 60px; margin-bottom: 10px; gap: 10px; font-size: 16px !important; border-radius: 15px !important; }
+.ds-launch .ds-compose-avatar { width: 38px; height: 38px; }
+.ds-root .ds-feed { gap: 12px; }
+.ds-root .ds-feed > .ds-card { padding: 16px; border-radius: 16px; }
+.ds-root .ds-author { gap: 9px; }
+.ds-root .ds-author .ds-avatar { width: 38px; height: 38px; }
+.ds-root .ds-author-copy { line-height: 1.35; }
+.ds-root .ds-author-copy b { font-size: 14px; }
+.ds-root .ds-post-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 2px; }
+.ds-root .ds-post-meta time { display: inline; font-size: 11px; line-height: 1.4; }
+.ds-root .ds-post-meta .ds-status.is-published { background: #edf7f1; color: #397454; padding: 1px 6px; border-radius: 5px; margin: 0; font-size: 10px; line-height: 1.5; }
+.ds-root .ds-post-meta .ds-pin { display: inline-flex; gap: 3px; margin: 0; font-size: 10px; line-height: 1.5; font-weight: 500; }
+.ds-root .ds-post-meta .ds-pin img { width: 12px; height: 12px; }
+.ds-root .ds-post-text { font-size: 14px; line-height: 1.55; margin: 8px 0; }
+.ds-root .ds-post-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
+.ds-root .ds-post-status .ds-status { margin: 0; padding: 3px 7px; line-height: 1.4; font-size: 11px; }
+body.dai-app-shell #expertSocial .ds-post-status .ds-text-button { min-height: 32px; padding: 4px 0; font-size: 11px; }
+.ds-root .ds-moderation-reason { margin: 3px 0 0; font-size: 12px; line-height: 1.45; }
+.ds-root .ds-actions { margin-top: 8px; padding-top: 4px; }
+.ds-root .ds-comments-state { margin: 3px 0 0; font-size: 11px; line-height: 1.4; }
+
+/* Native horizontal scrolling keeps full images and the existing viewer. */
+.ds-root .ds-media-carousel { position: relative; min-width: 0; max-width: 100%; margin: 10px 0 6px; }
+.ds-root .ds-gallery,
+.ds-root .ds-attachments-track { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: thin; border-radius: 12px; margin: 0; }
+.ds-root .ds-gallery > button,
+.ds-root .ds-attachments-track > .ds-attachment { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+.ds-root .ds-gallery img { width: 100%; height: 360px; max-height: 360px; object-fit: contain; }
+.ds-root .ds-gallery[data-count="1"] img { height: auto; max-height: 430px; }
+.ds-root .ds-carousel-position { display: block; text-align: right; color: #68778c; font-size: 11px; line-height: 1.5; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.ds-root .ds-attachments { display: block; margin-top: 10px; min-width: 0; }
+.ds-root .ds-attachments:empty { display: none; margin: 0; }
+.ds-root .ds-attachment img { display: block; height: 180px; object-fit: contain; }
+body.dai-app-shell #expertSocial .ds-attachment button { min-height: 44px; min-width: 44px; }
+@media(max-width:600px) {
+  .ds-root .ds-feed > .ds-card { padding: 14px; }
+  .ds-root .ds-gallery img { height: clamp(210px, 60vw, 280px); max-height: 280px; }
+  .ds-root .ds-attachment img { height: 160px; }
+}

@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/expert-social.css?v=20261108-1">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261108-2">
 <section id="expertSocial" class="ds-root" data-expert-social data-expert-id="{{ social_expert_id }}" data-user-id="{{ user.id }}" data-owner="{{ '1' if social_owner else '0' }}" data-management="{{ '1' if social_management|default(false) else '0' }}">
   <nav class="ds-tabs" role="tablist" aria-label="Uzman profili bölümleri">
     <button type="button" role="tab" aria-selected="true" aria-controls="ds-posts" data-tab="posts"><img src="/static/expert-icons/chats.svg" alt="">Gönderiler</button>
@@ -7,7 +7,7 @@
   </nav>
   <p class="ds-notice" role="status" aria-live="polite" data-notice hidden></p>
   <div id="ds-posts" role="tabpanel" data-panel="posts">
-    {% if social_owner and not social_management|default(false) %}<button type="button" class="ds-launch" data-compose><span class="ds-compose-avatar expert-reference-avatar" aria-hidden="true"></span><span>Bir şey paylaş…<small>Dental AI üyeleriyle bilimsel bir paylaşım yapın</small></span><span class="ds-launch-plus" aria-hidden="true">＋</span></button>{% endif %}
+    {% if social_owner and not social_management|default(false) %}<button type="button" class="ds-launch" data-compose><span class="ds-compose-avatar expert-reference-avatar" aria-hidden="true"></span><span>Bir şey paylaş…</span><span class="ds-launch-plus" aria-hidden="true">＋</span></button>{% endif %}
     {% if social_management|default(false) %}<details class="ds-content-rules"><summary><img src="/static/expert-icons/shield-check.svg" alt="">İçerik kuralları</summary><p>Hasta adı, kimlik veya iletişim bilgisi paylaşmayın. Hasta ve klinik görselleri yayımlanmadan önce incelenir. Paylaşımlar mesleki etik ve platform kurallarına uygun olmalıdır.</p></details>{% endif %}
     <div class="ds-feed" data-feed aria-live="polite"></div>
     <button type="button" class="ds-secondary ds-more" data-more-posts hidden>Daha fazla gönderi</button>
@@ -39,4 +39,4 @@
   {% endif %}
 </section>
 <script src="/static/expert-media-viewer.js?v=1" defer></script>
-<script src="/static/expert-social.js?v=20261108-1" defer></script>
+<script src="/static/expert-social.js?v=20261108-2" defer></script>
