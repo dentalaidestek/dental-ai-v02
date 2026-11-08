@@ -1085,3 +1085,87 @@ body.dai-app-shell .expert-manage-reference #expertManageTabs button[aria-select
 .expert-reference-profile .ds-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
 .ds-inline-composer .ds-edit-indicator{font-size:12px;color:#53677f;line-height:1.4;flex:1}
 body .expert-manage-reference #expertSocial [data-edit-cancel]{font-size:12px;padding:8px;min-height:40px;background:#eef4fb!important;white-space:nowrap}
+
+/* Match the supplied profile rhythm without inheriting the legacy page inset. */
+body:has(.expert-reference-profile)>main,body:has(.expert-manage-reference)>main{padding-top:0!important}
+.expert-reference-profile .expert-reference-back,.expert-manage-reference .expert-reference-back{margin-bottom:0}
+.expert-reference-profile .expert-public-avatar{box-sizing:border-box}
+.expert-reference-profile .expert-public-hero{gap:0}
+@media(max-width:600px){
+ .expert-reference-profile .expert-reference-back,.expert-manage-reference .expert-reference-back{font-size:18px;padding-bottom:12px}
+ .expert-reference-profile h1{font-size:19px;margin-top:10px}
+ .expert-reference-profile .expert-reference-topline{min-height:72px}
+ .expert-reference-profile .expert-reference-bio{font-size:14px;line-height:1.6;margin:10px 0}
+ .expert-reference-profile .expert-profile-badges{margin:12px 0}
+ .expert-reference-profile .expert-reference-stats{margin-top:14px}
+ .expert-reference-profile .ds-tabs{min-height:52px}
+ body .expert-reference-profile #expertSocial .ds-tabs button{padding-top:15px;padding-bottom:15px}
+}
+
+/* In management, publications follow the composer as in the supplied reference. */
+.expert-manage-reference #expertSocial{display:flex;flex-direction:column}
+.expert-manage-reference #expertSocial>[data-panel="posts"]{display:contents}
+.expert-manage-reference .ds-inline-composer{order:10}
+.expert-manage-reference [data-panel="publications"]{order:20;background:#fff;border:1px solid #e3e8ef;border-radius:22px;padding:18px;margin-bottom:18px}
+.expert-manage-reference [data-feed]{order:40}
+.expert-manage-reference [data-more-posts]{order:50}
+.expert-manage-reference .ds-notice{order:0}
+.expert-manage-reference .ds-orcid{border:0;box-shadow:none;margin:0;padding:0;border-radius:0}
+.expert-manage-reference .ds-section-head{border-top:1px solid #edf0f5;margin:16px 0 0;padding:16px 0 10px}
+.expert-manage-reference .ds-publications{border:0;border-radius:0;padding:0}
+.expert-manage-reference .ds-content-rules{order:30;border:1px solid #d7eaf6;background:#eff8fe;border-radius:18px;padding:16px;margin-bottom:18px;font-size:13px;color:#38566e}
+.ds-content-rules>summary{display:flex;align-items:center;gap:12px;cursor:pointer;font-weight:700}
+.ds-content-rules img{width:26px;height:26px}
+.ds-content-rules p{margin-bottom:0;font-size:12px;line-height:1.6}
+@media(max-width:600px){
+ .expert-manage-reference #expertSocial .ds-inline-composer textarea[data-post-text]{min-height:80px;line-height:1.5}
+ .expert-manage-reference .ds-inline-composer .ds-dialog-body{padding-top:14px}
+}
+/* Empty attachment containers must not reserve a blank media row. */
+.ds-attachments:empty{display:none;margin:0}
+body .expert-manage-reference #expertSocial .ds-inline-composer .ds-tool{padding:8px 12px!important;gap:4px;min-height:52px}
+.expert-manage-reference .ds-inline-composer .ds-tool img{width:22px;height:22px}
+.expert-manage-reference .ds-inline-composer .ds-dialog-head{padding-bottom:14px}
+/* In-page, top-layer gallery. No document/thumbnail navigation. */
+body.dai-app-shell #expertSocial .ds-gallery-open{display:block;width:100%;padding:0!important;border:0!important;background:#f3f6f9!important;box-shadow:none!important;border-radius:0!important;overflow:hidden}
+#dentalMediaViewer{position:fixed;inset:0;width:min(1100px,100vw);height:100dvh;max-height:100dvh;max-width:100vw;margin:auto;padding:0;border:0;border-radius:0;background:#090f19;color:#fff;overflow:hidden}
+#dentalMediaViewer[open]{display:grid;grid-template-rows:56px minmax(0,1fr) 64px}
+#dentalMediaViewer::backdrop{background:#030812ed}
+#dentalMediaViewer>header,#dentalMediaViewer>footer{display:flex;align-items:center;gap:12px;padding:6px max(12px,env(safe-area-inset-right)) 6px max(12px,env(safe-area-inset-left));z-index:2;color:#fff}
+#dentalMediaViewer>header{justify-content:space-between;padding-top:max(6px,env(safe-area-inset-top))}
+#dentalMediaViewer>footer{justify-content:center;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+body.dai-app-shell #dentalMediaViewer button{width:auto;min-width:44px;min-height:44px;padding:6px 12px!important;border:1px solid #ffffff38!important;border-radius:12px!important;background:#172332!important;color:#fff!important;box-shadow:none!important;font-size:19px;cursor:pointer}
+#dentalMediaViewer button:disabled{opacity:.35;cursor:default}#dentalMediaViewer output{min-width:45px;text-align:center;font-size:13px}#dentalMediaViewer [hidden]{display:none!important}
+.ds-media-stage{position:relative;min-height:0;min-width:0;overflow:hidden;touch-action:none;user-select:none;display:grid;place-items:center}
+.ds-media-stage img{width:100%;height:100%;max-height:100%;max-width:100%;object-fit:contain;transform-origin:center;will-change:transform;pointer-events:none}
+.ds-media-stage[data-zoomed=true]{cursor:grab}.ds-media-message{position:absolute;inset:auto 16px;text-align:center;font-size:14px;color:#d1dbe8!important;pointer-events:none}
+.ds-media-stage>button{position:absolute;top:58%}
+.ds-pin{display:flex;align-items:center;gap:6px;font-size:12px;line-height:20px;margin:0 0 8px;color:#536d89;font-weight:650}
+.ds-pin img{width:16px;height:16px}.ds-comments-state{font-size:12px;color:#68778c;margin:8px 0 0}
+.expert-reference-stats .ds-stat-open{appearance:none;border:0;background:transparent;display:flex;align-items:center;flex-direction:column;gap:4px;padding:0;min-height:44px;width:100%;cursor:pointer;font:inherit}
+.expert-reference-stats .ds-stat-open:focus-visible{outline:2px solid #2563eb;outline-offset:2px;border-radius:6px}
+.ds-relationships{padding:0 16px 16px}
+.ds-relationship-row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid #e7edf3}
+.ds-relationship-copy{display:flex;flex:1;min-width:0;flex-direction:column;overflow-wrap:anywhere;color:inherit;text-decoration:none}
+.ds-relationship-row .ds-secondary{flex-shrink:0;font-size:12px;min-height:44px}
+.ds-queue-aging{padding:10px 0;color:#64748b;font-size:13px}
+.ds-admin-wait{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.ds-media-review{border:0;background:transparent;padding:0;cursor:zoom-in;display:block}
+.expert-reference-profile .expert-profile-sticky .expert-primary{width:100%;text-align:center}
+.expert-reference-profile .expert-disabled.expert-profile-sticky.expert-support-unavailable{display:block;text-align:center}
+/* One comment sheet, loaded on demand. The list scrolls; writing stays reachable. */
+.ds-dialog.ds-comments-sheet{width:min(560px,calc(100vw - 28px));height:min(680px,82dvh);background:#fff}
+.ds-comments-sheet .ds-comments-head{position:relative;padding-top:19px;touch-action:pan-x}
+.ds-comments-head:before{content:"";position:absolute;top:7px;left:calc(50% - 18px);height:4px;width:36px;border-radius:8px;background:#dbe2eb}
+.ds-comment-total{font-size:13px;color:#728297;margin-right:4px}
+.ds-comments-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 20px 12px}
+.ds-comments-sheet .ds-comment{padding:16px 0;border-bottom:1px solid #f0f3f7}
+.ds-comment-author{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ds-comment-identity{display:inline-flex;align-items:center;gap:7px;min-width:0;color:#183753;text-decoration:none;min-height:32px}
+.ds-comment-identity .ds-comment-avatar{width:30px;height:30px;object-fit:cover;border-radius:50%;flex-shrink:0}
+.ds-comment-identity b{overflow-wrap:anywhere}.ds-comment-identity .ds-verified{font-size:12px}
+.ds-comments-sheet .ds-comment-form{margin:0;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid #e9eef5;background:#fff;flex-shrink:0}
+.ds-comments-sheet .ds-comment-form textarea{margin:0 0 6px;min-height:44px;max-height:110px;resize:none;font-size:16px;line-height:1.45;border:1px solid #e3e9f0;border-radius:18px;padding:11px 13px}
+.ds-comments-sheet .ds-comment-submit-row{gap:8px;min-height:42px}.ds-comments-sheet .ds-comment-submit-row small{font-size:11px}
+.ds-comments-empty{color:#7b899b;text-align:center;padding:24px 12px;font-size:14px}
+@media(max-width:600px){.ds-dialog.ds-comments-sheet{width:100%;height:min(680px,82dvh);max-width:100%;border-radius:22px 22px 0 0}.ds-comments-scroll{padding:0 16px 10px}.ds-comments-sheet .ds-comment-form{padding-left:14px;padding-right:14px}.ds-comments-sheet .ds-comment-tools button{min-height:36px}.ds-comments-sheet .ds-icon{min-height:44px;min-width:44px}}

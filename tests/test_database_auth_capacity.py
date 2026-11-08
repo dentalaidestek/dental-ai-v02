@@ -14,6 +14,8 @@ from app.database_pool import ObservedQueuePool
 
 class PoolAuthUser(SQLModel, table=True):
     id: int = Field(primary_key=True)
+    role: str = 'DOCTOR'
+    email: str | None = None
     is_active: bool = True
     email_verified_at: datetime | None = None
 
@@ -25,12 +27,17 @@ class PoolAuthToken(SQLModel, table=True):
     expires_at: datetime
 
 
+class PoolAdminVerifiedSession(SQLModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int
+
+
 @pytest.fixture
 def auth(tmp_path):
     engine = create_engine('sqlite:///' + str(tmp_path / 'auth.db'),
         poolclass=ObservedQueuePool, pool_size=4, max_overflow=0, pool_timeout=1,
         connect_args={'check_same_thread': False})
-    SQLModel.metadata.create_all(engine, tables=[PoolAuthUser.__table__, PoolAuthToken.__table__])
+    SQLModel.metadata.create_all(engine, tables=[PoolAuthUser.__table__, PoolAuthToken.__table__, PoolAdminVerifiedSession.__table__])
     with Session(engine) as session:
         session.add(PoolAuthUser(id=1, email_verified_at=datetime.now()))
         session.add(PoolAuthToken(id=1, user_id=1, token_hash='hashed', expires_at=datetime.now()+timedelta(days=1)))
@@ -40,6 +47,7 @@ def auth(tmp_path):
     code = ast.Module(body=[ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0), function], type_ignores=[])
     namespace = dict(Session=Session, engine=engine, select=select, User=PoolAuthUser,
         SessionToken=PoolAuthToken, SESSION_COOKIE='session', hash_session_token=lambda t: 'hashed',
+        AdminVerifiedSession=PoolAdminVerifiedSession,
         _utcnow_naive=datetime.now)
     exec(compile(ast.fix_missing_locations(code), '<actual-authentication>', 'exec'), namespace)
     yield engine, namespace['get_current_user']
@@ -97,6 +105,21 @@ def test_twenty_parallel_actual_auth_requests_release_all_four_connections(auth)
     assert not engine.pool._holders
 
 
+@pytest.mark.parametrize('email,mfa,allowed',[
+    ('dentalaidestek@gmail.com',False,False),
+    ('other@example.test',True,False),
+    ('dentalaidestek@gmail.com',True,True),
+])
+def test_admin_auth_requires_fixed_identity_and_mfa_without_retaining_connections(auth,email,mfa,allowed):
+    engine,current=auth
+    with Session(engine) as session:
+        user=session.get(PoolAuthUser,1);user.role='ADMIN';user.email=email;session.add(user)
+        if mfa:session.add(PoolAdminVerifiedSession(token_hash='hashed',user_id=1))
+        session.commit()
+    assert bool(current(request())) is allowed
+    assert engine.pool.checkedout()==0
+
+
 @pytest.mark.parametrize('role,size', [('web',4), ('router',2)])
 def test_role_capacity_stays_bounded_and_does_not_grow_router_pool(monkeypatch, role, size):
     monkeypatch.delenv('DENTAL_' + role.upper() + '_DB_POOL_SIZE', raising=False)
@@ -110,3 +133,4 @@ def test_role_capacity_stays_bounded_and_does_not_grow_router_pool(monkeypatch, 
     assert seen['max_overflow'] == 0
     assert seen['pool_timeout'] == 5
     assert result.pool.diagnostic_role == role
+

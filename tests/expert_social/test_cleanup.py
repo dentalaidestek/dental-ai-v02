@@ -2,7 +2,7 @@ from datetime import timedelta
 from pathlib import Path
 from sqlmodel import Session, select
 from test_api import env, post
-from app.expert_social_models import SocialMedia, SocialPost
+from app.expert_social_models import SocialMedia, SocialPost, SocialPreview, DoiMatch
 from app.expert_social_maintenance import cleanup_slice, erase_user_content
 from app.expert_social_models import now
 
@@ -58,3 +58,23 @@ def test_account_erasure_clears_social_content_and_queues_media(env, tmp_path):
         __import__("app.main", fromlist=["SESSION_COOKIE"]).SESSION_COOKIE, "t2"
     )
     assert c.get("/api/expert-social/posts/" + str(p["id"])).status_code == 404
+
+
+def test_expired_suggestions_are_removed_in_bounded_slices(env):
+    _, engine = env
+    cutoff = now() - timedelta(days=3)
+    with Session(engine) as session:
+        session.add_all(
+            SocialPreview(owner_id=1, url="https://example.org/", metadata_json="{}", created_at=cutoff)
+            for _ in range(700)
+        )
+        session.add_all(DoiMatch(owner_id=1, metadata_json="{}", created_at=cutoff) for _ in range(700))
+        session.commit()
+    cleanup_slice(engine)
+    with Session(engine) as session:
+        assert len(session.exec(select(SocialPreview)).all()) == 200
+        assert len(session.exec(select(DoiMatch)).all()) == 200
+    cleanup_slice(engine)
+    with Session(engine) as session:
+        assert session.exec(select(SocialPreview)).all() == []
+        assert session.exec(select(DoiMatch)).all() == []

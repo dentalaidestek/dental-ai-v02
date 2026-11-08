@@ -19,7 +19,7 @@
     const title=panel.querySelector('[data-live-title]');if(title)title.textContent=({idle:finished?'Dinleme tamamlandı':'Başlamaya hazır',connecting:'Mikrofon hazırlanıyor',listening:'Dinleniyor',stopping:'Dinleme durduruluyor',paused:'Duraklatıldı',error:hasListened?'Dinleme durdu':'Mikrofon açılamadı'})[next]||next;
     start.textContent=next==='paused'||(next==='error'&&hasListened)?'▶  Devam et':next==='error'?'Tekrar dene':'Mikrofonu başlat';
     if(next==='error'&&!hasListened)finish.hidden=true;
-    start.disabled=reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused','error'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
+    start.disabled=!consent.checked||reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused','error'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
   function microphoneOff(){node?.disconnect();if(node)node.port.onmessage=null;source?.disconnect();stream?.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{});node=null;source=null;stream=null;ctx=null;clearTimeout(setupTimer);clearTimeout(sessionTimer);clearTimeout(drainTimer)}
   function emitBatch(){clearTimeout(batchTimer);batchTimer=null;if(!batch)return;const text=batch;batch='';root.dispatchEvent(new CustomEvent('voice-live-segment',{detail:{text}}))}
   function closePrivate(){hasListened=false;finished=false;lastFlush=false;incomplete=false;stopClock();elapsed=0;drawTime();root.dataset.showReview='false';generation++;clearTimeout(batchTimer);batch='';preview.textContent='';microphoneOff();if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}stateChanged('idle')}
@@ -82,11 +82,12 @@
   root.addEventListener('voice-review-state',event=>{reviewBlocked=event.detail.blocked;
     if(reviewButton){reviewButton.disabled=!!event.detail.processing||!!event.detail.finalBusy;reviewButton.textContent=root.querySelector('.voice-review')?.hidden?'Metni kontrol et':'Özeti kontrol et'}
     if(finished&&state==='idle'){const title=panel.querySelector('[data-live-title]');if(title)title.textContent=event.detail.finalBusy?'Muayene değerlendiriliyor':event.detail.processing?'Konuşma işleniyor':event.detail.finalReady?'Muayene tamamlandı':'Dinleme tamamlandı'}
-    start.disabled=reviewBlocked||!['idle','paused','error'].includes(state)});
+    start.disabled=!consent.checked||reviewBlocked||!['idle','paused','error'].includes(state)});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='listening'){stream?.getTracks().forEach(track=>track.stop());stop(false)}});
   root.addEventListener('voice-live-stop',()=>{root.dataset.showReview='true';stop(false)});root.addEventListener('voice-private-clear',closePrivate);
   window.addEventListener('pagehide',closePrivate);
-  fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json()).then(data=>{panel.hidden=!data.live_enabled}).catch(()=>{panel.hidden=true});
+  (root.voiceCapabilities||fetch('/voice-exams/capabilities',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json())).then(data=>{panel.hidden=!data.live_enabled}).catch(()=>{panel.hidden=true});
 })();
+
 
 

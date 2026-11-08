@@ -1,14 +1,14 @@
 <section class="card voice-exam" id="voice-exam" data-has-listened="false" data-draft-scope="{{ user.id if user is defined and user else '' }}" data-patient-id="{{ patient.id }}">
   <div class="voice-exam-body">
     <p data-voice-recovery-notice class="voice-error" hidden></p>
-    <header class="voice-session-heading"><span class="voice-eyebrow">SESLİ MUAYENE</span><h2>Görüşmeye hazır mısınız?</h2><p>Hastanızı bilgilendirin, onay verin ve dinlemeyi başlatın.</p></header>
+    <header class="voice-session-heading"><span class="voice-eyebrow">SESLİ MUAYENE</span><h2>Sesli Muayene</h2><p>Hastayı bilgilendirin ve dinlemeyi başlatın.</p></header>
     <p class="voice-stage" data-voice-stage>Hazırlık</p>
     <p class="voice-exam-status" role="status" aria-live="polite">Sesli muayene hazırlanıyor…</p>
-    <label class="voice-check"><input type="checkbox" data-voice-consent disabled> Görüşmedeki kişileri bilgilendirdim; sesin Gemini ile metne çevrilmesini; muayeneyle ilgili metnin, klinik bilgilerin ve kaynakların Claude ile işlenmesini onaylıyorum.</label>
+    <label class="voice-check"><input type="checkbox" data-voice-consent disabled> Hastayı bilgilendirdim. Sesin Gemini ile yazıya çevrilmesini; geçici görüşme metninin ve klinik bilgilerin Claude ile değerlendirilmesini onaylıyorum.</label>
     <details class="voice-privacy"><summary>Veriler ve taslak hakkında</summary>
-    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Görüşme boyunca yalnız ses metne çevrilir. Muayeneyi bitirdiğinizde geçici metinden klinik bilgiler ve izin verilen kaynak konuları çıkarılır; ardından kaynaklarla son değerlendirme yapılır. Uzun görüşmeler bölünür ve daha fazla işleme çağrısı gerektirebilir. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Son 30 dakika içinde değişen taslak, bu tarayıcı sekmesinde yenileme sonrası geri yüklenebilir. Taslağı temizlediğinizde, kaydettiğinizde veya sekmeyi kapattığınızda silinir. Mikrofon ve kayıt onayı geri yüklenmez.</p>
+    <p class="voice-help">Ses, çözümleme sırasında sunucu üzerinden Gemini’ye aktarılır; uygulama ses dosyasını saklamaz. Görüşme boyunca yalnız ses metne çevrilir. Muayene bitince klinik bilgiler ve kaynak konuları çıkarılır. Claude, desteklenen sınırlar içindeki geçici görüşme metnini klinik bilgiler ve kaynaklarla birlikte değerlendirir. Doğrudan kimlik ve iletişim bilgileri azaltılır; bu, eksiksiz anonimleştirme garantisi değildir. Uzun görüşmeler bölünür ve daha fazla işleme çağrısı gerektirebilir. Kimlik numarası ve iletişim bilgilerini söyleme. Ham ses ve tam konuşma dökümü hasta dosyasına kaydedilmez. Özel hayat ayrıntılarını alanlardan çıkar; yalnız muayeneyle ilgili seçip onayladığın bilgiler kaydedilir. Son 30 dakika içinde değişen taslak, bu tarayıcı sekmesinde yenileme sonrası geri yüklenebilir. Taslağı temizlediğinizde, kaydettiğinizde veya sekmeyi kapattığınızda silinir. Mikrofon ve kayıt onayı geri yüklenmez.</p>
     </details>
-    <details class="voice-history"><summary>Önceki hekim onaylı klinik bilgiler</summary>
+    <details class="voice-history"><summary>Önceki bilgiler</summary>
       <p class="voice-help">Yalnız önceki sesli muayenelerde hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Bu alan tüm hasta arşivinin yerine geçmez. Bilgilerin hâlâ güncel olduğunu hastayla doğrulayın.</p>
       <button type="button" data-voice-history>Önceki kayıtları göster</button>
       <div data-voice-history-results></div>
@@ -77,11 +77,11 @@
     </section>
   </div>
 </section>
-<link rel="stylesheet" href="/static/voice-exam.css?v=13">
+<link rel="stylesheet" href="/static/voice-exam.css?v=14">
 <script src="/static/voice-finish-draft.js?v=1" defer></script>
-<script src="/static/voice-exam.js?v=30" defer></script>
+<script src="/static/voice-exam.js?v=31" defer></script>
 
-<script src="/static/voice-exam-live.js?v=7" defer></script>
+<script src="/static/voice-exam-live.js?v=8" defer></script>
 
 
 

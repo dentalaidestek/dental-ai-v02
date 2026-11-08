@@ -1,3 +1,5 @@
+Güncel görsel karşılaştırma: [yayın sonrası QA](../design-qa.md). Önceki görsel inceleme aşağıdadır.
+
 # Uzman profili görsel kontrolü — 7 Kasım 2026
 
 Kaynak: kullanıcının iki panelli uzman profil/yönetim görseli. Mevcut FastAPI uygulaması ve üst/alt gezinme korunmuştur. Yeni proje/dağıtım oluşturulmadı.

@@ -48,6 +48,7 @@ from app.execution import offload, on_loop, LoopWakeup
 from app.realtime_io import PostgresNotices, socket_writes
 from starlette.concurrency import run_in_threadpool
 from app.database import create_app_engine
+from app.expert_social_identity import expert_display_name
 from app.auth_rate import AuthRateBucket, LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt
 from app import work_jobs
 from app.upload_io import copy_image
@@ -73,6 +74,10 @@ from app.study_index_jobs import (
 )
 # Register durable broad-academic job metadata before init_db/create_all.
 from app.academic_generation_jobs import AcademicGenerationJob
+from app.expert_consultation_requests import (
+    ConsultationRequestReceipt, consultation_capacity_limit,
+    consultation_expert_is_verified, normalize_request_key, request_payload_hash,
+)
 from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
 from app.academic_study_runs import StudyRun
 from app.academic_recovery_store import AcademicRecoveryEvent
@@ -4275,6 +4280,7 @@ def template_user_context(request: Request):
         "account_title_change": account_title_change,
         "expert_verified": profile_verified,
         "professional_name": _professional_display_name,
+        "expert_display_name": expert_display_name,
         "profile_photo_url": _profile_photo_url,
     }
 
@@ -6464,20 +6470,46 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
 
 
 def _expert_performance(session: Session, expert_user_id: int) -> dict:
-    cases = session.exec(select(ConsultationCase).where(ConsultationCase.expert_user_id == expert_user_id)).all()
-    reviews = session.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id)).all()
-    completed = [x for x in cases if x.status == "COMPLETED"]
-    responded = [x for x in cases if x.proposed_at or x.requester_accepted_at or x.expert_started_at]
-    response_seconds = []
-    for case in responded:
-        first = case.proposed_at or case.requester_accepted_at or case.expert_started_at
-        if first and first >= case.requested_at:
-            response_seconds.append((first - case.requested_at).total_seconds())
-    avg_response_minutes = round(sum(response_seconds) / len(response_seconds) / 60, 1) if response_seconds else None
-    rating_avg = round(sum(x.rating for x in reviews) / len(reviews), 1) if reviews else None
+    """Return fixed-size aggregate rows rather than hydrating case/review histories."""
+    from sqlalchemy import BigInteger, extract
+
+    first_response = func.coalesce(
+        ConsultationCase.proposed_at, ConsultationCase.requester_accepted_at,
+        ConsultationCase.expert_started_at,
+    )
+    if session.get_bind().dialect.name == "postgresql":
+        elapsed_microseconds = extract("epoch", first_response - ConsultationCase.requested_at) * 1_000_000
+    else:
+        def sqlite_epoch_microseconds(value):
+            # SQLite julianday subtraction loses microsecond precision, which can
+            # change rounding at a 0.1-minute boundary. Subtract integer units.
+            timestamp = cast(value, String)
+            seconds = cast(func.strftime("%s", func.substr(timestamp, 1, 19)), BigInteger)
+            fraction = cast(func.substr(
+                cast(func.substr(timestamp, 21, 6), String) + "000000", 1, 6,
+            ), BigInteger)
+            return seconds * 1_000_000 + fraction
+
+        elapsed_microseconds = (
+            sqlite_epoch_microseconds(first_response)
+            - sqlite_epoch_microseconds(ConsultationCase.requested_at)
+        )
+    valid_response = first_response >= ConsultationCase.requested_at
     missed_30_since = _utcnow_naive() - timedelta(days=30)
-    missed_30 = len([x for x in cases if x.status == "EXPERT_TIMEOUT" and x.requested_at >= missed_30_since])
-    return {"rating_avg": rating_avg, "review_count": len(reviews), "completed_count": len(completed),
+    completed_count, missed_30, response_count, response_microseconds = session.exec(select(
+        func.count(ConsultationCase.id).filter(ConsultationCase.status == "COMPLETED"),
+        func.count(ConsultationCase.id).filter(
+            ConsultationCase.status == "EXPERT_TIMEOUT", ConsultationCase.requested_at >= missed_30_since,
+        ),
+        func.count(ConsultationCase.id).filter(valid_response),
+        func.sum(elapsed_microseconds).filter(valid_response),
+    ).where(ConsultationCase.expert_user_id == expert_user_id)).one()
+    review_count, rating_sum = session.exec(select(
+        func.count(ExpertReview.id), func.sum(ExpertReview.rating),
+    ).where(ExpertReview.expert_user_id == expert_user_id)).one()
+    avg_response_minutes = round(float(response_microseconds) / 1_000_000 / response_count / 60, 1) if response_count else None
+    rating_avg = round(rating_sum / review_count, 1) if review_count else None
+    return {"rating_avg": rating_avg, "review_count": review_count, "completed_count": completed_count,
             "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
 
 
@@ -7090,33 +7122,26 @@ def expert_support_public_profile(request: Request, expert_user_id: int, patient
     if not user:
         return RedirectResponse("/login", status_code=303)
     with Session(engine, expire_on_commit=False) as s:
-        profile = s.exec(select(ExpertProfile).where(
-            ExpertProfile.user_id == expert_user_id,
-            ExpertProfile.application_status == "APPROVED",
-            ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.specialty_verified == True,
-            ExpertProfile.credential_document_path != None,
-            ExpertProfile.phone != None,
-        )).first()
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)).first()
         expert = s.get(User, expert_user_id)
-        if not profile or not expert:
+        if not consultation_expert_is_verified(expert, profile) or (
+            user.id != expert_user_id and _users_blocked(s, user.id, expert_user_id)
+        ):
             return HTMLResponse("Doğrulanmış uzman profili bulunamadı.", status_code=404)
-        active_count = len(s.exec(select(ConsultationCase).where(
-            ConsultationCase.expert_user_id == expert_user_id,
-            ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
-        )).all())
-        reviews = s.exec(select(ExpertReview).where(ExpertReview.expert_user_id == expert_user_id).order_by(ExpertReview.created_at.desc())).all()
-        completed_count = len(s.exec(select(ConsultationCase).where(
-            ConsultationCase.expert_user_id == expert_user_id,
-            ConsultationCase.status == "COMPLETED",
-        )).all())
+        active_count = _expert_open_case_count(s, expert_user_id)
         performance = _expert_performance(s, expert_user_id)
         policy_state = _expert_policy_state(s, expert_user_id)
         rating_avg = performance["rating_avg"]
+        support_available = bool(
+            user.id != expert_user_id and profile.availability == "AVAILABLE"
+            and not _expert_is_blocked(policy_state)
+            and active_count < consultation_capacity_limit(profile)
+        )
     return templates.TemplateResponse(request=request, name="expert_public_profile.html", context={
         "user": user, "profile": profile, "expert": expert, "active_count": active_count,
-        "completed_count": completed_count, "rating_avg": rating_avg, "review_count": len(reviews),
+        "completed_count": performance["completed_count"], "rating_avg": rating_avg, "review_count": performance["review_count"],
         "patient_id": patient_id, "performance": performance, "policy_state": policy_state, "now": _utcnow_naive(),
+        "support_available": support_available,
     })
 
 
@@ -7438,19 +7463,16 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
         return HTMLResponse("Kendi uzman profilinize vaka gönderemezsiniz.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
         _expire_pending_expert_requests(s, expert_user_id)
-        profile = s.exec(select(ExpertProfile).where(
-            ExpertProfile.user_id == expert_user_id,
-            ExpertProfile.application_status == "APPROVED",
-            ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.specialty_verified == True,
-            ExpertProfile.credential_document_path != None,
-            ExpertProfile.phone != None,
-            ExpertProfile.availability == "AVAILABLE",
-        )).first()
-        policy_state = _expert_policy_state(s, expert_user_id)
-        if _expert_is_blocked(policy_state):
-            profile = None
+        profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)).first()
         expert = s.get(User, expert_user_id)
+        if not consultation_expert_is_verified(expert, profile) or _users_blocked(s, user.id, expert_user_id):
+            return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
+        policy_state = _expert_policy_state(s, expert_user_id)
+        if (
+            profile.availability != "AVAILABLE" or _expert_is_blocked(policy_state)
+            or _expert_open_case_count(s, expert_user_id) >= consultation_capacity_limit(profile)
+        ):
+            return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
         patient = s.get(Patient, patient_id) if patient_id else None
         if patient and patient.owner_user_id != user.id:
             patient = None
@@ -7458,10 +7480,9 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
             PatientMedia.patient_id == patient.id,
             PatientMedia.owner_user_id == user.id,
         ).order_by(PatientMedia.uploaded_at.desc())).all() if patient else []
-    if not profile or not expert:
-        return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
     return templates.TemplateResponse(request=request, name="expert_request.html", context={
         "user": user, "expert": expert, "profile": profile, "patient": patient, "patient_media": patient_media,
+        "request_key": str(uuid.uuid4()),
     })
 
 
@@ -7477,6 +7498,7 @@ def expert_support_request_create(
     patient_id: Optional[int] = Form(None),
     media_ids: str = Form(""),
     urgency: str = Form("NORMAL"),
+    request_key: str = Form(""),
 ):
     user = get_current_user(request)
     if not user:
@@ -7485,29 +7507,82 @@ def expert_support_request_create(
         urgency = "NORMAL"
     if expert_user_id == user.id:
         return HTMLResponse("Kendinize vaka gönderemezsiniz.", status_code=400)
+    supplied_request_key = bool(request_key.strip())
+    try:
+        normalized_request_key = normalize_request_key(request_key) if supplied_request_key else str(uuid.uuid4())
+    except (ValueError, TypeError, AttributeError):
+        return HTMLResponse("Geçersiz talep anahtarı. Lütfen sayfayı yenileyip tekrar deneyin.", status_code=400)
+    selected_media_ids = []
+    for raw_media_id in media_ids.split(","):
+        try:
+            selected_media_ids.append(int(raw_media_id.strip()))
+        except (TypeError, ValueError):
+            continue
+    selected_media_ids = sorted(set(selected_media_ids))
+    payload_hash = request_payload_hash(
+        clinical_summary=clinical_summary, requester_opinion=requester_opinion, question=question,
+        tooth_region=tooth_region, patient_id=patient_id, media_ids=selected_media_ids, urgency=urgency,
+    )
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
+        participant_stmt = select(User).where(
+            User.id.in_(sorted({user.id, expert_user_id})),
+        ).order_by(User.id.asc())
+        if engine.dialect.name == "postgresql":
+            # Erasure locks User before ExpertProfile. Acquire compatible account
+            # key locks first: block erasure while allowing social-write FK locks.
+            participant_stmt = participant_stmt.with_for_update(read=True, key_share=True)
+        participants = {participant.id: participant for participant in s.exec(
+            participant_stmt.execution_options(populate_existing=True)
+        ).all()}
+        user = participants.get(user.id)
+        if not user or not user.is_active or not user.email_verified_at:
+            return RedirectResponse("/login", status_code=303)
+        expert = participants.get(expert_user_id)
         _expire_pending_expert_requests(s, expert_user_id)
+        profile_stmt = select(ExpertProfile).where(ExpertProfile.user_id == expert_user_id)
+        if engine.dialect.name == "postgresql":
+            # A single expert lock serializes receipt lookup and capacity allocation.
+            profile_stmt = profile_stmt.with_for_update()
+        profile = s.exec(profile_stmt).first()
+        if not consultation_expert_is_verified(expert, profile) or _users_blocked(s, user.id, expert_user_id):
+            return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
+        receipt = s.exec(select(ConsultationRequestReceipt).where(
+            ConsultationRequestReceipt.requester_user_id == user.id,
+            ConsultationRequestReceipt.expert_user_id == expert_user_id,
+            ConsultationRequestReceipt.request_key == normalized_request_key,
+        )).first() if supplied_request_key else None
+        if receipt:
+            if receipt.payload_hash != payload_hash:
+                return HTMLResponse("Bu talep anahtarı farklı bir vaka bilgisiyle kullanılmış. Lütfen yeni bir talep formu açın.", status_code=409)
+            existing_case = s.get(ConsultationCase, receipt.case_id)
+            if not existing_case or existing_case.requester_user_id != user.id or existing_case.expert_user_id != expert_user_id:
+                return HTMLResponse("Bu talep kaydı kullanılamıyor. Lütfen yeni bir talep formu açın.", status_code=409)
+            return RedirectResponse(f"/expert-support/cases/{existing_case.id}", status_code=303)
+        if not supplied_request_key:
+            # Older cached clients have no key. Match a short-lived, still-pending
+            # receipt by hash under the same expert lock, using the compound index.
+            receipt = s.exec(select(ConsultationRequestReceipt).join(
+                ConsultationCase, ConsultationCase.id == ConsultationRequestReceipt.case_id,
+            ).where(
+                ConsultationRequestReceipt.requester_user_id == user.id,
+                ConsultationRequestReceipt.expert_user_id == expert_user_id,
+                ConsultationRequestReceipt.payload_hash == payload_hash,
+                ConsultationRequestReceipt.created_at >= now - timedelta(minutes=2),
+                ConsultationCase.requester_user_id == user.id,
+                ConsultationCase.expert_user_id == expert_user_id,
+                ConsultationCase.status == "REQUESTED",
+                ConsultationCase.expert_response_deadline > now,
+            ).order_by(ConsultationRequestReceipt.created_at.desc()).limit(1)).first()
+            if receipt:
+                return RedirectResponse(f"/expert-support/cases/{receipt.case_id}", status_code=303)
         policy_state = _expert_policy_state(s, expert_user_id)
         if _expert_is_blocked(policy_state):
             return HTMLResponse("Uzmanın yeni vaka kabulü geçici olarak kısıtlı.", status_code=409)
-        profile_stmt = select(ExpertProfile).where(
-            ExpertProfile.user_id == expert_user_id,
-            ExpertProfile.application_status == "APPROVED",
-            ExpertProfile.verification_status == "VERIFIED",
-            ExpertProfile.specialty_verified == True,
-            ExpertProfile.credential_document_path != None,
-            ExpertProfile.phone != None,
-            ExpertProfile.availability == "AVAILABLE",
-        )
-        if engine.dialect.name == "postgresql":
-            # Serialize capacity slot allocation for concurrent requests to the same expert.
-            profile_stmt = profile_stmt.with_for_update()
-        profile = s.exec(profile_stmt).first()
-        if not profile:
+        if profile.availability != "AVAILABLE":
             return HTMLResponse("Uzman şu anda yeni vaka kabul etmiyor.", status_code=409)
         active_count = _expert_open_case_count(s, expert_user_id)
-        capacity_limit = max(1, min(int(profile.max_active_cases or 5), 5))
+        capacity_limit = consultation_capacity_limit(profile)
         if active_count >= capacity_limit:
             return HTMLResponse("Uzman şu anda eş zamanlı danışmanlık sınırına ulaştığı için yeni danışmanlık talebi kabul edemiyor. Lütfen daha sonra tekrar deneyin.", status_code=409)
         if patient_id:
@@ -7523,13 +7598,11 @@ def expert_support_request_create(
             urgency=urgency,
         )
         s.add(case); s.flush(); s.refresh(case)
+        s.add(ConsultationRequestReceipt(
+            requester_user_id=user.id, expert_user_id=expert_user_id,
+            request_key=normalized_request_key, payload_hash=payload_hash, case_id=case.id, created_at=now,
+        ))
         _enqueue_deadline_pair(s, case.id, "EXPERT_RESPONSE", case.expert_response_deadline)
-        selected_media_ids = []
-        for raw_media_id in media_ids.split(","):
-            try:
-                selected_media_ids.append(int(raw_media_id.strip()))
-            except (TypeError, ValueError):
-                continue
         if patient_id and selected_media_ids:
             allowed_media = s.exec(select(PatientMedia).where(
                 PatientMedia.patient_id == patient_id,

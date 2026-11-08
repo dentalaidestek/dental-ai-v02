@@ -38,6 +38,7 @@ async function fixture(seed=null,nativeRestore=false){
       else body={ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'f'.repeat(64),summary:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Soğukta ağrı'}],questions:[{field:'chief_complaint',quote:'Soğukta ağrı',text:'Ne zamandır?'}],contradictions:[],clinical_items:sourceMode.startsWith('cards')?[{source_id:'test',consideration:'Koşullu klinik kontrol.',missing_information:'Malzeme bilinmiyor.',patient_quote:'Soğukta ağrı',source_quote:'Literal document passage.',alternative:'Hekim malzemeyi doğrulayabilir.'}]:[],clinician_review:sourceMode==='clinician'?[{field:'clinician_0',quote:'Bu işlem kesin risksizdir.',status:'unverified',source_ids:[]}]:[],references:sourceMode.startsWith('cards')?[{id:'test',url:'https://www.ada.org/example',institution:'ADA',title:'Synthetic document',evidence_level:'professional_information'}]:[],unavailable:sourceMode==='partial'?['group:literature']:[],notice:'Synthetic scope',source_coverage:[{topic:'prosth.fixed',label:'Kuron ve köprü',status:sourceMode==='native'?'research_material_unverified':'uncovered',source_ids:[]}],review_status:{source_retryable:sourceMode==='partial'}}};
     }else if(url.endsWith('/clinical'))body={ok:true,items:[],references:[],unavailable:[],notice:'Synthetic clinical review'};
     else if(url.endsWith('/apply'))body={ok:true,patient_url:'/voice-exams/1/session#saved'};
+    if(sourceMode.startsWith('cards')&&url.endsWith('/finalize'))body.final.summary=[{field:'chief_complaint',quote:'Soğukta ağrı, gece uykusundan uyandırıyor.',text:'Soğukta ağrı, gece uykusundan uyandırıyor.'}];
     if(sourceMode.startsWith('cards')&&url.endsWith('/finalize'))body.final.review_status.material_evidence=[{topic:'endo.post_core',candidate_source_count:sourceMode==='cards-gap'?0:1,accepted_control_count:0}];
     if(sourceMode.startsWith('cards')&&url.endsWith('/finalize'))body.final.material_review=[{topic:'endo.post_core',label:'Post, kor ve kalan diş dokusu',status:'unverified',source_ids:[]}];
     if(sourceMode==='compact'&&url.endsWith('/text'))body.review.communication=[
@@ -64,7 +65,7 @@ async function fixture(seed=null,nativeRestore=false){
   w.dispatchEvent(new w.PageTransitionEvent('pageshow',{persisted:false}));
   await until(()=>!get('[data-live-panel]').hidden,'capabilities');
   await until(()=>!get('[data-voice-transcript]').disabled,'recovered form ready');
-  async function begin(){get('[data-voice-consent]').checked=true;get('[data-live-start]').click();await until(()=>root.dataset.liveState==='listening','listen')}
+  async function begin(){get('[data-voice-consent]').click();get('[data-live-start]').click();await until(()=>root.dataset.liveState==='listening','listen')}
   async function finish(){get('[data-live-finish]').click();get('[data-live-finish]').click();await until(()=>!get('[data-voice-save]').disabled,'finish result')}
   return {w,get,root,calls,errors,deadlines,begin,finish,sessionData:()=>w.sessionStorage.getItem('dai:voice-draft:v1:7:1'),speech:text=>socket.message({type:'final',text}),setMode:mode=>sourceMode=mode,setFlush:value=>flush=value,
     disconnect:()=>socket.onclose(),hangExtraction:value=>hangText=value,stopped:()=>stopped,close(){w.dispatchEvent(new w.Event('pagehide'));w.close()}};
@@ -125,6 +126,7 @@ async function fixture(seed=null,nativeRestore=false){
   try{
     f.setMode('compact');await f.begin();f.speech('Soğuk içemiyorum.');await f.finish();
     const results=f.get('[data-voice-final-results]'),cards=Array.from(results.children);
+    assert.equal(cards.some(el=>el.querySelector('summary')?.textContent.includes('Görüşme özeti')),false,'A summary identical to an extracted field must not repeat the patient information');
     assert.equal(cards.some(el=>el.classList.contains('voice-material-review')),false,'Material status belongs with clinical controls, not another repeated card');
     const controls=cards.find(el=>el.querySelector('summary')?.textContent.includes('Dikkat edilecekler'));
     assert.ok(controls,'Use a short clear clinical heading');
@@ -280,18 +282,19 @@ async function fixture(seed=null,nativeRestore=false){
   f=await fixture();
   try{
     f.setMode('readable');await f.begin();f.speech('Rahatsızlığım yok, önceden anjiyo oldum.');await f.finish();
-    const card=f.get('[data-voice-final-results] details');card.querySelector('summary').click();
-    assert.ok(card.querySelector('article strong')?.textContent.includes('Sağlık geçmişi'),'Each summary value needs its clinical field label');
-    assert.equal(card.textContent.includes('Olumsuz beyan:'),false,'Internal assertion labels must not be shown to the clinician');
-    assert.ok(card.textContent.includes('Sistemik rahatsızlık yok'));
-    assert.ok(card.textContent.includes('Olmadığı belirtildi: Penisilin alerjisi'),'A negative noun-only fact must never read as a positive allergy');
+    const card=f.get('[data-voice-record-fields]');card.querySelector('summary').click();
+    const readable=Array.from(card.querySelectorAll('[data-field-row]')).map(row=>row.textContent+' '+row.querySelector('textarea').value).join('\n');
+    assert.ok(card.querySelector('[data-field-row=medical_history] label')?.textContent.includes('Sağlık geçmişi'),'Each recorded value needs its clinical field label');
+    assert.equal(readable.includes('Olumsuz beyan:'),false,'Internal assertion labels must not be shown to the clinician');
+    assert.ok(readable.includes('Sistemik rahatsızlık yok'));
+    assert.ok(readable.includes('Olmadığı belirtildi: Penisilin alerjisi'),'A negative noun-only fact must never read as a positive allergy');
     assert.ok(f.get('[data-field-row=allergies] textarea').value.includes('Olmadığı belirtildi: Penisilin alerjisi'));
-    assert.ok(card.textContent.includes('Önceden: Anjiyo öyküsü'),'Removing jargon must preserve historical meaning');
-    assert.ok(card.textContent.includes('Net değil: İşlemin tarihi bilinmiyor'));
-    assert.ok(card.textContent.includes('Önceki diş tedavileri'));
-    assert.ok(card.textContent.includes('Ağız bakımı ve alışkanlıklar'));
-    assert.ok(card.textContent.includes('Aile sağlık öyküsü'));
-    assert.ok(card.textContent.includes('Konuşulan materyaller'));
+    assert.ok(readable.includes('Önceden: Anjiyo öyküsü'),'Removing jargon must preserve historical meaning');
+    assert.ok(readable.includes('Net değil: İşlemin tarihi bilinmiyor'));
+    assert.ok(readable.includes('Önceki diş tedavileri'));
+    assert.ok(readable.includes('Ağız bakımı ve alışkanlıklar'));
+    assert.ok(readable.includes('Aile sağlık öyküsü'));
+    assert.ok(readable.includes('Konuşulan materyaller'));
     assert.ok(f.get('[data-field-row=materials] textarea').value.includes('markası henüz belli değil'));
     const anamnesis=f.get('.voice-anamnesis-review');
     assert.equal(anamnesis.textContent.includes('Aile sağlık öyküsü'),false,'Recorded history is not repeated');

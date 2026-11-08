@@ -1,0 +1,16 @@
+{
+  "current_failures": 62,
+  "prior_failure_ids": 71,
+  "new_failure_ids": [],
+  "no_longer_failing_in_this_run": [
+    "tests/academic_v2/test_intent_benchmark_15k.py::test_deterministic_15k_query_understanding_benchmark",
+    "tests/academic_v2/test_intent_combined_35k.py::test_combined_35k_query_understanding_consistency",
+    "tests/academic_v2/test_intent_holdout_20k.py::test_unseen_20k_academic_query_holdout",
+    "tests/academic_v2/test_past_question_note_holdout_89k.py::test_unseen_89k_past_question_note_workflow_holdout",
+    "tests/academic_v2/test_retrieval_training_corpus.py::test_training_surface_does_not_overlap_frozen_85k_benchmarks",
+    "tests/academic_v2/test_utility_holdout_50k.py::test_independent_50k_student_assistant_research_utility_holdout",
+    "tests/test_voice_drug_sources.py::test_bundled_labels_do_not_match_excipients_as_patient_drugs",
+    "tests/test_voice_drug_sources.py::test_bundled_real_labels_have_source_version_and_actual_sections",
+    "tests/test_voice_exam.py::test_official_sources_do_not_use_academic_or_transfer_patient_data"
+  ]
+}

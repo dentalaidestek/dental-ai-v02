@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/expert-social.css?v=20261108-1">
+<style>
+.expert-following-page{max-width:720px;padding:20px 14px 100px}
+.expert-following-page .expert-back-link{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:#425b74;text-decoration:none;font-size:14px;font-weight:650}
+.expert-following-page .expert-back-link img{width:18px;height:18px}
+.expert-following-head{margin:18px 0 22px}
+.expert-following-head h1{margin:0 0 6px;font-size:27px;line-height:1.25;color:#092747}
+.expert-following-head p{margin:0;color:#607187;font-size:14px;line-height:1.6}
+.expert-following-discover{display:inline-flex;align-items:center;min-height:44px;margin-top:5px;color:#1260ce;text-decoration:none;font-size:14px;font-weight:700}
+.expert-following-page .ds-root{margin:0}
+@media(max-width:760px){.expert-following-page{padding:10px 8px 96px}.expert-following-head{margin:12px 0 18px}.expert-following-head h1{font-size:24px}}
+</style>
+<div class="expert-shell expert-following-page">
+  <a class="expert-back-link" href="/"><img src="/static/expert-icons/arrow-left.svg" alt="">Ana Sayfa</a>
+  <header class="expert-following-head">
+    <h1>Takip ettiklerim</h1>
+    <p>Takip ettiğiniz uzmanların son paylaşımları.</p>
+    <a class="expert-following-discover" href="/expert-support">Uzmanları keşfet →</a>
+  </header>
+  <section id="expertSocial" class="ds-root" data-expert-social data-feed-mode="following" data-owner="0" data-expert-id="0" data-user-id="{{ user.id }}" aria-label="Takip edilen uzmanların gönderileri">
+    <p class="ds-notice" role="status" aria-live="polite" data-notice hidden></p>
+    <div class="ds-feed" data-feed aria-live="polite"></div>
+    <button type="button" class="ds-secondary ds-more" data-more-posts hidden>Daha fazla gönderi</button>
+  </section>
+</div>
+<script src="/static/expert-media-viewer.js?v=1" defer></script>
+<script src="/static/expert-social.js?v=20261108-1" defer></script>
+{% endblock %}

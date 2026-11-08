@@ -11,6 +11,16 @@ import hashlib
 from urllib.parse import quote
 from app.expert_social_safety import safe_url
 
+MAX_ORCID_WORKS = 500
+
+
+class OrcidWorkLimitError(ValueError):
+    def __init__(self):
+        super().__init__(
+            f"Bu ORCID kaydı aktarım sınırını aşıyor ({MAX_ORCID_WORKS} yayın). "
+            "Yayınları DOI ile veya elle ekleyebilirsiniz."
+        )
+
 
 def normalize_orcid(raw):
     raw = re.sub(r"^https?://(?:www\.)?orcid\.org/", "", raw.strip(), flags=re.I).strip(
@@ -97,6 +107,10 @@ def parse_orcid(data):
                 description="",
             )
         )
+        if len(rows) > MAX_ORCID_WORKS:
+            # Reject the whole import rather than silently presenting a partial
+            # bibliography as a successful synchronization.
+            raise OrcidWorkLimitError()
     return rows
 
 

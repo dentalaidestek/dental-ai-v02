@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/expert-social.css?v=20261107-3">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261108-1">
 <section id="expertSocial" class="ds-root" data-expert-social data-expert-id="{{ social_expert_id }}" data-user-id="{{ user.id }}" data-owner="{{ '1' if social_owner else '0' }}" data-management="{{ '1' if social_management|default(false) else '0' }}">
   <nav class="ds-tabs" role="tablist" aria-label="Uzman profili bölümleri">
     <button type="button" role="tab" aria-selected="true" aria-controls="ds-posts" data-tab="posts"><img src="/static/expert-icons/chats.svg" alt="">Gönderiler</button>
@@ -8,18 +8,20 @@
   <p class="ds-notice" role="status" aria-live="polite" data-notice hidden></p>
   <div id="ds-posts" role="tabpanel" data-panel="posts">
     {% if social_owner and not social_management|default(false) %}<button type="button" class="ds-launch" data-compose><span class="ds-compose-avatar expert-reference-avatar" aria-hidden="true"></span><span>Bir şey paylaş…<small>Dental AI üyeleriyle bilimsel bir paylaşım yapın</small></span><span class="ds-launch-plus" aria-hidden="true">＋</span></button>{% endif %}
+    {% if social_management|default(false) %}<details class="ds-content-rules"><summary><img src="/static/expert-icons/shield-check.svg" alt="">İçerik kuralları</summary><p>Hasta adı, kimlik veya iletişim bilgisi paylaşmayın. Hasta ve klinik görselleri yayımlanmadan önce incelenir. Paylaşımlar mesleki etik ve platform kurallarına uygun olmalıdır.</p></details>{% endif %}
     <div class="ds-feed" data-feed aria-live="polite"></div>
     <button type="button" class="ds-secondary ds-more" data-more-posts hidden>Daha fazla gönderi</button>
   </div>
   <div id="ds-publications" role="tabpanel" data-panel="publications" hidden>
     <header class="ds-section-head"><div><h2>Akademik yayınlar</h2><p>Kaynak bilgisi, eser sahipliğinin doğrulanması anlamına gelmez.</p></div>{% if social_owner %}<button class="ds-primary" type="button" data-add-publication>＋ Yayın ekle</button>{% endif %}</header>
-    {% if social_owner %}<details class="ds-orcid" {{ 'open' if social_management|default(false) else '' }}><summary>{{ 'ORCID Yayınlarım' if social_management|default(false) else 'ORCID yayınlarını getir' }}</summary><p>Herkese açık kayıtlar aktarılır. ORCID hesabı sahipliği doğrulanmaz; yayınlar gönderi akışında otomatik paylaşılmaz.</p><label>ORCID iD veya profil bağlantısı<input data-orcid value="{{ profile.orcid_url or '' }}" placeholder="0000-0002-1825-0097" maxlength="100" autocomplete="off"></label><button type="button" class="ds-secondary" data-sync>Yayınları getir</button><p data-sync-state role="status"></p></details>{% elif profile.orcid_url %}<a class="ds-orcid-link" href="{{ profile.orcid_url }}" target="_blank" rel="noopener noreferrer">ORCID kaydını aç ↗</a>{% endif %}
+    {% if social_owner %}<details class="ds-orcid" {{ 'open' if social_management|default(false) else '' }}><summary>{{ 'ORCID Yayınlarım' if social_management|default(false) else 'ORCID yayınlarını getir' }}</summary><p>Herkese açık kayıtlar alınır; ORCID sahipliği doğrulanmaz.</p><label>ORCID iD veya profil bağlantısı<input data-orcid value="{{ profile.orcid_url or '' }}" placeholder="0000-0002-1825-0097" maxlength="100" autocomplete="off"></label><button type="button" class="ds-secondary" data-sync>Yayınları getir</button><p data-sync-state role="status"></p></details>{% elif profile.orcid_url %}<a class="ds-orcid-link" href="{{ profile.orcid_url }}" target="_blank" rel="noopener noreferrer">ORCID kaydını aç ↗</a>{% endif %}
     <div class="ds-publications" data-publications></div>
     <button type="button" class="ds-secondary ds-more" data-more-publications hidden>Daha fazla yayın</button>
     {% if profile.publications_text %}<details class="ds-legacy"><summary>Önceden eklenen yayın bilgileri</summary><p>Uzman beyanı · Manuel metin</p><div class="ds-preserve">{{ profile.publications_text }}</div></details>{% endif %}
   </div>
   <div id="ds-about" role="tabpanel" data-panel="about" hidden><article class="ds-card"><h2>Uzman hakkında</h2><p class="ds-preserve">{{ profile.bio or 'Uzman henüz bir açıklama eklememiş.' }}</p>{% if profile.institution %}<p>{{ profile.institution }}</p>{% endif %}</article></div>
   {% if social_owner %}
+  <dialog class="ds-dialog ds-relationships" data-relationships-dialog aria-labelledby="ds-relationships-title"><header class="ds-dialog-head"><h2 id="ds-relationships-title">Takipçiler</h2><button type="button" class="ds-icon" data-close aria-label="Listeyi kapat">×</button></header><p class="ds-error" data-relationships-error role="status" hidden></p><div data-relationships-list></div><button type="button" class="ds-secondary" data-relationships-more hidden>Daha fazla</button></dialog>
   <{% if social_management|default(false) %}section{% else %}dialog{% endif %} class="ds-dialog ds-composer {{ 'ds-inline-composer' if social_management|default(false) else '' }}" data-composer aria-labelledby="ds-compose-title">
     <header class="ds-dialog-head"><button type="button" class="ds-icon" data-close aria-label="Taslağı koruyarak kapat">×</button><h2 id="ds-compose-title">Yeni gönderi</h2>{% if social_management|default(false) %}<span class="ds-inline-audience">Dental AI üyeleri</span>{% endif %}<span class="ds-edit-indicator" data-edit-mode hidden>Gönderiyi düzenliyorsunuz</span><button type="button" class="ds-text-button" data-edit-cancel hidden>Vazgeç</button><button type="button" class="ds-primary" data-publish>Paylaş</button></header>
     <div class="ds-dialog-body"><p class="ds-audience">Dental AI üyeleri görebilir</p><label class="ds-sr" for="ds-post-text">Gönderi metni</label><textarea id="ds-post-text" data-post-text maxlength="5000" placeholder="Bir şey paylaş…" rows="5"></textarea>
@@ -36,4 +38,5 @@
   </form></dialog>
   {% endif %}
 </section>
-<script src="/static/expert-social.js?v=20261107-3" defer></script>
+<script src="/static/expert-media-viewer.js?v=1" defer></script>
+<script src="/static/expert-social.js?v=20261108-1" defer></script>

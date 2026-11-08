@@ -1,3 +1,5 @@
+> Güncel yayın sonrası onarım, yük ve sesli muayene sonuçları: [7 Kasım takip raporu](postlaunch_social_voice_2026-11-07.md). Aşağıdaki rapor ilk geliştirme tesliminin tarihsel kaydıdır.
+
 # Uzman sosyal profili — geliştirme ve doğrulama
 
 Bu değişiklik geliştirme dalındadır. Main birleştirmesi ve canlı dağıtım yapılmadı.

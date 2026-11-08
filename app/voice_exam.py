@@ -192,6 +192,7 @@ class ClinicalInput(BaseModel):
 class FinalInput(ClinicalInput):
     insights: list[dict] = Field(default_factory=list, max_length=24)
     uncertain: str = Field(default='', max_length=3000)
+    conversation_text: str = Field(default='', max_length=core.MAX_CONVERSATION)
     source_fingerprint: str = Field(default='', pattern=r'^(?:[a-f0-9]{64})?$')
 
 
@@ -204,7 +205,13 @@ def final_review(request: Request, patient_id: int, payload: FinalInput):
         return _reply({'ok': False, 'error': 'İşleme onayını kontrol et.'}, 400)
     try:
         from app.voice_exam_final import finalize
-        options = {'previous_source_fingerprint': payload.source_fingerprint} if payload.source_fingerprint else {}
+        # Pending-review admission is private to this authenticated patient's
+        # request. Redacted clinical content can be identical for other patients.
+        options = {'request_scope': (user.id, patient_id)}
+        if payload.source_fingerprint:
+            options['previous_source_fingerprint'] = payload.source_fingerprint
+        if payload.conversation_text:
+            options['conversation_text'] = payload.conversation_text
         return _reply({'ok': True, 'revision': fingerprint,
                        'final': finalize(payload.context, payload.insights, payload.uncertain, **options)})
     except core.VoiceError as exc:

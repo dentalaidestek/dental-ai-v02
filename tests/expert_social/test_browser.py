@@ -174,7 +174,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
         page.reload()
         expect(page.locator("[data-compose]")).to_have_count(0)
         expect(
-            page.get_by_role("link", name="Danışmanlık başlat", exact=True)
+            page.get_by_role("link", name="Uzmandan Destek Al", exact=True)
         ).to_have_attribute(
             "href", __import__("re").compile("/expert-support/request/1")
         )
@@ -201,6 +201,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
             "Düzenlenmiş bilimsel yorum."
         )
         expect(page.locator("[data-comments-toggle]")).to_contain_text("2 yorum")
+        page.get_by_role('button',name='Yorumları kapat',exact=True).click()
         page.get_by_role("button", name="Beğen", exact=True).click()
         expect(page.get_by_role("button", name="Beğen", exact=True)).to_have_attribute(
             "aria-pressed", "true"
@@ -310,6 +311,10 @@ def test_management_inline_editor_tabs_and_settings(browser_app):
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(base + "/expert-support/profile")
         expect(page.locator(".ds-inline-composer")).to_be_visible()
+        expect(page.locator("[data-publications] .ds-empty")).to_be_visible()
+        empty_dest=Path(os.getenv("TEST_ARTIFACT_DIR",str(tmp/"screenshots")))
+        empty_dest.mkdir(parents=True,exist_ok=True)
+        page.screenshot(path=str(empty_dest/"expert-management-empty-390.png"),full_page=True)
         page.locator("[data-post-text]").fill("Yönetim ekranından bilimsel paylaşım")
         page.locator("[data-publish]").click()
         expect(page.locator("[data-feed] .ds-card")).to_have_count(1)
@@ -331,6 +336,10 @@ def test_management_inline_editor_tabs_and_settings(browser_app):
 
         page.locator("[data-manage-tab=general]").click()
         expect(page.locator("[data-manage-pane=general]")).to_be_visible()
+        expect(page.locator(".expert-publication-editor")).to_have_count(0)
+        expect(
+            page.locator("input[type=hidden][name=publications_text]")
+        ).to_have_count(1)
         expect(page.locator(".ds-inline-composer")).not_to_be_visible()
         page.locator("[data-manage-tab=settings]").click()
         expect(page.locator(".expert-availability-switch")).to_be_visible()
@@ -344,7 +353,9 @@ def test_management_inline_editor_tabs_and_settings(browser_app):
         assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
         dest = Path(os.getenv("TEST_ARTIFACT_DIR", str(tmp / "screenshots")))
         dest.mkdir(exist_ok=True, parents=True)
-        expect(page.locator("[data-manage-tab=posts]")).to_have_css("background-color", "rgb(9, 39, 71)")
+        expect(page.locator("[data-manage-tab=posts]")).to_have_css(
+            "background-color", "rgb(9, 39, 71)"
+        )
         page.screenshot(path=str(dest / "expert-management-390.png"), full_page=True)
         assert not errors, errors
         browser.close()

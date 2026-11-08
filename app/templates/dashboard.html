@@ -9,6 +9,7 @@
 .dashboard-home .visual-photo-card .visual-card-copy,.dashboard-home .visual-photo-card .visual-arrow{z-index:2}
 .dashboard-home .visual-photo-card .visual-card-copy strong{color:#fff}
 .dashboard-home .visual-photo-card .visual-card-copy small{color:#e6f3ff}
+.visual-following-link{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin:4px 0 8px;color:#2563eb;text-decoration:none;font-size:14px;font-weight:700}
 @media(max-width:760px){
 .dashboard-home .visual-photo-card:after{display:none}
 .dashboard-home .visual-photo-card:before{background:linear-gradient(90deg,#eff8ff 0%,rgba(239,248,255,.98) 48%,rgba(239,248,255,0) 82%)}
@@ -60,6 +61,8 @@
       <div class="visual-card-copy"><strong>Uzmandan Destek Al</strong><small>Vakanız için doğrulanmış bir uzmandan ikinci görüş alın.</small></div><span class="visual-arrow">›</span>
     </a>
 </section>
+
+  <a class="visual-following-link" href="/expert-support/following">Takip ettiğim uzmanlar <span aria-hidden="true">→</span></a>
 
   <section class="visual-program" id="dashboardProgram">
     <div class="visual-section-head"><h2>{% if dashboard_event_label == 'Bugün' %}Bugünkü Program{% else %}Yaklaşan Program{% endif %}</h2><a href="/program?view=today">Tümünü Gör →</a></div>
@@ -125,4 +128,5 @@
 </script>
 
 {% endblock %}
+
 

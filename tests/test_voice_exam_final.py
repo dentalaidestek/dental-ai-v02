@@ -121,7 +121,7 @@ def test_longer_but_bounded_clinical_context():
 
 def test_final_endpoint_access_consent_and_no_record_write(app_client, monkeypatch):
     client, engine = app_client
-    monkeypatch.setattr(final, 'finalize', lambda *args: {'summary': [], 'questions': [], 'contradictions': []})
+    monkeypatch.setattr(final, 'finalize', lambda *args, **kwargs: {'summary': [], 'questions': [], 'contradictions': []})
     assert client.post('/patients/2/voice-exam/finalize', json={'context': CONTEXT, 'consent': True}).status_code == 404
     assert client.post('/patients/1/voice-exam/finalize', json={'context': CONTEXT}).status_code == 400
     assert client.post('/patients/1/voice-exam/finalize', json={'context': CONTEXT, 'consent': True}).status_code == 200

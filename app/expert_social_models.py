@@ -2,8 +2,10 @@
 
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 from sqlmodel import SQLModel, Field
 from sqlalchemy import UniqueConstraint, CheckConstraint, Index, text
+from app.expert_consultation_requests import ConsultationRequestReceipt
 
 
 def now():
@@ -15,6 +17,8 @@ class SocialPost(SQLModel, table=True):
         UniqueConstraint("author_id", "idempotency_key"),
         CheckConstraint("status IN ('PUBLISHED','PENDING','REJECTED','DELETED')"),
         Index("ix_socialpost_feed", "author_id", "status", "id"),
+        Index("ix_socialpost_moderation", "status", "id"),
+        Index("ix_socialpost_waiting", "status", "created_at", "id"),
         Index(
             "uq_socialpost_pin",
             "author_id",
@@ -67,6 +71,8 @@ class SocialComment(SQLModel, table=True):
         UniqueConstraint("author_id", "idempotency_key"),
         CheckConstraint("status IN ('PUBLISHED','PENDING','REJECTED','DELETED')"),
         Index("ix_socialcomment_thread", "post_id", "id"),
+        Index("ix_socialcomment_moderation", "status", "id"),
+        Index("ix_socialcomment_waiting", "status", "created_at", "id"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
     post_id: int = Field(foreign_key="socialpost.id", ondelete="CASCADE")
@@ -126,6 +132,8 @@ class Publication(SQLModel, table=True):
         UniqueConstraint("expert_id", "title_key"),
         UniqueConstraint("expert_id", "source_orcid", "source_key"),
         Index("ix_publication_profile", "expert_id", "deleted", "year", "id"),
+        Index("ix_publication_moderation", "status", "id"),
+        Index("ix_publication_waiting", "status", "created_at", "id"),
         CheckConstraint("source IN ('MANUAL','ORCID','DOI_MATCH')"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -164,7 +172,7 @@ class DoiMatch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
     metadata_json: str
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = Field(default_factory=now, index=True)
 
 
 SOCIAL_MODELS = (
@@ -202,3 +210,67 @@ class SocialFollow(SQLModel, table=True):
 
 
 SOCIAL_MODELS = (*SOCIAL_MODELS, SocialFollow)
+
+
+class SocialModerationTask(SQLModel, table=True):
+    """One durable lifecycle per target; no text, image, or provider payloads."""
+
+    __table_args__ = (
+        UniqueConstraint("target_type", "target_id"),
+        UniqueConstraint("job_id"),
+        CheckConstraint("target_type IN ('POST','COMMENT','PUBLICATION')"),
+        CheckConstraint("state IN ('AUTO_DONE','HUMAN_DONE','WAITING_HUMAN','WAITING_OWNER','FAILED','RUNNING')"),
+        CheckConstraint("attempts >= 0 AND revision >= 1 AND content_version >= 1"),
+        Index("ix_socialmoderationtask_waiting", "state", "waiting_since", "id"),
+        Index("ix_socialmoderationtask_retry", "state", "next_attempt_at", "id"),
+        Index("ix_socialmoderationtask_lease", "state", "lease_until", "id"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    target_type: str
+    target_id: int
+    owner_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
+    job_id: str = Field(default_factory=lambda: str(uuid4()))
+    content_version: int
+    revision: int = 1
+    state: str
+    wait_type: str = "NONE"
+    reasons_json: str = "[]"
+    last_decision_status: str
+    last_decision_reason: str = ""
+    last_decision_source: str = "AUTOMATIC"
+    last_decision_at: datetime = Field(default_factory=now)
+    attempts: int = 0
+    next_attempt_at: Optional[datetime] = None
+    lease_token: Optional[str] = None
+    lease_until: Optional[datetime] = None
+    last_error_code: Optional[str] = None
+    waiting_since: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=now)
+    updated_at: datetime = Field(default_factory=now)
+
+
+class SocialModerationEvent(SQLModel, table=True):
+    """Append-only operational history, including recoverable local failures."""
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "revision"),
+        Index("ix_socialmoderationevent_target", "target_type", "target_id", "id"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_id: str
+    target_type: str
+    target_id: int
+    revision: int
+    content_version: int
+    state: str
+    status: str
+    source: str
+    reason: str
+    actor_id: Optional[int] = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
+    created_at: datetime = Field(default_factory=now)
+
+
+SOCIAL_MODELS = (
+    *SOCIAL_MODELS, SocialModerationTask, SocialModerationEvent,
+    ConsultationRequestReceipt,
+)

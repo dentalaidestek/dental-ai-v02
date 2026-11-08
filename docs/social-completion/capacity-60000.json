@@ -1,0 +1,27 @@
+{
+  "scope": "Local FastAPI social router and actual authentication, PostgreSQL; excludes lifespan workers, CDN/network/media/providers and full page middleware",
+  "synthetic_accounts": 60000,
+  "synthetic_posts": 60000,
+  "synthetic_comments": 60000,
+  "synthetic_likes": 60000,
+  "requests": 100,
+  "concurrency": 16,
+  "pool_size": 4,
+  "peak_checked_out": 4,
+  "errors": 0,
+  "requests_per_second": 153.05,
+  "p50_ms": 82.24,
+  "p95_ms": 196.54,
+  "query_samples": [
+    {
+      "path": "/api/expert-social/experts/1/posts",
+      "queries": 12,
+      "latency_ms": 27.11
+    },
+    {
+      "path": "/api/expert-social/experts/1/posts?before=30000",
+      "queries": 11,
+      "latency_ms": 7.31
+    }
+  ]
+}
