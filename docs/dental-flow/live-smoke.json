@@ -1,0 +1,54 @@
+{
+  "scope": "Read-only unauthenticated production smoke checks; not a capacity benchmark",
+  "commit": "3ce999dcdff018820b32de57b0cf16ce86dc6d02",
+  "deploy": "dep-dbp1qe2vcj2c73brb4k0",
+  "checks": [
+    {
+      "path": "/healthz",
+      "status": 200,
+      "ms": 8524,
+      "ok": true
+    },
+    {
+      "path": "/readyz",
+      "status": 200,
+      "ms": 9151,
+      "ok": true
+    },
+    {
+      "path": "/static/expert-social.js?v=20261109-4",
+      "status": 200,
+      "ms": 8721,
+      "bytes_match_release": true
+    },
+    {
+      "path": "/static/dental-flow.css?v=20261109-2",
+      "status": 200,
+      "ms": 6040,
+      "bytes_match_release": true
+    },
+    {
+      "path": "/static/dashboard/mobile/dental_flow.webp?v=20261109-1",
+      "status": 200,
+      "ms": 5934,
+      "bytes_match_release": true
+    },
+    {
+      "path": "/dental-akis",
+      "status": 401,
+      "ms": 5998,
+      "authentication_required": true
+    },
+    {
+      "path": "/api/expert-social/feed/discover",
+      "status": 401,
+      "ms": 5959,
+      "authentication_required": true
+    }
+  ],
+  "same_session_health_total_ms": [
+    4903,
+    124,
+    144
+  ]
+}

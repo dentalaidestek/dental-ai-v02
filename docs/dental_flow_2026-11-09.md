@@ -1,5 +1,9 @@
 # Dental Akış — Keşfet ve Takip Ettiklerim
 
+**Canlı:** 9 Kasım 2026, 22:23:18 Türkiye saati. [Dental Akış](https://dentalai.tr/dental-akis), [PR #255](https://github.com/dentalaidestek/dental-ai-v02/pull/255). Ana sayfadaki resimli kart ve menüden açılır. Seçilen görsel 4:3 yataydır.
+
+Profil görseli ve uzman adı aynı doğru profile gider. Açıklama düzenlemesi mevcut gönderiyi ve etkileşimlerini korur. Beş eşzamanlı yazma senaryosu ve yerel 60.000 kayıt ölçümü başarılıdır; bu sonuç 60.000 eşzamanlı üretim kullanıcısı garantisi değildir. Son tam akış CI paketi: **616 geçti, 5 isteğe bağlı test atlandı**.
+
 Uzmanların mevcut onaylı paylaşımları `/dental-akis` sayfasında toplanır. Keşfet tüm uygun uzmanların, Takip Ettiklerim yalnızca üyenin izlediği uzmanların gönderilerini gösterir. Sekmeler ve sekmeler arasında korunan branş filtreleri ana sayfa, menü ve Tüm Özellikler bağlantılarından açılır.
 
 Yeni paylaşım sistemi kurulmadı: mevcut gönderi, medya görüntüleyici, yorum/yanıt, emoji, beğeni, bildirim ve admin onayı kullanılır. Bekleyen/reddedilen/silinmiş içerikler sahibinin keşfet sayfasında da gösterilmez. Aktif/doğrulanmış uzman ve çift yönlü engelleme denetimleri her istekte uygulanır.
@@ -37,15 +41,30 @@ PR tarayıcı doğrulaması bekleyen taslak olarak tutuldu. Bu özellik için ma
 ## Eşzamanlılık ve 60.000 hesap denetimi
 
 - Önceki uygulama commit'i `f576f7216d80c61ab98661f3fcb2bfc7a95b7154`: GitHub Expert Social **607 geçti, 5 atlandı**, koşu `42675745939`. Mobil 360/390/430 ve masaüstü1280 akış, yeni ana sayfa kartı ve düzenleme/tekrar deneme dahil. 390/1280 ekran görüntüleri incelendi. Bu, aşağıdaki yeni sağlamlaştırmaların tarayıcı sonucu değildir.
-- PostgreSQL'de dört bağlantılık havuzla beş eşzamanlı yazma senaryosu geçti: beş farklı uzman, tek uzmanın beş farklı gönderisi, aynı isteğin beş tekrarı (tek kayıt), farklı anahtarla aynı içeriğin tekrarı (bir kayıt + dört429), önceden yüklenmiş beş farklı görselin sahiplikle doğru gönderiye bağlanması (incelemede). Kilitlenme ve bağlantı sızıntısı görülmedi.
-- Yerel sentetik ölçüm: 60.000 hesap, 1.000 uzman, 60.000'er gönderi/yorum/beğeni. 16 istemciyle profil/Keşfet/takip için100karışık okuma, dört bağlantılık havuz, **0hata**. p50 **194ms**, p95 **410ms**, **68,78istek/sn**. Sayfa başına11–12sorgu, derin cursor11sorgu; sorgu sayısı veri miktarıyla büyümedi. Ayrıntı `docs/dental-flow/capacity-60000.json`.
+- PostgreSQL'de dört bağlantılık havuzla beş eşzamanlı yazma senaryosu geçti: beş farklı uzman, tek uzmanın beş farklı gönderisi, aynı isteğin beş tekrarı (tek kayıt), farklı anahtarla aynı içeriğin tekrarı (bir kayıt + dört 429), önceden yüklenmiş beş farklı görselin sahiplikle doğru gönderiye bağlanması (incelemede). Kilitlenme ve bağlantı sızıntısı görülmedi.
+- Yerel sentetik ölçüm: 60.000 hesap, 1.000 uzman, 60.000'er gönderi/yorum/beğeni. 16 istemciyle profil/Keşfet/takip için100 karışık okuma, dört bağlantılık havuz, **0 hata**. p50 **194ms**, p95 **410ms**, **68,78istek/sn**. Sayfa başına11–12 sorgu, derin cursor11sorgu; sorgu sayısı veri miktarıyla büyümedi. Ayrıntı `docs/dental-flow/capacity-60000.json`.
 - Bu ölçüm yerel sosyal API+gerçek PostgreSQL içindir. Gerçek ağ/CDN, görsel baytları, R2 gecikmesi, tüm uygulama middleware'i, AI/uzun stream ve Render donanımı ölçülmedi. **60.000 eşzamanlı kullanıcı kapasitesi değildir.** Mevcut tek ücretsiz Render servisi; kodun varsayılan web havuzu4, uygulama istek kabul sınırı8, aynı anda görsel yükleme sınırı1. Karma uzun istekler503admission veya havuz beklemesi oluşturabilir. Ücretli plan veya servis ayarı değiştirilmedi.
-- Bulunan ve düzeltilen noktalar: akış avatarına profil bağlantısı; yalnızca503+Retry-After durumunda en çok4otomatik yükleme tekrarı (önizleme korunur); görsel cache kapasite hatasında500yerine503+Retry-After ve dahili feed görsellerinde en çok2yeniden yükleme; hesap kapanınca sıradaki dosyaları/tekrarları durdurma; aktif branş çipinde okunaklı beyaz metin.
-- Son ilgili yerel regresyon **156geçti, 1tarayıcı testi hariç**. Yeni cache503testi önce beklenen hatayı gösterdi, düzeltme sonrası geçti. Beş gerçek-JS yükleme senaryosu (başarıya tekrar,5denemede durma, başlıksız503/400tekrar etmeme, logout) ve çoklu dosyalı logout yeniden doğrulandı. Bağımsız incelemede açık önemli bulgu kalmadı. Son browser CI sonucu ayrıca kaydedilir.
-- Kalan altyapı sınırları: özel medya sunucu üzerinden aktarılıyor; cold-cache R2indirmesindeki süreç geneli ayırma kilidi talepleri sıraya sokabilir. Retry dayanıklılığı sağlar, kapasiteyi artırdığı iddia edilmez. 60bin kişinin aynı anda kullanımına yönelik kapasite onayı için gerçek karma ağ/medya/stream yükü ve üretime denk donanım ölçümü gerekir.
+- Bulunan ve düzeltilen noktalar: akış avatarına profil bağlantısı; yalnızca503+Retry-After durumunda en çok4 otomatik yükleme tekrarı (önizleme korunur); görsel cache kapasite hatasında500 yerine503+Retry-After ve dahili feed görsellerinde en çok2 yeniden yükleme; hesap kapanınca sıradaki dosyaları/tekrarları durdurma; aktif branş çipinde okunaklı beyaz metin.
+- Son ilgili yerel regresyon **156 geçti, 1 tarayıcı testi hariç**. Yeni cache503testi önce beklenen hatayı gösterdi, düzeltme sonrası geçti. Beş gerçek-JS yükleme senaryosu (başarıya tekrar,5denemede durma, başlıksız503/400tekrar etmeme, logout) ve çoklu dosyalı logout yeniden doğrulandı. Bağımsız incelemede açık önemli bulgu kalmadı. Son browser CI sonucu ayrıca kaydedilir.
+- Kalan altyapı sınırları: özel medya sunucu üzerinden aktarılıyor; cold-cache R2indirmesindeki süreç geneli ayırma kilidi talepleri sıraya sokabilir. Retry dayanıklılığı sağlar, kapasiteyi artırdığı iddia edilmez. 60 bin kişinin aynı anda kullanımına yönelik kapasite onayı için gerçek karma ağ/medya/stream yükü ve üretime denk donanım ölçümü gerekir.
 
 ## Son tarayıcı koşusu ve seçici düzeltmesi
 
 `41397f74` tam Expert Social koşusu `42680547916`: **615 geçti, 5 atlandı, 1 başarısız**. Yeni avatarı tıklayıp gerçek profile geçiş, yükleme503→başarı, cache503→görsel toparlanması, çoklu dosyada logout iptali, düzenleme ve tüm diğer testler geçti. Tek başarısızlık eski `test_following_page_loads_one_feed_with_working_member_actions` testindeki `.ds-author a` seçicisinin artık iki doğru bağlantıyı (avatar ve isim) bulmasıydı; ikisi de `/expert-support/expert/1` adresine gidiyordu. Seçici isim ve avatar için ayrı kontrollerle güncellendi; uygulama kodu değiştirilmedi. Yeni koşu ayrıca izlenir.
 
-Depodaki `render.yaml` HTTP kabul sınırı8olarak tanımlar; canlı ortam değişkenleri bu incelemede okunmadı. Web DB havuzu4kod varsayılanıdır. Bu sayılar canlı yapılandırma doğrulaması veya eşzamanlı kullanıcı taahhüdü olarak yorumlanmamalıdır.
+Depodaki `render.yaml` HTTP kabul sınırı8 olarak tanımlar; canlı ortam değişkenleri bu incelemede okunmadı. Web DB havuzu4 kod varsayılanıdır. Bu sayılar canlı yapılandırma doğrulaması veya eşzamanlı kullanıcı taahhüdü olarak yorumlanmamalıdır.
+
+## Canlı doğrulama
+
+- Main squash commit: `3ce999dcdff018820b32de57b0cf16ce86dc6d02`. Render dağıtımı: `dep-dbp1qe2vcj2c73brb4k0`, **LIVE**, 19:23:18 UTC / 22:23:18 Türkiye. Ana dal otomatik dağıtımı kullanıldı; ikinci deploy tetiklenmedi.
+- `/healthz` ve `/readyz` HTTPS üzerinden200 ve `ok:true`; yeni sosyal JS, Dental Akış CSS ve seçilen WebP baytları yerel yayın dosyalarıyla SHA256 düzeyinde aynı. Oturumsuz `/dental-akis` ve `/api/expert-social/feed/discover`401; erişim üyelik gerektirir. Başlangıç tamamlandı; dağıtım sonrasındaki uygulama error log sorgusu boş.
+- Bu ortamdaki yeni HTTPS bağlantıları6–9 saniye gözlendi; aynı HTTP oturumunda sağlık isteği tekrarları124/144ms oldu. Bu, uygulamanın tüm sayfalarının yanıt süresi veya kapasite ölçümü değildir; bağlantı/ağ payı ayrıca ayrıştırılmadı. Sonuçlar `docs/dental-flow/live-smoke.json` içinde.
+- Bu ortamda açık üretim üye/admin oturumu bulunmadığı için gerçek kullanıcı adına gönderi/yorum oluşturulmadı. Üye akışı sentetik tarayıcı/DB testleriyle kontrol edildi; canlı kullanıcı verisi değiştirilmedi.
+
+## Kapanış doğrulaması
+
+- Son test/doküman commit'i `5472b2a24dba0e3e41f47b72a0704f5b286b377f`; uygulama dosyaları canlı squash commit'iyle aynıdır. Expert Social koşusu [42682469412](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/42682469412): **616 geçti, 5 isteğe bağlı test atlandı**, 570,91saniye. Önceki tek seçici hatası giderildi; başarısız akış testi yok. Security recovery de geçti.
+- Akademik CI'nin önceki30başarısız test kimliği son uygulama kaynaklarıyla karşılaştırıldı; eklenen/çıkarılan kimlik yok. Genel depo CI'nin eski akademik/semantik sorunları giderildi denmez; bütün depo yeşil olarak sunulmaz.
+- Son bağımsız incelemede açık önemli bulgu kalmadı. Canlıya alınan değişiklikler veri silmez; ücretli altyapı değişikliği yoktur.
+
+- Son genel uygulama paketi: **2504 geçti, 75 atlandı, 44 başarısız sonuç / 34 kimlik**. Önceki canlı kaynakta45sonuç/35kimlik vardı; yeni başarısız kimlik yok, önceki390pxdört-görsel zamanlama testi artık başarısız listesinde değil. Semantik PostgreSQL'de önceki `[8]`/`[16]` iki test aynı şekilde başarısız. Bu sonuçlar akış testlerinin616geçti bilgisine karıştırılmaz.
