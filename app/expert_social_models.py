@@ -71,6 +71,7 @@ class SocialComment(SQLModel, table=True):
         UniqueConstraint("author_id", "idempotency_key"),
         CheckConstraint("status IN ('PUBLISHED','PENDING','REJECTED','DELETED')"),
         Index("ix_socialcomment_thread", "post_id", "id"),
+        Index("ix_socialcomment_replies", "post_id", "parent_id", "id"),
         Index("ix_socialcomment_moderation", "status", "id"),
         Index("ix_socialcomment_waiting", "status", "created_at", "id"),
     )
@@ -94,6 +95,15 @@ class SocialLike(SQLModel, table=True):
         primary_key=True, foreign_key="socialpost.id", ondelete="CASCADE"
     )
     user_id: int = Field(primary_key=True, foreign_key="user.id", ondelete="CASCADE")
+
+
+class SocialCommentLike(SQLModel, table=True):
+    comment_id: int = Field(
+        primary_key=True, foreign_key="socialcomment.id", ondelete="CASCADE"
+    )
+    user_id: int = Field(
+        primary_key=True, foreign_key="user.id", ondelete="CASCADE", index=True
+    )
 
 
 class SocialReport(SQLModel, table=True):
@@ -181,6 +191,7 @@ SOCIAL_MODELS = (
     SocialPreview,
     SocialComment,
     SocialLike,
+    SocialCommentLike,
     SocialReport,
     SocialDecision,
     Publication,

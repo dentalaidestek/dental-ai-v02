@@ -1183,22 +1183,73 @@ body.dai-app-shell #dentalMediaViewer button{width:auto;min-width:44px;min-heigh
 .ds-media-review{border:0;background:transparent;padding:0;cursor:zoom-in;display:block}
 .expert-reference-profile .expert-profile-sticky .expert-primary{width:100%;text-align:center}
 .expert-reference-profile .expert-disabled.expert-profile-sticky.expert-support-unavailable{display:block;text-align:center}
-/* One comment sheet, loaded on demand. The list scrolls; writing stays reachable. */
-.ds-dialog.ds-comments-sheet{width:min(560px,calc(100vw - 28px));height:min(680px,82dvh);background:#fff}
-.ds-comments-sheet .ds-comments-head{position:relative;padding-top:19px;touch-action:pan-x}
-.ds-comments-head:before{content:"";position:absolute;top:7px;left:calc(50% - 18px);height:4px;width:36px;border-radius:8px;background:#dbe2eb}
-.ds-comment-total{font-size:13px;color:#728297;margin-right:4px}
-.ds-comments-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 20px 12px}
-.ds-comments-sheet .ds-comment{padding:16px 0;border-bottom:1px solid #f0f3f7}
-.ds-comment-author{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.ds-comment-identity{display:inline-flex;align-items:center;gap:7px;min-width:0;color:#183753;text-decoration:none;min-height:32px}
-.ds-comment-identity .ds-comment-avatar{width:30px;height:30px;object-fit:cover;border-radius:50%;flex-shrink:0}
-.ds-comment-identity b{overflow-wrap:anywhere}.ds-comment-identity .ds-verified{font-size:12px}
-.ds-comments-sheet .ds-comment-form{margin:0;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid #e9eef5;background:#fff;flex-shrink:0}
-.ds-comments-sheet .ds-comment-form textarea{margin:0 0 6px;min-height:44px;max-height:110px;resize:none;font-size:16px;line-height:1.45;border:1px solid #e3e9f0;border-radius:18px;padding:11px 13px}
-.ds-comments-sheet .ds-comment-submit-row{gap:8px;min-height:42px}.ds-comments-sheet .ds-comment-submit-row small{font-size:11px}
-.ds-comments-empty{color:#7b899b;text-align:center;padding:24px 12px;font-size:14px}
-@media(max-width:600px){.ds-dialog.ds-comments-sheet{width:100%;height:min(680px,82dvh);max-width:100%;border-radius:22px 22px 0 0}.ds-comments-scroll{padding:0 16px 10px}.ds-comments-sheet .ds-comment-form{padding-left:14px;padding-right:14px}.ds-comments-sheet .ds-comment-tools button{min-height:36px}.ds-comments-sheet .ds-icon{min-height:44px;min-width:44px}}
+/* Compact comment threads. Replies load only when opened; the composer stays fixed. */
+.ds-dialog.ds-comments-sheet { width: min(560px, calc(100vw - 28px)); height: min(640px, 76dvh); background: #fff; }
+.ds-comments-sheet .ds-comments-head { position: relative; justify-content: center; min-height: 56px; padding: 18px 48px 10px; touch-action: pan-x; border-bottom: 0; }
+.ds-comments-head:before { content: ""; position: absolute; top: 6px; left: calc(50% - 16px); height: 3px; width: 32px; border-radius: 8px; background: #dfe4eb; }
+.ds-comments-sheet .ds-comments-head h2 { text-align: center; font-size: 14px; line-height: 1.4; font-weight: 650; }
+.ds-comment-total { color: inherit; font: inherit; }
+.ds-comments-sheet .ds-comments-head > .ds-icon { position: absolute; right: 10px; top: 12px; width: 32px; height: 32px; min-width: 32px; min-height: 32px; font-size: 24px; }
+.ds-comments-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 10px; }
+.ds-comments-sheet .ds-comment { position: relative; padding: 10px 34px 8px 40px; margin: 0; border: 0; min-width: 0; }
+.ds-comments-sheet .ds-comment[data-reply="true"] { padding-left: 32px; margin: 0; border: 0; }
+.ds-comment-author { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ds-comment-identity { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: #7c8592; text-decoration: none; line-height: 16px; }
+.ds-comment-identity b { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.ds-comments-sheet .ds-comment-identity, .ds-comments-sheet .ds-comment-identity b { color: #7c8592 !important; }
+.ds-comment-identity .ds-verified { font-size: 11px; }
+.ds-comment-avatar { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; color: #526579; background: #edf1f5; font-size: 12px; }
+.ds-comment-identity .ds-comment-avatar { position: absolute; left: 0; top: 10px; }
+.ds-comments-sheet .ds-comment[data-reply="true"] .ds-comment-avatar { width: 24px; height: 24px; font-size: 10px; }
+.ds-comments-sheet .ds-comment .ds-comment-text { font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; color: #17212e; margin: 2px 0 1px; }
+.ds-comment-text.is-collapsed { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.ds-comments-sheet .ds-comment-tools { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; margin-top: 1px; }
+.ds-comment-tools time { color: #929aa6; font-size: 11px; line-height: 24px; white-space: nowrap; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-tools button,
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-expand,
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-replies-toggle { appearance: none; border: 0 !important; background: transparent !important; box-shadow: none !important; transform: none !important; color: #818a97 !important; font-size: 11px; font-weight: 550 !important; min-height: 28px; padding: 2px 0; border-radius: 4px !important; line-height: 1.4; }
+.ds-comments-sheet .ds-comment-menu { margin-left: auto; align-self: auto; }
+.ds-comment-menu summary { width: 28px; height: 28px; line-height: 22px; font-size: 20px; }
+.ds-comment-menu[open] > div { top: 27px; width: 156px; padding: 5px; }
+.ds-comment-menu.opens-up[open] > div { top: auto; bottom: 29px; }
+body.dai-app-shell #expertSocial .ds-comment-menu[open] > div > button { min-height: 36px; padding: 7px 10px; color: #364658 !important; font-size: 12px; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-like { position: absolute; right: 0; top: 22px; display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 3px; width: 30px; min-width: 30px; min-height: 44px; padding: 0; background: transparent !important; border: 0 !important; box-shadow: none !important; color: #929aa5 !important; font-size: 10px; line-height: 1.1; border-radius: 8px !important; }
+.ds-comment-like svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; opacity: 1; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-like[aria-pressed="true"] { color: #e13c65 !important; }
+.ds-comment-like[aria-pressed="true"] svg { fill: currentColor; }
+.ds-comments-sheet .ds-comment .ds-comment-error { margin: 3px 0; color: #a43131; font-size: 12px; line-height: 1.4; }
+.ds-comment-error[hidden] { display: none; }
+.ds-comments-sheet .ds-comment-replies { padding-left: 40px; }
+.ds-comment-replies[hidden] { display: none; }
+.ds-comments-sheet .ds-replies-toggle { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+.ds-replies-toggle:before { content: ""; display: block; width: 20px; height: 1px; background: #d8dde4; }
+.ds-replies-toggle[hidden] { display: none !important; }
+.ds-comments-sheet .ds-comment-form { margin: 0; padding: 9px 12px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid #edf0f4; background: #fff; flex-shrink: 0; }
+.ds-comment-input-row { display: flex; align-items: flex-end; gap: 8px; width: 100%; }
+.ds-comment-self { padding-bottom: 3px; }
+.ds-comment-input { display: flex; flex: 1; align-items: flex-end; min-width: 0; background: #f3f4f6; border-radius: 22px; padding-right: 3px; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-form textarea { display: block; flex: 1; min-width: 0; width: 0; margin: 0; min-height: 38px; max-height: 96px; resize: none; font-size: 15px; line-height: 20px; border: 0 !important; border-radius: 22px !important; box-shadow: none !important; background: transparent !important; padding: 9px 4px 9px 13px; outline: 0 !important; }
+.ds-comment-input:focus-within { box-shadow: 0 0 0 2px #bdd0e6; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-emoji { min-width: 34px; min-height: 38px; padding: 0; background: transparent !important; border: 0 !important; box-shadow: none !important; border-radius: 50% !important; color: #526171 !important; font: 26px/1 sans-serif; }
+.ds-comment-emoji { display: flex; align-items: center; justify-content: center; }
+.ds-comment-emoji svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-send { display: flex; justify-content: center; align-items: center; width: 36px; min-width: 36px; min-height: 36px; padding: 0; margin-bottom: 1px; border: 0 !important; border-radius: 50% !important; background: #103452 !important; box-shadow: none !important; color: white !important; }
+.ds-comment-send svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ds-comment-send:disabled { opacity: .35; }
+.ds-comment-context { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 5px 40px; }
+.ds-comment-context[hidden] { display: none; }
+.ds-comment-context small { color: #7d8995; font-size: 11px; }
+body.dai-app-shell #expertSocial .ds-comments-sheet .ds-comment-context button { background: transparent !important; color: #758190 !important; border: 0 !important; box-shadow: none !important; padding: 0; min-height: 24px; min-width: 24px; font-size: 20px; }
+.ds-comment-emojis { display: flex; justify-content: space-around; gap: 2px; margin-bottom: 7px; }
+.ds-comment-emojis[hidden] { display: none; }
+body.dai-app-shell #expertSocial .ds-comment-emojis button { background: transparent !important; border: 0 !important; box-shadow: none !important; min-height: 40px; min-width: 40px; padding: 3px; font-size: 24px; }
+.ds-comments-sheet .ds-comment-form > .ds-error { font-size: 12px; padding: 7px 10px; margin: 6px 0 0; }
+.ds-comments-empty { color: #7b899b; text-align: center; padding: 24px 12px; font-size: 14px; }
+@media (max-width: 600px) {
+  .ds-dialog.ds-comments-sheet { width: 100%; height: min(640px, 72dvh); max-width: 100%; border-radius: 22px 22px 0 0; }
+  .ds-comments-scroll { padding: 0 12px 10px; }
+}
+
 
 /* Profile statistics sit outside the social root, above its tabs. */
 body.dai-app-shell #expertProfileStats .ds-stat-open,

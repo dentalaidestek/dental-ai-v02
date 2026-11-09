@@ -2,7 +2,7 @@
 <style>[data-expert-profile-error][hidden]{display:none}[data-expert-profile-error]{color:#991b1b;font-size:14px;line-height:1.5}</style>
 {% set social_ready=profile and profile.application_status=='APPROVED' and profile.verification_status=='VERIFIED' and profile.specialty_verified %}
 <div class="expert-shell expert-profile-page expert-manage-reference">
-<link rel="stylesheet" href="/static/expert-social.css?v=20261108-3">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261108-4">
 <a class="expert-reference-back" href="/account#expert-info"><img src="/static/expert-icons/arrow-left.svg" alt="">{{ 'Uzman Profilimi Yönet' if social_ready else 'Uzman Profilim' }}</a>
 {% if social_ready %}<nav id="expertManageTabs" class="ds-manage-tabs" aria-label="Uzman profil yönetimi"><button type="button" data-manage-tab="general">Genel</button><button type="button" data-manage-tab="publications">Yayınlar (ORCID)</button><button type="button" data-manage-tab="posts" aria-selected="true">Gönderiler</button><button type="button" data-manage-tab="settings">Ayarlar</button></nav><div data-manage-pane="general" hidden>{% endif %}
 {% if pending_title_change %}

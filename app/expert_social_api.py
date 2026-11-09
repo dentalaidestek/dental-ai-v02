@@ -17,8 +17,9 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, ConfigDict, Field as Input
-from sqlalchemy import and_, func, or_, update
+from sqlalchemy import and_, delete, func, or_, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 from app import (
@@ -33,6 +34,7 @@ from app.expert_social_models import (
     SocialMedia,
     SocialPreview,
     SocialComment,
+    SocialCommentLike,
     SocialLike,
     SocialReport,
     SocialDecision,
@@ -45,6 +47,7 @@ from app.expert_social_models import (
 )
 from app.auth_rate import admit
 from app.expert_social_identity import expert_display_name
+from app.expert_social_relationships import unblocked_relationship_condition
 from app.expert_consultation_requests import consultation_expert_is_verified
 
 HEADERS = {
@@ -485,9 +488,50 @@ def register(app, main):
             result.append(data)
         return result
 
+    def comment_visibility(user, model=SocialComment, *, admin_view=False):
+        conditions = [model.status != "DELETED"]
+        if not admin_view:
+            conditions.extend((
+                or_(model.status == "PUBLISHED", model.author_id == user.id),
+                unblocked_relationship_condition(main, user.id, model.author_id),
+            ))
+        return and_(*conditions)
+
+    def comment_thread_visibility(user, model=SocialComment, *, admin_view=False):
+        parent = aliased(SocialComment)
+        visible_parent = select(parent.id).where(
+            parent.id == model.parent_id,
+            parent.post_id == model.post_id,
+            parent.parent_id == None,
+            comment_visibility(user, parent, admin_view=admin_view),
+        ).exists()
+        return and_(
+            comment_visibility(user, model, admin_view=admin_view),
+            or_(model.parent_id == None, visible_parent),
+        )
+
     def comment_rows(s, rows, user, *, admin_view=False):
         if not rows:
             return []
+        ids = [c.id for c in rows]
+        root_ids = [c.id for c in rows if c.parent_id is None]
+        likes = dict(s.exec(
+            select(SocialCommentLike.comment_id, func.count())
+            .where(SocialCommentLike.comment_id.in_(ids))
+            .group_by(SocialCommentLike.comment_id)
+        ).all())
+        liked = set(s.exec(select(SocialCommentLike.comment_id).where(
+            SocialCommentLike.comment_id.in_(ids),
+            SocialCommentLike.user_id == user.id,
+        )).all())
+        reply_counts = dict(s.exec(
+            select(SocialComment.parent_id, func.count())
+            .where(
+                SocialComment.post_id.in_({c.post_id for c in rows if c.parent_id is None}),
+                SocialComment.parent_id.in_(root_ids),
+                comment_thread_visibility(user, admin_view=admin_view),
+            ).group_by(SocialComment.parent_id)
+        ).all()) if root_ids else {}
         users = {
             u.id: u
             for u in s.exec(
@@ -522,11 +566,32 @@ def register(app, main):
                 "author_profile_url": f"/expert-support/expert/{c.author_id}" if verified[c.author_id] else None,
                 "author_verified": verified[c.author_id],
                 "owned": c.author_id == user.id,
+                "like_count": likes.get(c.id, 0),
+                "liked": c.id in liked,
+                "reply_count": reply_counts.get(c.id, 0),
                 "created_at": c.created_at.isoformat() + "Z",
                 **({"moderation": lifecycle[c.id]} if c.id in lifecycle else {}),
             }
             for c in rows
         ]
+
+    def comment_write_response(s, comment, user, *, admin_view=False):
+        data = comment_rows(s, [comment], user, admin_view=admin_view)[0]
+        data["comment_count"] = s.exec(
+            select(func.count()).select_from(SocialComment).where(
+                SocialComment.post_id == comment.post_id,
+                SocialComment.status == "PUBLISHED",
+            )
+        ).one()
+        if comment.parent_id is not None:
+            data["parent_reply_count"] = s.exec(
+                select(func.count()).select_from(SocialComment).where(
+                    SocialComment.post_id == comment.post_id,
+                    SocialComment.parent_id == comment.parent_id,
+                    comment_thread_visibility(user, admin_view=admin_view),
+                )
+            ).one()
+        return data
 
     def save_image(user, raw):
         if os.getenv("RENDER") and not object_storage.enabled():
@@ -974,33 +1039,48 @@ def register(app, main):
         ident: int,
         after: int = Query(default=0, ge=0),
         limit: int = Query(default=30, ge=1, le=50),
+        threaded: bool = False,
+        parent_id: Optional[int] = Query(default=None, ge=1),
     ):
         u = actor(request)
         with Session(main.engine) as s:
             p = load_post(s, ident, u, request)
+            is_admin = bool(request.state.social_admin)
+            if parent_id is not None:
+                parent = s.exec(select(SocialComment.id).where(
+                    SocialComment.id == parent_id,
+                    SocialComment.post_id == ident,
+                    SocialComment.parent_id == None,
+                    comment_visibility(u, admin_view=is_admin),
+                )).first()
+                if parent is None:
+                    raise HTTPException(404, "Ana yorum bulunamadı.")
             stmt = select(SocialComment).where(
                 SocialComment.post_id == ident,
                 SocialComment.id > after,
-                SocialComment.status != "DELETED",
+                comment_thread_visibility(u, admin_view=is_admin),
             )
-            # Pending comments are visible only to their writer and MFA administrators.
-            if not request.state.social_admin:
-                stmt = stmt.where(
-                    or_(
-                        SocialComment.status == "PUBLISHED",
-                        SocialComment.author_id == u.id,
-                    )
-                )
+            if parent_id is not None:
+                stmt = stmt.where(SocialComment.parent_id == parent_id)
+            elif threaded:
+                stmt = stmt.where(SocialComment.parent_id == None)
             rows = list(s.exec(stmt.order_by(SocialComment.id).limit(limit + 1)).all())
             more = len(rows) > limit
             rows = rows[:limit]
             return JSONResponse(
                 {
-                    "items": comment_rows(s, rows, u),
+                    "items": comment_rows(s, rows, u, admin_view=is_admin),
                     "next_cursor": rows[-1].id if more else None,
                     "comment_count": s.exec(select(func.count()).select_from(SocialComment).where(
                         SocialComment.post_id == ident, SocialComment.status == "PUBLISHED"
                     )).one(),
+                    **({"reply_count": s.exec(
+                        select(func.count()).select_from(SocialComment).where(
+                            SocialComment.post_id == ident,
+                            SocialComment.parent_id == parent_id,
+                            comment_thread_visibility(u, admin_view=is_admin),
+                        )
+                    ).one()} if parent_id is not None else {}),
                 },
                 headers=HEADERS,
             )
@@ -1026,6 +1106,11 @@ def register(app, main):
                 or old.status == "DELETED"
             ):
                 raise HTTPException(409, "Yorum isteği değişmiş.")
+            if old and not s.exec(select(SocialComment.id).where(
+                SocialComment.id == old.id,
+                comment_thread_visibility(u, admin_view=bool(request.state.social_admin)),
+            )).first():
+                raise HTTPException(404, "Yorum bulunamadı.")
             return old
 
         with Session(main.engine) as s:
@@ -1034,7 +1119,7 @@ def register(app, main):
                 p = load_post(s, ident, u, request)
                 if p.status != "PUBLISHED" or p.comments_closed:
                     raise HTTPException(409, "Bu gönderide yorumlar kapalı.")
-                return comment_rows(s, [old], u)[0]
+                return comment_write_response(s, old, u, admin_view=bool(request.state.social_admin))
         throttle(u, "comment", 12)
         with Session(main.engine, expire_on_commit=False) as s:
             p = load_post(s, ident, u, request, lock=True)
@@ -1042,7 +1127,7 @@ def register(app, main):
                 raise HTTPException(409, "Bu gönderide yorumlar kapalı.")
             old = previous_comment(s)
             if old:
-                return comment_rows(s, [old], u)[0]
+                return comment_write_response(s, old, u, admin_view=bool(request.state.social_admin))
             if body.parent_id:
                 parent = s.get(SocialComment, body.parent_id)
                 if (
@@ -1054,6 +1139,9 @@ def register(app, main):
                     raise HTTPException(
                         400, "Yanıt için yayınlanmış bir ana yorum seçin."
                     )
+                if (not request.state.social_admin
+                        and main._users_blocked(s, u.id, parent.author_id)):
+                    raise HTTPException(404, "Ana yorum bulunamadı.")
             if s.exec(
                 select(SocialComment.id).where(
                     SocialComment.author_id == u.id,
@@ -1080,7 +1168,56 @@ def register(app, main):
             except IntegrityError as exc:
                 s.rollback()
                 raise HTTPException(409, "Bu yorum isteği zaten kullanıldı.") from exc
-            return comment_rows(s, [c], u)[0]
+            return comment_write_response(s, c, u, admin_view=bool(request.state.social_admin))
+
+    @r.put("/comments/{ident}/like")
+    def like_comment(request: Request, ident: int, body: LikeBody):
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        u = actor(request)
+        throttle(u, "comment-like", 60)
+        with Session(main.engine) as s:
+            # Erasure retains the account row. Share-lock it before content
+            # locks so erasure removes this reaction or rejects a late writer.
+            member_stmt = select(main.User).where(main.User.id == u.id)
+            if s.get_bind().dialect.name == "postgresql":
+                member_stmt = member_stmt.with_for_update(read=True, key_share=True)
+            member = s.exec(member_stmt).first()
+            if not member or not member.is_active:
+                raise HTTPException(401, "Üye girişi gerekiyor.")
+            original = s.get(SocialComment, ident)
+            if not original:
+                raise HTTPException(404, "Yorum bulunamadı.")
+            # Match reply creation/deletion's post-before-comment lock order.
+            p = load_post(s, original.post_id, u, request, lock=True)
+            comment = s.exec(select(SocialComment).where(
+                SocialComment.id == ident,
+                comment_thread_visibility(u, admin_view=bool(request.state.social_admin)),
+            ).with_for_update().execution_options(populate_existing=True)).first()
+            if not comment:
+                raise HTTPException(404, "Yorum bulunamadı.")
+            if p.status != "PUBLISHED" or comment.status != "PUBLISHED":
+                raise HTTPException(409, "Yalnızca yayınlanmış yorumlar beğenilebilir.")
+            if body.liked:
+                insert = pg_insert if s.get_bind().dialect.name == "postgresql" else sqlite_insert
+                s.execute(insert(SocialCommentLike).values(
+                    comment_id=ident, user_id=u.id,
+                ).on_conflict_do_nothing(index_elements=["comment_id", "user_id"]))
+            else:
+                s.exec(delete(SocialCommentLike).where(
+                    SocialCommentLike.comment_id == ident,
+                    SocialCommentLike.user_id == u.id,
+                ))
+            liked = s.exec(select(SocialCommentLike.comment_id).where(
+                SocialCommentLike.comment_id == ident,
+                SocialCommentLike.user_id == u.id,
+            )).first() is not None
+            count = s.exec(select(func.count()).select_from(SocialCommentLike).where(
+                SocialCommentLike.comment_id == ident,
+            )).one()
+            s.commit()
+            return {"liked": liked, "like_count": count}
 
     @r.patch("/comments/{ident}")
     def edit_comment(request: Request, ident: int, body: CommentPatch):
@@ -1108,7 +1245,7 @@ def register(app, main):
             s.add(c)
             decision(s, "COMMENT", c, u.id)
             s.commit()
-            return comment_rows(s, [c], u)[0]
+            return comment_write_response(s, c, u, admin_view=bool(request.state.social_admin))
 
     @r.delete("/comments/{ident}")
     def delete_comment(request: Request, ident: int):
