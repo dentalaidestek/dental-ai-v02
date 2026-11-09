@@ -655,205 +655,360 @@
     window.addEventListener('dai:session-ending',()=>{commentDrafts.clear();root.querySelector('[data-comments-sheet]')?.close();});
     async function toggleComments(card, p) {
       if (p.comments_closed || posts.get(p.id)?.comments_closed) return;
-      const previous=root.querySelector('[data-comments-sheet]');
-      if(previous?.open){closeDialog(previous);return;}
+      const previous = root.querySelector('[data-comments-sheet]');
+      if (previous?.open) { closeDialog(previous); return; }
       previous?.remove();
-      const toggle = card.querySelector("[data-comments-toggle]");
-      const wrap = el("dialog", "ds-dialog ds-comments-sheet");
-      wrap.dataset.commentsSheet='';wrap.dataset.commentPostId=p.id;wrap.setAttribute('aria-label','Yorumlar');
-      toggle.setAttribute("aria-expanded", "true");
-      const heading=el('header','ds-dialog-head ds-comments-head'),title=el('h2','','Yorumlar'),total=el('span','ds-comment-total',String(p.comment_count));
-      const close=button('×','ds-icon',()=>closeDialog(wrap));close.setAttribute('aria-label','Yorumları kapat');
-      heading.append(title,total,close);
-      const list = el("div",'ds-comments-list'),
-        more = button("Diğer yorumlar", "ds-text-button", () => load()),
-        form = el("form", "ds-comment-form"),
-        input = el("textarea"),
-        context = el(
-          "small",
-          "",
-          p.comments_closed ? "Yorumlar kapalı." : "Görüşünüzü paylaşın",
-        ),
-        submit = el("button", "ds-primary", "Gönder"),
-        cancel = button("Vazgeç", "ds-text-button", () => {
-          parent = null;
-          edit = null;
-          context.textContent = "Görüşünüzü paylaşın";
-          input.value = "";
-          cancel.hidden = true;
-        });
+      const toggle = card.querySelector('[data-comments-toggle]');
+      const wrap = el('dialog', 'ds-dialog ds-comments-sheet');
+      wrap.dataset.commentsSheet = '';
+      wrap.dataset.commentPostId = p.id;
+      wrap.setAttribute('aria-label', 'Yorumlar');
+      toggle.setAttribute('aria-expanded', 'true');
+      const heading = el('header', 'ds-dialog-head ds-comments-head');
+      const title = el('h2', '', 'yorum');
+      const total = el('span', 'ds-comment-total', String(p.comment_count));
+      title.prepend(total, document.createTextNode(' '));
+      const close = button('×', 'ds-icon', () => closeDialog(wrap));
+      close.setAttribute('aria-label', 'Yorumları kapat');
+      heading.append(title, close);
+      const list = el('div', 'ds-comments-list');
+      const more = button('Diğer yorumlar', 'ds-text-button', () => load());
+      const form = el('form', 'ds-comment-form');
+      const input = el('textarea');
+      const context = el('small');
+      const cancel = button('×', 'ds-text-button', () => {
+        parent = null; edit = null; input.value = ''; updateComposer();
+      });
+      cancel.setAttribute('aria-label', 'Vazgeç');
+      const replyContext = el('div', 'ds-comment-context');
+      replyContext.hidden = true;
+      replyContext.append(context, cancel);
       input.maxLength = 1500;
-      input.rows=1;input.placeholder = "Yorum ekle…";
-      input.setAttribute("aria-label", "Yorum metni");
-      submit.type = "submit";
-      const error = el("p", "ds-error");
-      error.hidden = true;
-      const bottom = el("div", "ds-comment-submit-row");
-      bottom.append(context, cancel, submit);
-      form.append(input, bottom, error);
-      cancel.hidden = true;
-      more.hidden = true;
-      const scrollArea=el('div','ds-comments-scroll');scrollArea.append(list,more);
-      wrap.append(heading,scrollArea,form);
-      root.append(wrap);
-      if (p.comments_closed) {
-        input.disabled = true;
-        submit.disabled = true;
+      input.rows = 1;
+      input.placeholder = 'Yorum ekle…';
+      input.setAttribute('aria-label', 'Yorum metni');
+      const emoji = button('', 'ds-comment-emoji', () => {
+        emojis.hidden = !emojis.hidden;
+        emoji.setAttribute('aria-expanded', String(!emojis.hidden));
+      });
+      emoji.setAttribute('aria-label', 'Emoji ekle');
+      emoji.setAttribute('aria-expanded', 'false');
+      const emojiIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      emojiIcon.setAttribute('viewBox', '0 0 24 24'); emojiIcon.setAttribute('aria-hidden', 'true');
+      const emojiPath = document.createElementNS(emojiIcon.namespaceURI, 'path');
+      emojiPath.setAttribute('d', 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM8 14a4.5 4.5 0 0 0 8 0M8 9h.01M16 9h.01');
+      emojiIcon.append(emojiPath); emoji.append(emojiIcon);
+      emoji.addEventListener('pointerdown', event => event.preventDefault());
+      const emojis = el('div', 'ds-comment-emojis');
+      emojis.hidden = true;
+      emojis.setAttribute('aria-label', 'Emojiler');
+      for (const value of ['👍', '👏', '❤️', '😊', '🦷', '🔬']) {
+        const choice = button(value, '', () => {
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? start;
+          input.setRangeText(value, start, end, 'end');
+          input.dispatchEvent(new Event('input', {bubbles: true}));
+          emojis.hidden = true;
+          emoji.setAttribute('aria-expanded', 'false');
+          input.focus();
+        });
+        choice.setAttribute('aria-label', value);
+        choice.addEventListener('pointerdown', event => event.preventDefault());
+        emojis.append(choice);
       }
-      const savedComment=commentDrafts.get(p.id);
-      let cursor = 0,
-        parent = savedComment?.parent || null,
-        edit = savedComment?.edit || null,
-        key = savedComment?.key || uuid(),signature=savedComment?.signature||null,loading=false;
-      input.value=savedComment?.text||'';
-      if(parent||edit){cancel.hidden=false;context.textContent=edit?'Yorumu düzenliyorsunuz':'Yoruma yanıt';}
-      const scroll=window.scrollY,overflow=document.body.style.overflow;
-      wrap.addEventListener('cancel',event=>{event.preventDefault();closeDialog(wrap);});
-      wrap.addEventListener('click',event=>{if(event.target===wrap)closeDialog(wrap);});
-      wrap.addEventListener('close',()=>{
-        if(!sessionEnding)commentDrafts.set(p.id,{text:input.value,parent,edit,key,signature});
-        else {input.value='';commentDrafts.clear();}
-        if(commentDrafts.size>20)commentDrafts.delete(commentDrafts.keys().next().value);
-        toggle.setAttribute('aria-expanded','false');document.body.style.overflow=overflow;
-        if(!sessionEnding){window.scrollTo(0,scroll);toggle.focus({preventScroll:true});}
-      },{once:true});
-      let dragStart=null;
-      heading.addEventListener('pointerdown',event=>{if(!event.target.closest('button'))dragStart=event.clientY;});
-      heading.addEventListener('pointerup',event=>{if(dragStart!==null&&event.clientY-dragStart>75)closeDialog(wrap);dragStart=null;});
-      input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(110,input.scrollHeight)+'px';commentDrafts.set(p.id,{text:input.value,parent,edit,key,signature});});
-      function count(value){p.comment_count=value;toggle.lastChild.textContent=value+' yorum';total.textContent=String(value);}
-      function inform(message){error.textContent=message;error.hidden=false;}
+      const submit = el('button', 'ds-comment-send');
+      submit.type = 'submit';
+      submit.setAttribute('aria-label', 'Gönder');
+      const sendIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      sendIcon.setAttribute('viewBox', '0 0 24 24');
+      sendIcon.setAttribute('aria-hidden', 'true');
+      const sendPath = document.createElementNS(sendIcon.namespaceURI, 'path');
+      sendPath.setAttribute('d', 'M12 19V5m-6 6 6-6 6 6');
+      sendIcon.append(sendPath); submit.append(sendIcon);
+      const selfAvatar = el('span', 'ds-comment-self');
+      if (root.dataset.userPhoto) {
+        const photo = el('img', 'ds-comment-avatar');
+        photo.src = root.dataset.userPhoto; photo.alt = '';
+        selfAvatar.append(photo);
+      } else selfAvatar.append(el('span', 'ds-comment-avatar', (root.dataset.userName || 'S').slice(0, 1)));
+      const pill = el('div', 'ds-comment-input');
+      pill.append(input, emoji, submit);
+      const inputRow = el('div', 'ds-comment-input-row');
+      inputRow.append(selfAvatar, pill);
+      const error = el('p', 'ds-error');
+      error.setAttribute('role', 'status'); error.hidden = true;
+      form.append(replyContext, emojis, inputRow, error);
+      more.hidden = true;
+      const scrollArea = el('div', 'ds-comments-scroll');
+      scrollArea.append(list, more);
+      wrap.append(heading, scrollArea, form);
+      root.append(wrap);
+      const saved = commentDrafts.get(p.id);
+      let cursor = 0, parent = saved?.parent || null, edit = saved?.edit || null;
+      let key = saved?.key || uuid(), signature = saved?.signature || null;
+      let loading = false, submitting = false, mutationVersion = 0;
+      let pendingMutations = 0;
+      const mutationWaiters = new Set();
+      function beginMutation() { mutationVersion++; pendingMutations++; }
+      function endMutation() {
+        mutationVersion++; pendingMutations--;
+        if (!pendingMutations) { for (const resolve of mutationWaiters) resolve(); mutationWaiters.clear(); }
+      }
+      async function waitForMutations() {
+        while (pendingMutations) await new Promise(resolve => mutationWaiters.add(resolve));
+      }
+      const threads = new Map();
+      input.value = saved?.text || '';
+      function updateComposer() {
+        input.style.height = 'auto';
+        input.style.height = Math.min(96, input.scrollHeight) + 'px';
+        submit.disabled = submitting || !input.value.trim() || p.comments_closed;
+        input.disabled = p.comments_closed;
+        replyContext.hidden = !parent && !edit;
+        if (edit) context.textContent = 'Yorumu düzenliyorsunuz';
+        else if (parent && !context.textContent) context.textContent = 'Yoruma yanıt';
+        if (!sessionEnding && wrap.open && wrap.isConnected) commentDrafts.set(p.id, {text: input.value, parent, edit, key, signature});
+      }
+      input.addEventListener('input', updateComposer);
+      function count(value) {
+        p.comment_count = value;
+        toggle.lastChild.textContent = value + ' yorum';
+        total.textContent = String(value);
+      }
+      function inform(message) { error.textContent = message; error.hidden = false; }
+      function relativeTime(raw) {
+        const seconds = Math.max(0, Math.floor((Date.now() - new Date(raw).valueOf()) / 1000));
+        if (!Number.isFinite(seconds)) return '';
+        if (seconds < 60) return seconds + ' sn';
+        if (seconds < 3600) return Math.floor(seconds / 60) + ' dk';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + ' sa';
+        if (seconds < 604800) return Math.floor(seconds / 86400) + ' gün';
+        return new Date(raw).toLocaleDateString('tr-TR', {day: 'numeric', month: 'short'});
+      }
+      function beginReply(c) {
+        parent = c.parent_id || c.id; edit = null;
+        context.textContent = c.author_name + ' adlı üyeye yanıt';
+        updateComposer(); input.focus();
+      }
       function renderComment(c) {
-        const row = el("article", "ds-comment");
-        row.dataset.commentId = c.id;
-        row.dataset.parentId=c.parent_id||'';
+        const row = el('article', 'ds-comment');
+        row.dataset.commentId = c.id; row.dataset.parentId = c.parent_id || '';
         row.dataset.reply = String(!!c.parent_id);
-        const author=el('div','ds-comment-author'),identity=el(c.author_profile_url?'a':'span','ds-comment-identity');
-        if(c.author_profile_url){identity.href=c.author_profile_url;identity.setAttribute('aria-label',c.author_name);}
-        if(c.author_photo){const photo=el('img','ds-comment-avatar');photo.src=c.author_photo;photo.alt='';photo.loading='lazy';identity.append(photo);}
-        identity.append(el('b','',c.author_name));
-        if(c.author_verified){const badge=el('span','ds-verified','✓');badge.setAttribute('aria-label','Mesleki belgesi doğrulanmış uzman');identity.append(badge);}
-        author.append(identity,
-          el(
-            "small",
-            "",
-            ` · ${date(c.created_at)}${c.parent_id ? " · Yanıt" : ""}`,
-          ));row.append(author,el("p", "", c.text));
-        if (c.status !== "PUBLISHED") {row.append(statusBadge(c.status,c.moderation));if(c.moderation?.reason)row.append(el('small','ds-muted',c.moderation.reason));}
-        const tools = el("div", "ds-comment-tools");
-        if (!c.parent_id && c.status === "PUBLISHED" && !p.comments_closed)
-          tools.append(
-            button("Yanıtla", "", () => {
-              parent = c.id;
-              edit = null;
-              context.textContent = c.author_name + " adlı üyeye yanıt";
-              cancel.hidden = false;
-              input.focus();
-            }),
-          );
-        if (c.owned && !p.comments_closed)
-          tools.append(
-            button("Düzenle", "", () => {
-              edit = c;
-              parent = null;
-              input.value = c.text;
-              context.textContent = "Yorumu düzenliyorsunuz";
-              cancel.hidden = false;
-              input.focus();
-            }),
-          );
-        if (c.owned || p.owned)
-          tools.append(
-            button("Sil", "", async (event) => {
-              const remove=event.currentTarget;if(remove.disabled)return;
-              if (!confirm("Yorum silinsin mi?")) return;
-              remove.disabled=true;
-              try {
-                const result=await api("/comments/" + c.id, "DELETE");
-                list.querySelectorAll(`[data-parent-id="${c.id}"]`).forEach(reply=>reply.remove());
-                row.remove();
-                count(result.comment_count);
-                if(parent===c.id||edit?.id===c.id){parent=null;edit=null;cancel.hidden=true;context.textContent='Görüşünüzü paylaşın';}
-              } catch (e) {
-                inform(e.message);
-              }finally{remove.disabled=false;}
-            }),
-          );
-        tools.append(
-          button("Bildir", "", () =>
-            report("COMMENT", c.id,inform).catch((e) => inform(e.message)),
-          ),
-        );
-        row.append(tools);
+        const author = el('div', 'ds-comment-author');
+        const identity = el(c.author_profile_url ? 'a' : 'span', 'ds-comment-identity');
+        if (c.author_profile_url) { identity.href = c.author_profile_url; identity.setAttribute('aria-label', c.author_name); }
+        const photo = c.author_photo ? el('img', 'ds-comment-avatar') : el('span', 'ds-comment-avatar', c.author_name.slice(0, 1));
+        if (c.author_photo) { photo.src = c.author_photo; photo.alt = ''; photo.loading = 'lazy'; }
+        identity.append(photo, el('b', '', c.author_name));
+        if (c.author_verified) {
+          const badge = el('span', 'ds-verified', '✓');
+          badge.setAttribute('aria-label', 'Mesleki belgesi doğrulanmış uzman'); identity.append(badge);
+        }
+        author.append(identity);
+        const body = el('p', 'ds-comment-text', c.text);
+        row.append(author, body);
+        if (c.text.length > 240 || c.text.split('\n').length > 4) {
+          body.classList.add('is-collapsed');
+          const expand = button('daha fazla', 'ds-comment-expand', () => {
+            const collapsed = body.classList.toggle('is-collapsed');
+            expand.textContent = collapsed ? 'daha fazla' : 'daha az';
+            expand.setAttribute('aria-expanded', String(!collapsed));
+          });
+          expand.setAttribute('aria-expanded', 'false'); row.append(expand);
+        }
+        if (c.status !== 'PUBLISHED') {
+          row.append(statusBadge(c.status, c.moderation));
+          if (c.moderation?.reason) row.append(el('small', 'ds-muted', c.moderation.reason));
+        }
+        const reactionError = el('p', 'ds-comment-error');
+        reactionError.setAttribute('role', 'status'); reactionError.hidden = true;
+        const likeCount = document.createTextNode(String(c.like_count || 0));
+        const like = button('', 'ds-comment-like', async () => {
+          if (like.disabled) return;
+          beginMutation();
+          like.disabled = true; like.setAttribute('aria-busy', 'true'); reactionError.hidden = true;
+          try {
+            const result = await api('/comments/' + c.id + '/like', 'PUT', {liked: !c.liked});
+            c.liked = result.liked; c.like_count = result.like_count;
+            likeCount.textContent = String(c.like_count);
+            like.setAttribute('aria-pressed', String(c.liked));
+            like.setAttribute('aria-label', c.liked ? 'Yorumu beğenmekten vazgeç' : 'Yorumu beğen');
+          } catch (e) {
+            reactionError.textContent = e.message; reactionError.hidden = false;
+            reactionError.scrollIntoView({block: 'nearest'});
+          } finally { endMutation(); like.disabled = false; like.removeAttribute('aria-busy'); }
+        });
+        like.dataset.commentLike = '';
+        like.setAttribute('aria-label', c.liked ? 'Yorumu beğenmekten vazgeç' : 'Yorumu beğen');
+        like.setAttribute('aria-pressed', String(!!c.liked));
+        like.disabled = c.status !== 'PUBLISHED';
+        like.append(likeCount); actionIcon(like, 'heart');
+        const tools = el('div', 'ds-comment-tools');
+        const created = el('time', '', relativeTime(c.created_at));
+        created.dateTime = c.created_at; created.title = date(c.created_at); tools.append(created);
+        if (c.status === 'PUBLISHED' && !p.comments_closed) tools.append(button('Yanıtla', '', () => beginReply(c)));
+        const options = [];
+        if (c.owned && !p.comments_closed) options.push(['Düzenle', () => {
+          edit = c; parent = null; input.value = c.text; updateComposer(); input.focus();
+        }]);
+        if (c.owned || p.owned) options.push(['Sil', async () => {
+          if (!confirm('Yorum silinsin mi?')) return;
+          beginMutation();
+          try {
+            const result = await api('/comments/' + c.id, 'DELETE');
+            if (!c.parent_id) { threads.get(c.id)?.host.remove(); threads.delete(c.id); }
+            else {
+              const state = threads.get(c.parent_id);
+              state?.items.delete(c.id); row.remove();
+              if (state) { state.comment.reply_count = Math.max(0, state.comment.reply_count - 1); updateThread(state); }
+            }
+            count(result.comment_count);
+            if (parent === c.id || edit?.id === c.id || edit?.parent_id === c.id) { parent = null; edit = null; updateComposer(); }
+            if (!threads.size) list.append(el('p', 'ds-comments-empty', 'İlk yorumu siz yazın.'));
+          } catch (e) { inform(e.message); }
+          finally { endMutation(); }
+        }]);
+        options.push(['Bildir', () => report('COMMENT', c.id, inform).catch(e => inform(e.message))]);
+        const controls = menu(options);
+        controls.classList.add('ds-comment-menu');
+        controls.querySelector('summary').setAttribute('aria-label', 'Yorum seçenekleri');
+        controls.addEventListener('toggle', () => {
+          if (!controls.open) return;
+          wrap.querySelectorAll('.ds-comment-menu[open]').forEach(other => { if (other !== controls) other.open = false; });
+          controls.classList.toggle('opens-up', controls.getBoundingClientRect().bottom + controls.lastElementChild.offsetHeight > scrollArea.getBoundingClientRect().bottom);
+        });
+        tools.append(controls); row.append(tools, like, reactionError);
         return row;
       }
-      async function load() {
-        if(loading)return;loading=true;
-        more.disabled = true;
+      function updateThread(state) {
+        const count = state.comment.reply_count || 0;
+        state.toggle.hidden = count === 0;
+        state.toggle.textContent = state.expanded ? 'Yanıtları gizle' : count + ' yanıtı görüntüle';
+        state.toggle.setAttribute('aria-expanded', String(state.expanded));
+        state.replies.hidden = !state.expanded;
+        state.more.hidden = !state.hasMore;
+      }
+      function insertReply(state, c) {
+        state.items.get(c.id)?.remove();
+        state.items.set(c.id, renderComment(c));
+        for (const [, row] of [...state.items].sort((a, b) => a[0] - b[0])) state.rows.append(row);
+      }
+      function putRoot(c) {
+        list.querySelector('.ds-comments-empty')?.remove();
+        let state = threads.get(c.id);
+        const row = renderComment(c);
+        if (!state) {
+          const host = el('div', 'ds-comment-thread');
+          const replies = el('div', 'ds-comment-replies');
+          replies.id = 'replies-' + p.id + '-' + c.id;
+          replies.hidden = true;
+          const rows = el('div');
+          const moreReplies = button('Diğer yanıtlar', 'ds-text-button', () => loadReplies(state));
+          replies.append(rows, moreReplies);
+          state = {comment: c, host, row, replies, rows, more: moreReplies, items: new Map(), expanded: false, loaded: false, hasMore: false, loading: false, cursor: 0};
+          host.append(row, replies); list.append(host); threads.set(c.id, state);
+        } else { state.row.replaceWith(row); state.row = row; state.comment = c; }
+        state.toggle = button('', 'ds-replies-toggle', async () => {
+          state.expanded = !state.expanded; updateThread(state);
+          if (state.expanded && !state.loaded) await loadReplies(state);
+        });
+        state.toggle.dataset.repliesToggle = '';
+        state.toggle.setAttribute('aria-controls', state.replies.id);
+        row.append(state.toggle); updateThread(state);
+        return state;
+      }
+      async function loadReplies(state, retries = 1) {
+        if (state.loading) return;
+        await waitForMutations();
+        if (!wrap.open || !threads.has(state.comment.id) || state.loading) return;
+        const version = mutationVersion;
+        let retry = false;
+        state.loading = true; state.more.disabled = true; state.toggle.disabled = true;
         try {
-          const data = await api(
-            "/posts/" + p.id + "/comments?after=" + cursor,
-          );
-          for (const c of data.items) list.append(renderComment(c));
-          if(data.comment_count!==undefined)count(data.comment_count);
-          if(!list.children.length)list.append(el('p','ds-comments-empty','İlk yorumu siz yazın.'));
-          cursor = data.next_cursor || cursor;
-          more.hidden = !data.next_cursor;
-        } catch (e) {
-          error.hidden = false;
-          error.textContent = e.message;
-          more.hidden = false;
-          more.textContent = "Yorumları yeniden yükle";
-        } finally {
-          loading=false;
-          more.disabled = false;
+          const data = await api('/posts/' + p.id + '/comments?parent_id=' + state.comment.id + '&after=' + state.cursor + '&limit=10');
+          if (!wrap.open || !threads.has(state.comment.id)) return;
+          if (version !== mutationVersion || pendingMutations) { retry = true; return; }
+          for (const c of data.items) insertReply(state, c);
+          state.cursor = data.next_cursor || state.cursor;
+          state.hasMore = !!data.next_cursor; state.loaded = true;
+          state.comment.reply_count = data.reply_count ?? Math.max(state.comment.reply_count || 0, state.items.size);
+          updateThread(state);
+          if (data.comment_count !== undefined) count(data.comment_count);
+        } catch (e) { inform(e.message); }
+        finally {
+          state.loading = false; state.more.disabled = false; state.toggle.disabled = false;
+          if (retry && retries > 0 && wrap.open && threads.has(state.comment.id)) await loadReplies(state, retries - 1);
         }
       }
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        if (!input.value.trim() || submit.disabled) return;
-        submit.disabled = true;
-        error.hidden = true;
-        const previouslyPublished = edit?.status === "PUBLISHED";
-        const submitted=input.value;
-        const submittedParent=parent,submittedEdit=edit?.id;
-        const nextSignature=JSON.stringify([submitted,parent]);
-        if(signature&&signature!==nextSignature)key=uuid();signature=nextSignature;
+      async function load(retries = 1) {
+        if (loading) return;
+        await waitForMutations();
+        if (!wrap.open || loading) return;
+        const version = mutationVersion;
+        let retry = false;
+        loading = true; more.disabled = true;
         try {
-          const data = await api(
-            edit ? "/comments/" + edit.id : "/posts/" + p.id + "/comments",
-            edit ? "PATCH" : "POST",
-            edit
-              ? { text: input.value, version: edit.version }
-              : { text: input.value, parent_id: parent, idempotency_key: key },
-          );
-          if (edit)
-            list
-              .querySelector(`[data-comment-id="${edit.id}"]`)
-              ?.replaceWith(renderComment(data));
-          else {list.querySelector('.ds-comments-empty')?.remove();list.append(renderComment(data));}
-          key = uuid();
-          parent = null;
-          edit = null;
-          if(input.value===submitted)input.value = "";
-          cancel.hidden = true;
-          context.textContent = "Görüşünüzü paylaşın";
-          count(Math.max(0, p.comment_count + (data.status === "PUBLISHED" ? 1 : 0) - (previouslyPublished ? 1 : 0)));
-          const stored=commentDrafts.get(p.id);
-          if(stored?.text===submitted&&stored.parent===submittedParent&&stored.edit?.id===submittedEdit)
-            commentDrafts.delete(p.id);
-          if (data.status !== "PUBLISHED")
-            inform(
-              labels[data.status] + ": yorumunuz diğer üyelere gösterilmiyor.",
-            );
-        } catch (e) {
-          error.hidden = false;
-          error.textContent = e.message;
-        } finally {
-          submit.disabled = false;
+          const data = await api('/posts/' + p.id + '/comments?threaded=true&after=' + cursor);
+          if (!wrap.open) return;
+          if (version !== mutationVersion || pendingMutations) { retry = true; return; }
+          for (const c of data.items) putRoot(c);
+          if (data.comment_count !== undefined) count(data.comment_count);
+          if (!list.children.length) list.append(el('p', 'ds-comments-empty', 'İlk yorumu siz yazın.'));
+          cursor = data.next_cursor || cursor; more.hidden = !data.next_cursor;
+        } catch (e) { inform(e.message); more.hidden = false; more.textContent = 'Yorumları yeniden yükle'; }
+        finally {
+          loading = false; more.disabled = false;
+          if (retry && retries > 0 && wrap.open) await load(retries - 1);
         }
+      }
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!input.value.trim() || submitting || p.comments_closed) return;
+        submitting = true; beginMutation(); submit.setAttribute('aria-busy', 'true'); updateComposer(); error.hidden = true;
+        const submitted = input.value, targetParent = parent, targetEdit = edit;
+        const previouslyPublished = edit?.status === 'PUBLISHED';
+        const nextSignature = JSON.stringify([submitted, parent, edit?.id || null]);
+        if (signature && signature !== nextSignature) key = uuid(); signature = nextSignature;
+        try {
+          const data = await api(edit ? '/comments/' + edit.id : '/posts/' + p.id + '/comments', edit ? 'PATCH' : 'POST',
+            edit ? {text: submitted, version: edit.version} : {text: submitted, parent_id: parent, idempotency_key: key});
+          const stored = commentDrafts.get(p.id);
+          if (stored?.text === submitted && stored.parent === targetParent && stored.edit?.id === targetEdit?.id) commentDrafts.delete(p.id);
+          if (root.querySelector('[data-comments-sheet]') !== wrap) return;
+          count(data.comment_count ?? Math.max(0, p.comment_count + (data.status === 'PUBLISHED' ? 1 : 0) - (previouslyPublished ? 1 : 0)));
+          if (!data.parent_id) putRoot(data);
+          else {
+            const state = threads.get(data.parent_id);
+            if (state) {
+              state.comment.reply_count = data.parent_reply_count ?? ((state.comment.reply_count || 0) + (targetEdit ? 0 : 1));
+              insertReply(state, data); state.expanded = true; updateThread(state);
+              if (!state.loaded) queueMicrotask(() => { if (wrap.open) loadReplies(state); });
+            }
+          }
+          key = uuid(); signature = null;
+          if (input.value === submitted && parent === targetParent && edit?.id === targetEdit?.id) {
+            input.value = '';
+            parent = null; edit = null; context.textContent = '';
+          }
+          if (data.status !== 'PUBLISHED') inform(labels[data.status] + ': yorumunuz diğer üyelere gösterilmiyor.');
+          else if (targetParent && !threads.has(targetParent)) inform('Yanıtınız eklendi.');
+        } catch (e) { inform(e.message); }
+        finally { endMutation(); submitting = false; submit.removeAttribute('aria-busy'); updateComposer(); }
       });
-      openDialog(wrap);document.body.style.overflow='hidden';
+      const scroll = window.scrollY, overflow = document.body.style.overflow;
+      wrap.addEventListener('cancel', event => { event.preventDefault(); closeDialog(wrap); });
+      wrap.addEventListener('click', event => { if (event.target === wrap) closeDialog(wrap); });
+      wrap.addEventListener('close', () => {
+        if (!sessionEnding) commentDrafts.set(p.id, {text: input.value, parent, edit, key, signature});
+        else { input.value = ''; commentDrafts.clear(); }
+        if (commentDrafts.size > 20) commentDrafts.delete(commentDrafts.keys().next().value);
+        toggle.setAttribute('aria-expanded', 'false'); document.body.style.overflow = overflow;
+        if (!sessionEnding) { window.scrollTo(0, scroll); toggle.focus({preventScroll: true}); }
+      }, {once: true});
+      let dragStart = null;
+      heading.addEventListener('pointerdown', event => { if (!event.target.closest('button')) dragStart = event.clientY; });
+      heading.addEventListener('pointerup', event => { if (dragStart !== null && event.clientY - dragStart > 75) closeDialog(wrap); dragStart = null; });
+      openDialog(wrap); document.body.style.overflow = 'hidden'; updateComposer();
       await load();
     }
 

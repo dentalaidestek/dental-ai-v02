@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlmodel import Session, select
 
 from app.study_index_jobs import enqueue_material_deletion, tombstone_material
@@ -54,6 +54,10 @@ def begin_account_erasure(
     extra_storage: list[str] = []
     from app.expert_social_maintenance import erase_user_content
     erase_user_content(session, user_id)
+    # Account erasure retains a pseudonymous User row, so its FK cascade does
+    # not run. Remove the member's comment reactions in the same transaction.
+    from app.expert_social_models import SocialCommentLike
+    session.exec(delete(SocialCommentLike).where(SocialCommentLike.user_id == user_id))
     for verification in session.exec(select(MembershipVerification).where(MembershipVerification.user_id == user_id)).all():
         extra_storage.append(verification.document_path)
         session.delete(verification)

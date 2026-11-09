@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="/static/expert-social.css?v=20261108-3">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261109-1">
 <style>
 .expert-following-page{max-width:720px;padding:20px 14px 100px}
 .expert-following-page .expert-back-link{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:#425b74;text-decoration:none;font-size:14px;font-weight:650}
@@ -19,12 +19,12 @@
     <p>Takip ettiğiniz uzmanların son paylaşımları.</p>
     <a class="expert-following-discover" href="/expert-support">Uzmanları keşfet →</a>
   </header>
-  <section id="expertSocial" class="ds-root" data-expert-social data-feed-mode="following" data-owner="0" data-expert-id="0" data-user-id="{{ user.id }}" aria-label="Takip edilen uzmanların gönderileri">
+  <section id="expertSocial" class="ds-root" data-expert-social data-feed-mode="following" data-owner="0" data-expert-id="0" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}" data-user-photo="{{ profile_photo_url(user) if user.profile_photo_path else '' }}" aria-label="Takip edilen uzmanların gönderileri">
     <p class="ds-notice" role="status" aria-live="polite" data-notice hidden></p>
     <div class="ds-feed" data-feed aria-live="polite"></div>
     <button type="button" class="ds-secondary ds-more" data-more-posts hidden>Daha fazla gönderi</button>
   </section>
 </div>
 <script src="/static/expert-media-viewer.js?v=1" defer></script>
-<script src="/static/expert-social.js?v=20261108-3" defer></script>
+<script src="/static/expert-social.js?v=20261109-1" defer></script>
 {% endblock %}

@@ -100,7 +100,7 @@
 <strong>KULLANICILAR</strong>
 <a href="{{admin_path}}?section=users">Kullanıcılar</a><a href="{{admin_path}}?section=experts">Uzmanlar</a><a href="{{admin_path}}?section=approvals">Onay Bekleyenler {% if pending_rows %}<i>{{pending_count}}</i>{% endif %}</a><a href="{{admin_path}}?section=bans">Ban İşlemleri</a><a href="{{admin_path}}?section=search">Kullanıcı Ara</a>
 <strong>İLETİŞİM</strong>
-<a href="{{admin_path}}/social">Gönderi ve Yorum Denetimi</a><a href="{{admin_path}}?section=complaints">Şikayet / Sorun Bildirimleri {% if open_report_count %}<i>{{open_report_count}}</i>{% endif %}</a><a href="{{admin_path}}?section=support">Destek Talepleri</a><a href="{{admin_path}}?section=broadcast">Toplu Bildirim Gönder</a><a href="{{admin_path}}?section=notice">Kullanıcıya Özel Bildirim</a>
+<a href="{{admin_path}}/social">Gönderi ve Yorum Denetimi {% if social_review_count %}<i>{{ social_review_count }}</i>{% endif %}</a><a href="{{admin_path}}?section=complaints">Şikayet / Sorun Bildirimleri {% if open_report_count %}<i>{{open_report_count}}</i>{% endif %}</a><a href="{{admin_path}}?section=support">Destek Talepleri</a><a href="{{admin_path}}?section=broadcast">Toplu Bildirim Gönder</a><a href="{{admin_path}}?section=notice">Kullanıcıya Özel Bildirim</a>
 <strong>SİTE YÖNETİMİ</strong>
 <a href="{{admin_path}}?section=homepage">Ana Sayfa İçerikleri</a><a href="{{admin_path}}?section=announcements">Duyurular</a><a href="{{admin_path}}?section=faq">SSS Yönetimi</a><a href="{{admin_path}}?section=legal">Yasal Sayfalar</a><a href="{{admin_path}}?section=maintenance">Bakım Modu</a>
 <a href="/admin/member-verifications">Üyelik Belgeleri</a>

@@ -179,5 +179,12 @@
     load();
   });
   $("[data-admin-more]").addEventListener("click", () => load(false));
-  load();
+  const params = new URLSearchParams(location.search);
+  const initialKind = params.get('kind'), target = params.get('target');
+  if (['POST', 'COMMENT', 'PUBLICATION'].includes(initialKind)) $('[data-kind]').value = initialKind;
+  if (['POST', 'COMMENT', 'PUBLICATION'].includes(initialKind) && /^[1-9]\d*$/.test(target || '')) {
+    api('/moderation/' + initialKind + '/' + target).then(data => {
+      list.replaceChildren(render(data.item, initialKind));
+    }).catch(error => explain(error.message));
+  } else load();
 })();

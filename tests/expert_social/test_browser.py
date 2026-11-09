@@ -191,6 +191,7 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
             "button", name="Gönder", exact=True
         ).click()
         expect(page.locator(".ds-comment")).to_have_count(2)
+        page.locator(".ds-comment").first.get_by_label("Yorum seçenekleri", exact=True).click()
         page.locator(".ds-comment").first.get_by_role(
             "button", name="Düzenle", exact=True
         ).click()
@@ -203,10 +204,13 @@ def test_mobile_profile_composer_publication_and_member_flow(browser_app, width)
         )
         expect(page.locator("[data-comments-toggle]")).to_contain_text("2 yorum")
         page.get_by_role('button',name='Yorumları kapat',exact=True).click()
-        page.get_by_role("button", name="Beğen", exact=True).click()
-        expect(page.get_by_role("button", name="Beğenmekten vazgeç", exact=True)).to_have_attribute(
+        with page.expect_response(lambda r: r.request.method == 'PUT' and r.url.endswith('/like')) as liked:
+            page.get_by_role("button", name="Beğen", exact=True).click()
+        assert liked.value.status == 200
+        expect(page.locator('[data-feed] .ds-actions button[aria-pressed]')).to_have_attribute(
             "aria-pressed", "true"
         )
+        expect(page.locator('[data-feed] .ds-actions button[aria-pressed]')).to_have_attribute('aria-label', 'Beğenmekten vazgeç')
         assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
         # Screenshots are test artifacts, never seeded into production UI.
         dest = Path(os.getenv("TEST_ARTIFACT_DIR", str(tmp / "screenshots")))
