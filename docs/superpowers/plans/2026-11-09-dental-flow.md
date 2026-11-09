@@ -16,8 +16,9 @@ Yeni tablo, AI çağrısı, servis ve ana sayfada besleme isteği yok. Bekleyen 
 
 Yetki/aktif uzman durumunun değişmesi; iki yönlü engeller; sayfa sınırı silinince cursor; filtre/sekme korunması; aynı uzmanın birden çok kartında takip durumunun tutarlılığı.
 
-- [ ] API başarısız testleri: keşfet/takip, branş doğrulama, gizli içerik, aktiflik/engeller, cursor ve sorgu sınırı.
-- [ ] Paylaşılan feed sorgusu, toplu takip/uygunluk metadatası ve tek Dental Akış sayfası.
-- [ ] Mobil/masaüstü görünüm, mevcut kart eylemleri, ana sayfa/menü girişleri; kendi gönderi menüsünün yönlendirmesi.
-- [ ] API/PostgreSQL ve mevcut akış regresyonları, gerçek Chromium etkileşim/taşma/ekran görüntüleri.
-- [ ] Bağımsız inceleme; ayrı PR ve doğrulanmış teslim raporu.
+- [x] API başarısız testleri: keşfet/takip, branş doğrulama, gizli içerik, aktiflik/engeller, cursor ve sorgu sınırı.
+- [x] Paylaşılan feed sorgusu, toplu takip/uygunluk metadatası ve tek Dental Akış sayfası.
+- [x] Mobil/masaüstü görünüm, mevcut kart eylemleri, ana sayfa/menü girişleri; kendi gönderi menüsünün yönlendirmesi.
+- [x] API/PostgreSQL ve mevcut akış regresyonları; üç yeni DOM etkileşim kontrolü.
+- [ ] Gerçek Chromium etkileşim/taşma/ekran görüntüleri: yerel socket izni ve GitHub jobs oluşturulmaması nedeniyle engelli.
+- [x] Bağımsız inceleme; taslak PR #255 ve doğrulama sınırlarıyla teslim raporu.

@@ -15,6 +15,12 @@ Yeni tablo, migration, AI çağrısı, arama sağlayıcısı veya ücretli servi
 - İlk hedefli API/gerçek yerel PostgreSQL ve mevcut ilişki regresyonu: **41 geçti, 1 tarayıcı testi bu koşudan hariç bırakıldı**.
 - Yeni Chromium senaryoları: 360/390/430/1280 px akış, filtre/sekme, takip durumunun kalıcılığı, destek/profil bağlantıları, mevcut yorum gönderimi, kendi gönderisini yönetme, hata sonrası yeniden yükleme ve gecikmiş sayfa.
 - Bu ortamda Chromium başlatma denemesi AF_UNIX socket izin hatası nedeniyle uygulama açılmadan durdu. Gerçek tarayıcı doğrulaması PR'ın mevcut GitHub Expert Social iş akışında yapılır; yerel görüntü doğrulandı iddiası yoktur.
-- Nihai tam regresyon, inceleme ve ekran kanıtı teslim kaydına eklenir. PR #254 sürümündeki bağımsız akademik/genel test başarısızlıklarının bu özellikte düzeltildiği iddia edilmez.
+- Geniş yerel pakette **480 geçti, 4 atlandı**. Ayrı ilişki koşusuyla örtüşmeyen toplam **504 geçti, 4 atlandı**; hedefli 41 test bu sayılara dahildir. Eski yorum taslakları için iki JSDOM senaryosu da geçti. Gerçek `expert-social.js` ile ek üç JSDOM kontrolü geçti: gecikmiş sayfada takip tercihi korunması, takipten çıkınca bütün kartların kaldırılması ve başarısız yüklemeden sonra çalışan yeniden deneme. Bunlar tarayıcı yerleşim testi yerine geçmez. PR #254 sürümündeki bağımsız akademik/genel test başarısızlıklarının bu özellikte düzeltildiği iddia edilmez.
 
-Çalışma ayrı PR olarak hazırlanır. Bu özellik için main birleştirmesi veya canlı dağıtım yapılmadı.
+## PR ve tarayıcı doğrulama engeli
+
+[PR #255](https://github.com/dentalaidestek/dental-ai-v02/pull/255), kaynak commit `be4815326d00d88217a5c52e46d32fe66365f66c`.
+
+GitHub Expert Social koşusu `42671476759` test işi oluşturmadan başarısız sona erdi (`jobs: []`). Aynı commit'in diğer üç iş akışında da test işi yok. Yeniden çalıştırma API'si 403 `This workflow run cannot be retried` döndürdü. Sağlayıcı yanıtında kesin neden yoktur; kota veya uygulama hatası olduğu varsayılmadı. Bu nedenle Chromium senaryoları ve 360/390/430/1280 px ekran görüntüleri doğrulanamadı. GitHub koşusu geçmiş sayılmaz. Kod bağımsız incelemede önemli açık bulgu vermedi.
+
+PR tarayıcı doğrulaması bekleyen taslak olarak tutuldu. Bu özellik için main birleştirmesi veya canlı dağıtım yapılmadı.
