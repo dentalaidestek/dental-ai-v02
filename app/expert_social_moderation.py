@@ -151,6 +151,9 @@ def record(session, kind, row, actor_id=None, reason=None, *, human=False,
     current.lease_until = None
     session.add(current)
     _event(session, current, actor_id=actor_id)
+    if state not in {"WAITING_HUMAN", "FAILED"} and row.version > 1:
+        from app.expert_social_review_notifications import resolve_targets
+        resolve_targets(session, kind, [row.id])
     return current
 
 
@@ -247,7 +250,9 @@ def cancel_tasks(session, *, kind=None, versions=None, owner=None):
                                     SocialModerationTask.target_id.in_(versions))
     if owner is not None:
         statement = statement.where(SocialModerationTask.owner_id == owner)
+    removed = {}
     for task in session.exec(statement.with_for_update()).all():
+        removed.setdefault(task.target_type, []).append(task.target_id)
         if task.last_decision_status == "DELETED":
             continue
         task.content_version = versions[task.target_id] if versions else task.content_version + 1
@@ -261,6 +266,9 @@ def cancel_tasks(session, *, kind=None, versions=None, owner=None):
         task.updated_at = now()
         session.add(task)
         _event(session, task)
+    from app.expert_social_review_notifications import resolve_targets
+    for target_kind, identifiers in removed.items():
+        resolve_targets(session, target_kind, identifiers)
 
 
 def backfill_pending(engine, *, limit=60):
@@ -394,6 +402,8 @@ def retry_failed(engine, *, limit=2):
                     task.revision += 1
                     session.add(task)
                     _event(session, task)
+                    from app.expert_social_review_notifications import resolve_targets
+                    resolve_targets(session, kind, [ident])
                 elif row.version != version or task.content_version != version:
                     record(session, kind, row, current=task, source="RECONCILED")
                 else:

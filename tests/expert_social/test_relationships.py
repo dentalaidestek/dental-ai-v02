@@ -43,8 +43,8 @@ def test_following_page_requires_an_active_member(env):
         assert 'data-expert-id="0"' in response.text
         assert 'data-feed ' in response.text
         assert 'data-more-posts' in response.text
-        assert '/static/expert-social.css?v=20261108-4' in response.text
-        assert '/static/expert-social.js?v=20261108-4' in response.text
+        assert '/static/expert-social.css?v=20261109-1' in response.text
+        assert '/static/expert-social.js?v=20261109-1' in response.text
         assert '/static/expert-media-viewer.js?' in response.text
         assert 'href="/expert-support"' in response.text
         assert 'data-composer' not in response.text

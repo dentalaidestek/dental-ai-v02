@@ -35,3 +35,20 @@ API yetkileri, CSRF, gizli/engellenmiş yorumların görünürlüğü, sayfalama
 - JavaScript sözdizimi ve diff boşluk denetimi geçti. Akademik/genel uygulama paketinin tamamı bu oturumda tekrar çalıştırılmadı.
 
 `docs/social-completion/compact-comments-{360,430,1280}.png` dosyaları önceki başarılı yerel tarayıcı koşusundan kalan sentetik ekranlardır; canlı ekran oldukları iddia edilmez.
+
+## Gönder düğmesi, admin inceleme bildirimi ve hız
+
+Kullanıcının devam talebiyle aynı PR genişletildi. Gönder düğmesi yazma alanının içine taşındı: 34×34 px koyu yuvarlak, yalnızca yukarı ok; erişilebilir adı “Gönder”. Yanıt/düzenleme taslak korumaları devam eder.
+
+Admin panelinde mevcut “Gönderi ve Yorum Denetimi” bölümü bulundu; yeni içerik için admin bildirimi eksikti. Yeni/düzenlenen ve inceleme gerektiren gönderi, yorum ve yayın artık aktif, e-postası doğrulanmış sabit admin hesabına tekilleştirilmiş bildirim oluşturur. Metin/görsel/kişisel veri bildirime kopyalanmaz. Bildirim doğru içerik türü ve kimliğiyle denetim ekranını açar; menüde bekleyen içerik sayısı görünür. İnsan kararı, otomatik kontrolün düzelmesi ve yorum/gönderi/hesap silme zincirleri eski bildirimleri kapatır.
+
+Bildirim ve içerik aynı DB işlemindedir; rollback ikisini de geri alır. Ağ yayını yalnızca dış işlem commit olup oturum kapandıktan ve HTTP gövdesi gönderildikten sonra yapılır. Anlık teslim başarısız olursa kalıcı bildirim ve olay kaydı korunur. Yeni tablo/servis/sağlayıcı yoktur.
+
+| Ölçülen yük / neden | Değişiklik / sınır |
+| --- | --- |
+| Son canlı yeniden açılış: 13:32:16–13:33:14 UTC, yaklaşık 58 saniye; yaklaşık 28 sn import ve 30 sn startup. Free servis. | Kurulu şema hazırken tekrar migration/backfill çalıştırılmaz; eksikse mevcut migration ve ardından readiness denetimi çalışır. Uygulama eksik şemayla başlamaz. İlk import süresi ve platformun uyuması tamamen giderildi iddiası yoktur. |
+| 32 uzman için eski dizin sorgusu 195 SQL çalıştırdı. | Kullanıcı, politika, kapasite ve performans istatistikleri toplulaştırıldı; aynı sentetik senaryoda 8 SQL. Mevcut SQLite/PostgreSQL ortalama/yuvarlama testleri korundu. |
+| Ana stil 257.992 bayt; sosyal stil 54.205 bayt. | Yalnızca herkese açık `/static` dosyaları gzip ile sıkıştırılır. Yerel gzip karşılıkları sırasıyla 44.850 ve 10.857 bayt. Sürüm parametreli dosyalarda bir günlük önbellek; özel HTML/klinik veri önbellek kuralları korunur. |
+| Render HTTP gecikme metriği boştu; son CPU/bellek örneklerinde kaynak baskısı görülmedi. | Tüm sayfa gecikmelerinin tek nedeni bulundu veya canlı gecikme artık belli bir süreye indi denmez. |
+
+Bu değişikliklerin ilk doğrulaması: **95 geçti** (admin inbox, rollback/teslim, silme zincirleri, startup, schema, eski moderasyon/temizlik ve gerçek PostgreSQL danışmanlık performansı dahil). GitHub'da önceki `e410e23` sürümünün Expert Social koşusu **560 geçti, 5 atlandı**; bu yeni değişikliklerin tarayıcı sonucu değildir. Güncel tam regresyon ve tarayıcı sonucu PR üzerinden ayrıca kaydedilir.

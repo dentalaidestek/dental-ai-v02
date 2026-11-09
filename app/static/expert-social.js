@@ -732,9 +732,9 @@
         selfAvatar.append(photo);
       } else selfAvatar.append(el('span', 'ds-comment-avatar', (root.dataset.userName || 'S').slice(0, 1)));
       const pill = el('div', 'ds-comment-input');
-      pill.append(input, emoji);
+      pill.append(input, emoji, submit);
       const inputRow = el('div', 'ds-comment-input-row');
-      inputRow.append(selfAvatar, pill, submit);
+      inputRow.append(selfAvatar, pill);
       const error = el('p', 'ds-error');
       error.setAttribute('role', 'status'); error.hidden = true;
       form.append(replyContext, emojis, inputRow, error);

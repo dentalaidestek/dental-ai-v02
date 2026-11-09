@@ -65,10 +65,13 @@ def require_schema(engine):
                 text("SELECT version FROM dental_social_revision WHERE id=1")
             ).scalar()
             inspector = inspect(conn)
-            complete = all(inspector.has_table(m.__tablename__) for m in SOCIAL_MODELS)
+            tables = set(inspector.get_table_names())
+            complete = all(m.__tablename__ in tables for m in SOCIAL_MODELS)
+            requirements = (*REQUIRED_INDEXES.items(), *REQUIRED_COMMENT_INDEXES.items())
+            indexes = inspector.get_multi_indexes(filter_names=list({table for table, _ in requirements})) if complete else {}
             indexed = complete and all(
-                name in {index["name"] for index in inspector.get_indexes(table)}
-                for table, name in (*REQUIRED_INDEXES.items(), *REQUIRED_COMMENT_INDEXES.items())
+                name in {index["name"] for index in indexes.get((None, table), [])}
+                for table, name in requirements
             )
         if revision != SCHEMA_VERSION or not complete or not indexed:
             raise RuntimeError()

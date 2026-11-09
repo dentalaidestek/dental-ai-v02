@@ -356,7 +356,7 @@ def register(app, main):
             expert(s, p.author_id)
         return p
 
-    def decision(s, kind, row, actor_id=None, reason=None, *, human=False, preserve=False):
+    def decision(s, kind, row, actor_id=None, reason=None, *, human=False, preserve=False, request=None):
         s.add(
             SocialDecision(
                 target_type=kind,
@@ -367,7 +367,13 @@ def register(app, main):
                 reason=reason or row.reasons_json,
             )
         )
-        moderation.record(s, kind, row, actor_id, reason, human=human, preserve=preserve)
+        if request is not None and not preserve:
+            from app.expert_social_review_notifications import prepare
+            prepare(s, request)
+        task = moderation.record(s, kind, row, actor_id, reason, human=human, preserve=preserve)
+        if request is not None and not preserve:
+            from app.expert_social_review_notifications import record
+            record(s, main, request, kind, row, task)
 
     def review_text(value, link, metadata):
         card = json.loads(metadata) if metadata else {}
@@ -820,7 +826,7 @@ def register(app, main):
                     m.post_id = p.id
                     m.position = ids.index(m.id)
                     s.add(m)
-                decision(s, "POST", p)
+                decision(s, "POST", p, request=request)
                 s.commit()
             except IntegrityError as exc:
                 s.rollback()
@@ -976,7 +982,7 @@ def register(app, main):
             p.version += 1
             p.updated_at = now()
             s.add(p)
-            decision(s, "POST", p, u.id, preserve=body.text is None)
+            decision(s, "POST", p, u.id, preserve=body.text is None, request=request)
             s.commit()
             return post_rows(s, [p], u)[0]
 
@@ -1003,6 +1009,7 @@ def register(app, main):
                 p,
                 u.id,
                 "DELETED_BY_OWNER" if p.author_id == u.id else "DELETED_BY_ADMIN",
+                request=request,
             )
             s.commit()
         return {"ok": True}
@@ -1163,7 +1170,7 @@ def register(app, main):
             s.add(c)
             try:
                 s.flush()
-                decision(s, "COMMENT", c)
+                decision(s, "COMMENT", c, request=request)
                 s.commit()
             except IntegrityError as exc:
                 s.rollback()
@@ -1243,7 +1250,7 @@ def register(app, main):
             c.version += 1
             c.updated_at = now()
             s.add(c)
-            decision(s, "COMMENT", c, u.id)
+            decision(s, "COMMENT", c, u.id, request=request)
             s.commit()
             return comment_write_response(s, c, u, admin_view=bool(request.state.social_admin))
 
@@ -1270,7 +1277,7 @@ def register(app, main):
                 SocialComment.post_id == p.id, SocialComment.status != "DELETED",
                 or_(SocialComment.id == ident, SocialComment.parent_id == ident),
             ).values(status="DELETED", text="", version=SocialComment.version + 1, updated_at=now()))
-            decision(s, "COMMENT", c, u.id, "COMMENT_REMOVED")
+            decision(s, "COMMENT", c, u.id, "COMMENT_REMOVED", request=request)
             moderation.cancel_tasks(s, kind="COMMENT", versions={
                 row_id: version + 1 for row_id, version in affected if row_id != ident
             })
@@ -1405,7 +1412,7 @@ def register(app, main):
             s.add(row)
             try:
                 s.flush()
-                decision(s, "PUBLICATION", row, u.id)
+                decision(s, "PUBLICATION", row, u.id, request=request)
                 s.commit()
             except IntegrityError as exc:
                 s.rollback()
@@ -1435,7 +1442,7 @@ def register(app, main):
             s.add(row)
             try:
                 s.flush()
-                decision(s, "PUBLICATION", row, u.id)
+                decision(s, "PUBLICATION", row, u.id, request=request)
                 s.commit()
             except IntegrityError as exc:
                 s.rollback()
@@ -1488,7 +1495,7 @@ def register(app, main):
             # Hard deletion permits adding the same DOI again. ORCID sync is explicit.
             row.status = "DELETED"
             row.version += 1
-            decision(s, "PUBLICATION", row, u.id, "PUBLICATION_REMOVED")
+            decision(s, "PUBLICATION", row, u.id, "PUBLICATION_REMOVED", request=request)
             s.delete(row)
             s.commit()
         return {"ok": True}
@@ -1659,7 +1666,7 @@ def register(app, main):
                 # rows together. Avoid two round trips for every ORCID work.
                 s.flush()
                 for publication in imported:
-                    decision(s, "PUBLICATION", publication)
+                    decision(s, "PUBLICATION", publication, request=request)
                 profile.orcid_url = "https://orcid.org/" + orcid
                 s.add(profile)
                 sync = s.get(OrcidSync, u.id)
@@ -1870,7 +1877,7 @@ def register(app, main):
             if kind == "POST" and body.status != "PUBLISHED":
                 row.pinned = False
             s.add(row)
-            decision(s, kind, row, u.id, reason, human=True)
+            decision(s, kind, row, u.id, reason, human=True, request=request)
             for report in s.exec(
                 select(SocialReport).where(
                     SocialReport.target_type == kind,
@@ -1942,4 +1949,6 @@ def register(app, main):
     from app.expert_social_relationships import register_relationships
     register_relationships(r, main, actor=actor, expert=expert, post_rows=post_rows, headers=HEADERS)
     app.include_router(r)
+    from app.expert_social_review_notifications import ReviewNoticeMiddleware
+    app.add_middleware(ReviewNoticeMiddleware, main=main)
     app.add_middleware(SocialBodyLimitMiddleware)

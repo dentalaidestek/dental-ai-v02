@@ -113,6 +113,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
@@ -4121,7 +4122,7 @@ def logout_user(request: Request):
     response.delete_cookie("dai_push_subscription_id", path="/")
     return response
 
-app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
+app.mount("/static", GZipMiddleware(StaticFiles(directory=BASE/"static"), minimum_size=1000), name="static")
 
 
 @app.get("/vision-ui/viewer", response_class=HTMLResponse)
@@ -4299,17 +4300,24 @@ def _startup_database():
     storage_check_connection()
     logger.warning("startup.step end=storage_check_connection")
     if os.getenv("RENDER"):
+        from app.migrate import require_schema
+        from app.expert_social_schema import require_schema as require_social_schema
         if os.getenv("DENTAL_MIGRATE_ON_STARTUP", "0") == "1":
             # One-shot compatibility path for deployments that cannot run a
             # pre-deploy command yet. app.migrate serializes the release DDL
             # and records the required schema revision for colocated workers.
-            from app.migrate import apply
-            apply()
+            try:
+                require_schema(engine, require_study=True)
+                require_social_schema(engine)
+                logger.warning("startup.schema ready migration_skipped=true")
+            except RuntimeError:
+                from app.migrate import apply
+                apply()
+                require_schema(engine, require_study=True)
+                require_social_schema(engine)
         else:
-            from app.migrate import require_schema
             logger.warning("startup.step begin=require_schema")
             require_schema(engine,require_study=True)
-            from app.expert_social_schema import require_schema as require_social_schema
             require_social_schema(engine)
             logger.warning("startup.step end=require_schema")
     else:
@@ -6471,8 +6479,16 @@ def _apply_expert_timeout(session: Session, case: ConsultationCase, now: Optiona
 
 def _expert_performance(session: Session, expert_user_id: int) -> dict:
     """Return fixed-size aggregate rows rather than hydrating case/review histories."""
+    return _expert_performance_map(session, [expert_user_id])[expert_user_id]
+
+
+def _expert_performance_map(session: Session, expert_user_ids) -> dict:
+    """One pair of grouped queries serves all expert cards on a directory page."""
     from sqlalchemy import BigInteger, extract
 
+    ids = list(set(expert_user_ids))
+    if not ids:
+        return {}
     first_response = func.coalesce(
         ConsultationCase.proposed_at, ConsultationCase.requester_accepted_at,
         ConsultationCase.expert_started_at,
@@ -6496,21 +6512,32 @@ def _expert_performance(session: Session, expert_user_id: int) -> dict:
         )
     valid_response = first_response >= ConsultationCase.requested_at
     missed_30_since = _utcnow_naive() - timedelta(days=30)
-    completed_count, missed_30, response_count, response_microseconds = session.exec(select(
+    case_rows = session.exec(select(
+        ConsultationCase.expert_user_id,
         func.count(ConsultationCase.id).filter(ConsultationCase.status == "COMPLETED"),
         func.count(ConsultationCase.id).filter(
             ConsultationCase.status == "EXPERT_TIMEOUT", ConsultationCase.requested_at >= missed_30_since,
         ),
         func.count(ConsultationCase.id).filter(valid_response),
         func.sum(elapsed_microseconds).filter(valid_response),
-    ).where(ConsultationCase.expert_user_id == expert_user_id)).one()
-    review_count, rating_sum = session.exec(select(
+    ).where(ConsultationCase.expert_user_id.in_(ids)).group_by(ConsultationCase.expert_user_id)).all()
+    case_stats = {row[0]: row[1:] for row in case_rows}
+    review_rows = session.exec(select(
+        ExpertReview.expert_user_id,
         func.count(ExpertReview.id), func.sum(ExpertReview.rating),
-    ).where(ExpertReview.expert_user_id == expert_user_id)).one()
-    avg_response_minutes = round(float(response_microseconds) / 1_000_000 / response_count / 60, 1) if response_count else None
-    rating_avg = round(rating_sum / review_count, 1) if review_count else None
-    return {"rating_avg": rating_avg, "review_count": review_count, "completed_count": completed_count,
-            "avg_response_minutes": avg_response_minutes, "missed_30": missed_30}
+    ).where(ExpertReview.expert_user_id.in_(ids)).group_by(ExpertReview.expert_user_id)).all()
+    review_stats = {row[0]: row[1:] for row in review_rows}
+    result = {}
+    for ident in ids:
+        completed_count, missed_30, response_count, response_microseconds = case_stats.get(ident, (0, 0, 0, None))
+        review_count, rating_sum = review_stats.get(ident, (0, None))
+        result[ident] = {
+            "rating_avg": round(rating_sum / review_count, 1) if review_count else None,
+            "review_count": review_count, "completed_count": completed_count,
+            "avg_response_minutes": round(float(response_microseconds) / 1_000_000 / response_count / 60, 1) if response_count else None,
+            "missed_30": missed_30,
+        }
+    return result
 
 
 _consultation_deadline_wakeup = LoopWakeup()
@@ -7170,9 +7197,17 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
             else:
                 query = query.where(ExpertProfile.academic_title == title)
         profiles = s.exec(query.order_by(ExpertProfile.updated_at.desc())).all()
+        expert_ids = [p.user_id for p in profiles]
+        expert_users = {u.id: u for u in s.exec(select(User).where(User.id.in_(expert_ids))).all()} if expert_ids else {}
+        policies = {p.expert_user_id: p for p in s.exec(select(ExpertPolicyState).where(ExpertPolicyState.expert_user_id.in_(expert_ids))).all()} if expert_ids else {}
+        active_counts = dict(s.exec(select(ConsultationCase.expert_user_id, func.count(ConsultationCase.id)).where(
+            ConsultationCase.expert_user_id.in_(expert_ids),
+            ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
+        ).group_by(ConsultationCase.expert_user_id)).all()) if expert_ids else {}
+        performances = _expert_performance_map(s, expert_ids)
         cards = []
         for p in profiles:
-            expert_user = s.get(User, p.user_id)
+            expert_user = expert_users.get(p.user_id)
             if not expert_user:
                 continue
             if q.strip():
@@ -7180,12 +7215,9 @@ def expert_support_directory(request: Request, specialty: str = "", available: s
                 haystack = " ".join(filter(None, [expert_user.display_name, p.specialty, p.institution, p.academic_title])).casefold()
                 if needle not in haystack:
                     continue
-            active_count = len(s.exec(select(ConsultationCase).where(
-                ConsultationCase.expert_user_id == p.user_id,
-                ConsultationCase.status.in_(CONSULTATION_CAPACITY_STATUSES),
-            )).all())
-            policy = _expert_policy_state(s, p.user_id)
-            perf = _expert_performance(s, p.user_id)
+            active_count = active_counts.get(p.user_id, 0)
+            policy = policies.get(p.user_id) or ExpertPolicyState(expert_user_id=p.user_id, rules_version=EXPERT_RULES_VERSION)
+            perf = performances[p.user_id]
             cards.append({"profile": p, "expert": expert_user, "active_count": active_count, "policy": policy, "performance": perf})
         own_profile = s.exec(select(ExpertProfile).where(ExpertProfile.user_id == user.id)).first()
     return templates.TemplateResponse(request=request, name="expert_support.html", context={
@@ -12308,6 +12340,8 @@ def _maintenance_response(request):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    if request.url.path.startswith("/static/") and request.query_params.get("v") and response.status_code in (200, 304):
+        response.headers["Cache-Control"] = "public, max-age=86400"
     # Authenticated clinical files must not inherit long-lived cache policies.
     private_request = bool(request.cookies.get(SESSION_COOKIE)) or request.headers.get("authorization", "").lower().startswith("bearer ")
     if private_request:
@@ -12408,6 +12442,10 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
         pending_count=int(s.exec(select(func.count(ExpertProfile.id)).where(ExpertProfile.application_status=="SUBMITTED")).one() or 0)
         pending_count += int(s.exec(select(func.count(ExpertTitleChange.id)).where(ExpertTitleChange.status=="PENDING_REVIEW")).one() or 0)
         open_report_count=int(s.exec(select(func.count(UserReport.id)).where(UserReport.status!="CLOSED")).one() or 0)
+        from app.expert_social_models import SocialModerationTask
+        social_review_count = int(s.exec(select(func.count()).select_from(SocialModerationTask).where(
+            SocialModerationTask.state.in_(["WAITING_HUMAN", "FAILED"]),
+        )).one())
         if section=="home":
             deleted_ids=select(DeletedAccountEmail.deleted_user_id)
             users_count=int(s.exec(select(func.count(User.id)).where(~User.id.in_(deleted_ids))).one() or 0)
@@ -12512,7 +12550,7 @@ def admin_center(request: Request, q: str = "", section: str = "home", cursor: O
         "section":section,"sections":ADMIN_SECTIONS,"expert_profiles":expert_profiles,"expert_users":expert_users,"expert_metas":expert_metas,"title_changes":title_changes,"cases":cases,"payments":payments,
         "tickets":tickets,"ticket_rows":ticket_rows,"reports":reports,"report_rows":report_rows,"disputes":disputes,"storage_by_user":storage_by_user,
         "admins":admins,"settings":settings,"gross_revenue":gross_revenue,"platform_revenue":platform_revenue,"report_ticket_by_report":report_ticket_by_report,
-        "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,
+        "users_count":users_count,"experts_count":experts_count,"open_support_count":open_support_count,"open_report_count":open_report_count,"social_review_count":social_review_count,
         "page_size":page_size,"has_more":has_more,"next_cursor":next_cursor,"support_counts":support_counts,"support_status":support_status,
     })
 

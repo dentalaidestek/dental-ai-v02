@@ -40,9 +40,11 @@ def test_review_notifies_owner_once_with_generic_copy_after_transaction_closes(e
     published = []
 
     async def capture(event):
+        if event.user_id != owner:
+            return
         assert engine.pool.checkedout() == 0
         with Session(engine) as session:
-            notice = session.exec(select(main.AdminNotice)).one()
+            notice = session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id == owner)).one()
             assert notice.user_id == owner
         published.append(event)
 
@@ -55,8 +57,8 @@ def test_review_notifies_owner_once_with_generic_copy_after_transaction_closes(e
     assert client.post(path, json=body).status_code == 409
     assert client.post(path, json={**body, "status": "REJECTED"}).status_code == 409
     with Session(engine) as session:
-        notice = session.exec(select(main.AdminNotice)).one()
-        event = session.exec(select(main.RealtimeEvent)).one()
+        notice = session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id == owner)).one()
+        event = session.exec(select(main.RealtimeEvent).where(main.RealtimeEvent.user_id == owner)).one()
         assert notice.user_id == event.user_id == owner
         assert notice.target_url == target
         suffix = "CHANGES_REQUESTED" if status == "PENDING" else status
@@ -89,8 +91,9 @@ def test_review_rolls_back_notice_and_outbox_when_notification_step_fails(env, m
     with Session(engine) as session:
         row = session.get(SocialPost, item["id"])
         assert row.status == "PENDING" and row.version == 1
-        assert session.exec(select(main.AdminNotice)).all() == []
-        assert session.exec(select(main.RealtimeEvent)).all() == []
+        assert session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id != 4)).all() == []
+        assert session.exec(select(main.RealtimeEvent).where(main.RealtimeEvent.user_id != 4)).all() == []
+        assert session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id == 4)).one().status == "ACTIVE"
     assert published == []
 
 
@@ -102,8 +105,8 @@ def test_ordinary_member_cannot_moderate_or_create_review_notification(env):
     assert response.status_code == 403
     with Session(engine) as session:
         assert session.get(SocialPost, item["id"]).status == "PENDING"
-        assert session.exec(select(main.AdminNotice)).all() == []
-        assert session.exec(select(main.RealtimeEvent)).all() == []
+        assert session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id != 4)).all() == []
+        assert session.exec(select(main.RealtimeEvent).where(main.RealtimeEvent.user_id != 4)).all() == []
 
 
 def test_realtime_delivery_failure_keeps_committed_notice_and_review(env, monkeypatch):
@@ -120,5 +123,5 @@ def test_realtime_delivery_failure_keeps_committed_notice_and_review(env, monkey
     assert response.status_code == 200, response.text
     with Session(engine) as session:
         assert session.get(SocialPost, item["id"]).status == "PUBLISHED"
-        assert len(session.exec(select(main.AdminNotice)).all()) == 1
-        assert len(session.exec(select(main.RealtimeEvent)).all()) == 1
+        assert len(session.exec(select(main.AdminNotice).where(main.AdminNotice.user_id != 4)).all()) == 1
+        assert len(session.exec(select(main.RealtimeEvent).where(main.RealtimeEvent.user_id != 4)).all()) == 1

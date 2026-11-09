@@ -149,6 +149,10 @@ def test_small_composer_inserts_emoji_at_caret_and_survives_short_viewport(comme
         expect(area).to_have_attribute("rows", "1")
         assert area.bounding_box()["height"] <= 48
         expect(submit.locator("svg")).to_have_count(1)
+        expect(submit).to_have_text("")
+        expect(sheet.locator(".ds-comment-input .ds-comment-send")).to_have_count(1)
+        expect(submit).to_have_css("background-color", "rgb(17, 17, 17)")
+        assert submit.bounding_box()["width"] == submit.bounding_box()["height"] == 34
         area.fill("Kaynak önerisi")
         area.evaluate("node => node.setSelectionRange(7, 7)")
         sheet.get_by_role("button", name="Emoji ekle", exact=True).click()
