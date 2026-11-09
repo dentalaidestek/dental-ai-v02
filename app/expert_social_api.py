@@ -664,8 +664,8 @@ def register(app, main):
                 path = object_storage.ensure_local(reference)
                 # Keep response independent of a short-lived materialization scope.
                 raw = Path(path).read_bytes()
-        except (FileNotFoundError, object_storage.ObjectStorageError) as exc:
-            raise HTTPException(503, "Görsel şu an yüklenemiyor.") from exc
+        except (FileNotFoundError, object_storage.ObjectStorageError, object_storage.object_cache.CacheCapacityError) as exc:
+            raise HTTPException(503, "Görsel şu an yüklenemiyor.", headers={"Retry-After": "3"}) from exc
         from fastapi.responses import Response
 
         return Response(
@@ -947,7 +947,11 @@ def register(app, main):
             if p.author_id != u.id:
                 raise HTTPException(403, "Bu gönderiyi düzenleyemezsiniz.")
             assert_version(p, body.version)
-            if body.text is not None:
+            text_changed = body.text is not None and body.text.strip() != p.text
+            if body.text is not None and not text_changed and body.pinned is None and body.comments_closed is None:
+                return post_rows(s, [p], u)[0]
+            if text_changed:
+                approved_media = p.status == "PUBLISHED"
                 p.text = body.text.strip()
                 images = s.exec(
                     select(SocialMedia.id).where(SocialMedia.post_id == p.id)
@@ -956,7 +960,10 @@ def register(app, main):
                     raise HTTPException(400, "Gönderi boş olamaz.")
                 p.status, reasons = moderation.evaluate(
                     review_text(p.text, p.link_url, p.preview_json),
-                    has_images=bool(images),
+                    # Caption-only edits cannot replace media. An already
+                    # published image has passed review; check the new text
+                    # without demanding another review of that same image.
+                    has_images=bool(images) and not approved_media,
                 )
                 p.reasons_json = json.dumps(reasons)
             if body.pinned is not None:
@@ -982,7 +989,7 @@ def register(app, main):
             p.version += 1
             p.updated_at = now()
             s.add(p)
-            decision(s, "POST", p, u.id, preserve=body.text is None, request=request)
+            decision(s, "POST", p, u.id, preserve=not text_changed, request=request)
             s.commit()
             return post_rows(s, [p], u)[0]
 

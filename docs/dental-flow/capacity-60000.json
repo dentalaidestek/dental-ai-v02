@@ -1,0 +1,53 @@
+{
+  "scope": "Local FastAPI social router and actual authentication, PostgreSQL; excludes lifespan workers, CDN/network/media/providers and full page middleware",
+  "synthetic_accounts": 60000,
+  "synthetic_experts": 1000,
+  "paths": [
+    "/api/expert-social/experts/1/posts",
+    "/api/expert-social/feed/discover",
+    "/api/expert-social/feed/following?details=true"
+  ],
+  "synthetic_posts": 60000,
+  "synthetic_comments": 60000,
+  "synthetic_likes": 60000,
+  "requests": 100,
+  "concurrency": 16,
+  "pool_size": 4,
+  "peak_checked_out": 4,
+  "errors": 0,
+  "requests_per_second": 68.78,
+  "p50_ms": 194.02,
+  "p95_ms": 410.27,
+  "query_samples": [
+    {
+      "path": "/api/expert-social/experts/1/posts",
+      "queries": 12,
+      "latency_ms": 35.07
+    },
+    {
+      "path": "/api/expert-social/experts/1/posts?before=30000",
+      "queries": 11,
+      "latency_ms": 9.49
+    },
+    {
+      "path": "/api/expert-social/feed/discover",
+      "queries": 11,
+      "latency_ms": 20.76
+    },
+    {
+      "path": "/api/expert-social/feed/discover?before=30000",
+      "queries": 11,
+      "latency_ms": 16.69
+    },
+    {
+      "path": "/api/expert-social/feed/discover?specialty=Ortodonti",
+      "queries": 11,
+      "latency_ms": 58.35
+    },
+    {
+      "path": "/api/expert-social/feed/following?details=true",
+      "queries": 11,
+      "latency_ms": 84.92
+    }
+  ]
+}

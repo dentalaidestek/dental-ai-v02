@@ -6,7 +6,7 @@ serializer. No relationship graph or response is retained between requests.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -103,6 +103,29 @@ def register_relationships(
     """
     user_model, profile_model = main.User, main.ExpertProfile
 
+    def validate_specialty(value):
+        if value and value not in main.EXPERT_SPECIALTIES:
+            raise HTTPException(422, "Geçerli bir uzmanlık alanı seçin.")
+        return value
+
+    def flow_page(request, tab, specialty):
+        viewer = actor(request)
+        validate_specialty(specialty)
+        return main.templates.TemplateResponse(
+            request=request, name="expert_following.html",
+            context={"user": viewer, "title": "Dental Akış", "feed_mode": tab,
+                     "selected_specialty": specialty, "specialties": main.EXPERT_SPECIALTIES},
+            headers=headers,
+        )
+
+    if not any(getattr(route, "path", None) == "/dental-akis" for route in main.app.routes):
+        @main.app.get("/dental-akis", response_class=HTMLResponse)
+        def dental_flow_page(
+            request: Request, tab: Literal["discover", "following"] = "discover",
+            specialty: str = Query(default="", max_length=80),
+        ):
+            return flow_page(request, tab, specialty)
+
     # The API can be registered on isolated apps in tests. The member page
     # belongs to the main application and is mounted once on that application.
     if not any(
@@ -112,13 +135,7 @@ def register_relationships(
 
         @main.app.get("/expert-support/following", response_class=HTMLResponse)
         def expert_social_following_page(request: Request):
-            viewer = actor(request)
-            return main.templates.TemplateResponse(
-                request=request,
-                name="expert_following.html",
-                context={"user": viewer, "title": "Takip ettiklerim"},
-                headers=headers,
-            )
+            return flow_page(request, "following", "")
 
     def relationship_list(request, owner_id, kind, before, limit):
         viewer = actor(request)
@@ -213,21 +230,15 @@ def register_relationships(
     ):
         return relationship_list(request, expert_id, "following", before, limit)
 
-    @router.get("/feed/following")
-    def followed_experts_feed(
-        request: Request,
-        before: Optional[int] = Query(default=None, ge=1),
-        limit: int = Query(default=15, ge=1, le=30),
-    ):
+    def feed(request, *, mode, before, limit, specialty, details):
         viewer = actor(request)
+        validate_specialty(specialty)
         with Session(main.engine) as session:
             statement = (
-                select(SocialPost)
-                .join(SocialFollow, SocialFollow.expert_id == SocialPost.author_id)
+                select(SocialPost, profile_model)
                 .join(user_model, user_model.id == SocialPost.author_id)
                 .join(profile_model, profile_model.user_id == SocialPost.author_id)
                 .where(
-                    SocialFollow.follower_id == viewer.id,
                     SocialPost.status == "PUBLISHED",
                     *_verified_expert_conditions(main),
                     unblocked_relationship_condition(
@@ -235,6 +246,12 @@ def register_relationships(
                     ),
                 )
             )
+            if mode == "following":
+                statement = statement.join(SocialFollow, SocialFollow.expert_id == SocialPost.author_id).where(
+                    SocialFollow.follower_id == viewer.id,
+                )
+            if specialty:
+                statement = statement.where(profile_model.specialty == specialty)
             if before is not None:
                 statement = statement.where(SocialPost.id < before)
             rows = list(
@@ -244,10 +261,49 @@ def register_relationships(
             )
             has_more = len(rows) > limit
             rows = rows[:limit]
+            items = post_rows(session, [row[0] for row in rows], viewer)
+            if details and rows:
+                profiles = {profile.user_id: profile for _, profile in rows}
+                authors = list(profiles)
+                followed = set(session.exec(select(SocialFollow.expert_id).where(
+                    SocialFollow.follower_id == viewer.id, SocialFollow.expert_id.in_(authors),
+                )).all())
+                capacity = dict(session.exec(select(main.ConsultationCase.expert_user_id, func.count()).where(
+                    main.ConsultationCase.expert_user_id.in_(authors),
+                    main.ConsultationCase.status.in_(main.CONSULTATION_CAPACITY_STATUSES),
+                ).group_by(main.ConsultationCase.expert_user_id)).all())
+                blocked = set(session.exec(select(main.ExpertPolicyState.expert_user_id).where(
+                    main.ExpertPolicyState.expert_user_id.in_(authors),
+                    main.ExpertPolicyState.new_case_blocked_until > main._utcnow_naive(),
+                )).all())
+                for item in items:
+                    ident = item["author_id"]
+                    profile = profiles[ident]
+                    item.update(
+                        author_specialty=profile.specialty,
+                        author_followed=ident in followed,
+                        author_support_available=(ident != viewer.id and profile.availability == "AVAILABLE"
+                            and ident not in blocked and capacity.get(ident, 0) < main.consultation_capacity_limit(profile)),
+                    )
             return JSONResponse(
                 {
-                    "items": post_rows(session, rows, viewer),
-                    "next_cursor": rows[-1].id if has_more else None,
+                    "items": items,
+                    "next_cursor": rows[-1][0].id if has_more else None,
                 },
                 headers=headers,
             )
+
+    @router.get("/feed/discover")
+    def discovered_experts_feed(
+        request: Request, before: Optional[int] = Query(default=None, ge=1),
+        limit: int = Query(default=15, ge=1, le=30), specialty: str = Query(default="", max_length=80),
+    ):
+        return feed(request, mode="discover", before=before, limit=limit, specialty=specialty, details=True)
+
+    @router.get("/feed/following")
+    def followed_experts_feed(
+        request: Request, before: Optional[int] = Query(default=None, ge=1),
+        limit: int = Query(default=15, ge=1, le=30), specialty: str = Query(default="", max_length=80),
+        details: bool = False,
+    ):
+        return feed(request, mode="following", before=before, limit=limit, specialty=specialty, details=details)

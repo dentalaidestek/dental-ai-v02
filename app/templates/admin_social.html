@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block content %}
-<link rel="stylesheet" href="/static/expert-social.css?v=20261109-1">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261109-4">
 <div id="expertSocial" class="ds-root ds-moderation" data-social-admin><a href="{{ admin_path }}">‹ Yönetim merkezine dön</a> <a class="ds-text-button" href="{{ admin_path }}/social">Tüm inceleme kuyruğu</a><h1>Gönderi ve yorum denetimi</h1><p class="ds-muted">Görsellerde ve metinde hasta kimliği, sağlık verisi, reklam ve kötüye kullanım risklerini inceleyin. Otomatik işaretler karar değildir. Karar gerekçesine kişisel veya sağlık verisi yazmayın.</p>
 <div class="ds-moderation-nav"><label>İçerik<select data-kind><option value="POST">Gönderiler</option><option value="COMMENT">Yorumlar</option><option value="PUBLICATION">Akademik yayınlar</option></select></label><label>Durum<select data-status><option value="PENDING">İncelemede</option><option value="PUBLISHED">Yayınlandı</option><option value="REJECTED">Reddedildi</option></select></label><button type="button" class="ds-secondary" data-queue>Listele</button><button type="button" class="ds-secondary" data-reports>Şikâyetleri gör</button></div><p class="ds-notice" role="status" data-admin-notice hidden></p><p class="ds-queue-aging" role="status" data-queue-aging hidden></p><div data-admin-list></div><button class="ds-secondary" data-admin-more hidden>Daha fazla</button></div>
 <script src="/static/expert-media-viewer.js?v=1" defer></script>
-<script src="/static/expert-social.js?v=20261109-1" defer></script><script src="/static/expert-social-admin.js?v=20261109-1" defer></script>
+<script src="/static/expert-social.js?v=20261109-4" defer></script><script src="/static/expert-social-admin.js?v=20261109-1" defer></script>
 {% endblock %}

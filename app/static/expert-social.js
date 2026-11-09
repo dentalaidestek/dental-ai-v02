@@ -6,6 +6,20 @@
     return;
   }
   const API = "/api/expert-social";
+  let sessionEnded = false;
+  window.addEventListener('dai:session-ending', () => { sessionEnded = true; });
+  function mediaSource(img, url) {
+    img.src = url;
+    if (!url?.startsWith(API + '/media/')) return;
+    let retries = 0;
+    img.addEventListener('error', () => {
+      if (retries >= 2 || sessionEnded || !img.isConnected) return;
+      const attempt = ++retries;
+      setTimeout(() => {
+        if (!sessionEnded && img.isConnected) img.src = url + (url.includes('?') ? '&' : '?') + 'retry=' + attempt;
+      }, 3000 * attempt);
+    });
+  }
   const labels = {
     PUBLISHED: "Yayınlandı",
     PENDING: "İncelemede",
@@ -107,7 +121,7 @@
     const a = external(url, undefined, "ds-link-card");
     if (cover) {
       const img = el("img");
-      img.src = cover;
+      mediaSource(img, cover);
       img.alt = "Bağlantı kapağı";
       img.loading = "lazy";
       a.append(img);
@@ -222,6 +236,9 @@
       userId = Number(root.dataset.userId);
     const management=root.dataset.management==="1";
     const followingFeed=root.dataset.feedMode==='following';
+    const aggregateFeed=followingFeed || root.dataset.feedMode==='discover';
+    const followingWrites=new Set();
+    const authorFollowState=new Map();
     const notice = $("[data-notice]");
     function say(message, post = null) {
       if (dialog?.open && !post) {
@@ -322,12 +339,26 @@
       history.pushState({ ...history.state, dsDialog: true }, "");
       adjustViewport();
     }
-    function closeDialog(d, fromHistory = false) {
-      if (management && d===dialog) {resetInlineComposer();return;}
-      if (!d?.open) return;
+    function closeDialog(d, fromHistory = false, saved = false) {
+      if (d === dialog && !saved) {
+        if (sending) return false;
+        if (editing && text.value.trim() !== editing.text.trim() &&
+            !confirm('Değişiklikler kaydedilmedi. Düzenlemeden çıkılsın mı?')) {
+          if (fromHistory) history.pushState({ ...history.state, dsDialog: true }, '');
+          return false;
+        }
+      }
+      if (management && d===dialog) {resetInlineComposer();return true;}
+      if (!d?.open) return true;
+      if (d === dialog && editing && !saved) {
+        editing = null;
+        text.value = draft.text;
+        renderEditContext(null);
+      }
       d.close();
       document.body.style.overflow = "";
       if (!fromHistory && history.state?.dsDialog) history.back();
+      return true;
     }
     root.querySelectorAll("dialog").forEach((d) => {
       d.addEventListener("cancel", (e) => {
@@ -413,6 +444,7 @@
       feedback("Bildiriminiz inceleme için alındı.");
     }
     function renderPost(p) {
+      if (aggregateFeed && authorFollowState.has(p.author_id)) p.author_followed = authorFollowState.get(p.author_id);
       posts.set(p.id, p);
       if (p.comments_closed) {
         const sheet = root.querySelector(`[data-comments-sheet][data-comment-post-id="${p.id}"]`);
@@ -422,15 +454,21 @@
       card.dataset.postId = p.id;
       card.id = "post-" + p.id;
       const author = el("header", "ds-author");
+      const avatar = el(aggregateFeed ? 'a' : 'span', 'ds-author-avatar');
+      if (aggregateFeed) {
+        avatar.href = '/expert-support/expert/' + p.author_id;
+        avatar.setAttribute('aria-label', p.author_name + ' adlı uzmanın profili');
+      }
       if (p.author_photo) {
         const img = el("img", "ds-avatar");
         img.src = p.author_photo;
         img.alt = "";
-        author.append(img);
-      } else author.append(el("span", "ds-avatar expert-reference-avatar"));
+        avatar.append(img);
+      } else avatar.append(el("span", "ds-avatar expert-reference-avatar"));
+      author.append(avatar);
       const copy = el("div", "ds-author-copy"),
-        name = el(followingFeed ? "a" : "b", "", p.author_name);
-      if(followingFeed)name.href='/expert-support/expert/'+p.author_id;
+        name = el(aggregateFeed ? "a" : "b", "", p.author_name);
+      if(aggregateFeed)name.href='/expert-support/expert/'+p.author_id;
       copy.append(name, el("span", "ds-verified", " ✓"));
       copy.querySelector(".ds-verified").title =
         "Mesleki belgesi doğrulanmış uzman";
@@ -446,8 +484,45 @@
         pin.append(icon, document.createTextNode("Sabit")); metadata.append(pin);
       }
       copy.append(metadata);
+      if (aggregateFeed && p.author_specialty) copy.append(el('small', 'ds-author-specialty', p.author_specialty));
       author.append(copy);
-      const options = p.owned
+      if (aggregateFeed && p.author_id !== userId && typeof p.author_followed === 'boolean') {
+        const follow = button(p.author_followed ? 'Takip ediliyor' : 'Takip et', 'ds-author-follow', async () => {
+          const ident = p.author_id;
+          if (followingWrites.has(ident)) return;
+          followingWrites.add(ident);
+          const controls = () => feed.querySelectorAll('[data-author-follow="' + ident + '"]');
+          controls().forEach(control => control.disabled = true);
+          actionError.hidden = true;
+          try {
+            const next = !p.author_followed;
+            await api('/experts/' + ident + '/follow', 'PUT', {followed: next});
+            authorFollowState.set(ident, next);
+            for (const post of posts.values()) if (post.author_id === ident) post.author_followed = next;
+            controls().forEach(control => {
+              control.textContent = next ? 'Takip ediliyor' : 'Takip et';
+              control.setAttribute('aria-pressed', String(next));
+              control.setAttribute('aria-label', p.author_name + (next ? ' adlı uzmanı takipten çık' : ' adlı uzmanı takip et'));
+            });
+            if (followingFeed && !next) {
+              for (const post of posts.values()) if (post.author_id === ident) {
+                feed.querySelector('[data-post-id="' + post.id + '"]')?.remove(); posts.delete(post.id);
+              }
+              if (!feed.children.length) feed.append(el('div', 'ds-empty', 'Takip ettiğiniz uzmanların gönderileri burada görünecek.'));
+            }
+          } catch (error) {
+            actionError.textContent = error.message; actionError.hidden = false;
+          } finally { followingWrites.delete(ident); controls().forEach(control => control.disabled = false); }
+        });
+        follow.dataset.authorFollow = p.author_id;
+        follow.disabled = followingWrites.has(p.author_id);
+        follow.setAttribute('aria-pressed', String(p.author_followed));
+        follow.setAttribute('aria-label', p.author_name + (p.author_followed ? ' adlı uzmanı takipten çık' : ' adlı uzmanı takip et'));
+        author.append(follow);
+      }
+      const options = p.owned && aggregateFeed
+        ? [['Profilimde yönet', () => location.assign('/expert-support/profile?post=' + p.id)]]
+        : p.owned
         ? [
             ["Gönderiyi düzenle", () => openComposer(p)],
             [
@@ -513,7 +588,7 @@
           a.setAttribute('aria-label',`Gönderi görselini aç: ${index+1} / ${gallery.length}`);
           a.addEventListener('click',()=>window.DentalMediaViewer.open(gallery,index,a));
           const img = el("img");
-          img.src = m.url;
+          mediaSource(img, m.url);
           img.alt = "Gönderi görseli";
           img.loading = "lazy";
           a.append(img);
@@ -588,6 +663,18 @@
       actions.append(share);
       card.append(actionError, actions);
       if(p.comments_closed){const closed=el('p','ds-comments-state','Yorumlar kapalı');closed.dataset.commentsState='';card.append(closed);}
+      if (aggregateFeed) {
+        const links = el('footer', 'ds-expert-links');
+        const profile = el('a', '', 'Uzman profili');
+        profile.href = '/expert-support/expert/' + p.author_id;
+        links.append(profile);
+        if (p.author_support_available) {
+          const support = el('a', 'ds-expert-support', 'Uzmandan Destek Al');
+          support.href = '/expert-support/request/' + p.author_id;
+          links.append(support);
+        }
+        card.append(links);
+      }
       return card;
     }
     function replacePost(p) {
@@ -606,6 +693,8 @@
     async function loadPosts(reset = false) {
       if (postsLoading) return;
       postsLoading = true;
+      feed.setAttribute('aria-busy', 'true');
+      if ($('[data-feed-loading]')) $('[data-feed-loading]').hidden = false;
       const more = $("[data-more-posts]");
       more.disabled = true;
       try {
@@ -613,28 +702,22 @@
           postCursor = null;
           posts.clear();
         }
-        const data = await api(
-          (followingFeed ? "/feed/following" : "/experts/" +
-            expertId +
-            "/posts") +
-            (postCursor ? "?before=" + postCursor : ""),
-        );
+        const params = new URLSearchParams();
+        if (postCursor) params.set('before', postCursor);
+        if (aggregateFeed && root.dataset.feedSpecialty) params.set('specialty', root.dataset.feedSpecialty);
+        if (followingFeed) params.set('details', 'true');
+        const path = aggregateFeed ? '/feed/' + root.dataset.feedMode : '/experts/' + expertId + '/posts';
+        const data = await api(path + (params.size ? '?' + params : ''));
         if (reset) feed.replaceChildren();
-        if (!feed.children.length && !data.items.length)
-          feed.append(
-            el(
-              "div",
-              "ds-empty",
-              followingFeed ? "Takip ettiğiniz uzmanların gönderileri burada görünecek." : owner
-                ? "İlk bilimsel paylaşımınızı yapın."
-                : "Uzman henüz bir gönderi paylaşmamış.",
-            ),
-          );
+        if (data.items.length) feed.querySelector('.ds-empty')?.remove();
         for (const p of data.items) {
+          if (followingFeed && authorFollowState.get(p.author_id) === false) continue;
           const old = feed.querySelector(`[data-post-id="${p.id}"]`);
           if (old) old.replaceWith(renderPost(p));
           else feed.append(renderPost(p));
         }
+        if (!feed.children.length) feed.append(el('div', 'ds-empty',
+          aggregateFeed && root.dataset.feedSpecialty ? 'Bu branşta henüz bir paylaşım yok. Diğer branşlara göz atabilirsiniz.' : followingFeed ? 'Takip ettiğiniz uzmanların gönderileri burada görünecek.' : aggregateFeed ? 'Uzmanların onaylanan paylaşımları burada görünecek.' : owner ? 'İlk bilimsel paylaşımınızı yapın.' : 'Uzman henüz bir gönderi paylaşmış değil.'));
         postCursor = data.next_cursor;
         more.hidden = !postCursor;
       } catch (e) {
@@ -647,6 +730,8 @@
           );
       } finally {
         postsLoading = false;
+        feed.setAttribute('aria-busy', 'false');
+        if ($('[data-feed-loading]')) $('[data-feed-loading]').hidden = true;
         more.disabled = false;
       }
     }
@@ -1054,7 +1139,7 @@
                 ? m.cover
                   ? "Kapak"
                   : "Hazır"
-                : "Yükleniyor…",
+                : m.waiting ? "Sıra bekliyor…" : "Yükleniyor…",
           ),
           button("›", "", () => {
             if (index < photos.length - 1) {
@@ -1116,7 +1201,7 @@
         wrap.append(remove);
         if (cover) {
           const controls = el("div", "ds-cover-tools");
-          const state = el("small", "", cover.error ? "Kapak yüklenemedi" : cover.uploading ? "Kapak yükleniyor…" : "Kapak eklendi");
+          const state = el("small", "", cover.error ? "Kapak yüklenemedi" : cover.waiting ? "Kapak için sıra bekliyor…" : cover.uploading ? "Kapak yükleniyor…" : "Kapak eklendi");
           state.setAttribute("role", "status");
           const removeCover = button("Kapağı kaldır", "ds-text-button", () => removeMedia(cover));
           removeCover.disabled = !!cover.uploading;
@@ -1143,6 +1228,7 @@
     function resetInlineComposer(){
       if(!management)return;
       editing=null;text.value=draft.text;
+      renderEditContext(null);
       $('[data-publish]').textContent='Paylaş';dialog.querySelector('h2').textContent='Yeni gönderi';
       $('[data-photo]').hidden=false;$('[data-link]').hidden=false;$('[data-cover]').hidden=!draft.linkUrl;
       $('[data-edit-mode]').hidden=true;$('[data-edit-cancel]').hidden=true;
@@ -1150,9 +1236,12 @@
       renderAttachments();renderPreview();fitText();
     }
     function openComposer(p = null, initial = "") {
-      if (!dialog) return;
+      if (!dialog || sending) return;
+      if (editing && text.value.trim() !== editing.text.trim() &&
+          !confirm('Değişiklikler kaydedilmedi. Düzenlemeden çıkılsın mı?')) return;
       if(management)root.closest('.expert-manage-reference').querySelector('[data-manage-tab="posts"]').click();
       editing = p;
+      renderEditContext(p);
       $('[data-edit-mode]').hidden=!(management&&p);$('[data-edit-cancel]').hidden=!(management&&p);
       const audience=dialog.querySelector('.ds-inline-audience');if(audience)audience.hidden=!!p;
       if (p) {
@@ -1160,7 +1249,6 @@
         $("[data-attachments]").replaceChildren();
         $("[data-preview]").replaceChildren();
         $("[data-publish]").textContent = "Kaydet";
-        $("[data-compose-title]");
         dialog.querySelector("h2").textContent = "Gönderiyi düzenle";
       } else {
         if (initial) {
@@ -1184,8 +1272,26 @@
       fitText();
       text.focus({ preventScroll: true });
     }
+    function renderEditContext(p) {
+      dialog.classList.toggle('is-editing', !!p);
+      const context = $('[data-edit-context]'), help = $('[data-edit-help]');
+      if (context) {
+        context.hidden = !p || (!p.media?.length && !p.link_url);
+        const media = $('[data-edit-media]'), preview = $('[data-edit-preview]');
+        media.replaceChildren(); preview.replaceChildren();
+        for (const item of p?.media || []) {
+          if (item.id === p.cover_media_id && p.link_url) continue;
+          const img = el('img'); mediaSource(img, item.url);
+          img.alt = 'Gönderinin mevcut görseli'; img.loading = 'lazy';
+          media.append(img);
+        }
+        if (p?.link_url) preview.append(linkCard(p.link_url, p.preview,
+          p.media?.find(item => item.id === p.cover_media_id)?.url));
+      }
+      if (help) help.hidden = !p;
+    }
     if (owner) {
-      $('[data-edit-cancel]').addEventListener('click',resetInlineComposer);
+      $('[data-edit-cancel]').addEventListener('click',()=>closeDialog(dialog));
       $("[data-compose]")?.addEventListener("click", () => openComposer());
       text.addEventListener("input", () => {
         fitText();
@@ -1259,7 +1365,8 @@
         fileInput.multiple = false;
         fileInput.click();
       });
-      function uploadFile(file, item) {
+      function uploadFile(file, item, attempt = 0) {
+        if (sessionEnding || !draft.media.includes(item)) return Promise.reject(new Error('Görsel yüklemesi durduruldu.'));
         return new Promise((resolve, reject) => {
           const data = new FormData();
           data.append("file", file);
@@ -1274,11 +1381,20 @@
               if (item.cover) renderPreview();
             }
           };
-          xhr.onload = () => {
+          xhr.onload = async () => {
             let data;
             try {
               data = JSON.parse(xhr.responseText);
             } catch {}
+            const delay = Number(xhr.getResponseHeader('Retry-After'));
+            if (xhr.status === 503 && delay > 0 && delay <= 15 && attempt < 4) {
+              item.waiting = true; item.progress = 0;
+              renderAttachments(); if (item.cover) renderPreview();
+              await new Promise(done => setTimeout(done, delay * 1000 + Math.random() * 500));
+              if (sessionEnding || !draft.media.includes(item)) return reject(new Error('Görsel yüklemesi durduruldu.'));
+              item.waiting = false;
+              return uploadFile(file, item, attempt + 1).then(resolve, reject);
+            }
             if (xhr.status >= 200 && xhr.status < 300 && data?.id)
               resolve(data);
             else reject(new Error(data?.detail || "Görsel yüklenemedi."));
@@ -1297,6 +1413,7 @@
         const selectedAsCover = coverMode;
         fileInput.value = "";
         for (const file of selected) {
+          if (sessionEnding) break;
           if (draft.media.length - (selectedAsCover && draft.media.some(m => m.cover) ? 1 : 0) >= 4) {
             say("Bir gönderide en fazla dört görsel olabilir.");
             break;
@@ -1323,11 +1440,13 @@
           renderPreview();
           try {
             const data = await uploadFile(file, item);
+            if (sessionEnding || !draft.media.includes(item)) continue;
             URL.revokeObjectURL(item.url);
             item.url = data.url;
             item.id = data.id;
             item.local = false;
           } catch (e) {
+            if (sessionEnding) continue;
             item.error = true;
             const error = $("[data-compose-error]");
             error.textContent = e.message;
@@ -1367,6 +1486,9 @@
           return;
         }
         sending = true;
+        text.readOnly = true;
+        dialog.setAttribute('aria-busy', 'true');
+        dialog.querySelectorAll('[data-close], [data-edit-cancel]').forEach(control => control.disabled = true);
         const submit = $("[data-publish]");
         submit.disabled = true;
         const wasEditing = !!editing;
@@ -1397,13 +1519,19 @@
             previewSequence++;
             resetDraft();
           }
-          closeDialog(dialog);
+          closeDialog(dialog, false, true);
           editing = null;
           feed.querySelector(".ds-empty")?.remove();
           replacePost(row);
           setTab("posts");refreshStats().catch(()=>{});
           say(
-            row.status === "PUBLISHED"
+            wasEditing
+              ? row.status === 'PUBLISHED'
+                ? 'Gönderi güncellendi. Beğeniler ve yorumlar korundu.'
+                : row.status === 'PENDING'
+                  ? 'Değişiklikler incelemeye alındı. Beğeniler ve yorumlar korundu; onaydan sonra yeniden görünür.'
+                  : 'Değişiklikler yayımlanmadı. Beğeniler ve yorumlar korunur.'
+              : row.status === "PUBLISHED"
               ? "Yayımlandı. Gönderiniz profilinizde."
               : row.status === "PENDING"
                 ? "İncelemeye alındı. Onaylanana kadar yalnızca siz görebilirsiniz."
@@ -1417,6 +1545,9 @@
           error.scrollIntoView({block: "nearest"});
         } finally {
           sending = false;
+          text.readOnly = false;
+          dialog.setAttribute('aria-busy', 'false');
+          dialog.querySelectorAll('[data-close], [data-edit-cancel]').forEach(control => control.disabled = false);
           submit.disabled = false;
           submit.textContent = editing ? "Kaydet" : "Paylaş";
         }
@@ -1651,7 +1782,8 @@
       const availability=host.querySelector('.expert-availability-switch');
       if(availability)host.querySelector('[data-manage-availability]').append(availability);
       for(const b of host.querySelectorAll('[data-manage-tab]'))b.addEventListener('click',()=>{
-        const name=b.dataset.manageTab;if(name!=='posts'&&editing)resetInlineComposer();
+        const name=b.dataset.manageTab;
+        if(name!=='posts'&&editing&&!closeDialog(dialog))return;
         host.querySelectorAll('[data-manage-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===b)));
         general.hidden=name!=='general';social.hidden=!['posts','publications'].includes(name);settings.hidden=name!=='settings';
         if(!social.hidden)setTab(name);
@@ -1709,7 +1841,7 @@
       if (target && /^\d+$/.test(target)) {
         try {
           const p = await api("/posts/" + target);
-          if (followingFeed || p.author_id !== expertId) return;
+          if (aggregateFeed || p.author_id !== expertId) return;
           replacePost(p);
           setTimeout(
             () =>

@@ -34,8 +34,8 @@ def test_following_page_requires_an_active_member(env):
         client.cookies.set(main.SESSION_COOKIE, "t2")
         response = client.get("/expert-support/following")
         assert response.status_code == 200, response.text
-        assert "<title>Takip ettiklerim</title>" in response.text
-        assert '<h1>Takip ettiklerim</h1>' in response.text
+        assert "<title>Dental Akış</title>" in response.text
+        assert '<h1>Dental Akış</h1>' in response.text
         assert response.text.count('id="expertSocial"') == 1
         assert 'data-feed-mode="following"' in response.text
         assert 'data-user-id="2"' in response.text
@@ -43,8 +43,8 @@ def test_following_page_requires_an_active_member(env):
         assert 'data-expert-id="0"' in response.text
         assert 'data-feed ' in response.text
         assert 'data-more-posts' in response.text
-        assert '/static/expert-social.css?v=20261109-1' in response.text
-        assert '/static/expert-social.js?v=20261109-1' in response.text
+        assert '/static/expert-social.css?v=20261109-4' in response.text
+        assert '/static/expert-social.js?v=20261109-4' in response.text
         assert '/static/expert-media-viewer.js?' in response.text
         assert 'href="/expert-support"' in response.text
         assert 'data-composer' not in response.text
@@ -66,8 +66,8 @@ def test_dashboard_links_to_following_without_mounting_its_feed(env):
     try:
         response = client.get("/")
         assert response.status_code == 200, response.text
-        assert response.text.count('href="/expert-support/following"') == 1
-        assert "Takip ettiğim uzmanlar" in response.text
+        assert 'href="/dental-akis"' in response.text
+        assert "Dental Akış" in response.text
         assert "expert-social.js" not in response.text
         assert "data-expert-social" not in response.text
     finally:
@@ -106,13 +106,15 @@ def test_following_page_loads_one_feed_with_working_member_actions(browser_app):
             )
             page.goto(base + "/")
             assert not social_requests
-            page.get_by_role("link", name="Takip ettiğim uzmanlar").click()
-            expect(page.get_by_role("heading", name="Takip ettiklerim")).to_be_visible()
+            page.locator("main .visual-flow").click()
+            page.get_by_role('navigation', name='Dental Akış bölümleri').get_by_role('link', name='Takip Ettiklerim', exact=True).click()
+            expect(page.get_by_role("heading", name="Dental Akış")).to_be_visible()
             card = page.locator(f'[data-post-id="{post_id}"]')
             expect(page.locator("[data-feed] > article")).to_have_count(1)
-            expect(card.locator(".ds-author a")).to_have_attribute(
+            expect(card.locator(".ds-author-copy > a")).to_have_attribute(
                 "href", "/expert-support/expert/1"
             )
+            expect(card.locator('.ds-author-avatar')).to_have_attribute('href','/expert-support/expert/1')
             card.get_by_role("button", name="Beğen", exact=True).click()
             expect(card.get_by_role("button", name="Beğenmekten vazgeç", exact=True)).to_have_attribute(
                 "aria-pressed", "true"

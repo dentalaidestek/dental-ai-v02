@@ -1,30 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="/static/expert-social.css?v=20261109-1">
-<style>
-.expert-following-page{max-width:720px;padding:20px 14px 100px}
-.expert-following-page .expert-back-link{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:#425b74;text-decoration:none;font-size:14px;font-weight:650}
-.expert-following-page .expert-back-link img{width:18px;height:18px}
-.expert-following-head{margin:18px 0 22px}
-.expert-following-head h1{margin:0 0 6px;font-size:27px;line-height:1.25;color:#092747}
-.expert-following-head p{margin:0;color:#607187;font-size:14px;line-height:1.6}
-.expert-following-discover{display:inline-flex;align-items:center;min-height:44px;margin-top:5px;color:#1260ce;text-decoration:none;font-size:14px;font-weight:700}
-.expert-following-page .ds-root{margin:0}
-@media(max-width:760px){.expert-following-page{padding:10px 8px 96px}.expert-following-head{margin:12px 0 18px}.expert-following-head h1{font-size:24px}}
-</style>
-<div class="expert-shell expert-following-page">
-  <a class="expert-back-link" href="/"><img src="/static/expert-icons/arrow-left.svg" alt="">Ana Sayfa</a>
-  <header class="expert-following-head">
-    <h1>Takip ettiklerim</h1>
-    <p>Takip ettiğiniz uzmanların son paylaşımları.</p>
-    <a class="expert-following-discover" href="/expert-support">Uzmanları keşfet →</a>
+<link rel="stylesheet" href="/static/expert-social.css?v=20261109-4">
+<link rel="stylesheet" href="/static/dental-flow.css?v=20261109-2">
+<div class="dental-flow-page">
+  <header class="dental-flow-head">
+    <div><span class="dental-flow-kicker">Uzmanlardan mesleki paylaşımlar</span><h1>Dental Akış</h1></div>
+    <a class="dental-flow-directory" href="/expert-support">Uzmanları keşfet <span aria-hidden="true">↗</span></a>
   </header>
-  <section id="expertSocial" class="ds-root" data-expert-social data-feed-mode="following" data-owner="0" data-expert-id="0" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}" data-user-photo="{{ profile_photo_url(user) if user.profile_photo_path else '' }}" aria-label="Takip edilen uzmanların gönderileri">
+  <nav class="dental-flow-tabs" aria-label="Dental Akış bölümleri">
+    <a href="/dental-akis?tab=discover{% if selected_specialty %}&amp;specialty={{ selected_specialty|urlencode }}{% endif %}"{% if feed_mode=='discover' %} aria-current="page"{% endif %}>Keşfet</a>
+    <a href="/dental-akis?tab=following{% if selected_specialty %}&amp;specialty={{ selected_specialty|urlencode }}{% endif %}"{% if feed_mode=='following' %} aria-current="page"{% endif %}>Takip Ettiklerim</a>
+  </nav>
+  <nav class="dental-flow-filters" aria-label="Branşa göre filtrele">
+    <a href="/dental-akis?tab={{ feed_mode }}"{% if not selected_specialty %} aria-current="true"{% endif %}>Tümü</a>
+    {% for specialty in specialties %}<a href="/dental-akis?tab={{ feed_mode }}&amp;specialty={{ specialty|urlencode }}"{% if selected_specialty==specialty %} aria-current="true"{% endif %}>{{ specialty }}</a>{% endfor %}
+  </nav>
+  <section id="expertSocial" class="ds-root dental-flow-feed" data-expert-social data-feed-mode="{{ feed_mode }}" data-feed-specialty="{{ selected_specialty }}" data-owner="0" data-expert-id="0" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}" data-user-photo="{{ profile_photo_url(user) if user.profile_photo_path else '' }}" aria-label="{{ 'Keşfet gönderileri' if feed_mode=='discover' else 'Takip edilen uzmanların gönderileri' }}">
     <p class="ds-notice" role="status" aria-live="polite" data-notice hidden></p>
+    <p class="dental-flow-loading" role="status" data-feed-loading>Paylaşımlar yükleniyor…</p>
     <div class="ds-feed" data-feed aria-live="polite"></div>
     <button type="button" class="ds-secondary ds-more" data-more-posts hidden>Daha fazla gönderi</button>
   </section>
 </div>
 <script src="/static/expert-media-viewer.js?v=1" defer></script>
-<script src="/static/expert-social.js?v=20261109-1" defer></script>
+<script src="/static/expert-social.js?v=20261109-4" defer></script>
 {% endblock %}

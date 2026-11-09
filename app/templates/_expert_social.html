@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="/static/expert-social.css?v=20261109-1">
+<link rel="stylesheet" href="/static/expert-social.css?v=20261109-4">
 <section id="expertSocial" class="ds-root" data-expert-social data-expert-id="{{ social_expert_id }}" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}" data-user-photo="{{ profile_photo_url(user) if user.profile_photo_path else '' }}" data-owner="{{ '1' if social_owner else '0' }}" data-management="{{ '1' if social_management|default(false) else '0' }}">
   <nav class="ds-tabs" role="tablist" aria-label="Uzman profili bölümleri">
     <button type="button" role="tab" aria-selected="true" aria-controls="ds-posts" data-tab="posts"><img src="/static/expert-icons/chats.svg" alt="">Gönderiler</button>
@@ -24,7 +24,8 @@
   <dialog class="ds-dialog ds-relationships" data-relationships-dialog aria-labelledby="ds-relationships-title"><header class="ds-dialog-head"><h2 id="ds-relationships-title">Takipçiler</h2><button type="button" class="ds-icon" data-close aria-label="Listeyi kapat">×</button></header><p class="ds-error" data-relationships-error role="status" hidden></p><div data-relationships-list></div><button type="button" class="ds-secondary" data-relationships-more hidden>Daha fazla</button></dialog>
   <{% if social_management|default(false) %}section{% else %}dialog{% endif %} class="ds-dialog ds-composer {{ 'ds-inline-composer' if social_management|default(false) else '' }}" data-composer aria-labelledby="ds-compose-title">
     <header class="ds-dialog-head"><button type="button" class="ds-icon" data-close aria-label="Taslağı koruyarak kapat">×</button><h2 id="ds-compose-title">Yeni gönderi</h2>{% if social_management|default(false) %}<span class="ds-inline-audience">Dental AI üyeleri</span>{% endif %}<span class="ds-edit-indicator" data-edit-mode hidden>Gönderiyi düzenliyorsunuz</span><button type="button" class="ds-text-button" data-edit-cancel hidden>Vazgeç</button><button type="button" class="ds-primary" data-publish>Paylaş</button></header>
-    <div class="ds-dialog-body"><p class="ds-audience">Dental AI üyeleri görebilir</p><label class="ds-sr" for="ds-post-text">Gönderi metni</label><textarea id="ds-post-text" data-post-text maxlength="5000" placeholder="Bir şey paylaş…" rows="5"></textarea>
+    <div class="ds-dialog-body"><p class="ds-audience">Dental AI üyeleri görebilir</p><div class="ds-edit-context" data-edit-context hidden><div class="ds-edit-media" data-edit-media></div><div data-edit-preview></div></div><label class="ds-sr" for="ds-post-text">Gönderi metni</label><textarea id="ds-post-text" data-post-text maxlength="5000" placeholder="Bir şey paylaş…" rows="5"></textarea>
+      <p class="ds-edit-help" data-edit-help hidden>Beğeniler ve yorumlar korunur. Görseller ve bağlantı aynı kalır.</p>
       <div class="ds-attachments" data-attachments></div><div data-preview></div>
       <div data-link-entry hidden><label>Bağlantı<input type="url" data-link-input placeholder="https://…" maxlength="2048"></label><button type="button" class="ds-secondary" data-add-link>Önizle</button></div>
       <p class="ds-error" data-compose-error role="alert" hidden></p>
@@ -39,4 +40,4 @@
   {% endif %}
 </section>
 <script src="/static/expert-media-viewer.js?v=1" defer></script>
-<script src="/static/expert-social.js?v=20261109-1" defer></script>
+<script src="/static/expert-social.js?v=20261109-4" defer></script>
