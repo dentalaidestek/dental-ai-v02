@@ -22,3 +22,11 @@ Yetki/aktif uzman durumunun değişmesi; iki yönlü engeller; sayfa sınırı s
 - [x] API/PostgreSQL ve mevcut akış regresyonları; üç yeni DOM etkileşim kontrolü.
 - [ ] Gerçek Chromium etkileşim/taşma/ekran görüntüleri: yerel socket izni ve GitHub jobs oluşturulmaması nedeniyle engelli.
 - [x] Bağımsız inceleme; taslak PR #255 ve doğrulama sınırlarıyla teslim raporu.
+
+## Kullanıcının eşzamanlılık devam isteği
+
+- [x] Avatar bağlantısı, beş gerçek PostgreSQL yazarı ve sahiplik/idempotency testleri.
+- [x] 60.000 kayıt +1.000uzmanla Keşfet/takip/profil okuma ölçümü; üretim sınırlarını raporla.
+- [x] Tek yükleme yuvasını koruyup Retry-After beklemesi ve logout iptali ekle.
+- [x] Cache kapasite hatasını503olarak işle; görsel GET tekrarı sınırla; aktif filtre kontrastını düzelt.
+- [ ] Son kaynak için tarayıcı regresyonu, kullanıcı onaylı canlı yayın ve sağlık doğrulaması.

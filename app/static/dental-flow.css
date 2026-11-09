@@ -10,6 +10,7 @@
 .dental-flow-filters{display:flex;gap:7px;overflow-x:auto;max-width:100%;padding:14px 2px 16px;margin:0;background:transparent;scrollbar-width:thin}
 .dental-flow-filters a{display:inline-flex;align-items:center;flex-shrink:0;min-height:36px;padding:7px 12px;border:1px solid #dee6ec;border-radius:20px;color:#5d6c7b;background:#fff;font-size:12px;font-weight:650;white-space:nowrap;text-decoration:none}
 .dental-flow-filters a[aria-current=true]{background:#103452;color:#fff;border-color:#103452}
+body.dai-app-shell .dental-flow-page .dental-flow-filters a[aria-current=true]{color:#fff!important}
 .dental-flow-tabs a:focus-visible,.dental-flow-filters a:focus-visible,.dental-flow-directory:focus-visible{outline:2px solid #147d87;outline-offset:3px}
 .dental-flow-page .ds-root{margin:0;max-width:none}
 .dental-flow-feed .ds-card{margin:0 0 14px;border:1px solid #e3e9ef;border-radius:18px;box-shadow:0 3px 16px #14334d05;overflow:visible}

@@ -6,6 +6,20 @@
     return;
   }
   const API = "/api/expert-social";
+  let sessionEnded = false;
+  window.addEventListener('dai:session-ending', () => { sessionEnded = true; });
+  function mediaSource(img, url) {
+    img.src = url;
+    if (!url?.startsWith(API + '/media/')) return;
+    let retries = 0;
+    img.addEventListener('error', () => {
+      if (retries >= 2 || sessionEnded || !img.isConnected) return;
+      const attempt = ++retries;
+      setTimeout(() => {
+        if (!sessionEnded && img.isConnected) img.src = url + (url.includes('?') ? '&' : '?') + 'retry=' + attempt;
+      }, 3000 * attempt);
+    });
+  }
   const labels = {
     PUBLISHED: "Yayınlandı",
     PENDING: "İncelemede",
@@ -107,7 +121,7 @@
     const a = external(url, undefined, "ds-link-card");
     if (cover) {
       const img = el("img");
-      img.src = cover;
+      mediaSource(img, cover);
       img.alt = "Bağlantı kapağı";
       img.loading = "lazy";
       a.append(img);
@@ -440,12 +454,18 @@
       card.dataset.postId = p.id;
       card.id = "post-" + p.id;
       const author = el("header", "ds-author");
+      const avatar = el(aggregateFeed ? 'a' : 'span', 'ds-author-avatar');
+      if (aggregateFeed) {
+        avatar.href = '/expert-support/expert/' + p.author_id;
+        avatar.setAttribute('aria-label', p.author_name + ' adlı uzmanın profili');
+      }
       if (p.author_photo) {
         const img = el("img", "ds-avatar");
         img.src = p.author_photo;
         img.alt = "";
-        author.append(img);
-      } else author.append(el("span", "ds-avatar expert-reference-avatar"));
+        avatar.append(img);
+      } else avatar.append(el("span", "ds-avatar expert-reference-avatar"));
+      author.append(avatar);
       const copy = el("div", "ds-author-copy"),
         name = el(aggregateFeed ? "a" : "b", "", p.author_name);
       if(aggregateFeed)name.href='/expert-support/expert/'+p.author_id;
@@ -568,7 +588,7 @@
           a.setAttribute('aria-label',`Gönderi görselini aç: ${index+1} / ${gallery.length}`);
           a.addEventListener('click',()=>window.DentalMediaViewer.open(gallery,index,a));
           const img = el("img");
-          img.src = m.url;
+          mediaSource(img, m.url);
           img.alt = "Gönderi görseli";
           img.loading = "lazy";
           a.append(img);
@@ -1119,7 +1139,7 @@
                 ? m.cover
                   ? "Kapak"
                   : "Hazır"
-                : "Yükleniyor…",
+                : m.waiting ? "Sıra bekliyor…" : "Yükleniyor…",
           ),
           button("›", "", () => {
             if (index < photos.length - 1) {
@@ -1181,7 +1201,7 @@
         wrap.append(remove);
         if (cover) {
           const controls = el("div", "ds-cover-tools");
-          const state = el("small", "", cover.error ? "Kapak yüklenemedi" : cover.uploading ? "Kapak yükleniyor…" : "Kapak eklendi");
+          const state = el("small", "", cover.error ? "Kapak yüklenemedi" : cover.waiting ? "Kapak için sıra bekliyor…" : cover.uploading ? "Kapak yükleniyor…" : "Kapak eklendi");
           state.setAttribute("role", "status");
           const removeCover = button("Kapağı kaldır", "ds-text-button", () => removeMedia(cover));
           removeCover.disabled = !!cover.uploading;
@@ -1261,7 +1281,7 @@
         media.replaceChildren(); preview.replaceChildren();
         for (const item of p?.media || []) {
           if (item.id === p.cover_media_id && p.link_url) continue;
-          const img = el('img'); img.src = item.url;
+          const img = el('img'); mediaSource(img, item.url);
           img.alt = 'Gönderinin mevcut görseli'; img.loading = 'lazy';
           media.append(img);
         }
@@ -1345,7 +1365,8 @@
         fileInput.multiple = false;
         fileInput.click();
       });
-      function uploadFile(file, item) {
+      function uploadFile(file, item, attempt = 0) {
+        if (sessionEnding || !draft.media.includes(item)) return Promise.reject(new Error('Görsel yüklemesi durduruldu.'));
         return new Promise((resolve, reject) => {
           const data = new FormData();
           data.append("file", file);
@@ -1360,11 +1381,20 @@
               if (item.cover) renderPreview();
             }
           };
-          xhr.onload = () => {
+          xhr.onload = async () => {
             let data;
             try {
               data = JSON.parse(xhr.responseText);
             } catch {}
+            const delay = Number(xhr.getResponseHeader('Retry-After'));
+            if (xhr.status === 503 && delay > 0 && delay <= 15 && attempt < 4) {
+              item.waiting = true; item.progress = 0;
+              renderAttachments(); if (item.cover) renderPreview();
+              await new Promise(done => setTimeout(done, delay * 1000 + Math.random() * 500));
+              if (sessionEnding || !draft.media.includes(item)) return reject(new Error('Görsel yüklemesi durduruldu.'));
+              item.waiting = false;
+              return uploadFile(file, item, attempt + 1).then(resolve, reject);
+            }
             if (xhr.status >= 200 && xhr.status < 300 && data?.id)
               resolve(data);
             else reject(new Error(data?.detail || "Görsel yüklenemedi."));
@@ -1383,6 +1413,7 @@
         const selectedAsCover = coverMode;
         fileInput.value = "";
         for (const file of selected) {
+          if (sessionEnding) break;
           if (draft.media.length - (selectedAsCover && draft.media.some(m => m.cover) ? 1 : 0) >= 4) {
             say("Bir gönderide en fazla dört görsel olabilir.");
             break;
@@ -1409,11 +1440,13 @@
           renderPreview();
           try {
             const data = await uploadFile(file, item);
+            if (sessionEnding || !draft.media.includes(item)) continue;
             URL.revokeObjectURL(item.url);
             item.url = data.url;
             item.id = data.id;
             item.local = false;
           } catch (e) {
+            if (sessionEnding) continue;
             item.error = true;
             const error = $("[data-compose-error]");
             error.textContent = e.message;

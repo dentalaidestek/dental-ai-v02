@@ -17,7 +17,7 @@ from sqlmodel import Session, create_engine
 
 from app import main
 from app.expert_social_api import register
-from app.expert_social_models import SocialPost, SocialComment, SocialLike
+from app.expert_social_models import SocialPost, SocialComment, SocialLike, SocialFollow
 from app.expert_social_schema import apply
 from test_postgres import pg_engine
 
@@ -39,6 +39,7 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
         main.AuthRateBucket,
         main.AdminVerifiedSession,
         main.UserBlock,
+        main.ConsultationCase,
     ):
         model.__table__.create(engine, checkfirst=True)
     apply(engine)
@@ -64,7 +65,7 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
                 [
                     dict(
                         id=i,
-                        author_id=1,
+                        author_id=((i - 1) % 1000) + 1,
                         text="Bilimsel araştırma üzerine paylaşım",
                         status="PUBLISHED",
                         idempotency_key=f"seed{i}",
@@ -112,7 +113,13 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
                 expires_at=main._utcnow_naive() + timedelta(hours=1),
             )
         )
+        for ident in range(2,1001):
+            s.add(main.ExpertProfile(user_id=ident,specialty=main.EXPERT_SPECIALTIES[(ident-1)%len(main.EXPERT_SPECIALTIES)],application_status='APPROVED',verification_status='VERIFIED',specialty_verified=True,credential_document_path='synthetic/doc',phone='05300000000',availability='AVAILABLE'))
+        s.flush()
+        for ident in range(1,1000,2):
+            s.add(SocialFollow(follower_id=2,expert_id=ident))
         s.commit()
+    with engine.begin() as connection: connection.execute(text('ANALYZE'))
     app = FastAPI()
     register(app, main)
     active = 0
@@ -159,6 +166,10 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
     for path in (
         "/api/expert-social/experts/1/posts",
         "/api/expert-social/experts/1/posts?before=30000",
+        "/api/expert-social/feed/discover",
+        "/api/expert-social/feed/discover?before=30000",
+        "/api/expert-social/feed/discover?specialty=Ortodonti",
+        "/api/expert-social/feed/following?details=true",
     ):
         before = queries
         status, ms, payload = fetch(path)
@@ -166,14 +177,15 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
         measurements.append(
             dict(path=path, queries=queries - before, latency_ms=round(ms, 2))
         )
-    assert max(row["queries"] for row in measurements) <= 15
+    assert max(row["queries"] for row in measurements) <= 18
     assert (
         abs(measurements[0]["queries"] - measurements[1]["queries"]) <= 1
     )  # first page also checks the pin
+    paths=['/api/expert-social/experts/1/posts','/api/expert-social/feed/discover','/api/expert-social/feed/following?details=true']
     started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=16) as pool:
         results = list(
-            pool.map(lambda _: fetch("/api/expert-social/experts/1/posts"), range(100))
+            pool.map(lambda index: fetch(paths[index % len(paths)]), range(100))
         )
     wall = time.perf_counter() - started
     assert all(status == 200 for status, _, _ in results)
@@ -182,6 +194,8 @@ def test_sixty_thousand_accounts_and_posts_with_four_connection_pool(
     report = dict(
         scope="Local FastAPI social router and actual authentication, PostgreSQL; excludes lifespan workers, CDN/network/media/providers and full page middleware",
         synthetic_accounts=count,
+        synthetic_experts=1000,
+        paths=paths,
         synthetic_posts=count,
         synthetic_comments=count,
         synthetic_likes=count,

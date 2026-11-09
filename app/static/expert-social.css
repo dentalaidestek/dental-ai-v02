@@ -1324,3 +1324,5 @@ body.dai-app-shell #expertSocial .ds-attachment button { min-height: 44px; min-w
   .ds-root .ds-gallery img { height: clamp(210px, 60vw, 280px); max-height: 280px; }
   .ds-root .ds-attachment img { height: 160px; }
 }
+
+.ds-author-avatar{display:block;flex-shrink:0;line-height:0;border-radius:50%}

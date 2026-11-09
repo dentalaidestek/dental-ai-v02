@@ -664,8 +664,8 @@ def register(app, main):
                 path = object_storage.ensure_local(reference)
                 # Keep response independent of a short-lived materialization scope.
                 raw = Path(path).read_bytes()
-        except (FileNotFoundError, object_storage.ObjectStorageError) as exc:
-            raise HTTPException(503, "Görsel şu an yüklenemiyor.") from exc
+        except (FileNotFoundError, object_storage.ObjectStorageError, object_storage.object_cache.CacheCapacityError) as exc:
+            raise HTTPException(503, "Görsel şu an yüklenemiyor.", headers={"Retry-After": "3"}) from exc
         from fastapi.responses import Response
 
         return Response(
