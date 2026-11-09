@@ -222,6 +222,9 @@
       userId = Number(root.dataset.userId);
     const management=root.dataset.management==="1";
     const followingFeed=root.dataset.feedMode==='following';
+    const aggregateFeed=followingFeed || root.dataset.feedMode==='discover';
+    const followingWrites=new Set();
+    const authorFollowState=new Map();
     const notice = $("[data-notice]");
     function say(message, post = null) {
       if (dialog?.open && !post) {
@@ -413,6 +416,7 @@
       feedback("Bildiriminiz inceleme için alındı.");
     }
     function renderPost(p) {
+      if (aggregateFeed && authorFollowState.has(p.author_id)) p.author_followed = authorFollowState.get(p.author_id);
       posts.set(p.id, p);
       if (p.comments_closed) {
         const sheet = root.querySelector(`[data-comments-sheet][data-comment-post-id="${p.id}"]`);
@@ -429,8 +433,8 @@
         author.append(img);
       } else author.append(el("span", "ds-avatar expert-reference-avatar"));
       const copy = el("div", "ds-author-copy"),
-        name = el(followingFeed ? "a" : "b", "", p.author_name);
-      if(followingFeed)name.href='/expert-support/expert/'+p.author_id;
+        name = el(aggregateFeed ? "a" : "b", "", p.author_name);
+      if(aggregateFeed)name.href='/expert-support/expert/'+p.author_id;
       copy.append(name, el("span", "ds-verified", " ✓"));
       copy.querySelector(".ds-verified").title =
         "Mesleki belgesi doğrulanmış uzman";
@@ -446,8 +450,45 @@
         pin.append(icon, document.createTextNode("Sabit")); metadata.append(pin);
       }
       copy.append(metadata);
+      if (aggregateFeed && p.author_specialty) copy.append(el('small', 'ds-author-specialty', p.author_specialty));
       author.append(copy);
-      const options = p.owned
+      if (aggregateFeed && p.author_id !== userId && typeof p.author_followed === 'boolean') {
+        const follow = button(p.author_followed ? 'Takip ediliyor' : 'Takip et', 'ds-author-follow', async () => {
+          const ident = p.author_id;
+          if (followingWrites.has(ident)) return;
+          followingWrites.add(ident);
+          const controls = () => feed.querySelectorAll('[data-author-follow="' + ident + '"]');
+          controls().forEach(control => control.disabled = true);
+          actionError.hidden = true;
+          try {
+            const next = !p.author_followed;
+            await api('/experts/' + ident + '/follow', 'PUT', {followed: next});
+            authorFollowState.set(ident, next);
+            for (const post of posts.values()) if (post.author_id === ident) post.author_followed = next;
+            controls().forEach(control => {
+              control.textContent = next ? 'Takip ediliyor' : 'Takip et';
+              control.setAttribute('aria-pressed', String(next));
+              control.setAttribute('aria-label', p.author_name + (next ? ' adlı uzmanı takipten çık' : ' adlı uzmanı takip et'));
+            });
+            if (followingFeed && !next) {
+              for (const post of posts.values()) if (post.author_id === ident) {
+                feed.querySelector('[data-post-id="' + post.id + '"]')?.remove(); posts.delete(post.id);
+              }
+              if (!feed.children.length) feed.append(el('div', 'ds-empty', 'Takip ettiğiniz uzmanların gönderileri burada görünecek.'));
+            }
+          } catch (error) {
+            actionError.textContent = error.message; actionError.hidden = false;
+          } finally { followingWrites.delete(ident); controls().forEach(control => control.disabled = false); }
+        });
+        follow.dataset.authorFollow = p.author_id;
+        follow.disabled = followingWrites.has(p.author_id);
+        follow.setAttribute('aria-pressed', String(p.author_followed));
+        follow.setAttribute('aria-label', p.author_name + (p.author_followed ? ' adlı uzmanı takipten çık' : ' adlı uzmanı takip et'));
+        author.append(follow);
+      }
+      const options = p.owned && aggregateFeed
+        ? [['Profilimde yönet', () => location.assign('/expert-support/profile?post=' + p.id)]]
+        : p.owned
         ? [
             ["Gönderiyi düzenle", () => openComposer(p)],
             [
@@ -588,6 +629,18 @@
       actions.append(share);
       card.append(actionError, actions);
       if(p.comments_closed){const closed=el('p','ds-comments-state','Yorumlar kapalı');closed.dataset.commentsState='';card.append(closed);}
+      if (aggregateFeed) {
+        const links = el('footer', 'ds-expert-links');
+        const profile = el('a', '', 'Uzman profili');
+        profile.href = '/expert-support/expert/' + p.author_id;
+        links.append(profile);
+        if (p.author_support_available) {
+          const support = el('a', 'ds-expert-support', 'Uzmandan Destek Al');
+          support.href = '/expert-support/request/' + p.author_id;
+          links.append(support);
+        }
+        card.append(links);
+      }
       return card;
     }
     function replacePost(p) {
@@ -606,6 +659,8 @@
     async function loadPosts(reset = false) {
       if (postsLoading) return;
       postsLoading = true;
+      feed.setAttribute('aria-busy', 'true');
+      if ($('[data-feed-loading]')) $('[data-feed-loading]').hidden = false;
       const more = $("[data-more-posts]");
       more.disabled = true;
       try {
@@ -613,28 +668,22 @@
           postCursor = null;
           posts.clear();
         }
-        const data = await api(
-          (followingFeed ? "/feed/following" : "/experts/" +
-            expertId +
-            "/posts") +
-            (postCursor ? "?before=" + postCursor : ""),
-        );
+        const params = new URLSearchParams();
+        if (postCursor) params.set('before', postCursor);
+        if (aggregateFeed && root.dataset.feedSpecialty) params.set('specialty', root.dataset.feedSpecialty);
+        if (followingFeed) params.set('details', 'true');
+        const path = aggregateFeed ? '/feed/' + root.dataset.feedMode : '/experts/' + expertId + '/posts';
+        const data = await api(path + (params.size ? '?' + params : ''));
         if (reset) feed.replaceChildren();
-        if (!feed.children.length && !data.items.length)
-          feed.append(
-            el(
-              "div",
-              "ds-empty",
-              followingFeed ? "Takip ettiğiniz uzmanların gönderileri burada görünecek." : owner
-                ? "İlk bilimsel paylaşımınızı yapın."
-                : "Uzman henüz bir gönderi paylaşmamış.",
-            ),
-          );
+        if (data.items.length) feed.querySelector('.ds-empty')?.remove();
         for (const p of data.items) {
+          if (followingFeed && authorFollowState.get(p.author_id) === false) continue;
           const old = feed.querySelector(`[data-post-id="${p.id}"]`);
           if (old) old.replaceWith(renderPost(p));
           else feed.append(renderPost(p));
         }
+        if (!feed.children.length) feed.append(el('div', 'ds-empty',
+          aggregateFeed && root.dataset.feedSpecialty ? 'Bu branşta henüz bir paylaşım yok. Diğer branşlara göz atabilirsiniz.' : followingFeed ? 'Takip ettiğiniz uzmanların gönderileri burada görünecek.' : aggregateFeed ? 'Uzmanların onaylanan paylaşımları burada görünecek.' : owner ? 'İlk bilimsel paylaşımınızı yapın.' : 'Uzman henüz bir gönderi paylaşmış değil.'));
         postCursor = data.next_cursor;
         more.hidden = !postCursor;
       } catch (e) {
@@ -647,6 +696,8 @@
           );
       } finally {
         postsLoading = false;
+        feed.setAttribute('aria-busy', 'false');
+        if ($('[data-feed-loading]')) $('[data-feed-loading]').hidden = true;
         more.disabled = false;
       }
     }
@@ -1709,7 +1760,7 @@
       if (target && /^\d+$/.test(target)) {
         try {
           const p = await api("/posts/" + target);
-          if (followingFeed || p.author_id !== expertId) return;
+          if (aggregateFeed || p.author_id !== expertId) return;
           replacePost(p);
           setTimeout(
             () =>
