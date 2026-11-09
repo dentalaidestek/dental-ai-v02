@@ -269,7 +269,25 @@ def register(app, main):
     r = APIRouter(prefix="/api/expert-social")
 
     def actor(request):
-        u = main.get_current_user(request)
+        # Native tokens use the same revocable session records, but do not
+        # convey the separate cookie-based administrator MFA authorization.
+        authorization = request.headers.get("authorization")
+        native = authorization is not None
+        if native:
+            scheme, _, token = authorization.partition(" ")
+            if scheme.lower() != "bearer" or not token.strip():
+                raise HTTPException(401, "Üye girişi gerekiyor.")
+            with Session(main.engine, expire_on_commit=False) as session:
+                u = session.exec(select(main.User).join(
+                    main.SessionToken, main.SessionToken.user_id == main.User.id
+                ).where(
+                    main.SessionToken.token_hash == main.hash_session_token(token.strip()),
+                    main.SessionToken.expires_at > main._utcnow_naive(),
+                    main.User.is_active == True,
+                    main.User.email_verified_at != None,
+                )).first()
+        else:
+            u = main.get_current_user(request)
         if not u or not u.is_active:
             raise HTTPException(401, "Üye girişi gerekiyor.")
         if request.method not in ("GET", "HEAD"):
@@ -287,7 +305,7 @@ def register(app, main):
         # Resolve MFA authorization before opening a content transaction. Reuse
         # it only within this request, so admin reads also need one connection.
         request.state.social_admin = (
-            main._admin_only(request) if u.role == "ADMIN" else None
+            main._admin_only(request) if u.role == "ADMIN" and not native else None
         )
         return u
 
@@ -842,6 +860,23 @@ def register(app, main):
                     409, "Paylaşım değişti. Sayfayı yeniden açın."
                 ) from exc
             return post_rows(s, [p], u)[0]
+
+    @r.get("/experts/{expert_id}/photo")
+    def native_expert_photo(request: Request, expert_id: int):
+        u = actor(request)
+        with Session(main.engine) as s:
+            expert(s, expert_id)
+            if u.id != expert_id and main._users_blocked(s, u.id, expert_id):
+                raise HTTPException(404, "Uzman profili bulunamadı.")
+            reference = s.get(main.User, expert_id).profile_photo_path
+        if not reference:
+            raise HTTPException(404, "Profil fotoğrafı bulunamadı.")
+        try:
+            path = main.storage_ensure_local(reference)
+        except FileNotFoundError:
+            raise HTTPException(404, "Profil fotoğrafı bulunamadı.") from None
+        from fastapi.responses import FileResponse
+        return FileResponse(path, media_type="image/jpeg", headers=HEADERS)
 
     @r.get("/experts/{expert_id}/stats")
     def profile_stats(request: Request, expert_id: int):

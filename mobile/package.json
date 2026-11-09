@@ -1,15 +1,17 @@
 {
   "name": "dental-ai-mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "test": "npm run typecheck && npm run test:session && npm run test:realtime",
+    "android": "expo run:android",
+    "test": "npm run typecheck && npm run test:session && npm run test:realtime && npm run test:beta",
     "typecheck": "tsc --noEmit",
     "test:session": "node --test tests/session.cjs",
-    "test:realtime": "node --test tests/realtime.cjs tests/analysisRefresh.cjs tests/pagedRecords.cjs"
+    "test:realtime": "node --test tests/realtime.cjs tests/analysisRefresh.cjs tests/pagedRecords.cjs",
+    "test:beta": "node --test tests/social.cjs tests/findings.cjs tests/socialScreens.cjs",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -19,6 +21,7 @@
     "@react-navigation/native": "^7.1.17",
     "@react-navigation/native-stack": "^7.3.26",
     "expo": "~54.0.0",
+    "expo-crypto": "~15.0.9",
     "expo-image-picker": "~17.0.8",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.0",

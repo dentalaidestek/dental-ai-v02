@@ -21,7 +21,7 @@ export function verifyEmail(challengeToken:string,code:string){return request<{a
 export function logout(token:string){return request<{ok:boolean}>("/auth/logout",token,{method:"POST"});}
 export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
-export function getPatients(token:string,q=""){return request<{items:Patient[];total:number}>("/patients?q="+encodeURIComponent(q),token);}
+export function getPatients(token:string,q="",offset=0){return request<{items:Patient[];total:number}>("/patients?limit=30&offset="+offset+"&q="+encodeURIComponent(q),token);}
 export function getPatient(token:string,id:number){return request<PatientDetail>("/patients/"+id,token);}
 
 export type ScheduleEvent={id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;notes?:string|null;status:string;reminder_minutes?:number|null;notification_enabled?:boolean;recurrence_rule?:string};
@@ -61,4 +61,5 @@ export type E2EEDeviceKey={device_id:string;public_key:string;algorithm:string;k
 export const registerE2EEDevice=(token:string,payload:{device_id:string;public_key:string;algorithm?:string;key_version?:string})=>request<{ok:boolean;device_id:string;public_key:string;algorithm:string;key_version:string}>("/e2ee/device",token,{method:"PUT",body:JSON.stringify(payload)});
 export const getE2EEUserKeys=(token:string,userId:number)=>request<{items:E2EEDeviceKey[]}>(`/e2ee/users/${userId}/keys`,token);
 export const revokeE2EEDevice=(token:string,deviceId:string)=>request<{ok:boolean;device_id:string;revoked:boolean}>(`/e2ee/device/${encodeURIComponent(deviceId)}`,token,{method:"DELETE"});
+
 
