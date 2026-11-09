@@ -105,8 +105,12 @@ def test_realtime_failure_does_not_lose_pending_submission(env, monkeypatch):
 
 
 @pytest.mark.parametrize("removal", ["root", "post", "account"])
-def test_cascade_removal_resolves_pending_reply_alert(env, removal):
+def test_cascade_removal_resolves_pending_reply_alert(env, removal, monkeypatch):
     client, engine = env
+    delivered = []
+    async def capture(event):
+        delivered.append(event)
+    monkeypatch.setattr(main, '_publish_realtime_event', capture)
     parent_post = post(client).json()
     endpoint = f"/api/expert-social/posts/{parent_post['id']}/comments"
     root = client.post(endpoint, json={"text": "Bilimsel ana yorum.", "idempotency_key": str(uuid.uuid4())}).json()
@@ -124,6 +128,8 @@ def test_cascade_removal_resolves_pending_reply_alert(env, removal):
     with Session(engine) as session:
         notices = session.exec(select(main.AdminNotice).where(main.AdminNotice.notice_type == "SOCIAL_REVIEW_REQUIRED")).all()
         assert [(n.related_id, n.status) for n in notices] == [(str(reply["id"]), "RESOLVED")]
+    if removal != 'account':
+        assert any(event.user_id == 4 and event.event_type == 'NOTICE_RESOLVED' for event in delivered)
 
 
 def test_successful_background_retry_resolves_admin_alert(env, monkeypatch):

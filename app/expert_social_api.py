@@ -1002,6 +1002,8 @@ def register(app, main):
             s.add(p)
             from app.expert_social_maintenance import remove_post_media
 
+            from app.expert_social_review_notifications import prepare
+            prepare(s, request)
             remove_post_media(s, p.id)
             decision(
                 s,
