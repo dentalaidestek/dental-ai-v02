@@ -24,3 +24,12 @@ Yeni tablo, migration, AI çağrısı, arama sağlayıcısı veya ücretli servi
 GitHub Expert Social koşusu `42671476759` test işi oluşturmadan başarısız sona erdi (`jobs: []`). Aynı commit'in diğer üç iş akışında da test işi yok. Yeniden çalıştırma API'si 403 `This workflow run cannot be retried` döndürdü. Sağlayıcı yanıtında kesin neden yoktur; kota veya uygulama hatası olduğu varsayılmadı. Bu nedenle Chromium senaryoları ve 360/390/430/1280 px ekran görüntüleri doğrulanamadı. GitHub koşusu geçmiş sayılmaz. Kod bağımsız incelemede önemli açık bulgu vermedi.
 
 PR tarayıcı doğrulaması bekleyen taslak olarak tutuldu. Bu özellik için main birleştirmesi veya canlı dağıtım yapılmadı.
+
+## Ana sayfa kartı ve açıklama düzenleme devamı
+
+- Seçilen 4:3 sosyal medya görseli `app/static/dashboard/mobile/dental_flow.webp` olarak ana işlem kartlarına eklendi. HTML başlık **Dental Akış**; hedef `/dental-akis`. Lazy loading, width/height ve WebP kullanılır; ana sayfa besleme istemez.
+- Görsel Image Gen ile üretildi; son seçilen görsel üç diş hekimi, tablette sosyal akış, avatarlar, beğeni/yorum simgeleri ve yüzen gönderi kartları içerir. İstek: mevcut beyaz/mavi klinik fotoğraf tarzı, sosyal medya kimliği açık, yazısız, son oran 4:3. Kullanıcı son görseli açıkça seçti.
+- Açıklama editörü mevcut medya/bağlantıyı gösterir; üstte Kaydet, metin altında etkileşimlerin korunduğu bilgisi vardır. Hatalı kaydetme taslağı korur; bekleyen kayıt sırasında editör değiştirilemez. Çıkış ve yönetim sekmesi değişikliği kaydedilmemiş açıklama için vazgeçme onayı ister.
+- Aynı gönderi güncellenir. Yorum/yanıt, gönderi ve yorum beğenileri silinmez. Güvenli açıklama düzeltmesinde onaylı görsel yeniden kuyruğa alınmaz. Değişmeyen açıklama, onay kararını ve sürümü aynen korur. Riskli açıklama ve onaylanmamış görseller için inceleme sürer.
+- Yeni API regresyonu önce beklenen 2 hatayı gösterdi (onaylı görseli gereksiz incelemeye alma ve değişmeyen açıklamada kararın kaybı); düzeltmeden sonra **6 test geçti**. Gerçek şablon/JS ile medya-bağlantı görünümü, başarısız kayıt, tekrar deneme ve düzenleme korumaları geçti; bağımsız incelemenin bulduğu iki vazgeçme sorunu da düzeltildi ve yeniden doğrulandı.
+- Gerçek Chromium bu devam işinde de uygulama açılmadan `socket() failed: Operation not permitted` ile durdu. Yeni 390/1280 px tarayıcı senaryoları eklendi; ekran doğrulaması yapıldı sayılmaz.

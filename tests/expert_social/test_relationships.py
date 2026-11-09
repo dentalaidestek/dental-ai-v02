@@ -43,8 +43,8 @@ def test_following_page_requires_an_active_member(env):
         assert 'data-expert-id="0"' in response.text
         assert 'data-feed ' in response.text
         assert 'data-more-posts' in response.text
-        assert '/static/expert-social.css?v=20261109-2' in response.text
-        assert '/static/expert-social.js?v=20261109-2' in response.text
+        assert '/static/expert-social.css?v=20261109-3' in response.text
+        assert '/static/expert-social.js?v=20261109-3' in response.text
         assert '/static/expert-media-viewer.js?' in response.text
         assert 'href="/expert-support"' in response.text
         assert 'data-composer' not in response.text
@@ -106,7 +106,7 @@ def test_following_page_loads_one_feed_with_working_member_actions(browser_app):
             )
             page.goto(base + "/")
             assert not social_requests
-            page.locator("main .visual-following-link").click()
+            page.locator("main .visual-flow").click()
             page.get_by_role('navigation', name='Dental Akış bölümleri').get_by_role('link', name='Takip Ettiklerim', exact=True).click()
             expect(page.get_by_role("heading", name="Dental Akış")).to_be_visible()
             card = page.locator(f'[data-post-id="{post_id}"]')

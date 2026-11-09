@@ -181,4 +181,7 @@ def test_dental_flow_page_and_navigation_keep_filter_and_do_not_fetch_on_home(en
     assert client.get('/dental-akis', params={'tab':'bogus'}).status_code == 422
     home = client.get('/').text
     assert 'Dental Akış' in home and 'href="/dental-akis"' in home
+    assert 'visual-feature-card visual-flow visual-photo-card' in home
+    assert '/static/dashboard/mobile/dental_flow.webp' in home
+    assert 'width="768" height="576" loading="lazy"' in home
     assert 'data-expert-social' not in home and 'expert-social.js' not in home

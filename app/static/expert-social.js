@@ -325,12 +325,26 @@
       history.pushState({ ...history.state, dsDialog: true }, "");
       adjustViewport();
     }
-    function closeDialog(d, fromHistory = false) {
-      if (management && d===dialog) {resetInlineComposer();return;}
-      if (!d?.open) return;
+    function closeDialog(d, fromHistory = false, saved = false) {
+      if (d === dialog && !saved) {
+        if (sending) return false;
+        if (editing && text.value.trim() !== editing.text.trim() &&
+            !confirm('Değişiklikler kaydedilmedi. Düzenlemeden çıkılsın mı?')) {
+          if (fromHistory) history.pushState({ ...history.state, dsDialog: true }, '');
+          return false;
+        }
+      }
+      if (management && d===dialog) {resetInlineComposer();return true;}
+      if (!d?.open) return true;
+      if (d === dialog && editing && !saved) {
+        editing = null;
+        text.value = draft.text;
+        renderEditContext(null);
+      }
       d.close();
       document.body.style.overflow = "";
       if (!fromHistory && history.state?.dsDialog) history.back();
+      return true;
     }
     root.querySelectorAll("dialog").forEach((d) => {
       d.addEventListener("cancel", (e) => {
@@ -1194,6 +1208,7 @@
     function resetInlineComposer(){
       if(!management)return;
       editing=null;text.value=draft.text;
+      renderEditContext(null);
       $('[data-publish]').textContent='Paylaş';dialog.querySelector('h2').textContent='Yeni gönderi';
       $('[data-photo]').hidden=false;$('[data-link]').hidden=false;$('[data-cover]').hidden=!draft.linkUrl;
       $('[data-edit-mode]').hidden=true;$('[data-edit-cancel]').hidden=true;
@@ -1201,9 +1216,12 @@
       renderAttachments();renderPreview();fitText();
     }
     function openComposer(p = null, initial = "") {
-      if (!dialog) return;
+      if (!dialog || sending) return;
+      if (editing && text.value.trim() !== editing.text.trim() &&
+          !confirm('Değişiklikler kaydedilmedi. Düzenlemeden çıkılsın mı?')) return;
       if(management)root.closest('.expert-manage-reference').querySelector('[data-manage-tab="posts"]').click();
       editing = p;
+      renderEditContext(p);
       $('[data-edit-mode]').hidden=!(management&&p);$('[data-edit-cancel]').hidden=!(management&&p);
       const audience=dialog.querySelector('.ds-inline-audience');if(audience)audience.hidden=!!p;
       if (p) {
@@ -1211,7 +1229,6 @@
         $("[data-attachments]").replaceChildren();
         $("[data-preview]").replaceChildren();
         $("[data-publish]").textContent = "Kaydet";
-        $("[data-compose-title]");
         dialog.querySelector("h2").textContent = "Gönderiyi düzenle";
       } else {
         if (initial) {
@@ -1235,8 +1252,26 @@
       fitText();
       text.focus({ preventScroll: true });
     }
+    function renderEditContext(p) {
+      dialog.classList.toggle('is-editing', !!p);
+      const context = $('[data-edit-context]'), help = $('[data-edit-help]');
+      if (context) {
+        context.hidden = !p || (!p.media?.length && !p.link_url);
+        const media = $('[data-edit-media]'), preview = $('[data-edit-preview]');
+        media.replaceChildren(); preview.replaceChildren();
+        for (const item of p?.media || []) {
+          if (item.id === p.cover_media_id && p.link_url) continue;
+          const img = el('img'); img.src = item.url;
+          img.alt = 'Gönderinin mevcut görseli'; img.loading = 'lazy';
+          media.append(img);
+        }
+        if (p?.link_url) preview.append(linkCard(p.link_url, p.preview,
+          p.media?.find(item => item.id === p.cover_media_id)?.url));
+      }
+      if (help) help.hidden = !p;
+    }
     if (owner) {
-      $('[data-edit-cancel]').addEventListener('click',resetInlineComposer);
+      $('[data-edit-cancel]').addEventListener('click',()=>closeDialog(dialog));
       $("[data-compose]")?.addEventListener("click", () => openComposer());
       text.addEventListener("input", () => {
         fitText();
@@ -1418,6 +1453,9 @@
           return;
         }
         sending = true;
+        text.readOnly = true;
+        dialog.setAttribute('aria-busy', 'true');
+        dialog.querySelectorAll('[data-close], [data-edit-cancel]').forEach(control => control.disabled = true);
         const submit = $("[data-publish]");
         submit.disabled = true;
         const wasEditing = !!editing;
@@ -1448,13 +1486,19 @@
             previewSequence++;
             resetDraft();
           }
-          closeDialog(dialog);
+          closeDialog(dialog, false, true);
           editing = null;
           feed.querySelector(".ds-empty")?.remove();
           replacePost(row);
           setTab("posts");refreshStats().catch(()=>{});
           say(
-            row.status === "PUBLISHED"
+            wasEditing
+              ? row.status === 'PUBLISHED'
+                ? 'Gönderi güncellendi. Beğeniler ve yorumlar korundu.'
+                : row.status === 'PENDING'
+                  ? 'Değişiklikler incelemeye alındı. Beğeniler ve yorumlar korundu; onaydan sonra yeniden görünür.'
+                  : 'Değişiklikler yayımlanmadı. Beğeniler ve yorumlar korunur.'
+              : row.status === "PUBLISHED"
               ? "Yayımlandı. Gönderiniz profilinizde."
               : row.status === "PENDING"
                 ? "İncelemeye alındı. Onaylanana kadar yalnızca siz görebilirsiniz."
@@ -1468,6 +1512,9 @@
           error.scrollIntoView({block: "nearest"});
         } finally {
           sending = false;
+          text.readOnly = false;
+          dialog.setAttribute('aria-busy', 'false');
+          dialog.querySelectorAll('[data-close], [data-edit-cancel]').forEach(control => control.disabled = false);
           submit.disabled = false;
           submit.textContent = editing ? "Kaydet" : "Paylaş";
         }
@@ -1702,7 +1749,8 @@
       const availability=host.querySelector('.expert-availability-switch');
       if(availability)host.querySelector('[data-manage-availability]').append(availability);
       for(const b of host.querySelectorAll('[data-manage-tab]'))b.addEventListener('click',()=>{
-        const name=b.dataset.manageTab;if(name!=='posts'&&editing)resetInlineComposer();
+        const name=b.dataset.manageTab;
+        if(name!=='posts'&&editing&&!closeDialog(dialog))return;
         host.querySelectorAll('[data-manage-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===b)));
         general.hidden=name!=='general';social.hidden=!['posts','publications'].includes(name);settings.hidden=name!=='settings';
         if(!social.hidden)setTab(name);
