@@ -16,7 +16,7 @@
 
 Değişiklikler eklemelidir; mevcut baseline 12/social 2 uyumluluğu korunur. Dağıtımdan önce `python -m app.migrate` çalıştırılmalıdır. Şema hazır değilse uygulama başlangıç denetimi eksik tabloyla trafik kabul etmez. Başarılı geçiş sabit ve içerik içermeyen `social.schema ready version=2 comment_likes=true` kaydını üretir. Yeni bağımlılık veya ücretli servis eklenmedi.
 
-Bu çalışmada main birleştirmesi ve Render dağıtımı yapılmadı. Canlı hesap üzerinde yeni yorum özelliği testi yapılmadı; uygulama yerel test hesaplarıyla doğrulanır.
+İlk PR tesliminde main birleştirmesi ve Render dağıtımı yapılmadı. Daha sonraki kullanıcı onaylı yayın aşağıdaki sürüm kaydındadır. Canlı hesap üzerinde yeni yorum özelliği testi yapılmadı; uygulama sentetik hesaplarla doğrulanır.
 
 ## Test kapsamı
 
@@ -63,4 +63,16 @@ Bu değişikliklerin ilk doğrulaması: **95 geçti** (admin inbox, rollback/tes
 - Academic V2: 40 başarısız sonuç; listelenen 30 test kimliği önceki e410e23 ile aynı, yeni kimlik yok. Semantic PostgreSQL başarısız iki test kimliği de öncekiyle aynı (`test_every_allowed_planner_search_reaches_real_postgres[8]`, `[16]`). Genel uygulama paketi ayrı izlenir; tüm depo yeşil olarak sunulmaz.
 - Son bağımsız incelemede açık önemli bulgu kalmadı. Zincirleme silmede bildirim kapanması API ile yeniden doğrulandı.
 - Güncel sentetik görseller `docs/social-completion/compact-comments-{360,430,1280}.png` ve `moderation-human-queue-1280.png`. 360 px yorum ve 1280 px denetim ekranı ayrıca görsel olarak incelendi.
-- Main birleştirmesi, Render dağıtımı veya ücretli altyapı değişikliği yapılmadı.
+- İlk teslimde main birleştirmesi/Render dağıtımı yapılmadı. Sonraki onaylı yayın aşağıda kayıtlıdır; ücretli altyapı değişikliği yapılmadı.
+
+
+## Kullanıcı onaylı canlı yayın — 9 Kasım 2026
+
+- Kullanıcı “Canlıya alalım artık” talimatıyla PR #254 dağıtımını onayladı.
+- PR #254 squash ile main’e alındı: `2a8073d21311500ef49e85db4f0e471d18773ff6`.
+- Render servisi `dental-ai-v02`; dağıtım `dep-dbp0fep42hec73db3vm0` otomatik tetiklendi. İkinci bir deploy başlatılmadı.
+- Durum **LIVE**: 9 Kasım 2026 **17:51:51 UTC / 20:51:51 Türkiye saati**.
+- Geçiş kaydı: `social.schema ready version=2 comment_likes=true` (17:51:41 UTC); uygulama başlangıcı tamamlandı.
+- Canlı tarayıcıda `/healthz` ve `/readyz` yanıtları `{"ok":true}` olarak doğrulandı. Oturumsuz takip sayfası üye girişini zorunlu tuttu; ana sayfa giriş ekranına yönlendi. Bu tarayıcıda açık üye/admin oturumu olmadığı için gerçek hesapla yorum gönderme veya yönetici onayı yapılmadı.
+- Yayın öncesi genel paket karşılaştırması: 45 başarısız sonuç/35 kimlik; önceki 44/34’e ek yalnızca `tests/expert_social/test_mobile_social_polish.py::test_upload_previews_scroll_sideways_and_keep_reorder_controls[390]` vardı. Dört görsel önizlemesinin 20 saniyelik test sınırında üçü tamamlanmıştı; aynı test tam Expert Social Chromium koşusunda geçti. Testi yeşile çevirmek için üretim davranışı veya test süresi değiştirilmedi. Akademik/semantik başarısızlık kimlikleri öncekiyle aynı.
+- Kullanıcının LiteraDent görsellerinden hareketle istediği genel uzman keşfet alanı bu yayına eklenmedi; ayrı ürün önerisidir. Mevcut takip akışı ve uzman paylaşımları altyapısı yeniden kullanılabilir.
