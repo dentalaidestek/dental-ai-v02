@@ -34,7 +34,7 @@ API yetkileri, CSRF, gizli/engellenmiş yorumların görünürlüğü, sayfalama
 - Güncel oturumda tam tarayıcı koşusu başlatıldı, fakat Chromium uygulama açılmadan `socket() failed: Operation not permitted` hatasıyla durdu. Bu ortam hatası başarılı tarayıcı testi olarak sayılmaz; PR'ın mevcut GitHub Expert Social iş akışı tarayıcıları yeniden çalıştırır.
 - JavaScript sözdizimi ve diff boşluk denetimi geçti. Akademik/genel uygulama paketinin tamamı bu oturumda tekrar çalıştırılmadı.
 
-`docs/social-completion/compact-comments-{360,430,1280}.png` dosyaları önceki başarılı yerel tarayıcı koşusundan kalan sentetik ekranlardır; canlı ekran oldukları iddia edilmez.
+`docs/social-completion/compact-comments-{360,430,1280}.png` dosyaları son GitHub Chromium koşusunun sentetik ekranlarıyla güncellendi; canlı ekran oldukları iddia edilmez.
 
 ## Gönder düğmesi, admin inceleme bildirimi ve hız
 
@@ -52,3 +52,15 @@ Bildirim ve içerik aynı DB işlemindedir; rollback ikisini de geri alır. Ağ 
 | Render HTTP gecikme metriği boştu; son CPU/bellek örneklerinde kaynak baskısı görülmedi. | Tüm sayfa gecikmelerinin tek nedeni bulundu veya canlı gecikme artık belli bir süreye indi denmez. |
 
 Bu değişikliklerin ilk doğrulaması: **95 geçti** (admin inbox, rollback/teslim, silme zincirleri, startup, schema, eski moderasyon/temizlik ve gerçek PostgreSQL danışmanlık performansı dahil). GitHub'da önceki `e410e23` sürümünün Expert Social koşusu **560 geçti, 5 atlandı**; bu yeni değişikliklerin tarayıcı sonucu değildir. Güncel tam regresyon ve tarayıcı sonucu PR üzerinden ayrıca kaydedilir.
+
+
+## Son doğrulama
+
+- Uygulama commit: `959a265ac75f5179d95dc025eab6f1de581752c4`.
+- Ayrı yerel koşuların örtüşmeyen toplamı: **487 geçti, 4 dış servis testi atlandı**.
+- GitHub Expert Social: **575 geçti, 5 atlandı**; gerçek Chromium, yeni düğmenin 34×34 boyutu/simgesi, admin menüsündeki sayaç, bildirimden doğru içerik ekranına geçiş ve kuyruktan insan onayı dahil. Koşu: https://github.com/dentalaidestek/dental-ai-v02/actions/runs/42630984117
+- Admin security, Security recovery ve Mobile Android CI geçti.
+- Academic V2: 40 başarısız sonuç; listelenen 30 test kimliği önceki e410e23 ile aynı, yeni kimlik yok. Semantic PostgreSQL başarısız iki test kimliği de öncekiyle aynı (`test_every_allowed_planner_search_reaches_real_postgres[8]`, `[16]`). Genel uygulama paketi ayrı izlenir; tüm depo yeşil olarak sunulmaz.
+- Son bağımsız incelemede açık önemli bulgu kalmadı. Zincirleme silmede bildirim kapanması API ile yeniden doğrulandı.
+- Güncel sentetik görseller `docs/social-completion/compact-comments-{360,430,1280}.png` ve `moderation-human-queue-1280.png`. 360 px yorum ve 1280 px denetim ekranı ayrıca görsel olarak incelendi.
+- Main birleştirmesi, Render dağıtımı veya ücretli altyapı değişikliği yapılmadı.
