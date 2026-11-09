@@ -111,9 +111,10 @@ def test_following_page_loads_one_feed_with_working_member_actions(browser_app):
             expect(page.get_by_role("heading", name="Dental Akış")).to_be_visible()
             card = page.locator(f'[data-post-id="{post_id}"]')
             expect(page.locator("[data-feed] > article")).to_have_count(1)
-            expect(card.locator(".ds-author a")).to_have_attribute(
+            expect(card.locator(".ds-author-copy > a")).to_have_attribute(
                 "href", "/expert-support/expert/1"
             )
+            expect(card.locator('.ds-author-avatar')).to_have_attribute('href','/expert-support/expert/1')
             card.get_by_role("button", name="Beğen", exact=True).click()
             expect(card.get_by_role("button", name="Beğenmekten vazgeç", exact=True)).to_have_attribute(
                 "aria-pressed", "true"
