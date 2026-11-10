@@ -25,7 +25,7 @@ export function Notifications({token}:{token:string}){
   if(chat){nav.navigate("ConsultationChat",{id:Number(chat[1])});return;}
   if(/^\/(?:consultations|expert\/consultations)\/?(?:\?.*)?$/.test(url)){nav.navigate("Consultations");return;}
   if(/^\/patients\/(\d+)(?:\/.*)?$/.test(url)){const id=Number(url.match(/^\/patients\/(\d+)/)?.[1]);if(id)nav.navigate("Patients",{screen:"PatientDetail",params:{id}});return;}
-  if(url)nav.navigate("Consultations");
+  // Unsupported web routes stay in the notification center instead of opening an unrelated conversation.
  }
  return <FlatList style={s.page} contentContainerStyle={s.pad} data={d?.items||[]} keyExtractor={x=>String(x.id)}
  refreshControl={<RefreshControl refreshing={busy} onRefresh={()=>void load()}/>}
