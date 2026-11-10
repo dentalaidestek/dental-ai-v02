@@ -739,6 +739,24 @@ def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User 
     return {"ok": True, "patient": _patient_payload(patient)}
 
 
+@router.delete("/patients/{patient_id}")
+def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
+    """Mirror the web patient deletion path with owner checks and realtime invalidation."""
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        events = _record_patient_realtime_events(session, patient, "PATIENT_DELETED")
+        profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
+        if profile:
+            session.delete(profile)
+        session.delete(patient)
+        session.commit()
+    for event in events:
+        on_loop(_publish_realtime_event, event)
+    return {"ok": True, "patient_id": patient_id}
+
+
 @router.get("/patients/{patient_id}")
 def mobile_patient_detail(
     patient_id: int,
