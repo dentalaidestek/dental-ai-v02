@@ -999,3 +999,60 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
         return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
 
+
+
+# Native voice-exam adapter: reuse the existing web clinical engines, not their
+# cookie-authenticated route handlers. No transcript or raw audio is persisted.
+class MobileVoiceTextRequest(BaseModel):
+    transcript: str
+    consent: bool = False
+
+class MobileVoiceFinalRequest(BaseModel):
+    context: dict
+    consent: bool = False
+    insights: list[dict] = []
+    uncertain: str = ""
+    conversation_text: str = ""
+
+def _mobile_voice_patient(user: User, patient_id: int):
+    if user.role not in {"DOCTOR", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Sesli muayene yetkisi yok.")
+    with Session(engine) as session:
+        patient = session.exec(select(Patient).where(
+            Patient.id == patient_id, Patient.owner_user_id == user.id
+        )).first()
+        if patient is None:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        from app import voice_exam
+        return voice_exam._fingerprint(session, __import__("app.main", fromlist=["Patient"]), patient)
+
+@router.post("/patients/{patient_id}/voice-exam/text")
+def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, user: User = Depends(_mobile_user)):
+    from app.voice_exam import core
+    if not core.enabled():
+        raise HTTPException(status_code=503, detail="Sesli muayene etkin değil.")
+    revision = _mobile_voice_patient(user, patient_id)
+    if not payload.consent:
+        raise HTTPException(status_code=400, detail="Veri işleme onayı gerekli.")
+    if not payload.transcript.strip() or len(payload.transcript) > core.MAX_TRANSCRIPT:
+        raise HTTPException(status_code=422, detail="Muayene metni geçersiz.")
+    try:
+        return {"ok": True, "revision": revision, "review": core.extract(transcript=payload.transcript)}
+    except core.VoiceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+@router.post("/patients/{patient_id}/voice-exam/finalize")
+def mobile_voice_finalize(patient_id: int, payload: MobileVoiceFinalRequest, user: User = Depends(_mobile_user)):
+    from app.voice_exam import core
+    from app.voice_exam_final import finalize
+    if not core.enabled():
+        raise HTTPException(status_code=503, detail="Sesli muayene etkin değil.")
+    _mobile_voice_patient(user, patient_id)
+    if not payload.consent:
+        raise HTTPException(status_code=400, detail="Veri işleme onayı gerekli.")
+    try:
+        return {"ok": True, **finalize(payload.context, payload.insights,
+            payload.uncertain, conversation_text=payload.conversation_text,
+            request_scope=(user.id, patient_id))}
+    except (core.VoiceError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
