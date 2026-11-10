@@ -1211,8 +1211,16 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
         session.commit()
     on_loop(_publish_realtime_event, event)
     # Database commit precedes object deletion, matching the web route.
-    storage_delete(file_path)
-    return {"ok": True, "media_id": media_id}
+    cleanup_pending = False
+    try:
+        storage_delete(file_path)
+    except Exception:
+        # The database deletion already committed: do not report a false API failure.
+        # Operators must reconcile orphaned storage objects from server logs.
+        import logging
+        logging.getLogger(__name__).exception("Patient media storage cleanup failed for media_id=%s", media_id)
+        cleanup_pending = True
+    return {"ok": True, "media_id": media_id, "storage_cleanup_pending": cleanup_pending}
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
