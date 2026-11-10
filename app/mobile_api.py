@@ -1133,6 +1133,10 @@ async def mobile_patient_media_upload(
 ):
     if media_type not in {"PHOTO", "RADIOGRAPH"}:
         raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü türü.")
+    if tooth_number and (len(tooth_number.strip()) != 2 or not tooth_number.strip().isdigit() or tooth_number.strip()[0] not in "12345678" or tooth_number.strip()[1] not in "12345678"):
+        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    if note and len(note.strip()) > 2000:
+        raise HTTPException(status_code=422, detail="Klinik not 2000 karakteri aşamaz.")
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422,detail="Görüntü seçin.")
