@@ -325,13 +325,14 @@ function Sheet({
   children: React.ReactNode;
 }) {
   return (
-    <Modal animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={s.page}>
+    <Modal animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose} statusBarTranslucent={false}>
+      <SafeAreaView style={[s.page, {flex:1}]}>
         <View style={s.header}>
           <Text style={s.title}>{title}</Text>
           <Pressable
-            accessibilityLabel="Kapat"
+            accessibilityLabel="Pencereyi kapat"
             accessibilityRole="button"
+            hitSlop={12}
             onPress={onClose}
           >
             <Text style={s.action}>Kapat</Text>
