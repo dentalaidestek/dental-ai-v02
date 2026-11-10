@@ -19,7 +19,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
-from PIL import Image
+from PIL import Image, ImageOps
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -97,6 +97,26 @@ def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int)
             if width <= 0 or height <= 0 or width * height > MOBILE_MAX_IMAGE_PIXELS:
                 raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
             image.verify()
+        # Clinical uploads may contain GPS coordinates, device IDs and patient
+        # identifiers in EXIF. Re-encode pixel data before persistent storage.
+        expected_formats = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
+        expected = expected_formats.get(destination.suffix.lower())
+        if expected is None:
+            raise HTTPException(status_code=422, detail="Desteklenmeyen görüntü formatı.")
+        with Image.open(destination) as original:
+            if original.format != expected:
+                raise HTTPException(status_code=422, detail="Dosya uzantısı görüntü formatıyla eşleşmiyor.")
+            oriented = ImageOps.exif_transpose(original)
+            mode = "RGB" if expected == "JPEG" else ("RGBA" if "A" in oriented.getbands() else "RGB")
+            pixels = oriented.convert(mode)
+            clean = Image.new(mode, pixels.size)
+            clean.paste(pixels)
+            temporary = destination.with_name(destination.name + ".sanitized")
+            try:
+                clean.save(temporary, format=expected)
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
     except HTTPException:
         destination.unlink(missing_ok=True)
         raise
