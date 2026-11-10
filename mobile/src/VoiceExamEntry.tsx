@@ -42,8 +42,8 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
    </Pressable>
    <Text style={{color:muted,lineHeight:20,marginTop:14}}>Kayıt yalnızca hazır olduğunda başlatılmalı. Bu beta sürümünde native mikrofon henüz bağlanmadı; işlevsiz bir kayıt düğmesi göstermiyoruz.</Text>
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
-   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} onChangeText={v=>{setTranscript(v);setReview(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
-   <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Metin yalnız değerlendirme düğmesine bastığınızda gönderilir.</Text>
+   <TextInput multiline maxLength={18000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} onChangeText={v=>{setTranscript(v);setReview(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
+   <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/18000 karakter · Metin yalnız değerlendirme düğmesine bastığınızda gönderilir.</Text>
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
    <Pressable accessibilityRole="button" disabled={processing||!consent||!selected||!transcript.trim()} onPress={()=>void processText()} style={{backgroundColor:processing||!consent||!selected||!transcript.trim()?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Metni Klinik Olarak Çözümle"}</Text></Pressable>
    {review&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
