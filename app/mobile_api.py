@@ -1056,3 +1056,31 @@ def mobile_voice_finalize(patient_id: int, payload: MobileVoiceFinalRequest, use
             request_scope=(user.id, patient_id))}
     except (core.VoiceError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/patients/{patient_id}/voice-exam/audio")
+async def mobile_voice_audio(request: Request, patient_id: int, user: User = Depends(_mobile_user)):
+    """Transcribe one bounded native recording. Audio is never stored here."""
+    from app.voice_exam import core
+    from starlette.concurrency import run_in_threadpool
+    if not core.enabled():
+        raise HTTPException(status_code=503, detail="Sesli muayene etkin değil.")
+    if request.headers.get("x-voice-consent") != "yes":
+        raise HTTPException(status_code=400, detail="Ses aktarımı için onay gerekli.")
+    revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
+    # Reject oversized bodies without buffering unbounded user audio.
+    max_bytes = core.MAX_AUDIO_BYTES
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > max_bytes:
+            raise HTTPException(status_code=413, detail="Ses kaydı çok büyük.")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    try:
+        mime = core.validate_audio(data, request.headers.get("content-type", ""))
+        result = await run_in_threadpool(core.extract, data=data, mime=mime, transcription_only=True)
+        return {"ok": True, "revision": revision, "transcript": result["transcript"]}
+    except core.VoiceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
