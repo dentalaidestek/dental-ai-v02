@@ -152,6 +152,7 @@ function Composer({
   const d = useDraft(userId, "post"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [localPhoto, setLocalPhoto] = useState<string | null>(null),
     lock = useRef(false);
   async function image() {
     if (lock.current) return;
@@ -174,6 +175,7 @@ function Composer({
         type: a.mimeType || "image/jpeg",
       });
       d.update({ media_ids: [...d.draft.media_ids, uploaded.id] });
+      setLocalPhoto(a.uri);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -255,6 +257,8 @@ function Composer({
               style={s.input}
             />
             <Text style={s.meta}>{d.draft.media_ids.length}/4 fotoğraf</Text>
+            {localPhoto && <Image accessibilityLabel="Yüklenen son fotoğrafın önizlemesi" source={{uri:localPhoto}} resizeMode="contain" style={{width:"100%",height:220,borderRadius:12,backgroundColor:C.bg,marginVertical:8}}/>}
+            {!!d.draft.media_ids.length && <Text style={s.meta}>Fotoğraf taslağa eklendi. Paylaşmadan önce metni ve fotoğrafları kontrol edin.</Text>}
             <Button
               title="Fotoğraf ekle"
               onPress={() => void image()}
