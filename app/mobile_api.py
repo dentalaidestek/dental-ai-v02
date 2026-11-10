@@ -768,7 +768,9 @@ def register_mobile_push_device(payload: MobilePushRegistration, user: User = De
     with Session(engine, expire_on_commit=False) as session:
         # A physical device must not retain a push subscription from another signed-in account.
         previous = session.exec(select(MobilePushDevice).where(
-            (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token)
+            (MobilePushDevice.user_id == user.id) & (
+                (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token)
+            )
         )).all()
         for item in previous:
             session.delete(item)
