@@ -594,6 +594,42 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
                           "location": event.location, "status": event.status}}
 
 
+
+@router.post("/schedule/{event_id}/complete")
+def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        event = session.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
+        if event.recurrence_rule != "NONE":
+            raise HTTPException(status_code=400, detail="Tekrarlanan programı tamamlamak yerine düzenleyin.")
+        if event.status == "COMPLETED":
+            return {"ok": True, "status": "COMPLETED"}
+        event.status = "COMPLETED"
+        event.updated_at = datetime.utcnow()
+        session.add(event)
+        realtime = _record_realtime_event(session, user.id, "PROGRAM_COMPLETED", "schedule_event", event.id, {"event_id": event.id, "status": event.status})
+        session.commit()
+    on_loop(_publish_realtime_event, realtime)
+    return {"ok": True, "status": "COMPLETED"}
+
+
+@router.delete("/schedule/{event_id}")
+def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        event = session.get(ScheduleEvent, event_id)
+        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+            raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
+        event.status = "DELETED"
+        event.updated_at = datetime.utcnow()
+        session.add(event)
+        realtime = _record_realtime_event(session, user.id, "PROGRAM_DELETED", "schedule_event", event.id, {"event_id": event.id, "status": event.status})
+        session.commit()
+    on_loop(_publish_realtime_event, realtime)
+    return {"ok": True}
+
+
+
 @router.post("/patients/{patient_id}/teeth/{tooth_number}")
 def mobile_update_tooth(
     patient_id: int,
