@@ -1051,7 +1051,7 @@ def mobile_voice_finalize(patient_id: int, payload: MobileVoiceFinalRequest, use
     if not payload.consent:
         raise HTTPException(status_code=400, detail="Veri işleme onayı gerekli.")
     try:
-        return {"ok": True, **finalize(payload.context, payload.insights,
+        return {"ok": True, "final": finalize(payload.context, payload.insights,
             payload.uncertain, conversation_text=payload.conversation_text,
             request_scope=(user.id, patient_id))}
     except (core.VoiceError, ValueError, TypeError) as exc:
