@@ -18,6 +18,7 @@ import VoiceExamEntry from "./src/VoiceExamEntry";
 import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,MediaGallery,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 import{uploadPatientMedia}from"./src/api";
+import{unregisterPushDevice}from"./src/modernApi";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
 
@@ -109,7 +110,7 @@ function AppContent(){
  },[]);
  useEffect(()=>{void restore()},[restore]);
  useEffect(()=>{if(!session)return;let active=true;const token=session.token;const stop=subscribeSessionExpiry(token,()=>{setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token]);
- async function signOut(){if(session)try{await logout(session.token)}catch{}await SecureStore.deleteItemAsync("dentalai_token");setSession(null)}
+ async function signOut(){if(session){try{const deviceId=await SecureStore.getItemAsync("dai.push.device_id");if(deviceId)await unregisterPushDevice(session.token,deviceId)}catch{}try{await logout(session.token)}catch{}}await SecureStore.deleteItemAsync("dentalai_token");setSession(null)}
  if(boot)return <Splash/>;
  if(bootError)return <View style={s.splash}><Logo/><Text style={s.err}>{bootError}</Text><Pressable style={s.primary} onPress={()=>void restore()}><Text style={s.primaryText}>Tekrar Dene</Text></Pressable></View>;
  return session?<Main key={session.user.id} token={session.token} user={session.user} signOut={signOut}/>:<Login done={(token,user)=>setSession({token,user})}/>;
