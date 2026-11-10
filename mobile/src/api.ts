@@ -56,8 +56,8 @@ export const getConsultation=(token:string,id:number)=>request<ConsultationDetai
 export const getAcademicCourses=(token:string)=>request<{items:AcademicCourse[]}>("/academic/courses",token);
 export const getAcademicMessages=(token:string,id:number)=>request<{items:AcademicMessage[]}>(`/academic/courses/${id}/messages`,token);
 export const askAcademic=(token:string,id:number,message:string)=>request<any>(`/academic/courses/${id}/ask`,token,{method:"POST",body:JSON.stringify({message})});
-export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:string;name:string;type:string},toothNumber?:string)=>{
- const body=new FormData(); body.append("image",{uri:file.uri,name:file.name,type:file.type} as any); if(toothNumber) body.append("tooth_number",toothNumber);
+export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:string;name:string;type:string},toothNumber?:string,mediaType:"PHOTO"|"RADIOGRAPH"="PHOTO")=>{
+ const body=new FormData(); body.append("media_type",mediaType); body.append("image",{uri:file.uri,name:file.name,type:file.type} as any); if(toothNumber) body.append("tooth_number",toothNumber);
  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body});
  if(response.status===401)reportSessionExpiry(token);
  const raw=await response.text(); let data:any={}; try{data=raw?JSON.parse(raw):{}}catch{} if(!response.ok)throw new Error(data.detail||"Görüntü yüklenemedi."); return data;
