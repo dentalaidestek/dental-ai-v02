@@ -24,6 +24,7 @@ export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
 export function getPatients(token:string,q="",offset=0){return request<{items:Patient[];total:number}>("/patients?limit=30&offset="+offset+"&q="+encodeURIComponent(q),token);}
 export function getPatient(token:string,id:number){return request<PatientDetail>("/patients/"+id,token);}
+export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
 export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string}){return request<{ok:boolean;patient:Patient}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});}
 
 export type ScheduleEvent={id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;notes?:string|null;status:string;reminder_minutes?:number|null;notification_enabled?:boolean;recurrence_rule?:string};
