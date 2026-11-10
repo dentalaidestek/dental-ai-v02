@@ -1072,8 +1072,11 @@ async def mobile_patient_media_upload(
     file:UploadFile=File(None),
     tooth_number:Optional[str]=Form(None),
     note:Optional[str]=Form(None),
+    media_type:str=Form("PHOTO"),
     user:User=Depends(_mobile_user),
 ):
+    if media_type not in {"PHOTO", "RADIOGRAPH"}:
+        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü türü.")
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422,detail="Görüntü seçin.")
@@ -1091,7 +1094,7 @@ async def mobile_patient_media_upload(
         storage_persist_file(destination)
         media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
             original_filename=Path(image.filename).name,stored_filename=stored,
-            file_path=str(destination),media_type="PHOTO",
+            file_path=str(destination),media_type=media_type,
             tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
         session.add(media);session.flush()
         realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
