@@ -4,6 +4,25 @@ import {getPatient,getPatients,Patient} from "./api";
 import {extractVoice,finalizeVoice,VoiceExtraction} from "./voiceApi";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
+const fieldLabels:Record<string,string>={first_name:"Ad",last_name:"Soyad",age:"Yaş",chief_complaint:"Başvuru şikâyeti",medical_history:"Sağlık geçmişi",family_history:"Aile sağlık öyküsü",materials:"Konuşulan materyaller",dental_history:"Önceki diş tedavileri",oral_habits:"Ağız bakımı ve alışkanlıklar",medications:"İlaç bilgileri",allergies:"Alerji bilgileri",clinical_findings:"Muayene bulguları",plan:"Konuşulan tedavi planı"};
+const reviewSections:[string,string][]=[["summary","Özet"],["questions","Netleştirilecek sorular"],["contradictions","Çelişkiler"],["clinical_items","Klinik değerlendirmeler"],["references","Kaynaklar"],["unavailable","Doğrulanamayanlar"]];
+function readable(value:unknown):string{
+ if(typeof value==="string")return value;
+ if(typeof value==="number"||typeof value==="boolean")return String(value);
+ if(Array.isArray(value))return value.map(readable).filter(Boolean).join(" · ");
+ if(value&&typeof value==="object"){const item=value as Record<string,unknown>;return ["text","description","finding","recommendation","reason","quote","status","title","label","url"].filter(k=>item[k]!=null).map(k=>readable(item[k])).filter(Boolean).join(" — ")||"Ayrıntı belirtilmedi";}
+ return "";
+}
+function ResultSection({name,items}:{name:string;items:unknown}){
+ const [expanded,setExpanded]=useState(false);const rows=Array.isArray(items)?items:[];
+ return <View style={{borderWidth:1,borderColor:line,borderRadius:13,marginTop:12,overflow:"hidden"}}>
+ <Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={()=>setExpanded(v=>!v)} style={{padding:14,flexDirection:"row",justifyContent:"space-between",alignItems:"center",backgroundColor:"#F6FAFD"}}>
+ <Text style={{fontWeight:"800",color:navy,flex:1}}>{name} ({rows.length})</Text><Text style={{color:navy}}>{expanded?"−":"+"}</Text>
+ </Pressable>
+ {expanded&&(rows.length?rows.map((item,i)=><View key={i} style={{padding:12,borderTopWidth:1,borderTopColor:line}}><Text selectable style={{color:navy,lineHeight:21}}>{readable(item)}</Text>{item&&typeof item==="object"&&typeof (item as Record<string,unknown>).url==="string"&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(String((item as Record<string,unknown>).url))}><Text style={{color:"#1769AA",marginTop:6}}>Kaynağı aç</Text></Pressable>}</View>):<Text style={{color:muted,padding:12}}>Bu bölümde kayıt yok.</Text>)}
+ </View>;
+}
+
 export default function VoiceExamEntry({token,initialPatientId}:{token:string;initialPatientId?:number}){
  const [processing,setProcessing]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[query,setQuery]=useState(""),[patients,setPatients]=useState<Patient[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await getPatients(token,query,0);setPatients(r.items)}catch(e){setError(e instanceof Error?e.message:"Hasta listesi alınamadı.")}finally{setBusy(false)}},[token,query,initialPatientId]);
@@ -26,16 +45,16 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
    <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} onChangeText={v=>{setTranscript(v);setReview(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Metin yalnız değerlendirme düğmesine bastığınızda gönderilir.</Text>
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
-   <Pressable accessibilityRole="button" disabled={processing||!consent||!selected||!transcript.trim()} onPress={()=>void processText()} style={{backgroundColor:processing?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Metni Klinik Olarak Çözümle"}</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={processing||!consent||!selected||!transcript.trim()} onPress={()=>void processText()} style={{backgroundColor:processing||!consent||!selected||!transcript.trim()?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Metni Klinik Olarak Çözümle"}</Text></Pressable>
    {review&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Çıkarılan muayene bilgileri</Text>
-    {Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{name.replace(/_/g," ")}</Text><Text style={{color:muted,marginTop:4}}>{item.value}</Text></View>)}
+    {Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text><Text style={{color:muted,marginTop:4}}>{item.value}</Text></View>)}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>Muayenenin Tamamını Değerlendir</Text></Pressable>
    </View>}
    {finalResult&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:18,fontWeight:"800",color:navy}}>Kaynaklı klinik değerlendirme</Text>
-    {["summary","questions","contradictions","clinical_items","references","unavailable"].map(key=><View key={key} style={{marginTop:12}}><Text style={{fontWeight:"800",color:navy}}>{({summary:"Özet",questions:"Netleştirilecek sorular",contradictions:"Çelişkiler",clinical_items:"Klinik değerlendirmeler",references:"Kaynaklar",unavailable:"Doğrulanamayanlar"} as Record<string,string>)[key]}</Text><Text selectable style={{color:muted,marginTop:5,lineHeight:20}}>{JSON.stringify(finalResult[key]||[],null,2)}</Text></View>)}
+    {reviewSections.map(([key,label])=><ResultSection key={key} name={label} items={finalResult[key]}/>)}
     <Text style={{color:"#B42318",marginTop:12}}>Hekim kontrolü gereklidir. Sonuç otomatik olarak hasta dosyasına yazılmaz.</Text>
    </View>}
    <Pressable accessibilityRole="button" disabled={!consent||!selected} onPress={()=>void open()} style={{backgroundColor:consent&&selected?navy:"#9BA7B7",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>Webdeki Tam Muayeneyi Aç</Text></Pressable>
@@ -44,7 +63,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
  </ScrollView>;
  return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
   <Text style={{fontSize:25,fontWeight:"800",color:navy}}>Sesli Muayene</Text>
-  <Text style={{color:muted,marginTop:7,lineHeight:21}}>Webdeki mevcut muayene akışına hasta seçerek ulaşın. Native mikrofon, transkript ve değerlendirme ekranları henüz aktarılmadı.</Text>
+  <Text style={{color:muted,marginTop:7,lineHeight:21}}>Webdeki mevcut muayene akışına hasta seçerek ulaşın. Hasta seçerek muayeneye başlayın. Konuşma metni ve klinik değerlendirme bu ekranda yönetilir.</Text>
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:18}}>
    <Text style={{fontWeight:"800",color:navy,marginBottom:9}}>Hasta seçimi</Text>
    <TextInput accessibilityLabel="Hasta ara" value={query} onChangeText={setQuery} placeholder="Ad veya hasta kodu ara" style={{borderWidth:1,borderColor:line,borderRadius:12,padding:12,color:navy}}/>
@@ -56,7 +75,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
     <Text style={{color:navy}}>{selected?.id===p.id?"●":"○"}</Text>
    </Pressable>)}
    <Pressable onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center"}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
-   <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Bu geçici geçiş web tarayıcısında açılır; web oturumunda giriş gerekebilir. Hasta kaydına otomatik veri yazılmaz.</Text>
+   <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir.</Text>
   </View>
  </ScrollView>
 }
