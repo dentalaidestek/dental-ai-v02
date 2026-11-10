@@ -27,6 +27,7 @@ from app.auth import create_session_token, hash_session_token, verify_password
 from app.auth_rate import LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt, bucket_key
 from app.main import (
     Analysis,
+    MobilePushDevice,
     ImageAsset,
     PatientProfile,
     DoctorProfile,
@@ -748,6 +749,48 @@ def _response_json(response):
         except Exception:
             return {"ok": False, "error": "Sunucu yanıtı okunamadı."}
     return response
+
+class MobilePushRegistration(BaseModel):
+    device_id: str
+    expo_push_token: str
+    platform: str
+
+
+@router.post("/push/devices")
+def register_mobile_push_device(payload: MobilePushRegistration, user: User = Depends(_mobile_user)):
+    device_id = payload.device_id.strip()
+    token = payload.expo_push_token.strip()
+    platform = payload.platform.strip().lower()
+    if not (1 <= len(device_id) <= 128) or platform not in {"android", "ios"}:
+        raise HTTPException(status_code=422, detail="Geçersiz cihaz bilgisi.")
+    if len(token) > 256 or not (token.startswith("ExponentPushToken[") or token.startswith("ExpoPushToken[")) or not token.endswith("]"):
+        raise HTTPException(status_code=422, detail="Geçersiz Expo push token.")
+    with Session(engine, expire_on_commit=False) as session:
+        # A physical device must not retain a push subscription from another signed-in account.
+        previous = session.exec(select(MobilePushDevice).where(
+            (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token)
+        )).all()
+        for item in previous:
+            session.delete(item)
+        session.flush()
+        session.add(MobilePushDevice(user_id=user.id, device_id=device_id,
+                                     expo_push_token=token, platform=platform))
+        session.commit()
+    return {"ok": True}
+
+
+@router.delete("/push/devices/{device_id}")
+def unregister_mobile_push_device(device_id: str, user: User = Depends(_mobile_user)):
+    if len(device_id) > 128:
+        raise HTTPException(status_code=422, detail="Geçersiz cihaz.")
+    with Session(engine, expire_on_commit=False) as session:
+        for item in session.exec(select(MobilePushDevice).where(
+            MobilePushDevice.user_id == user.id, MobilePushDevice.device_id == device_id
+        )).all():
+            session.delete(item)
+        session.commit()
+    return {"ok": True}
+
 
 @router.get("/notifications")
 def mobile_notifications(user: User = Depends(_mobile_user)):
