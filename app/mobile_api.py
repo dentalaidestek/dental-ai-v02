@@ -766,7 +766,13 @@ def register_mobile_push_device(payload: MobilePushRegistration, user: User = De
     if len(token) > 256 or not (token.startswith("ExponentPushToken[") or token.startswith("ExpoPushToken[")) or not token.endswith("]"):
         raise HTTPException(status_code=422, detail="Geçersiz Expo push token.")
     with Session(engine, expire_on_commit=False) as session:
-        # A physical device must not retain a push subscription from another signed-in account.
+        # Reject cross-account token conflicts; a client-supplied device ID is not proof of ownership.
+        other_owner = session.exec(select(MobilePushDevice).where(
+            MobilePushDevice.expo_push_token == token,
+            MobilePushDevice.user_id != user.id,
+        )).first()
+        if other_owner:
+            raise HTTPException(status_code=409, detail="Cihaz bildirimi önceki hesaptan kaldırılmalı.")
         previous = session.exec(select(MobilePushDevice).where(
             (MobilePushDevice.user_id == user.id) & (
                 (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token)
