@@ -998,9 +998,11 @@ export function DentalFlow({
     <View>
       <View style={s.header}>
         <Text style={s.title}>{expertName || "Dental Akış"}</Text>
-        <Pressable onPress={() => setCompose(true)}>
-          <Text style={s.action}>＋ Paylaş</Text>
-        </Pressable>
+        {(!expertId || expertId === user.id) && (
+          <Pressable accessibilityRole="button" accessibilityLabel="Gönderi paylaş" onPress={() => setCompose(true)}>
+            <Text style={s.action}>＋ Paylaş</Text>
+          </Pressable>
+        )}
       </View>
       {expertId ? (
         <View style={s.card}>
