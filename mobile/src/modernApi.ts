@@ -1,9 +1,11 @@
+import {ApiError} from './api';
+import {reportSessionExpiry} from './sessionExpiry';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={"Content-Type":"application/json",Authorization:"Bearer "+token,...(init.headers||{})};
  const r=await fetch(API_BASE+path,{...init,headers});
  const raw=await r.text(); let b:any={}; try{b=raw?JSON.parse(raw):{}}catch{}
- if(!r.ok) throw new Error(typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));
+ if(!r.ok){if(r.status===401)reportSessionExpiry(token);throw new ApiError(r.status,typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));}
  return b as T;
 }
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
@@ -27,3 +29,4 @@ export function askAcademic(t:string,courseId:number,message:string){
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
+

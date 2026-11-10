@@ -51,6 +51,11 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          # The action defaults to the retired `tools` package. Install only
+          # supported SDK packages so setup can reach the actual APK build.
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
       # Standalone JS bundle, signed with the generated development key only.
@@ -63,4 +68,5 @@ jobs:
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
 

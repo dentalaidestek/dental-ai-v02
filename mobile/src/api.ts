@@ -1,3 +1,4 @@
+import {reportSessionExpiry} from './sessionExpiry';
 const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
@@ -13,7 +14,7 @@ export class ApiError extends Error {
 async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
  const response=await fetch(API_BASE+path,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
  const raw=await response.text(); let body:any={}; try{body=raw?JSON.parse(raw):{}}catch{}
- if(!response.ok){const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
+ if(!response.ok){if(response.status===401&&token)reportSessionExpiry(token);const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
  return body as T;
 }
 export function login(loginValue:string,password:string,renewEmailCode=false){return request<{access_token:string|null;token_type:string;expires_at:string;challenge_token?:string}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password,renew_email_code:renewEmailCode})});}
@@ -52,6 +53,7 @@ export const askAcademic=(token:string,id:number,message:string)=>request<any>(`
 export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:string;name:string;type:string},toothNumber?:string)=>{
  const body=new FormData(); body.append("image",{uri:file.uri,name:file.name,type:file.type} as any); if(toothNumber) body.append("tooth_number",toothNumber);
  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body});
+ if(response.status===401)reportSessionExpiry(token);
  const raw=await response.text(); let data:any={}; try{data=raw?JSON.parse(raw):{}}catch{} if(!response.ok)throw new Error(data.detail||"Görüntü yüklenemedi."); return data;
 };
 
@@ -61,5 +63,6 @@ export type E2EEDeviceKey={device_id:string;public_key:string;algorithm:string;k
 export const registerE2EEDevice=(token:string,payload:{device_id:string;public_key:string;algorithm?:string;key_version?:string})=>request<{ok:boolean;device_id:string;public_key:string;algorithm:string;key_version:string}>("/e2ee/device",token,{method:"PUT",body:JSON.stringify(payload)});
 export const getE2EEUserKeys=(token:string,userId:number)=>request<{items:E2EEDeviceKey[]}>(`/e2ee/users/${userId}/keys`,token);
 export const revokeE2EEDevice=(token:string,deviceId:string)=>request<{ok:boolean;device_id:string;revoked:boolean}>(`/e2ee/device/${encodeURIComponent(deviceId)}`,token,{method:"DELETE"});
+
 
 

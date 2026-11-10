@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import {reportSessionExpiry} from './sessionExpiry';
 const BASE = "https://dentalai.tr";
 export const socialUrl = (path: string) =>
   path.startsWith("/")
@@ -74,6 +75,7 @@ export async function socialRequest<T>(
       "Sunucu yanıtı okunamadı. Taslağınız korundu.",
     );
   }
+  if(response.status===401)reportSessionExpiry(token);
   if (!response.ok)
     throw new ApiError(
       response.status,
@@ -197,3 +199,4 @@ export const reportSocial = (
     method: "POST",
     body: JSON.stringify({ target_type, target_id, reason }),
   });
+

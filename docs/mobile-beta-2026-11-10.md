@@ -42,3 +42,12 @@ PostHog inspection: only Default project 318683 visible, onboarding incomplete, 
 - Rulings: mutable feed/patient refresh replaces the current loaded page to remove deleted/blocked content; append-only chat/course history keeps existing merge semantics. Upload/send blocks composer dismissal until completion/error, with bounded social HTTP timeouts. Native admin tokens do not grant web moderation/MFA authority.
 - Deferred: full public profile/cover/publication management, in-card follow shortcut (follow works in profile), pinch/swipe gallery, native anamnesis editing, complete analysis-upload progress/idempotency, full session-expiry UX, native voice and academic upload/quiz/export, push delivery, account deletion/consent, icon/splash, and store release.
 - Device, APK install, TestFlight, clinical accuracy and 60k-user load tests: NOT RUN.
+
+
+## Resume checkpoint — PR #256
+
+All first-pass source was recovered from remote commit `2fc0ef2d32603bd97695b71cf8f4be1651ddd5d7` after the execution workspace restarted. The remote branch and draft PR preserve the full work.
+
+Follow-up: TypeScript and 36 mobile tests passed. All four authenticated JSON clients now retain HTTP status and publish a token-scoped 401 event. An expired/revoked current session returns to login once; delayed old-session responses cannot log out a newer account, and 403/429/503 do not erase the session.
+
+GitHub Actions independently passed npm ci, all first-pass mobile tests and both platform exports. The first APK job failed before compilation because android-actions/setup-android defaulted to the retired SDK package `tools`. The workflow now supplies supported platform/build-tools packages explicitly. This is a diagnosed setup failure, not an APK success; follow the latest workflow artifact/result before claiming an installable beta.

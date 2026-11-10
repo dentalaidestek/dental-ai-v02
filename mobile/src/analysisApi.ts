@@ -1,11 +1,12 @@
-import {Patient} from "./api";
+import {Patient,ApiError} from "./api";
+import {reportSessionExpiry} from './sessionExpiry';
 
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 
 async function call<T>(path:string,token:string,options:RequestInit={}):Promise<T>{
   const response=await fetch(API_BASE+path,{...options,headers:{Authorization:"Bearer "+token,...(options.headers||{})}});
   const raw=await response.text();let body:any={};try{body=raw?JSON.parse(raw):{}}catch{}
-  if(!response.ok)throw new Error(typeof body.detail==="string"?body.detail:(body.detail?.message||"İstek başarısız."));
+  if(!response.ok){if(response.status===401)reportSessionExpiry(token);throw new ApiError(response.status,typeof body.detail==="string"?body.detail:(body.detail?.message||"İstek başarısız."));}
   return body as T;
 }
 
@@ -32,3 +33,4 @@ export function startAnalysisAI(token:string,id:number){return call<{ok:boolean;
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
 export function getAnalysisHistory(token:string,patientId?:number){return call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId?"?patient_id="+patientId:""),token);}
+
