@@ -864,7 +864,8 @@ def mobile_patient_detail(
                 (PatientMedia.patient_id == patient_id)
                 & (PatientMedia.owner_user_id == user.id)
             )
-            .order_by(PatientMedia.uploaded_at.desc())
+            .order_by(PatientMedia.id.desc())
+            .limit(20)
         ).all()
 
         profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
