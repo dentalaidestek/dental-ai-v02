@@ -280,6 +280,17 @@ class SupportTicketReadState(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class MobilePushDevice(SQLModel, table=True):
+    """User-scoped Expo device registration; no patient content is stored here."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True)
+    expo_push_token: str = Field(index=True, unique=True)
+    platform: str
+    enabled: bool = True
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+
+
 class AdminNotice(SQLModel, table=True):
     """Durable non-message notification.
 
