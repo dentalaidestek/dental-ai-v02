@@ -41,7 +41,49 @@ export function AnalysisHistory({token}:{token:string}){const nav:any=useNavigat
 
 export function MediaGallery({token,patientId}:{token:string;patientId:number}){const[d,setD]=useState<any>();const{lastEvent}=useRealtime();const[uploading,setUploading]=useState(false);const[error,setError]=useState("");const load=useCallback(async()=>{try{setD(await getMedia(token,patientId));setError("")}catch(e){setError(e instanceof Error?e.message:"Medya yüklenemedi.")}},[token,patientId]);useEffect(()=>{load()},[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&["PATIENT_MEDIA_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[lastEvent,load,patientId]);async function upload(camera:boolean){setUploading(true);try{if(camera){const p=await ImagePicker.requestCameraPermissionsAsync();if(!p.granted)return;}else{const p=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!p.granted)return;}const r=camera?await ImagePicker.launchCameraAsync({mediaTypes:["images"],quality:.82}):await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],quality:.82});if(r.canceled||!r.assets[0])return;const a=r.assets[0];await uploadPatientMedia(token,patientId,{uri:a.uri,name:a.fileName||("media_"+Date.now()+".jpg"),type:a.mimeType||"image/jpeg"});await load()}catch(e){setError(e instanceof Error?e.message:"Görüntü yüklenemedi.")}finally{setUploading(false)}}return <View style={s.page}><View style={s.pad}><View style={s.row}><View style={{flex:1}}><Text style={s.big}>Hasta Medyası</Text><Text style={s.muted}>Klinik fotoğraflar ve görüntüler.</Text></View><Text style={s.pill}>{d?.items?.length||0}</Text></View><View style={s.row}><Pressable style={[s.btn,{flex:1}]} onPress={()=>upload(false)} disabled={uploading}><Text style={s.btnT}>Galeriden</Text></Pressable><Pressable style={[s.btn,{flex:1}]} onPress={()=>upload(true)} disabled={uploading}><Text style={s.btnT}>Kamera</Text></Pressable></View></View>{!!error&&<Text style={{color:C.red,paddingHorizontal:16}}>{error}</Text>}<FlatList style={s.page} contentContainerStyle={s.pad} numColumns={2} columnWrapperStyle={{gap:10}} data={d?.items||[]} keyExtractor={x=>String(x.id)} refreshControl={<RefreshControl refreshing={!d} onRefresh={load}/>} renderItem={({item})=><View style={s.mediaCard}><Image source={{uri:item.url,headers:{Authorization:"Bearer "+token}}} style={s.media}/><Text numberOfLines={1} style={s.meta}>{item.filename}</Text></View>} ListEmptyComponent={<Empty title="Medya yok" sub="İlk klinik görüntünü ekle."/>}/></View>}
 
-export function ExpertDirectory({token,navigation}:{token:string;navigation:any}){const{lastEvent}=useRealtime();const[data,setData]=useState<Expert[]>([]),[q,setQ]=useState(""),[busy,setBusy]=useState(true);const load=useCallback(async()=>{setBusy(true);try{setData((await getExperts(token,q)).items)}finally{setBusy(false)}},[token,q]);useEffect(()=>{load()},[token]);useEffect(()=>{if(lastEvent&&["PROFILE_UPDATED","PROFILE_PHOTO_UPDATED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[lastEvent,load]);return <View style={s.page}><View style={s.pad}><Text style={s.big}>Uzmandan Destek Al</Text><Text style={s.muted}>Doğrulanmış uzmanlarla vaka danışmanlığı.</Text><TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Uzman, branş veya kurum ara" placeholderTextColor={C.muted} style={s.input}/></View>{busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:<FlatList contentContainerStyle={s.pad} data={data} keyExtractor={x=>String(x.user_id)} renderItem={({item})=><Pressable style={card} onPress={()=>navigation.navigate("NewConsultation",{expert:item})}><View style={s.row}><View style={{flex:1}}><Text style={s.title}>{item.display_name}</Text><Text style={s.body}>{item.academic_title||"Uzman Diş Hekimi"} · {item.specialty}</Text><Text style={s.meta}>{item.institution||"Kurum belirtilmemiş"}{item.rating_avg?" · ★ "+item.rating_avg:""}</Text></View><Text style={[s.availability,item.availability==="AVAILABLE"&&{color:C.green}]}>{item.availability==="AVAILABLE"?"Müsait":"Pasif"}</Text></View></Pressable>}/>}</View>}
+export function ExpertDirectory({token,navigation}:{token:string;navigation:any}){
+ const{lastEvent}=useRealtime();
+ const[data,setData]=useState<Expert[]>([]);
+ const[q,setQ]=useState(""),[busy,setBusy]=useState(true),[error,setError]=useState("");
+ const seq=useRef(0);
+ const load=useCallback(async()=>{
+  const request=++seq.current;
+  setBusy(true);setError("");
+  try{
+   const result=await getExperts(token,q.trim());
+   if(request===seq.current)setData(result.items);
+  }catch(e){
+   if(request===seq.current)setError(e instanceof Error?e.message:"Uzmanlar yüklenemedi.");
+  }finally{
+   if(request===seq.current)setBusy(false);
+  }
+ },[token,q]);
+ useEffect(()=>{
+  const timeout=setTimeout(()=>{void load()},q.trim()?300:0);
+  return()=>{clearTimeout(timeout);seq.current++};
+ },[load]);
+ useEffect(()=>{
+  if(lastEvent&&["PROFILE_UPDATED","PROFILE_PHOTO_UPDATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load();
+ },[lastEvent,load]);
+ return <View style={s.page}>
+  <View style={s.pad}>
+   <Text style={s.big}>Uzmandan Destek Al</Text>
+   <Text style={s.muted}>Doğrulanmış uzmanlarla vaka danışmanlığı.</Text>
+   <TextInput value={q} onChangeText={setQ} onSubmitEditing={()=>void load()} returnKeyType="search" placeholder="Uzman, branş veya kurum ara" placeholderTextColor={C.muted} style={s.input}/>
+   {!!error&&<View><Text style={{color:C.red,marginBottom:8}}>{error}</Text><Btn title="Tekrar dene" onPress={()=>void load()}/></View>}
+  </View>
+  {busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:
+  <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data} keyExtractor={x=>String(x.user_id)}
+   ListEmptyComponent={<Empty title="Uzman bulunamadı" sub="Arama kelimelerini değiştirebilirsin."/>}
+   renderItem={({item})=><Pressable style={card} onPress={()=>navigation.navigate("NewConsultation",{expert:item})}>
+    <View style={s.row}><View style={{flex:1}}>
+     <Text style={s.title}>{item.display_name}</Text>
+     <Text style={s.body}>{item.academic_title||"Uzman Diş Hekimi"} · {item.specialty}</Text>
+     <Text style={s.meta}>{item.institution||"Kurum belirtilmemiş"}{item.rating_avg?" · ★ "+item.rating_avg:""}</Text>
+    </View><Text style={[s.availability,item.availability==="AVAILABLE"&&{color:C.green}]}>{item.availability==="AVAILABLE"?"Müsait":"Pasif"}</Text></View>
+   </Pressable>}/>}
+ </View>
+}
 
 export function NewConsultation({token,route,navigation}:{token:string;route:any;navigation:any}){const e=route.params.expert;const[summary,setSummary]=useState("");const[q,setQ]=useState("");const[patient,setPatient]=useState("");const[busy,setBusy]=useState(false);const[err,setErr]=useState("");async function send(){if(!summary.trim()||!q.trim())return setErr("Klinik özet ve soru zorunlu.");setBusy(true);setErr("");try{const r=await createConsultation(token,{expert_user_id:e.user_id,clinical_summary:summary,question:q,patient_id:patient?Number(patient):undefined});navigation.replace("Consultations");}catch(x:any){setErr(x.message||"Talep oluşturulamadı.")}finally{setBusy(false)}}return <ScrollView style={s.page} contentContainerStyle={s.pad}><Text style={s.big}>Yeni Danışmanlık</Text><Text style={s.body}>{e.display_name} · {e.specialty}</Text><TextInput value={patient} onChangeText={setPatient} keyboardType="number-pad" placeholder="Hasta ID (isteğe bağlı)" placeholderTextColor={C.muted} style={s.input}/><TextInput value={summary} onChangeText={setSummary} multiline placeholder="Klinik özet" placeholderTextColor={C.muted} style={[s.input,{height:110,textAlignVertical:"top"}]}/><TextInput value={q} onChangeText={setQ} multiline placeholder="Uzmandan ne öğrenmek istiyorsun?" placeholderTextColor={C.muted} style={[s.input,{height:110,textAlignVertical:"top"}]}/>{!!err&&<Text style={{color:"#B42318",marginTop:10}}>{err}</Text>}<Btn title={busy?"Gönderiliyor...":"Danışmanlık Talebi Gönder"} disabled={busy} onPress={send}/></ScrollView>}
 
