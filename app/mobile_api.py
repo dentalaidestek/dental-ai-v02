@@ -690,6 +690,55 @@ def mobile_update_tooth(
         return {"ok": True, "tooth_number": tooth_number, "status": payload.status, "surface": payload.surface}
 
 
+class MobilePatientEdit(BaseModel):
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    birth_date: Optional[str] = None
+    tc_kimlik_no: Optional[str] = None
+    address: Optional[str] = None
+    chief_complaint: Optional[str] = None
+
+
+@router.put("/patients/{patient_id}")
+def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User = Depends(_mobile_user)):
+    first_name, last_name = payload.first_name.strip(), payload.last_name.strip()
+    phone = payload.phone.strip() if payload.phone else None
+    if not first_name or not last_name:
+        raise HTTPException(status_code=422, detail="Ad ve soyad zorunludur.")
+    if phone and (not phone.isdigit() or len(phone) != 11 or not phone.startswith("05")):
+        raise HTTPException(status_code=422, detail="Telefon 05 ile başlamalı ve 11 rakam olmalıdır.")
+    age = None
+    if payload.birth_date:
+        try:
+            birth = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
+            today = _utcnow_naive().date()
+            if birth > today:
+                raise ValueError()
+            age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Doğum tarihi geçersiz.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        patient.first_name, patient.last_name = first_name, last_name
+        patient.phone, patient.birth_date, patient.age = phone, payload.birth_date or None, age
+        patient.tc_kimlik_no = payload.tc_kimlik_no.strip() if payload.tc_kimlik_no else None
+        patient.chief_complaint = payload.chief_complaint.strip() if payload.chief_complaint else None
+        profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
+        if not profile:
+            profile = PatientProfile(patient_id=patient_id)
+        profile.address = payload.address.strip() if payload.address else None
+        session.add(patient)
+        session.add(profile)
+        events = _record_patient_realtime_events(session, patient, "PATIENT_UPDATED", profile)
+        session.commit()
+    for event in events:
+        on_loop(_publish_realtime_event, event)
+    return {"ok": True, "patient": _patient_payload(patient)}
+
+
 @router.get("/patients/{patient_id}")
 def mobile_patient_detail(
     patient_id: int,
