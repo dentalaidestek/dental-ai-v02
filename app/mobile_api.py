@@ -773,8 +773,9 @@ def mobile_patient_detail(
             .order_by(PatientMedia.uploaded_at.desc())
         ).all()
 
+        profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         return {
-            "patient": _patient_payload(patient),
+            "patient": {**_patient_payload(patient), "tc_kimlik_no": patient.tc_kimlik_no, "address": profile.address if profile else None},
             "teeth": [
                 {
                     "id": t.id,
