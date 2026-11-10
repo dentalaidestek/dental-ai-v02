@@ -804,6 +804,35 @@ def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, use
         return {"ok": True, "treatment_id": treatment.id}
 
 
+@router.put("/patients/{patient_id}/treatments/{treatment_id}")
+def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileTreatmentCreate, user: User = Depends(_mobile_user)):
+    name = payload.treatment_name.strip()
+    if not name or len(name) > 200:
+        raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
+    if payload.treatment_date:
+        try:
+            datetime.strptime(payload.treatment_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+    tooth = payload.tooth_number.strip() if payload.tooth_number else None
+    if tooth and (len(tooth) != 2 or not tooth.isdigit() or tooth[0] not in "12345678" or tooth[1] not in "12345678"):
+        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        treatment = session.get(Treatment, treatment_id)
+        if not patient or patient.owner_user_id != user.id or not treatment or treatment.patient_id != patient_id:
+            raise HTTPException(status_code=404, detail="Tedavi bulunamadı.")
+        treatment.treatment_name = name
+        treatment.tooth_number = tooth
+        treatment.treatment_date = payload.treatment_date or None
+        treatment.material = payload.material.strip()[:500] if payload.material else None
+        treatment.doctor_note = payload.doctor_note.strip()[:4000] if payload.doctor_note else None
+        treatment.result = payload.result.strip()[:1000] if payload.result else None
+        session.add(treatment)
+        session.commit()
+        return {"ok": True, "treatment_id": treatment_id}
+
+
 @router.get("/patients/{patient_id}")
 def mobile_patient_detail(
     patient_id: int,
