@@ -9149,6 +9149,37 @@ async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
         logger.exception("Web Push delivery failed for notice %s", event.entity_id)
 
 
+async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
+    """Mirror the existing web event policy; never invent a second notification rule."""
+    if event.event_type not in {"NOTICE_CREATED", "MESSAGE_CREATED"}:
+        return
+    try:
+        payload = json.loads(event.payload_json or "{}")
+    except (ValueError, TypeError):
+        payload = {}
+    if event.event_type == "MESSAGE_CREATED" and payload.get("is_outgoing"):
+        return
+    try:
+        from app.mobile_push import send_push_tokens
+        with Session(engine, expire_on_commit=False) as session:
+            if event.event_type == "NOTICE_CREATED":
+                notice = session.get(AdminNotice, int(event.entity_id)) if event.entity_id else None
+                if not notice or notice.user_id != event.user_id or notice.status != "ACTIVE":
+                    return
+                title, body = "Dental AI", "Yeni bir bildiriminiz var."
+                route = {"kind": "notification", "notice_id": notice.id}
+            else:
+                title, body = "Dental AI", "Yeni bir uzman mesajınız var."
+                route = {"kind": "consultation", "case_id": payload.get("case_id")}
+            tokens = [device.expo_push_token for device in session.exec(
+                select(MobilePushDevice).where(MobilePushDevice.user_id == event.user_id,
+                                               MobilePushDevice.enabled == True)).all()]
+        if tokens:
+            await asyncio.to_thread(send_push_tokens, tokens, title=title, body=body, data=route)
+    except Exception:
+        logger.exception("Mobile push delivery failed for event %s", event.id)
+
+
 async def _publish_realtime_event(event: RealtimeEvent) -> None:
     """Publish committed realtime state, then best-effort optional Web Push."""
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
@@ -9156,6 +9187,7 @@ async def _publish_realtime_event(event: RealtimeEvent) -> None:
         await _deliver_web_push_for_notice(event)
     elif event.event_type == "MESSAGE_CREATED":
         await _deliver_web_push_for_message(event)
+    await _deliver_mobile_push_for_event(event)
 
 
 def _notify_user(
