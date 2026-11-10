@@ -757,6 +757,47 @@ def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
     return {"ok": True, "patient_id": patient_id}
 
 
+class MobileTreatmentCreate(BaseModel):
+    treatment_name: str
+    tooth_number: Optional[str] = None
+    treatment_date: Optional[str] = None
+    material: Optional[str] = None
+    doctor_note: Optional[str] = None
+    result: Optional[str] = None
+
+
+@router.post("/patients/{patient_id}/treatments", status_code=201)
+def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, user: User = Depends(_mobile_user)):
+    name = payload.treatment_name.strip()
+    if not name or len(name) > 200:
+        raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
+    if payload.treatment_date:
+        try:
+            datetime.strptime(payload.treatment_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+    tooth = payload.tooth_number.strip() if payload.tooth_number else None
+    if tooth and (len(tooth) > 3 or not tooth.isdigit() or tooth[0] not in "12345678" or tooth[1:] not in ("1","2","3","4","5","6","7","8")):
+        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        treatment = Treatment(
+            patient_id=patient_id,
+            tooth_number=tooth,
+            treatment_name=name,
+            treatment_date=payload.treatment_date or None,
+            material=payload.material.strip()[:500] if payload.material else None,
+            doctor_note=payload.doctor_note.strip()[:4000] if payload.doctor_note else None,
+            result=payload.result.strip()[:1000] if payload.result else None,
+        )
+        session.add(treatment)
+        session.commit()
+        session.refresh(treatment)
+        return {"ok": True, "treatment_id": treatment.id}
+
+
 @router.get("/patients/{patient_id}")
 def mobile_patient_detail(
     patient_id: int,
