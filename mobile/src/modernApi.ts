@@ -16,6 +16,10 @@ export type Consultation={id:number;other_user_id:number;other_name:string;speci
 export type ChatMessage={id:number;sender_user_id:number;type:string;content:string;created_at:string};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
+export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios")=>
+ req<{ok:boolean}>("/push/devices",t,{method:"POST",body:JSON.stringify({device_id:deviceId,expo_push_token:expoPushToken,platform})});
+export const unregisterPushDevice=(t:string,deviceId:string)=>
+ req<{ok:boolean}>("/push/devices/"+encodeURIComponent(deviceId),t,{method:"DELETE"});
 export const getNotifications=async(t:string)=>{const r=await req<any>("/notifications",t);return {items:(r.items||r.notifications||[]).map((n:any)=>({...n,read_at:n.read_at||(n.is_read? n.created_at:null)})) as Notice[],unread:Number(r.unread??r.unread_count??0)}};
 export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:number}>("/analyses",t);
