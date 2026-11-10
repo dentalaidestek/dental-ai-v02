@@ -51,7 +51,7 @@ from app.main import (
     AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ExpertProfile, E2EEDeviceKey,
     expert_support_request_create, expert_support_message, study_ai_ask,
-    SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
+    SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
@@ -1192,6 +1192,23 @@ def mobile_patient_media(patient_id:int,user:User=Depends(_mobile_user)):
         return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,
             "tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,
             "url":f"/patients/{patient_id}/media/{m.id}"} for m in rows]}
+
+@router.delete("/patients/{patient_id}/media/{media_id}")
+def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        media = session.get(PatientMedia, media_id)
+        if not patient or not media or media.patient_id != patient_id or patient.owner_user_id != user.id or media.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
+        file_path = media.file_path
+        session.delete(media)
+        event = _record_realtime_event(session, user.id, "PATIENT_MEDIA_DELETED", "patient", patient_id, {"patient_id": patient_id, "media_id": media_id})
+        session.commit()
+    on_loop(_publish_realtime_event, event)
+    # Database commit precedes object deletion, matching the web route.
+    storage_delete(file_path)
+    return {"ok": True, "media_id": media_id}
+
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
 def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
