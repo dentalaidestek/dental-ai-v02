@@ -53,6 +53,7 @@ from app.main import (
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
+    _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
 
@@ -606,11 +607,14 @@ def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
         if event.status == "COMPLETED":
             return {"ok": True, "status": "COMPLETED"}
         event.status = "COMPLETED"
-        event.updated_at = datetime.utcnow()
+        event.updated_at = _utcnow_naive()
         session.add(event)
-        realtime = _record_realtime_event(session, user.id, "PROGRAM_COMPLETED", "schedule_event", event.id, {"event_id": event.id, "status": event.status})
+        _cancel_pending_program_reminders(session, event.id)
+        realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
+        realtime_events.append(_record_program_realtime_event(session, user.id, "PROGRAM_COMPLETED", event.id))
         session.commit()
-    on_loop(_publish_realtime_event, realtime)
+    for realtime_event in realtime_events:
+        on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True, "status": "COMPLETED"}
 
 
@@ -623,9 +627,12 @@ def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
         event.status = "DELETED"
         event.updated_at = datetime.utcnow()
         session.add(event)
-        realtime = _record_realtime_event(session, user.id, "PROGRAM_DELETED", "schedule_event", event.id, {"event_id": event.id, "status": event.status})
+        _cancel_pending_program_reminders(session, event.id)
+        realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
+        realtime_events.append(_record_program_realtime_event(session, user.id, "PROGRAM_DELETED", event.id))
         session.commit()
-    on_loop(_publish_realtime_event, realtime)
+    for realtime_event in realtime_events:
+        on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True}
 
 
