@@ -3,9 +3,9 @@ import {ActivityIndicator,Linking,Pressable,ScrollView,Text,TextInput,View} from
 import {getPatients,Patient} from "./api";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
-export default function VoiceExamEntry({token}:{token:string}){
+export default function VoiceExamEntry({token,initialPatientId}:{token:string;initialPatientId?:number}){
  const [query,setQuery]=useState(""),[patients,setPatients]=useState<Patient[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
- const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await getPatients(token,query,0);setPatients(r.items)}catch(e){setError(e instanceof Error?e.message:"Hasta listesi alınamadı.")}finally{setBusy(false)}},[token,query]);
+ const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await getPatients(token,query,0);setPatients(r.items);if(initialPatientId)setSelected(current=>current||r.items.find(p=>p.id===initialPatientId)||null)}catch(e){setError(e instanceof Error?e.message:"Hasta listesi alınamadı.")}finally{setBusy(false)}},[token,query,initialPatientId]);
  useEffect(()=>{const timer=setTimeout(()=>{void load()},300);return()=>clearTimeout(timer)},[load]);
  async function open(){const url=selected?`https://dentalai.tr/voice-exams/${selected.id}/session`:"https://dentalai.tr/voice-exams";try{await Linking.openURL(url)}catch{setError("Sesli Muayene sayfası açılamadı.")}}
  return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
