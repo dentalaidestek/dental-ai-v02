@@ -5,6 +5,7 @@ import{createBottomTabNavigator}from"@react-navigation/bottom-tabs";
 import{createNativeStackNavigator}from"@react-navigation/native-stack";
 import*as SecureStore from"expo-secure-store";
 import*as ImagePicker from"expo-image-picker";
+import {StatusBar} from "expo-status-bar";
 import{createPatient,createSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,verifyEmail,logout,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
 import {SafeAreaProvider,SafeAreaView} from "react-native-safe-area-context";
 import {DentalFlow} from "./src/SocialScreens";
@@ -86,7 +87,7 @@ function AppContent(){
  return session?<Main key={session.user.id} token={session.token} user={session.user} signOut={signOut}/>:<Login done={(token,user)=>setSession({token,user})}/>;
 }
 
-export default function App(){return <SafeAreaProvider><SafeAreaView edges={["top","left","right"]} style={{flex:1,backgroundColor:C.bg}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}><AppContent/></KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>}
+export default function App(){return <SafeAreaProvider><StatusBar style="dark" backgroundColor="#F5F7FA"/><SafeAreaView edges={["top","left","right"]} style={{flex:1,backgroundColor:C.bg}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}><AppContent/></KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>}
 
 const s=StyleSheet.create({
  splash:{flex:1,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},brand:{color:C.white,fontSize:25,fontWeight:"900",marginTop:14,letterSpacing:1},splashSub:{color:"#B9C7D8",marginTop:7},
