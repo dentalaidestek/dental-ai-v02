@@ -1181,17 +1181,22 @@ def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_leng
         return {"items":items}
 
 @router.get("/patients/{patient_id}/media")
-def mobile_patient_media(patient_id:int,user:User=Depends(_mobile_user)):
-    with Session(engine,expire_on_commit=False) as session:
-        patient=session.get(Patient,patient_id)
-        if not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
-            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
-        rows=session.exec(select(PatientMedia).where(
-            PatientMedia.patient_id==patient_id,PatientMedia.owner_user_id==user.id
-        ).order_by(PatientMedia.uploaded_at.desc()).limit(100)).all()
-        return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,
-            "tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,
-            "url":f"/patients/{patient_id}/media/{m.id}"} for m in rows]}
+def mobile_patient_media(patient_id: int, before: Optional[int] = Query(None, ge=1), limit: int = Query(40, ge=1, le=100), user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        query = select(PatientMedia).where(PatientMedia.patient_id == patient_id, PatientMedia.owner_user_id == user.id)
+        if before is not None:
+            query = query.where(PatientMedia.id < before)
+        rows = session.exec(query.order_by(PatientMedia.id.desc()).limit(limit + 1)).all()
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        return {"items": [{"id": m.id, "filename": m.original_filename, "media_type": m.media_type,
+            "tooth_number": m.tooth_number, "note": m.note, "uploaded_at": m.uploaded_at,
+            "url": f"/patients/{patient_id}/media/{m.id}"} for m in page],
+            "next_before": page[-1].id if has_more and page else None}
+
 
 @router.delete("/patients/{patient_id}/media/{media_id}")
 def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Depends(_mobile_user)):
