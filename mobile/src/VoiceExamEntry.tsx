@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useState} from "react";
-import {ActivityIndicator,Linking,Pressable,ScrollView,Text,TextInput,View} from "react-native";
+import {ActivityIndicator,Alert,Linking,Pressable,ScrollView,Text,TextInput,View} from "react-native";
 import {getPatient,getPatients,Patient} from "./api";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
@@ -10,7 +10,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function open(){const url=selected?`https://dentalai.tr/voice-exams/${selected.id}/session`:"https://dentalai.tr/voice-exams";try{await Linking.openURL(url)}catch{setError("Sesli Muayene sayfası açılamadı.")}}
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
-  <Pressable accessibilityRole="button" onPress={()=>setStage("select")}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
+  <Pressable accessibilityRole="button" onPress={()=>{if(transcript.trim())Alert.alert("Metin kaybolabilir","Bu ekrandaki muayene metni henüz kalıcı kaydedilmiyor.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:()=>setStage("select")}]);else setStage("select")}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
   <Text style={{fontSize:25,fontWeight:"800",color:navy,marginTop:16}}>Sesli Muayene</Text>
   <Text style={{color:muted,marginTop:8}}>{selected?[selected.first_name,selected.last_name].filter(Boolean).join(" ")||selected.anonymous_id:"Hasta seçilmedi"}</Text>
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:20}}>
@@ -22,8 +22,8 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
    <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} onChangeText={setTranscript} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Metin henüz sunucuya gönderilmiyor.</Text>
-   <Pressable accessibilityRole="button" disabled={!consent||!selected} onPress={()=>void open()} style={{backgroundColor:consent&&selected?navy:"#9BA7B7",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>Webdeki Tam Muayeneye Geç</Text></Pressable>
-   <Text style={{color:muted,fontSize:12,lineHeight:19,marginTop:12}}>Mevcut web değerlendirmesi açılır. Buraya yazdığınız metin otomatik aktarılmaz. Kaydetmeden ekranı kapatmayın.</Text>
+   <Pressable accessibilityRole="button" disabled={!consent||!selected} onPress={()=>void open()} style={{backgroundColor:consent&&selected?navy:"#9BA7B7",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>Webdeki Tam Muayeneyi Aç</Text></Pressable>
+   <Text style={{color:muted,fontSize:12,lineHeight:19,marginTop:12}}>Mevcut web değerlendirmesi açılır. Buraya yazdığınız metin web sayfasına otomatik aktarılmaz. Webe geçmeden önce metninizi güvenli bir yere alın; bu alan kalıcı kayıt değildir.</Text>
   </View>
  </ScrollView>;
  return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
