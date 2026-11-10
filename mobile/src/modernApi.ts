@@ -23,6 +23,7 @@ export const unregisterPushDevice=(t:string,deviceId:string)=>
 export const getNotifications=async(t:string)=>{const r=await req<any>("/notifications",t);return {items:(r.items||r.notifications||[]).map((n:any)=>({...n,read_at:n.read_at||(n.is_read? n.created_at:null)})) as Notice[],unread:Number(r.unread??r.unread_count??0)}};
 export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 export const getAnalysisHistory=(t:string)=>req<{items:AnalysisHistory[];total:number}>("/analyses",t);
+export const deleteMedia=(t:string,patientId:number,mediaId:number)=>req<{ok:boolean;media_id:number}>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
 export const getMedia=async(t:string,p:number)=>{const r=await req<{items:any[]}>(`/patients/${p}/media`,t);return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename,url:`${API_BASE}/patients/${p}/media/${m.id}/file`}))}};
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
