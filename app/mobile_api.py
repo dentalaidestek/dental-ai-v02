@@ -1120,7 +1120,7 @@ async def mobile_patient_media_upload(
         raise HTTPException(status_code=422,detail="Desteklenmeyen görüntü formatı.")
     with Session(engine,expire_on_commit=False) as session:
         patient=session.get(Patient,patient_id)
-        if not patient or (user.role!="ADMIN" and patient.owner_user_id!=user.id):
+        if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         destination=Path("uploads")/"patient-media"/stored
@@ -1262,7 +1262,7 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
 def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
-        if not patient or not media or media.patient_id!=patient_id or (user.role!="ADMIN" and (patient.owner_user_id!=user.id or media.owner_user_id!=user.id)):
+        if not patient or not media or media.patient_id!=patient_id or patient.owner_user_id!=user.id or media.owner_user_id!=user.id:
             raise HTTPException(status_code=404,detail="Görüntü bulunamadı.")
         try:path=storage_ensure_local(media.file_path)
         except FileNotFoundError:raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
