@@ -1,5 +1,4 @@
 import { ApiError } from "./api";
-import {reportSessionExpiry} from './sessionExpiry';
 const BASE = "https://dentalai.tr";
 export const socialUrl = (path: string) =>
   path.startsWith("/")
@@ -75,7 +74,7 @@ export async function socialRequest<T>(
       "Sunucu yanıtı okunamadı. Taslağınız korundu.",
     );
   }
-  if(response.status===401)reportSessionExpiry(token);
+  // A social-route 401 can be an endpoint-specific authorization failure.\n  // Only the canonical mobile session validator may invalidate the global login.
   if (!response.ok)
     throw new ApiError(
       response.status,
