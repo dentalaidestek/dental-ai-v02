@@ -1069,7 +1069,7 @@ async def mobile_voice_audio(request: Request, patient_id: int, user: User = Dep
         raise HTTPException(status_code=400, detail="Ses aktarımı için onay gerekli.")
     revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
     # Reject oversized bodies without buffering unbounded user audio.
-    max_bytes = core.MAX_AUDIO_BYTES
+    max_bytes = core.MAX_AUDIO
     chunks = []
     size = 0
     async for chunk in request.stream():
