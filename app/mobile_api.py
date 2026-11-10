@@ -1230,7 +1230,7 @@ def mobile_patient_media(patient_id: int, before: Optional[int] = Query(None, ge
         page = rows[:limit]
         return {"items": [{"id": m.id, "filename": m.original_filename, "media_type": m.media_type,
             "tooth_number": m.tooth_number, "note": m.note, "uploaded_at": m.uploaded_at,
-            "url": f"/patients/{patient_id}/media/{m.id}"} for m in page],
+            "url": f"/api/mobile/v1/patients/{patient_id}/media/{m.id}/file"} for m in page],
             "next_before": page[-1].id if has_more and page else None}
 
 
