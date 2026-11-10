@@ -1146,15 +1146,27 @@ async def mobile_patient_media_upload(
         stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
         destination=Path("uploads")/"patient-media"/stored
         destination.parent.mkdir(parents=True,exist_ok=True)
-        _copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)
-        storage_persist_file(destination)
-        media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
-            original_filename=Path(image.filename).name,stored_filename=stored,
-            file_path=str(destination),media_type=media_type,
-            tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
-        session.add(media);session.flush()
-        realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
-        session.commit(); on_loop(_publish_realtime_event,realtime)
+        # Persist the object and its database row as one logical operation.
+        # If either persistence step fails, remove the unreferenced object.
+        try:
+            _copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)
+            storage_persist_file(destination)
+            media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
+                original_filename=Path(image.filename).name,stored_filename=stored,
+                file_path=str(destination),media_type=media_type,
+                tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
+            session.add(media);session.flush()
+            realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
+            session.commit()
+        except Exception:
+            session.rollback()
+            try:
+                storage_delete(str(destination))
+            except Exception:
+                logging.exception("Failed to clean orphan clinical media upload: %s", destination)
+            destination.unlink(missing_ok=True)
+            raise
+        on_loop(_publish_realtime_event,realtime)
         return {"media":{"id":media.id,"original_filename":media.original_filename,
             "media_type":media.media_type,"tooth_number":media.tooth_number,
             "note":media.note,"uploaded_at":media.uploaded_at}}
