@@ -9390,6 +9390,22 @@ def _message_realtime_payload(case: ConsultationCase, message: ConsultationMessa
             "is_outgoing":bool(viewer_user_id and viewer_user_id==message.sender_user_id)}
 
 
+def _queue_mobile_message_push(session: Session, case: ConsultationCase, sender_user_id: int) -> None:
+    """Queue generic push only after the database transaction commits."""
+    from app.mobile_push import send_push_tokens
+    recipient_id = case.expert_user_id if sender_user_id == case.requester_user_id else case.requester_user_id
+    tokens = [device.expo_push_token for device in session.exec(
+        select(MobilePushDevice).where(MobilePushDevice.user_id == recipient_id,
+                                       MobilePushDevice.enabled == True)).all()]
+    if not tokens:
+        return
+    import threading
+    threading.Thread(target=send_push_tokens, args=(tokens,),
+                     kwargs={"title": "Dental AI", "body": "Yeni bir uzman mesajınız var.",
+                             "data": {"kind": "consultation", "case_id": case.id}},
+                     daemon=True).start()
+
+
 def _record_message_realtime_events(session: Session, case: ConsultationCase,
                                     message: ConsultationMessage, sender: Optional[User]) -> list[RealtimeEvent]:
     """Persist one durable event per participant so every open session stays in sync."""
