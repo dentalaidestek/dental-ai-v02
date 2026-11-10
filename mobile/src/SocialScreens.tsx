@@ -1132,20 +1132,18 @@ export function DentalFlow({
           onProfile={profile}
         />
       )}
-      <Modal visible={!!image} animationType="fade" onRequestClose={() => setImage(null)}>
-        <SafeAreaView style={{flex:1,backgroundColor:"#07111F"}}>
-          <View style={{flexDirection:"row",justifyContent:"flex-end",paddingHorizontal:12,paddingVertical:8}}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Fotoğrafı kapat" onPress={() => setImage(null)} style={{padding:12}}>
-              <Text style={{color:"#FFF",fontWeight:"800",fontSize:16}}>Kapat ✕</Text>
-            </Pressable>
-          </View>
-          {image && <Image
-            source={{uri:api.socialUrl(image),headers:{Authorization:"Bearer "+token}}}
-            style={{flex:1,width:"100%"}}
+      {image && (
+        <Sheet title="Fotoğraf" onClose={() => setImage(null)}>
+          <Image
+            source={{
+              uri: api.socialUrl(image),
+              headers: { Authorization: "Bearer " + token },
+            }}
+            style={{ flex: 1 }}
             resizeMode="contain"
-          />}
-        </SafeAreaView>
-      </Modal>
+          />
+        </Sheet>
+      )}
       {editing && (
         <Sheet
           title="Gönderiyi düzenle"
