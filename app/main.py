@@ -10345,6 +10345,15 @@ def update_tooth_status(
     if status not in allowed_statuses:
         return HTMLResponse("Geçersiz diş durumu", status_code=400)
 
+    valid_fdi = ((len(tooth_number) == 2 and tooth_number[0] in "1234" and tooth_number[1] in "12345678")
+                 or (len(tooth_number) == 2 and tooth_number[0] in "5678" and tooth_number[1] in "12345"))
+    if not valid_fdi:
+        return HTMLResponse("Geçersiz FDI diş numarası", status_code=422)
+    if note is not None and len(note) > 2000:
+        return HTMLResponse("Diş notu 2000 karakteri aşamaz", status_code=422)
+    if surface and surface not in {"OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"}:
+        return HTMLResponse("Geçersiz diş yüzeyi", status_code=422)
+
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
