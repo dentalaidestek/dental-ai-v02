@@ -18,3 +18,12 @@ test('voice API rejects malformed and ambiguous success payloads',async()=>{
   global.fetch=async()=>response('{}');await assert.rejects(()=>api.extractVoice('secret',1,'text'),/başarı durumunu/);
  }finally{global.fetch=original}
 });
+
+test('voice API rejects successful but incomplete clinical extraction',async()=>{
+ const original=global.fetch;global.fetch=async()=>response(JSON.stringify({ok:true}));
+ try{await assert.rejects(()=>api.extractVoice('secret',1,'text'),/muayene bilgileri bulunamadı/)}finally{global.fetch=original}
+});
+test('voice finalization requires a clinical review payload',async()=>{
+ const original=global.fetch;global.fetch=async()=>response(JSON.stringify({ok:true}));
+ try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:[],conversation_text:'text'}),/son değerlendirme yanıtı eksik/)}finally{global.fetch=original}
+});
