@@ -54,6 +54,7 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
 export const getConsultations=async(t:string,before?:number)=>{
+ if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>("/consultations"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  const cursor=r?.next_before??null;
  if(!Array.isArray(r?.items)||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
@@ -76,10 +77,12 @@ function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_be
  return {items:response.items,next_before:cursor};
 }
 export const getCourses=async(t:string,before?:number)=>{
+ if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz ders sayfa kimliği.");
  const r=await req<{items:Course[];next_before?:number|null}>("/academic/courses"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  return validateAcademicPage(r,before);
 };
 export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))throw Error("Geçersiz ders veya sayfa kimliği.");
  const r=await req<{items:Array<{id:number;role:string;content:string;created_at:string}>;next_before?:number|null}>(`/academic/courses/${id}/messages`+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  const page=validateAcademicPage(r,before);
  if(page.items.some(item=>typeof item.role!=="string"||typeof item.content!=="string"))
@@ -87,6 +90,7 @@ export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
  return page;
 };
 export function askAcademic(t:string,courseId:number,message:string){
+ if(!Number.isSafeInteger(courseId)||courseId<=0||!message.trim())throw Error("Geçersiz ders veya boş soru.");
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
