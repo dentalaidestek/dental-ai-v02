@@ -58,3 +58,15 @@ test('voice extraction retains clinical uncertainty as text for final review',as
  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},uncertain:'İlaç dozu doğrulanamadı'}}));
  try{const result=await api.extractVoice('token',9,'muayene');assert.equal(result.review.uncertain,'İlaç dozu doğrulanamadı')}finally{global.fetch=original}
 });
+
+test('voice API expires only the matching session on unauthorized clinical requests',async()=>{
+ const {subscribeSessionExpiry}=require('../src/sessionExpiry.ts');
+ const original=global.fetch,events=[];
+ const stopCurrent=subscribeSessionExpiry('current',()=>events.push('current'));
+ const stopOther=subscribeSessionExpiry('other',()=>events.push('other'));
+ try{
+  global.fetch=async()=>response(JSON.stringify({detail:'Oturum süresi doldu'}),401);
+  await assert.rejects(()=>api.extractVoice('current',12,'muayene'),/Oturum süresi doldu/);
+  assert.deepEqual(events,['current']);
+ }finally{stopCurrent();stopOther();global.fetch=original}
+});
