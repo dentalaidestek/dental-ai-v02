@@ -67,7 +67,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
   setFinalResult(null);
  }
  function undoRemovedItem(){
-  if(processingLock.current||!lastRemoved)return;
+  if(processingLock.current||!lastRemoved||!review)return;
   generation.current++;
   const {key,index,item}=lastRemoved;
   setReview(previous=>{
@@ -88,14 +88,14 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:20}}>
    <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Muayene hazırlığı</Text>
    <Text style={{color:muted,marginTop:8}}>Hazırlık · Metin · Klinik değerlendirme · Hekim onayı</Text>
-   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing}} disabled={processing} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
+   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing}} disabled={processing} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
     <Text style={{fontSize:21,color:navy}}>{consent?"☑":"☐"}</Text><Text style={{flex:1,color:navy,lineHeight:21}}>Hastayı bilgilendirdim. Bu ekrana girdiğim muayene metninin klinik yapay zekâ hizmetiyle değerlendirilmesine onay veriyorum.</Text>
    </Pressable>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:privacyExpanded}} onPress={()=>setPrivacyExpanded(v=>!v)} style={{marginTop:14,paddingVertical:10}}><Text style={{fontWeight:"700",color:navy}}>Veriler ve taslak hakkında {privacyExpanded?"−":"+"}</Text></Pressable>
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Bu ekrandaki metin, yalnızca klinik değerlendirme işlemini başlattığınızda sunucuya gönderilir. Ses kaydı bu metin alanından gönderilmez. Ham ses ve tam konuşma metni hasta dosyasına otomatik kaydedilmez. Kimlik ve iletişim bilgilerini konuşma metnine eklemeyin. Bu mobil sürümde metin taslağı kalıcı saklanmaz.</Text>}
    <Text style={{color:muted,lineHeight:20,marginTop:14}}>Native mikrofon henüz bağlanmadı. Klinik değerlendirme için geçici metin alanını kullanabilirsiniz.</Text>
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
-   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
+   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Tek seferde çözümleme sınırı 18.000 karakterdir. Metin yalnız değerlendirme düğmesine bastığınızda gönderilir.</Text>
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
    <Pressable accessibilityRole="button" disabled={processing||!consent||!selected||!transcript.trim()||transcript.length>18000} onPress={()=>void processText()} style={{backgroundColor:processing||!consent||!selected||!transcript.trim()||transcript.length>18000?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Metni Klinik Olarak Çözümle"}</Text></Pressable>
