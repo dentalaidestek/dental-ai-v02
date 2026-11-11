@@ -57,7 +57,10 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  const validTeeth=teeth===undefined||(Array.isArray(teeth)&&teeth.length<=52&&teeth.every(item=>isRecord(item)&&/^([1-4][1-8]|[5-8][1-5])$/.test(String(item.tooth))&&allowedToothStates.has(String(item.status))&&typeof item.quote==="string"&&item.quote.length<=1500&&Object.keys(item).every(key=>["tooth","status","quote"].includes(key))));
  const validEvidence=(value:unknown,key:"topic"|"term",limit:number)=>value===undefined||(Array.isArray(value)&&value.length<=limit&&value.every(item=>isRecord(item)&&typeof item[key]==="string"&&typeof item.quote==="string"));
  if(!validFields||!validTeeth||!validEvidence(topics,"topic",40)||!validEvidence(requests,"term",6)||(appointment!=null&&(!isRecord(appointment)||Object.keys(appointment).some(key=>!["quote","acceptance_quote"].includes(key))||Object.values(appointment).some(value=>typeof value!=="string"||value.length>1500)))||payload.insights.length>24||payload.uncertain.length>3000)throw Error("Klinik son değerlendirme bağlamı geçersiz veya sınır dışında. Taslağı kontrol edin; metniniz korunuyor.");
- const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
+ const contextBytes=new TextEncoder().encode(JSON.stringify(payload.context)).length;
+ if(contextBytes>32000)throw Error("Klinik bağlam 32 KB sınırını aşıyor. Taslağı kısaltın; görüşme metniniz korunuyor.");
+ if(payload.insights.some(item=>!isRecord(item)||typeof item.quote!=="string"||typeof item.observation!=="string"))throw Error("Hekim iletişimi kanıtları eksik veya geçersiz. Taslağı kontrol edin; metniniz korunuyor.");
+  const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
  return result;
 }
