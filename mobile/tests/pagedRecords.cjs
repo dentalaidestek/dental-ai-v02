@@ -70,3 +70,28 @@ test('valid initial cursor remains available for older pages',async()=>{
  h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
  await h.current.loadMore();h.render();assert.equal(h.current.items.map(x=>x.id).join(','),'1');
 });
+
+test('date-ordered cursor may increase in numeric ID across older pages',async()=>{
+ const calls=[];
+ const h=harness(async before=>{
+  calls.push(before);
+  if(before===undefined)return {items:[row(4),row(10)],next_before:10};
+  if(before===10)return {items:[row(31),row(24)],next_before:24};
+  return {items:[row(2)],next_before:null};
+ },false,false);
+ h.render();await tick();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.deepEqual(calls,[undefined,10,24]);
+ assert.equal(h.current.items.length,5);
+});
+test('repeated cursor cycle stops without unbounded pagination',async()=>{
+ const h=harness(async before=>before===undefined?{items:[row(4)],next_before:4}:before===4?{items:[row(9)],next_before:9}:{items:[row(4)],next_before:4},false,false);
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,false);
+});
