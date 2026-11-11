@@ -6,6 +6,7 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  let body:Record<string,unknown>;
  try {body=raw?JSON.parse(raw):{};} catch {throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı. Metniniz bu ekranda korunuyor.");}
  if(!body||typeof body!=="object"||Array.isArray(body))throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı.");
+ if(response.ok&&body.ok!==true)throw Error("Klinik değerlendirme yanıtı beklenen başarı durumunu içermiyor. Metninizi koruyup tekrar deneyin.");
  if(!response.ok||body.ok===false){
   const detail=typeof body.detail==="string"?body.detail:typeof body.error==="string"?body.error:"Klinik değerlendirme başarısız.";
   throw Error(detail);
