@@ -64,11 +64,7 @@ export const createConsultation=(t:string,payload:{expert_user_id:number;clinica
  if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||
     (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0)))
   throw Error("Geçersiz uzman, hasta veya boş danışma sorusu.");
- const form=new FormData();
- for(const [key,value] of Object.entries(payload)){
-  if(value!==undefined&&value!==null)form.append(key,String(value));
- }
- return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:form});
+ return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
 };
 export const getConsultations=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
@@ -88,8 +84,7 @@ export const getConsultation=(t:string,id:number)=>{
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>{
  if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim())
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
- const form=new FormData();form.append("content",content);form.append("client_message_id",clientMessageId);
- return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:form});
+ return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
 };
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
@@ -116,8 +111,7 @@ export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
 };
 export function askAcademic(t:string,courseId:number,message:string){
  if(!Number.isSafeInteger(courseId)||courseId<=0||!message.trim())throw Error("Geçersiz ders veya boş soru.");
- const form=new FormData();form.append("message",message);
- return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:form});
+ return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
 
