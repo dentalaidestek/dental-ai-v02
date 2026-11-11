@@ -72,3 +72,13 @@ test('clinical gallery ignores pending page responses from another account befor
  assert.match(gallery,/previous\.accountScope===scope/);
  assert.match(gallery,/next_before:page\.next_before,accountScope:previous\.accountScope/);
 });
+
+test('expert directory does not display previous account results while new account loads',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const directory=source.slice(source.indexOf('export function ExpertDirectory('),source.indexOf('export function ',source.indexOf('export function ExpertDirectory(')+20));
+ assert.match(directory,/activeToken\.current!==token/);
+ assert.match(directory,/seq\.current\+\+/);
+ assert.match(directory,/accountToken:token/);
+ assert.match(directory,/data=\{data\?\.accountToken===token\?data\.items:\[\]\}/);
+ assert.match(directory,/request===seq\.current&&activeToken\.current===token/);
+});
