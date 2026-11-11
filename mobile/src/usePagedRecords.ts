@@ -24,7 +24,7 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
   if(next===null||pending.current===generation.current||busy)return;const request=generation.current;pending.current=request;setBusy(true);setError('');
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
    page.items.forEach(item=>knownIds.current.add(item.id));
-   setItems(old=>ascending?mergeRecords(old,page.items,true):mergeRecords(page.items,old));setNext(page.next_before);more.current=true;
+   setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});setNext(page.next_before);more.current=true;
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
   finally{if(pending.current===request)pending.current=null;if(request===generation.current)setBusy(false);}
  };
