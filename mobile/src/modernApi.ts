@@ -21,7 +21,10 @@ export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,p
 export const unregisterPushDevice=(t:string,deviceId:string)=>
  req<{ok:boolean}>("/push/devices/"+encodeURIComponent(deviceId),t,{method:"DELETE"});
 export const getNotifications=async(t:string)=>{const r=await req<any>("/notifications",t);const items=r?.items??r?.notifications;if(!Array.isArray(items)||items.some((n:unknown)=>!n||typeof n!=="object"||!Number.isSafeInteger((n as Notice).id)||typeof (n as Notice).title!=="string"||typeof (n as Notice).message!=="string"))throw Error("Bildirim sunucusundan geçersiz liste alındı. Tekrar deneyin.");const unread=Number(r?.unread??r?.unread_count??0);if(!Number.isSafeInteger(unread)||unread<0)throw Error("Bildirim sunucusundan geçersiz okunmamış sayısı alındı.");return {items:items.map((n:Notice&{is_read?:boolean})=>({...n,read_at:n.read_at||(n.is_read?n.created_at:null)})) as Notice[],unread}};
-export const markNotificationRead=(t:string,id:number)=>req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
+export const markNotificationRead=(t:string,id:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");
+ return req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
+};
 export const getAnalysisHistory=async(t:string,before?:number)=>{
  const r=await req<{items:AnalysisHistory[];total:number;next_before?:number|null}>("/analyses?limit=50"+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
  // Older deployed servers omit next_before; treat this as the final page.
@@ -64,8 +67,15 @@ export const getConsultations=async(t:string,before?:number)=>{
   throw Error("Uzman görüşmeleri sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {next_before:cursor,items:r.items.map(item=>({...item,other_name:item.other_name||item.other_display_name||"",clinical_summary:item.clinical_summary||""})) as Consultation[]};
 };
-export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
-export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
+export const getConsultation=(t:string,id:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme kimliği.");
+ return req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
+};
+export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>{
+ if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim())
+  throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
+ return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
+};
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
  if(!Array.isArray(response?.items)||
