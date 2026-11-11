@@ -70,6 +70,7 @@ test('analysis pagination rejects invalid cursor metadata and oversized pages',a
    {items:[],total:0,next_before:-1},
    {items:[],total:0,next_before:'bad'},
    {items:[],total:-1,next_before:null},
+   {items:[],total:0,next_before:42},
    {items:[],total:'zero',next_before:null},
    {items:Array.from({length:51},(_,i)=>row(i+1)),total:51,next_before:null}
   ]){
