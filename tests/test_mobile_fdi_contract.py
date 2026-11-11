@@ -31,3 +31,20 @@ def test_mobile_clinical_routes_use_shared_fdi_validator():
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name in routes:
             assert any(isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_valid_fdi_tooth_number" for call in ast.walk(node)), node.name
+
+
+def test_tooth_updates_do_not_create_completed_treatments():
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "mobile_update_tooth")
+    assert not any(isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id == "Treatment" for item in ast.walk(update))
+
+
+def test_tooth_surface_updates_validate_duplicates_and_ownership():
+    source_text = SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "mobile_update_tooth")
+    source = ast.get_source_segment(source_text, update)
+    assert "len(set(payload.surfaces))" in source
+    assert "patient.owner_user_id != user.id" in source
+    assert "for surface_name in requested_surfaces" in source
+    assert "session.commit()" in source
