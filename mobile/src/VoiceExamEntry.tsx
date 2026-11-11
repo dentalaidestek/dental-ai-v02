@@ -5,7 +5,7 @@ import {extractVoice,finalizeVoice,VoiceExtraction} from "./voiceApi";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
 const fieldLabels:Record<string,string>={first_name:"Ad",last_name:"Soyad",age:"Yaş",chief_complaint:"Başvuru şikâyeti",medical_history:"Sağlık geçmişi",family_history:"Aile sağlık öyküsü",materials:"Konuşulan materyaller",dental_history:"Önceki diş tedavileri",oral_habits:"Ağız bakımı ve alışkanlıklar",medications:"İlaç bilgileri",allergies:"Alerji bilgileri",clinical_findings:"Muayene bulguları",plan:"Konuşulan tedavi planı"};
-const reviewSections:[string,string][]=[["summary","Özet"],["questions","Netleştirilecek sorular"],["contradictions","Çelişkiler"],["clinical_items","Klinik değerlendirmeler"],["references","Kaynaklar"],["unavailable","Doğrulanamayanlar"]];
+const reviewSections:[string,string][]=[["summary","Özet"],["anamnesis_review","Anamnez kontrolü"],["questions","Netleştirilecek sorular"],["contradictions","Çelişkiler"],["clinical_items","Klinik değerlendirmeler"],["material_review","Materyal değerlendirmesi"],["references","Kaynaklar"],["source_coverage","Kaynak kapsamı"],["unavailable","Doğrulanamayanlar"],["notice","Kaynak ve değerlendirme uyarısı"]];
 function readable(value:unknown):string{
  if(typeof value==="string")return value;
  if(typeof value==="number"||typeof value==="boolean")return String(value);
