@@ -50,7 +50,7 @@ from app.main import (
     _run_preliminary_ai,
     classify_dental_image,
     AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
-    ConsultationCase, ConsultationMessage, ExpertProfile, E2EEDeviceKey,
+    ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -1115,6 +1115,9 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
         case_ids=[c.id for c in cases]
         other_ids={c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id for c in cases}
         peers={u.id:u for u in session.exec(select(User).where(User.id.in_(other_ids))).all()} if other_ids else {}
+        inbox_states={state.case_id:state for state in session.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.case_id.in_(case_ids),ConsultationInboxState.user_id==user.id
+        )).all()} if case_ids else {}
         last_by_case={}
         if case_ids:
             ranked=select(ConsultationMessage.id,func.row_number().over(
@@ -1123,6 +1126,28 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
             ).label("position")).where(ConsultationMessage.case_id.in_(case_ids)).subquery()
             latest=session.exec(select(ConsultationMessage).join(ranked,ranked.c.id==ConsultationMessage.id).where(ranked.c.position==1)).all()
             last_by_case={message.case_id:message for message in latest}
+        unread_by_case={}
+        if case_ids:
+            read_boundary={cid:(inbox_states[cid].last_read_at if cid in inbox_states else None) for cid in case_ids}
+            for cid in case_ids:
+                boundary=read_boundary[cid]
+                if boundary is None:
+                    continue
+                unread_by_case[cid]=0
+            # One grouped query for cases with an existing read cursor.
+            active_ids=[cid for cid in case_ids if read_boundary[cid] is not None]
+            if active_ids:
+                unread_rows=session.exec(select(ConsultationMessage.case_id,func.count(ConsultationMessage.id)).where(
+                    ConsultationMessage.case_id.in_(active_ids),
+                    ConsultationMessage.sender_user_id!=user.id,
+                    ConsultationMessage.created_at>func.coalesce(
+                        select(ConsultationInboxState.last_read_at).where(
+                            ConsultationInboxState.case_id==ConsultationMessage.case_id,
+                            ConsultationInboxState.user_id==user.id
+                        ).scalar_subquery(),ConsultationMessage.created_at
+                    )
+                ).group_by(ConsultationMessage.case_id)).all()
+                unread_by_case.update({cid:int(count) for cid,count in unread_rows})
         items=[]
         for c in cases:
             other_id=c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id
@@ -1132,7 +1157,7 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
-                "messages_deleted_at":c.messages_deleted_at})
+                "messages_deleted_at":c.messages_deleted_at,"unread_count":unread_by_case.get(c.id,0)})
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
