@@ -156,3 +156,20 @@ test('native voice audio refuses invalid patient IDs and non-finite sizes before
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
+
+test('clinical extraction rejects malformed fields and list shapes before UI use',async()=>{
+ const original=global.fetch;
+ try{
+  for(const review of [
+   {fields:{chief_complaint:null}},
+   {fields:{chief_complaint:{value:123}}},
+   {fields:{},teeth:'44'},
+   {fields:{},communication:{}},
+   {fields:{},uncertain:['şüpheli']},
+   {fields:{},appointment:[]}
+  ]){
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   await assert.rejects(()=>api.extractVoice('token',1,'muayene'),/alanları geçersiz/);
+  }
+ }finally{global.fetch=original}
+});
