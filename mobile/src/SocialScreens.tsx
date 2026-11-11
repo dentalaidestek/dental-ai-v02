@@ -658,15 +658,21 @@ function Comments({
       } catch (e) {
         if (request === commentLoadGeneration.current) setError(message(e));
       } finally {
-        if (after) commentPageLock.current = false;
-        if (request === commentLoadGeneration.current) setBusy(false);
+        if (request === commentLoadGeneration.current) {
+          if (after) commentPageLock.current = false;
+          setBusy(false);
+        }
       }
     },
     [post.id, token],
   );
   useEffect(() => {
+    commentPageLock.current = false;
     void load();
-    return () => { commentLoadGeneration.current++; };
+    return () => {
+      commentLoadGeneration.current++;
+      commentPageLock.current = false;
+    };
   }, [load]);
   async function send() {
     if (lock.current) return;
