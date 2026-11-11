@@ -98,3 +98,16 @@ test('academic pagination rejects invalid records, stalled cursors and malformed
   await assert.rejects(()=>getAcademicMessages('secret',2,13),/geçersiz kayıt/);
  }finally{global.fetch=original;}
 });
+
+test('notification unread badges reject malformed server counts',async()=>{
+ const {getNotifications}=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const unread of [-1,'NaN',1.5,'Infinity']){
+   global.fetch=async()=>new Response(JSON.stringify({items:[],unread}),{status:200});
+   await assert.rejects(()=>getNotifications('secret'),/geçersiz okunmamış sayısı/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,title:'Randevu',message:'Bilgi',created_at:'now',is_read:true}],unread:0}),{status:200});
+  const result=await getNotifications('secret');
+  assert.equal(result.unread,0);assert.equal(result.items[0].read_at,'now');
+ }finally{global.fetch=original;}
+});
