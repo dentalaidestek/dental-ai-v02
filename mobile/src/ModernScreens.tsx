@@ -15,7 +15,11 @@ function Empty({title,sub}:{title:string;sub:string}){return <View style={s.empt
 export function Notifications({token}:{token:string}){
  const nav:any=useNavigation();const[d,setD]=useState<any>();const{lastEvent}=useRealtime();
  const[busy,setBusy]=useState(false),[error,setError]=useState("");
- const load=useCallback(async()=>{setBusy(true);try{setD(await getNotifications(token));setError("")}catch(e){setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{setBusy(false)}},[token]);
+ const requestGeneration=useRef(0),activeToken=useRef(token);
+ // Never allow an earlier account or an older refresh to overwrite this account\u0027s notifications.
+ if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;}
+ const load=useCallback(async()=>{const request=++requestGeneration.current;setBusy(true);try{const result=await getNotifications(token);if(request!==requestGeneration.current||activeToken.current!==token)return;setD(result);setError("")}catch(e){if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{if(request===requestGeneration.current&&activeToken.current===token)setBusy(false)}},[token]);
+ useEffect(()=>{setD(undefined);setError("");setBusy(false);return()=>{requestGeneration.current++}},[token]);
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
