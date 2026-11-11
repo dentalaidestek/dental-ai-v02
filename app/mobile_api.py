@@ -666,8 +666,7 @@ def mobile_update_tooth(
     payload: MobileToothUpdate,
     user: User = Depends(_mobile_user),
 ):
-    valid_fdi = {f"{quadrant}{position}" for quadrant in (1, 2, 3, 4) for position in range(1, 9)} | {f"{quadrant}{position}" for quadrant in (5, 6, 7, 8) for position in range(1, 6)}
-    if tooth_number not in valid_fdi:
+    if not _valid_fdi_tooth_number(tooth_number):
         raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
     if payload.note is not None and len(payload.note) > 2000:
         raise HTTPException(status_code=422, detail="Diş notu 2000 karakteri aşamaz.")
@@ -785,6 +784,14 @@ def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
     return {"ok": True, "patient_id": patient_id}
 
 
+def _valid_fdi_tooth_number(tooth_number: str) -> bool:
+    """FDI two-digit adult (11-48) or primary (51-85) tooth identifiers."""
+    return len(tooth_number) == 2 and (
+        (tooth_number[0] in "1234" and tooth_number[1] in "12345678")
+        or (tooth_number[0] in "5678" and tooth_number[1] in "12345")
+    )
+
+
 class MobileTreatmentCreate(BaseModel):
     treatment_name: str
     tooth_number: Optional[str] = None
@@ -805,7 +812,7 @@ def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, use
         except ValueError:
             raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
     tooth = payload.tooth_number.strip() if payload.tooth_number else None
-    if tooth and (len(tooth) > 3 or not tooth.isdigit() or tooth[0] not in "12345678" or tooth[1:] not in ("1","2","3","4","5","6","7","8")):
+    if tooth and not _valid_fdi_tooth_number(tooth):
         raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
@@ -837,7 +844,7 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
         except ValueError:
             raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
     tooth = payload.tooth_number.strip() if payload.tooth_number else None
-    if tooth and (len(tooth) != 2 or not tooth.isdigit() or tooth[0] not in "12345678" or tooth[1] not in "12345678"):
+    if tooth and not _valid_fdi_tooth_number(tooth):
         raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
