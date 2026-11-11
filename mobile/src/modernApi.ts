@@ -49,11 +49,12 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
   throw Error("Geçersiz hasta veya sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media`+(before!==undefined?`?before=${encodeURIComponent(before)}`:""),t);
  const cursor=r?.next_before??null;
- if(!Array.isArray(r?.items)||
+ if(!Array.isArray(r?.items)||r.items.length>40||
+   new Set(r.items.map(m=>m?.id)).size!==r.items.length||
    r.items.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||
       (m.original_filename!=null&&typeof m.original_filename!=="string")||
       (m.filename!=null&&typeof m.filename!=="string"))||
-   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
+   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!r.items.some(m=>m.id===cursor)))||
    (r.items.length===0&&cursor!==null)||
    (before!==undefined&&(r.items.some(m=>m.id>=before)||(cursor!==null&&cursor>=before))))
   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
