@@ -107,8 +107,9 @@ function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_be
     response.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
     (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
     (response.items.length===0&&cursor!==null)||
+    (new Set(response.items.map(item=>item.id)).size!==response.items.length)||
     (cursor!==null&&!response.items.some(item=>item.id===cursor))||
-    (before!==undefined&&(dateOrdered?cursor===before:(response.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before)))))
+    (before!==undefined&&(dateOrdered?(cursor===before||response.items.some(item=>item.id===before)):(response.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before)))))
   throw Error("Akademik kayıt sunucusundan geçersiz sayfa alındı. Tekrar deneyin.");
  return {items:response.items,next_before:cursor};
 }
