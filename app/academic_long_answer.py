@@ -41,7 +41,7 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
         emitted = False
         call_options = dict(options)
         if attempt:
-            call_options['max_output_tokens'] = max(16000, options['max_output_tokens'])
+            call_options['max_output_tokens'] = max(32768, options['max_output_tokens'])
             call_options['prompt'] = (
                 original_prompt
                 + '\n\nUZUN YANITIN DEVAMI: Önceki üretim çıktı sınırında kesildi. '
@@ -165,4 +165,4 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
             raise LongAnswerError('Soru setinin devamı ilerlemedi; eksik set kaydedilmedi.')
         if MAX_CONTINUATIONS is not None and attempt==MAX_CONTINUATIONS:
             raise LongAnswerError('Soru seti uzunluk sınırında tamamlanamadı; eksik set kaydedilmedi.')
-        budget=min(32768,max(16000,budget*2))
+        budget=max(32768,budget)
