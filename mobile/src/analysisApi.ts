@@ -26,7 +26,9 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   payload.images.forEach((image,i)=>{
     form.append("images",{uri:image.uri,name:image.name||("dental-image-"+i+".jpg"),type:image.type||"image/jpeg"} as any);
   });
-  return call<{ok:boolean;analysis_id:number;status:string}>("/analyses",token,{method:"POST",body:form});
+  const result=await call<{ok:boolean;analysis_id:number;status:string}>("/analyses",token,{method:"POST",body:form});
+  if(!result?.ok||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error("Analiz oluşturuldu ancak sunucu geçerli bir iş kimliği döndürmedi.");
+  return result;
 }
 
 export function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<MobileAnalysis>("/analyses/"+id,token);}
