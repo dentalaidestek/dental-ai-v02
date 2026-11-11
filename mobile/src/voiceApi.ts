@@ -59,7 +59,9 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  if(!validFields||!validTeeth||!validEvidence(topics,"topic",40)||!validEvidence(requests,"term",6)||(appointment!=null&&(!isRecord(appointment)||Object.keys(appointment).some(key=>!["quote","acceptance_quote"].includes(key))||Object.values(appointment).some(value=>typeof value!=="string"||value.length>1500)))||payload.insights.length>24||payload.uncertain.length>3000)throw Error("Klinik son değerlendirme bağlamı geçersiz veya sınır dışında. Taslağı kontrol edin; metniniz korunuyor.");
  const contextBytes=new TextEncoder().encode(JSON.stringify(payload.context)).length;
  if(contextBytes>32000)throw Error("Klinik bağlam 32 KB sınırını aşıyor. Taslağı kısaltın; görüşme metniniz korunuyor.");
- if(payload.insights.some(item=>!isRecord(item)||typeof item.quote!=="string"||typeof item.observation!=="string"))throw Error("Hekim iletişimi kanıtları eksik veya geçersiz. Taslağı kontrol edin; metniniz korunuyor.");
+ const allowedInsightKeys=new Set(["quote","observation","suggestion","category","question","explanation","response_type"]);
+ const allowedResponseTypes=new Set(["CLINICIAN_RESPONSE","PATIENT_RESPONSE","UNATTRIBUTED_RESPONSE"]);
+ if(payload.insights.some(item=>!isRecord(item)||Object.entries(item).some(([key,value])=>!allowedInsightKeys.has(key)||typeof value!=="string"||value.length>1000||(key==="response_type"&&!allowedResponseTypes.has(value)))||typeof item.quote!=="string"||!item.quote.trim()||typeof item.observation!=="string"||!item.observation.trim()))throw Error("Hekim iletişimi kanıtları eksik veya geçersiz. Taslağı kontrol edin; metniniz korunuyor.");
   const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
  return result;
