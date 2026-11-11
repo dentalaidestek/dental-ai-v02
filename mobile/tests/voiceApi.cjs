@@ -146,3 +146,13 @@ test('clinical communication coaching from extraction is accepted in final paylo
   assert.deepEqual(finalRequest.insights,communication);
  }finally{global.fetch=original}
 });
+
+test('native voice audio refuses invalid patient IDs and non-finite sizes before network',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected upload')};
+ try{
+  const blob=new Blob([new Uint8Array(128)],{type:'audio/mp4'});
+  for(const id of [0,-1,1.5,Number.NaN])await assert.rejects(()=>api.transcribeVoiceAudio('token',id,blob,'audio/mp4'),/geçerli bir hasta/);
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,{size:Number.NaN},'audio/mp4'),/8 MB/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
