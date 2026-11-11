@@ -81,3 +81,13 @@ test('voice API expires matching session even when unauthorized response is HTML
   assert.deepEqual(events,['expired']);
  }finally{stop();global.fetch=original}
 });
+
+test('voice API explains overload and server outages without losing transcript',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>response(JSON.stringify({detail:'rate limited'}),429);
+  await assert.rejects(()=>api.extractVoice('token',1,'metin'),/hizmeti şu anda yoğun.*Metniniz korunuyor/);
+  global.fetch=async()=>response(JSON.stringify({detail:'internal error'}),503);
+  await assert.rejects(()=>api.extractVoice('token',1,'metin'),/sunucusuna şu anda ulaşılamıyor.*Metniniz korunuyor/);
+ }finally{global.fetch=original}
+});
