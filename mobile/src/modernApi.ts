@@ -36,7 +36,21 @@ export const getAnalysisHistory=async(t:string,before?:number)=>{
  return {...r,next_before};
 };
 export const deleteMedia=(t:string,patientId:number,mediaId:number)=>req<{ok:boolean;media_id:number}>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
-export const getMedia=async(t:string,p:number,before?:number)=>{const r=await req<{items:any[];next_before:number|null}>(`/patients/${p}/media`+(before?`?before=${before}`:""),t);if(!Array.isArray(r?.items)||r.items.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0)||(r.next_before!=null&&(!Number.isSafeInteger(r.next_before)||r.next_before<=0))||(r.items.length===0&&r.next_before!=null)||(before!==undefined&&(r.items.some(m=>m.id>=before)||(r.next_before!=null&&r.next_before>=before))))throw Error("Klinik medya sunucusundan geçersiz liste alındı.");return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename,url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:r.next_before??null}};
+export const getMedia=async(t:string,p:number,before?:number)=>{
+ if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
+  throw Error("Geçersiz hasta veya sayfa kimliği.");
+ const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media`+(before!==undefined?`?before=${encodeURIComponent(before)}`:""),t);
+ const cursor=r?.next_before??null;
+ if(!Array.isArray(r?.items)||
+   r.items.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||
+      (m.original_filename!=null&&typeof m.original_filename!=="string")||
+      (m.filename!=null&&typeof m.filename!=="string"))||
+   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
+   (r.items.length===0&&cursor!==null)||
+   (before!==undefined&&(r.items.some(m=>m.id>=before)||(cursor!==null&&cursor>=before))))
+  throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
+ return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:cursor};
+};
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
 export const getConsultations=async(t:string,before?:number)=>{
