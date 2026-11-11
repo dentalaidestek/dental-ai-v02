@@ -1103,7 +1103,7 @@ def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_le
         return {"items":items}
 
 @router.get("/consultations")
-def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=None):
+def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
     with Session(engine,expire_on_commit=False) as session:
         scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
         query=select(ConsultationCase).where(scope)
@@ -1127,11 +1127,12 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=N
         for c in cases:
             other_id=c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id
             other=peers.get(other_id)
-            last=last_by_case.get(c.id)
+            last=None if c.messages_deleted_at is not None else last_by_case.get(c.id)
             items.append({"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
-                "last_message":last.content if last else None,"last_message_at":last.created_at if last else None})
+                "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
+                "messages_deleted_at":c.messages_deleted_at})
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
@@ -1140,10 +1141,11 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
         c=session.get(ConsultationCase,case_id)
         if not c or user.id not in {c.requester_user_id,c.expert_user_id}:
             raise HTTPException(status_code=404,detail="Vaka bulunamadı.")
-        query=select(ConsultationMessage).where(ConsultationMessage.case_id==c.id)
         if c.messages_deleted_at is not None:
-            # Never expose retained or pending-purge messages after chat deletion.
-            query=query.where(ConsultationMessage.id<0)
+            return {"next_before":None,"case":{"id":c.id,"status":c.status,"specialty":c.specialty,
+                "messages_deleted_at":c.messages_deleted_at,"expert_user_id":c.expert_user_id,
+                "requester_user_id":c.requester_user_id},"messages":[]}
+        query=select(ConsultationMessage).where(ConsultationMessage.case_id==c.id)
         if before is not None:
             query=query.where(ConsultationMessage.id<before)
         page=session.exec(query.order_by(ConsultationMessage.id.desc()).limit(limit+1)).all()
