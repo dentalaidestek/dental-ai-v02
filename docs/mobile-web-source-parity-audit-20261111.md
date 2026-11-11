@@ -32,3 +32,24 @@ Web davranışını yeniden icat etme. Önce gerçek şablon + CSS + JavaScript 
 
 ## Değişiklik politikası
 Bu envanter doğrulanmadan yeni native tasarım uydurulmaz; her modülde mevcut web kaynakları esas alınır. Klinik geçmişe yanlış kayıt eklenmemesi ve hasta yetkileri önceliklidir.
+
+## 11 Kasım — Web ana yönlendirme envanteri (main.py)
+
+`app/main.py` içindeki `@app.get/post/put/delete/patch` dekoratörleri üzerinden **180 route deklarasyonu** tespit edildi. Bu sayı diğer FastAPI router dosyalarını kapsamaz ve 180 ayrı kullanıcı ekranı anlamına gelmez. Canlı dağıtımın bu commit'te olduğu ayrıca doğrulanmadı.
+
+| Web iş alanı | main.py route sayısı | Native kontrol önceliği |
+| --- | ---: | --- |
+| Hesap, profil ve güvenlik | 30 | Giriş, 2FA, profil, parola/e-posta değişimi, oturum |
+| Ana sayfa, yasal sayfalar, destek | 12 | Dashboard, destek talebi, yasal metinler |
+| Hastalar ve diş şeması | 18 | Hasta CRUD, tedavi, FDI, yüzey, medya |
+| Görüntü analizi ve görüntüleyiciler | 34 | Yükleme, job, sonuç, görüntüleyici, yeniden deneme |
+| Akademik AI ve ders notları | 20 | Ders CRUD, kaynak yükleme, AI soru, geçmiş, PDF |
+| Program | 8 | Oluşturma, düzenleme, kopyalama, tamamlama, silme |
+| Uzman desteği ve mesajlaşma | 35 | Uygunluk, talep, danışma, medya, bildirim, engelleme |
+| Bildirim ve senkronizasyon | 8 | Okundu, push, gerçek zamanlı olay |
+| Yönetim | 9 | Yönetici yetkisi ve moderasyon (kullanıcı mobiline körü körüne taşınmaz) |
+| Diğer / yukarıdaki grupların dışında | 6 | Ayrı incelenecek |
+
+**Eşleştirme durumu:** Mobilde `App.tsx`, `ModernScreens.tsx`, `NativeDentalAI.tsx`, `NativeToothChart.tsx`, `VoiceExamEntry.tsx`, `SocialScreens.tsx` mevcut. Bunların varlığı web işlevleriyle birebir eşleşme veya test başarısı kanıtı değildir. Uzman sosyal akışının ek router'ları, sesli muayene, akademik AI ve yönetim router'ları ayrıca envantere katılmalıdır.
+
+**11 Kasım uygulama:** `ModernScreens.tsx` Akademik AI isteklerinde hızlı çift gönderim kilidi ve ders/oturum değişiminde eski yanıtı dışlama eklendi. TypeScript ve gerçek cihaz testi hâlâ gerekli.
