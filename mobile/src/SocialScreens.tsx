@@ -578,13 +578,19 @@ function Comments({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [parent, setParent] = useState<number | undefined>(),
-    lock = useRef(false);
+    lock = useRef(false),
+    commentLoadGeneration = useRef(0),
+    commentPageLock = useRef(false);
   const d = useDraft(userId, `comment.${post.id}`);
   const load = useCallback(
     async (after = 0) => {
+      if (after && commentPageLock.current) return;
+      const request = ++commentLoadGeneration.current;
+      if (after) commentPageLock.current = true;
       setBusy(true);
       try {
         const page = await api.getComments(token, post.id, after);
+        if (request !== commentLoadGeneration.current) return;
         setItems((v) =>
           after
             ? [...v, ...page.items.filter((x) => !v.some((y) => y.id === x.id))]
@@ -593,15 +599,17 @@ function Comments({
         setNext(page.next_cursor);
         setError("");
       } catch (e) {
-        setError(message(e));
+        if (request === commentLoadGeneration.current) setError(message(e));
       } finally {
-        setBusy(false);
+        if (after) commentPageLock.current = false;
+        if (request === commentLoadGeneration.current) setBusy(false);
       }
     },
     [post.id, token],
   );
   useEffect(() => {
     void load();
+    return () => { commentLoadGeneration.current++; };
   }, [load]);
   async function send() {
     if (lock.current) return;
