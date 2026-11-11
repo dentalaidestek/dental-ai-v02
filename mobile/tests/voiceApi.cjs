@@ -1,0 +1,20 @@
+const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
+const {test}=require('node:test');
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
+const api=require('../src/voiceApi.ts');
+const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
+test('voice extraction sends consent, bearer and patient path',async()=>{
+ const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{}}}))};
+ try{const result=await api.extractVoice('secret',12,'muayene konuşması');assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true})}finally{global.fetch=original}
+});
+test('voice API surfaces HTTP errors without masking details',async()=>{
+ const original=global.fetch;global.fetch=async()=>response(JSON.stringify({detail:'Hasta erişim yetkisi yok'}),403);
+ try{await assert.rejects(()=>api.extractVoice('secret',1,'text'),/Hasta erişim yetkisi yok/)}finally{global.fetch=original}
+});
+test('voice API rejects malformed and ambiguous success payloads',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>response('<html>bad gateway</html>',502);await assert.rejects(()=>api.extractVoice('secret',1,'text'),/geçersiz klinik/);
+  global.fetch=async()=>response('{}');await assert.rejects(()=>api.extractVoice('secret',1,'text'),/başarı durumunu/);
+ }finally{global.fetch=original}
+});
