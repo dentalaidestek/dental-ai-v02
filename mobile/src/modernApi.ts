@@ -73,7 +73,7 @@ export const getConsultations=async(t:string,before?:number)=>{
  if(!Array.isArray(r?.items)||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
    (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
    (r.items.length===0&&cursor!==null)||
-   (before!==undefined&&(r.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before))))
+   (before!==undefined&&cursor!==null&&cursor>=before))
   throw Error("Uzman görüşmeleri sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {next_before:cursor,items:r.items.map(item=>({...item,other_name:item.other_name||item.other_display_name||"",clinical_summary:item.clinical_summary||""})) as Consultation[]};
 };
