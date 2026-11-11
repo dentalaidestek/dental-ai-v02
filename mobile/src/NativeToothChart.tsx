@@ -14,6 +14,8 @@ export default function NativeToothChart({token,patientId}:{token:string;patient
  const load=useCallback(()=>{getPatient(token,patientId).then(setD).catch(e=>setErr(e?.message||"Diş verileri alınamadı."))},[token,patientId]);useEffect(load,[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&lastEvent.event_type==="TOOTH_UPDATED"){const p=lastEvent.payload||{};setD(v=>v?{...v,teeth:v.teeth.map(t=>t.tooth_number===String(p.tooth_number)?{...t,status:p.status}:t)}:v)}},[lastEvent,patientId]);
  const map=useMemo(()=>new Map((d?.teeth||[]).map(t=>[t.tooth_number,t.status as ToothStatusCode])),[d]);
  useEffect(()=>{if(selected)setStatus(map.get(selected)||"HEALTHY")},[selected,map]);
+ // A surface belongs to a specific tooth; never carry it into another tooth record.
+ useEffect(()=>{setSurface(undefined)},[selected,patientId]);
  async function save(){if(!selected)return;setBusy(true);setErr("");try{await updateTooth(token,patientId,selected,{status,note:undefined,surface});setD(v=>v?{...v,teeth:v.teeth.some(t=>t.tooth_number===selected)?v.teeth.map(t=>t.tooth_number===selected?{...t,status}:t):[...v.teeth,{id:-Date.now(),tooth_number:selected,status}]}:v)}catch(e:any){setErr(e?.message||"Diş durumu kaydedilemedi.")}finally{setBusy(false)}}
  if(!d)return <View style={{padding:30,alignItems:"center"}}><ActivityIndicator color="#071B35"/></View>;
  // Keep FDI quadrants together on every screen width; never wrap 16 teeth into arbitrary rows.
@@ -24,7 +26,7 @@ export default function NativeToothChart({token,patientId}:{token:string;patient
     <View key={index} style={{flex:1,flexDirection:"row",gap:3,justifyContent:index===0?"flex-end":"flex-start"}}>
      {quadrant.map(n=>{const st=map.get(n)||"HEALTHY";const active=selected===n;return <Pressable
       accessibilityRole="button" accessibilityLabel={`Diş ${n}, ${STATUS.find(x=>x[0]===st)?.[1]||"Durum bilinmiyor"}`}
-      accessibilityState={{selected:active}} key={n} onPress={()=>setSelected(n)}
+      accessibilityState={{selected:active}} key={n} disabled={busy} onPress={()=>{if(!busy)setSelected(n)}}
       style={{flex:1,minWidth:0,maxWidth:44,height:54,borderRadius:9,borderWidth:1,borderColor:active?"#071B35":"#DCE3EB",backgroundColor:active?"#071B35":"#FFF",alignItems:"center",justifyContent:"center"}}>
       <Text style={{fontSize:11,fontWeight:"800",color:active?"#FFF":"#102033"}}>{n}</Text>
       <Text style={{fontSize:12,fontWeight:"800",color:active?"#FFF":"#718096",marginTop:3}}>{statusShort[st]||"•"}</Text>
