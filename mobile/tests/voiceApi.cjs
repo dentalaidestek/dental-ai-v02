@@ -372,3 +372,19 @@ test('voice review undo state is invalidated on transcript edit and consent with
  assert.match(source,/setReview\(null\);setLastRemoved\(null\);setFinalResult\(null\);setClinicalError\(""\)/);
  assert.match(source,/if\(processingLock\.current\|\|!lastRemoved\|\|!review\)return/);
 });
+
+test('final voice review rejects malformed literature and drug search evidence without requests',async()=>{
+ const original=global.fetch;let requests=0;global.fetch=async()=>{requests++;throw Error('unexpected request')};
+ const base={insights:[],uncertain:'',conversation_text:'Muayene'};
+ try{
+  for(const context of [
+   {fields:{},source_requests:[{term:'a',quote:'ilaç'}]},
+   {fields:{},source_requests:[{term:'amoxicillin123',quote:'ilaç'}]},
+   {fields:{},source_requests:[{term:'amoxicillin',quote:'ilaç',unexpected:'private'}]},
+   {fields:{},source_requests:[{term:'amoxicillin',quote:'x'.repeat(1001)}]},
+   {fields:{},literature_topics:[{topic:'endo.general',quote:'kanal',unexpected:'private'}]},
+   {fields:{},literature_topics:[{topic:'endo.general',quote:'x'.repeat(1001)}]}
+  ])await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context}),/bağlamı geçersiz/);
+  assert.equal(requests,0);
+ }finally{global.fetch=original}
+});
