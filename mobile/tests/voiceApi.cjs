@@ -52,3 +52,9 @@ test('voice API reports aborted clinical requests without discarding transcript'
  global.fetch=async()=>{const error=new Error('This operation was aborted');error.name='AbortError';throw error};
  try{await assert.rejects(()=>api.extractVoice('token',1,'metin'),/zaman aşımına uğradı.*Metniniz bu ekranda korunuyor/)}finally{global.fetch=original}
 });
+
+test('voice extraction retains clinical uncertainty as text for final review',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},uncertain:'İlaç dozu doğrulanamadı'}}));
+ try{const result=await api.extractVoice('token',9,'muayene');assert.equal(result.review.uncertain,'İlaç dozu doğrulanamadı')}finally{global.fetch=original}
+});
