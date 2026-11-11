@@ -37,25 +37,36 @@ def _user_owned_patient(session, user, patient_id):
 
 
 @router.get("/analyses")
-def mobile_analysis_history(user=Depends(_mobile_user), limit: int = 30, offset: int = 0):
+def mobile_analysis_history(user=Depends(_mobile_user), limit: int = 30, offset: int = 0, before: int | None = None):
     limit=max(1,min(limit,50)); offset=max(0,offset)
+    if before is not None and before <= 0:
+        raise HTTPException(status_code=422,detail="Geçersiz sayfa kimliği.")
     with Session(engine, expire_on_commit=False) as s:
-        rows=s.exec(
-            select(Analysis, Patient).join(Patient, Patient.id==Analysis.patient_id)
-            .where(Patient.owner_user_id==user.id)
-            .order_by(Analysis.created_at.desc()).offset(offset).limit(limit)
-        ).all()
+        query=(select(Analysis, Patient).join(Patient, Patient.id==Analysis.patient_id)
+               .where(Patient.owner_user_id==user.id))
+        if before is not None:
+            query=query.where(Analysis.id < before)
+        rows=s.exec(query.order_by(Analysis.id.desc()).offset(offset if before is None else 0).limit(limit+1)).all()
+        has_more=len(rows)>limit
+        rows=rows[:limit]
         total=s.exec(select(func.count()).select_from(Analysis).join(Patient,Patient.id==Analysis.patient_id).where(Patient.owner_user_id==user.id)).one()
-        return {"items":[{"id":a.id,"patient_id":p.id,"patient_name":f"{p.first_name or ''} {p.last_name or ''}".strip(),"tooth_number":a.tooth_number,"status":a.status,"clinical_notes":a.clinical_notes,"created_at":a.created_at} for a,p in rows],"total":int(total),"limit":limit,"offset":offset}
+        return {"items":[{"id":a.id,"patient_id":p.id,"patient_name":f"{p.first_name or ''} {p.last_name or ''}".strip(),"tooth_number":a.tooth_number,"status":a.status,"clinical_notes":a.clinical_notes,"created_at":a.created_at} for a,p in rows],"total":int(total),"limit":limit,"offset":offset,"next_before":rows[-1][0].id if has_more and rows else None}
 
 
 @router.get("/patients/{patient_id}/media")
-def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,offset:int=0):
+def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,offset:int=0,before:int|None=None):
     limit=max(1,min(limit,100)); offset=max(0,offset)
+    if before is not None and before <= 0:
+        raise HTTPException(status_code=422,detail="Geçersiz sayfa kimliği.")
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
-        rows=s.exec(select(PatientMedia).where(PatientMedia.patient_id==patient_id,PatientMedia.owner_user_id==user.id).order_by(PatientMedia.uploaded_at.desc()).offset(offset).limit(limit)).all()
-        return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,"tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,"url":f"/api/mobile/v1/patients/{patient_id}/media/{m.id}"} for m in rows]}
+        query=select(PatientMedia).where(PatientMedia.patient_id==patient_id,PatientMedia.owner_user_id==user.id)
+        if before is not None:
+            query=query.where(PatientMedia.id < before)
+        rows=s.exec(query.order_by(PatientMedia.id.desc()).offset(offset if before is None else 0).limit(limit+1)).all()
+        has_more=len(rows)>limit
+        rows=rows[:limit]
+        return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,"tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,"url":f"/api/mobile/v1/patients/{patient_id}/media/{m.id}/file"} for m in rows],"next_before":rows[-1].id if has_more and rows else None}
 
 
 @router.post("/patients/{patient_id}/media")
