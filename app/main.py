@@ -10415,28 +10415,8 @@ def update_tooth_status(
             s.add(tooth)
 
 
-        # Tedavi geçmişine otomatik kayıt
-        treatment_statuses = {
-            "CARIES": "Çürük",
-            "FILLING": "Dolgu",
-            "CROWN": "Kron",
-            "ROOT_CANAL": "Kanal Tedavisi",
-            "EXTRACTED": "Diş Çekimi",
-            "IMPLANT": "İmplant",
-            "OTHER": "Diğer",
-        }
-
-        treatment_name = treatment_statuses.get(status)
-
-        if treatment_name:
-            treatment = Treatment(
-                patient_id=patient_id,
-                tooth_number=tooth_number,
-                treatment_name=treatment_name,
-                treatment_date=_utcnow_naive().strftime("%Y-%m-%d"),
-                doctor_note=note.strip() if note else None,
-            )
-            s.add(treatment)
+        # A clinical observation is not evidence that a procedure was performed.
+        # Completed treatments are recorded explicitly via the treatment workflow.
 
         s.commit()
 
