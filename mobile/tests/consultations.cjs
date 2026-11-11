@@ -99,3 +99,17 @@ test('academic pages reject duplicate records',async()=>{
   await assert.rejects(()=>api.getCourses('token'),/geçersiz sayfa/);
  });
 });
+
+test('consultation list rejects duplicate rows and foreign cursors',async()=>{
+ await withFetch(async()=>json({items:[consultation(8,'2026-11-11'),consultation(8,'2026-11-10')],next_before:8}),async()=>{
+  await assert.rejects(()=>api.getConsultations('token'),/geçersiz liste/);
+ });
+ await withFetch(async()=>json({items:[consultation(8,'2026-11-11')],next_before:21}),async()=>{
+  await assert.rejects(()=>api.getConsultations('token'),/geçersiz liste/);
+ });
+});
+test('consultation list rejects replay of requested anchor',async()=>{
+ await withFetch(async()=>json({items:[consultation(15,'2026-11-11')],next_before:null}),async()=>{
+  await assert.rejects(()=>api.getConsultations('token',15),/geçersiz liste/);
+ });
+});
