@@ -239,3 +239,20 @@ test('clinical finalization refuses malformed review payload before network',asy
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
+
+test('voice extraction refuses malformed FDI teeth, communication and evidence',async()=>{
+ const original=global.fetch;
+ try{
+  for(const review of [
+   {fields:{},teeth:[{tooth:'99',status:'unknown',quote:'metin'}]},
+   {fields:{},teeth:[{tooth:'44',status:'unknown'}]},
+   {fields:{},communication:[{quote:'endişeliyim',observation:'kaygı'}]},
+   {fields:{},literature_topics:[{topic:42,quote:'muayene'}]},
+   {fields:{},source_requests:[{term:'amoxicillin',quote:123}]},
+   {fields:{},decision_barriers:[null]}
+  ]){
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   await assert.rejects(()=>api.extractVoice('token',4,'muayene'),/alanları geçersiz/);
+  }
+ }finally{global.fetch=original}
+});
