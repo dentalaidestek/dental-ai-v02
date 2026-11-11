@@ -8,6 +8,7 @@ mobile clients do not create a second authentication system.
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
+import logging
 import os
 import shutil
 import time
@@ -1168,7 +1169,10 @@ async def mobile_patient_media_upload(
                 storage_delete(str(destination))
             except Exception:
                 logging.exception("Failed to clean orphan clinical media upload: %s", destination)
-            destination.unlink(missing_ok=True)
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                logging.exception("Failed to clean local clinical media upload: %s", destination)
             raise
         on_loop(_publish_realtime_event,realtime)
         return {"media":{"id":media.id,"original_filename":media.original_filename,
