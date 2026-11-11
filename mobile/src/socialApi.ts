@@ -8,6 +8,20 @@ export const socialUrl = (path: string) =>
         "/api/expert-social/experts/$1/photo",
       )
     : path;
+// Never forward a session bearer token to an externally hosted image URL.
+export function socialImageSource(path: string, token: string): {
+  uri: string;
+  headers?: { Authorization: string };
+} {
+  const uri = socialUrl(path);
+  const firstParty =
+    uri === BASE ||
+    uri.startsWith(BASE + "/") ||
+    uri.startsWith(BASE + "?");
+  return firstParty
+    ? { uri, headers: { Authorization: "Bearer " + token } }
+    : { uri };
+}
 export type SocialPost = {
   id: number;
   author_id: number;
