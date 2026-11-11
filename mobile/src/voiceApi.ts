@@ -35,6 +35,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
 }
 export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Son değerlendirme için geçerli bir hasta seçin.");
+ if(!payload||!payload.context||typeof payload.context!=="object"||Array.isArray(payload.context)||!Array.isArray(payload.insights)||typeof payload.uncertain!=="string")throw Error("Klinik son değerlendirme bilgileri geçersiz. Metniniz korunuyor.");
  if(typeof payload.conversation_text!=="string"||payload.conversation_text.length>72000)throw Error("Görüşme metni 72.000 karakteri aşamaz. Metniniz korunuyor.");
  const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
