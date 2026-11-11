@@ -25,7 +25,7 @@ test('voice API rejects successful but incomplete clinical extraction',async()=>
 });
 test('voice finalization requires a clinical review payload',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({ok:true}));
- try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:[],conversation_text:'text'}),/son değerlendirme yanıtı eksik/)}finally{global.fetch=original}
+ try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:'',conversation_text:'text'}),/son değerlendirme yanıtı eksik/)}finally{global.fetch=original}
 });
 
 test('voice finalization submits full transcript, clinician review and consent',async()=>{
