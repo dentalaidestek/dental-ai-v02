@@ -173,3 +173,13 @@ test('clinical extraction rejects malformed fields and list shapes before UI use
   }
  }finally{global.fetch=original}
 });
+
+test('native voice audio rejects null, list and primitive server responses safely',async()=>{
+ const original=global.fetch;
+ try{
+  for(const body of ['null','[]','true','42','"unexpected"']){
+   global.fetch=async()=>response(body);
+   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/geçersiz yanıt/);
+  }
+ }finally{global.fetch=original}
+});
