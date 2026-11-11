@@ -33,12 +33,13 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
    if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length)throw Error("Geçersiz sayfa yanıtı.");
    const nextCursor=validInitialCursor(page,cursorMode);
-   if(cursorMode==="offset"&&nextCursor!==null&&nextCursor<=next)throw Error("Geçersiz sayfalama ilerlemesi.");
+   // Preserve a valid page but close pagination when an offset repeats or regresses.
+   const stalledOffset=cursorMode==="offset"&&nextCursor!==null&&nextCursor<=next;
    page.items.forEach(item=>knownIds.current.add(item.id));
    setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});
    // A broken backend cursor must not trigger an endless request for the same page.
    seenCursors.current.add(next);
-   setNext(nextCursor!==null&&!seenCursors.current.has(nextCursor)?nextCursor:null);more.current=true;
+   setNext(!stalledOffset&&nextCursor!==null&&!seenCursors.current.has(nextCursor)?nextCursor:null);more.current=true;
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
   finally{if(pending.current===request)pending.current=null;if(request===generation.current)setBusy(false);}
  };
