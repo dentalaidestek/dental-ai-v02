@@ -350,3 +350,18 @@ test('final voice review enforces 32KB context and quoted clinician evidence bef
   assert.equal(requests,0);
  }finally{global.fetch=original}
 });
+
+test('voice finalization rejects unsupported coaching keys and response types',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected network')};
+ const base={context:{fields:{}},uncertain:'',conversation_text:'görüşme'};
+ try{
+  for(const insight of [
+   {quote:'Hasta ağrı dedi',observation:'Ağrı',private_note:'hasta kimliği'},
+   {quote:'Hasta ağrı dedi',observation:'Ağrı',response_type:'OTHER'},
+   {quote:'',observation:'Ağrı'},
+   {quote:'Hasta ağrı dedi',observation:''},
+   {quote:'Hasta ağrı dedi',observation:'x'.repeat(1001)}
+  ])await assert.rejects(()=>api.finalizeVoice('token',4,{...base,insights:[insight]}),/kanıtları eksik/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
