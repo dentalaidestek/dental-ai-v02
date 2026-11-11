@@ -9,7 +9,7 @@ export function validInitialCursor<T extends {id:number}>(page:Page<T>):number|n
  if(cursor===null||!Number.isSafeInteger(cursor)||cursor<0||!Array.isArray(page.items)||page.items.length===0)return null;
  const ids=page.items.map(item=>item?.id);
  if(ids.some(id=>!Number.isSafeInteger(id)||id<0))return null;
- return cursor<Math.max(...ids)?cursor:null;
+ return cursor<=Math.max(...ids)?cursor:null;
 }
 export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false,replaceOnRefresh=false){
  const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
