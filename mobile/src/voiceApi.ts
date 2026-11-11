@@ -44,6 +44,7 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
 const AUDIO_MIMES=new Set(["audio/webm","audio/ogg","audio/mp4","audio/mpeg","audio/wav"]);
 const MAX_AUDIO_BYTES=8*1024*1024;
 export async function transcribeVoiceAudio(token:string,patientId:number,audio:Blob,mime:string):Promise<{ok:true;revision:string;transcript:string}>{
+ if(typeof mime!=="string")throw Error("Ses biçimi desteklenmiyor. Geçerli bir ses dosyası seçin.");
  const contentType=mime.split(";")[0].trim().toLowerCase();
  if(!AUDIO_MIMES.has(contentType))throw Error("Ses biçimi desteklenmiyor. WebM, OGG, MP4, MP3 veya WAV kaydı kullanın.");
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Ses kaydı için geçerli bir hasta seçin.");
