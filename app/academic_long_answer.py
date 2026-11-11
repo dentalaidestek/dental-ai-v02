@@ -1,7 +1,7 @@
 """Bounded completion of long prose using the same source evidence."""
 
-MAX_ANSWER_CHARS = 1_000_000
-MAX_CONTINUATIONS = 12
+MAX_ANSWER_CHARS = None  # No application-wide total answer character ceiling
+MAX_CONTINUATIONS = None  # No application-wide continuation count ceiling
 AUTO_PDF_CHARS = 12_000
 LONG_PDF_NOTICE = 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.'
 
@@ -37,7 +37,7 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
     """
     original_prompt = options['prompt']
     answer = ''
-    for attempt in range(MAX_CONTINUATIONS + 1):
+    for attempt in __import__('itertools').count():
         emitted = False
         call_options = dict(options)
         if attempt:
@@ -67,14 +67,14 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
                 if not chunk:
                     continue
             emitted = True
-            if len(answer) + len(chunk) > MAX_ANSWER_CHARS:
+            if MAX_ANSWER_CHARS is not None and len(answer) + len(chunk) > MAX_ANSWER_CHARS:
                 raise LongAnswerError('Yanıt PDF hazırlama sınırını aştığı için tamamlanamadı; eksik PDF kaydedilmedi.')
             answer += chunk
             yield chunk
         if attempt and prefix:
             chunk = _without_repeated_tail(previous, prefix)
             if chunk:
-                if len(answer) + len(chunk) > MAX_ANSWER_CHARS:
+                if MAX_ANSWER_CHARS is not None and len(answer) + len(chunk) > MAX_ANSWER_CHARS:
                     raise LongAnswerError('Yanıt PDF hazırlama sınırını aştığı için tamamlanamadı; eksik PDF kaydedilmedi.')
                 emitted = True
                 answer += chunk
@@ -84,7 +84,7 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
             if not emitted:
                 raise LongAnswerError('Akademik AI boş yanıt döndürdü; eksik PDF kaydedilmedi.')
             return
-        if not allow_continuation or attempt == MAX_CONTINUATIONS:
+        if not allow_continuation or (MAX_CONTINUATIONS is not None and attempt == MAX_CONTINUATIONS):
             raise LongAnswerError('Yanıt uzunluk sınırına ulaştığı için tamamlanamadı; eksik PDF kaydedilmedi.')
         # A thinking-only token stop can have no text. Give it a larger budget
         # as well, without pretending there is already an answer to save.
@@ -115,7 +115,7 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
     """Retain complete questions; request only the missing suffix on a token stop."""
     import json
     saved=[];budget=options['max_output_tokens'];total_size=0
-    for attempt in range(MAX_CONTINUATIONS+1):
+    for attempt in __import__('itertools').count():
         call=dict(options,max_output_tokens=budget)
         if saved:
             remaining=expected_count-len(saved) if expected_count is not None else None
@@ -132,7 +132,7 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
         for chunk in provider.generate_stream(**call):
             if not chunk:continue
             total_size+=len(chunk)
-            if total_size>MAX_ANSWER_CHARS:
+            if MAX_ANSWER_CHARS is not None and total_size>MAX_ANSWER_CHARS:
                 raise LongAnswerError('Soru seti tamamlanamadı; eksik set kaydedilmedi.')
             chunks.append(chunk)
         text=''.join(chunks)
@@ -163,6 +163,6 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
                 return
         elif attempt and saved:
             raise LongAnswerError('Soru setinin devamı ilerlemedi; eksik set kaydedilmedi.')
-        if attempt==MAX_CONTINUATIONS:
+        if MAX_CONTINUATIONS is not None and attempt==MAX_CONTINUATIONS:
             raise LongAnswerError('Soru seti uzunluk sınırında tamamlanamadı; eksik set kaydedilmedi.')
         budget=min(32768,max(16000,budget*2))
