@@ -345,7 +345,7 @@ test('final voice review enforces 32KB context and quoted clinician evidence bef
  const original=global.fetch;let requests=0;global.fetch=async()=>{requests++;throw Error('network should not be called')};
  const base={uncertain:'',conversation_text:'Klinik görüşme'};
  try{
-  await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{medical_history:{value:'ğ'.repeat(17000),quote:'ğ'.repeat(17000)}}},insights:[]}),/32 KB/);
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:Object.fromEntries(['first_name','last_name','age','chief_complaint','medical_history','family_history','materials','dental_history','oral_habits','medications','allergies','clinical_findings','plan'].map(key=>[key,{value:'ğ'.repeat(1500),quote:'ğ'.repeat(1500)}]))},insights:[]}),/32 KB/);
   await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{}},insights:[{finding:'Öneri'}]}),/kanıtları eksik/);
   assert.equal(requests,0);
  }finally{global.fetch=original}
