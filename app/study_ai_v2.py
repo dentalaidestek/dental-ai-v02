@@ -800,7 +800,10 @@ def stream_rag_v2(
             checked_source = (retrieval.study_task.get('source_kind') == 'questions'
                 and type(retrieval.study_task.get('count')) is int
                 and not retrieval.study_task.get('batch_partial'))
-            output_budget = 16000 if retrieval.study_task.get('inventory_output') or pdf_patch else 7000
+            # Give Anthropic prose and final source synthesis the same full
+            # per-call budget as structured generation. The provider still
+            # enforces its own maximum output capacity.
+            output_budget = 16000 if target.provider == 'anthropic' or retrieval.study_task.get('inventory_output') or pdf_patch else 7000
             # Claude's cap includes adaptive thinking as well as answer text.
             # Whole-source extraction and long question sets need room for
             # both; the earlier Gemini-sized cap truncated a real 20-item turn.
@@ -827,7 +830,7 @@ def stream_rag_v2(
                         expected_count=retrieval.study_task.get('count') if structured_quiz else None)
                     if generation_options.get('response_schema') else
                     stream_complete_answer(provider, generation_call, retrieval,
-                        allow_continuation=not retrieval.study_task.get('batch_partial')))
+                        allow_continuation=True))
                 for chunk in completed:
                     if chunk:
                         emitted = True
