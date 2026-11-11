@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useMemo,useState}from"react";
+import React,{useCallback,useEffect,useMemo,useRef,useState}from"react";
 import{ActivityIndicator,Pressable,ScrollView,Text,TextInput,View}from"react-native";
 import{getPatient,PatientDetail,ToothStatusCode,ToothSurfaceCode,updateTooth}from"./api";
 import{useRealtime}from"./realtime";
@@ -10,16 +10,17 @@ const SURFACES:[ToothSurfaceCode,string][]=[["OCCLUSAL","Oklüzal"],["INCISAL","
 const statusShort:any={HEALTHY:"✓",CARIES:"Ç",FILLING:"D",CROWN:"K",ROOT_CANAL:"KT",EXTRACTED:"×",IMPLANT:"İ",OTHER:"•"};
 
 export default function NativeToothChart({token,patientId}:{token:string;patientId:number}){
+ const requestGeneration=useRef(0);const savingRef=useRef(false);
  const{lastEvent}=useRealtime();const[d,setD]=useState<PatientDetail|null>(null),[selected,setSelected]=useState(""),[status,setStatus]=useState<ToothStatusCode>("HEALTHY"),[surface,setSurface]=useState<ToothSurfaceCode|undefined>(),[busy,setBusy]=useState(false),[note,setNote]=useState(""),[err,setErr]=useState("");
- const load=useCallback(()=>{let active=true;setD(null);setSelected("");setSurface(undefined);setNote("");setErr("");getPatient(token,patientId).then(result=>{if(active)setD(result)}).catch(e=>{if(active)setErr(e?.message||"Diş verileri alınamadı.")});return()=>{active=false}},[token,patientId]);useEffect(()=>load(),[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&lastEvent.event_type==="TOOTH_UPDATED"){const p=lastEvent.payload||{};setD(v=>v?{...v,teeth:v.teeth.map(t=>t.tooth_number===String(p.tooth_number)?{...t,status:p.status}:t)}:v)}},[lastEvent,patientId]);
+ const load=useCallback(()=>{const request=++requestGeneration.current;setD(null);setSelected("");setSurface(undefined);setNote("");setErr("");getPatient(token,patientId).then(result=>{if(request===requestGeneration.current)setD(result)}).catch(e=>{if(request===requestGeneration.current)setErr(e?.message||"Diş verileri alınamadı.")});return()=>{requestGeneration.current++}},[token,patientId]);useEffect(()=>load(),[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&lastEvent.event_type==="TOOTH_UPDATED"){const p=lastEvent.payload||{};setD(v=>v?{...v,teeth:v.teeth.map(t=>t.tooth_number===String(p.tooth_number)?{...t,status:p.status}:t)}:v)}},[lastEvent,patientId]);
  const map=useMemo(()=>new Map((d?.teeth||[]).map(t=>[t.tooth_number,t.status as ToothStatusCode])),[d]);
  const selectedSurfaces=useMemo(()=>d?.surfaces.filter(t=>t.tooth_number===selected)||[],[d,selected]);
  const selectedTreatments=useMemo(()=>d?.treatments.filter(t=>t.tooth_number===selected)||[],[d,selected]);
  const selectedSurfaceRecord=selectedSurfaces.find(item=>item.surface===surface);
- useEffect(()=>{if(selected){setStatus(map.get(selected)||"HEALTHY");setNote(d?.teeth.find(t=>t.tooth_number===selected)?.note||"")}},[selected,patientId]);
+ const selectTooth=(tooth:string)=>{if(savingRef.current)return;setSelected(tooth);setStatus(map.get(tooth)||"HEALTHY");setNote(d?.teeth.find(t=>t.tooth_number===tooth)?.note||"");setSurface(undefined);setErr("")};
  // A surface belongs to a specific tooth; never carry it into another tooth record.
  useEffect(()=>{setSurface(undefined)},[selected,patientId]);
- async function save(){if(!selected||busy)return;const tooth=selected;setBusy(true);setErr("");try{await updateTooth(token,patientId,tooth,{status,note:note.trim(),surface});const updated=await getPatient(token,patientId);setD(updated)}catch(e:any){setErr(e?.message||"Diş durumu kaydedildiği doğrulanamadı. Yeniden yükleyip kontrol edin.")}finally{setBusy(false)}}
+ async function save(){if(!selected||savingRef.current)return;const tooth=selected;const request=requestGeneration.current;savingRef.current=true;setBusy(true);setErr("");try{await updateTooth(token,patientId,tooth,{status,note:note.trim(),surface});const updated=await getPatient(token,patientId);if(request===requestGeneration.current)setD(updated)}catch(e:any){if(request===requestGeneration.current)setErr(e?.message||"Diş durumu kaydedildiği doğrulanamadı. Yeniden yükleyip kontrol edin.")}finally{savingRef.current=false;if(request===requestGeneration.current)setBusy(false)}}
  if(!d)return <View style={{padding:30,alignItems:"center"}}>{err?<><Text accessibilityRole="alert" style={{color:"#B42318",textAlign:"center"}}>{err}</Text><Pressable accessibilityRole="button" onPress={()=>{setErr("");load()}} style={{padding:14,marginTop:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Tekrar dene</Text></Pressable></>:<ActivityIndicator color="#071B35"/>}</View>;
  // Keep FDI quadrants together on every screen width; never wrap 16 teeth into arbitrary rows.
  const row=(numbers:string[],label:string)=><View style={{marginTop:16}}>
@@ -29,7 +30,7 @@ export default function NativeToothChart({token,patientId}:{token:string;patient
     <View key={index} style={{flex:1,flexDirection:"row",gap:3,justifyContent:index===0?"flex-end":"flex-start"}}>
      {quadrant.map(n=>{const st=map.get(n)||"HEALTHY";const active=selected===n;return <Pressable
       accessibilityRole="button" accessibilityLabel={`Diş ${n}, ${STATUS.find(x=>x[0]===st)?.[1]||"Durum bilinmiyor"}`}
-      accessibilityState={{selected:active}} key={n} disabled={busy} onPress={()=>{if(!busy)setSelected(n)}}
+      accessibilityState={{selected:active}} key={n} disabled={busy} onPress={()=>selectTooth(n)}
       style={{flex:1,minWidth:0,maxWidth:44,height:54,borderRadius:9,borderWidth:1,borderColor:active?"#071B35":"#DCE3EB",backgroundColor:active?"#071B35":"#FFF",alignItems:"center",justifyContent:"center"}}>
       <Text style={{fontSize:11,fontWeight:"800",color:active?"#FFF":"#102033"}}>{n}</Text>
       <Text style={{fontSize:12,fontWeight:"800",color:active?"#FFF":"#718096",marginTop:3}}>{statusShort[st]||"•"}</Text>
