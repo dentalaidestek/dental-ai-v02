@@ -57,7 +57,7 @@ test('non-advancing pagination cursor is closed to prevent endless load-more req
 });
 
 test('invalid initial cursors do not expose endless pagination after refresh',async()=>{
- for(const cursor of [NaN,Infinity,-1,4,5,1.5]){
+ for(const cursor of [NaN,Infinity,-1,6,7,1.5]){
   let calls=0;
   const h=harness(async()=>{calls++;return {items:[row(4),row(5)],next_before:cursor}},true,false);
   h.render();await tick();h.render();
