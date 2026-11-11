@@ -223,3 +223,27 @@ test('active mobile media routes and analysis pagination contracts',()=>{
  assert.match(extended,/def mobile_analysis_history\([^\n]*before: int \| None = None\)/);
  assert.match(extended,/Analysis\.id < before/);
 });
+
+test('clinical media upload uses authorized multipart and validates committed response',async()=>{
+ const {uploadPatientMedia,ApiError}=require('../src/api.ts');
+ const original=global.fetch,calls=[];
+ const file={uri:'file:///tmp/clinical.jpg',name:'clinical.jpg',type:'image/jpeg'};
+ global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({media:{id:17,original_filename:'clinical.jpg',media_type:'PHOTO'}}),{status:200})};
+ try{
+  for(const id of [0,-1,1.5,NaN,Infinity])await assert.rejects(()=>uploadPatientMedia('token',id,file),/Geçersiz hasta/);
+  await assert.rejects(()=>uploadPatientMedia('token',5,{uri:'',name:'',type:''}),/Geçerli bir klinik/);
+  await assert.rejects(()=>uploadPatientMedia('token',5,file,'99'),/Geçersiz FDI/);
+  assert.equal(calls.length,0);
+  const result=await uploadPatientMedia('token',5,file,'11','RADIOGRAPH');
+  assert.equal(result.media.id,17);assert.equal(calls.length,1);
+  assert.equal(calls[0].init.headers.Authorization,'Bearer token');
+  assert.equal(calls[0].init.headers['Content-Type'],undefined);
+  assert.equal(calls[0].init.body.get('media_type'),'RADIOGRAPH');
+  assert.equal(calls[0].init.body.get('tooth_number'),'11');
+  assert.ok(calls[0].init.body.get('file'));
+  global.fetch=async()=>new Response(JSON.stringify({media:{id:0}}),{status:200});
+  await assert.rejects(()=>uploadPatientMedia('token',5,file),/Yeniden yüklemeden önce galeriyi kontrol edin/);
+  global.fetch=async()=>new Response(JSON.stringify({detail:'Erişim reddedildi'}),{status:403});
+  await assert.rejects(()=>uploadPatientMedia('token',5,file),e=>e instanceof ApiError&&e.status===403);
+ }finally{global.fetch=original;}
+});
