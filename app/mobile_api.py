@@ -1134,6 +1134,13 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                 if boundary is None:
                     continue
                 unread_by_case[cid]=0
+            # Cases never opened have no read cursor: all peer messages are unread.
+            never_read=[cid for cid in case_ids if read_boundary[cid] is None]
+            if never_read:
+                new_rows=session.exec(select(ConsultationMessage.case_id,func.count(ConsultationMessage.id)).where(
+                    ConsultationMessage.case_id.in_(never_read),ConsultationMessage.sender_user_id!=user.id
+                ).group_by(ConsultationMessage.case_id)).all()
+                unread_by_case.update({cid:int(count) for cid,count in new_rows})
             # One grouped query for cases with an existing read cursor.
             active_ids=[cid for cid in case_ids if read_boundary[cid] is not None]
             if active_ids:
@@ -1157,7 +1164,7 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
-                "messages_deleted_at":c.messages_deleted_at,"unread_count":unread_by_case.get(c.id,0)})
+                "messages_deleted_at":c.messages_deleted_at,"unread_count":0 if c.messages_deleted_at is not None else unread_by_case.get(c.id,0)})
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
