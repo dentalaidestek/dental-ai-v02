@@ -91,3 +91,13 @@ test('voice API explains overload and server outages without losing transcript',
   await assert.rejects(()=>api.extractVoice('token',1,'metin'),/sunucusuna şu anda ulaşılamıyor.*Metniniz korunuyor/);
  }finally{global.fetch=original}
 });
+
+test('voice API handles HTML gateway failures and rate limits before parsing',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>response('<html>Too Many Requests</html>',429);
+  await assert.rejects(()=>api.extractVoice('token',1,'metin'),/hizmeti şu anda yoğun/);
+  global.fetch=async()=>response('<html>Bad Gateway</html>',502);
+  await assert.rejects(()=>api.extractVoice('token',1,'metin'),/sunucusuna şu anda ulaşılamıyor/);
+ }finally{global.fetch=original}
+});
