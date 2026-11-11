@@ -121,7 +121,8 @@ export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))throw Error("Geçersiz ders veya sayfa kimliği.");
  const r=await req<{items:Array<{id:number;role:string;content:string;created_at:string}>;next_before?:number|null}>(`/academic/courses/${id}/messages`+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  const page=validateAcademicPage(r,before);
- if(page.items.some(item=>typeof item.role!=="string"||typeof item.content!=="string"))
+ if(page.items.some((item,index)=>typeof item.role!=="string"||typeof item.content!=="string"||
+   (index>0&&item.id<=page.items[index-1].id)))
   throw Error("Akademik mesaj sunucusundan geçersiz kayıt alındı. Tekrar deneyin.");
  return page;
 };
