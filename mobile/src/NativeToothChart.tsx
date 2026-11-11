@@ -11,13 +11,13 @@ const statusShort:any={HEALTHY:"✓",CARIES:"Ç",FILLING:"D",CROWN:"K",ROOT_CANA
 
 export default function NativeToothChart({token,patientId}:{token:string;patientId:number}){
  const{lastEvent}=useRealtime();const[d,setD]=useState<PatientDetail|null>(null),[selected,setSelected]=useState(""),[status,setStatus]=useState<ToothStatusCode>("HEALTHY"),[surface,setSurface]=useState<ToothSurfaceCode|undefined>(),[busy,setBusy]=useState(false),[err,setErr]=useState("");
- const load=useCallback(()=>{getPatient(token,patientId).then(setD).catch(e=>setErr(e?.message||"Diş verileri alınamadı."))},[token,patientId]);useEffect(load,[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&lastEvent.event_type==="TOOTH_UPDATED"){const p=lastEvent.payload||{};setD(v=>v?{...v,teeth:v.teeth.map(t=>t.tooth_number===String(p.tooth_number)?{...t,status:p.status}:t)}:v)}},[lastEvent,patientId]);
+ const load=useCallback(()=>{let active=true;setD(null);setSelected("");setSurface(undefined);setErr("");getPatient(token,patientId).then(result=>{if(active)setD(result)}).catch(e=>{if(active)setErr(e?.message||"Diş verileri alınamadı.")});return()=>{active=false}},[token,patientId]);useEffect(()=>load(),[load]);useEffect(()=>{if(lastEvent&&Number(lastEvent.entity_id)===patientId&&lastEvent.event_type==="TOOTH_UPDATED"){const p=lastEvent.payload||{};setD(v=>v?{...v,teeth:v.teeth.map(t=>t.tooth_number===String(p.tooth_number)?{...t,status:p.status}:t)}:v)}},[lastEvent,patientId]);
  const map=useMemo(()=>new Map((d?.teeth||[]).map(t=>[t.tooth_number,t.status as ToothStatusCode])),[d]);
  useEffect(()=>{if(selected)setStatus(map.get(selected)||"HEALTHY")},[selected,map]);
  // A surface belongs to a specific tooth; never carry it into another tooth record.
  useEffect(()=>{setSurface(undefined)},[selected,patientId]);
  async function save(){if(!selected)return;setBusy(true);setErr("");try{await updateTooth(token,patientId,selected,{status,note:undefined,surface});setD(v=>v?{...v,teeth:v.teeth.some(t=>t.tooth_number===selected)?v.teeth.map(t=>t.tooth_number===selected?{...t,status}:t):[...v.teeth,{id:-Date.now(),tooth_number:selected,status}]}:v)}catch(e:any){setErr(e?.message||"Diş durumu kaydedilemedi.")}finally{setBusy(false)}}
- if(!d)return <View style={{padding:30,alignItems:"center"}}><ActivityIndicator color="#071B35"/></View>;
+ if(!d)return <View style={{padding:30,alignItems:"center"}}>{err?<><Text accessibilityRole="alert" style={{color:"#B42318",textAlign:"center"}}>{err}</Text><Pressable accessibilityRole="button" onPress={()=>{setErr("");load()}} style={{padding:14,marginTop:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Tekrar dene</Text></Pressable></>:<ActivityIndicator color="#071B35"/>}</View>;
  // Keep FDI quadrants together on every screen width; never wrap 16 teeth into arbitrary rows.
  const row=(numbers:string[],label:string)=><View style={{marginTop:16}}>
   <Text style={{fontSize:13,fontWeight:"800",color:"#53657B",marginBottom:10}}>{label}</Text>
