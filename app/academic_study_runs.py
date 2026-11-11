@@ -73,7 +73,7 @@ def complete_in_transaction(session,*,run_id,owner,course,message_id):
 
 def checkpoint(engine,run_id,*,stage,partial=None):
     values={'stage':stage,'updated_at':now()}
-    if partial is not None:values['partial_text']=partial[:24000]
+    if partial is not None:values['partial_text']=partial[:240000]
     with Session(engine) as session:
         changed=session.execute(update(StudyRun).where(StudyRun.id==run_id,
             StudyRun.status=='RUNNING').values(**values)).rowcount
@@ -87,11 +87,16 @@ def generation(engine,run_id,iterator,*,pdf=False):
     for part in iterator:
         collected+=part
         if time.monotonic()-last>=2:
-            hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru ')) or len(collected)>12000
+            hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru ')) 
             checkpoint(engine,run_id,stage='PDF hazırlanıyor' if hidden else 'Yanıt hazırlanıyor',
-                partial='' if hidden else collected)
+                partial=None if hidden else collected)
             last=time.monotonic()
         yield part
+    # Persist the final streamed chunk even when it arrived within the last
+    # two-second checkpoint interval. Do not expose structured/private payloads.
+    hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru '))
+    if collected and not hidden:
+        checkpoint(engine,run_id,stage='Yanıt hazırlanıyor',partial=collected)
 
 
 def _drain(engine):
@@ -124,14 +129,14 @@ def _drain(engine):
                 row=session.get(StudyRun,run.id)
                 if row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error=payload.get('error','Çalışma tamamlanamadı. Yeniden deneyebilirsin.')
-                    row.stage='Tamamlanamadı';row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                    row.stage='Tamamlanamadı';row.updated_at=now();session.add(row);session.commit()
         except Exception:
             # Do not store provider/user exception text or restart a paid call.
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)
                 if row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error='Çalışma tamamlanamadı. Önceki kayıtların korunuyor.'
-                    row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                    row.updated_at=now();session.add(row);session.commit()
 
 
 def wake(engine):
@@ -156,7 +161,7 @@ def recover(engine):
     with Session(engine) as session:
         session.execute(update(StudyRun).where(StudyRun.status=='RUNNING',
             StudyRun.updated_at<now()-timedelta(minutes=15)).values(status='INTERRUPTED',
-            error='Sunucu yeniden başladı. Çalışma otomatik tekrarlanmadı; yeniden gönderebilirsin.',partial_text=''))
+            error='Sunucu yeniden başladı. Çalışma otomatik tekrarlanmadı; kaydedilmiş ilerleme korunuyor.',stage='Kesildi — ilerleme korundu'))
         session.commit()
     wake(engine)
 
@@ -172,8 +177,8 @@ def erase(session,owner,course=None,*,purge=False):
 
 def payload(session,row):
     if row.status=='RUNNING' and row.updated_at<now()-timedelta(minutes=15):
-        row.status='INTERRUPTED';row.partial_text=''
-        row.error='Çalışma kesildi. Otomatik tekrarlanmadı; yeniden gönderebilirsin.'
+        row.status='INTERRUPTED';row.stage='Kesildi — ilerleme korundu'
+        row.error='Çalışma kesildi. Kaydedilmiş ilerleme korunuyor; otomatik tekrarlanmadı.'
         session.add(row);session.commit()
     result={'id':row.id,'status':row.status,'stage':row.stage,'question':row.question,
         'partial':row.partial_text,'error':row.error}

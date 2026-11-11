@@ -1,7 +1,7 @@
 """Bounded completion of long prose using the same source evidence."""
 
-MAX_ANSWER_CHARS = 240_000
-MAX_CONTINUATIONS = 3
+MAX_ANSWER_CHARS = 1_000_000
+MAX_CONTINUATIONS = 12
 AUTO_PDF_CHARS = 12_000
 LONG_PDF_NOTICE = 'Yanıt çok uzun olduğu için PDF şeklinde oluşturulmuştur.'
 
