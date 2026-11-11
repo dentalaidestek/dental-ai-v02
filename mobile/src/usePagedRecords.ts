@@ -4,6 +4,13 @@ export function mergeRecords<T extends {id:number}>(existing:T[],incoming:T[],as
  const byId=new Map(existing.map(item=>[item.id,item]));incoming.forEach(item=>byId.set(item.id,item));const incomingIds=new Set(incoming.map(item=>item.id));
  return ascending?Array.from(byId.values()).sort((a,b)=>a.id-b.id):[...incoming,...existing.filter(item=>!incomingIds.has(item.id))];
 }
+export function validInitialCursor<T extends {id:number}>(page:Page<T>):number|null{
+ const cursor=page.next_before;
+ if(cursor===null||!Number.isSafeInteger(cursor)||cursor<0||!Array.isArray(page.items)||page.items.length===0)return null;
+ const ids=page.items.map(item=>item?.id);
+ if(ids.some(id=>!Number.isSafeInteger(id)||id<0))return null;
+ return cursor<Math.max(...ids)?cursor:null;
+}
 export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false,replaceOnRefresh=false){
  const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const fetchRef=useRef(fetchPage);fetchRef.current=fetchPage;
@@ -11,12 +18,12 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
  const refresh=useCallback(async()=>{
   const request=++generation.current;setBusy(true);setError('');
   try{const page=await fetchRef.current();if(request!==generation.current)return;
-   if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(page.next_before);return;}
+   if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(validInitialCursor(page));return;}
    const overlaps=page.items.some(item=>knownIds.current.has(item.id));
    if(!page.items.length){knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
    if(!overlaps)more.current=false;
    page.items.forEach(item=>knownIds.current.add(item.id));
-   setItems(old=>mergeRecords(old,page.items,ascending));if(!more.current)setNext(page.next_before);
+   setItems(old=>mergeRecords(old,page.items,ascending));if(!more.current)setNext(validInitialCursor(page));
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
   finally{if(request===generation.current)setBusy(false);}
  },[scope,ascending,replaceOnRefresh]);
