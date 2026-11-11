@@ -34,3 +34,19 @@ test('mobile lists reject malformed server data before rendering clinical or acc
   assert.equal((await modern.getNotifications('current')).items.length,0);
  }finally{global.fetch=original}
 });
+
+test('mobile notifications and analyses accept the actual FastAPI response contracts',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({
+   unread_count:1,unread:1,
+   notifications:[{id:11,title:'Klinik',message:'Yeni mesaj',notice_type:'MESSAGE',is_read:false,read_at:null,created_at:'2026-11-11T07:00:00'}],
+   items:[{id:11,title:'Klinik',message:'Yeni mesaj',notice_type:'MESSAGE',read_at:null,created_at:'2026-11-11T07:00:00'}]
+  }),{status:200});
+  const notices=await modern.getNotifications('current');
+  assert.equal(notices.items.length,1);assert.equal(notices.unread,1);assert.equal(notices.items[0].read_at,null);
+  global.fetch=async()=>new Response(JSON.stringify({total:1,items:[{id:14,patient_id:9,patient_name:'Hasta',tooth_number:'46',clinical_notes:'Kontrol',status:'AI_ANALYZED',created_at:'2026-11-11T07:00:00'}]}),{status:200});
+  const analyses=await modern.getAnalysisHistory('current');
+  assert.equal(analyses.total,1);assert.equal(analyses.items[0].patient_id,9);
+ }finally{global.fetch=original}
+});
