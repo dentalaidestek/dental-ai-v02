@@ -91,6 +91,11 @@ export const getConsultation=async(t:string,id:number,before?:number)=>{
   throw Error("Görüşme sunucusundan geçersiz mesaj sayfası alındı.");
  return {...result,next_before:cursor};
 };
+export const markConsultationRead=(t:string,id:number,throughId:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(throughId)||throughId<=0)
+  throw Error("Geçersiz görüşme veya okundu mesajı.");
+ return req<{ok:boolean;through_id:number;at:string}>(`/consultations/${id}/read`,t,{method:"POST",body:JSON.stringify({through_id:throughId})});
+};
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string,replyToMessageId?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim()||(replyToMessageId!==undefined&&(!Number.isSafeInteger(replyToMessageId)||replyToMessageId<=0)))
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
