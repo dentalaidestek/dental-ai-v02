@@ -61,6 +61,7 @@ export async function transcribeVoiceAudio(token:string,patientId:number,audio:B
    throw Error(detail);
   }
   if(typeof body.transcript!=="string"||!body.transcript.trim()||typeof body.revision!=="string")throw Error("Ses yazıya çevirme yanıtı eksik. Yerel kaydı koruyun.");
+  if(body.transcript.length>72000)throw Error("Ses çözümleme metni 72.000 karakter sınırını aştı. Yerel kaydı koruyun ve görüşmeyi bölümlere ayırın.");
   return {ok:true,revision:body.revision,transcript:body.transcript};
  }catch(error){if(error instanceof Error&&error.name==="AbortError")throw Error("Ses aktarımı zaman aşımına uğradı. Yerel kaydı koruyup tekrar deneyin.");throw error;
  }finally{clearTimeout(timeout)}
