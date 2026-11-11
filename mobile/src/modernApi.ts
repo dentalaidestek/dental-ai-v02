@@ -86,7 +86,7 @@ export const getConsultation=(t:string,id:number,before?:number)=>{
   result.messages.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||!Number.isSafeInteger(m.sender_user_id)||m.sender_user_id<=0||
     (m.content!=null&&typeof m.content!=="string")||(before!==undefined&&m.id>=before))||
   result.messages.some((m,i)=>i>0&&m.id<=result.messages[i-1].id)||
-  (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!result.messages.length||cursor>=result.messages[0].id))||
+  (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!result.messages.length||cursor!==result.messages[0].id))||
   (before!==undefined&&cursor!==null&&cursor>=before))
   throw Error("Görüşme sunucusundan geçersiz mesaj sayfası alındı.");
  return {...result,next_before:cursor};
