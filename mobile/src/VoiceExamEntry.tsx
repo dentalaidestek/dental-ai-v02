@@ -28,6 +28,8 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
  const processingLock=useRef(false),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0));
  scope.current=token+":"+(selected?.id||0);
  useEffect(()=>{generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage("select")},[token,selected?.id]);
+ // Clear patient selection and cached search results when the authenticated account changes.
+ useEffect(()=>{setSelected(null);setPatients([]);setQuery("");setError("");},[token]);
  const patientSearchGeneration=useRef(0);
  const load=useCallback(async()=>{const request=++patientSearchGeneration.current;setBusy(true);setError("");try{const r=await getPatients(token,query,0);if(request===patientSearchGeneration.current)setPatients(r.items)}catch(e){if(request===patientSearchGeneration.current)setError(e instanceof Error?e.message:"Hasta listesi alınamadı.")}finally{if(request===patientSearchGeneration.current)setBusy(false)}},[token,query]);
  useEffect(()=>{const timer=setTimeout(()=>{void load()},300);return()=>{clearTimeout(timer);patientSearchGeneration.current++}},[load]);
