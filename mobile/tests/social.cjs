@@ -111,3 +111,29 @@ test('notification unread badges reject malformed server counts',async()=>{
   assert.equal(result.unread,0);assert.equal(result.items[0].read_at,'now');
  }finally{global.fetch=original;}
 });
+
+test('clinical media archive rejects malformed records and stale pagination',async()=>{
+ const {getMedia}=require('../src/modernApi.ts'),original=global.fetch;
+ let calls=0;
+ try{
+  global.fetch=async()=>{calls++;return new Response('{}',{status:200})};
+  await assert.rejects(()=>getMedia('secret',0),/Geçersiz hasta/);
+  await assert.rejects(()=>getMedia('secret',7,-2),/Geçersiz hasta/);
+  assert.equal(calls,0,'invalid IDs must not reach the API');
+  for(const payload of [
+   {items:null,next_before:null},
+   {items:[{id:'3'}],next_before:null},
+   {items:[{id:5,filename:{unsafe:true}}],next_before:null},
+   {items:[],next_before:4},
+   {items:[{id:9}],next_before:10},
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
+   await assert.rejects(()=>getMedia('secret',7,10),/geçersiz liste/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8,original_filename:'scan.png'}],next_before:8}),{status:200});
+  const page=await getMedia('secret',7,10);
+  assert.equal(page.items[0].filename,'scan.png');
+  assert.equal(page.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/8/file');
+  assert.equal(page.next_before,8);
+ }finally{global.fetch=original;}
+});
