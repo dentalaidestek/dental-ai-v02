@@ -51,6 +51,7 @@ from app.main import (
     classify_dental_image,
     AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
+    _socket_case_authorized,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -1190,6 +1191,24 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
             "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id},
             "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
             "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at} for m in msgs]}
+
+class MobileConsultationReadRequest(BaseModel):
+    through_id: int
+
+
+@router.post("/consultations/{case_id}/read")
+def mobile_consultation_mark_read(case_id:int, body:MobileConsultationReadRequest,
+                                  background_tasks:BackgroundTasks,user:User=Depends(_mobile_user)):
+    if body.through_id <= 0:
+        raise HTTPException(status_code=422,detail="Geçersiz mesaj kimliği.")
+    # Reuse the web read-receipt implementation so both clients share one cursor.
+    receipt=_socket_case_authorized(user.id,case_id,mark_read=True,through_id=body.through_id)
+    if not receipt:
+        raise HTTPException(status_code=404,detail="Görüşme bulunamadı.")
+    for event in receipt["events"]:
+        background_tasks.add_task(_publish_realtime_event,event)
+    return {"ok":True,"through_id":receipt["through_id"],"at":receipt["at"]}
+
 
 @router.get("/academic/courses")
 def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int]=None):
