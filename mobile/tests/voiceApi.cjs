@@ -70,3 +70,14 @@ test('voice API expires only the matching session on unauthorized clinical reque
   assert.deepEqual(events,['current']);
  }finally{stopCurrent();stopOther();global.fetch=original}
 });
+
+test('voice API expires matching session even when unauthorized response is HTML',async()=>{
+ const {subscribeSessionExpiry}=require('../src/sessionExpiry.ts');
+ const original=global.fetch,events=[];
+ const stop=subscribeSessionExpiry('current',()=>events.push('expired'));
+ try{
+  global.fetch=async()=>response('<html>Unauthorized</html>',401);
+  await assert.rejects(()=>api.extractVoice('current',12,'muayene'),/geçersiz klinik/);
+  assert.deepEqual(events,['expired']);
+ }finally{stop();global.fetch=original}
+});
