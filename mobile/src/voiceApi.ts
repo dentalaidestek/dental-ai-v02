@@ -31,3 +31,26 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
  return result;
 }
+
+const AUDIO_MIMES=new Set(["audio/webm","audio/ogg","audio/mp4","audio/mpeg","audio/wav"]);
+const MAX_AUDIO_BYTES=8*1024*1024;
+export async function transcribeVoiceAudio(token:string,patientId:number,audio:Blob,mime:string):Promise<{ok:true;revision:string;transcript:string}>{
+ const contentType=mime.split(";")[0].trim().toLowerCase();
+ if(!AUDIO_MIMES.has(contentType))throw Error("Ses biçimi desteklenmiyor. WebM, OGG, MP4, MP3 veya WAV kaydı kullanın.");
+ if(!audio||audio.size<100||audio.size>MAX_AUDIO_BYTES)throw Error("Ses kaydı 100 bayttan büyük ve en fazla 8 MB olmalıdır.");
+ const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
+ try{
+  const response=await fetch(BASE+`/patients/${patientId}/voice-exam/audio`,{method:"POST",headers:{"Content-Type":contentType,"X-Voice-Consent":"yes",Authorization:"Bearer "+token},body:audio,signal:controller.signal});
+  if(response.status===401)reportSessionExpiry(token);
+  if(response.status===429||response.status>=500)throw Error("Ses yazıya çevrilemedi; sunucu meşgul. Yerel kaydı silmeden tekrar deneyin.");
+  const raw=await response.text();let body:Record<string,unknown>;
+  try{body=raw?JSON.parse(raw):{}}catch{throw Error("Ses aktarımından geçersiz yanıt alındı. Yerel kaydı koruyun.");}
+  if(!response.ok||body.ok!==true){
+   const detail=typeof body.detail==="string"?body.detail:"Ses aktarımı tamamlanamadı. Yerel kaydı koruyun.";
+   throw Error(detail);
+  }
+  if(typeof body.transcript!=="string"||!body.transcript.trim()||typeof body.revision!=="string")throw Error("Ses yazıya çevirme yanıtı eksik. Yerel kaydı koruyun.");
+  return {ok:true,revision:body.revision,transcript:body.transcript};
+ }catch(error){if(error instanceof Error&&error.name==="AbortError")throw Error("Ses aktarımı zaman aşımına uğradı. Yerel kaydı koruyup tekrar deneyin.");throw error;
+ }finally{clearTimeout(timeout)}
+}
