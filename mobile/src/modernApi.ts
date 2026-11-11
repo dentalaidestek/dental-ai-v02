@@ -13,7 +13,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_name:string;specialty:string;status:string;question:string;clinical_summary:string;requested_at:string;expert_response_deadline:string;last_message?:string|null;last_message_at?:string|null};
-export type ChatMessage={id:number;sender_user_id:number;type:string;content:string;created_at:string};
+export type ChatMessage={id:number;sender_user_id:number;type:string;message_type?:string;content:string;reply_to_message_id?:number|null;created_at:string};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
 export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios")=>
@@ -81,10 +81,10 @@ export const getConsultation=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme kimliği.");
  return req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
 };
-export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>{
- if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim())
+export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string,replyToMessageId?:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim()||(replyToMessageId!==undefined&&(!Number.isSafeInteger(replyToMessageId)||replyToMessageId<=0)))
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
- return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
+ return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId,...(replyToMessageId?{reply_to_message_id:replyToMessageId}:{})})});
 };
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
