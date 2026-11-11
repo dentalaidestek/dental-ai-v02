@@ -17,7 +17,9 @@ const ENAMEL_ATLAS="https://dentalai.tr/static/tooth-chart/enamel-atlas-v2.webp"
 function AtlasTooth({number,height=37}:{number:string;height?:number}){
  const [width,setWidth]=useState(24);
  const position=Number(number)%10;
- const atlasColumn=position>=6?0:position>=4?1:position===3?2:3;
+ const primary=Number(number[0])>=5;
+ // Primary dentition has no premolars: FDI 4 and 5 are molars.
+ const atlasColumn=primary?(position>=4?0:position===3?2:3):(position>=6?0:position>=4?1:position===3?2:3);
  const lower=Number(number[0])===3||Number(number[0])===4||Number(number[0])===7||Number(number[0])===8;
  return <View onLayout={event=>{const w=event.nativeEvent.layout.width;if(w>0&&Math.abs(w-width)>0.5)setWidth(w)}} style={{height,alignSelf:"stretch",overflow:"hidden",transform:[{rotate:lower?"180deg":"0deg"}]}}><Image source={{uri:ENAMEL_ATLAS}} resizeMode="stretch" style={{position:"absolute",width:width*4,height,left:-atlasColumn*width,top:0}} accessibilityIgnoresInvertColors/></View>;
 }
