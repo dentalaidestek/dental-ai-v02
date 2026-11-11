@@ -80,7 +80,16 @@ export const getConsultations=async(t:string,before?:number)=>{
 export const getConsultation=(t:string,id:number,before?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme kimliği.");
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz mesaj sayfası.");
- return req<{case:any;messages:ChatMessage[];next_before?:number|null}>(`/consultations/${id}`+(before!==undefined?`?before=${before}`:""),t);
+ const result=await req<{case:any;messages:ChatMessage[];next_before?:number|null}>(`/consultations/${id}`+(before!==undefined?`?before=${before}`:""),t);
+ const cursor=result?.next_before??null;
+ if(!result?.case||result.case.id!==id||!Array.isArray(result.messages)||result.messages.length>100||
+  result.messages.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||!Number.isSafeInteger(m.sender_user_id)||m.sender_user_id<=0||
+    (m.content!=null&&typeof m.content!=="string")||(before!==undefined&&m.id>=before))||
+  result.messages.some((m,i)=>i>0&&m.id<=result.messages[i-1].id)||
+  (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!result.messages.length||cursor>=result.messages[0].id))||
+  (before!==undefined&&cursor!==null&&cursor>=before))
+  throw Error("Görüşme sunucusundan geçersiz mesaj sayfası alındı.");
+ return {...result,next_before:cursor};
 };
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string,replyToMessageId?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim()||(replyToMessageId!==undefined&&(!Number.isSafeInteger(replyToMessageId)||replyToMessageId<=0)))
