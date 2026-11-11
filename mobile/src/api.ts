@@ -40,7 +40,7 @@ export async function createSchedule(token:string,payload:{event_type:string;tit
 
 export type ToothStatusCode="HEALTHY"|"CARIES"|"FILLING"|"CROWN"|"ROOT_CANAL"|"EXTRACTED"|"IMPLANT"|"OTHER";
 export type ToothSurfaceCode="OCCLUSAL"|"INCISAL"|"MESIAL"|"DISTAL"|"BUCCAL"|"LINGUAL";
-export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode}){return request<{ok:boolean;tooth_number:string;status:string;surface?:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){return request<{ok:boolean;tooth_number:string;status:string;surface?:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
 
 export type NotificationItem={id:number;title:string;message:string;notice_type?:string;target_url?:string|null;is_read:boolean;created_at:string};
 export type Expert={id:number;display_name:string;specialty?:string|null;academic_title?:string|null;institution?:string|null;availability:string;consultation_price?:number|null};
