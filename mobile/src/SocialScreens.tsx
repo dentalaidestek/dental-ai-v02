@@ -1030,12 +1030,9 @@ export function DentalFlow({
                     expertId,
                     !stats.following_by_viewer,
                   );
-                  setStats({
-                    ...stats,
-                    ...r,
-                    followers:
-                      stats.followers + (r.following_by_viewer ? 1 : -1),
-                  });
+                  // Re-read authoritative counts: concurrent follows can change totals.
+                  const latest = await api.getSocialStats(token, expertId);
+                  setStats({ ...latest, following_by_viewer: r.following_by_viewer });
                 } catch (e) {
                   setError(message(e));
                 } finally {
